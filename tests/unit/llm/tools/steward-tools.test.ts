@@ -613,61 +613,6 @@ describe("steward log_stewardship_decision", () => {
   });
 });
 
-describe("steward notify_dependent_stewards", () => {
-  const CLAIM = "33333333-3333-3333-3333-333333333333";
-  const PARENT_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-  const PARENT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("notifies every dependent when parent_ids is omitted", async () => {
-    vi.mocked(rawQuery).mockResolvedValueOnce([
-      { parent_id: PARENT_A },
-      { parent_id: PARENT_B },
-    ]);
-    const out = await executeStewardTool("notify_dependent_stewards", {
-      claim_id: CLAIM,
-      change_summary: "moved SUPPORTED -> INCONCLUSIVE",
-    });
-    expect(enqueueSteward).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(out).parent_claim_ids).toEqual([PARENT_A, PARENT_B]);
-  });
-
-  it("restricts the fan-out to parent_ids when the steward triages (#182)", async () => {
-    vi.mocked(rawQuery).mockResolvedValueOnce([
-      { parent_id: PARENT_A },
-      { parent_id: PARENT_B },
-    ]);
-    const out = await executeStewardTool("notify_dependent_stewards", {
-      claim_id: CLAIM,
-      change_summary: "confidence nudged within INCONCLUSIVE",
-      parent_ids: [PARENT_A],
-    });
-    expect(enqueueSteward).toHaveBeenCalledTimes(1);
-    expect(enqueueSteward).toHaveBeenCalledWith(
-      expect.objectContaining({ claimId: PARENT_A, trigger: "subclaim_change" })
-    );
-    expect(JSON.parse(out).parent_claim_ids).toEqual([PARENT_A]);
-  });
-
-  it("never enqueues an id that is not actually a dependent; reports it instead", async () => {
-    // A hallucinated/stale parent_id must not trigger an unrelated claim's
-    // Steward; the tool result names the dropped ids so the model can correct.
-    vi.mocked(rawQuery).mockResolvedValueOnce([{ parent_id: PARENT_A }]);
-    const out = await executeStewardTool("notify_dependent_stewards", {
-      claim_id: CLAIM,
-      change_summary: "s",
-      parent_ids: [PARENT_A, PARENT_B],
-    });
-    expect(enqueueSteward).toHaveBeenCalledTimes(1);
-    const parsed = JSON.parse(out);
-    expect(parsed.parent_claim_ids).toEqual([PARENT_A]);
-    expect(parsed.skipped_not_dependents).toEqual([PARENT_B]);
-  });
-});
-
 describe("steward update_claim_assessment", () => {
   beforeEach(() => {
     vi.clearAllMocks();

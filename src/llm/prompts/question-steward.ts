@@ -26,6 +26,11 @@ Each task message names its trigger:
   presupposes, decompose it, then assess.
 - subclaim_change: an answer, subquestion or presupposition changed its
   assessment. Judge whether the change moves your answer; most do not.
+- dependent_note: the Steward of a node that depends on your question
+  thinks your assessment may be mistaken, and says why. Weigh its reasons;
+  you decide.
+- steward_note: the Steward of a node not joined to yours by an edge has
+  written to you with its reasons. Decide whether anything should change.
 - contribution_accepted: integrate an accepted contribution, holding it to
   the same standard as anything else on the page (§14).
 - curator_change: the Curator merged or split the question, changed its

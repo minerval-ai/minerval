@@ -117,7 +117,7 @@ order a reader sees them, is yours to decide.
 
 Before the run ends, the following must be recorded: ${record}, the ${noun}'s importance and contestation, and your
 decision (log_stewardship_decision). If the assessment changed materially,
-notify the dependents it could matter to (notify_dependent_stewards).`;
+notify the dependents it could matter to (notify_steward).`;
 }
 
 /**
