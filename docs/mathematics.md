@@ -2904,7 +2904,9 @@ Issue #301's thesis is that Minerval directs other tools, and those tools
 speak MCP:
 - `get_claim` returns `formalization` beside `assessment` and accepts
   `include: "proofs"` for the check records; its description gains one
-  sentence about formal statements and machine-checked arguments.
+  sentence about formal statements and machine-checked arguments. (Since
+  #774 the agents' `get_claim` is the same tool, and both carry the whole
+  formalization record.)
 - `search_claims` results carry `prize_micro_usd` and `checked`; the input
   gains `with_prizes`.
 - New `get_bounty_terms {claim_id}` returns the machine-readable terms of

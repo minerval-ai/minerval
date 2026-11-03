@@ -589,7 +589,7 @@ export function getStewardToolDefinitions(): Tool[] {
         "different claim, and rewording into the negation would flip every " +
         "recorded stance. Escalate those to the Curator instead. The form's " +
         "direction was chosen on the proposition's own terms (see the claim's " +
-        "canonical_direction_note in get_claim_details), never from whichever " +
+        "canonical_direction_note in get_claim), never from whichever " +
         "source arrived first; keep it.",
       input_schema: {
         type: "object" as const,

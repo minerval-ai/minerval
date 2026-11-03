@@ -534,9 +534,10 @@ beside each instance, and the edges behind a disclosure, in words), on
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
 `get_claim_instances`.
 
-A claim is a canonical proposition with no home source, so the admin
-`get_claim` read returns the canonical record and an `instance_count`, never
-the instances; `get_claim_instances` pages through them. The Steward decides
+A claim is a canonical proposition with no home source, so `get_claim`
+returns the canonical record and an `instance_count`, and the instances only
+when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
+pages through them. The Steward decides
 which instances the claim carries and in what order: `detach_claim_instance`
 removes one whose source does not assert, deny or pose the proposition
 (`claim_instances.detached_at`, with the reason in the audit trail; the row

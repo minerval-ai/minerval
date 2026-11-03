@@ -164,33 +164,49 @@ and the tool description says what a call spends.
   machine-checked argument stands on the claim, the same derivation as the
   badge on the claim page), and the input accepts `with_prizes: true` to
   restrict results to claims with an open bounty.
-- **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
-  — canonical form, current assessment (status, confidence, reasoning),
-  source instances, arguments, dependents, page link. With `"provenance"`,
-  each instance carries the Steward's `reading` of its source (whether the
-  source's own evidence bears its assertion, the mechanical quote check,
-  whether it is worth reading closely; null until recorded), and the payload
-  carries `source_map` (the Steward's account of what the support rests on,
-  with `material` saying whether the claim page shows it), `provenance_edges`
-  (which assertions draw on which documents, with fidelity), and
-  `source_relationships` (documents that are one voice), per #286. None of
-  it is a score. `formalization` is
-  returned beside `assessment`: the published Lean 4 statement, its pin
-  (toolchain and Mathlib revision), both hashes, the correspondence note,
-  and the review-period end, or null when the claim has none. A formal
-  statement is the graph's own rendering of the proposition and is what
-  prizes, solver attempts, and machine-checked arguments bind to; the
-  assessment beside it remains the Steward's judgment of the claim as
-  worded. `include` also accepts `"proofs"`, which adds, to each argument
-  that carries one, the public check record (verdict, gates, pin, hashes,
-  and the submission source once public) behind a machine-checked proof or
-  disproof.
+- **`get_claim`** `{claim_id, include?: ["arguments"|"subclaims"|"provenance"|"dependents"|"related"|"findings"|"proofs"], dependents_limit?, dependents_offset?}`
+  — one node as the graph records it. This is the same tool, with the same
+  description and payload, that the graph's own agents call
+  (`src/services/claim-view-service.ts`, #774), so a skill that names
+  `get_claim` means one thing to every reader. Every read returns `claim`
+  (`kind`, canonical form, type, state, importance, contestation, tags,
+  page link, `steward_state` and `stewarded_at`), `assessment` (status,
+  confidence, credence, reasoning), the kind's record, `preliminary_seed`
+  while the node is unassessed, the formalization record, `requests`,
+  `subclaim_count`, `instance_count` and `source_map`. Nothing else is
+  included by default; `include` adds sections:
+  - `"arguments"`: each argument with its written form, its current
+    evaluation, and the check record behind a machine-checked one.
+  - `"subclaims"`: the direct subclaims, one row per argument each serves,
+    with their standing, and `subclaims_assessed`. `get_decomposition`
+    walks deeper.
+  - `"provenance"`: the instances, each with the Steward's `reading` of its
+    source (whether the source's own evidence bears its assertion, the
+    mechanical quote check, whether it is worth reading closely; null until
+    recorded), plus `provenance_edges` (which assertions draw on which
+    documents, with fidelity) and `source_relationships` (documents that are
+    one voice), per #286. None of it is a score.
+  - `"dependents"`: one page by importance (`dependents_limit`, default 25,
+    at most 100; `dependents_offset`), with `dependents_total`.
+  - `"related"`: lateral see-also links with the reason for each; never
+    dependencies.
+  - `"findings"`: findings already noted on the node.
+  - `"proofs"`: every Lean check record on any version of the statement.
+
+  `formalization` is returned beside `assessment`: the published Lean 4
+  statement, its pin (toolchain and Mathlib revision), both hashes, the
+  correspondence note, and the review-period end, or null when the claim has
+  none; `formalization_pending`, `formalization_history`, `verification` and
+  the newest `lean_checks` ride beside it. A formal statement is the graph's
+  own rendering of the proposition and is what prizes, solver attempts, and
+  machine-checked arguments bind to; the assessment beside it remains the
+  Steward's judgment of the claim as worded.
   The node's `kind` rides on `claim`: a quantity carries a `quantity`
   record (definition, the graph's estimate with its work, stated figures,
-  readings, cut claims) and no assessment, a question a `question` record
-  (standing, answers, presuppositions, subquestions), a cut claim
-  `threshold_of`, and every node its open `requests`, as
-  `GET /claims/:id` serves them.
+  figures not yet recorded, readings, cut claims) and no assessment, a
+  question a `question` record (standing, answers, presuppositions,
+  subquestions), a cut claim `threshold_of`, and every node its `requests`,
+  as `GET /claims/:id` serves them.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
 - **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion

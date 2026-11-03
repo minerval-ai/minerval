@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 19211,
-    "fullChars": 101737,
+    "roleChars": 19281,
+    "fullChars": 101807,
     "skills": [
       {
         "name": "costing",

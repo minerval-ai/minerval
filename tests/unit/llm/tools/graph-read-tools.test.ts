@@ -12,7 +12,9 @@ vi.mock("../../../../src/services/assessment-service.js", () => ({
   getCurrentAssessment: vi.fn(),
 }));
 vi.mock("../../../../src/services/argument-service.js", () => ({
-  getArgumentsForClaim: vi.fn(),
+  getArgumentsForClaim: vi.fn(async () => []),
+  getEvaluationStateForClaim: vi.fn(async () => []),
+  hasWrittenForm: (content: string | null) => !!content && content.length > 40,
 }));
 vi.mock("../../../../src/services/tree-service.js", () => ({
   getTransitiveDependents: vi.fn(),
@@ -27,9 +29,28 @@ vi.mock("../../../../src/services/tag-service.js", () => ({
 }));
 vi.mock("../../../../src/services/formalization-service.js", () => ({
   getClaimFormalizationRecord: vi.fn(),
+  leanChecksByArgument: vi.fn(async () => new Map()),
+  listLeanChecksForClaim: vi.fn(async () => []),
 }));
 vi.mock("../../../../src/services/quantity-service.js", () => ({
   getQuantityDetail: vi.fn(),
+  getThresholdOf: vi.fn(async () => null),
+}));
+vi.mock("../../../../src/services/request-service.js", () => ({
+  listRequests: vi.fn(async () => ({ items: [], total: 0 })),
+}));
+vi.mock("../../../../src/services/claim-instance-service.js", () => ({
+  countClaimInstances: vi.fn(async () => 0),
+}));
+vi.mock("../../../../src/services/source-map-service.js", () => ({
+  getSourceMapSummary: vi.fn(async () => null),
+  getClaimSourceMap: vi.fn(async () => null),
+}));
+vi.mock("../../../../src/services/claim-link-service.js", () => ({
+  listRelatedClaims: vi.fn(async () => []),
+}));
+vi.mock("../../../../src/services/finding-service.js", () => ({
+  listFindings: vi.fn(async () => []),
 }));
 vi.mock("../../../../src/services/question-service.js", () => ({
   getQuestionDetail: vi.fn(),
@@ -51,6 +72,16 @@ import {
 import { getClaimFormalizationRecord } from "../../../../src/services/formalization-service.js";
 import { getQuantityDetail } from "../../../../src/services/quantity-service.js";
 import { getQuestionDetail } from "../../../../src/services/question-service.js";
+import {
+  getArgumentsForClaim,
+  getEvaluationStateForClaim,
+} from "../../../../src/services/argument-service.js";
+import { listClaimDependents } from "../../../../src/services/tree-service.js";
+import { listRequests } from "../../../../src/services/request-service.js";
+import { countClaimInstances } from "../../../../src/services/claim-instance-service.js";
+import { getSourceMapSummary } from "../../../../src/services/source-map-service.js";
+import { listRelatedClaims } from "../../../../src/services/claim-link-service.js";
+import { listFindings } from "../../../../src/services/finding-service.js";
 
 const mockHybrid = vi.mocked(hybridSearch);
 const mockRawQuery = vi.mocked(rawQuery);
@@ -274,15 +305,15 @@ describe("graph-read-tools", () => {
       mockGetClaim.mockResolvedValueOnce({ id: "q1", kind: "quantity", ...base } as never);
       const qty = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "q1" }))!);
       expect(qty.claim.kind).toBe("quantity");
-      expect(qty.quantity.current_estimate).toEqual({ form: "point", central: 4 });
-      expect(qty.quantity.stated_estimates).toBe(2);
-      expect(qty.question).toBeUndefined();
+      expect(qty.quantity.estimate).toEqual({ form: "point", central: 4 });
+      expect(qty.quantity.estimates).toHaveLength(2);
+      expect(qty.question).toBeNull();
 
       mockGetClaim.mockResolvedValueOnce({ id: "k1", kind: "question", ...base } as never);
       const qn = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "k1" }))!);
       expect(qn.claim.kind).toBe("question");
       expect(qn.question).toEqual({ standing: "open", answers: [] });
-      expect(qn.quantity).toBeUndefined();
+      expect(qn.quantity).toBeNull();
     });
 
     // #435: a Grantmaker valuing attempt_proof must read the published
@@ -349,6 +380,163 @@ describe("graph-read-tools", () => {
       expect(out.formalization_pending).toBeNull();
       expect(out.formalization_history).toEqual([]);
       expect(out.lean_checks_total).toBe(0);
+    });
+    // #774: one get_claim for every agent. What the governance roles' reader
+    // returned is reachable here, by default or by `include`.
+    describe("the governance record (#774)", () => {
+      const row = {
+        id: "c1",
+        kind: "claim",
+        text: "A claim",
+        claimType: "empirical_derived",
+        state: "active",
+        decompositionStatus: "complete",
+        importance: 0.6,
+        stewardState: "pending",
+        stewardedAt: null,
+        canonicalDirectionNote: "Stated positively, as the literature does.",
+        seedCredence: 0.7,
+        seedNote: "Likely, per the parent's review.",
+        seedSourceClaimId: "p1",
+      };
+
+      beforeEach(() => {
+        mockGetClaim.mockResolvedValue(row as never);
+        mockSubclaimCount.mockResolvedValue(2 as never);
+        mockAssessment.mockResolvedValue(null as never);
+      });
+
+      it("always carries Steward state, the seed while unassessed, counts and the source map", async () => {
+        vi.mocked(countClaimInstances).mockResolvedValue(4 as never);
+        vi.mocked(getSourceMapSummary).mockResolvedValue({ summary: "Rests on one survey" } as never);
+        vi.mocked(listRequests).mockResolvedValue({
+          items: [{ id: "r1", keeper: { kind: "steward" }, bears_on: [{ id: "c1" }] }],
+          total: 1,
+        } as never);
+
+        const out = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "c1" }))!);
+
+        expect(out.claim).toMatchObject({
+          kind: "claim",
+          canonical_form: "A claim",
+          steward_state: "pending",
+          stewarded_at: null,
+          canonical_direction_note: "Stated positively, as the literature does.",
+        });
+        expect(out.preliminary_seed).toEqual({
+          credence: 0.7,
+          note: "Likely, per the parent's review.",
+          seeded_by_claim_id: "p1",
+        });
+        expect(out.instance_count).toBe(4);
+        expect(out.subclaim_count).toBe(2);
+        expect(out.source_map).toEqual({ summary: "Rests on one survey" });
+        expect(out.requests[0].kept_by_this_node).toBe(true);
+        // Sections that grow with the graph come only when asked for.
+        for (const key of ["arguments", "subclaims", "instances", "dependents", "related", "findings", "proofs"]) {
+          expect(out[key]).toBeUndefined();
+        }
+      });
+
+      it("drops the seed once the node has its own assessment", async () => {
+        mockAssessment.mockResolvedValue({
+          status: "supported",
+          confidence: 0.8,
+          claimCredence: 0.8,
+          summary: "s",
+          reasoningTrace: "t",
+          assessedAt: new Date("2026-01-01T00:00:00Z"),
+        } as never);
+        const out = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "c1" }))!);
+        expect(out.preliminary_seed).toBeUndefined();
+      });
+
+      it("serves arguments with evaluations, subclaims by argument, related links and findings on request", async () => {
+        vi.mocked(getArgumentsForClaim).mockResolvedValue([
+          { id: "a1", name: "Survey", stance: "supports", content: "label", evidenceUrls: [], shows: null },
+        ] as never);
+        vi.mocked(getEvaluationStateForClaim).mockResolvedValue([
+          { argument_id: "a1", argument_name: "Survey", verdict: "holds", decisive: true, content: "Sound.", stale: false },
+        ] as never);
+        mockRawQuery.mockResolvedValue([
+          {
+            edge_id: "e1",
+            child_id: "k1",
+            child_text: "A subclaim",
+            child_type: "empirical_derived",
+            relation_type: "requires",
+            confidence: 0.9,
+            child_status: "supported",
+            child_confidence: 0.7,
+            argument_id: "a1",
+            argument_name: "Survey",
+            child_kind: "claim",
+            child_estimate: null,
+            child_standing: null,
+          },
+        ] as never);
+        vi.mocked(listRelatedClaims).mockResolvedValue([
+          { id: "r1", text: "A neighbour", kind: "see_also", reasoning: "Same survey", assessment_status: null, assessment_confidence: null },
+        ] as never);
+        vi.mocked(listFindings).mockResolvedValue([
+          {
+            id: "f1",
+            first_noted_at: new Date("2026-02-01T00:00:00Z"),
+            agent: "audit",
+            importance: "0.5",
+            sighting_count: "2",
+            headline: "Seed unexamined",
+            refs: [{ kind: "claim", id: "c1" }],
+            stale: true,
+          },
+        ] as never);
+
+        const out = JSON.parse(
+          (await executeGraphReadTool("get_claim", {
+            claim_id: "c1",
+            include: ["arguments", "subclaims", "related", "findings"],
+          }))!
+        );
+
+        expect(out.arguments).toEqual([
+          expect.objectContaining({
+            id: "a1",
+            has_written_form: false,
+            evaluation: { verdict: "holds", decisive: true, content: "Sound.", stale: false },
+          }),
+        ]);
+        expect(out.subclaims).toEqual([
+          expect.objectContaining({ id: "k1", edge_id: "e1", argument_id: "a1", assessment_status: "supported" }),
+        ]);
+        expect(out.related).toEqual([
+          expect.objectContaining({ id: "r1", link_kind: "see_also", reasoning: "Same survey" }),
+        ]);
+        expect(out.findings).toEqual([
+          expect.objectContaining({
+            id: "f1",
+            noted_at: "2026-02-01T00:00:00.000Z",
+            importance: 0.5,
+            sighting_count: 2,
+            cites: ["claim c1"],
+            stale: expect.any(String),
+          }),
+        ]);
+      });
+
+      it("pages dependents as MCP does", async () => {
+        vi.mocked(listClaimDependents).mockResolvedValue({ dependents: [{ id: "d1" }], total: 40 } as never);
+        const out = JSON.parse(
+          (await executeGraphReadTool("get_claim", {
+            claim_id: "c1",
+            include: ["dependents"],
+            dependents_limit: 500,
+            dependents_offset: 25,
+          }))!
+        );
+        expect(listClaimDependents).toHaveBeenCalledWith("c1", { limit: 100, offset: 25 });
+        expect(out.dependents).toEqual([{ id: "d1" }]);
+        expect(out.dependents_total).toBe(40);
+      });
     });
   });
 });
