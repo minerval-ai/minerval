@@ -11,11 +11,12 @@ description: >-
   merely use a number or a model.
 metadata:
   minerval:
-    version: 2
+    version: 3
     since_epoch: 2026-09-domain-skills
     domains: [mathematics]
     changelog:
-      2: A section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section.
+      2: "requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)"
+      3: A section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section.
 ---
 
 ## For every administrator
@@ -67,7 +68,9 @@ on which named results it lives or dies. Two proofs by different methods
 stand side by side and corroborate without merging; two proofs that share a
 lemma share the subclaim. A counterexample or a proof of the negation is an
 argument with stance `against` on the same node. Relations, in
-mathematics: `requires` for a named result the argument depends on;
+mathematics: `requires` for a named result every proof of the claim
+depends on (a result only one of several proofs uses is `supports`, and the
+proof's argument records that it rests on it, constitution §6);
 `supports` for a proven weaker statement, a verified special case, or a
 large computation; `contradicts` for a counterexample or an inconsistent
 theorem; `assumes` for a foundational choice the discourse disputes for

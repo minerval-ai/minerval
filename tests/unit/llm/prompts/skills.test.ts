@@ -88,7 +88,7 @@ describe("the Mathematics skill", () => {
   it("loads with the frontmatter Appendix A specifies", () => {
     const m = getSkill("mathematics");
     expect(m.displayName).toBe("Mathematics");
-    expect(m.version).toBe(2);
+    expect(m.version).toBe(3);
     expect(m.sinceEpoch).toBe("2026-09-domain-skills");
     expect(m.domains).toEqual(["mathematics"]);
     expect(m.description).toMatch(/^How the constitution applies to propositions of mathematics/);
@@ -254,7 +254,7 @@ describe("views", () => {
 
   it("wraps the role's sections with the citable heading and the standing sentence", () => {
     const view = getSkillView(m, "claim-steward");
-    expect(view.startsWith("# Domain skill: Mathematics (version 2)\n\n" + SKILL_STANDING)).toBe(
+    expect(view.startsWith("# Domain skill: Mathematics (version 3)\n\n" + SKILL_STANDING)).toBe(
       true
     );
     for (const h of ROLE_VIEW["claim-steward"]) expect(view).toContain(`## ${h}\n`);
@@ -325,7 +325,9 @@ describe("views", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog.split("\n")).toHaveLength(4);
     expect(catalog).toContain("- costing (version 1, a method skill; as first written). ");
-    expect(catalog).toContain("- mathematics (version 2, a domain skill, for claims tagged mathematics; this version changed: ");
+    expect(catalog).toContain(
+      "- mathematics (version 3, a domain skill, for claims tagged mathematics; this version changed: A section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section.). "
+    );
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
     expect(catalog).toContain(
       "- provenance (version 3, a method skill; this version changed: The researcher's section carries the mapping " +
