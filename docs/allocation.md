@@ -360,16 +360,41 @@ swept or something in it was re-assessed since its last sweep, and not
 within a day of its last sweep; the reconcile sweep opens an exclusive
 set of two `consistency_sweep` rows (`consistency:<tag_id|residual>`)
 for every due partition: a standard variant on the cheap tier
-(`CONSISTENCY_MODEL`, capped at `CAP_CONSISTENCY_SWEEP_OWLS`) and a strong
-one (`CONSISTENCY_STRONG_MODEL`, `CAP_CONSISTENCY_SWEEP_STRONG_OWLS`). The
+(`CONSISTENCY_MODEL`) and a strong one (`CONSISTENCY_STRONG_MODEL`). The
 General mandate funds one of the two from its escrow and its daily rate
 like a review pass, with no count of sweeps (`CONSISTENCY_SWEEPS_ENABLED`
-is a deployment switch, off by default). Which variant it buys is the
-marginal-return rule: a sweep has no value of its own to set against the
-day's bar, so the strong variant is bought when its value per owl is at
-least the standard's, that is when the policy's
-`consistency_strong_gain_multiplier` times the standard's cost covers the
-strong one's. Thinking about the work competes with the work: a day's
+is a deployment switch, off by default).
+
+**A sweep is priced by its partition's size** (#756). Each row costs its
+variant's rate per assessed node in the partition (claims with a verdict,
+quantities with an estimate, questions with a standing), counting at
+least 20, with the variant's cap as the ceiling:
+`min(cap, rate × max(20, assessed nodes))`. The defaults are generous on
+purpose, so a big tag or the residual bucket gets the budget to be read
+rather than a small tag's: 0.005 owl a node on the standard variant
+(`CONSISTENCY_SWEEP_OWLS_PER_NODE`; the flash tier metered about 0.0007
+a node over a 30-node partition, and a reader pays more per node as its
+history grows), capped at 2 owls (`CAP_CONSISTENCY_SWEEP_OWLS`, 400
+nodes), and ten times that rate on the strong one
+(`CONSISTENCY_SWEEP_STRONG_OWLS_PER_NODE`, 0.05), capped at 10 owls
+(`CAP_CONSISTENCY_SWEEP_STRONG_OWLS`, 200 nodes). A row still open is
+repriced when its partition grows; what a sweep does not spend settles
+back. The size is the work, not the importance: importance mass decides
+which partition is swept first and, through the formula, what the passes
+a sweep's flags ask for are worth. The checker's briefing states the
+rate, the ceiling and what its partition came to; where the ceiling
+binds it is told how far the budget reaches, reads in the listing's
+order (changed, then important), and its note says where it stopped so
+the next sweep starts there.
+
+Which variant the General mandate buys is the marginal-return rule,
+taken per partition from its two prices: a sweep has no value of its own
+to set against the day's bar, so the strong variant is bought when its
+value per owl is at least the standard's, that is when the policy's
+`consistency_strong_gain_multiplier` times the standard's price covers the
+strong one's. Below both caps the strong price is ten times the
+standard's; above 200 nodes the strong cap binds first and the ratio
+falls. Thinking about the work competes with the work: a day's
 sweeps come out of the same rate as the passes they ask for.
 
 **A flag is information, not money.** `flag_inconsistency` names a

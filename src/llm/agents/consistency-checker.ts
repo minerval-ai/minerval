@@ -105,6 +105,12 @@ async function runConsistencyCheckerImpl(input: {
   lastSweep: { started_at: Date; note: string | null } | null;
   model?: string;
   /**
+   * How the sweep's budget was priced (the partition's size, #756), stated
+   * beside the budget line so the checker knows why it has what it has.
+   * Absent for a run without a priced budget (an eval, a one-off call).
+   */
+  budgetBasis?: string;
+  /**
    * Read and judge, write nothing: flag_inconsistency records the proposal
    * and returns without touching the ledger or the Steward queue. The eval
    * harness uses this as a coherence measure of a graph (how much would a
@@ -297,6 +303,7 @@ async function runConsistencyCheckerImpl(input: {
         ? ""
         : `No flag in this partition is still waiting for its pass.\n\n`) +
     `${turnBudgetLine(MAX_ITERATIONS)}\n\n` +
+    (input.budgetBasis ? `${input.budgetBasis}\n\n` : "") +
     `Read the partition, compare what needs comparing, and flag what does not ` +
     `fit together, here or wherever in the graph what this partition ` +
     `establishes bears; then finish with your note. Nobody is watching this ` +

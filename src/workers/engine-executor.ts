@@ -901,12 +901,16 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
       () =>
-        withPassBudget(actionBudget(action, "the General mandate's allocation for this sweep"), () =>
-          // The strong variant reads with the stronger model (#756).
-          runConsistencySweep({
-            partition,
-            model: action.variant === "strong" ? loadConfig().consistencyStrongModel : undefined,
-          })
+        withPassBudget(
+          actionBudget(action, "the General mandate's allocation for this sweep, priced by the partition's size"),
+          () =>
+            // The strong variant reads with the stronger model (#756), and
+            // the sweep is told how its budget was priced.
+            runConsistencySweep({
+              partition,
+              variant: action.variant === "strong" ? "strong" : "standard",
+              model: action.variant === "strong" ? loadConfig().consistencyStrongModel : undefined,
+            })
         )
     );
     await completeAction(action.id, billedMicroUsd, {

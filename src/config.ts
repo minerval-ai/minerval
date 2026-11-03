@@ -149,19 +149,30 @@ const configSchema = z.object({
   // brief, the graph, and the open web, and raising candidates. Set near
   // the average cost of a run that finds nothing, which is most of them.
   capLookoutRunOwls: z.coerce.number().default(0.05),
-  // One consistency sweep (kind 'consistency_sweep', #330): a cheap-tier
-  // agent reading one partition's assessments against each other. The
-  // allocation reserves the whole cap against the General mandate's day
-  // until the run settles, so a cap far above the metered cost (about 0.02
-  // owl on the flash tier over a 30-claim partition) crowds out the passes
-  // the sweep asks for. The lookout's cap.
-  capConsistencySweepOwls: z.coerce.number().default(0.05),
+  // One consistency sweep (kind 'consistency_sweep', #330, #756): a
+  // partition's row is priced by its size, so a big tag or the residual
+  // bucket gets enough budget to be read, not a small tag's: the rate per
+  // assessed node below times the partition's assessed nodes (counted as at
+  // least 20, CONSISTENCY_SWEEP_MIN_NODES, for the briefing, the skills and
+  // the searches beyond the partition every sweep pays for), with this cap as
+  // the ceiling. The rate is generous on purpose: about 0.0007 owl per node
+  // is what the flash tier metered over a 30-node partition, and a reader
+  // pays more per node as its history grows, so 0.005 leaves room to read
+  // every node and compare what needs comparing. The allocation reserves
+  // the row's price against the General mandate's day only until the run
+  // settles. The cap covers 400 nodes at the rate; above that the sweep is
+  // told the ceiling binds and to note where it stopped.
+  capConsistencySweepOwls: z.coerce.number().default(2),
+  consistencySweepOwlsPerNode: z.coerce.number().min(0).default(0.005),
   // The strong variant of a sweep (#756): the same partition read by
   // consistencyStrongModel, a standard-tier reader that catches more of the
   // subtle tensions the sweep exists for (two readings of one study, a
-  // consideration from another field). Set near what a standard-tier sweep
-  // of a 30-claim partition costs, about ten times the flash read.
-  capConsistencySweepStrongOwls: z.coerce.number().default(0.5),
+  // consideration from another field). Its rate is ten times the flash
+  // read's, as the tiers' metered costs are; its cap covers 200 nodes, so
+  // above that the strong variant costs less than ten times the standard
+  // and the marginal-return rule weighs that per partition.
+  capConsistencySweepStrongOwls: z.coerce.number().default(10),
+  consistencySweepStrongOwlsPerNode: z.coerce.number().min(0).default(0.05),
   // The budget a paid assessment's Steward pass works to (an order, or a
   // proposal's first pass), shown to the Steward and enforced on its paid
   // tools. Deliberately above the buyer's cap: the buyer pays at most
@@ -889,8 +900,8 @@ const configSchema = z.object({
   // identically in infra/lib/api-stack.ts.
   consistencyStrongModel: modelId(MODELS.sonnet),
   // Whether the General mandate funds consistency sweeps at all (each a
-  // 'consistency_sweep' ledger action, capped at capConsistencySweepOwls or
-  // its strong variant's cap). A deployment off-switch only, as
+  // 'consistency_sweep' ledger action priced by the partition's size, with
+  // capConsistencySweepOwls or its strong variant's cap as the ceiling). A deployment off-switch only, as
   // lookoutRunsEnabled is: how many sweeps run is the General mandate's
   // escrow and day room, with the re-sweep interval (CONSISTENCY_BOUNDS.
   // resweepHours) keeping a partition to one sweep a day (#749). Off by
@@ -1041,6 +1052,8 @@ export function loadConfig(): Config {
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
     capConsistencySweepStrongOwls: process.env.CAP_CONSISTENCY_SWEEP_STRONG_OWLS,
+    consistencySweepOwlsPerNode: process.env.CONSISTENCY_SWEEP_OWLS_PER_NODE,
+    consistencySweepStrongOwlsPerNode: process.env.CONSISTENCY_SWEEP_STRONG_OWLS_PER_NODE,
     paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,

@@ -75,7 +75,9 @@ export interface AllocationPolicy {
    *  marginal-return rule compares the upgrade with the sweep itself: the
    *  strong variant is bought when its value per owl is at least the
    *  standard's, that is when this × the standard's cost covers the strong
-   *  one's. At the default caps (0.05 and 0.5 owl) that takes 10. */
+   *  one's. Both are priced by the partition's size; at the default rates
+   *  (0.005 and 0.05 owl a node) that takes 10 below the caps, less for a
+   *  partition past 200 nodes, where the strong cap binds first. */
   consistency_strong_gain_multiplier: number;
   /** Formula weight of a reconcile-candidate request (a similarity scan's
    *  pair, times its score) relative to a Steward's escalation (1.0): a
@@ -272,7 +274,7 @@ function defaultsFromConfig(): AllocationPolicy {
     est_audit_cost_owls: 0.5,
     // A guess for the General mandate's Grantmaker to revise once the
     // corpus consistency eval compares the tiers (#756): below the 10 the
-    // default caps need, so sweeps stay on the cheap tier until a funder
+    // default rates need, so sweeps stay on the cheap tier until a funder
     // judges the stronger read worth it.
     consistency_strong_gain_multiplier: 3,
     curate_candidate_weight: 0.5,

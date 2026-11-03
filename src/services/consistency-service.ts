@@ -166,6 +166,12 @@ export interface PartitionStatus {
   label: string;
   /** Live claims in the partition. */
   claims: number;
+  /**
+   * Of those, the assessed nodes a sweep reads (a claim with a verdict, a
+   * quantity with an estimate, a question with a standing): what a sweep
+   * of the partition is priced by (#756).
+   */
+  assessed: number;
   /** Sum of those claims' importance: where a sweep's budget lands first. */
   importance_mass: number;
   last_swept_at: Date | null;
@@ -186,6 +192,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     tag_id: string | null;
     label: string;
     claims: number;
+    assessed: number;
     importance_mass: number;
     last_swept_at: Date | null;
     changed_since: number;
@@ -240,6 +247,9 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
             k.tag_id,
             COALESCE(t.slug, 'residual') AS label,
             COUNT(*)::int AS claims,
+            COUNT(*) FILTER (WHERE EXISTS (
+              SELECT 1 FROM claims c ${CURRENT_RECORD_JOINS}
+               WHERE c.id = k.claim_id AND ${RECORD_ID} IS NOT NULL))::int AS assessed,
             COALESCE(SUM(k.importance), 0)::real AS importance_mass,
             k.at AS last_swept_at,
             COALESCE(MAX(ch.n), 0)::int AS changed_since
@@ -252,6 +262,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
   return rows.map((r) => ({
     ...r,
     claims: Number(r.claims),
+    assessed: Number(r.assessed),
     importance_mass: Number(r.importance_mass),
     changed_since: Number(r.changed_since),
   }));
@@ -266,7 +277,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
  * running (younger than the reclaim window) or failed within the re-sweep
  * interval.
  */
-export async function duePartitions(minTagClaims: number): Promise<SweepPartition[]> {
+export async function duePartitions(minTagClaims: number): Promise<DuePartition[]> {
   const [partitions, running] = await Promise.all([
     listPartitions(minTagClaims),
     // Busy: a sweep still running, or one that failed within the re-sweep
@@ -296,8 +307,11 @@ export async function duePartitions(minTagClaims: number): Promise<SweepPartitio
       if (a.changed_since !== b.changed_since) return b.changed_since - a.changed_since;
       return b.importance_mass - a.importance_mass;
     });
-  return due.map(toSweepPartition);
+  return due.map((p) => ({ ...toSweepPartition(p), assessed: p.assessed }));
 }
+
+/** A partition due a sweep, with the size its sweep is priced by (#756). */
+export type DuePartition = SweepPartition & { assessed: number };
 
 function toSweepPartition(p: PartitionStatus): SweepPartition {
   return p.partition === "tag"

@@ -85,6 +85,9 @@ reasoning, or whether a reader holding both pages would be misled.
 Each sweep covers one part of the graph: a topic tag, or the nodes no
 sweepable tag covers. You are briefed with the note you left on this
 partition's last sweep and the flags in it still waiting for their pass.
+Your budget is priced by the partition's size, at a rate per node meant
+to cover reading all of it; the briefing states the rate and the ceiling,
+and says when a large partition's ceiling leaves part of it unread.
 
 1. list_partition_claims, reading what changed since your last sweep
    first: that is where new incoherence comes from.
@@ -123,7 +126,9 @@ partition's last sweep and the flags in it still waiting for their pass.
 6. Finish with finish_sweep. Your note is your memory of this partition:
    the next sweep of it starts from it. Say what you read and found
    sound, what you flagged, and what deserves a look next time, citing
-   nodes by their full ids so the next sweep can open them.
+   nodes by their full ids so the next sweep can open them. If you did not
+   get through the partition, say where you stopped (the listing offset
+   and the last node you read), so the next sweep starts there.
 
 ## Standing rules
 

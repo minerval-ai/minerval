@@ -41,7 +41,6 @@ import {
   ASSESS_GROUP,
   COVERAGE_SQL,
   REQUEST_GROUP,
-  consistencySweepCostMicroUsd,
   ensureAssessActions,
   ensureRequestActions,
 } from "./action-service.js";
@@ -706,19 +705,24 @@ export async function runGeneralAllocator(): Promise<MandateAllocationResult | n
  * allocations and any regrants out).
  */
 /**
- * Which variant of a consistency sweep the General mandate buys (#756).
- * A sweep has no value estimate of its own to set against the day's bar,
- * so the marginal-return rule compares the upgrade with the sweep itself:
- * the strong variant is worth `consistency_strong_gain_multiplier` times
- * the standard, and is bought when that is at least as much per owl
- * (multiplier × standard cost ≥ strong cost). Otherwise more partitions
- * read on the cheap tier return more than fewer read on the strong one.
+ * Which variant of a consistency sweep the General mandate buys (#756),
+ * given the two prices of one partition's rows. A sweep has no value
+ * estimate of its own to set against the day's bar, so the marginal-return
+ * rule compares the upgrade with the sweep itself: the strong variant is
+ * worth `multiplier` times the standard, and is bought when that is at
+ * least as much per owl (multiplier × standard cost ≥ strong cost).
+ * Otherwise more partitions read on the cheap tier return more than fewer
+ * read on the strong one. Both prices scale with the partition's size, so
+ * the choice is made per partition: where a cap binds, the ratio between
+ * them is not the ratio of their rates. fundGrantSelfActions makes the
+ * same comparison in SQL; this is its statement.
  */
-export async function consistencySweepVariant(): Promise<"standard" | "strong"> {
-  const policy = await getEffectiveAllocationPolicy();
-  const standard = consistencySweepCostMicroUsd("standard");
-  const strong = consistencySweepCostMicroUsd("strong");
-  return policy.consistency_strong_gain_multiplier * standard >= strong ? "strong" : "standard";
+export function consistencySweepVariant(
+  multiplier: number,
+  standardMicroUsd: number,
+  strongMicroUsd: number
+): "standard" | "strong" {
+  return multiplier * standardMicroUsd >= strongMicroUsd ? "strong" : "standard";
 }
 
 export async function fundGrantSelfActions(): Promise<number> {
@@ -824,15 +828,24 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- mandate funds them from its day like any of its work, the
         -- re-sweep interval keeps a partition to one a day, and the switch
         -- is a deployment off-switch. Of a partition's two variants it
-        -- buys the one the marginal-return rule picks ($4, #756), and
-        -- never both.
-        AND (a.kind <> 'consistency_sweep' OR ($1::boolean AND a.variant = $4::text))
+        -- buys the one the marginal-return rule picks from that
+        -- partition's two prices (consistencySweepVariant, with the
+        -- policy's multiplier as $4, #756), and never both.
+        AND (a.kind <> 'consistency_sweep' OR ($1::boolean AND a.variant = (
+              SELECT CASE WHEN $4::real * std.cost_est_micro_usd >= strong.cost_est_micro_usd
+                          THEN 'strong' ELSE 'standard' END
+                FROM actions std
+                JOIN actions strong ON strong.exclusion_group = std.exclusion_group
+                                   AND strong.variant = 'strong'
+               WHERE std.exclusion_group = a.exclusion_group AND std.variant = 'standard')))
       LIMIT 100`,
     [
       loadConfig().consistencySweepsEnabled === true,
       loadConfig().mandateReviewEnabled !== false,
       loadConfig().lookoutRunsEnabled !== false,
-      loadConfig().consistencySweepsEnabled === true ? await consistencySweepVariant() : "standard",
+      loadConfig().consistencySweepsEnabled === true
+        ? (await getEffectiveAllocationPolicy()).consistency_strong_gain_multiplier
+        : 0,
     ]
   );
   let placed = 0;

@@ -23,7 +23,11 @@ import {
   partitionClaims,
   startSweep,
 } from "../../src/services/consistency-service.js";
-import { reconcileActions, ASSESS_GROUP } from "../../src/services/action-service.js";
+import {
+  reconcileActions,
+  ASSESS_GROUP,
+  consistencySweepCostMicroUsd,
+} from "../../src/services/action-service.js";
 import { refreshFormulaValuations } from "../../src/services/mandate-valuer-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
@@ -302,6 +306,20 @@ describe("partitions and sweeps (#330)", () => {
     expect(open.length).toBeGreaterThan(0);
     expect(open.length % 2).toBe(0);
 
+    // Each row is priced by its partition's assessed nodes (#756).
+    const partitions = await listPartitions(3);
+    const priced = await rawQuery<{ target_ref: string; variant: string; cost: string }>(
+      `SELECT target_ref, variant, cost_est_micro_usd::text AS cost
+         FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    for (const row of priced) {
+      const p = partitions.find((x) => (x.tag_id ?? "residual") === row.target_ref)!;
+      expect(p).toBeDefined();
+      expect(Number(row.cost)).toBe(
+        consistencySweepCostMicroUsd(row.variant as "standard" | "strong", p.assessed)
+      );
+    }
+
     await fundGrantSelfActions();
     await fundGrantSelfActions();
     const funded = await rawQuery<{ n: number; groups: number; variants: string[] }>(
@@ -316,6 +334,51 @@ describe("partitions and sweeps (#330)", () => {
     expect(funded[0]!.n).toBe(open.length / 2);
     expect(funded[0]!.groups).toBe(open.length / 2);
     expect(funded[0]!.variants).toEqual(["standard"]);
+  });
+
+  it("chooses a partition's variant from its own two prices, and reprices an open row when its partition grows", async () => {
+    resetAllocationPolicyCache();
+    await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true`);
+    await rawQuery(`DELETE FROM action_allocations WHERE exclusion_group LIKE 'consistency:%'`);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE kind = 'consistency_sweep'`);
+    const funder = await seedUser("platform");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500_000_000, policy: "general" });
+    // A Grantmaker that judges the strong read worth ten times the cheap one:
+    // below both caps that is exactly the price ratio, so it buys strong.
+    await rawQuery(
+      `UPDATE grants SET is_platform = true,
+              allocation_policy = '{"consistency_strong_gain_multiplier": 10}'::jsonb
+        WHERE id = $1`,
+      [grantId]
+    );
+    resetAllocationPolicyCache();
+
+    await reconcileActions();
+    const groups = await rawQuery<{ exclusion_group: string }>(
+      `SELECT DISTINCT exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    expect(groups.length).toBeGreaterThan(0);
+    // An open row whose stored price is stale takes the partition's price again.
+    await rawQuery(
+      `UPDATE actions SET cost_est_micro_usd = 1 WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    await reconcileActions();
+    const stale = await rawQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM actions
+        WHERE kind = 'consistency_sweep' AND status = 'open' AND cost_est_micro_usd = 1`
+    );
+    expect(stale[0]!.n).toBe(0);
+
+    await fundGrantSelfActions();
+    const funded = await rawQuery<{ variant: string }>(
+      `SELECT a.variant FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE al.exclusion_group LIKE 'consistency:%' AND al.grant_id = $1`,
+      [grantId]
+    );
+    expect(funded.length).toBe(groups.length);
+    expect(new Set(funded.map((f) => f.variant))).toEqual(new Set(["strong"]));
+    await rawQuery(`UPDATE grants SET allocation_policy = NULL WHERE id = $1`, [grantId]);
+    resetAllocationPolicyCache();
   });
 });
 

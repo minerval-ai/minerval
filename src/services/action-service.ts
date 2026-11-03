@@ -591,11 +591,65 @@ export async function reconcileActions(): Promise<{
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
 }
 
-/** What one sweep of each variant is priced at: its cap, in micro-USD (#756). */
-export function consistencySweepCostMicroUsd(variant: "standard" | "strong"): number {
-  return variant === "strong"
-    ? owlsToMicroUsd(loadConfig().capConsistencySweepStrongOwls)
-    : capMicroUsd("consistency_sweep");
+/**
+ * The fewest assessed nodes a sweep is priced for. Every sweep pays for its
+ * briefing, its skills and its searches beyond the partition whatever the
+ * partition's size, so a small one is priced as if it held this many.
+ */
+export const CONSISTENCY_SWEEP_MIN_NODES = 20;
+
+export interface ConsistencySweepPrice {
+  /** What the row is priced at, and so the sweep's budget, in micro-USD. */
+  microUsd: number;
+  /** The variant's rate per assessed node, in micro-USD. */
+  perNodeMicroUsd: number;
+  /** The nodes priced: the partition's assessed nodes, at least CONSISTENCY_SWEEP_MIN_NODES. */
+  nodesPriced: number;
+  /** The variant's ceiling, in micro-USD. */
+  capMicroUsd: number;
+  /** True when the ceiling, not the size, set the price. */
+  capped: boolean;
+}
+
+/**
+ * What one sweep of a partition costs (#756): the variant's rate per
+ * assessed node times the partition's assessed nodes (at least
+ * CONSISTENCY_SWEEP_MIN_NODES), with the variant's cap as the ceiling. The
+ * price follows the work, so a big tag or the residual bucket gets the
+ * budget to be read, and the rate is set generously above the metered cost
+ * (config.ts, capConsistencySweepOwls): a sweep that runs out before it has
+ * read its partition is the failure this pricing exists to avoid, and what
+ * it does not spend settles back.
+ */
+export function consistencySweepPrice(
+  variant: "standard" | "strong",
+  assessedNodes: number
+): ConsistencySweepPrice {
+  const config = loadConfig();
+  const perNodeMicroUsd = owlsToMicroUsd(
+    variant === "strong" ? config.consistencySweepStrongOwlsPerNode : config.consistencySweepOwlsPerNode
+  );
+  const ceiling =
+    variant === "strong"
+      ? owlsToMicroUsd(config.capConsistencySweepStrongOwls)
+      : capMicroUsd("consistency_sweep");
+  const nodesPriced = Math.max(CONSISTENCY_SWEEP_MIN_NODES, Math.max(0, Math.floor(assessedNodes)));
+  const bySize = Math.round(perNodeMicroUsd * nodesPriced);
+  return {
+    microUsd: Math.min(ceiling, bySize),
+    perNodeMicroUsd,
+    nodesPriced,
+    capMicroUsd: ceiling,
+    capped: bySize > ceiling,
+  };
+}
+
+/** What one sweep of each variant of a partition is priced at, in micro-USD (#756). */
+export function consistencySweepCostMicroUsd(
+  variant: "standard" | "strong",
+  assessedNodes: number
+): number {
+  return consistencySweepPrice(variant, assessedNodes).microUsd;
 }
 
 async function reconcileConsistencySweeps(): Promise<void> {
@@ -626,13 +680,12 @@ async function reconcileConsistencySweeps(): Promise<void> {
                            AND al.released_at IS NULL)`,
     [refs]
   );
-  const variants = [
-    ["standard", consistencySweepCostMicroUsd("standard")],
-    ["strong", consistencySweepCostMicroUsd("strong")],
-  ] as const;
   for (const p of due) {
     const ref = partitionRef(p);
-    for (const [variant, cost] of variants) {
+    // Each variant is priced by the partition's size (#756). A row still
+    // open takes the new price too, so a partition that grew while its row
+    // waited is funded for what it now holds.
+    for (const variant of ["standard", "strong"] as const) {
       await rawQuery(
         `INSERT INTO actions
            (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
@@ -640,13 +693,15 @@ async function reconcileConsistencySweeps(): Promise<void> {
          ON CONFLICT (exclusion_group, variant) DO UPDATE
            SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
                updated_at = now()
-           WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+           WHERE actions.status IN ('done', 'superseded', 'cancelled')
+              OR (actions.status = 'open'
+                  AND actions.cost_est_micro_usd <> EXCLUDED.cost_est_micro_usd)`,
         [
           CONSISTENCY_GROUP(ref),
           variant,
           ref,
           `Consistency sweep${variant === "strong" ? " (strong)" : ""}: ${p.label}`,
-          cost,
+          consistencySweepCostMicroUsd(variant, p.assessed),
         ]
       );
     }

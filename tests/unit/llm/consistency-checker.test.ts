@@ -170,6 +170,13 @@ describe("runConsistencyChecker", () => {
     expect(state.loop!.briefing).toContain("No flag in this partition is still waiting");
   });
 
+  it("states how its budget was priced when the sweep has one (#756)", async () => {
+    await runConsistencyChecker({ ...base, budgetBasis: "How this budget was set: by the partition's size." });
+    expect(state.loop!.briefing).toContain("How this budget was set: by the partition's size.");
+    await runConsistencyChecker(base);
+    expect(state.loop!.briefing).not.toContain("How this budget was set");
+  });
+
   it("briefs the flags still waiting in the partition (#745)", async () => {
     state.openFlags = [{
       flag_id: "f1", primary_claim_id: PRIMARY, kind: "stale_premise",
