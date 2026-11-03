@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 3)
+# Domain skill: Mathematics (version 4)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
