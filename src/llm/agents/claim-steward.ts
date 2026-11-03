@@ -384,7 +384,7 @@ stuck loop, not a target. Make sure you have recorded an assessment
 (${assessmentTool}) and logged your decision (log_stewardship_decision) before
 either runs out, so your work is never lost mid-task. If you are warned that
 little budget or few iterations remain, stop exploring and record your
-conclusion immediately.
+conclusion.
 
 ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsNote}`;
 

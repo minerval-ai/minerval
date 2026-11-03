@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 12522,
-    "fullChars": 93496,
+    "fullChars": 95048,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 10572,
-    "fullChars": 91546,
+    "roleChars": 10710,
+    "fullChars": 93236,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 16212,
-    "fullChars": 97186,
+    "roleChars": 16350,
+    "fullChars": 98876,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 47313,
-    "fullChars": 128287,
+    "roleChars": 47492,
+    "fullChars": 130018,
     "skills": [
       {
         "name": "costing",
@@ -145,8 +145,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23732,
-    "fullChars": 104706,
+    "roleChars": 23870,
+    "fullChars": 106396,
     "skills": []
   },
   {
@@ -158,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 10674,
-    "fullChars": 91648,
+    "roleChars": 10812,
+    "fullChars": 93338,
     "skills": [
       {
         "name": "costing",
@@ -199,8 +199,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11446,
-    "fullChars": 92420,
+    "roleChars": 11584,
+    "fullChars": 94110,
     "skills": [
       {
         "name": "costing",
@@ -239,8 +239,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12831,
-    "fullChars": 93805,
+    "roleChars": 12969,
+    "fullChars": 95495,
     "skills": [
       {
         "name": "costing",
@@ -292,8 +292,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 20078,
-    "fullChars": 101052,
+    "roleChars": 20216,
+    "fullChars": 102742,
     "skills": [
       {
         "name": "costing",
@@ -332,8 +332,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 12027,
-    "fullChars": 93001,
+    "roleChars": 12165,
+    "fullChars": 94691,
     "skills": [
       {
         "name": "costing",
@@ -371,7 +371,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 8534,
-    "fullChars": 89508,
+    "fullChars": 91060,
     "skills": []
   },
   {
@@ -396,8 +396,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 14397,
-    "fullChars": 95371,
+    "roleChars": 14535,
+    "fullChars": 97061,
     "skills": [
       {
         "name": "costing",
