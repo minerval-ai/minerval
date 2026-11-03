@@ -5,6 +5,7 @@ import { getMatcherSystemPromptBlocks, getMatchingPrompt } from "../prompts/matc
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { findSimilarClaims } from "../../services/search-service.js";
+import { SIMILAR_CLAIMS_FLOOR } from "../tools/graph-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -135,7 +136,7 @@ async function matchClaimImpl(input: {
     name: "search_similar_claims",
     description:
       "Search existing claims by semantic similarity. Returns the top matches " +
-      "ranked by similarity, above only a low floor that trims noise; results " +
+      `ranked by similarity, scoring at least ${SIMILAR_CLAIMS_FLOOR}, a low floor that only trims noise; results ` +
       "are retrieval for your judgment, not a decision. A true counterpart can " +
       "score low or miss the floor under one framing, so call this multiple " +
       "times with different framings of the claim (its wording, paraphrases, " +
@@ -321,7 +322,8 @@ async function matchClaimImpl(input: {
             limit: config.matchingTopK,
             // Retrieval, not decision: keep a low floor so counterparts and
             // alternate framings that embed far apart still surface (#25).
-            minSimilarity: 0.4,
+            // One floor with the Curator's and Steward's search (#773).
+            minSimilarity: SIMILAR_CLAIMS_FLOOR,
             excludeId: input.excludeClaimId,
           });
         } catch (err) {

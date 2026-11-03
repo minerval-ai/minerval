@@ -30,6 +30,10 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
 
 import { complete, completeStructured, toolUseLoop } from "../../../src/llm/client.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
+import { runDateLine } from "../../../src/llm/run-date.js";
+
+// What the model is sent: the caller's system prompt, dated at the seam (#771).
+const DATED_SYSTEM = `the constitution\n\n${runDateLine()}`;
 
 const usage = { inputTokens: 1, outputTokens: 1 };
 
@@ -84,7 +88,7 @@ describe("single-shot completion step recording", () => {
     expect(promptKind).toBe("prompt");
     expect(prompt).toMatchObject({
       model: "m",
-      system: "the constitution",
+      system: DATED_SYSTEM,
       initialMessages: messages,
       tools: [],
       schemaName: "Claims",
@@ -97,7 +101,7 @@ describe("single-shot completion step recording", () => {
     expect(content).toEqual({
       model: "m",
       schemaName: "Claims",
-      systemChars: "the constitution".length,
+      systemChars: DATED_SYSTEM.length,
       messages,
       output: { items: [{ text: "a claim" }] },
       stopReason: null,
@@ -152,7 +156,7 @@ describe("toolUseLoop step recording", () => {
     // The prompt step carries the whole setup: system prompt, initial
     // messages and the tool descriptors, verbatim.
     expect(calls[0]![2]).toMatchObject({
-      system: "the constitution",
+      system: DATED_SYSTEM,
       initialMessages: [{ role: "user", content: "go" }],
       tools: [{ name: "search", description: "find things", input_schema: { type: "object" } }],
     });

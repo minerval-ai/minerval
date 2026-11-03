@@ -12,6 +12,15 @@ export interface ToolResult {
   error?: string;
 }
 
+/**
+ * The similarity floor for every search_similar_claims, here and in the
+ * Matcher (#773). Low on purpose: a counterpart or a rival framing can embed
+ * far from the claim it matches (#25), and the Curator, which catches what
+ * the Matcher missed, must see at least what the Matcher sees. The floor only
+ * trims noise; the agent's judgment decides.
+ */
+export const SIMILAR_CLAIMS_FLOOR = 0.4;
+
 export function getGraphToolDefinitions(): Tool[] {
   return [
     {
@@ -19,9 +28,12 @@ export function getGraphToolDefinitions(): Tool[] {
       description:
         "Search the knowledge graph for claims semantically similar to a " +
         "query. Use it to see the surrounding territory: related claims, " +
-        "rival explanations, how live the neighborhood is. It is retrieval, " +
-        "not identity: candidate lists inform judgment about whether a claim " +
-        "already exists, they never decide it.",
+        "rival explanations, how live the neighborhood is. Returns up to " +
+        `limit claims scoring at least ${SIMILAR_CLAIMS_FLOOR} in similarity, ` +
+        "best first; that floor only trims noise, so a true counterpart can " +
+        "score low, and fewer hits than limit means nothing else cleared it. " +
+        "It is retrieval, not identity: candidate lists inform judgment about " +
+        "whether a claim already exists, they never decide it.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -114,7 +126,7 @@ async function executeGraphToolInner(
       const embedding = await generateEmbedding(query);
       const results = await findSimilarClaims(embedding, {
         limit,
-        minSimilarity: 0.5,
+        minSimilarity: SIMILAR_CLAIMS_FLOOR,
       });
       return {
         success: true,
