@@ -164,6 +164,18 @@ const configSchema = z.object({
   // and concluded on what it already knew; the budget is what the work
   // needs, the cap what the buyer is asked to pay.
   paidAssessmentBudgetOwls: z.coerce.number().positive().default(5),
+  // The budget a Curator run (a 'curate' ledger action) and an Audit run
+  // (an 'audit' action) work to, shown to the agent and enforced on its
+  // paid tools: the larger of this and what its funders' allocations
+  // cover. As with paidAssessmentBudgetOwls, the budget is what the work
+  // needs and the price is something else: funders are asked to cover the
+  // action's expected cost (the live p80, or est_curate_cost_owls /
+  // est_audit_cost_owls), and a run that needs more draws the rest from
+  // the funding mandate's escrow as metered cost. A run held to its
+  // expected cost would stop short of reading the claims a merge or an
+  // audit turns on, the failure #671 saw at 1 owl.
+  curateRunBudgetOwls: z.coerce.number().positive().default(5),
+  auditRunBudgetOwls: z.coerce.number().positive().default(5),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
@@ -1023,6 +1035,8 @@ export function loadConfig(): Config {
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
     paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
+    curateRunBudgetOwls: process.env.CURATE_RUN_BUDGET_OWLS,
+    auditRunBudgetOwls: process.env.AUDIT_RUN_BUDGET_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
