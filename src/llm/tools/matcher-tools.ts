@@ -22,7 +22,8 @@ export function getMatcherToolDefinition(): Tool {
       "Check whether a proposition already exists in the graph before creating " +
       "it as a new claim. The Matcher searches the graph itself (multiple " +
       "framings, including the negation) and decides identity: a claim and its " +
-      "denial/counterpart are the SAME node. Always call this before adding a " +
+      "negation are the SAME node, while a contrary (both could be false) is a " +
+      "rival claim, named in relationship_notes. Always call this before adding a " +
       "subclaim; if it returns a match, link that existing claim instead of " +
       "minting a duplicate.",
     input_schema: {
@@ -106,7 +107,7 @@ export async function executeMatcherTool(
         : {}),
       is_match: decision.is_match,
       matched_claim_id: decision.matched_claim_id,
-      // For a counterpart/negation match the stance is "denies": the matched
+      // For a match to the negation the stance is "denies": the matched
       // node is the same claim stated in the opposite direction.
       instance_stance: decision.instance_stance,
       new_canonical_form: decision.new_canonical_form,
