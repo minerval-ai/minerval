@@ -8,10 +8,13 @@ import { getTableName } from "drizzle-orm";
 // skill's researcher view is spliced and its tools offered while
 // provenance_write_map is not, the report ends the run, the ceiling and the
 // pause flag stop it, and the only tables it writes are its own run, the
-// provenance tables, and a fetched source's stored copy.
+// provenance tables, the claim's instances (on a Steward's claim-scoped run),
+// and a fetched source's stored copy.
 
 const mocks = vi.hoisted(() => ({
   writes: [] as Array<{ verb: string; table: string }>,
+  // The rows inserted through the query builder, by table.
+  inserted: [] as Array<{ table: string; values: Record<string, unknown> }>,
   longRunCalls: [] as Array<Record<string, unknown>>,
   toolLoopCalls: [] as Array<Record<string, unknown>>,
   script: {
@@ -41,16 +44,22 @@ function recordSql(q: string) {
 }
 
 vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string) => {
+  rawQuery: vi.fn(async (q: string, params?: unknown[]) => {
     recordSql(q);
     if (/FROM platform_flags/.test(q)) return mocks.paused ? [{ value: true }] : [];
+    if (/SELECT id, kind FROM claims WHERE id = \$1/.test(q)) return [{ id: params?.[0], kind: "claim" }];
     return [];
   }),
   withTransaction: vi.fn(),
   getDb: () => ({
     insert: (table: unknown) => ({
-      values: async () => {
-        mocks.writes.push({ verb: "INSERT INTO", table: getTableName(table as never) });
+      values: (values: Record<string, unknown>) => {
+        const name = getTableName(table as never);
+        mocks.writes.push({ verb: "INSERT INTO", table: name });
+        mocks.inserted.push({ table: name, values });
+        return Object.assign(Promise.resolve(), {
+          returning: async () => [{ id: "instance-1", ...values }],
+        });
       },
     }),
     update: (table: unknown) => ({
@@ -120,6 +129,14 @@ vi.mock("../../../src/llm/client.js", () => ({
   }),
 }));
 
+vi.mock("../../../src/services/source-service.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/services/source-service.js")>();
+  return {
+    ...original,
+    getOrCreateSource: vi.fn(async (input: { url: string }) => ({ id: "source-1", url: input.url })),
+  };
+});
+
 vi.mock("../../../src/llm/tools/elicit-tools.js", () => ({
   elicitConfigured: () => false,
   getElicitToolDefinitions: async () => [],
@@ -132,7 +149,7 @@ import { getConstitution } from "../../../src/llm/prompts/constitution.js";
 
 const CLAIM = "aaaaaaaa-0000-4000-8000-000000000001";
 
-function input(over: Partial<{ model: string; model_tier: string; include_constitution: boolean; domains: string[]; claim: boolean; ceiling: number }> = {}) {
+function input(over: Partial<{ model: string; model_tier: string; include_constitution: boolean; domains: string[]; claim: boolean; ceiling: number; kind: string }> = {}) {
   return {
     run: {
       id: "run-1",
@@ -147,12 +164,13 @@ function input(over: Partial<{ model: string; model_tier: string; include_consti
       ceiling_micro_usd: over.ceiling ?? 2_000_000,
       notebook: {},
     },
-    claim: over.claim === false ? null : { id: CLAIM, text: "The claim.", domains: over.domains ?? [] },
+    claim: over.claim === false ? null : { id: CLAIM, text: "The claim.", domains: over.domains ?? [], ...(over.kind ? { kind: over.kind } : {}) },
   };
 }
 
 beforeEach(() => {
   mocks.writes.length = 0;
+  mocks.inserted.length = 0;
   mocks.longRunCalls.length = 0;
   mocks.toolLoopCalls.length = 0;
   mocks.script.report = true;
@@ -194,7 +212,9 @@ describe("toolset by model", () => {
     expect(names).not.toContain("provenance_write_map");
     expect(names).not.toContain("provenance_record_root");
     expect(names).not.toContain("delegate_research");
-    expect(names).not.toContain("record_claim_instance");
+    expect(names).toContain("record_claim_instance");
+    expect(names).not.toContain("update_claim_instance");
+    expect(names).not.toContain("detach_claim_instance");
     expect(names).not.toContain("lean_search");
     expect(names).toContain("read_page");
     expect(names.slice(-3)).toEqual(["report", "web_search", "code_execution"]);
@@ -317,6 +337,7 @@ describe("toolset by model", () => {
     await runResearcher(i);
     const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+    expect(names).not.toContain("record_claim_instance");
     const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("Research a mandate funds writes nothing to the graph");
   });
@@ -331,7 +352,7 @@ describe("the prompt", () => {
     expect(system[0]).toContain("# Your Specific Role");
     expect(system[0]).toContain("You are the researcher");
     expect(system[0]).toContain("## Skills");
-    expect(system[0]).toContain("- provenance (version 1, a method skill");
+    expect(system[0]).toContain("- provenance (version 2, a method skill");
     expect(system[0]).not.toContain("# Method skill:");
   });
 
@@ -447,7 +468,7 @@ describe("what the researcher may write", () => {
   it("refuses a tool it was not offered, and a provenance call on another claim", async () => {
     mocks.script.calls = [
       { name: "provenance_write_map", input: { summary: "x" } },
-      { name: "record_claim_instance", input: {} },
+      { name: "update_claim_instance", input: {} },
       { name: "provenance_record_reading", input: { claim_id: "bbbbbbbb-0000-4000-8000-000000000002" } },
     ];
     await runResearcher(input());
@@ -456,6 +477,78 @@ describe("what the researcher may write", () => {
     expect(JSON.parse(mocks.script.outputs[2]!).message).toMatch(/provenance tools work on it alone/);
     const tables = new Set(mocks.writes.map((w) => w.table));
     expect(tables.has("claim_source_maps")).toBe(false);
+  });
+
+  const INSTANCE = {
+    url: "https://example.org/op-ed",
+    verbatim_text: "The claim, as the op-ed puts it.",
+    stance: "affirms",
+    speaker: "A. Writer",
+  };
+
+  it("offers record_claim_instance only on a Steward's run scoped to a claim proper", async () => {
+    const offered = async (i: ReturnType<typeof input>) => {
+      await runResearcher(i);
+      return (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name).includes("record_claim_instance");
+    };
+    expect(await offered(input())).toBe(true);
+    expect(await offered(input({ kind: "claim" }))).toBe(true);
+    // Off a claim, on a quantity or a question, and for any launcher that
+    // does not write the graph: not offered.
+    expect(await offered(input({ claim: false }))).toBe(false);
+    expect(await offered(input({ kind: "quantity" }))).toBe(false);
+    expect(await offered(input({ kind: "question" }))).toBe(false);
+    for (const launcher of ["grantmaker", "request", "request_scope"]) {
+      const i = input();
+      i.run.requested_by = launcher;
+      expect(await offered(i)).toBe(false);
+    }
+  });
+
+  it("drops claim_id from the researcher's schema and refuses another claim's id", async () => {
+    await runResearcher(input());
+    const tool = (mocks.toolLoopCalls[0]!.tools as Array<{ name: string; input_schema: { properties: object; required: string[] } }>)
+      .find((t) => t.name === "record_claim_instance")!;
+    expect(Object.keys(tool.input_schema.properties)).not.toContain("claim_id");
+    expect(tool.input_schema.required).toEqual(["url", "verbatim_text", "stance"]);
+
+    mocks.script.calls = [
+      { name: "record_claim_instance", input: { ...INSTANCE, claim_id: "bbbbbbbb-0000-4000-8000-000000000002" } },
+    ];
+    await runResearcher(input());
+    expect(JSON.parse(mocks.script.outputs[0]!)).toMatchObject({
+      success: false,
+      message: expect.stringMatching(/serves claim aaaaaaaa-0000-4000-8000-000000000001; record_claim_instance records on it alone/),
+    });
+    expect(mocks.inserted.filter((r) => r.table === "claim_instances")).toEqual([]);
+  });
+
+  it("records an instance on the run's claim, attributed to the researcher, through the Steward's executor", async () => {
+    mocks.script.calls = [
+      { name: "record_claim_instance", input: { ...INSTANCE } },
+      { name: "record_claim_instance", input: { ...INSTANCE, claim_id: CLAIM } },
+    ];
+    await runResearcher(input());
+    const first = JSON.parse(mocks.script.outputs[0]!);
+    expect(first).toMatchObject({ success: true, instance_id: "instance-1", source_id: "source-1" });
+    expect(first.message).toContain("recorded as yours; the Steward owns the instance set and may correct or detach it");
+    expect(JSON.parse(mocks.script.outputs[1]!).success).toBe(true);
+    const rows = mocks.inserted.filter((r) => r.table === "claim_instances");
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.values).toMatchObject({
+        claimId: CLAIM,
+        sourceId: "source-1",
+        stance: "affirms",
+        speaker: "A. Writer",
+        createdBy: "researcher",
+      });
+    }
+    // The only graph table it wrote is the claim's instances.
+    const tables = new Set(mocks.writes.map((w) => w.table));
+    for (const forbidden of FORBIDDEN_TABLES.filter((t) => t !== "claim_instances")) {
+      expect(tables.has(forbidden)).toBe(false);
+    }
   });
 
   it("writes only its own run row and the notebook; never a claim, an assessment, an argument, an edge, or an instance", async () => {

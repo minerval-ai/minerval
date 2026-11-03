@@ -186,7 +186,7 @@ const AGENTS: AgentMeta[] = [
   // writes only provenance rows and its notebook; its report is context the
   // launcher weighs.
   { key: "researcher", name: "Researcher", stage: 10, group: "instruments",
-    tagline: "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
+    tagline: "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its claim, and returns a report the launcher weighs.",
     invokedWhen: "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     model: `Chosen per launch: ${modelLabel(MODELS.strong)} (strong), ${modelLabel(MODELS.sonnet)} (standard), ${modelLabel(OPENROUTER_MODELS.flash)} (cheap)`, fn: getResearcherSystemPrompt },
 ];

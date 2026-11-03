@@ -15,8 +15,8 @@
  * turn, one wrap-up notice, an operator pause flag polled every turn, wall
  * and turn caps, and a terminal `report` tool. What the researcher may
  * write: its notebook, the provenance tables through the Provenance skill's
- * tools, and the stored copy of a source it fetched. Nothing else; a unit
- * test holds that line. A run a Grantmaker launched writes only its
+ * tools, the claim's instances through record_claim_instance, and the stored
+ * copy of a source it fetched. Nothing else; a unit test holds that line. A run a Grantmaker launched writes only its
  * notebook: the provenance and examination tools are withheld from it
  * whatever it was given (research-run-service.ts says why).
  *
@@ -76,6 +76,7 @@ import {
 } from "../tools/elicit-tools.js";
 import { createPangramTools } from "../tools/pangram-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
+import { executeStewardTool, getResearcherInstanceToolDefinition } from "../tools/steward-tools.js";
 import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
 import {
   contributionBudgetLine,
@@ -116,6 +117,14 @@ export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
 
 /** The one request tool a run that takes up a request carries. */
 const FILE_REQUEST_TOOL: Tool = getRequestToolDefinitions("researcher").find((t) => t.name === "file_request")!;
+
+/**
+ * The Steward's record_claim_instance, for a run that records on its claim:
+ * without the provenance recording tools a new source the researcher finds
+ * asserting the claim could only go in its report, since every one of them
+ * needs an instance to record on. claim_id is filled from the run.
+ */
+const RECORD_INSTANCE_TOOL: Tool = getResearcherInstanceToolDefinition();
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -221,7 +230,7 @@ export const RESEARCH_REPORT_TOOL: Tool = {
       },
       provenance_recorded: {
         type: "string",
-        description: "What you recorded with the provenance tools, or 'none'.",
+        description: "What you recorded on the graph (instances, readings, edges, source relations), or 'none'.",
       },
       caveats: { type: "string", description: "What you could not do or check, and why." },
       what_would_change: { type: "string", description: "What evidence would overturn your answer." },
@@ -335,7 +344,13 @@ export interface ResearcherInput {
      */
     contribution_budget_micro_usd?: number;
   };
-  claim: { id: string; text: string; domains: string[] } | null;
+  /**
+   * The claim the run serves. kind is the node's kind; absent is read as
+   * "claim". A quantity's figures and a question's askings are not recorded
+   * by this run (record_estimate and record_question_instance stay the
+   * Stewards'), so record_claim_instance is offered on a claim alone.
+   */
+  claim: { id: string; text: string; domains: string[]; kind?: string } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
   /** Wall-clock cap for the run; defaults to RESEARCHER_MAX_WALL_MINUTES. */
@@ -408,6 +423,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const pangramTools = createPangramTools({ config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
+  // An instance is recorded on the run's claim on exactly the runs that get
+  // the provenance recording tools: a launcher that writes the graph, and a
+  // run scoped to a claim (a claim proper; see ResearcherInput.claim).
+  const recordsInstances = graphWrites && !!input.claim && (input.claim.kind ?? "claim") === "claim";
   const takesUpRequest = run.requested_by === "request";
   const scopesRequest = run.requested_by === "request_scope";
   const submitsContributions =
@@ -432,6 +451,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...pangramTools.definitions,
     ...skillLoader.definitions,
     ...skillTools,
+    ...(recordsInstances ? [RECORD_INSTANCE_TOOL] : []),
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
     // A run that takes up a request reports its outcome, and may file the
@@ -544,6 +564,22 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
     if (name === FILE_REQUEST_TOOL.name) {
       return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
+    }
+    if (name === RECORD_INSTANCE_TOOL.name && input.claim) {
+      // The run's claim and no other: the schema has no claim_id, and one
+      // the model supplies anyway that names a different claim is refused.
+      const named = typeof toolInput.claim_id === "string" ? toolInput.claim_id.trim() : "";
+      if (named && named !== input.claim.id) {
+        return JSON.stringify({
+          success: false,
+          message: `This investigation serves claim ${input.claim.id}; record_claim_instance records on it alone.`,
+        });
+      }
+      return executeStewardTool(
+        name,
+        { ...toolInput, claim_id: input.claim.id },
+        { trigger: "research", context: run.task, model, recordedBy: RESEARCHER_AGENT }
+      );
     }
     if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
       const submitted = await submitMandateContribution({ researchRunId: run.id, input: toolInput });
