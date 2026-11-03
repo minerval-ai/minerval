@@ -376,11 +376,11 @@ describe("the prompt", () => {
     expect(system[0]).toContain("# Your Specific Role");
     expect(system[0]).toContain("You are the researcher");
     expect(system[0]).toContain("## Skills");
-    expect(system[0]).toContain("- provenance (version 2, a method skill");
+    expect(system[0]).toContain("- provenance (version 3, a method skill");
     expect(system[0]).not.toContain("# Method skill:");
   });
 
-  it("loads the Provenance skill with the Steward's procedure as well as its own section", async () => {
+  it("loads the Provenance skill with its own section, which carries the procedure, not the Steward's (#765)", async () => {
     await runResearcher(input());
     const call = mocks.toolLoopCalls[0] as unknown as {
       tools: Array<{ name: string }>;
@@ -390,8 +390,9 @@ describe("the prompt", () => {
     const view = await call.executeTool("load_skill", { name: "provenance" });
     expect(view.startsWith("# Method skill: Provenance")).toBe(true);
     expect(view).toContain("## For every administrator");
-    expect(view).toContain("## For the Claim Steward");
+    expect(view).not.toContain("## For the Claim Steward");
     expect(view).toContain("## For the researcher");
+    expect(view).toContain("Begin with `provenance_get_map`");
     expect(view).not.toContain("## For the Audit Agent");
   });
 

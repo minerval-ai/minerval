@@ -492,7 +492,7 @@ composition table:
 
 | Role | View |
 |---|---|
-| claim-steward | every section except `Standards for judging` and `Failure modes` |
+| claim-steward | `For every administrator` + `For the Claim Steward` + `For the Curator` + `For the Matcher` + `For the Extractor` (the structural calls it makes itself, not other roles' procedures) |
 | audit-agent | every section except `Failure modes` |
 | grantmaker | `For every administrator` + `For the Grantmaker` |
 | lookout | `For every administrator` only (it judges relevance on a mandate's behalf, never truth; it carries the mandate's skills as the review pass does) |
@@ -500,6 +500,7 @@ composition table:
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |
 | extractor | `For the Extractor` only |
+| researcher | `For every administrator` + `For the researcher` |
 
 **Placement.** The skill is a separate cached system block after the
 constitution-plus-role block. The seam's `system` type widens from `string`

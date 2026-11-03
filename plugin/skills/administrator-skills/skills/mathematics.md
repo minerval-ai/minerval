@@ -11,9 +11,11 @@ description: >-
   merely use a number or a model.
 metadata:
   minerval:
-    version: 1
+    version: 2
     since_epoch: 2026-09-domain-skills
     domains: [mathematics]
+    changelog:
+      2: A section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section.
 ---
 
 ## For every administrator
@@ -409,6 +411,25 @@ are not. Definitions are setup. Importance prior: settled results near
 0.15; open problems in the notable range unless the discourse prices them
 higher; contestation from how live the problem is in the literature, not
 from how hard it is.
+
+## For the researcher
+
+You may be launched on a mathematical claim to read its literature, check
+what a paper proves, or find what Mathlib holds. Where a checker is
+configured, `lean_search` finds Mathlib declarations at the pinned
+revision and `lean_elaborate` type-checks a Lean fragment against it: use
+them to say whether a lemma or definition exists in Mathlib, and whether a
+statement as written elaborates. Neither checks a proof, and no research
+run can: a checked result comes only from the solver's check against a
+published statement. Report a proof you find as an argument with its
+source, and a Lean fragment as elaborating or not, never as verified.
+Publishing a formal statement, deciding a prize claim, and planning
+attempts belong to the Steward and the Grantmaker; where your work bears
+on them (a formal statement that looks unfaithful to the claim, a lemma the
+literature already proves, a route an attempt report names), say so in
+your report. What this skill says above about what a mathematical claim
+is, how its statuses read, and that money never enters the reasoning holds
+for what you report.
 
 ## Standards for judging
 

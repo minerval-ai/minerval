@@ -3,9 +3,6 @@
     "claim-steward": [
       "For every administrator",
       "For the Claim Steward",
-      "For the Grantmaker",
-      "For the Contribution Reviewer and the Dispute Arbitrator",
-      "For the Audit Agent",
       "For the Curator",
       "For the Matcher",
       "For the Extractor"
@@ -49,7 +46,6 @@
     ],
     "researcher": [
       "For every administrator",
-      "For the Claim Steward",
       "For the researcher"
     ]
   },
@@ -66,9 +62,7 @@
         {
           "key": "claim-steward",
           "sections": [
-            "For every administrator",
-            "For the Grantmaker",
-            "For the Contribution Reviewer and the Dispute Arbitrator"
+            "For every administrator"
           ]
         },
         {
@@ -144,7 +138,7 @@
       "name": "mathematics",
       "displayName": "Mathematics",
       "description": "How the constitution applies to propositions of mathematics: what a mathematical claim is, how proofs are arguments, how the six statuses and credence read for theorems and conjectures, what a machine-checked proof is as evidence, how formal statements are published and checked in Lean 4 against a pinned Mathlib, how the platform's solver and prize program work, and what money may never touch. Applies to claims tagged mathematics and to contributions on them. Does not apply to claims that merely use a number or a model.",
-      "version": 1,
+      "version": 2,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "domain",
       "domains": [
@@ -156,9 +150,6 @@
           "sections": [
             "For every administrator",
             "For the Claim Steward",
-            "For the Grantmaker",
-            "For the Contribution Reviewer and the Dispute Arbitrator",
-            "For the Audit Agent",
             "For the Curator",
             "For the Matcher",
             "For the Extractor"
@@ -229,7 +220,7 @@
           "key": "researcher",
           "sections": [
             "For every administrator",
-            "For the Claim Steward"
+            "For the researcher"
           ]
         }
       ],
@@ -518,13 +509,13 @@
           }
         }
       ],
-      "bodyChars": 26405
+      "bodyChars": 27526
     },
     {
       "name": "provenance",
       "displayName": "Provenance",
       "description": "How to trace what a claim's support rests on: opening the sources behind a claim's instances and recording whether each source's own evidence bears the assertion it makes, which documents each assertion draws on and what survived the crossing, which sources are one voice appearing more than once, and a plain account for readers of what the support rests on, shown only where it matters. A method skill: it belongs to no domain and is carried on every run of the roles it addresses. It produces structure and figures for the Steward to reason about; the verdict stays the Steward's.",
-      "version": 2,
+      "version": 3,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -534,7 +525,6 @@
           "sections": [
             "For every administrator",
             "For the Claim Steward",
-            "For the Audit Agent",
             "For the Curator",
             "For the Extractor"
           ]
@@ -591,7 +581,6 @@
           "key": "researcher",
           "sections": [
             "For every administrator",
-            "For the Claim Steward",
             "For the researcher"
           ]
         }
@@ -1004,13 +993,13 @@
           }
         }
       ],
-      "bodyChars": 18902
+      "bodyChars": 20084
     },
     {
       "name": "search",
       "displayName": "Search",
       "description": "How to search for evidence on a claim or question so that what the search did not find can be weighed: searching across framings and kinds of source, recording how the search was done, and reading absence in proportion to the search. A method skill; the verdict stays the Steward's.",
-      "version": 1,
+      "version": 2,
       "sinceEpoch": "2026-10-assessment-as-thinking",
       "kind": "method",
       "domains": [],
@@ -1060,13 +1049,12 @@
         {
           "key": "researcher",
           "sections": [
-            "For every administrator",
-            "For the researcher"
+            "For every administrator"
           ]
         }
       ],
       "tools": [],
-      "bodyChars": 1552
+      "bodyChars": 1066
     }
   ]
 }
