@@ -98,11 +98,11 @@ export async function executeMatcherTool(
       ...(decision.outcome === "undecided"
         ? {
             note:
-              "The Matcher reached no identity verdict (search budget " +
-              "exhausted). Do not create a new claim from this result: " +
-              "retry match_claim once, and if it is still undecided take " +
-              "the recoverable path (an edge to a candidate, a suggestion, " +
-              "or nothing).",
+              "The Matcher reached no identity verdict (its budget ran " +
+              "out). Do not create a new claim from this result: retry " +
+              "match_claim, rewording the query if that helps, and if it " +
+              "stays undecided take the recoverable path (an edge to a " +
+              "candidate, a suggestion, or nothing).",
           }
         : {}),
       is_match: decision.is_match,
