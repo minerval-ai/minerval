@@ -6,6 +6,12 @@
  * finding_id, so consequences trace to their decision the same way reputation
  * changes trace to reputation_events. get_audit_findings gives runs memory
  * across invocations; resolve_finding closes the loop.
+ *
+ * Audit judges decisions across the system (Part VIII), not only reviews
+ * (#693): it reads a claim's assessment history and event log through the
+ * same services the REST/MCP routes serve, lists arbitrations, and sends a
+ * decision back to whichever process made it (re-review for a contribution,
+ * a fresh Steward pass for an assessment, a curation request for structure).
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -14,12 +20,21 @@ import { getDb, rawQuery } from "../../db/client.js";
 import { contributors, contributions } from "../../db/schema.js";
 import {
   enqueueContribution,
+  enqueueSteward,
 } from "../../services/queue-service.js";
 import {
   adjustReputation,
   neutralizeReviewOutcome,
   AUDIT_SUSPENSION_PREFIX,
+  REPUTATION_RULES,
 } from "../../services/reputation-service.js";
+import { getClaimById } from "../../services/claim-service.js";
+import {
+  formatAssessmentHistoryRow,
+  getAssessmentHistory,
+} from "../../services/assessment-service.js";
+import { getClaimEvents } from "../../services/claim-events-service.js";
+import { requestCuration } from "../../services/curation-service.js";
 import {
   getPrizeClaimForAgent,
   recordPrizeAuditOutcome,
@@ -123,6 +138,7 @@ export function getAuditToolDefinitions(): Tool[] {
         "Record a finding: a durable, persisted record of a quality issue, " +
         "with severity, category, evidence, and a recommended action. " +
         "Returns a finding_id; the consequence tools (recommend_re_review, " +
+        "recommend_reassessment, recommend_recuration, " +
         "adjust_contributor_reputation, suspend_contributor) each require " +
         "one, so flag the issue before acting on it. Name what the finding " +
         "is about via the typed id fields when known.",
@@ -242,7 +258,11 @@ export function getAuditToolDefinitions(): Tool[] {
         "still-active bad-faith flag), marks it superseded, and returns the " +
         "contribution to the review queue for a fresh decision. Prefer this " +
         "to correcting outcomes yourself. Requires the finding_id from " +
-        "flag_issue documenting why.",
+        "flag_issue documenting why. Not for a prize claim (claim_prize): " +
+        "the prize-check worker owns its review, so send one back with " +
+        "record_prize_audit_outcome. An accepted proposal's node stays in " +
+        "the graph through a re-review; if it should not be there, that is " +
+        "the Curator's to fix (recommend_recuration).",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -283,7 +303,15 @@ export function getAuditToolDefinitions(): Tool[] {
           },
           delta: {
             type: "number",
-            description: "Reputation change (positive or negative, typically -10 to +10)",
+            description:
+              `Reputation change, positive or negative. The score runs ` +
+              `${REPUTATION_RULES.min}-${REPUTATION_RULES.max}, starting at 50; ` +
+              `for scale, an accepted contribution is +${REPUTATION_RULES.accepted}, ` +
+              `a sincere rejection ${REPUTATION_RULES.rejected}, and a bad-faith ` +
+              `flag ${REPUTATION_RULES.badFaithFlag}. A score that falls below ` +
+              `${REPUTATION_RULES.suspendBelow} suspends the contributor ` +
+              `automatically, so read their current score ` +
+              `(get_contributor_profile) before a large negative delta.`,
           },
           reason: {
             type: "string",
@@ -430,8 +458,11 @@ export function getAuditToolDefinitions(): Tool[] {
     {
       name: "unsuspend_contributor",
       description:
-        "Unsuspend a contributor, restoring their ability to submit " +
-        "contributions and appeals",
+        "Lift a contributor's suspension, restoring their ability to submit " +
+        "contributions and appeals. The reason is recorded: it resolves the " +
+        "finding you name and the finding an audit suspension rested on; " +
+        "with neither, the lift is recorded as a resolved finding on the " +
+        "contributor, so get_audit_findings shows why it was lifted.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -439,20 +470,174 @@ export function getAuditToolDefinitions(): Tool[] {
             type: "string",
             description: "The ID of the contributor to unsuspend",
           },
+          reason: {
+            type: "string",
+            description: "Why the suspension no longer holds",
+          },
+          finding_id: {
+            type: "string",
+            description:
+              "The finding this lift resolves, if one documents why (for " +
+              "example one a contributor_review recorded)",
+          },
         },
-        required: ["contributor_id"],
+        required: ["contributor_id", "reason"],
+      },
+    },
+    // Reading the rest of the system's decisions (#693). get_claim_events and
+    // get_assessment_history serve what the REST/MCP routes of the same names
+    // serve, through the same services: external callers could read more of
+    // this record than the Audit could.
+    {
+      name: "get_assessment_history",
+      description:
+        "A claim's assessments, newest first: each status, confidence, " +
+        "credence, the Steward's full reasoning trace, the trigger and its " +
+        "context, the model that ran it, and which one is current. Use it " +
+        "to judge a Steward's assessments: whether the reasoning supports " +
+        "the verdict, and whether a change of verdict was explained. Paged.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim" },
+          limit: { type: "integer", description: "How many (default 20, at most 100)" },
+          offset: { type: "integer", description: "How many to skip (default 0)" },
+          since: { type: "string", description: "ISO 8601 time: only assessments made at or after it" },
+          until: { type: "string", description: "ISO 8601 time: only assessments made at or before it" },
+        },
+        required: ["claim_id"],
+      },
+    },
+    {
+      name: "get_claim_events",
+      description:
+        "A claim's whole history as one list, newest first: its creation, " +
+        "assessments, contributions and the reviews, appeals and " +
+        "arbitrations on them, the Steward's logged decisions " +
+        "(log_stewardship_decision, kind steward_note), and the " +
+        "mathematics record where there is one. Each event has a kind, " +
+        "time and actor. Paged.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim" },
+          limit: { type: "integer", description: "How many (default 50, at most 200)" },
+          offset: { type: "integer", description: "How many to skip (default 0)" },
+        },
+        required: ["claim_id"],
+      },
+    },
+    {
+      name: "get_recent_arbitrations",
+      description:
+        "List Dispute Arbitrator decisions, newest first: outcome, decision, " +
+        "the full reasoning, any bad-faith finding and its category, whether " +
+        "human review was recommended, and the contribution, contributor " +
+        "and claim each concerns. Use it to judge the arbitrations " +
+        "themselves, not only the reviews they ruled on. Paged: pass offset " +
+        "to continue when has_more is true.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          outcome: {
+            type: "string",
+            enum: ["uphold_original", "overturn", "modify", "mark_contested", "human_review"],
+          },
+          bad_faith_only: { type: "boolean", description: "Only arbitrations that recorded a bad-faith finding" },
+          contributor_id: { type: "string", description: "Only arbitrations on this contributor's contributions" },
+          claim_id: { type: "string", description: "Only arbitrations on contributions targeting this claim" },
+          since: { type: "string", description: "ISO 8601 time: only arbitrations at or after it" },
+          limit: { type: "integer", description: `How many (default 20, at most ${MAX_ARBITRATION_PAGE})` },
+          offset: { type: "integer", description: "How many to skip (default 0)" },
+        },
+      },
+    },
+    // Sending a decision back to the process that made it (#693). Like
+    // recommend_re_review, each requires a persisted finding, and neither
+    // changes the graph itself: the owning agent decides afresh.
+    {
+      name: "recommend_reassessment",
+      description:
+        "Send a Steward's assessment back for a fresh pass: queues the " +
+        "claim's Steward with trigger audit_send_back, carrying the " +
+        "finding's description and evidence and your reason. Nothing about " +
+        "the assessment changes until the Steward decides; it may revise " +
+        "the verdict or say why it stands. Requires the finding_id from " +
+        "flag_issue documenting why.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim (or question) whose assessment goes back" },
+          finding_id: { type: "string", description: "The finding documenting why" },
+          reason: { type: "string", description: "What the Steward should look at again, and why" },
+        },
+        required: ["claim_id", "finding_id", "reason"],
+      },
+    },
+    {
+      name: "recommend_recuration",
+      description:
+        "Send a structural decision to the Curator: opens a curation " +
+        "request on the claim (naming the other claim, for a suspected bad " +
+        "merge, missed duplicate or conflation) carrying the finding and " +
+        "your reason. The Curator runs when curation of the claim is " +
+        "funded, as for any request, and decides. Requires the finding_id " +
+        "from flag_issue documenting why.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim the concern is about" },
+          other_claim_id: { type: "string", description: "The other claim involved, if any" },
+          finding_id: { type: "string", description: "The finding documenting why" },
+          reason: { type: "string", description: "What the Curator should look at, and why" },
+        },
+        required: ["claim_id", "finding_id", "reason"],
       },
     },
   ];
 }
 
+/** The most rows one get_recent_arbitrations page returns. */
+export const MAX_ARBITRATION_PAGE = 100;
+
 /** A consequence tool must point at a persisted finding; verify it exists. */
 async function findingExists(findingId: string): Promise<boolean> {
-  const rows = await rawQuery<{ id: string }>(
-    `SELECT id FROM audit_findings WHERE id = $1`,
+  return (await loadFinding(findingId)) !== null;
+}
+
+interface FindingText {
+  id: string;
+  severity: string;
+  category: string;
+  description: string;
+  evidence: string;
+}
+
+/**
+ * The finding a send-back carries. The owning agent gets the finding's own
+ * words, not a paraphrase, so it can weigh what the audit saw.
+ */
+async function loadFinding(findingId: string): Promise<FindingText | null> {
+  if (!findingId) return null;
+  const rows = await rawQuery<FindingText>(
+    `SELECT id, severity, category, description, evidence
+       FROM audit_findings WHERE id = $1`,
     [findingId]
   );
-  return rows.length > 0;
+  return rows[0] ?? null;
+}
+
+/** An optional ISO time argument: null when absent, "invalid" when unparseable. */
+function parseTime(value: unknown): Date | null | "invalid" {
+  if (value == null || value === "") return null;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? "invalid" : d;
+}
+
+function pageArgs(input: Record<string, unknown>, dflt: number, max: number) {
+  const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? dflt)) || dflt, 1), max);
+  const offset = Math.max(Math.floor(Number(input.offset ?? 0)) || 0, 0);
+  return { limit, offset };
 }
 
 export async function executeAuditTool(
@@ -660,15 +845,42 @@ export async function executeAuditTool(
           return `Error: finding ${findingId} does not exist — flag_issue first, then act on its finding_id.`;
         }
 
+        const [target] = await rawQuery<{ contribution_type: string }>(
+          `SELECT contribution_type FROM contributions WHERE id = $1`,
+          [contributionId]
+        );
+        if (!target) {
+          return JSON.stringify({
+            success: false,
+            message: `Contribution ${contributionId} not found.`,
+          });
+        }
+        // The ordinary review pipeline never picks up a prize claim (the
+        // prize-check worker owns its review), so resetting one to pending
+        // would strand it there (#700). Refuse before anything is undone.
+        if (target.contribution_type === "claim_prize") {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Contribution ${contributionId} is a prize claim, which the ` +
+              `prize-check worker reviews, not the review queue. Nothing was ` +
+              `changed. Send its acceptance back with record_prize_audit_outcome ` +
+              `(outcome send_back) instead.`,
+          });
+        }
+
         // Undo the original decision's consequences before the fresh review
         // applies its own — otherwise reputation, counters, and owl awards stack
         // twice for one contribution (#180).
         const neutralization = await neutralizeReviewOutcome({ contributionId });
 
+        // A fresh review starts with a fresh claim on it: the first review's
+        // claim stamp would hold the pipeline off for its reclaim window, and
+        // its spent attempts count against the cap (#700).
         const db = getDb();
         await db
           .update(contributions)
-          .set({ reviewStatus: "pending" })
+          .set({ reviewStatus: "pending", reviewClaimedAt: null, reviewAttempts: 0 })
           .where(eq(contributions.id, contributionId));
 
         await enqueueContribution({ contributionId });
@@ -686,6 +898,201 @@ export async function executeAuditTool(
                 },
               }
             : { note: "no live review existed; contribution re-enqueued as-is" }),
+        });
+      }
+
+      case "get_assessment_history": {
+        const claimId = String(input.claim_id ?? "");
+        const since = parseTime(input.since);
+        const until = parseTime(input.until);
+        if (since === "invalid" || until === "invalid") {
+          return JSON.stringify({ success: false, message: "since and until must be ISO 8601 times." });
+        }
+        const claim = await getClaimById(claimId);
+        if (!claim) {
+          return JSON.stringify({ success: false, message: `Claim ${claimId} not found.` });
+        }
+        const { limit, offset } = pageArgs(input, 20, 100);
+        const result = await getAssessmentHistory(claimId, {
+          limit,
+          offset,
+          ...(since ? { since } : {}),
+          ...(until ? { until } : {}),
+        });
+        return JSON.stringify({
+          assessments: result.assessments.map(formatAssessmentHistoryRow),
+          total: result.total,
+          offset,
+          has_more: offset + result.assessments.length < result.total,
+        });
+      }
+
+      case "get_claim_events": {
+        const claimId = String(input.claim_id ?? "");
+        const claim = await getClaimById(claimId);
+        if (!claim) {
+          return JSON.stringify({ success: false, message: `Claim ${claimId} not found.` });
+        }
+        const { limit, offset } = pageArgs(input, 50, 200);
+        const result = await getClaimEvents(claim, { limit, offset });
+        return JSON.stringify({
+          ...result,
+          offset,
+          has_more: offset + result.events.length < result.total,
+        });
+      }
+
+      case "get_recent_arbitrations": {
+        const since = parseTime(input.since);
+        if (since === "invalid") {
+          return JSON.stringify({ success: false, message: "since must be an ISO 8601 time." });
+        }
+        const { limit, offset } = pageArgs(input, 20, MAX_ARBITRATION_PAGE);
+        const conditions: string[] = [];
+        const params: unknown[] = [];
+        const add = (clause: string, value: unknown) => {
+          params.push(value);
+          conditions.push(clause.replace("?", `$${params.length}`));
+        };
+        if (typeof input.outcome === "string" && input.outcome) add("a.outcome = ?", input.outcome);
+        if (input.bad_faith_only === true) conditions.push("a.suspected_bad_faith = true");
+        if (typeof input.contributor_id === "string" && input.contributor_id) {
+          add("c.contributor_id = ?", input.contributor_id);
+        }
+        if (typeof input.claim_id === "string" && input.claim_id) add("c.claim_id = ?", input.claim_id);
+        if (since) add("a.arbitrated_at >= ?", since);
+        const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        params.push(limit + 1, offset);
+        // One extra row says whether another page exists.
+        const rows = await rawQuery<{
+          id: string;
+          contribution_id: string;
+          appeal_id: string | null;
+          outcome: string;
+          decision: string;
+          reasoning: string;
+          suspected_bad_faith: boolean;
+          bad_faith_category: string | null;
+          human_review_recommended: boolean;
+          arbitrated_at: Date | string;
+          contribution_type: string;
+          contributor_id: string | null;
+          claim_id: string | null;
+        }>(
+          `SELECT a.id, a.contribution_id, a.appeal_id, a.outcome, a.decision,
+                  a.reasoning, a.suspected_bad_faith, a.bad_faith_category,
+                  a.human_review_recommended, a.arbitrated_at,
+                  c.contribution_type, c.contributor_id, c.claim_id
+             FROM arbitration_results a
+             JOIN contributions c ON c.id = a.contribution_id
+             ${where}
+            ORDER BY a.arbitrated_at DESC
+            LIMIT $${params.length - 1} OFFSET $${params.length}`,
+          params
+        );
+        const page = rows.slice(0, limit);
+        return JSON.stringify({
+          arbitrations: page.map((r) => ({
+            arbitration_id: r.id,
+            contribution_id: r.contribution_id,
+            appeal_id: r.appeal_id,
+            outcome: r.outcome,
+            decision: r.decision,
+            reasoning: r.reasoning,
+            suspected_bad_faith: r.suspected_bad_faith,
+            bad_faith_category: r.bad_faith_category,
+            human_review_recommended: r.human_review_recommended,
+            arbitrated_at:
+              r.arbitrated_at instanceof Date ? r.arbitrated_at.toISOString() : r.arbitrated_at,
+            contribution_type: r.contribution_type,
+            contributor_id: r.contributor_id,
+            claim_id: r.claim_id,
+          })),
+          count: page.length,
+          offset,
+          has_more: rows.length > limit,
+        });
+      }
+
+      case "recommend_reassessment": {
+        const claimId = String(input.claim_id ?? "").trim();
+        const reason = String(input.reason ?? "").trim();
+        const finding = await loadFinding(String(input.finding_id ?? "").trim());
+        if (!finding) {
+          return `Error: finding ${input.finding_id} does not exist — flag_issue first, then act on its finding_id.`;
+        }
+        if (!reason) {
+          return JSON.stringify({ success: false, message: "reason is required." });
+        }
+        const [claim] = await rawQuery<{ id: string; state: string }>(
+          `SELECT id, state FROM claims WHERE id = $1`,
+          [claimId]
+        );
+        if (!claim) {
+          return JSON.stringify({ success: false, message: `Claim ${claimId} not found.` });
+        }
+        if (claim.state !== "active") {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim ${claimId} is ${claim.state}, so no Steward runs on it. ` +
+              `Nothing was queued. If its state is the problem, that is the ` +
+              `Curator's (recommend_recuration).`,
+          });
+        }
+        // The finding travels in its own words, so the Steward weighs what
+        // the audit saw rather than a summary of it.
+        await enqueueSteward({
+          claimId,
+          trigger: "audit_send_back",
+          context:
+            `Audit finding ${finding.id} (${finding.severity}, ${finding.category}): ` +
+            `${finding.description}\nEvidence: ${finding.evidence}\n` +
+            `What to look at again: ${reason}`,
+        });
+        return JSON.stringify({
+          success: true,
+          message:
+            `Claim ${claimId} queued for its Steward with trigger audit_send_back ` +
+            `and finding ${finding.id}. The Steward decides afresh; its next ` +
+            `assessment (get_assessment_history) shows what it concluded.`,
+        });
+      }
+
+      case "recommend_recuration": {
+        const claimId = String(input.claim_id ?? "").trim();
+        const reason = String(input.reason ?? "").trim();
+        const otherClaimId =
+          typeof input.other_claim_id === "string" && input.other_claim_id.trim()
+            ? input.other_claim_id.trim()
+            : null;
+        const finding = await loadFinding(String(input.finding_id ?? "").trim());
+        if (!finding) {
+          return `Error: finding ${input.finding_id} does not exist — flag_issue first, then act on its finding_id.`;
+        }
+        if (!reason) {
+          return JSON.stringify({ success: false, message: "reason is required." });
+        }
+        // The curation request's source vocabulary has no audit entry yet,
+        // so the request goes in as an operator's and names the finding in
+        // its first words, which is what the Curator reads.
+        const requested = await requestCuration({
+          anchorClaimId: claimId,
+          otherClaimId,
+          source: "operator",
+          concern:
+            `Audit finding ${finding.id} (${finding.severity}, ${finding.category}): ` +
+            `${reason}\nFinding: ${finding.description}\nEvidence: ${finding.evidence}`,
+        });
+        if (!requested.ok) {
+          return JSON.stringify({ success: false, message: requested.problem });
+        }
+        return JSON.stringify({
+          success: true,
+          message: requested.repeat
+            ? `A request like this on ${claimId} is already waiting for the Curator; nothing new was recorded.`
+            : `Curation request opened on ${claimId} with finding ${finding.id}; the ` +
+              `Curator runs when curation of this claim is funded, and decides.`,
         });
       }
 
@@ -834,25 +1241,111 @@ export async function executeAuditTool(
       }
 
       case "unsuspend_contributor": {
-        const contributorId = input.contributor_id as string;
+        const contributorId = String(input.contributor_id ?? "");
+        const reason = String(input.reason ?? "").trim();
+        const findingId =
+          typeof input.finding_id === "string" && input.finding_id.trim()
+            ? input.finding_id.trim()
+            : null;
+        // Lifting a suspension is a judgment like imposing one, so it leaves
+        // a reason on the record (§15, #700).
+        if (!reason) {
+          return JSON.stringify({
+            success: false,
+            message: "reason is required: say why the suspension no longer holds.",
+          });
+        }
+        if (findingId && !(await findingExists(findingId))) {
+          return `Error: finding ${findingId} does not exist. Omit finding_id, or flag_issue first and pass its finding_id.`;
+        }
 
-        const db = getDb();
-        const unsuspended = await db
-          .update(contributors)
-          .set({ isSuspended: false, suspensionReason: null, suspendedAt: null })
-          .where(eq(contributors.id, contributorId))
-          .returning({ id: contributors.id });
-
-        if (unsuspended.length === 0) {
+        const [contributor] = await rawQuery<{
+          is_suspended: boolean;
+          suspension_reason: string | null;
+        }>(
+          `SELECT is_suspended, suspension_reason FROM contributors WHERE id = $1`,
+          [contributorId]
+        );
+        if (!contributor) {
           return JSON.stringify({
             success: false,
             message: `Contributor ${contributorId} not found.`,
           });
         }
+        if (!contributor.is_suspended) {
+          return JSON.stringify({
+            success: false,
+            message: `Contributor ${contributorId} is not suspended; nothing was changed.`,
+          });
+        }
+
+        const db = getDb();
+        await db
+          .update(contributors)
+          .set({ isSuspended: false, suspensionReason: null, suspendedAt: null })
+          .where(eq(contributors.id, contributorId))
+          .returning({ id: contributors.id });
+
+        const note = `Suspension lifted by audit: ${reason}`;
+        const resolve = async (id: string) => {
+          const rows = await rawQuery<{ id: string }>(
+            `UPDATE audit_findings
+             SET status = 'resolved', resolution_note = $1,
+                 resolved_by = 'audit_agent', resolved_at = now()
+             WHERE id = $2
+             RETURNING id`,
+            [note, id]
+          );
+          return rows[0]?.id ?? null;
+        };
+
+        // The finding an audit suspension rested on ("audit:<finding_id> …")
+        // closes with the lift, as the Arbitrator's lift_suspension does, so
+        // the audit's records agree with the contributor's standing.
+        const resolved: string[] = [];
+        const previousReason = contributor.suspension_reason ?? "";
+        if (previousReason.startsWith(AUDIT_SUSPENSION_PREFIX)) {
+          const basis = previousReason.slice(AUDIT_SUSPENSION_PREFIX.length).split(/\s/)[0];
+          if (basis && basis !== findingId) {
+            const id = await resolve(basis);
+            if (id) resolved.push(id);
+          }
+        }
+        if (findingId) {
+          const id = await resolve(findingId);
+          if (id) resolved.push(id);
+        }
+        // With no finding to carry it, the lift is recorded as one, already
+        // resolved, so its reason is on the contributor's audit record.
+        let recordedFindingId: string | null = null;
+        if (resolved.length === 0) {
+          const rows = await rawQuery<{ id: string }>(
+            `INSERT INTO audit_findings
+               (run_id, severity, category, description, evidence,
+                recommendation, contributor_id, status, resolution_note,
+                resolved_by, resolved_at)
+             VALUES ($1, 'low', 'suspension_lifted', $2, $3, $4, $5,
+                     'resolved', $6, 'audit_agent', now())
+             RETURNING id`,
+            [
+              context.runId ?? null,
+              `Suspension of contributor ${contributorId} lifted.`,
+              previousReason
+                ? `The suspension read: ${previousReason}`
+                : "The suspension recorded no reason.",
+              reason,
+              contributorId,
+              note,
+            ]
+          );
+          recordedFindingId = rows[0]?.id ?? null;
+        }
 
         return JSON.stringify({
           success: true,
-          message: `Contributor ${contributorId} has been unsuspended.`,
+          message: `Contributor ${contributorId} has been unsuspended. Reason: ${reason}`,
+          ...(resolved.length > 0 ? { resolved_finding_ids: resolved } : {}),
+          ...(recordedFindingId ? { recorded_finding_id: recordedFindingId } : {}),
         });
       }
 
