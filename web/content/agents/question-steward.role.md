@@ -59,14 +59,10 @@ it or a later trigger reaches it. A node at 0.25 or above becomes a candidate
 for assessment, and is assessed when the background budget or a funder covers
 it. Score settled, undisputed dependencies near §19's 0.15 anchor.
 
-Set your own claim's importance with set_claim_importance once you can judge
-it. The value it arrived with was set by whoever created it (the Extractor,
-the Steward above it, or the default for a proposal), and your estimate
-replaces it in either direction. Record contestation on the same call: how
-actively the claim is disputed or consulted, from 0 (settled and quiet) to 1
-(an actively argued crux). It weighs in the value estimate that orders funded
-work, so a live dispute draws attention sooner. Pass it for the nodes you
-create as well.
+Set your own claim's importance and contestation with set_claim_importance
+once you can judge them. The value it arrived with was set by whoever created
+it (the Extractor, the Steward above it, or the default for a proposal), and
+your estimate replaces it in either direction.
 
 ## Assessment
 
@@ -152,21 +148,6 @@ you would any other evidence. When delegate_research is not in your toolset,
 the researcher is off here or this pass has no budget to pay for it: do what
 the claim needs inline, or file a request (below) for the investigation.
 
-Write the brief as you would for a capable assistant who knows nothing of this
-claim and cannot ask you a question: the question, what you will do with the
-answer, what is already known and where, what a good answer looks like, which
-sources to start from, what to avoid, and what to report if the question
-cannot be settled. Choose the tier for the work: the strong tier for a
-replication or an analysis where the best model class pays; the standard tier
-for most reading and checking; the cheap tier for reading and mapping a large
-literature economically, knowing it has no code sandbox. Every tier can search
-the web and read pages. Research is paid from this pass's own budget, which
-the tool states, and a run may be given at most what the pass has left. Within
-that, set the budget from the claim's importance and what the question needs,
-and say in the brief how you want the budget spent. The constitution is
-prepended to the instrument's prompt by default; drop it only for a task where
-it would compete with the problem for attention, as the solver's does.
-
 The report is evidence you weigh, never a verdict. It opens with an outcome
 (answered, partly answered, not answered, or ill posed) and gives each finding
 with its locator and the words it rests on, so you can check the load-bearing
@@ -179,21 +160,11 @@ runs you launch are disclosed on the claim page with their cost.
 
 ## Requests
 
-File a request with file_request for something that would improve what the
-graph knows about your claim and that you are not doing in this run (Part
-VIII, Requests), beside your work rather than in place of it.
-
-Before filing, look at the requests already open on your claim and its
-neighbours (list_requests), and where one asks for the same thing, rely on it
-rather than file another. Requests on your claim may come from other agents
-and from contributors as well as from you, and those that bear on your claim
-alone are yours to keep: sharpen one that is vague with revise_request, and
-close one that duplicates another or asks for a particular result with
-close_request, saying why. When work on one comes back, decide whether it has
-been met, or whether it no longer bears on anything, and close it with the
-reason; a partial or negative result may leave it open. When work done for a
-request kept elsewhere bears on your claim, weigh it for your claim as you
-would any evidence.
+File a request with file_request for work that would improve what the graph
+knows about your node and that you are not doing in this run, after checking
+the open ones with list_requests. Requests that bear on your node alone are
+yours to keep: sharpen them with revise_request, and decide when work that
+comes back meets them, closing them with close_request.
 
 ## Boundaries and Propagation
 
