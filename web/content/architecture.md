@@ -1045,7 +1045,10 @@ the statement.
 ### The researcher
 
 `researcher` (`src/llm/agents/researcher.ts`, #298) is the general
-instrument, of which the solver is the special case. An administrator (the
+instrument, of which the solver is the special case (special too in how it
+starts: no administrator launches it; an attempt is funded through a
+mandate's plan and its result goes to the claim's Steward, which files a
+request when it needs one no plan funds; docs/mathematics.md 7.2, #768). An administrator (the
 Claim Steward on its claim, a Grantmaker on a funded mandate) launches it
 with `delegate_research`: a brief written for a capable assistant that
 knows nothing of the claim and cannot ask a question back, a model tier, a
