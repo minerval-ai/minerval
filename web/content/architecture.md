@@ -459,10 +459,18 @@ precedence), the surrounding `context`, a brief
 `summary_context` describing the circumstances ("said during a Senate hearing
 on banking regulation, in response to questioning about derivatives
 oversight"), a `stance` recording whether the quote affirms or denies the
-canonical claim, and a `confidence` that the quote really expresses it.
-Instances are how a single canonical claim accumulates provenance from many
-documents, and the stance field is what lets a claim and its negation share one
-node without losing track of who said which.
+canonical claim, poses it as an open question, or only mentions it (cites it,
+reports that others hold it, or raises it in passing), and a `confidence` that
+the quote carries that stance. Instances are how a single canonical claim
+accumulates provenance from many documents, and the stance field is what lets a
+claim and its negation share one node without losing track of who said which.
+Posing and mentioning instances take no side: every count of who affirms or
+denies leaves them out (the citation record counts them apart as
+`posing_instances` and `mentioning_instances`, and the monitors count only
+`affirms` and `denies`), and the claim page lists mentions apart from the
+voices that take a position. The Matcher assigns `affirms`, `denies` or
+`poses` at ingestion; a mention is the Steward's reading of a source, recorded
+with `record_claim_instance`.
 
 #### Source provenance: what the support rests on
 
@@ -538,7 +546,8 @@ A claim is a canonical proposition with no home source, so the admin
 `get_claim` read returns the canonical record and an `instance_count`, never
 the instances; `get_claim_instances` pages through them. The Steward decides
 which instances the claim carries and in what order: `detach_claim_instance`
-removes one whose source does not assert, deny or pose the proposition
+removes one whose source states a different proposition or that misreads its
+source, while one that only mentions the claim stays with stance `mentions`
 (`claim_instances.detached_at`, with the reason in the audit trail; the row
 stays for the provenance record, and `reattach_claim_instance` restores it),
 and `set_instance_order` ranks the instances a reader should see first

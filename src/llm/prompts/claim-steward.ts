@@ -254,9 +254,11 @@ asserts the claim, denies it, or poses it as an open question, with the
 passage as it states it in verbatim_text. Favor the voices that matter for
 understanding the discourse: the prominent ones, the origins, and the clearest
 statement of each position. Attribute a quote to the person quoted, not the
-outlet, and prefer the original to coverage that repeats it. A passing
-mention, or a neutral report that others hold the view, is not an instance.
-Record only what was said in public (§2).
+outlet, and prefer the original to coverage that repeats it. Record a source
+that mentions the claim without taking a side, citing it or reporting that
+others hold it, as a mention when a reader should see it: when it is
+prominent, an origin, or telling about how the claim is used, not for every
+passing occurrence. Record only what was said in public (§2).
 
 Fill the metadata you actually saw (speaker, publication, source_date, a deep
 link) and omit what you would have to guess. Recording is deduplicated per
@@ -267,9 +269,10 @@ their own voice holds one instance per speaker, all against the same URL.
 
 export const NODE_INSTANCES_BODY = `Instances may have been recorded by other agents, and the set may be
 incomplete or include ones that do not belong; get_claim_instances lists them.
-An instance belongs when its source asserts, denies or poses the proposition.
-Correct one that is wrong in its details with update_claim_instance, detach
-one that does not belong with detach_claim_instance (reattach_claim_instance
+An instance belongs when its source asserts, denies, poses or mentions the
+proposition. Correct one that is wrong in its details with
+update_claim_instance, detach one that states a different proposition or
+misreads its source with detach_claim_instance (reattach_claim_instance
 restores it), and give the reason each time. Correct or detach only what you
 have read yourself.
 

@@ -66,6 +66,7 @@ const STANCE_WORD: Record<string, string> = {
   affirms: "affirms",
   denies: "denies the claim",
   poses: "poses it as a question",
+  mentions: "mentions it",
 };
 
 function Card({ item, h, focus = false, edgeInside = false }: { item: CardItem; h: Handlers; focus?: boolean; edgeInside?: boolean }) {
@@ -84,8 +85,8 @@ function Card({ item, h, focus = false, edgeInside = false }: { item: CardItem; 
   const eyebrow = [focus ? "Centre" : "", head, type].filter(Boolean).join(" · ");
 
   // When it was said, and which side it takes where that is not simply
-  // asserting the claim: a denial or an open question changes how the card
-  // reads, and "affirms" on every card would be noise.
+  // asserting the claim: a denial, an open question or a mention changes how
+  // the card reads, and "affirms" on every card would be noise.
   const dates = item.members.map((m) => m.date).filter((d): d is string => !!d).sort();
   const when = dates.length === 0 ? null
     : dates[0] === dates[dates.length - 1] || !stack ? partialDate(dates[0])
