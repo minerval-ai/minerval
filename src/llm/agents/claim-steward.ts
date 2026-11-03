@@ -75,6 +75,9 @@ const CLAIM_ONLY_TOOLS = new Set([
   "add_argument",
   "write_argument",
   "evaluate_argument",
+  "ungroup_subclaim",
+  "revise_argument",
+  "retire_argument",
 ]);
 
 /** The tool that records each kind's assessment, which every pass must leave on the record. */

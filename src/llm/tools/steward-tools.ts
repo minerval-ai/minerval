@@ -22,6 +22,7 @@ import {
   getArgument,
   getArgumentSubclaims,
   getEvaluationStateForClaim,
+  hasWrittenForm,
   isArgumentVerdict,
   parseClaimLinks,
   setArgumentContent,
@@ -54,6 +55,10 @@ import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
 import { setArgumentShows } from "../../services/quantity-service.js";
 import { NODE_KINDS, quantityDefinitionSchema, valueShownSchema } from "../../schemas/kinds.js";
+import {
+  executeStewardStructureTool,
+  getStewardStructureToolDefinitions,
+} from "./steward-structure-tools.js";
 import {
   ClaimInstanceError,
   detachClaimInstance,
@@ -629,12 +634,13 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "write_argument",
       description:
-        "Write or revise an argument's written form: one to three " +
-        "sentences stating plainly how its premises combine to reach its " +
-        "conclusion, e.g. 'Because [[claim:<uuid>]] and " +
-        "[[claim:<uuid>]], and given [[claim:<uuid>]], the claim " +
-        "follows.' Reference every attached subclaim inline as " +
-        "[[claim:<uuid>]] (or [[claim:<uuid>|inline phrasing]]). State " +
+        "Write or revise an argument's written form: brief prose stating " +
+        "plainly how its premises combine to reach its conclusion. " +
+        "Reference every attached subclaim inline as [[claim:<uuid>]] (or " +
+        "[[claim:<uuid>|inline phrasing]]); you may also link the claim's " +
+        "ungrouped basis subclaims. Premises that are settled and not " +
+        "claims in their own right (§7) may be stated in the prose, so an " +
+        "argument with no attached subclaims needs no links. State " +
         "the argument faithfully, as its proponents would recognize it, " +
         "at its most plausible intended reading, without weakening or " +
         "repairing it. Use no rhetoric. Include every premise the " +
@@ -654,7 +660,9 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "The written form: brief prose with inline [[claim:<uuid>]] " +
-              "references to the argument's subclaims",
+              "references to the argument's subclaims. Under 1,000 " +
+              "characters, links included (each costs about 46): enough " +
+              "for the inference, while detail belongs in the subclaims.",
           },
         },
         required: ["argument_id", "content"],
@@ -703,7 +711,8 @@ export function getStewardToolDefinitions(): Tool[] {
           evaluation: {
             type: "string",
             description:
-              "Two to four sentences, reader-facing (§12): how far the " +
+              "Reader-facing (§12), usually a few sentences and under 1,200 " +
+              "characters, links included: how far the " +
               "inference goes, phrased conditionally ('granting its " +
               "premises, ...'), and, for a rating of none, the flaw in " +
               "plain words; then which premises bear the weight, given " +
@@ -1197,6 +1206,9 @@ export function getStewardToolDefinitions(): Tool[] {
         required: ["claim_id", "concern"],
       },
     },
+    // Correcting structure already built (#741): remove, retype, ungroup,
+    // revise and retire.
+    ...getStewardStructureToolDefinitions(),
   ];
 }
 
@@ -2014,52 +2026,71 @@ export async function executeStewardTool(
             message: `Argument not found: ${argumentId}`,
           });
         }
+        if (argument.retiredAt) {
+          return JSON.stringify({
+            success: false,
+            message: `Argument ${argumentId} was retired; it takes no written form.`,
+          });
+        }
 
         // Brief means brief: uuid links cost ~46 chars each, so the cap is
-        // roomier than the 1–3 sentences it is meant to hold, but it still
-        // stops essays.
+        // roomier than the few sentences it is meant to hold, but it still
+        // stops essays. The description states it.
         if (content.length > 1000) {
           return JSON.stringify({
             success: false,
             message:
               `Written form is ${content.length} chars; keep it under 1000. ` +
-              `State the inference in 1–3 sentences; detail belongs in the ` +
-              `subclaims themselves.`,
+              `State the inference briefly; detail belongs in the subclaims ` +
+              `themselves.`,
           });
         }
-
-        const links = parseClaimLinks(content);
-        if (links.length === 0) {
+        if (!hasWrittenForm({ content, description: argument.description })) {
           return JSON.stringify({
             success: false,
             message:
-              "The written form must reference the argument's subclaims inline " +
-              "as [[claim:<uuid>]]; a written form with no links is just a " +
-              "longer label.",
+              "That is the argument's label, not a written form: state how " +
+              "its premises combine to reach its conclusion.",
           });
         }
 
-        // Mutual checkability: every link must be a subclaim edge of this
-        // argument (or the parent claim itself), and every subclaim should be
-        // referenced. Unknown links fail; unreferenced subclaims only warn, so
-        // a steward mid-restructure is nudged, not wedged.
+        // Mutual checkability: every link must be a subclaim of this
+        // argument, one of the claim's ungrouped basis subclaims (#434), or
+        // the claim itself, the same targets evaluate_argument accepts; and
+        // when the argument has attached subclaims, the form must reference
+        // them. An argument whose settled premises live in the prose has no
+        // attached subclaims and needs no links (§6, §7; #747). Unknown
+        // links fail; unreferenced subclaims only warn, so a steward
+        // mid-restructure is nudged, not wedged.
+        const links = parseClaimLinks(content);
         const subclaims = await getArgumentSubclaims(argumentId);
+        const basis = await getClaimBasisSubclaims(argument.claimId);
         const subclaimIds = new Set(subclaims.map((s) => s.id));
+        const linkable = new Set([...subclaimIds, ...basis.map((s) => s.id), argument.claimId]);
         const linkedIds = new Set(links.map((l) => l.claimId));
 
-        const unknown = [...linkedIds].filter(
-          (id) => !subclaimIds.has(id) && id !== argument.claimId
-        );
+        const unknown = [...linkedIds].filter((id) => !linkable.has(id));
         if (unknown.length > 0) {
           return JSON.stringify({
             success: false,
             message:
-              `These linked claims are not subclaims of this argument: ` +
-              `${unknown.join(", ")}. Link only claims attached to the ` +
-              `argument via add_relationship_edge / add_decomposition_edge. ` +
-              `A claim that is already a subclaim (in the basis, or under ` +
-              `another argument) joins this one when you call ` +
-              `add_relationship_edge again with this argument_id.`,
+              `These linked claims are neither subclaims of this argument nor ` +
+              `ungrouped basis subclaims of its claim: ${unknown.join(", ")}. ` +
+              `Link only claims attached to the claim via add_relationship_edge / ` +
+              `add_decomposition_edge. A subclaim grouped under another argument ` +
+              `joins this one when you call add_relationship_edge again with ` +
+              `this argument_id.`,
+          });
+        }
+        if (subclaims.length > 0 && links.length === 0) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `This argument has ${subclaims.length} attached subclaim(s); the ` +
+              `written form must reference them inline as [[claim:<uuid>]] so a ` +
+              `reader can follow each premise to its page. If a subclaim does ` +
+              `not belong to this line of reasoning, take it out with ` +
+              `ungroup_subclaim.`,
           });
         }
 
@@ -2076,8 +2107,9 @@ export async function executeStewardTool(
                 unreferenced
                   .map((s) => `${s.id} ("${s.text.slice(0, 60)}")`)
                   .join("; ") +
-                `. Reference every subclaim, or detach edges that no longer ` +
-                `belong to this line of reasoning.`
+                `. Reference every subclaim, or take out of this argument any ` +
+                `that does not belong to it (ungroup_subclaim, or ` +
+                `remove_subclaim_edge if it does not bear on the claim at all).`
               : ""),
         });
       }
@@ -2105,6 +2137,12 @@ export async function executeStewardTool(
             message: `Argument not found: ${argumentId}`,
           });
         }
+        if (argument.retiredAt) {
+          return JSON.stringify({
+            success: false,
+            message: `Argument ${argumentId} was retired; it takes no evaluation.`,
+          });
+        }
         if (!argument.name) {
           return JSON.stringify({
             success: false,
@@ -2121,7 +2159,8 @@ export async function executeStewardTool(
           });
         }
         // Same brevity budget as the written form: links cost ~46 chars each,
-        // so the cap is roomier than the 2–4 sentences it should hold.
+        // so the cap is roomier than the few sentences it should hold. The
+        // description states it.
         if (content.length > 1200) {
           return JSON.stringify({
             success: false,
@@ -2229,6 +2268,17 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: "A claim cannot be its own subclaim (parent_id === child_id).",
+          });
+        }
+        // The enum is advisory to a model, so check it here (#658): an
+        // off-enum relation would be stored as given and read by nothing.
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown relation "${String(input.relation)}". Use one of: ` +
+              `${RELATION_TYPES.join(", ")}. To change an existing edge's ` +
+              `relation, use set_edge_relation.`,
           });
         }
 
@@ -2361,9 +2411,17 @@ export async function executeStewardTool(
       case "add_decomposition_edge": {
         const parentId = input.parent_id as string;
         const childText = input.child_text as string;
-        const relation = input.relation as string;
+        const relation = String(input.relation ?? "").toLowerCase();
         const reasoning = input.reasoning as string;
         const argumentId = (input.argument_id as string) ?? null;
+        // As in add_relationship_edge (#658): an off-enum relation is refused
+        // before anything is minted.
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown relation "${String(input.relation)}". Use one of: ${RELATION_TYPES.join(", ")}.`,
+          });
+        }
         // Validate the grouping target first: a bad argument id must not mint
         // an orphan subclaim on its way to failing.
         if (argumentId) {
@@ -2911,8 +2969,10 @@ export async function executeStewardTool(
         });
       }
 
-      default:
-        return `Error: Unknown steward tool: ${toolName}`;
+      default: {
+        const structure = await executeStewardStructureTool(toolName, input);
+        return structure ?? `Error: Unknown steward tool: ${toolName}`;
+      }
     }
   } catch (err) {
     return `Error: ${err instanceof Error ? err.message : String(err)}`;

@@ -370,10 +370,16 @@ export function getQuestionToolDefinitions(): Tool[] {
     },
     {
       name: "remove_answer",
-      description: "Take a node out of the question's answer set, saying why.",
+      description:
+        "Take a node out of the answer set of the question you steward, saying why. The node stays " +
+        "in the graph; your reasoning is kept in the question's audit log.",
       input_schema: {
         type: "object" as const,
-        properties: { question_id: { type: "string" }, answer_id: { type: "string" }, reasoning: { type: "string" } },
+        properties: {
+          question_id: { type: "string" },
+          answer_id: { type: "string" },
+          reasoning: { type: "string", description: "Why the node is not a serious or prominent answer" },
+        },
         required: ["question_id", "answer_id", "reasoning"],
       },
     },
@@ -400,7 +406,9 @@ export function getQuestionToolDefinitions(): Tool[] {
         "claim's assessment, and how well answered the question is (§10). standing: answered " +
         "(favor exactly one answer), leaning (favor one or more), open (examined and level), " +
         "ill_posed (a presupposition fails or the question has no answer of the kind it asks " +
-        "for), or unknown (too little is known to say). assessment is the reader-facing account; " +
+        "for), or unknown (too little is known to say). favored_answer_ids go with answered and " +
+        "leaning only; open, ill_posed and unknown take none, so name the answers an open question " +
+        "leaves level in the assessment itself. assessment is the reader-facing account; " +
         "reasoning_trace the audit record. incomplete: your note when the answer set is missing " +
         "a serious answer you could not yet add.",
       input_schema: {
@@ -945,13 +953,36 @@ async function executeKindToolImpl(
     }
 
     case "remove_answer": {
-      const deleted = await rawQuery<{ id: string }>(
+      const questionId = str(input.question_id);
+      const answerId = str(input.answer_id);
+      const reasoning = str(input.reasoning);
+      // The answer set is the question's Steward's to keep (Part VIII), and
+      // the removal is logged with its reason (§5; #741).
+      if (ctx.claimId && questionId !== ctx.claimId) {
+        return refuse(
+          `Question ${questionId} is not the node you steward. Its answer set is its own Steward's to ` +
+            `keep: file a request (file_request) or escalate_to_curator.`
+        );
+      }
+      if (!reasoning) return refuse("reasoning is required: say why the node leaves the answer set.");
+      const deleted = await rawQuery<{ id: string; answer_basis: string | null; reasoning: string }>(
         `DELETE FROM claim_relationships
-          WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'answers' RETURNING id`,
-        [str(input.question_id), str(input.answer_id)]
+          WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'answers'
+          RETURNING id, answer_basis, reasoning`,
+        [questionId, answerId]
       );
       if (deleted.length === 0) return refuse("That node is not in the question's answer set.");
-      return ok(`Removed ${str(input.answer_id)} from the answer set.`);
+      const edge = deleted[0]!;
+      await rawQuery(
+        `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'remove_answer', $2, $3)`,
+        [
+          questionId,
+          `Removed ${answerId} from the answer set (basis ${edge.answer_basis ?? "none"}; edge reasoning: ` +
+            `"${edge.reasoning}"): ${reasoning}`,
+          createdBy,
+        ]
+      );
+      return ok(`Removed ${answerId} from the answer set.`);
     }
 
     case "set_answer_relation": {

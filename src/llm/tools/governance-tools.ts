@@ -340,10 +340,14 @@ async function getClaim(claimId: string) {
 
   // Arguments, each with its current evaluation (issue #173) so a re-running
   // steward sees its prior judgment of the inference and can revise or confirm.
-  const args = await db
+  // Retired arguments (#741) are history: listed apart, by name and reason,
+  // so a Steward does not rebuild one it or a predecessor retired.
+  const allArgs = await db
     .select()
     .from(arguments_)
     .where(eq(arguments_.claimId, claimId));
+  const args = allArgs.filter((a) => a.retiredAt === null);
+  const retiredArgs = allArgs.filter((a) => a.retiredAt !== null);
 
   const evaluations = await rawQuery<{
     argument_id: string;
@@ -539,9 +543,9 @@ async function getClaim(claimId: string) {
         stance: a.stance,
         ...(a.shows ? { shows: a.shows } : {}),
         content: a.content,
-        // False when content is still just the creation-time label — the steward
-        // owes this argument a write_argument call (issue #129).
-        has_written_form: hasWrittenForm(a.content),
+        // False when content is still just the creation-time label: the steward
+        // owes this argument a write_argument call (issue #129, #747).
+        has_written_form: hasWrittenForm(a),
         // The steward's current judgment of the inference (issue #173); null
         // when the argument has never been evaluated. `stale` means it was
         // derived under an assessment that is no longer current.
@@ -555,6 +559,17 @@ async function getClaim(claimId: string) {
           : null,
       };
     }),
+    ...(retiredArgs.length > 0
+      ? {
+          retired_arguments: retiredArgs.map((a) => ({
+            id: a.id,
+            name: a.name,
+            stance: a.stance,
+            retired_at: a.retiredAt!.toISOString(),
+            reason: a.retiredReason,
+          })),
+        }
+      : {}),
   };
 }
 
