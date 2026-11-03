@@ -363,8 +363,8 @@ Minerval to collect a tax on a purchase it is shown at checkout; any other
 tax on a purchase is yours.
 
 6.4 **Caps, not prices.** Nothing on the Services has a fixed price. Every
-metered operation carries a published cap, the most it may cost you, set
-near its usual cost. The cap is charged to your balance when the work
+metered operation carries a published cap, the most it may cost you, which
+can be less than what the work costs Minerval. The cap is charged to your balance when the work
 starts, the actual cost is metered as the work runs, and the unused part
 returns to your balance when it finishes. A run that costs more than its cap
 is absorbed by Minerval, never charged to you. A run that fails after the
@@ -373,8 +373,8 @@ such as a page analysis served from cache. As of the effective date:
 
 | Operation | Cap |
 |---|---|
-| Propose a claim (reviewed, then assessed) | 1 Owl |
-| Order a claim assessment | 1 Owl |
+| Propose a claim (reviewed, then assessed) | 2 Owls |
+| Order a claim assessment | 2 Owls |
 | Submit a source for extraction | 0.1 Owl |
 | Extension page analysis | 0.1 Owl |
 | Extension chat exchange | 0.1 Owl |
