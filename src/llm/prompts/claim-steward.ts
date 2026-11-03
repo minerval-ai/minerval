@@ -307,8 +307,7 @@ export const REQUESTS = `## Requests
 
 File a request with file_request for something that would improve what the
 graph knows about your claim and that you are not doing in this run (Part
-VIII, Requests), beside your work rather than in place of it. Say so when the
-graph's own agents could meet it once funded.
+VIII, Requests), beside your work rather than in place of it.
 
 Before filing, look at the requests already open on your claim and its
 neighbours (list_requests), and where one asks for the same thing, rely on it
