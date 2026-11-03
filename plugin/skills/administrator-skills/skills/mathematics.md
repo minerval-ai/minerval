@@ -11,10 +11,11 @@ description: >-
   merely use a number or a model.
 metadata:
   minerval:
-    version: 2
+    version: 3
     since_epoch: 2026-09-domain-skills
     changelog:
-      2: A challenge whose only ground is dislike of the result is rejected without the bad-faith flag; the prize-specific abuses map to the misinformation and sybil categories; the Arbitrator reads the prize claim and records challenge_upheld.
+      2: "requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)"
+      3: A challenge whose only ground is dislike of the result is rejected without the bad-faith flag; the prize-specific abuses map to the misinformation and sybil categories; the Arbitrator reads the prize claim and records challenge_upheld.
     domains: [mathematics]
 ---
 
@@ -67,7 +68,9 @@ on which named results it lives or dies. Two proofs by different methods
 stand side by side and corroborate without merging; two proofs that share a
 lemma share the subclaim. A counterexample or a proof of the negation is an
 argument with stance `against` on the same node. Relations, in
-mathematics: `requires` for a named result the argument depends on;
+mathematics: `requires` for a named result every proof of the claim
+depends on (a result only one of several proofs uses is `supports`, and the
+proof's argument records that it rests on it, constitution §6);
 `supports` for a proven weaker statement, a verified special case, or a
 large computation; `contradicts` for a counterexample or an inconsistent
 theorem; `assumes` for a foundational choice the discourse disputes for

@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 12118,
-    "fullChars": 93092,
+    "fullChars": 94644,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 13674,
-    "fullChars": 94648,
+    "fullChars": 96200,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 19846,
-    "fullChars": 100820,
+    "fullChars": 102372,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 50759,
-    "fullChars": 131733,
+    "roleChars": 50800,
+    "fullChars": 133326,
     "skills": [
       {
         "name": "costing",
@@ -146,7 +146,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 27178,
-    "fullChars": 108152,
+    "fullChars": 109704,
     "skills": []
   },
   {
@@ -159,7 +159,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 14120,
-    "fullChars": 95094,
+    "fullChars": 96646,
     "skills": [
       {
         "name": "costing",
@@ -200,7 +200,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 14553,
-    "fullChars": 95527,
+    "fullChars": 97079,
     "skills": [
       {
         "name": "costing",
@@ -240,7 +240,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 16277,
-    "fullChars": 97251,
+    "fullChars": 98803,
     "skills": [
       {
         "name": "costing",
@@ -293,7 +293,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 23524,
-    "fullChars": 104498,
+    "fullChars": 106050,
     "skills": [
       {
         "name": "costing",
@@ -333,7 +333,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 15473,
-    "fullChars": 96447,
+    "fullChars": 97999,
     "skills": [
       {
         "name": "costing",
@@ -371,7 +371,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11395,
-    "fullChars": 92369,
+    "fullChars": 93921,
     "skills": []
   },
   {
@@ -397,7 +397,7 @@
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
     "roleChars": 14578,
-    "fullChars": 95552,
+    "fullChars": 97104,
     "skills": [
       {
         "name": "costing",
