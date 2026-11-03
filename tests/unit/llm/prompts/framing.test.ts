@@ -95,9 +95,19 @@ describe("the Steward and the claim's instances", () => {
     expect(steward).toContain("detach_claim_instance");
     expect(steward).toContain("reattach_claim_instance");
     expect(steward).toContain("set_instance_order");
-    expect(steward).toMatch(/asserts, denies or poses\s+the\s+proposition/);
+    expect(steward).toMatch(/asserts, denies, poses or mentions\s+the\s+proposition/);
+    // Detaching is for a different proposition or a misreading, not for a
+    // source that only mentions the claim: that one is recorded as a mention.
+    expect(steward).toMatch(/detach one that states a different proposition or\s+misreads its source/);
+    expect(steward).not.toMatch(/is not an instance/);
     expect(steward).not.toMatch(/confidence lowered toward 0/);
     expect(steward).not.toMatch(/toward 0\b/);
+  });
+
+  it("records a mention when a reader should see it, not every passing occurrence", () => {
+    expect(steward).toMatch(/that mentions the claim without taking a side/);
+    expect(steward).toMatch(/as a mention when a reader should see it/);
+    expect(steward).toMatch(/not for every\s+passing occurrence/);
   });
 
   it("keeps the register: no em-dashes, all-caps or bold emphasis", () => {

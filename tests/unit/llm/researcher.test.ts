@@ -331,7 +331,7 @@ describe("the prompt", () => {
     expect(system[0]).toContain("# Your Specific Role");
     expect(system[0]).toContain("You are the researcher");
     expect(system[0]).toContain("## Skills");
-    expect(system[0]).toContain("- provenance (version 1, a method skill");
+    expect(system[0]).toContain("- provenance (version 2, a method skill");
     expect(system[0]).not.toContain("# Method skill:");
   });
 

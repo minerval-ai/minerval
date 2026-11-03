@@ -256,11 +256,14 @@ export function getStewardToolDefinitions(): Tool[] {
       name: "record_claim_instance",
       description:
         "Record a source for the claim you steward: one you read that asserts " +
-        "the claim, denies it, or poses it as an open question, with the " +
-        "passage as it states it. Instances are what the claim page shows of " +
-        "the discourse, and the provenance tools record what each one rests " +
-        "on. A source that merely mentions the claim, or reports that others " +
-        "hold a view without taking one, is not an instance; a source quoting " +
+        "the claim, denies it, poses it as an open question, or mentions it " +
+        "without taking a side, with the passage as it states it. Instances " +
+        "are what the claim page shows of the discourse, and the provenance " +
+        "tools record what each one rests on. Record a mention (it cites the " +
+        "claim, reports that others hold it, or raises it in passing) when the " +
+        "source is worth a reader seeing: prominent, an origin, or telling " +
+        "about how the claim is used, not every passing occurrence. A mention " +
+        "is never counted as affirming or denying. A source quoting " +
         "someone is an instance whose speaker is the person quoted. One " +
         "instance per (claim, source, speaker): re-recording the same source " +
         "is deduplicated, but a document in which several people each speak " +
@@ -288,8 +291,8 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "The passage as this source states the claim (or its " +
-              "negation), verbatim — the statement itself, not your " +
-              "paraphrase.",
+              "negation, or where it mentions it), verbatim — the statement " +
+              "itself, not your paraphrase.",
           },
           context: {
             type: "string",
@@ -302,9 +305,11 @@ export function getStewardToolDefinitions(): Tool[] {
             enum: [...INSTANCE_STANCES],
             description:
               "Whether this source asserts the canonical claim (affirms), " +
-              "its negation (denies), or states the proposition as an open " +
+              "its negation (denies), states the proposition as an open " +
               "question without endorsing either side (poses: a conjecture " +
-              "as a survey states it).",
+              "as a survey states it), or refers to it without asserting, " +
+              "denying or posing it (mentions: it cites the claim, reports " +
+              "that others hold it, or raises it in passing).",
           },
           speaker: {
             type: "string",
@@ -335,9 +340,9 @@ export function getStewardToolDefinitions(): Tool[] {
           confidence: {
             type: "number",
             description:
-              "0.0-1.0: how confident you are this is a genuine assertion " +
-              "of THIS claim (not a near-miss proposition or a passing " +
-              "mention). Defaults to 1.",
+              "0.0-1.0: how confident you are that the passage carries " +
+              "this stance on THIS claim (not a near-miss proposition). " +
+              "Defaults to 1.",
           },
           stated_probability: {
             type: "number",
@@ -359,11 +364,8 @@ export function getStewardToolDefinitions(): Tool[] {
         "this is the only way to fix an instance that misrepresents its source: a " +
         "quote attributed to the outlet instead of the person quoted, a " +
         "stance read backwards, a passage that is not the one carrying the " +
-        "stance. " +
-        "A source that only mentions the claim, or reports others' views " +
-        "on it without asserting, denying or posing it, is not an instance " +
-        "at all: detach " +
-        "it with detach_claim_instance instead of correcting it. Every " +
+        "stance, or a source recorded as affirming or denying that only " +
+        "mentions the claim (correct its stance to mentions). Every " +
         "correction requires a reasoning note, which is written to the " +
         "claim's audit trail.",
       input_schema: {
@@ -384,15 +386,16 @@ export function getStewardToolDefinitions(): Tool[] {
             enum: [...INSTANCE_STANCES],
             description:
               "Corrected stance: whether this source asserts the canonical " +
-              "claim (affirms), its negation (denies), or states the " +
+              "claim (affirms), its negation (denies), states the " +
               "proposition as an open question without taking a side " +
-              "(poses). Omit to leave as is.",
+              "(poses), or only refers to it without asserting, denying or " +
+              "posing it (mentions). Omit to leave as is.",
           },
           confidence: {
             type: "number",
             description:
-              "Corrected 0.0-1.0 confidence that this is a genuine assertion " +
-              "of this claim. Omit to leave as is.",
+              "Corrected 0.0-1.0 confidence that the passage carries this " +
+              "stance on this claim. Omit to leave as is.",
           },
           speaker: {
             type: "string",
@@ -434,10 +437,12 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "detach_claim_instance",
       description:
-        "Detach an instance from the claim you steward: the source does not " +
-        "assert, deny or pose the proposition (a passing mention, a neutral " +
-        "report of others' views, a near-miss proposition, or a match to the " +
-        "wrong claim). The instance no longer belongs to the claim: it leaves " +
+        "Detach an instance from the claim you steward: the source states a " +
+        "different proposition (a near-miss, or a match to the wrong claim), " +
+        "or the instance misreads the source. A source that refers to this " +
+        "claim without taking a side is not detached: correct its stance to " +
+        "mentions with update_claim_instance. The instance no longer belongs " +
+        "to the claim: it leaves " +
         "the claim page, the instance count and every read of the claim's " +
         "instances. The row is kept for the provenance record, never deleted, " +
         "and reattach_claim_instance restores it. The reason is written to " +
@@ -456,8 +461,8 @@ export function getStewardToolDefinitions(): Tool[] {
           reason: {
             type: "string",
             description:
-              "What you read that shows the source does not assert, deny or " +
-              "pose this claim: the note the audit trail keeps.",
+              "What you read that shows the instance does not belong to this " +
+              "claim: the note the audit trail keeps.",
           },
         },
         required: ["claim_id", "instance_id", "reason"],
@@ -467,8 +472,8 @@ export function getStewardToolDefinitions(): Tool[] {
       name: "reattach_claim_instance",
       description:
         "Reattach an instance that was detached from the claim you steward, " +
-        "when reading the source shows it does assert, deny or pose the " +
-        "proposition after all. It returns at the default position. " +
+        "when reading the source shows it belongs to the claim after all. It " +
+        "returns at the default position. " +
         "get_claim_instances with include_detached lists detached instances " +
         "and why each was detached. The reason is written to the claim's " +
         "audit trail.",
@@ -1380,9 +1385,10 @@ export async function executeStewardTool(
             success: false,
             message:
               `Unknown stance "${stance}". Use "affirms" (the source asserts ` +
-              `the canonical claim), "denies" (it asserts the negation), or ` +
+              `the canonical claim), "denies" (it asserts the negation), ` +
               `"poses" (it states the proposition as an open question ` +
-              `without taking a side).`,
+              `without taking a side), or "mentions" (it refers to the claim ` +
+              `without asserting, denying or posing it).`,
           });
         }
 
@@ -1480,7 +1486,7 @@ export async function executeStewardTool(
               `This source has an instance${voice} on this claim that was detached` +
               (existing.detached_reason ? ` ("${existing.detached_reason}")` : "") +
               `; nothing new was written. If your reading shows the source ` +
-              `does assert, deny or pose the claim, reattach it with ` +
+              `does belong to the claim, reattach it with ` +
               `reattach_claim_instance (instance_id ${existing.id}) and correct ` +
               `it with update_claim_instance if needed.` +
               unattributedNote,
@@ -1534,8 +1540,12 @@ export async function executeStewardTool(
           source_id: source.id,
           message:
             `Recorded a ${stance} instance of claim ${claimId} from ` +
-            `${source.url ?? url}. It now counts among the claim's source ` +
-            `instances; weigh its stance in your assessment like any other.`,
+            `${source.url ?? url}. ` +
+            (stance === "mentions"
+              ? `The claim page shows it among the sources that mention the ` +
+                `claim; it takes no side and is never counted as affirming or denying.`
+              : `It now counts among the claim's source instances; weigh its ` +
+                `stance in your assessment like any other.`),
         });
       }
 
@@ -1576,10 +1586,9 @@ export async function executeStewardTool(
               message:
                 `Unknown stance "${stance}". Use "affirms" (the source ` +
                 `asserts the canonical claim), "denies" (it asserts the ` +
-                `negation), or "poses" (it states the proposition as an open ` +
-                `question without taking a side). A source that only ` +
-                `mentions the claim in passing is not an instance: detach it ` +
-                `with detach_claim_instance.`,
+                `negation), "poses" (it states the proposition as an open ` +
+                `question without taking a side), or "mentions" (it refers to ` +
+                `the claim without asserting, denying or posing it).`,
             });
           }
           patch.stance = stance;
