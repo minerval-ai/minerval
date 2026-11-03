@@ -11,6 +11,7 @@ import {
   MCP_INSTRUCTIONS,
 } from "../../../src/mcp/caller-skills.js";
 import { ROUTE_TOOLS } from "../../../src/mcp/route-tools.js";
+import { GRAPH_READ_TOOL_NAMES } from "../../../src/services/graph-read-service.js";
 
 /**
  * The caller skills (#620): plugin/skills/, shipped by the plugin and served
@@ -77,7 +78,12 @@ describe("caller skills", () => {
     const server = readFileSync(join(root, "src/mcp/server.ts"), "utf-8");
     const native = [...server.matchAll(/registerTool\(\s*"([a-z_]+)"/g)].map((m) => m[1]!);
     expect(native).toContain("match_claim");
-    const tools = new Set([...native, ...Object.values(ROUTE_TOOLS).map((t) => t.name)]);
+    // The graph reads are registered from their shared definitions (#726).
+    const tools = new Set([
+      ...native,
+      ...GRAPH_READ_TOOL_NAMES,
+      ...Object.values(ROUTE_TOOLS).map((t) => t.name),
+    ]);
     // A backticked identifier that reads as a tool call (verb_noun), as
     // opposed to a field name such as `page_url`.
     const TOOLISH =

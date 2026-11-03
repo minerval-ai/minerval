@@ -48,7 +48,8 @@ const mocks = vi.hoisted(() => ({
     total: 0,
     truncated: false,
   })),
-  getArgumentsForClaim: vi.fn(async () => []),
+  getArgumentsForClaim: vi.fn(async () => [] as unknown[]),
+  getEvaluationStateForClaim: vi.fn(async () => [] as unknown[]),
   getFormalizationSummary: vi.fn(async () => null as unknown),
   getVerificationSummary: vi.fn(async () => null as unknown),
   leanChecksByArgument: vi.fn(async () => new Map()),
@@ -98,6 +99,7 @@ vi.mock("../../../src/services/tree-service.js", () => ({
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
+  getEvaluationStateForClaim: mocks.getEvaluationStateForClaim,
 }));
 vi.mock("../../../src/services/formalization-service.js", () => ({
   getFormalizationSummary: mocks.getFormalizationSummary,
@@ -907,6 +909,54 @@ describe("MCP tools", () => {
     expect(plain.formalization).toBeNull();
     expect(plain.verification).toBeNull();
     expect(plain.proofs).toBeUndefined();
+    await client.close();
+  });
+
+  // #726: §7 makes the evaluation reader-facing; MCP used to drop it.
+  it("get_claim carries each argument's evaluation: the rating of the inference, decisive, and the premises", async () => {
+    mocks.getArgumentsForClaim.mockResolvedValueOnce([
+      {
+        id: "a-1",
+        name: "Supply shocks",
+        stance: "supports",
+        content: "Shipping costs rose [[claim:x]], therefore prices did.",
+        evidenceUrls: [],
+        shows: null,
+      },
+      { id: "a-2", name: null, stance: "opposes", content: "Unnamed.", evidenceUrls: [], shows: null },
+    ]);
+    mocks.getEvaluationStateForClaim.mockResolvedValueOnce([
+      {
+        argument_id: "a-1",
+        argument_name: "Supply shocks",
+        verdict: "likely",
+        decisive: false,
+        content: "Lives or dies on [[claim:x]].",
+        stale: false,
+      },
+    ]);
+    mocks.getClaimById.mockResolvedValueOnce({ ...CLAIM_ROW, contestation: 0.4 });
+    mocks.listRequests.mockResolvedValueOnce({ items: [{ id: "r-1" }], total: 27 });
+    const payload = parseText(
+      await client.callTool({
+        name: "get_claim",
+        arguments: { claim_id: CLAIM_ID, include: ["arguments"] },
+      })
+    ) as {
+      claim: Record<string, unknown>;
+      arguments: Array<Record<string, unknown>>;
+      requests_total: number;
+    };
+    expect(payload.arguments[0]).toMatchObject({
+      id: "a-1",
+      verdict: "likely",
+      decisive: false,
+      evaluation: "Lives or dies on [[claim:x]].",
+      shows: null,
+    });
+    expect(payload.arguments[1]).toMatchObject({ id: "a-2", verdict: null, decisive: null, evaluation: null });
+    expect(payload.claim.contestation).toBe(0.4);
+    expect(payload.requests_total).toBe(27);
     await client.close();
   });
 

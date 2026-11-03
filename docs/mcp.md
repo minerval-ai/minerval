@@ -149,24 +149,41 @@ and the tool description says what a call spends.
 
 ## Tools
 
-- **`search_claims`** `{query, limit?, assessed?, min_importance?, tag?, kind?}` — hybrid
-  vector + keyword search over canonical claims, quantities and questions
-  (all three live in `claims`). Each result carries its `kind`, its
+The four graph reads (`search_claims`, `get_claim`, `get_decomposition`,
+`get_dependents`) are defined once, in `src/services/graph-read-service.ts`,
+and served both here and to the graph's own agents
+(`src/llm/tools/graph-read-tools.ts`), so the two cannot drift (#726). The
+definitions differ only where the audiences do: a description suffix (a
+caller is told the read is free; an agent which signals allocation turns
+on), and get_claim's formalization (an agent reads the full record, with
+pending versions and history; a caller the published statement and badge).
+
+- **`search_claims`** `{query, limit?, kind?, tag?, assessed?,
+  min_importance?, claim_type?, with_prizes?}` — hybrid vector + keyword
+  search over canonical claims, quantities and questions (all three live in
+  `claims`). Each result carries its `kind`, importance, `contestation`,
   current assessment status/confidence (a question's `standing`, a
-  quantity's `estimate` and `unit`), its topic `tags`, and a
-  `minerval.ai` page link; `tag` (a slug) narrows the search to one topic
-  and `kind` to one kind. `assessed` judges each kind by its own verdict.
+  quantity's `estimate` and `unit`), `days_since_assessed`, its topic
+  `tags`, and a `minerval.ai` page link. It also carries `prize_micro_usd`
+  (the live bounty on the claim, or null) and `checked` (`proof`,
+  `disproof`, or null: whether a machine-checked argument stands on the
+  claim, the same derivation as the badge on the claim page). `tag` (a
+  slug) narrows the search to one topic, `kind` to one kind, `claim_type`
+  to one type, and `with_prizes: true` to claims with an open bounty;
+  `assessed` judges each kind by its own verdict.
 - **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
   claims carry, with how many claims carry each; with `query`, ranked by
   meaning. A tag says what a claim is about, never whether it holds.
-  Each result also carries `prize_micro_usd` (the live bounty on the claim,
-  or null) and `checked` (`proof`, `disproof`, or null: whether a
-  machine-checked argument stands on the claim, the same derivation as the
-  badge on the claim page), and the input accepts `with_prizes: true` to
-  restrict results to claims with an open bounty.
-- **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
+- **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"|"proofs"],
+  dependents_limit?, dependents_offset?}`
   — canonical form, current assessment (status, confidence, reasoning),
-  source instances, arguments, dependents, page link. With `"provenance"`,
+  `contestation`, source instances, arguments, dependents, page link. Each
+  argument carries the Steward's evaluation (§7): `verdict` (how far the
+  conclusion follows if the premises hold: certain, likely, slight, none),
+  `decisive`, `evaluation` (the premises it lives or dies on), and `shows`
+  for an argument about a quantity, the same fields `GET /claims/:id`
+  serves at `information_depth=deep`. `requests` holds up to 20 of the
+  node's requests, with `requests_total`. With `"provenance"`,
   each instance carries the Steward's `reading` of its source (whether the
   source's own evidence bears its assertion, the mechanical quote check,
   whether it is worth reading closely; null until recorded), and the payload
@@ -193,6 +210,9 @@ and the tool description says what a call spends.
   `GET /claims/:id` serves them.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
+- **`get_dependents`** `{claim_id, max_depth?}` — the walk up: everything
+  that rests on the claim, ranked by importance, with each one's distance.
+  Being load-bearing is not being important (constitution §19).
 - **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion
   through the Matcher agent → the canonical claim it states (or negates — see
   `stance`) plus its assessment, `matched: false` for new/unknown, or

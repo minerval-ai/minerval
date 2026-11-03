@@ -44,36 +44,17 @@ import {
 } from "../server/plugins/quota.js";
 import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext, untraced } from "../llm/usage-context.js";
-import { hybridSearch } from "../services/search-service.js";
+import { listTags, searchTags } from "../services/tag-service.js";
+import { getClaimById, listClaims } from "../services/claim-service.js";
 import {
-  attachClaimTags,
-  getTagsForSubject,
-  listTags,
-  resolveTagBySlug,
-  searchTags,
-} from "../services/tag-service.js";
-import {
-  getClaimById,
-  getClaimInstances,
-  listClaims,
-} from "../services/claim-service.js";
-import { getClaimSourceMap } from "../services/source-map-service.js";
+  claimPageUrl,
+  formatAssessment,
+  graphReadDefinitions,
+  runGraphRead,
+} from "../services/graph-read-service.js";
 import { getCurrentAssessment } from "../services/assessment-service.js";
-import {
-  getClaimTree,
-  getSubclaimCount,
-  getTransitiveDependents,
-  listClaimDependents,
-} from "../services/tree-service.js";
-import { getArgumentsForClaim } from "../services/argument-service.js";
-import {
-  getBountyTerms,
-  getFormalizationSummary,
-  getVerificationSummary,
-  leanChecksByArgument,
-  listLeanChecksForClaim,
-} from "../services/formalization-service.js";
-import { claimTypeEnum } from "../schemas/common.js";
+import { getClaimTree } from "../services/tree-service.js";
+import { getBountyTerms } from "../services/formalization-service.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
@@ -107,13 +88,8 @@ import {
   type TextAnalysisType,
 } from "../services/text-analysis-service.js";
 import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
-import {
-  getCurrentEstimate,
-  getQuantityDetail,
-  getThresholdOf,
-} from "../services/quantity-service.js";
-import { getCurrentStanding, getQuestionDetail } from "../services/question-service.js";
-import { listRequests } from "../services/request-service.js";
+import { getCurrentEstimate } from "../services/quantity-service.js";
+import { getCurrentStanding } from "../services/question-service.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -123,17 +99,6 @@ export interface McpRequestContext {
 }
 
 // ---- helpers ----------------------------------------------------------------
-
-/**
- * The requests get_claim shows inline: a tool result is context the caller
- * carries for the rest of its session. The rest are a list_requests call
- * away, and requests_total says when there are more.
- */
-const GET_CLAIM_REQUESTS_LIMIT = 20;
-
-function claimPageUrl(claimId: string): string {
-  return `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${claimId}`;
-}
 
 function jsonResult(payload: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
@@ -145,34 +110,6 @@ function errorResult(code: string, message: string, extra?: object): CallToolRes
     content: [
       { type: "text", text: JSON.stringify({ error: { code, message, ...extra } }) },
     ],
-  };
-}
-
-function formatAssessment(
-  a: {
-    status: string;
-    confidence: number;
-    claimCredence: number | null;
-    summary: string | null;
-    reasoningTrace: string;
-    assessedAt: Date;
-    model?: string | null;
-  } | null
-) {
-  if (!a) return null;
-  return {
-    status: a.status,
-    // Verdict confidence — how sure the Steward is of the status, not P(true).
-    confidence: a.confidence,
-    // Credence that the claim is true; null where one number would be false
-    // precision (constitution §10).
-    claim_credence: a.claimCredence ?? null,
-    // Reader-facing body first; fall back to the trace for pre-split rows.
-    summary: a.summary ?? a.reasoningTrace,
-    reasoning_trace: a.reasoningTrace,
-    assessed_at: a.assessedAt.toISOString(),
-    // The assessor behind the verdict (#294); null for legacy rows.
-    model: a.model ?? null,
   };
 }
 
@@ -372,88 +309,27 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
 
   // ---- free read tools ----
 
-  server.registerTool(
-    "search_claims",
-    {
-      title: "Search claims",
-      description:
-        "Search Minerval's claim graph. A claim is a single reusable " +
-        "proposition about the world, assessable with evidence and reasons; " +
-        "each is stored once, under a neutral canonical " +
-        "wording shared by the claim and its denial. The graph also holds " +
-        "quantities (values it estimates) and questions (which it answers); " +
-        "search reaches all three, each result says its `kind`, and `kind` " +
-        "narrows to one. Combined semantic and " +
-        "keyword search, ranked by similarity; each result carries its " +
-        "current assessment status (for a question its `standing`, for a " +
-        "quantity its `estimate` and `unit`), the amount of any live prize offered " +
-        "for a machine-checked proof or disproof of its formal statement " +
-        "(prize_micro_usd), whether such a check exists (checked), its " +
-        "topic tags, and a link to its minerval.ai page. Narrow to one " +
-        "topic with `tag` (a slug from list_tags). Free.",
-      inputSchema: {
-        query: z.string().min(1).max(500).describe("Free-text search query"),
-        limit: z.number().int().min(1).max(50).default(10),
-        assessed: z
-          .enum(["all", "assessed", "unassessed"])
-          .default("all")
-          .describe("Filter on whether a claim carries a current assessment"),
-        min_importance: z.number().min(0).max(1).default(0),
-        with_prizes: z
-          .boolean()
-          .default(false)
-          .describe("Only claims with a live prize on their formal statement"),
-        claim_type: claimTypeEnum
-          .optional()
-          .describe("Only claims of this type; `mathematical` for propositions of mathematics"),
-        tag: z
-          .string()
-          .max(100)
-          .optional()
-          .describe("Only claims carrying this topic tag (slug); an unknown tag matches nothing"),
-        kind: nodeKindEnum
-          .optional()
-          .describe("Only nodes of this kind: claims, quantities, or questions"),
+  // The graph reads, defined once with the agents' (graph-read-service.ts,
+  // #726): the same inputs, payloads, and argument evaluations on both
+  // sides, with a caller-facing description suffix.
+  for (const def of graphReadDefinitions("caller")) {
+    server.registerTool(
+      def.name,
+      {
+        title: def.title,
+        description: def.description,
+        inputSchema: z.fromJSONSchema(
+          def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
+        ) as z.ZodObject,
+        annotations: { readOnlyHint: true },
       },
-    },
-    async ({ query, limit, assessed, min_importance, with_prizes, claim_type, tag, kind }) => {
-      let tagId: string | undefined;
-      if (tag?.trim()) {
-        const resolved = await resolveTagBySlug(tag);
-        if (!resolved) return jsonResult({ results: [], note: `no tag "${tag}"` });
-        tagId = resolved.id;
+      async (args: Record<string, unknown>) => {
+        const result = await runGraphRead(def.name, args, "caller");
+        if (!result) return errorResult("NOT_FOUND", `No read named ${def.name}`);
+        return result.ok ? jsonResult(result.payload) : errorResult(result.code, result.message);
       }
-      const { results } = await hybridSearch(query, {
-        limit,
-        assessed,
-        minImportance: min_importance,
-        withPrizes: with_prizes,
-        claimType: claim_type,
-        tagId,
-        kind,
-      });
-      const tagged = await attachClaimTags(results);
-      return jsonResult({
-        results: tagged.map((r) => ({
-          id: r.id,
-          kind: r.kind,
-          canonical_form: r.text,
-          claim_type: r.claim_type,
-          state: r.state,
-          similarity_score: r.similarity_score,
-          importance: r.importance,
-          assessment_status: r.assessment_status,
-          assessment_confidence: r.assessment_confidence,
-          prize_micro_usd: r.prize_micro_usd ?? null,
-          checked: r.checked ?? null,
-          ...(r.kind === "question" ? { standing: r.standing ?? null } : {}),
-          ...(r.kind === "quantity" ? { estimate: r.estimate ?? null, unit: r.unit ?? null } : {}),
-          tags: r.tags.map((t) => ({ slug: t.slug, name: t.name })),
-          page_url: claimPageUrl(r.id),
-        })),
-      });
-    }
-  );
+    );
+  }
 
   server.registerTool(
     "list_tags",
@@ -495,217 +371,6 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           description: t.description,
           claim_count: t.claim_count,
         })),
-      });
-    }
-  );
-
-  server.registerTool(
-    "get_claim",
-    {
-      title: "Get claim",
-      description:
-        "Fetch one claim in full: canonical form, current assessment, and, " +
-        "via `include`, its source instances (provenance), the named " +
-        "arguments bearing on it, and the claims that depend on it. An " +
-        "assessment is a verdict reached by direct examination of the " +
-        "evidence, with the reasoning included: a status (verified, " +
-        "supported, inconclusive, doubtful, contradicted, or unknown), a " +
-        "confidence that the status is the right reading of the evidence, " +
-        "and a credence that the claim is true where a single number is an " +
-        "honest summary (null where it would be false precision). How " +
-        "actively the claim is disputed is not a status: it is the claim's " +
-        "`contestation` (0..1, null until judged). " +
-        "Dependents come back as the most load-bearing page by importance " +
-        "with `dependents_total` beside them, since a hub claim has " +
-        "hundreds; page through the rest with `dependents_offset`. A " +
-        "mathematical claim may carry a published formal statement " +
-        "(`formalization`: Lean 4 against a pinned Mathlib, with a " +
-        "correspondence note) and a machine-checked argument whose evidence " +
-        "is a checker verdict (`verification`; `include: \"proofs\"` lists " +
-        "the check records). A node is a claim, a quantity, or a question " +
-        "(`claim.kind`): a quantity has no assessment but a `quantity` " +
-        "record (definition, the graph's estimate with its work, the " +
-        "figures sources state, instrument readings, and the cut claims on " +
-        "it); a question has a `question` record (standing, favored and " +
-        "candidate answers, presuppositions, subquestions). A claim that " +
-        "cuts a quantity carries `threshold_of`. `requests` lists the work " +
-        `someone could do on the node that would improve what the graph ` +
-        `knows: up to ${GET_CLAIM_REQUESTS_LIMIT}, with \`requests_total\` ` +
-        "beside them; list_requests with claim_id pages through all. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        include: z
-          .array(z.enum(["provenance", "arguments", "dependents", "proofs"]))
-          .default(["provenance"])
-          .describe("Optional detail sections to include"),
-        dependents_limit: z.number().int().min(1).max(100).default(25),
-        dependents_offset: z.number().int().min(0).default(0),
-      },
-    },
-    async ({ claim_id, include, dependents_limit, dependents_offset }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-
-      const assessment = await getCurrentAssessment(claim_id);
-      const [formalization, verification, quantity, thresholdOf, question, requests] =
-        await Promise.all([
-          getFormalizationSummary(claim_id),
-          getVerificationSummary(claim_id),
-          // The kinds' records (§7a), as GET /claims/:id serves them.
-          claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
-          claim.kind === "claim" ? getThresholdOf(claim_id) : null,
-          claim.kind === "question" ? getQuestionDetail(claim_id) : null,
-          // Requests degrade to none rather than failing the claim, as tags do.
-          listRequests({ claimId: claim_id, limit: GET_CLAIM_REQUESTS_LIMIT }).catch(() => ({
-            items: [],
-            total: 0,
-          })),
-        ]);
-      const payload: Record<string, unknown> = {
-        claim: {
-          id: claim.id,
-          kind: claim.kind ?? "claim",
-          canonical_form: claim.text,
-          claim_type: claim.claimType,
-          state: claim.state,
-          decomposition_status: claim.decompositionStatus,
-          importance: claim.importance,
-          // How actively the claim is disputed or consulted (0..1), kept apart
-          // from the status (#524): a status says where the evidence points,
-          // this says how live the dispute is. null = not yet judged.
-          contestation: claim.contestation ?? null,
-          domains: claim.domains,
-          // Navigation, never the payload: a tag read failure is an empty
-          // list, not a failed claim.
-          tags: (await getTagsForSubject("claim", claim_id).catch(() => [])).map((t) => ({
-            slug: t.slug,
-            name: t.name,
-          })),
-          created_at: claim.createdAt.toISOString(),
-          updated_at: claim.updatedAt.toISOString(),
-          page_url: claimPageUrl(claim.id),
-        },
-        assessment: formatAssessment(assessment),
-        // The published formal statement and the derived machine-checked
-        // badge (docs/mathematics.md §11.2); null when the claim has none.
-        formalization,
-        verification,
-        quantity,
-        threshold_of: thresholdOf,
-        question,
-        requests: requests.items,
-        requests_total: requests.total,
-        subclaim_count: await getSubclaimCount(claim_id),
-      };
-      if (include.includes("provenance")) {
-        // The instances, each with the reading recorded from opening its
-        // source against the claim (#286), and the claim's source map when
-        // one has been written: the account of what the support rests on.
-        const [instances, sourceMap] = await Promise.all([
-          getClaimInstances(claim_id),
-          getClaimSourceMap(claim_id).catch(() => null),
-        ]);
-        payload.instances = instances.map((inst) => ({
-          ...inst,
-          reading: sourceMap?.readings[inst.id] ?? null,
-        }));
-        payload.source_map = sourceMap?.map ?? null;
-        payload.provenance_edges = sourceMap?.edges ?? [];
-        payload.source_relationships = sourceMap?.source_relationships ?? [];
-      }
-      if (include.includes("arguments")) {
-        const args = await getArgumentsForClaim(claim_id);
-        const checks = await leanChecksByArgument(claim_id);
-        payload.arguments = args.map((a) => ({
-          id: a.id,
-          name: a.name,
-          stance: a.stance,
-          content: a.content,
-          evidence_urls: a.evidenceUrls,
-          lean_check: checks.get(a.id) ?? null,
-        }));
-      }
-      if (include.includes("proofs")) {
-        // Every check the platform ran on any version of the statement:
-        // verdict, mode, kind, gate, pin, and hash, never the source.
-        payload.proofs = await listLeanChecksForClaim(claim_id);
-      }
-      if (include.includes("dependents")) {
-        // Paginated: an unbounded list let one hub claim push hundreds of rows
-        // at a client. `dependents` stays an array so existing callers keep
-        // iterating it; the count they were previously deriving from its
-        // length now lives in `dependents_total`.
-        const { dependents, total } = await listClaimDependents(claim_id, {
-          limit: dependents_limit,
-          offset: dependents_offset,
-        });
-        payload.dependents = dependents;
-        payload.dependents_total = total;
-      }
-      return jsonResult(payload);
-    }
-  );
-
-  server.registerTool(
-    "get_decomposition",
-    {
-      title: "Get decomposition",
-      description:
-        "Fetch the tree of subclaims a claim rests on. Each edge is typed " +
-        "(requires, supports, contradicts, and so on) and grouped into a " +
-        "named argument where one exists; each node carries its own " +
-        "assessment status, so a disputed subclaim under a well-supported " +
-        "parent marks exactly where the disagreement lives. Descends only: " +
-        "for what rests ON this claim, use get_dependents. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        max_depth: z.number().int().min(1).max(8).default(3),
-      },
-    },
-    async ({ claim_id, max_depth }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const tree = await getClaimTree(claim_id, max_depth);
-      return jsonResult({
-        claim_id,
-        page_url: claimPageUrl(claim_id),
-        tree,
-      });
-    }
-  );
-
-  server.registerTool(
-    "get_dependents",
-    {
-      title: "Get dependents",
-      description:
-        "Walk UP from a claim: everything that rests on it, directly or " +
-        "through a chain, ranked by importance and tagged with how many " +
-        "edges away it sits. This is what shows whether a claim is " +
-        "LOAD-BEARING, which is not readable off the claim itself — a modest " +
-        "lemma carrying six high-importance dependents matters more than an " +
-        "isolated claim that scores higher alone. The mirror of " +
-        "get_decomposition, and the question 'what would move if this " +
-        "verdict changed'. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        max_depth: z
-          .number()
-          .int()
-          .min(1)
-          .max(8)
-          .default(3)
-          .describe("Edges to walk upward; 1 is direct dependents only."),
-      },
-    },
-    async ({ claim_id, max_depth }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const walk = await getTransitiveDependents(claim_id, max_depth);
-      return jsonResult({
-        claim_id,
-        page_url: claimPageUrl(claim_id),
-        ...walk,
       });
     }
   );

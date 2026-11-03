@@ -42,6 +42,7 @@ import {
 import { getFundingLabelForJob } from "../services/grant-service.js";
 import { emptyClaimExtras, loadClaimExtras } from "../services/claim-extras-service.js";
 import { leanChecksByArgument } from "../services/formalization-service.js";
+import { formatAssessment as formatAssessmentShared } from "../services/graph-read-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
 import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../services/tag-service.js";
 
@@ -1797,24 +1798,16 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
   };
 }
 
+/**
+ * The shared assessment shape (graph-read-service.ts, #726) plus what the
+ * REST record adds: the row id and the subclaim summary.
+ */
 export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null }) {
   return {
     id: a.id,
-    status: a.status,
-    // Verdict confidence — how sure the Steward is of the status, not P(true).
-    confidence: a.confidence,
-    // Credence that the claim is true; null where one number would be false
-    // precision (constitution §7).
-    claim_credence: a.claimCredence ?? null,
-    // Reader-facing body; fall back to the reasoning trace for assessments
-    // written before the summary/reasoning split (nullable column).
-    summary: a.summary ?? a.reasoningTrace,
-    reasoning_trace: a.reasoningTrace,
+    ...formatAssessmentShared(a)!,
     // Guarantee a non-null object so clients can safely Object.entries() it (issue #17).
     subclaim_summary: a.subclaimSummary ?? {},
-    assessed_at: a.assessedAt.toISOString(),
-    // The assessor behind the verdict (#294); null for legacy rows.
-    model: a.model ?? null,
   };
 }
 

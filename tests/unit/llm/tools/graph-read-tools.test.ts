@@ -13,6 +13,7 @@ vi.mock("../../../../src/services/assessment-service.js", () => ({
 }));
 vi.mock("../../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: vi.fn(),
+  getEvaluationStateForClaim: vi.fn(async () => []),
 }));
 vi.mock("../../../../src/services/tree-service.js", () => ({
   getTransitiveDependents: vi.fn(),
@@ -27,9 +28,20 @@ vi.mock("../../../../src/services/tag-service.js", () => ({
 }));
 vi.mock("../../../../src/services/formalization-service.js", () => ({
   getClaimFormalizationRecord: vi.fn(),
+  getFormalizationSummary: vi.fn(async () => null),
+  getVerificationSummary: vi.fn(async () => null),
+  leanChecksByArgument: vi.fn(async () => new Map()),
+  listLeanChecksForClaim: vi.fn(async () => []),
 }));
 vi.mock("../../../../src/services/quantity-service.js", () => ({
   getQuantityDetail: vi.fn(),
+  getThresholdOf: vi.fn(async () => null),
+}));
+vi.mock("../../../../src/services/request-service.js", () => ({
+  listRequests: vi.fn(async () => ({ items: [], total: 0 })),
+}));
+vi.mock("../../../../src/services/source-map-service.js", () => ({
+  getClaimSourceMap: vi.fn(async () => null),
 }));
 vi.mock("../../../../src/services/question-service.js", () => ({
   getQuestionDetail: vi.fn(),
@@ -43,6 +55,10 @@ import { hybridSearch } from "../../../../src/services/search-service.js";
 import { rawQuery } from "../../../../src/db/client.js";
 import { getClaimById } from "../../../../src/services/claim-service.js";
 import { getCurrentAssessment } from "../../../../src/services/assessment-service.js";
+import {
+  getArgumentsForClaim,
+  getEvaluationStateForClaim,
+} from "../../../../src/services/argument-service.js";
 import {
   getTransitiveDependents,
   getClaimTree,
@@ -96,7 +112,7 @@ describe("graph-read-tools", () => {
 
       await executeGraphReadTool("search_claims", { query: "wages" });
 
-      expect(mockHybrid).toHaveBeenCalledWith("wages", { limit: 15 });
+      expect(mockHybrid).toHaveBeenCalledWith("wages", expect.objectContaining({ limit: 10 }));
     });
 
     it("decorates hits with the allocation signals hybridSearch omits", async () => {
@@ -117,8 +133,9 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("search_claims", { query: "wages" }))!
       );
 
-      expect(out.claims[0]).toMatchObject({
+      expect(out.results[0]).toMatchObject({
         id: "c1",
+        canonical_form: "A claim",
         importance: 0.8,
         contestation: 0.6,
         steward_state: "pending",
@@ -130,7 +147,7 @@ describe("graph-read-tools", () => {
     // `assessments`; the hit says which kind it is and reads recency there.
     it("carries each hit's kind and reads recency from the kind's own table", async () => {
       mockHybrid.mockResolvedValue({
-        results: [{ id: "q1", text: "How large is X?", importance: 0.5 }],
+        results: [{ id: "q1", kind: "quantity", text: "How large is X?", importance: 0.5 }],
         total: 1,
       } as never);
       mockRawQuery.mockResolvedValue([
@@ -141,10 +158,35 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("search_claims", { query: "x" }))!
       );
 
-      expect(out.claims[0]).toMatchObject({ id: "q1", kind: "quantity", days_since_assessed: 3 });
+      expect(out.results[0]).toMatchObject({ id: "q1", kind: "quantity", days_since_assessed: 3 });
       const sql = String(mockRawQuery.mock.calls[0]![0]);
       expect(sql).toContain("quantity_estimates");
       expect(sql).toContain("question_assessments");
+    });
+
+    // #726: the agents' search takes the same filters MCP's does.
+    it("passes kind, assessed, prize, type and importance filters through to hybridSearch", async () => {
+      mockHybrid.mockResolvedValue({ results: [], total: 0 } as never);
+
+      await executeGraphReadTool("search_claims", {
+        query: "primes",
+        kind: "question",
+        assessed: "unassessed",
+        with_prizes: true,
+        claim_type: "mathematical",
+        min_importance: 0.4,
+        limit: 500,
+      });
+
+      expect(mockHybrid).toHaveBeenCalledWith("primes", {
+        limit: 50,
+        assessed: "unassessed",
+        minImportance: 0.4,
+        withPrizes: true,
+        claimType: "mathematical",
+        tagId: undefined,
+        kind: "question",
+      });
     });
 
     it("skips the signals query when nothing matched", async () => {
@@ -202,7 +244,7 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("get_claim", { claim_id: "gone" }))!
       );
 
-      expect(out.error).toBe("claim not found");
+      expect(out.error).toBe("Claim not found");
     });
 
     it("answers a malformed id with a tool error, not a thrown query error", async () => {
@@ -276,13 +318,13 @@ describe("graph-read-tools", () => {
       expect(qty.claim.kind).toBe("quantity");
       expect(qty.quantity.current_estimate).toEqual({ form: "point", central: 4 });
       expect(qty.quantity.stated_estimates).toBe(2);
-      expect(qty.question).toBeUndefined();
+      expect(qty.question).toBeNull();
 
       mockGetClaim.mockResolvedValueOnce({ id: "k1", kind: "question", ...base } as never);
       const qn = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "k1" }))!);
       expect(qn.claim.kind).toBe("question");
       expect(qn.question).toEqual({ standing: "open", answers: [] });
-      expect(qn.quantity).toBeUndefined();
+      expect(qn.quantity).toBeNull();
     });
 
     // #435: a Grantmaker valuing attempt_proof must read the published
@@ -334,6 +376,29 @@ describe("graph-read-tools", () => {
       ]);
       expect(out.lean_checks[0].failed_gate).toBe("kernel");
       expect(out.lean_checks_total).toBe(1);
+    });
+
+    // #726: the Steward's evaluation of each argument (constitution 7) reaches agents.
+    it("carries each argument's verdict, decisive flag and evaluation", async () => {
+      mockGetClaim.mockResolvedValue({ id: "c1", text: "A claim" } as never);
+      mockSubclaimCount.mockResolvedValue(0 as never);
+      mockAssessment.mockResolvedValue(null as never);
+      vi.mocked(getArgumentsForClaim).mockResolvedValue([
+        { id: "a1", name: "Counterexample", stance: "opposes", content: "One case fails.", evidenceUrls: [], shows: null },
+      ] as never);
+      vi.mocked(getEvaluationStateForClaim).mockResolvedValue([
+        { argument_id: "a1", argument_name: "Counterexample", verdict: "certain", decisive: true, content: "A clean counterexample.", stale: false },
+      ] as never);
+
+      const out = JSON.parse(
+        (await executeGraphReadTool("get_claim", { claim_id: "c1", include: ["arguments"] }))!
+      );
+
+      expect(out.arguments[0]).toMatchObject({
+        verdict: "certain",
+        decisive: true,
+        evaluation: "A clean counterexample.",
+      });
     });
 
     it("says explicitly when nothing has ever been formalized", async () => {
