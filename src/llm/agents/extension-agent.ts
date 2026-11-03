@@ -9,12 +9,13 @@ import {
   getChatContextPrompt,
 } from "../prompts/extension-agent.js";
 import {
-  getGraphToolDefinitions,
-  executeGraphTool,
-} from "../tools/graph-tools.js";
+  getGraphReadToolDefinitions,
+  executeGraphReadTool,
+} from "../tools/graph-read-tools.js";
 import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import type { InstanceStance } from "../../schemas/common.js";
+import type { NodeKind, QuantityEstimate, QuantityUnit, QuestionStanding } from "../../schemas/kinds.js";
 
 /**
  * The Extension Agent (issue #72) — lives with the browser extension, never
@@ -52,9 +53,28 @@ export interface ClaimForAssessment {
   stance: InstanceStance;
   match_confidence: number;
   graph: {
+    /**
+     * claim, quantity or question. Only a claim carries a status; a
+     * quantity's assessment is its estimate and a question's its standing
+     * (#680).
+     */
+    kind: NodeKind;
+    /** A claim's status; "unknown" when no verdict is recorded, or for another kind. */
     status: string;
     confidence: number;
-    reasoning_excerpt: string | null;
+    /** The reader-facing summary of the current assessment, estimate or standing. */
+    summary: string | null;
+    /** What a quantity measures, of what population, in what unit. */
+    definition?: {
+      measures: string;
+      population: string | null;
+      conditions: string | null;
+      unit: QuantityUnit;
+    } | null;
+    /** A quantity's current estimate; null when none is recorded. */
+    estimate?: QuantityEstimate | null;
+    /** A question's current standing. */
+    standing?: QuestionStanding | null;
     subclaim_count: number;
   };
 }
@@ -187,7 +207,10 @@ async function extensionChatImpl(input: {
 
   const result = await toolUseLoop({
     initialMessages,
-    tools: [...getGraphToolDefinitions(), ...reportTools.definitions],
+    // The shared graph reads every agent gets (#679): get_claim returns a
+    // node's kind, its arguments, a quantity's estimate and a question's
+    // standing, which the chat needs to relay the graph faithfully.
+    tools: [...getGraphReadToolDefinitions(), ...reportTools.definitions],
     system: getChatSystemPrompt(),
     // No maxTokens: the client default leaves room for the model's thinking,
     // which draws on the same allowance (4096 did not, on Sonnet 5.5).
@@ -203,7 +226,9 @@ async function extensionChatImpl(input: {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
-      return executeGraphTool(name, toolInput);
+      const graphRead = await executeGraphReadTool(name, toolInput);
+      if (graphRead !== null) return graphRead;
+      return JSON.stringify({ error: `Unknown tool: ${name}` });
     },
   });
 

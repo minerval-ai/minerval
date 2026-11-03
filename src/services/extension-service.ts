@@ -38,6 +38,7 @@ import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import type { InstanceStance } from "../schemas/common.js";
+import type { NodeKind, QuantityEstimate, QuestionStanding } from "../schemas/kinds.js";
 import {
   assessPageClaims,
   type ClaimForAssessment,
@@ -46,6 +47,11 @@ import {
 import { extensionChat, type ChatTurn } from "../llm/agents/extension-agent.js";
 import { getClaimById } from "./claim-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
+import {
+  getCurrentEstimate,
+  getQuantityDefinition,
+  type QuantityDefinitionView,
+} from "./quantity-service.js";
 import { rawQuery } from "../db/client.js";
 import { untraced } from "../llm/usage-context.js";
 
@@ -333,18 +339,47 @@ export async function chatAboutPage(input: {
 
 export interface MatchedClaim {
   claimId: string;
+  /** claim, quantity or question: only a claim carries a status (#680). */
+  kind: NodeKind;
   canonicalForm: string;
+  /** A claim's status; "unknown" when it has no verdict, and for the other kinds. */
   status: string;
   statusConfidence: number;
-  reasoningExcerpt: string | null;
+  /**
+   * The reader-facing summary of the current assessment, estimate or
+   * standing (§12), not the internal trace. An older record with no summary
+   * falls back to the trace's opening.
+   */
+  summary: string | null;
+  /** A quantity's definition and current estimate; null for other kinds or none recorded. */
+  definition: QuantityDefinitionView | null;
+  estimate: QuantityEstimate | null;
+  /** A question's current standing; null for other kinds or none recorded. */
+  standing: QuestionStanding | null;
   subclaimCount: number;
   claimUrl: string;
+}
+
+/** The trace's opening, for a record written before summaries existed. */
+const TRACE_FALLBACK_CHARS = 600;
+
+function readerSummary(
+  summary: string | null | undefined,
+  trace: string | null | undefined
+): string | null {
+  return summary?.trim() || trace?.slice(0, TRACE_FALLBACK_CHARS) || null;
 }
 
 /**
  * A claim's current graph state as an annotation carries it, or null if the
  * claim does not exist. Read live: the shared page cache serves stored
  * analyses through this so their statuses are today's.
+ *
+ * A quantity's assessment is its estimate and a question's is its standing
+ * (constitution §10); neither has a row in `assessments`, so each is read
+ * from its own table. Without them the assessor saw a quantity as
+ * "unknown" and could never compare a page's figure with the graph's
+ * estimate (#680).
  */
 export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | null> {
   const [claim, assessment, subclaimCount] = await Promise.all([
@@ -353,15 +388,42 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
     getSubclaimCount(claimId),
   ]);
   if (!claim) return null;
-  return {
+  const kind = (claim.kind ?? "claim") as NodeKind;
+  const matched: MatchedClaim = {
     claimId,
+    kind,
     canonicalForm: claim.text,
     status: assessment?.status ?? "unknown",
     statusConfidence: assessment?.confidence ?? 0,
-    reasoningExcerpt: assessment?.reasoningTrace?.slice(0, 600) ?? null,
+    summary: readerSummary(assessment?.summary, assessment?.reasoningTrace),
+    definition: null,
+    estimate: null,
+    standing: null,
     subclaimCount,
     claimUrl: claimPageUrl(claimId),
   };
+  if (kind === "quantity") {
+    const [definition, current] = await Promise.all([
+      getQuantityDefinition(claimId),
+      getCurrentEstimate(claimId),
+    ]);
+    matched.definition = definition;
+    matched.estimate = current?.estimate ?? null;
+    matched.summary = readerSummary(current?.assessed.summary, current?.assessed.work);
+  } else if (kind === "question") {
+    const [row] = await rawQuery<{
+      standing: QuestionStanding;
+      summary: string | null;
+      reasoning_trace: string;
+    }>(
+      `SELECT standing, summary, reasoning_trace
+         FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+      [claimId]
+    );
+    matched.standing = row?.standing ?? null;
+    matched.summary = readerSummary(row?.summary, row?.reasoning_trace);
+  }
+  return matched;
 }
 
 async function getSubclaimCount(claimId: string): Promise<number> {
@@ -553,9 +615,14 @@ async function analyzePageUncached(
       stance: s.stance,
       match_confidence: s.matchConfidence,
       graph: {
+        kind: s.matched.kind,
         status: s.matched.status,
         confidence: s.matched.statusConfidence,
-        reasoning_excerpt: s.matched.reasoningExcerpt,
+        summary: s.matched.summary,
+        ...(s.matched.kind === "quantity"
+          ? { definition: s.matched.definition, estimate: s.matched.estimate }
+          : {}),
+        ...(s.matched.kind === "question" ? { standing: s.matched.standing } : {}),
         subclaim_count: s.matched.subclaimCount,
       },
     });
