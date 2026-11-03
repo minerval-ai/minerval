@@ -35,7 +35,16 @@ const { state } = vi.hoisted(() => ({
     reopened: [] as string[],
     auditClosed: [] as unknown[][],
     cancelled: [] as unknown[][],
+    request: null as null | Record<string, unknown>,
   },
+}));
+
+vi.mock("../../../src/services/request-service.js", () => ({
+  getRequest: vi.fn(async () => state.request),
+  notifyRequestKeeper: vi.fn(async () => true),
+  recordWork: vi.fn(async () => ({ id: "w" })),
+  requestBrief: () => "brief",
+  setRequestBudget: vi.fn(async () => {}),
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -203,6 +212,7 @@ beforeEach(() => {
   state.reopened = [];
   state.auditClosed = [];
   state.cancelled = [];
+  state.request = null;
   resetFallbackCuratorRuns();
 });
 
@@ -242,6 +252,62 @@ describe("the curate action", () => {
     state.claimState = "merged";
     const r = await processNextEngineAction();
     expect(r.status).toBe("empty");
+    expect(state.curatorCalls).toHaveLength(0);
+  });
+});
+
+describe("the curate action on a request the Curator keeps (#722)", () => {
+  const REQUEST = "d3333333-3333-4333-8333-333333333333";
+  const requestAction = () => ({
+    ...curateAction(),
+    id: "act-cr",
+    exclusion_group: `curate:request:${REQUEST}`,
+    claim_id: null,
+    target_ref: REQUEST,
+  });
+  const request = (over: Record<string, unknown> = {}) => ({
+    id: REQUEST,
+    ask: "Find every estimate of the regional figure",
+    why: "Three claims rest on it",
+    satisfied_by: "A table of the estimates with their sources",
+    bears_on: [{ id: ANCHOR, text: "The figure is 40 percent", kind: "claim" }],
+    bears_on_sources: [],
+    bears_on_text: "the regional estimates",
+    keeper: { kind: "curator", label: "the Curator" },
+    state: "in_progress",
+    work: [
+      { by: "Researcher", outcome: "partly_met", summary: "Found four of six regions.", research_run_id: "run-9", funded_by: "x" },
+    ],
+    ...over,
+  });
+
+  it("runs the Curator on a request-anchored brief that names the run holding the full report", async () => {
+    state.covered = requestAction();
+    state.request = request();
+    const r = await processNextEngineAction();
+    expect(r).toMatchObject({ status: "processed", ok: true, kind: "curate", grantId: "g-1" });
+    expect(state.curatorCalls).toHaveLength(1);
+    expect(state.curatorCalls[0]).toMatchObject({ trigger: "request_returned", claimId: null, requestId: REQUEST });
+    const brief = String(state.curatorCalls[0]!.context);
+    expect(brief).toContain("Find every estimate of the regional figure");
+    expect(brief).toContain("Found four of six regions.");
+    expect(brief).toContain("get_research_run run-9");
+    expect(brief).toContain("decide whether the request has been met");
+    // The agents that judge a request never see who paid for its work.
+    expect(brief).not.toContain("funded_by");
+    expect(state.completed).toEqual([{ id: "act-cr", metered: 120_000, meteredJobId: "job-1" }]);
+    expect(state.consumed).toEqual([]);
+  });
+
+  it("cancels the row when the request closed or passed to a Steward while it waited", async () => {
+    for (const over of [{ state: "met" }, { keeper: { kind: "steward", label: "the claim's Steward" } }]) {
+      state.covered = requestAction();
+      state.request = request(over);
+      state.cancelled = [];
+      const r = await processNextEngineAction();
+      expect(r.status).toBe("empty");
+      expect(state.cancelled).toEqual([[`curate:request:${REQUEST}`]]);
+    }
     expect(state.curatorCalls).toHaveLength(0);
   });
 });

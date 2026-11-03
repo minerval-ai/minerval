@@ -80,7 +80,10 @@ export type ActionKind =
   // variant; opened (or reopened) only by a curation request
   // (curation-service.requestCuration) and run once some mandate values and
   // funds it. Maintenance is chosen, never induced: nothing bills a
-  // Curator run to whoever happened to be nearby.
+  // Curator run to whoever happened to be nearby. A request the Curator
+  // keeps (Part VIII) has a row of its own, group `curate:request:<id>`,
+  // claim_id null and target_ref the request, opened when work on it comes
+  // back: a request on several nodes or on none has no anchor claim (#722).
   | "curate"
   // One Audit Agent run (#363): group `audit:<audit_runs.id>`, target_ref the
   // run id. Opened by requestAudit behind its dedupe key; funded by a
@@ -104,6 +107,8 @@ export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
 export const CURATE_GROUP = (claimId: string) => `curate:${claimId}`;
+/** The Curator's row for one request it keeps (#722). */
+export const CURATE_REQUEST_GROUP = (requestId: string) => `curate:request:${requestId}`;
 export const AUDIT_GROUP = (auditRunId: string) => `audit:${auditRunId}`;
 export const REQUEST_GROUP = (requestId: string) => `request:${requestId}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
@@ -219,6 +224,45 @@ export async function ensureCurateAction(anchorClaimId: string): Promise<string 
       CURATE_GROUP(anchorClaimId),
       anchorClaimId,
       `Curate around: ${claim.text.slice(0, 280)}`,
+      Math.max(1, Math.round(cost)),
+    ]
+  );
+  return row?.id ?? null;
+}
+
+/**
+ * Open (or reopen) the Curator's row for a request it keeps (#722), when
+ * work on it has come back for the keeper to judge. The Curator keeps the
+ * requests that bear on several nodes, on a source, or on nothing the
+ * graph holds yet; none has an anchor claim, so the row carries the
+ * request in target_ref and runs a request-anchored brief. Priced like any
+ * curation run and valued from the request's own standing
+ * (mandate-valuer-service.ts). Null when the request is closed or has
+ * passed to a Steward.
+ */
+export async function ensureRequestCurateAction(requestId: string): Promise<string | null> {
+  const [req] = await rawQuery<{ ask: string }>(
+    `SELECT ask FROM requests
+      WHERE id = $1 AND keeper_kind = 'curator'
+        AND state NOT IN ('met', 'declined', 'withdrawn', 'moot')`,
+    [requestId]
+  );
+  if (!req) return null;
+  const cost = await estimateLedgerKindCostMicroUsd("curate");
+  const [row] = await rawQuery<{ id: string }>(
+    `INSERT INTO actions
+       (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
+     VALUES ('curate', $1, 'standard', NULL, $2, $3, $4)
+     ON CONFLICT (exclusion_group, variant) DO UPDATE
+       SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           status = CASE WHEN actions.status = 'running'
+                         THEN actions.status ELSE 'open' END,
+           updated_at = now()
+     RETURNING id`,
+    [
+      CURATE_REQUEST_GROUP(requestId),
+      requestId,
+      `Judge work returned on a request: ${req.ask.slice(0, 260)}`,
       Math.max(1, Math.round(cost)),
     ]
   );
@@ -524,7 +568,8 @@ export async function reconcileActions(): Promise<{
   await reconcileConsistencySweeps();
 
   // Curation (#363): a curate row wants its anchor still active and at
-  // least one live request to read. A merge can retire the anchor out from
+  // least one live request to read; a request's row, its request open and
+  // kept by the Curator. A merge can retire the anchor out from
   // under an open row; a run that read everything leaves nothing to do.
   // Only mandates place on curate rows, so releasing a cancelled group's
   // placements is just the mandates' exposure dropping; left live, they
@@ -533,11 +578,21 @@ export async function reconcileActions(): Promise<{
     `WITH gone AS (
        UPDATE actions a SET status = 'cancelled', updated_at = now()
         WHERE a.status = 'open' AND a.kind = 'curate'
-          AND (NOT EXISTS (SELECT 1 FROM claims c
-                            WHERE c.id = a.claim_id AND c.state = 'active')
-               OR NOT EXISTS (SELECT 1 FROM curation_requests r
-                               WHERE r.anchor_claim_id = a.claim_id
-                                 AND r.consumed_at IS NULL))
+          AND CASE
+                -- A request's row (#722) wants the request still open and
+                -- still the Curator's to keep.
+                WHEN a.claim_id IS NULL AND a.target_ref IS NOT NULL THEN
+                  NOT EXISTS (SELECT 1 FROM requests rq
+                               WHERE rq.id::text = a.target_ref
+                                 AND rq.keeper_kind = 'curator'
+                                 AND rq.state NOT IN ('met', 'declined', 'withdrawn', 'moot'))
+                ELSE
+                  NOT EXISTS (SELECT 1 FROM claims c
+                               WHERE c.id = a.claim_id AND c.state = 'active')
+                  OR NOT EXISTS (SELECT 1 FROM curation_requests r
+                                  WHERE r.anchor_claim_id = a.claim_id
+                                    AND r.consumed_at IS NULL)
+              END
         RETURNING a.exclusion_group
      )
      UPDATE action_allocations al SET released_at = now()

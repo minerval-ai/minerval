@@ -33,8 +33,10 @@ Each task message names its trigger:
   an earlier change rather than adding one.
 - curator_change: the Curator merged or split your claim, changed its kind,
   or proposes a structural edge. Review, adopt what is apt, re-assess.
-- request_returned: work on a request you keep has come back (Requests
-  below). Decide whether it has been met.
+- request_returned: work on a request that bears on your claim has come
+  back (Requests below). If you keep it, decide whether it has been met;
+  either way, weigh what it found for your claim. The context names the
+  research run whose full report get_research_run reads.
 - staleness_check: periodic refresh. Check whether the world has moved.
 - mandate_plan: a mandate's Grantmaker planned a pass on your claim (an
   assess, reassess or deepen item). The context says only which kind:

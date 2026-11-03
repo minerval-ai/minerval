@@ -384,7 +384,11 @@ mandates by valuing it, a Grantmaker directly with `fund_request`, readers
 with `POST /requests/:id/contribute`. Once it is covered the engine
 executor runs the Researcher on the request as filed, its ceiling the
 row's funding: the run writes nothing to the graph, its outcome is
-recorded as work on the request, and the keeper is asked to judge it.
+recorded as work on the request with the run's id, and the keeper is asked
+to judge it while the Steward of every node it bears on is asked to weigh
+it for that node (a Steward keeper and those Stewards by a
+`request_returned` pass, the Curator by a `curate:request:<id>` row). Each
+of them reads the full report with `get_research_run`.
 Neither the brief nor what the keeper reads names a funder; the public
 request says the work was funded. A closed request returns its funders'
 unspent money. Contributors propose requests, answers and

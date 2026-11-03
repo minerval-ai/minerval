@@ -52,6 +52,8 @@ export interface ResearchRunRow {
   id: string;
   claim_id: string | null;
   grant_id: string | null;
+  /** The request the run takes up or scopes (Part VIII); null for a delegated run. */
+  request_id: string | null;
   requested_by: string;
   requester_run_id: string | null;
   run_id: string | null;
@@ -75,7 +77,7 @@ export interface ResearchRunRow {
   error: string | null;
 }
 
-const COLUMNS = `id, claim_id, grant_id, requested_by, requester_run_id, run_id, job_id, task,
+const COLUMNS = `id, claim_id, grant_id, request_id, requested_by, requester_run_id, run_id, job_id, task,
   model, model_tier, effort, include_constitution, status, tools,
   ceiling_micro_usd::bigint AS ceiling_micro_usd, spent_micro_usd::bigint AS spent_micro_usd,
   contribution_budget_micro_usd::bigint AS contribution_budget_micro_usd,

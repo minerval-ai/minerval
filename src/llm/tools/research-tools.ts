@@ -46,6 +46,7 @@ import {
   openResearchRun,
   readResearcherPaused,
   type ResearchModelTier,
+  type ResearchRunRow,
 } from "../../services/research-run-service.js";
 import { runResearcher, type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
 import { allocateMandateToRequest } from "../../services/allocation-service.js";
@@ -245,22 +246,105 @@ export function getResearchToolDefinitions(
         additionalProperties: false,
       },
     },
-    {
-      name: GET_RESEARCH_RUN_TOOL_NAME,
-      description:
-        "Read a research run: its brief, model, status, spend, report, and notebook. Use it " +
-        "to reread a report from an earlier pass, or to see what a run that ended without " +
-        "reporting had written to its notebook.",
-      input_schema: {
-        type: "object",
-        properties: {
-          research_run_id: { type: "string", description: "The run's id." },
-        },
-        required: ["research_run_id"],
-        additionalProperties: false,
-      },
-    },
+    getResearchRunReadToolDefinition(),
   ];
+}
+
+/**
+ * get_research_run: reading a run's report and notebook. A launcher reads
+ * the runs it launched; the keeper of a request, and the Steward of each
+ * node it bears on, read the runs that took it up or scoped it (#718), so
+ * the Curator, which launches nothing, carries this tool alone.
+ */
+export function getResearchRunReadToolDefinition(): Tool {
+  return {
+    name: GET_RESEARCH_RUN_TOOL_NAME,
+    description:
+      "Read a research run: its brief, model, status, spend, report, and notebook. Use it " +
+      "to reread a report from an earlier pass, to see what a run that ended without " +
+      "reporting had written to its notebook, or to read in full the work a Researcher " +
+      "returned on a request you keep or that bears on your node (the work's research_run_id, " +
+      "in list_requests or in the message that told you of it).",
+    input_schema: {
+      type: "object",
+      properties: {
+        research_run_id: { type: "string", description: "The run's id." },
+      },
+      required: ["research_run_id"],
+      additionalProperties: false,
+    },
+  };
+}
+
+/** Who is reading a run: a node's Steward, a mandate's Grantmaker, or the Curator. */
+export interface ResearchRunReader {
+  /** The node the reader stewards. */
+  claimId?: string | null;
+  /** The mandate the reader serves. */
+  grantId?: string | null;
+  /** The Curator, keeper of the requests that bear on several nodes or none. */
+  curator?: boolean;
+}
+
+/**
+ * Whether `reader` may read `row`. A launcher reads its own runs: a Steward
+ * those on its node, a Grantmaker those its mandate launched. A run on a
+ * request is the request's (Part VIII: what it finds goes to the keeper and
+ * to the Steward of each node it bears on), so its keeper and those
+ * Stewards read it too.
+ */
+async function mayReadRun(row: ResearchRunRow, reader: ResearchRunReader): Promise<boolean> {
+  if (reader.claimId && row.claim_id === reader.claimId) return true;
+  if (!reader.claimId && reader.grantId && row.grant_id === reader.grantId) return true;
+  if (!row.request_id || !(reader.claimId || reader.curator)) return false;
+  const [req] = await rawQuery<{ keeper_kind: string; keeper_claim_id: string | null; bears: boolean }>(
+    `SELECT r.keeper_kind, r.keeper_claim_id,
+            EXISTS (SELECT 1 FROM request_targets t
+                     WHERE t.request_id = r.id AND t.claim_id = $2) AS bears
+       FROM requests r WHERE r.id = $1`,
+    [row.request_id, reader.claimId ?? null]
+  );
+  if (!req) return false;
+  if (reader.curator) return req.keeper_kind === "curator";
+  return req.keeper_claim_id === reader.claimId || req.bears;
+}
+
+/** get_research_run's result for `reader`. */
+export async function readResearchRun(input: Record<string, unknown>, reader: ResearchRunReader): Promise<string> {
+  const id = str(input.research_run_id);
+  if (!id) return refuse("research_run_id is required.");
+  if (!UUID_RE.test(id)) return refuse(`"${id}" is not a research run id.`);
+  const row = await getResearchRun(id);
+  if (!row) return refuse(`No research run ${id} exists.`);
+  if (!(await mayReadRun(row, reader))) {
+    return refuse(
+      reader.curator
+        ? "That run was not on a request you keep."
+        : "That run was launched for another claim or mandate, and was not on a request you keep or that bears on your node."
+    );
+  }
+  return JSON.stringify({
+    success: true,
+    research_run: {
+      id: row.id,
+      claim_id: row.claim_id,
+      ...(row.request_id ? { request_id: row.request_id } : {}),
+      requested_by: row.requested_by,
+      task: row.task,
+      model: row.model,
+      model_tier: row.model_tier,
+      status: row.status,
+      spent_usd: Math.round(row.spent_micro_usd / 10_000) / 100,
+      turns: row.turns,
+      tools: row.tools,
+      started_at: row.started_at,
+      finished_at: row.finished_at,
+      report: row.report,
+      notebook: row.notebook,
+      error: row.error,
+      ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
+    },
+  });
 }
 
 function str(v: unknown): string {
@@ -623,40 +707,8 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     });
   };
 
-  const get = async (input: Record<string, unknown>): Promise<string> => {
-    const id = str(input.research_run_id);
-    if (!id) return refuse("research_run_id is required.");
-    if (!UUID_RE.test(id)) return refuse(`"${id}" is not a research run id.`);
-    const row = await getResearchRun(id);
-    if (!row) return refuse(`No research run ${id} exists.`);
-    // A launcher reads its own runs: a Steward those on its claim, a
-    // Grantmaker those its mandate launched.
-    const mine = options.claimId
-      ? row.claim_id === options.claimId
-      : !!options.grantId && row.grant_id === options.grantId;
-    if (!mine) return refuse("That run was launched for another claim or mandate.");
-    return JSON.stringify({
-      success: true,
-      research_run: {
-        id: row.id,
-        claim_id: row.claim_id,
-        requested_by: row.requested_by,
-        task: row.task,
-        model: row.model,
-        model_tier: row.model_tier,
-        status: row.status,
-        spent_usd: Math.round(row.spent_micro_usd / 10_000) / 100,
-        turns: row.turns,
-        tools: row.tools,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        report: row.report,
-        notebook: row.notebook,
-        error: row.error,
-        ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
-      },
-    });
-  };
+  const get = (input: Record<string, unknown>): Promise<string> =>
+    readResearchRun(input, { claimId: options.claimId ?? null, grantId: options.grantId ?? null });
 
   const execute = async (name: string, input: Record<string, unknown>): Promise<string | null> => {
     if (name === DELEGATE_RESEARCH_TOOL_NAME) return delegate(input);
