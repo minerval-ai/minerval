@@ -78,6 +78,18 @@ Your written reasoning is the contributor's hearing (§14) and the record
 an auditor will check (§11): say what was disputed, what you examined,
 and why the outcome follows, in the register of §12.
 
+## A challenge to a prize claim
+
+A Reviewer who admits a challenge to an accepted prize claim escalates it
+to you mechanically: the admission is not a ruling, and the prize claim's
+window stays paused until you rule. The question is whether the challenge
+succeeds on its named ground. Record it with challenge_upheld: true with
+overturn (the prize claim is voided on that ground), false with
+uphold_original (the challenge fails and the window runs on), or the
+human_review outcome; there is no partial ruling. get_prize_claim reads
+the prize claim's record (its id is on the contribution), and the
+Mathematics skill's section for you carries the grounds.
+
 ## Stakes and care
 
 Depth of analysis follows stakes, and stakes are judged, never counted

@@ -17,10 +17,10 @@ import {
   executeArbitratorTool,
 } from "../tools/arbitrator-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { withAgent, withDefaultPassBudget, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
-import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { listSkills } from "../prompts/skills.js";
 import {
   executeSkillTool,
@@ -32,10 +32,19 @@ import { executeReadPage, getReadPageToolDefinition } from "../tools/read-page-t
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
+// An arbitration works to a budget it is shown (#712).
 export function runArbitration(
   input: Parameters<typeof runArbitrationImpl>[0]
 ): ReturnType<typeof runArbitrationImpl> {
-  return withAgent("dispute_arbitrator", () => runArbitrationImpl(input));
+  return withAgent("dispute_arbitrator", () =>
+    withDefaultPassBudget(
+      {
+        microUsd: loadConfig().arbitrationBudgetUsd * 1_000_000,
+        source: "the ceiling for one arbitration",
+      },
+      () => runArbitrationImpl(input)
+    )
+  );
 }
 
 async function runArbitrationImpl(input: {
@@ -78,7 +87,9 @@ async function runArbitrationImpl(input: {
 
   const system = getDisputeArbitratorSystemPromptBlocks();
 
-  const ARBITRATION_MAX_TURNS = 12;
+  // Money bounds the run (#712); the turn cap only halts a loop that has
+  // stopped spending (CLAUDE.md, "Prefer money to counts").
+  const ARBITRATION_MAX_TURNS = RUN_TURN_GUARD;
   // The ids, the trigger and the budget only: how to arbitrate is the role
   // prompt's. The step list that used to sit here had drifted from it
   // ("analyze policies", flag_for_human_review over the human_review

@@ -2134,7 +2134,8 @@ anywhere (section 9.1). Identical source from two accounts: the earlier keeps
 priority and the later is surfaced to the Reviewer as `duplicate_of`.
 
 **Human review has an exit.** `flag_for_human_review` sets `review_status =
-'human_review'` (`src/llm/tools/arbitrator-tools.ts:458-472`), and the only
+'human_review'` and stores its reason in `human_review_reason`
+(`src/llm/tools/arbitrator-tools.ts`), and the only
 exit today is the Audit agent's `recommend_re_review`
 (`src/llm/tools/audit-tools.ts:414-420`); no operator path exists. Prize claims need an operator path
 from day one: `POST /prize-claims/:id/sign-off {note}` and `POST
@@ -2169,8 +2170,10 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   or theft, an earlier valid submission, sanctions) with followable
   evidence; "I do not like this proof" is not a challenge. A challenge the
   Reviewer accepts is escalated to the Arbitrator mechanically (accepting
-  the case is not upholding it); `overturn` voids the prize claim with the
-  ground, `uphold_original` closes the challenge and the window continues.
+  the case is not upholding it); the Arbitrator rules with
+  `challenge_upheld`, which must agree with the outcome: `overturn` voids
+  the prize claim with the ground, `uphold_original` closes the challenge
+  and the window continues.
   When the upheld ground is the claimant rather than the statement
   (ineligibility, sanctions, theft), the bounty considers only claims filed
   before the verdict, in order, and if none passes it closes as
@@ -3621,10 +3624,16 @@ A challenge to an accepted prize claim must name one of the enumerated
 grounds (statement defect, ineligibility, disallowed axioms or tactics the
 checker missed, plagiarism or theft, an earlier valid submission,
 sanctions) with followable evidence; accepting the case escalates it to the
-Arbitrator mechanically and is not upholding it. Prize-specific bad faith
-includes submitting another's proof as one's own, sock-puppet submissions
-to defeat priority, and challenges whose only ground is dislike of the
-result.
+Arbitrator mechanically and is not upholding it. The Arbitrator reads the
+prize claim with `get_prize_claim` and rules with `challenge_upheld`: true
+with `overturn`, which voids the prize claim on the ground; false with
+`uphold_original`, which closes the challenge and lets the window run on.
+A challenge that names no enumerated ground, dislike of the result
+included, is rejected on the merits without the bad-faith flag (§13).
+Prize-specific bad faith is flagged under the ordinary categories:
+submitting another's proof as one's own is `misinformation`, and
+sock-puppet submissions filed to defeat priority, or a run of groundless
+challenges from related accounts, are `sybil`.
 
 ## For the Audit Agent
 

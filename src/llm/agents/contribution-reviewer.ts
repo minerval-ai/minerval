@@ -23,19 +23,29 @@ import {
   executeReviewerTool,
 } from "../tools/reviewer-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { withAgent, withDefaultPassBudget, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
-import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { executeReadPage, getReadPageToolDefinition } from "../tools/read-page-tool.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
-// wrapper keeps attribution correct for any call site.
+// wrapper keeps attribution correct for any call site. A review works to a
+// budget it is shown (#712), unless its caller set one (the prize worker
+// runs reviews under the bounty's reserve).
 export function runContributionReview(
   input: Parameters<typeof runContributionReviewImpl>[0]
 ): ReturnType<typeof runContributionReviewImpl> {
-  return withAgent("contribution_reviewer", () => runContributionReviewImpl(input));
+  return withAgent("contribution_reviewer", () =>
+    withDefaultPassBudget(
+      {
+        microUsd: loadConfig().contributionReviewBudgetUsd * 1_000_000,
+        source: "the ceiling for one contribution review",
+      },
+      () => runContributionReviewImpl(input)
+    )
+  );
 }
 
 async function runContributionReviewImpl(input: {
@@ -75,7 +85,9 @@ async function runContributionReviewImpl(input: {
 
   const system = getContributionReviewerSystemPromptBlocks();
 
-  const REVIEW_MAX_TURNS = 8;
+  // Money bounds the run (#712); the turn cap only halts a loop that has
+  // stopped spending (CLAUDE.md, "Prefer money to counts").
+  const REVIEW_MAX_TURNS = RUN_TURN_GUARD;
   // The ids and the budget only: how a review runs is the role prompt's,
   // and a second copy here drifted from it (#708).
   const userMessage = `Review contribution ${input.contributionId}.

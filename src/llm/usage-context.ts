@@ -218,6 +218,34 @@ export async function withPassBudget<T>(
   return { value, billedMicroUsd: meter.billedMicroUsd };
 }
 
+/**
+ * Run `fn` under `budget` unless the caller already set one (a lane that
+ * funds the pass knows its own ceiling better). The budget's meter is fresh,
+ * so it measures this run alone, and what it measured is added to any
+ * enclosing meter afterwards: nested meters shadow outer ones, and a caller
+ * that records the run's cost (a contribution's review_cost) must still see
+ * it, failure included.
+ */
+export async function withDefaultPassBudget<T>(
+  budget: { microUsd: number; source: string },
+  fn: () => Promise<T>
+): Promise<T> {
+  if (getUsageContext().passBudget) return fn();
+  const outer = getUsageContext().meter;
+  const meter = { billedMicroUsd: 0 };
+  try {
+    return await runWithUsageContext(
+      {
+        meter,
+        passBudget: { microUsd: Math.max(0, Math.round(budget.microUsd)), source: budget.source, meter },
+      },
+      fn
+    );
+  } finally {
+    if (outer) outer.billedMicroUsd += meter.billedMicroUsd;
+  }
+}
+
 /** The enclosing run's budget and what it has spent so far, in micro-USD. */
 export interface RunBudget {
   ceilingMicroUsd: number;

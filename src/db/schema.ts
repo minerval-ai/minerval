@@ -2980,10 +2980,14 @@ export const contributions = pgTable(
       .notNull()
       .defaultNow(),
     reviewStatus: text("review_status").notNull().default("pending"),
-    // Why the reviewer escalated (#178). Written by escalate_to_arbitrator so
-    // the reason reaches the Arbitrator even when no review row was recorded;
-    // the review record, when present, carries the fuller reasoning.
+    // Why the reviewer escalated (#178). Written by record_review_decision's
+    // escalate (formerly escalate_to_arbitrator) so the reason reaches the
+    // Arbitrator first; the review record carries the fuller reasoning.
     escalationReason: text("escalation_reason"),
+    // Why the Arbitrator sent the contribution to humans with
+    // flag_for_human_review (#713): a human opening the case reads why, and
+    // the action is not a quiet one (§11, §15).
+    humanReviewReason: text("human_review_reason"),
     mergeTargetClaimId: uuid("merge_target_claim_id").references(
       () => claims.id
     ),

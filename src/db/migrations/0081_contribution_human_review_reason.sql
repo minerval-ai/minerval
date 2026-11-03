@@ -1,0 +1,1 @@
+ALTER TABLE "contributions" ADD COLUMN "human_review_reason" text;

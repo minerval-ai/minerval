@@ -46,7 +46,9 @@ export function getArbitratorToolDefinitions(): Tool[] {
         "case arrived by escalation and no outcome was ever applied, the " +
         "final accept or reject consequences (reputation, owl awards, and a " +
         "bad-faith finding's penalty and standing when you attach one) are " +
-        "applied directly. Results are reported in the tool result.",
+        "applied directly. On a challenge to a prize claim, challenge_upheld " +
+        "is required and must agree with the outcome. Results are reported " +
+        "in the tool result.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -102,6 +104,16 @@ export function getArbitratorToolDefinitions(): Tool[] {
             description:
               "Required when suspected_bad_faith is true: which kind of abuse.",
           },
+          challenge_upheld: {
+            type: "boolean",
+            description:
+              "Only for a challenge to a prize claim, and required there with " +
+              "overturn or uphold_original: whether the challenge succeeds on " +
+              "its named ground. true goes with overturn (the prize claim is " +
+              "voided on that ground); false with uphold_original (the " +
+              "challenge fails and the prize claim's window runs on). A " +
+              "mismatch is refused, so the words cannot invert.",
+          },
         },
         required: [
           "contribution_id",
@@ -138,8 +150,11 @@ export function getArbitratorToolDefinitions(): Tool[] {
     {
       name: "flag_for_human_review",
       description:
-        "Flag a specific contribution for human review. Use when the " +
-        "situation is beyond what automated arbitration can handle.",
+        "Send a contribution to human review without recording an " +
+        "arbitration. The reason is stored on the contribution for the " +
+        "humans who pick it up. Once you have reached a judgment, prefer " +
+        "record_arbitration_decision with the human_review outcome, so " +
+        "your reasoning is on the record.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -149,7 +164,9 @@ export function getArbitratorToolDefinitions(): Tool[] {
           },
           reason: {
             type: "string",
-            description: "Why human review is needed",
+            description:
+              "Why human review is needed, written for the person who will " +
+              "take the case up.",
           },
         },
         required: ["contribution_id", "reason"],
@@ -202,6 +219,48 @@ export async function executeArbitratorTool(
           ? (input.bad_faith_category as string)
           : null;
 
+        // A challenge to a prize claim arrives with the Reviewer's ADMISSION
+        // as the decision under review, so "uphold the original" reads as
+        // "the challenge stands" while the tools take it as "the challenge
+        // fails" (#710). The Arbitrator names the substance with
+        // challenge_upheld and the tool refuses any outcome that disagrees.
+        // Money moves on this: overturn voids the prize claim at the window
+        // closer's next pass (prize-window-closer.ts).
+        const target = await getContributionById(contributionId);
+        const challengedPrizeClaimId =
+          target?.contributionType === "challenge" ? (target.challengedPrizeClaimId ?? null) : null;
+        let prizeNote: string | null = null;
+        if (challengedPrizeClaimId) {
+          const refusal = (why: string) =>
+            JSON.stringify({ success: false, error: `${why} Nothing was recorded.` });
+          if (outcome === "modify" || outcome === "mark_contested") {
+            return refusal(
+              `This is a challenge to prize claim ${challengedPrizeClaimId}, and it succeeds or ` +
+                `it does not: overturn with challenge_upheld true, uphold_original with ` +
+                `challenge_upheld false, or human_review.`
+            );
+          }
+          if (outcome === "overturn" || outcome === "uphold_original") {
+            if (typeof input.challenge_upheld !== "boolean") {
+              return refusal(
+                `This is a challenge to prize claim ${challengedPrizeClaimId}: say whether it ` +
+                  `succeeds with challenge_upheld (true with overturn, false with uphold_original).`
+              );
+            }
+            const expected = input.challenge_upheld ? "overturn" : "uphold_original";
+            if (outcome !== expected) {
+              return refusal(
+                `challenge_upheld ${input.challenge_upheld} goes with outcome ${expected}, not ${outcome}. ` +
+                  `overturn upholds the challenge and voids the prize claim; uphold_original rejects ` +
+                  `the challenge and lets the window run on.`
+              );
+            }
+            prizeNote = input.challenge_upheld
+              ? `The challenge is upheld: prize claim ${challengedPrizeClaimId} is voided on its ground at the window closer's next pass, and its Steward reassesses.`
+              : `The challenge is rejected: prize claim ${challengedPrizeClaimId}'s window runs on.`;
+          }
+        }
+
         // An overturn that ACCEPTS an intake contribution (#157) must
         // materialize it, exactly as the reviewer's accept does — otherwise
         // an escalated proposal arbitrated in the contributor's favor would
@@ -209,7 +268,7 @@ export async function executeArbitratorTool(
         // surfaces to the arbitrator; the call is idempotent.
         let materialization: IntakeMaterializationResult | null = null;
         if (outcome === "overturn") {
-          const contribution = await getContributionById(contributionId);
+          const contribution = target;
           if (
             contribution &&
             isIntakeContributionType(contribution.contributionType)
@@ -312,6 +371,7 @@ export async function executeArbitratorTool(
         return JSON.stringify({
           success: true,
           message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}`,
+          ...(prizeNote ? { prize_claim: prizeNote } : {}),
           ...(input.suspected_bad_faith === true && !suspectedBadFaith
             ? {
                 note: "suspected_bad_faith was ignored because the outcome is not 'uphold_original'",
@@ -421,15 +481,24 @@ export async function executeArbitratorTool(
         const contributionId = input.contribution_id as string;
         const reason = input.reason as string;
 
+        if (!reason?.trim()) {
+          return JSON.stringify({
+            success: false,
+            error: "reason is required: the humans who take the case up read it. Nothing was recorded.",
+          });
+        }
+
+        // The reason is stored (#713): a human opening the case reads why,
+        // and no action on a contribution is a quiet one (§11, §15).
         const db = getDb();
         await db
           .update(contributions)
-          .set({ reviewStatus: "human_review" })
+          .set({ reviewStatus: "human_review", humanReviewReason: reason.trim() })
           .where(eq(contributions.id, contributionId));
 
         return JSON.stringify({
           success: true,
-          message: `Contribution ${contributionId} flagged for human review: ${reason}`,
+          message: `Contribution ${contributionId} flagged for human review; the reason is recorded on it.`,
         });
       }
 

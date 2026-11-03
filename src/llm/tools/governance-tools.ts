@@ -117,6 +117,7 @@ export function getGovernanceToolDefinitions(): Tool[] {
         "content, evidence, proposed wording, merge target), who filed it " +
         "(a contributor's id and name, or \"a funded mandate\"), the target " +
         "claim, any existing review, the reviewer's escalation reason, any " +
+        "human-review reason, the prize claim a challenge targets, any " +
         "appeals (with the appellant's reasoning), and prior arbitration " +
         "results. Reputation is not here: " +
         "get_contributor_profile has it, for when bad faith or coordination " +
@@ -745,6 +746,14 @@ async function getContributionDetails(
       // Why the reviewer escalated — present even when the reviewer skipped
       // record_review_decision, so an escalation never arrives reasonless.
       escalation_reason: contribution.escalationReason,
+      // Why the Arbitrator sent it to humans, when it did (#713).
+      ...(contribution.humanReviewReason
+        ? { human_review_reason: contribution.humanReviewReason }
+        : {}),
+      // A challenge to a prize claim names it; get_prize_claim reads it (#710).
+      ...(contribution.challengedPrizeClaimId
+        ? { challenged_prize_claim_id: contribution.challengedPrizeClaimId }
+        : {}),
     },
     ...(source
       ? {
