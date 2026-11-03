@@ -27,6 +27,9 @@ const { state } = vi.hoisted(() => ({
     finalAfter: [] as boolean[],
     flags: [] as Array<Record<string, unknown>>,
     listed: [] as Array<Record<string, unknown>>,
+    curation: [] as Array<Record<string, unknown>>,
+    openFlags: [] as Array<Record<string, unknown>>,
+    listing: null as null | Array<Record<string, unknown>>,
   },
 }));
 
@@ -45,13 +48,40 @@ vi.mock("../../../src/llm/prompts/consistency-checker.js", () => ({
 vi.mock("../../../src/llm/tools/report-tools.js", () => ({
   createReportTools: () => ({ definitions: [{ name: "raise_issue" }], execute: async () => null }),
 }));
+vi.mock("../../../src/llm/tools/finding-tools.js", () => ({
+  createFindingTools: () => ({ definitions: [{ name: "note_finding" }], execute: async () => null }),
+}));
+vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
+  createSkillLoadTools: () => ({
+    definitions: [{ name: "load_skill" }],
+    execute: async () => null,
+    pointed: [],
+    pointerNote: "",
+  }),
+}));
+vi.mock("../../../src/services/curation-service.js", () => ({
+  CURATION_CONCERN_MAX_CHARS: 4_000,
+  requestCuration: vi.fn(async (input: Record<string, unknown>) => {
+    state.curation.push(input);
+    return { ok: true, requestId: "r", actionId: "a", repeat: false };
+  }),
+}));
 vi.mock("../../../src/llm/tools/graph-read-tools.js", () => ({
   getGraphReadToolDefinitions: () => [{ name: "search_claims" }, { name: "get_claim" }],
   executeGraphReadTool: async (name: string) => (name === "get_claim" ? '{"claim":"x"}' : null),
 }));
 vi.mock("../../../src/services/consistency-service.js", () => ({
-  CONSISTENCY_BOUNDS: { maxClaims: 8, noteChars: 4_000 },
-  CONSISTENCY_FLAG_KINDS: ["reasoning_conflict", "overlooked_evidence", "other"],
+  CONSISTENCY_BOUNDS: {
+    maxClaims: 8,
+    noteChars: 4_000,
+    rationaleChars: 2_000,
+    listingTextChars: 300,
+    listingSummaryChars: 500,
+  },
+  CONSISTENCY_FLAG_KINDS: ["unweighed_consideration", "reasoning_conflict", "overlooked_evidence", "other"],
+  TRACE_EXCERPT_CHARS: 5_000,
+  OPEN_FLAG_RATIONALE_CHARS: 200,
+  openFlagsInScope: vi.fn(async () => state.openFlags),
   compareAssessments: vi.fn(async () => ({ claims: [], relations: [], unknown: [] })),
   checkFlagInput: vi.fn(async (input: { primaryClaimId: string; claimIds: string[] }) =>
     input.primaryClaimId.length === 36
@@ -59,7 +89,7 @@ vi.mock("../../../src/services/consistency-service.js", () => ({
       : { ok: false, code: "CLAIM", problem: "bad id" }),
   partitionClaims: vi.fn(async (_scope: unknown, opts: Record<string, unknown>) => {
     state.listed.push(opts);
-    return { total: 20, claims: [{ claim_id: PRIMARY, text: "t", summary: "s" }] };
+    return { total: 20, claims: state.listing ?? [{ claim_id: PRIMARY, text: "t", summary: "s" }] };
   }),
   flagInconsistency: vi.fn(async (input: Record<string, unknown>) => {
     state.flags.push(input);
@@ -120,6 +150,9 @@ beforeEach(() => {
   state.finalAfter = [];
   state.flags = [];
   state.listed = [];
+  state.curation = [];
+  state.openFlags = [];
+  state.listing = null;
 });
 
 describe("runConsistencyChecker", () => {
@@ -130,9 +163,67 @@ describe("runConsistencyChecker", () => {
     expect(state.loop!.model).toBe("openai/gpt-6-luna");
     const names = state.loop!.tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
-      "raise_issue", "search_claims", "get_claim", "list_partition_claims",
-      "compare_assessments", "flag_inconsistency", "finish_sweep",
+      "raise_issue", "note_finding", "load_skill", "search_claims", "get_claim",
+      "list_partition_claims", "compare_assessments", "flag_inconsistency",
+      "escalate_to_curator", "finish_sweep",
     ]));
+    expect(state.loop!.briefing).toContain("No flag in this partition is still waiting");
+  });
+
+  it("briefs the flags still waiting in the partition (#745)", async () => {
+    state.openFlags = [{
+      flag_id: "f1", primary_claim_id: PRIMARY, kind: "stale_premise",
+      rationale: "x".repeat(200), repeats: 1, created_at: "2026-10-01T00:00:00.000Z",
+    }];
+    await runConsistencyChecker(base);
+    expect(state.loop!.briefing).toContain(`${PRIMARY} (stale_premise, flagged 2026-10-01, 1 repeat(s))`);
+  });
+
+  it("states its limits and marks a listing field it cut (#753)", async () => {
+    state.listing = [{ claim_id: PRIMARY, text: "t".repeat(400), summary: "s".repeat(600) }];
+    state.script = [{ name: "list_partition_claims", input: {} }];
+    await runConsistencyChecker(base);
+    const listed = JSON.parse(state.outputs[0]!).claims[0];
+    expect(listed.text).toHaveLength(300);
+    expect(listed.text_truncated).toBe(true);
+    expect(listed.summary_truncated).toBe(true);
+    const tools = state.loop!.tools as Array<{ name: string; description: string; input_schema: { properties: Record<string, { description?: string }> } }>;
+    const describe = (n: string) => JSON.stringify(tools.find((t) => t.name === n));
+    expect(describe("list_partition_claims")).toContain("first 300 characters");
+    expect(describe("compare_assessments")).toContain("5000");
+    expect(describe("flag_inconsistency")).toContain("At most 2000 characters");
+    expect(describe("finish_sweep")).toContain("At most 4000 characters");
+    // The precision line is gone from what the agent reads (#745).
+    expect(describe("flag_inconsistency")).not.toContain("precision");
+  });
+
+  it("refuses an over-long note and keeps the sweep open, never cutting it (#753)", async () => {
+    state.script = [
+      { name: "finish_sweep", input: { note: "n".repeat(4_001) } },
+      { name: "finish_sweep", input: { note: "Short note." } },
+    ];
+    const res = await runConsistencyChecker(base);
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ ok: false });
+    expect(res.note).toBe("Short note.");
+  });
+
+  it("sends a structural defect to the Curator as a consistency_sweep request (#742)", async () => {
+    state.script = [{
+      name: "escalate_to_curator",
+      input: { claim_id: PRIMARY, other_claim_id: OTHER, concern: "These two nodes are one claim." },
+    }];
+    const res = await runConsistencyChecker(base);
+    expect(state.curation[0]).toMatchObject({
+      anchorClaimId: PRIMARY, otherClaimId: OTHER, source: "consistency_sweep", requestedByRunId: "run-1",
+    });
+    expect(res.escalations).toBe(1);
+  });
+
+  it("sends nothing to the Curator in a dry run", async () => {
+    state.script = [{ name: "escalate_to_curator", input: { claim_id: PRIMARY, concern: "Duplicate." } }];
+    const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true });
+    expect(state.curation).toHaveLength(0);
+    expect(res.escalations).toBe(1);
   });
 
   it("lists the partition from the last sweep's start, paginated", async () => {

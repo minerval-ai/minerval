@@ -26,7 +26,7 @@ import {
   stewardTierCostEstimates,
 } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
-import { capMicroUsd } from "./owl.js";
+import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
 import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
@@ -517,10 +517,10 @@ export async function reconcileActions(): Promise<{
     );
   }
 
-  // Consistency sweeps (#330): one open row per partition due a sweep,
-  // at most the day's cap of them, most due first, so what the funding
-  // side covers is the most due. Off (and any open rows cancelled) when
-  // the cap is 0. Funding (fundGrantSelfActions) bounds sweeps per day.
+  // Consistency sweeps (#330): an exclusive set of a standard and a strong
+  // variant per partition due a sweep (#756). Off (and any open rows
+  // cancelled) when sweeps are disabled. How many run is the General
+  // mandate's money (fundGrantSelfActions), not a count (#749).
   await reconcileConsistencySweeps();
 
   // Curation (#363): a curate row wants its anchor still active and at
@@ -591,10 +591,16 @@ export async function reconcileActions(): Promise<{
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
 }
 
+/** What one sweep of each variant is priced at: its cap, in micro-USD (#756). */
+export function consistencySweepCostMicroUsd(variant: "standard" | "strong"): number {
+  return variant === "strong"
+    ? owlsToMicroUsd(loadConfig().capConsistencySweepStrongOwls)
+    : capMicroUsd("consistency_sweep");
+}
+
 async function reconcileConsistencySweeps(): Promise<void> {
   const config = loadConfig();
-  const cap = config.consistencyMaxSweepsPerDay ?? 0;
-  if (cap <= 0) {
+  if (!config.consistencySweepsEnabled) {
     await rawQuery(
       `UPDATE actions SET status = 'cancelled', updated_at = now()
         WHERE kind = 'consistency_sweep' AND status = 'open'`
@@ -604,10 +610,13 @@ async function reconcileConsistencySweeps(): Promise<void> {
   // A sweep whose process died leaves its row 'running'; close it so the
   // coverage record reads true and the partition can be due again.
   await reclaimAbandonedSweeps();
-  const due = (await duePartitions(config.consistencyMinTagClaims)).slice(0, cap);
+  // Every due partition gets its rows: a partition is due at most once
+  // per re-sweep interval, and the General mandate's escrow and day room
+  // decide how many are bought.
+  const due = await duePartitions(config.consistencyMinTagClaims);
   const refs = due.map((p) => CONSISTENCY_GROUP(partitionRef(p)));
-  // Only the most due stay open: a row the day cap left unfunded yields
-  // to whatever is more due now, so open rows never pile up across days.
+  // A partition no longer due loses its open rows, so open rows never
+  // pile up across days.
   await rawQuery(
     `UPDATE actions a SET status = 'cancelled', updated_at = now()
       WHERE a.kind = 'consistency_sweep' AND a.status = 'open'
@@ -617,19 +626,30 @@ async function reconcileConsistencySweeps(): Promise<void> {
                            AND al.released_at IS NULL)`,
     [refs]
   );
-  const cost = capMicroUsd("consistency_sweep");
+  const variants = [
+    ["standard", consistencySweepCostMicroUsd("standard")],
+    ["strong", consistencySweepCostMicroUsd("strong")],
+  ] as const;
   for (const p of due) {
     const ref = partitionRef(p);
-    await rawQuery(
-      `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-       VALUES ('consistency_sweep', $1, 'standard', $2, $3, $4)
-       ON CONFLICT (exclusion_group, variant) DO UPDATE
-         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             updated_at = now()
-         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [CONSISTENCY_GROUP(ref), ref, `Consistency sweep: ${p.label}`, cost]
-    );
+    for (const [variant, cost] of variants) {
+      await rawQuery(
+        `INSERT INTO actions
+           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+         VALUES ('consistency_sweep', $1, $2, $3, $4, $5)
+         ON CONFLICT (exclusion_group, variant) DO UPDATE
+           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+               updated_at = now()
+           WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+        [
+          CONSISTENCY_GROUP(ref),
+          variant,
+          ref,
+          `Consistency sweep${variant === "strong" ? " (strong)" : ""}: ${p.label}`,
+          cost,
+        ]
+      );
+    }
   }
 }
 

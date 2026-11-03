@@ -133,7 +133,9 @@ is written without one. The researcher, the instrument an administrator
 briefs and launches, often does a Steward's work on its behalf (a
 provenance map, a literature search), so its load returns `For every
 administrator` and `For the Claim Steward` as well as `For the researcher`,
-which says what it leaves to the Steward.
+which says what it leaves to the Steward. The Consistency Checker, which reads
+assessments against each other as the Audit Agent reads them against the
+standards, receives `For every administrator` and `Standards for judging`.
 
 Rules enforced by `tests/unit/llm/prompts/skills.test.ts`: the file is under
 600 lines; only the headings above appear as H2s; the text contains no

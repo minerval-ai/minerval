@@ -69,6 +69,14 @@ export interface AllocationPolicy {
   est_curate_cost_owls: number;
   /** Cost prior for one `audit` run, in owls, likewise. */
   est_audit_cost_owls: number;
+  /** Expected gain of a strong consistency sweep over a standard one of the
+   *  same partition (#756): value(strong) = value(standard) × this. A sweep
+   *  carries no value of its own to set against the day's bar, so the
+   *  marginal-return rule compares the upgrade with the sweep itself: the
+   *  strong variant is bought when its value per owl is at least the
+   *  standard's, that is when this × the standard's cost covers the strong
+   *  one's. At the default caps (0.05 and 0.5 owl) that takes 10. */
+  consistency_strong_gain_multiplier: number;
   /** Formula weight of a reconcile-candidate request (a similarity scan's
    *  pair, times its score) relative to a Steward's escalation (1.0): a
    *  scan saw two texts; an agent read the claim. */
@@ -131,6 +139,7 @@ export const POLICY_BOUNDS: Record<
   maintenance_share: { min: 0, max: 1 },
   est_curate_cost_owls: { min: 0.01, max: 20 },
   est_audit_cost_owls: { min: 0.01, max: 20 },
+  consistency_strong_gain_multiplier: { min: 1, max: 50 },
   curate_candidate_weight: { min: 0, max: 1 },
   curate_matcher_quiet_days: { min: 0, max: 365 },
   reconcile_candidates_max_per_sweep: { min: 0, max: 200 },
@@ -261,6 +270,11 @@ function defaultsFromConfig(): AllocationPolicy {
     maintenance_share: 0.1,
     est_curate_cost_owls: 0.25,
     est_audit_cost_owls: 0.5,
+    // A guess for the General mandate's Grantmaker to revise once the
+    // corpus consistency eval compares the tiers (#756): below the 10 the
+    // default caps need, so sweeps stay on the cheap tier until a funder
+    // judges the stronger read worth it.
+    consistency_strong_gain_multiplier: 3,
     curate_candidate_weight: 0.5,
     curate_matcher_quiet_days: 7,
     reconcile_candidates_max_per_sweep: 0,

@@ -3184,7 +3184,7 @@ export const curationRequests = pgTable(
     otherClaimId: uuid("other_claim_id").references(() => claims.id, {
       onDelete: "cascade",
     }),
-    // steward_escalation | reconcile_candidate | operator
+    // steward_escalation | consistency_sweep | audit | matcher | reconcile_candidate | operator
     source: text("source").notNull(),
     concern: text("concern").notNull(),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
@@ -3221,7 +3221,7 @@ export const curationRequests = pgTable(
       .where(sql`consumed_at IS NULL`),
     check(
       "ck_curation_requests_source",
-      sql`source IN ('steward_escalation', 'reconcile_candidate', 'operator')`
+      sql`source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')`
     ),
   ]
 );

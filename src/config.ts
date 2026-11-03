@@ -156,6 +156,12 @@ const configSchema = z.object({
   // owl on the flash tier over a 30-claim partition) crowds out the passes
   // the sweep asks for. The lookout's cap.
   capConsistencySweepOwls: z.coerce.number().default(0.05),
+  // The strong variant of a sweep (#756): the same partition read by
+  // consistencyStrongModel, a standard-tier reader that catches more of the
+  // subtle tensions the sweep exists for (two readings of one study, a
+  // consideration from another field). Set near what a standard-tier sweep
+  // of a 30-claim partition costs, about ten times the flash read.
+  capConsistencySweepStrongOwls: z.coerce.number().default(0.5),
   // The budget a paid assessment's Steward pass works to (an order, or a
   // proposal's first pass), shown to the Steward and enforced on its paid
   // tools. Deliberately above the buyer's cap: the buyer pays at most
@@ -872,15 +878,27 @@ const configSchema = z.object({
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
   // The Consistency Checker (#330; docs/allocation.md, "Consistency
   // sweeps"): reads one partition's assessments against each other and
-  // flags where they do not cohere. It raises candidates, never conclusions
-  // (the flagged claim's Steward verifies and decides), so it runs on the
-  // cheap tier. Pinned identically in infra/lib/api-stack.ts.
+  // flags where they do not fit together. What it writes is a flag the
+  // owning Steward weighs and decides, so the standard variant of a sweep
+  // runs on the cheap tier. Pinned identically in infra/lib/api-stack.ts.
   consistencyModel: modelId(OPENROUTER_MODELS.flash),
-  // Consistency sweeps the General mandate funds per UTC day, across all
-  // partitions (each a 'consistency_sweep' ledger action, capped at
-  // capConsistencySweepOwls). 0, the default, is the off-switch: no sweep
-  // rows are opened or funded.
-  consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(0),
+  // The strong variant's reader (#756): a sweep is an exclusive set of a
+  // standard (consistencyModel) and a strong variant, and the funder buys
+  // the strong one when its expected gain per owl beats the standard's
+  // (allocation policy consistency_strong_gain_multiplier). Pinned
+  // identically in infra/lib/api-stack.ts.
+  consistencyStrongModel: modelId(MODELS.sonnet),
+  // Whether the General mandate funds consistency sweeps at all (each a
+  // 'consistency_sweep' ledger action, capped at capConsistencySweepOwls or
+  // its strong variant's cap). A deployment off-switch only, as
+  // lookoutRunsEnabled is: how many sweeps run is the General mandate's
+  // escrow and day room, with the re-sweep interval (CONSISTENCY_BOUNDS.
+  // resweepHours) keeping a partition to one sweep a day (#749). Off by
+  // default, as before: "true" turns sweeps on.
+  consistencySweepsEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .prefault("false"),
   // A tag is a sweep partition only when it carries at least this many live
   // claims; every claim no such tag covers falls in the residual bucket.
   consistencyMinTagClaims: z.coerce.number().int().min(1).default(10),
@@ -1022,6 +1040,7 @@ export function loadConfig(): Config {
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
+    capConsistencySweepStrongOwls: process.env.CAP_CONSISTENCY_SWEEP_STRONG_OWLS,
     paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
@@ -1154,7 +1173,8 @@ export function loadConfig(): Config {
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
-    consistencyMaxSweepsPerDay: process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY,
+    consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,
+    consistencyStrongModel: process.env.CONSISTENCY_STRONG_MODEL,
     consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,

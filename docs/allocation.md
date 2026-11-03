@@ -356,14 +356,21 @@ closes the sweep and briefs the next sweep of the same partition: the
 checker's memory is per region.
 
 **Sweeps are ledger actions.** A partition is due when it has never been
-swept or something in it was re-assessed since its last sweep; the
-reconcile sweep opens a `consistency_sweep` row
-(`consistency:<tag_id|residual>`) for the most due partitions, and the
-General mandate funds them from its escrow and its daily rate like a
-review pass, at most `CONSISTENCY_MAX_SWEEPS_PER_DAY` across all
-partitions (0, the default, is off), each capped at
-`CAP_CONSISTENCY_SWEEP_OWLS`. Thinking about the work competes with the
-work: a day's sweeps come out of the same rate as the passes they ask for.
+swept or something in it was re-assessed since its last sweep, and not
+within a day of its last sweep; the reconcile sweep opens an exclusive
+set of two `consistency_sweep` rows (`consistency:<tag_id|residual>`)
+for every due partition: a standard variant on the cheap tier
+(`CONSISTENCY_MODEL`, capped at `CAP_CONSISTENCY_SWEEP_OWLS`) and a strong
+one (`CONSISTENCY_STRONG_MODEL`, `CAP_CONSISTENCY_SWEEP_STRONG_OWLS`). The
+General mandate funds one of the two from its escrow and its daily rate
+like a review pass, with no count of sweeps (`CONSISTENCY_SWEEPS_ENABLED`
+is a deployment switch, off by default). Which variant it buys is the
+marginal-return rule: a sweep has no value of its own to set against the
+day's bar, so the strong variant is bought when its value per owl is at
+least the standard's, that is when the policy's
+`consistency_strong_gain_multiplier` times the standard's cost covers the
+strong one's. Thinking about the work competes with the work: a day's
+sweeps come out of the same rate as the passes they ask for.
 
 **A flag is information, not money.** `flag_inconsistency` names a
 primary claim (the one whose assessment looks wrong: its Steward can
@@ -378,7 +385,9 @@ estimate and staleness (below). So the formula prices a flagged pass the
 way it prices every pass, importance and contestation included, and the
 allocator decides whether it runs. The checker writes no valuation, no
 verdict, no edge and no importance; a second flag on a primary whose pass
-is still waiting is a repeat, folded into the first.
+is still waiting is a repeat, folded into the first. The primary may be a
+claim, a quantity or a question, and may lie outside the partition: what
+a partition establishes often bears on nodes in other fields.
 
 **Precision is on the record,** as a lookout's is: each flag snapshots the
 primary's assessment, and `GET /consistency` shows the partitions and

@@ -114,6 +114,8 @@ const MAINTENANCE_KEYS = [
   "audit_value_anomaly",
   "audit_value_suspension",
   "audit_value_sweep",
+  // The strong consistency sweep's expected gain over the standard (#756).
+  "consistency_strong_gain_multiplier",
 ];
 
 describe("POLICY_BOUNDS (maintenance and audit keys, #363)", () => {

@@ -98,6 +98,12 @@ export const ROLE_VIEW = {
   // describe that work as well as its own, which says what it leaves to the
   // Steward.
   researcher: ["For every administrator", "For the Claim Steward", "For the researcher"],
+  // The Consistency Checker reads other administrators' assessments against
+  // each other, as the Audit Agent reads them against the standards, so it
+  // receives the standards a good assessment in the domain meets: a
+  // mathematics standard ("a checked proof against any status other than
+  // verified ... is a coherence failure") is exactly its reading (#742).
+  "consistency-checker": ["For every administrator", "Standards for judging"],
 } as const satisfies Record<string, readonly SkillSection[]>;
 
 export type SkillRole = keyof typeof ROLE_VIEW;

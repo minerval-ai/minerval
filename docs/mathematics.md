@@ -500,6 +500,7 @@ composition table:
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |
 | extractor | `For the Extractor` only |
+| consistency-checker | `For every administrator` + `Standards for judging` (it reads assessments against each other) |
 
 **Placement.** The skill is a separate cached system block after the
 constitution-plus-role block. The seam's `system` type widens from `string`

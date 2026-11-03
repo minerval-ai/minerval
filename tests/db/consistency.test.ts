@@ -2,14 +2,14 @@
  * The Consistency Checker's mechanism (#330) against real Postgres: the
  * flag write path and its folding, the flag's expected gain entering the
  * formula valuation, partitions and what makes one due, the partition
- * listing a sweep reads, the ledger rows a sweep runs on and their daily
- * cap, and the precision read.
+ * listing a sweep reads, the ledger rows a sweep runs on and their two
+ * variants, and the precision read.
  */
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeAll } from "vitest";
 
 // Read by loadConfig on first use, which is after this line.
-process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY = "2";
+process.env.CONSISTENCY_SWEEPS_ENABLED = "true";
 process.env.CONSISTENCY_MIN_TAG_CLAIMS = "3";
 
 import { rawQuery } from "../../src/db/client.js";
@@ -287,7 +287,7 @@ describe("partitions and sweeps (#330)", () => {
     expect(claims[1]!.changed).toBe(false);
   });
 
-  it("opens sweep rows for due partitions and funds them from the General mandate within the daily cap", async () => {
+  it("opens a standard and a strong row per due partition and funds one of them from the General mandate", async () => {
     resetAllocationPolicyCache();
     await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true`);
     const funder = await seedUser("platform");
@@ -298,19 +298,24 @@ describe("partitions and sweeps (#330)", () => {
     const open = await rawQuery<{ id: string; exclusion_group: string }>(
       `SELECT id, exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
     );
-    // At most the day's cap of rows is opened.
+    // Two variants per due partition, an exclusive set (#756); no count.
     expect(open.length).toBeGreaterThan(0);
-    expect(open.length).toBeLessThanOrEqual(2);
+    expect(open.length % 2).toBe(0);
 
     await fundGrantSelfActions();
     await fundGrantSelfActions();
-    const funded = await rawQuery<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM action_allocations
-        WHERE exclusion_group LIKE 'consistency:%' AND grant_id = $1`,
+    const funded = await rawQuery<{ n: number; groups: number; variants: string[] }>(
+      `SELECT COUNT(*)::int AS n, COUNT(DISTINCT al.exclusion_group)::int AS groups,
+              ARRAY_AGG(DISTINCT a.variant) AS variants
+         FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE al.exclusion_group LIKE 'consistency:%' AND al.grant_id = $1`,
       [grantId]
     );
-    expect(funded[0]!.n).toBe(open.length);
-    expect(funded[0]!.n).toBeLessThanOrEqual(2);
+    // One variant bought per partition: at the default caps and multiplier,
+    // the standard one.
+    expect(funded[0]!.n).toBe(open.length / 2);
+    expect(funded[0]!.groups).toBe(open.length / 2);
+    expect(funded[0]!.variants).toEqual(["standard"]);
   });
 });
 

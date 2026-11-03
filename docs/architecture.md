@@ -799,13 +799,19 @@ These act through tools over the life of a claim and the graph:
   of the graph at a time (a topic tag, or the claims no sizeable tag
   covers), for what no single Steward sees: reasoning that conflicts with a
   neighbor's, evidence one claim records that another never weighed,
-  verdicts that are not a defensible function of what they rest on (§21).
-  Each find is a flag on the claim that looks wrong: its Steward is queued
-  with the tension as context, and the checker's estimate that a pass would
-  change something enters the formula's expected-gain term, so the pass is
-  priced and funded like any other. Its sweeps are ledger actions the
-  General mandate funds, capped per day; it writes no verdict and no
-  valuation (docs/allocation.md, "Consistency sweeps").
+  verdicts that are not a defensible function of what they rest on, and
+  what is established in one place (often another field) bearing on
+  assessments elsewhere that never weighed it (§21). It may reason about
+  anything that bears on whether assessments fit together, including which
+  reading of the evidence is right; what it writes is a flag on the node
+  that looks wrong, anywhere in the graph: its Steward is queued with the
+  tension as context and decides, and the checker's estimate that a pass
+  would change something enters the formula's expected-gain term, so the
+  pass is priced and funded like any other. Structural defects it finds go
+  to the Curator as curation requests. Its sweeps are ledger actions the
+  General mandate funds (a standard and a strong variant, the funder buying
+  one by marginal return); it writes no verdict and no valuation
+  (docs/allocation.md, "Consistency sweeps").
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in

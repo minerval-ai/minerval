@@ -26,9 +26,9 @@ export interface SweepResult {
   /** Null for a dry run, which records no sweep. */
   sweepId: string | null;
   partition: SweepPartition;
-  /** Assessed claims in the partition. */
+  /** Assessed nodes in the partition (claims with a verdict, quantities with an estimate, questions with a standing). */
   claimsInScope: number;
-  /** False when the partition had fewer than two assessed claims to read. */
+  /** False when the partition had fewer than two assessed nodes to read. */
   agentRan: boolean;
   flagsRaised: number;
   repeats: number;
@@ -64,9 +64,9 @@ export async function runConsistencySweep(
     if (sweepId) await finishSweep({ sweepId, claimsInScope, ...fields });
   };
 
-  // One assessed claim cannot be incoherent with anything in its partition.
+  // One assessed node cannot be incoherent with anything in its partition.
   if (claimsInScope < 2) {
-    const note = `Only ${claimsInScope} assessed claim(s) in scope; nothing to read against.`;
+    const note = `Only ${claimsInScope} assessed node(s) in scope; nothing to read against.`;
     await close({ status: "done", flagsRaised: 0, note });
     return { ...base, agentRan: false, flagsRaised: 0, repeats: 0, proposed: [], note };
   }
