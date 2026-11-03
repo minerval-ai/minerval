@@ -49,6 +49,8 @@ import {
   listFormalizations,
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
+import { resolveProvider } from "../providers/routing.js";
+import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-harness.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
@@ -551,6 +553,12 @@ async function runClaimStewardImpl(input: {
     claimId: input.claimId,
   });
 
+  // The code-execution sandbox, for the Steward's own analysis (§9): an
+  // Anthropic server tool, so present only when this run's model is
+  // Anthropic-served, as for the researcher. toolUseLoop meters its
+  // container time against the pass budget.
+  const sandbox = resolveProvider(model) === "anthropic";
+
   const tools = [
     ...graphTools,
     ...claimContextTools,
@@ -568,6 +576,7 @@ async function runClaimStewardImpl(input: {
     ...researchTools.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
     webSearch.tool,
+    ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
 
   const isInitial = input.trigger === "structure_and_assess";
@@ -601,6 +610,16 @@ The Pangram tools are in your toolset, each call billed per word against
 this run's budget: pangram_check_ai detects AI-generated writing, and
 pangram_find_sources finds web content matching a text.`
       : "";
+
+  const sandboxNote = sandbox
+    ? `
+
+code_execution is in your toolset: a sandbox running Python with the usual
+scientific libraries (no network), for your own analysis. Each turn that uses
+it is billed by its wall-clock time at $${CODE_EXECUTION_USD_PER_HOUR.toFixed(2)} a container-hour
+against this run's budget, so a few minutes of computation costs well under
+a cent.`
+    : "";
 
 
   const skillsNote = `${skillLoader.pointerNote}${
@@ -641,7 +660,7 @@ Context: ${input.context}
 
 ${turnBudgetLine(iterationBudget)}
 
-${task.text}${elicitNote}${pangramNote}${skillsNote}`;
+${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.

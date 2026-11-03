@@ -33,6 +33,7 @@ import {
   reviewCostEstimateMicroUsd,
 } from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
+import { resolveProvider } from "../providers/routing.js";
 import { LlmBudgetExceededError } from "../errors.js";
 import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withPassBudget } from "../usage-context.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
@@ -119,6 +120,31 @@ export function getFundRequestToolDefinition(): Tool {
   };
 }
 
+/**
+ * Which tiers carry the code-execution sandbox in this deployment. The
+ * sandbox is an Anthropic server tool, so a tier has it only when its
+ * configured model is Anthropic-served (agents/researcher.ts); the launcher
+ * is told which, since a replication on a tier without it cannot run code.
+ */
+export function sandboxTiersSentence(): string {
+  const withSandbox = RESEARCH_MODEL_TIERS.filter((t) => {
+    const model = modelForTier(t);
+    return !!model && resolveProvider(model) === "anthropic";
+  });
+  const list = (tiers: readonly string[]) => tiers.map((t) => `'${t}'`).join(" and ");
+  if (withSandbox.length === RESEARCH_MODEL_TIERS.length) {
+    return "Every tier has a code-execution sandbox (Python, no network). ";
+  }
+  if (withSandbox.length === 0) {
+    return "No tier has a code-execution sandbox here: the researcher cannot run code. ";
+  }
+  const without = RESEARCH_MODEL_TIERS.filter((t) => !withSandbox.includes(t));
+  return (
+    `${list(withSandbox)} ${withSandbox.length === 1 ? "has" : "have"} a code-execution sandbox ` +
+    `(Python, no network); ${list(without)} ${without.length === 1 ? "has" : "have"} none and cannot run code. `
+  );
+}
+
 export function getResearchToolDefinitions(
   input: {
     claimScoped: boolean;
@@ -158,11 +184,10 @@ export function getResearchToolDefinitions(
         (graphWrites
           ? "where configured, a notebook, and the provenance tools on a claim-scoped task. "
           : "where configured, and a notebook. ") +
-        "Tiers: 'strong' runs the best model class on the long-run loop with a " +
-        "code-execution sandbox (Python, no network), for a replication or an analysis " +
-        "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
-        "for most delegated reading and checking; 'cheap' runs the cheap tier with no " +
-        "sandbox, and is right for reading and mapping a large literature economically. " +
+        "Tiers: 'strong' runs the best model class, for a replication or an analysis " +
+        "where the best model pays; 'standard' for most delegated reading and checking; " +
+        "'cheap' for reading and mapping a large literature economically. " +
+        sandboxTiersSentence() +
         "Budget is in USD of metered work. " +
         funding +
         "Each result says what is left after the run. " +

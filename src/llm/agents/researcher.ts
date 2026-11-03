@@ -656,9 +656,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // ceiling or the operator's pause it allows one last turn, in which
     // every tool call is refused with the instruction to report, and then
     // ends the run. The spend line, and the wrap-up notice once past the
-    // reminder fraction, ride on every turn's note. Container time is not metered per turn on this
-    // path; the sandbox's free allowance covers a run of this size, and the
-    // token meter binds.
+    // reminder fraction, ride on every turn's note. toolUseLoop meters the
+    // container time of each turn that used the sandbox into the same meter.
     let turns = 0;
     let lastTurn = false;
     const startedAt = now();

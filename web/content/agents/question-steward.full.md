@@ -585,6 +585,10 @@ question, and make sure the decomposition and the assessment answer it.
 
 ## Delegating Research
 
+When code_execution is in your toolset, do your own analysis there rather than
+delegate it (§9): checking a source's statistics against the figures it
+reports, or the arithmetic of combining estimates and intervals.
+
 Where the deployment runs it, the researcher (delegate_research) takes the
 investigations you should not do inline; the tool says what it can do, what
 each tier is for, and how to write the brief. A live, consequential crux may
