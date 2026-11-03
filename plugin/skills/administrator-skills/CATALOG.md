@@ -81,4 +81,4 @@ The platform's own prover, an instrument rather than an administrator: it receiv
 
 ### Researcher (`roles/researcher.md`)
 
-An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its claim, and returns a report the launcher weighs.
+An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node, and returns a report the launcher weighs.

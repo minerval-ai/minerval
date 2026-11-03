@@ -1057,7 +1057,8 @@ OpenRouter search elsewhere) and `read_page`, the graph's read tools
 Elicit search tools and the Pangram tools (`pangram_check_ai`,
 `pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
 task, the Provenance skill's tools except `provenance_write_map` and
-`provenance_record_root`, and `record_claim_instance`; on a
+`provenance_record_root`, and `record_claim_instance` on a claim or
+`record_question_instance` on a question; on a
 mathematical claim with a checker configured it also has `lean_search` and
 `lean_elaborate`. The task message names the toolset, so the researcher
 knows what it can and cannot do, and the tool description names the tiers'
@@ -1066,9 +1067,11 @@ affordances, so the launcher can brief it accordingly.
 **What it may write.** Its notebook, the provenance tables through the
 skill's tools (a reading only for a source it opened, an edge only with the
 located passage), the run's claim's instances through the Steward's
-`record_claim_instance` (on the same runs that get the provenance recording
-tools, a claim proper rather than a quantity or a question, with `claim_id`
-filled from the run and the row's `created_by` set to `researcher`), and
+`record_claim_instance` on a claim or `record_question_instance` on a
+question (on the same runs that get the provenance recording tools, never
+on a quantity, with the node's id filled from the run, an `instance_id` or
+`answer_id` outside the question refused, and the row's `created_by` set to
+`researcher`), and
 the stored copy of a source it fetched. It has no tool that writes a claim,
 an assessment, an argument, or an edge between claims, nor any that
 corrects, detaches or reattaches an instance: the Steward owns the instance

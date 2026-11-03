@@ -311,8 +311,9 @@ describe("views", () => {
     );
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
     expect(catalog).toContain(
-      "- provenance (version 2, a method skill; this version changed: The researcher a Steward launches on a claim " +
-        "may record the instances it finds with record_claim_instance; the Steward owns the instance set.). "
+      "- provenance (version 2, a method skill; this version changed: The researcher a Steward launches may record " +
+        "the instances it finds, with record_claim_instance on a claim or record_question_instance on a question; " +
+        "the Steward owns the instance set.). "
     );
     expect(catalog).toContain(getSkill("provenance").description.replace(/\s+/g, " ").trim());
     expect(getSkillCatalog("claim-steward")).toContain(

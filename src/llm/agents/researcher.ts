@@ -75,7 +75,11 @@ import {
   isElicitTool,
 } from "../tools/elicit-tools.js";
 import { createPangramTools } from "../tools/pangram-tools.js";
-import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
+import {
+  executeKindTool,
+  getRequestToolDefinitions,
+  getResearcherQuestionInstanceToolDefinition,
+} from "../tools/kind-tools.js";
 import { executeStewardTool, getResearcherInstanceToolDefinition } from "../tools/steward-tools.js";
 import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
 import {
@@ -125,6 +129,9 @@ const FILE_REQUEST_TOOL: Tool = getRequestToolDefinitions("researcher").find((t)
  * needs an instance to record on. claim_id is filled from the run.
  */
 const RECORD_INSTANCE_TOOL: Tool = getResearcherInstanceToolDefinition();
+
+/** The same, on a question: record_question_instance, question_id filled from the run. */
+const RECORD_QUESTION_INSTANCE_TOOL: Tool = getResearcherQuestionInstanceToolDefinition();
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -345,10 +352,10 @@ export interface ResearcherInput {
     contribution_budget_micro_usd?: number;
   };
   /**
-   * The claim the run serves. kind is the node's kind; absent is read as
-   * "claim". A quantity's figures and a question's askings are not recorded
-   * by this run (record_estimate and record_question_instance stay the
-   * Stewards'), so record_claim_instance is offered on a claim alone.
+   * The node the run serves. kind is the node's kind; absent is read as
+   * "claim". A claim's instances are recorded with record_claim_instance and
+   * a question's with record_question_instance; a quantity's figures are not
+   * recorded by this run (record_estimate stays the Steward's).
    */
   claim: { id: string; text: string; domains: string[]; kind?: string } | null;
   /** The document examination this run carries out, when launched as one (#507). */
@@ -423,10 +430,13 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const pangramTools = createPangramTools({ config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
-  // An instance is recorded on the run's claim on exactly the runs that get
+  // An instance is recorded on the run's node on exactly the runs that get
   // the provenance recording tools: a launcher that writes the graph, and a
-  // run scoped to a claim (a claim proper; see ResearcherInput.claim).
-  const recordsInstances = graphWrites && !!input.claim && (input.claim.kind ?? "claim") === "claim";
+  // run scoped to a node. A claim proper takes record_claim_instance, a
+  // question record_question_instance; a quantity neither.
+  const nodeKind = input.claim ? (input.claim.kind ?? "claim") : null;
+  const recordsInstances = graphWrites && nodeKind === "claim";
+  const recordsQuestionInstances = graphWrites && nodeKind === "question";
   const takesUpRequest = run.requested_by === "request";
   const scopesRequest = run.requested_by === "request_scope";
   const submitsContributions =
@@ -452,6 +462,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...skillLoader.definitions,
     ...skillTools,
     ...(recordsInstances ? [RECORD_INSTANCE_TOOL] : []),
+    ...(recordsQuestionInstances ? [RECORD_QUESTION_INSTANCE_TOOL] : []),
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
     // A run that takes up a request reports its outcome, and may file the
@@ -580,6 +591,23 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         { ...toolInput, claim_id: input.claim.id },
         { trigger: "research", context: run.task, model, recordedBy: RESEARCHER_AGENT }
       );
+    }
+    if (name === RECORD_QUESTION_INSTANCE_TOOL.name && input.claim) {
+      // The run's question and no other, as for a claim's instances; the
+      // executor checks that an instance_id is this question's and that an
+      // answer_id is in its answer set.
+      const named = typeof toolInput.question_id === "string" ? toolInput.question_id.trim() : "";
+      if (named && named !== input.claim.id) {
+        return JSON.stringify({
+          success: false,
+          message: `This investigation serves question ${input.claim.id}; record_question_instance records on it alone.`,
+        });
+      }
+      return (await executeKindTool(
+        name,
+        { ...toolInput, question_id: input.claim.id },
+        { role: "researcher", claimId: input.claim.id, model, trigger: "research", context: run.task }
+      ))!;
     }
     if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
       const submitted = await submitMandateContribution({ researchRunId: run.id, input: toolInput });

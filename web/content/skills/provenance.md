@@ -238,8 +238,9 @@ edges with `provenance_record_edge`, and document relations with
 `provenance_record_source_relationship`. Every reading and edge hangs on an
 instance, so where you find a source that asserts, denies or poses the
 claim in its own voice and is not yet an instance, record it with
-`record_claim_instance` as you read, by the Steward's rules for
-instances, and then map it. The instance is recorded as yours; the Steward
+`record_claim_instance` as you read (on a question,
+`record_question_instance`, for a source that asks or answers it), by the
+Steward's rules for instances, and then map it. The instance is recorded as yours; the Steward
 owns the instance set and may correct or detach it. You do not write the map's summary
 or record where the story begins; the reader-facing account and the origins
 are the Steward's judgment. Put in your report any source you found to be

@@ -143,7 +143,8 @@ export function getResearchToolDefinitions(
         "investigation and returns a report you weigh. It answers only to you, writes " +
         (graphWrites
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
-            "and instances (sources asserting, denying or posing the claim) on the claim in scope, "
+            "and instances (sources asserting, denying or posing a claim, or asking or answering a " +
+            "question) on the node in scope, "
           : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
             "not record provenance or examine documents, and with contribution_budget_usd it submits " +
             "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
