@@ -714,8 +714,10 @@ const configSchema = z.object({
   prizeHumanSignoffImportance: z.coerce.number().min(0).max(1).default(0.6),
   // The challenge window between acceptance and payment (§8.5): the small
   // window below the tier, the large one at or above it, never under 14
-  // days — which the bounds enforce, because "never below 14" is a rule
-  // the constitution's §16 rests on, not a tuning knob.
+  // days — which the bounds enforce, because "never below 14" is the
+  // promise to challengers that a paid prize, which cannot be recalled,
+  // waits long enough for anyone to raise what the acceptance missed; it is
+  // not a tuning knob.
   prizeChallengeWindowDaysSmall: z.coerce.number().min(14).default(14),
   prizeChallengeWindowDaysLarge: z.coerce.number().min(14).default(30),
   prizeWindowTierOwls: z.coerce.number().min(0).default(1000),

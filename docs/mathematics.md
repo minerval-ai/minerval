@@ -2146,11 +2146,10 @@ money waits on them.
 
 ### 8.5 The challenge window, audit, and sign-off
 
-Constitution §16: a change that would substantially alter the assessment of
-an important claim allows time for challenge before becoming final.
-Accepting a proof of an open conjecture is such a change, and a paid prize
-is irreversible in practice, so the window sits between the Steward's
-acceptance and payment. It is not for re-judging the proof, which is
+A paid prize is irreversible in practice: money that has left cannot be
+recalled, and the claimant, the funders and the record all act on it. So a
+public challenge window sits between the Steward's acceptance and payment,
+long enough for anyone to raise what a single acceptance could miss. It is not for re-judging the proof, which is
 deterministic and public; it is for what the checker cannot see: a
 defective statement, an ineligible or sanctioned claimant, a stolen proof,
 an axiom or tactic the policy missed, an earlier submission mishandled.
@@ -2210,8 +2209,7 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   in which case the bounty does not rebind. Funders confirm nothing.
 - **Status during the window.** The Steward records the assessment at
   acceptance, `verified` or `contradicted` as the proof warrants, marked
-  provisional in its own reasoning, which is the provisional update §16
-  allows; the page says "accepted; prize payable after DATE unless a
+  provisional in its own reasoning until the window closes; the page says "accepted; prize payable after DATE unless a
   challenge succeeds." A successful challenge on the statement retires it
   and the Steward reassesses; a prediction market that resolves on a
   Minerval status should read the provisional marker, which the API
