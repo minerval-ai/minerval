@@ -291,11 +291,11 @@ claims that is *not* a dependency (a rival explanation, two halves of one
 position, two formulations kept apart because identity was unclear) is a
 **claim link** in its own table, symmetric and non-evaluative, rendered as a
 see-also on both claim pages and invisible to the tree. The relation types
-are:
+are (their meanings are set in constitution §6):
 
 | Relation | Meaning |
 |----------|---------|
-| `requires` | The child is a load-bearing premise: the parent is false without it. |
+| `requires` | The parent is false if the child is, whatever else supports it. A premise of one argument among independent lines of support is `supports` (or `contradicts`), not `requires` (constitution §6). |
 | `supports` | The child provides evidence for the parent without being logically required. |
 | `contradicts` | The child weighs against the parent. |
 | `specifies` | The child narrows or makes precise part of the parent. |
