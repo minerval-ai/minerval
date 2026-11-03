@@ -11,9 +11,11 @@ description: >-
   figures for the Steward to reason about; the verdict stays the Steward's.
 metadata:
   minerval:
-    version: 1
+    version: 2
     since_epoch: 2026-09-domain-skills
     kind: method
+    changelog:
+      2: The Contribution Reviewer and the Dispute Arbitrator may open a cited source with provenance_read_source, so a quote, a figure or a counter-source is checked against the text, not taken on faith.
 ---
 
 ## For every administrator

@@ -20,9 +20,13 @@ import {
 } from "../../db/schema.js";
 import {
   enqueueArbitration,
-  enqueueSteward,
   requestAudit,
 } from "../../services/queue-service.js";
+import {
+  executeNotifyClaimSteward,
+  getNotifyClaimStewardToolDefinition,
+  NOTIFY_CLAIM_STEWARD,
+} from "./notify-claim-steward.js";
 import {
   applyReviewOutcome,
   BAD_FAITH_CATEGORIES,
@@ -80,13 +84,9 @@ export function getReviewerToolDefinitions(): Tool[] {
           suspected_bad_faith: {
             type: "boolean",
             description:
-              "Set true ONLY with a 'reject' decision when the contribution " +
-              "shows deliberate abuse (spam, vandalism, sybil coordination, " +
-              "deliberate misinformation), NOT for sincere contributions " +
-              "rejected on the merits. This flag has real consequences " +
-              "(reputation penalty, pay-to-contribute standing) and is " +
-              "appealable; when uncertain, reject without the flag or " +
-              "escalate. Setting it requires bad_faith_category.",
+              "Only with 'reject': a finding of deliberate abuse under §13, " +
+              "as your role prompt sets out; never for a sincere contribution " +
+              "rejected on the merits. Requires bad_faith_category.",
           },
           bad_faith_category: {
             type: "string",
@@ -179,33 +179,7 @@ export function getReviewerToolDefinitions(): Tool[] {
         required: ["contribution_id", "reason"],
       },
     },
-    {
-      name: "notify_claim_steward",
-      description:
-        "Notify the claim steward that a claim may need attention due to " +
-        "a contribution being accepted or other change. Not for accepted " +
-        "intake contributions: those enqueue their own follow-on work " +
-        "during record_review_decision.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim to notify about",
-          },
-          change_type: {
-            type: "string",
-            enum: ["contribution_accepted", "new_challenge", "new_support"],
-            description: "Type of change",
-          },
-          details: {
-            type: "string",
-            description: "Details about what changed and why steward attention is needed",
-          },
-        },
-        required: ["claim_id", "change_type", "details"],
-      },
-    },
+    getNotifyClaimStewardToolDefinition("contribution_reviewer"),
   ];
 }
 
@@ -513,22 +487,8 @@ export async function executeReviewerTool(
         });
       }
 
-      case "notify_claim_steward": {
-        const claimId = input.claim_id as string;
-        const changeType = input.change_type as string;
-        const details = input.details as string;
-
-        await enqueueSteward({
-          claimId,
-          trigger: "contribution_accepted",
-          context: `${changeType}: ${details}`,
-        });
-
-        return JSON.stringify({
-          success: true,
-          message: `Claim steward notified about claim ${claimId}`,
-        });
-      }
+      case NOTIFY_CLAIM_STEWARD:
+        return executeNotifyClaimSteward(input, "contribution_reviewer");
 
       default:
         return `Error: Unknown reviewer tool: ${toolName}`;
