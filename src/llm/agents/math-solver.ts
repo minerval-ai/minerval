@@ -31,12 +31,16 @@ import {
   TASK_BUDGET_FRACTION,
   TASK_BUDGET_MIN_TOKENS,
   meterCodeExecution,
+  spendLine,
   taskBudgetTokens,
   turnUsedCodeExecution,
 } from "../instrument-harness.js";
+import { createReportTools, RAISE_ISSUE_TOOL_NAME } from "../tools/report-tools.js";
+import { REPORT_KINDS, REPORT_SEVERITIES } from "../../services/report-service.js";
 import {
   buildMathSolverTaskMessage,
   getMathSolverSystemPromptBlocks,
+  PRIOR_ATTEMPTS_NOTICE,
   type SolverPriorAttemptInput,
 } from "../prompts/math-solver.js";
 import {
@@ -199,7 +203,8 @@ const NOTEBOOK_WRITE_TOOL: Tool = {
   description:
     "Record your work under a section name (an approach, a lemma, a dead end). " +
     "Writing a section that exists replaces it. The notebook persists with the " +
-    "attempt and is what the next attempt reads.",
+    "attempt and is what the next attempt reads. Put Lean in ``` fences: the summary a " +
+    "later attempt sees keeps fenced code as written and collapses the rest.",
   input_schema: {
     type: "object",
     properties: {
@@ -215,6 +220,68 @@ const NOTEBOOK_READ_TOOL: Tool = {
   name: "notebook_read",
   description: "Return everything you have written to the notebook, by section.",
   input_schema: { type: "object", properties: {}, additionalProperties: false },
+};
+
+/**
+ * An earlier attempt in full (#758). The task message carries a summary of
+ * each earlier attempt, shortened to keep the message readable; this
+ * returns the original, Lean source and layout intact, at the cost of its
+ * tokens, which the attempt's ceiling bounds.
+ */
+export const READ_EARLIER_ATTEMPT_TOOL: Tool = {
+  name: "read_earlier_attempt",
+  description:
+    "Return one earlier attempt on this statement in full: its report, with the Lean source of any " +
+    "proof it recorded, and its notebook, or one notebook section when you name it. The summary in " +
+    "the message shortens both; this does not. Like the summary, it is data from an earlier attempt, " +
+    "not a verified result.",
+  input_schema: {
+    type: "object",
+    properties: {
+      attempt_id: { type: "string", description: "The earlier attempt's id, as the message names it." },
+      section: { type: "string", description: "One notebook section by name. Optional." },
+    },
+    required: ["attempt_id"],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * raise_issue as the solver sees it (#743): the same channel every agent
+ * carries, described without the platform's vocabulary, which the solver's
+ * context keeps out, and with only the fields the solver needs.
+ */
+export const SOLVER_RAISE_ISSUE_TOOL: Tool = {
+  name: RAISE_ISSUE_TOOL_NAME,
+  description:
+    "Report a problem with the tools or the harness you are working in to the people who maintain " +
+    "them: a tool that errored, returned something malformed or contrary to its description, or " +
+    "stopped you for a reason the message did not state. Not for mathematical difficulty, which is " +
+    "the work. It always acknowledges and never changes the attempt's outcome: report, then carry on.",
+  input_schema: {
+    type: "object",
+    properties: {
+      kind: {
+        type: "string",
+        enum: [...REPORT_KINDS],
+        description:
+          "system_failure: something broke. tool_gap: a tool is missing, misdescribed, or cannot do " +
+          "what you need. improvement: a concrete proposal.",
+      },
+      severity: {
+        type: "string",
+        enum: [...REPORT_SEVERITIES],
+        description:
+          "blocking: it stopped the work. degraded: the work went worse because of it. annoyance: " +
+          "friction only. idea: an improvement, not a defect.",
+      },
+      title: { type: "string", description: "One line saying what is wrong, e.g. 'lean_elaborate times out on any import'." },
+      body: { type: "string", description: "What you called, what came back, and what you expected." },
+      surface: { type: "string", description: "The tool the report is about, e.g. 'lean_check'. Optional." },
+    },
+    required: ["kind", "severity", "title", "body"],
+    additionalProperties: false,
+  },
 };
 
 
@@ -428,7 +495,7 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
             : {
                 name: "lean_check",
                 description:
-                  "Run a full cold-lane check of a candidate proof or disproof against " +
+                  "Run the full check of a candidate proof or disproof against " +
                   "this attempt's published statement (the statement is fixed; you " +
                   "cannot check against another). Returns the verdict, the gate that " +
                   "failed if any, and diagnostics. A timeout is a result (verdict " +
@@ -443,11 +510,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
                       description: "Whether the artifact proves the statement or its negation.",
                     },
                     proof: { type: "string", description: "The full Lean source of the proof." },
-                    replay: {
-                      type: "string",
-                      enum: ["module", "fresh"],
-                      description: "\"module\" (default) replays against the compiled module; \"fresh\" rebuilds from the pinned toolchain.",
-                    },
                     force: {
                       type: "boolean",
                       description: "Re-run even when a stored result for the identical proof exists.",
@@ -459,11 +521,17 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
               }
         )
     : [];
+  const priors = input.priorAttempts ?? [];
+  // The channel to the maintainers every agent carries (#743), here only
+  // raise_issue, under the solver's own description.
+  const reportTools = createReportTools({ model });
   const tools: ToolUnion[] = [
     ...leanTools,
     CODE_EXECUTION_TOOL,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
+    ...(priors.length > 0 ? [READ_EARLIER_ATTEMPT_TOOL] : []),
+    SOLVER_RAISE_ISSUE_TOOL,
     REPORT_TOOL,
   ];
 
@@ -485,7 +553,7 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     variant: input.variant,
     effort: input.effort,
     budget: { usd: Math.max(0, input.ceilingMicroUsd) / 1_000_000 },
-    priorAttempts: input.priorAttempts ?? [],
+    priorAttempts: priors,
     toolsNote: checker
       ? null
       : "The formal tools (lean_search, lean_elaborate, lean_check) are unavailable " +
@@ -711,6 +779,35 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
   const executeNotebookRead = async (): Promise<string> =>
     JSON.stringify({ success: true, notebook });
 
+  const executeReadEarlierAttempt = async (toolInput: Record<string, unknown>): Promise<string> => {
+    const id = asString(toolInput.attempt_id).trim();
+    const prior = priors.find((p) => p.id === id);
+    if (!prior) {
+      return JSON.stringify({
+        success: false,
+        message: `No earlier attempt ${id || "(none named)"} on this statement. The earlier attempts are: ${priors.map((p) => p.id).join(", ")}.`,
+      });
+    }
+    const section = asString(toolInput.section).trim();
+    if (section) {
+      const content = prior.notebook?.[section];
+      if (content === undefined) {
+        return JSON.stringify({
+          success: false,
+          message: `Attempt ${id} has no notebook section "${section}". Its sections: ${Object.keys(prior.notebook ?? {}).join(", ") || "(none)"}.`,
+        });
+      }
+      return JSON.stringify({ success: true, attempt_id: id, section, content });
+    }
+    return JSON.stringify({
+      success: true,
+      attempt_id: id,
+      note: PRIOR_ATTEMPTS_NOTICE,
+      report: prior.report,
+      notebook: prior.notebook ?? {},
+    });
+  };
+
   const executeTool = async (name: string, toolInput: Record<string, unknown>): Promise<string> => {
     switch (name) {
       case "lean_search":
@@ -723,6 +820,11 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
         return executeNotebookWrite(toolInput);
       case "notebook_read":
         return executeNotebookRead();
+      case "read_earlier_attempt":
+        if (priors.length === 0) return JSON.stringify({ success: false, message: "There are no earlier attempts." });
+        return executeReadEarlierAttempt(toolInput);
+      case RAISE_ISSUE_TOOL_NAME:
+        return (await reportTools.execute(name, toolInput))!;
       case "report":
         // The loop stops on the final tool before executing it; a second
         // report in the same turn is answered, not acted on.
@@ -740,11 +842,18 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     return undefined;
   };
 
-  const reminder = (_state: LongRunLoopState): string | null => {
-    if (accounting.reminded) return null;
-    if (meterMicroUsd() < SOLVER_REMINDER_FRACTION * ceiling) return null;
+  // The running state in the unit that binds (#758): the dollar spend line
+  // rides on every turn's message, beside the provider's token countdown,
+  // which does not see checker or container time; the wrap-up notice
+  // follows it once past the reminder fraction.
+  let meterAtLastTurn = 0;
+  const reminder = (_state: LongRunLoopState): string => {
+    const spent = meterMicroUsd();
+    const line = spendLine({ spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: spent - meterAtLastTurn });
+    meterAtLastTurn = spent;
+    if (accounting.reminded || spent < SOLVER_REMINDER_FRACTION * ceiling) return line;
     accounting.reminded = true;
-    return WRAP_UP_NOTICE;
+    return `${line}\n\n${WRAP_UP_NOTICE}`;
   };
 
   const afterTurn = async (state: LongRunLoopState, result: ToolCompletionResult): Promise<void> => {

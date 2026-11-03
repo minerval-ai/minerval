@@ -663,13 +663,6 @@ export async function ensureFormalizeAction(
 }
 
 /**
- * A plan item's rationale waives the attempt cooldown only when it says
- * something: at least this many characters (a new lemma in the subtree was
- * formalized; a prior report names a route it could not pursue for budget).
- */
-export const ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS = 20;
-
-/**
  * Open the next attempt group on a claim's published statement when the
  * plan asks for more attempts than the ledger has opened: group
  * `attempt:<formalization_id>:<n>` with `n` one more than the closed
@@ -678,6 +671,13 @@ export const ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS = 20;
  * next; a claim without a published statement opens nothing; and the next
  * group waits out the mandate's `attempt_cooldown_days` after the last
  * closed attempt unless the item entitling it states a reason (§7.2).
+ *
+ * Whether a reason is good enough is the Grantmaker's judgment, stated in
+ * the item's public rationale and open to audit, not a test of its length
+ * (#763): the skill tells it to say what changed since the last attempt,
+ * and inspect_ledger shows the Audit Agent the item and its rationale. What
+ * bounds repeated attempts on one claim is money: the per-claim lifetime
+ * cap and the Grantmaker's valuation.
  */
 export interface EnsureAttemptResult {
   /** The published statement the groups hang off, when there is one. */
@@ -741,13 +741,13 @@ export async function ensureAttemptActions(
     if (withinCooldown) {
       const rationales = opts.rationales ?? [];
       const rationale = rationales[groups] ?? rationales[rationales.length - 1] ?? "";
-      if (rationale.trim().length < ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS) {
+      if (!rationale.trim()) {
         return {
           ...base,
           reason:
             `the last attempt closed within the mandate's ${cooldownDays}-day cooldown; ` +
-            `the entitling item's rationale must state at least ${ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS} ` +
-            "characters of reason (a new lemma formalized, a route the prior report could not pursue) to waive it",
+            "the entitling item's rationale must say what changed since then (a new lemma formalized, " +
+            "a route the prior report could not pursue) for the attempt to open sooner",
         };
       }
     }

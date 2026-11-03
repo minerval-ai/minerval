@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 2)
+# Domain skill: Mathematics (version 3)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -162,7 +162,10 @@ while the claim still lacks one. An `attempt_proof` item is `waiting`, not
 blocked, until a statement is published; the n-th item on a claim
 entitles the n-th attempt group, an earlier open group holds the next one
 back, and the mandate's attempt cooldown holds it back too unless the
-entitling item's rationale states a reason of at least twenty characters.
+entitling item's rationale says what changed since the last attempt (a new
+lemma formalized in the subtree, a route the prior report names and could
+not pursue). Whether that is reason enough is your judgment; the rationale
+is public and the Audit Agent reads it.
 Every item's standing (open, running, done, cancelled, waiting, blocked,
 with the reason) comes back from `extend_plan` in the same turn and from
 `grant_overview` at any time; read it before valuing, and before filing a

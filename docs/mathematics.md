@@ -1264,7 +1264,10 @@ its context competes with the problem for attention; a test pins that
 absence. Its user message is in the same register: the problem in words,
 the formal statement and pin, the note relating the two, the effort, the
 budget in dollars of metered work, and, for a repeat attempt, the earlier
-attempts' reports and notebook summaries marked as unverified. The two
+attempts' reports and notebook summaries marked as unverified, prose
+collapsed and fenced code kept as written, each pointing to
+`read_earlier_attempt`, which returns an earlier attempt's report (with its
+Lean source) and notebook in full. The two
 Mathlib search tools carry descriptions written for the solver; their input
 schemas are the skill's, so the executors are shared with the Steward.
 
@@ -1279,7 +1282,10 @@ ceiling bounds them); the provider's code-execution tool as the computer-algebra
 (sympy and mpmath are preinstalled; the container has one CPU, five
 gibibytes, no network, and cannot hold Mathlib, which is why Lean is a client
 tool); `notebook_write {section, content}` and `notebook_read {}` backed by
-`proof_attempts.notebook`; and a terminal `report` tool with strict schema.
+`proof_attempts.notebook`; `read_earlier_attempt {attempt_id, section?}` on
+a repeat attempt; `raise_issue`, described for the solver without the
+platform's vocabulary, for a tool that failed or misbehaved; and a
+terminal `report` tool with strict schema.
 No `web_search`: the Steward does the literature before and after, a proof
 found on the web is not the platform solving the problem, and a
 bounty-bearing problem was established as open by the Steward. This is
@@ -1315,7 +1321,9 @@ for them); the claim's lifetime attempt spend is under its
 cap; no attempt on the formalization is `running`; the previous attempt
 closed at least `ATTEMPT_COOLDOWN_DAYS` (30) ago unless the Grantmaker states
 a reason (a new lemma in the subtree was formalized; a prior report names a
-route it could not pursue for budget). `reconcileActions` opens rows from
+route it could not pursue for budget). Whether the reason is good enough is
+the Grantmaker's judgment, stated in the item's public rationale and open
+to audit, not a test of its length (#763). `reconcileActions` opens rows from
 plan items of action `attempt_proof`, cancels rows whose formalization was
 superseded, and changes its reopen rule: the 60-minute clause at
 `action-service.ts:257-262` becomes `kind NOT IN ('ingest','attempt_proof')`
@@ -1347,8 +1355,10 @@ select.
   in dollars of metered work (the same number as owls at cost). The
   `beforeTurn` hook reads `ctx.meter.billedMicroUsd` (which includes Lean
   and code-execution metering) and stops the loop at the ceiling; the
-  `reminder` hook appends a wrap-up notice at 85 percent. The model-facing
-  pacing signal is the provider's task budget (beta `task-budgets-2026-03-13`):
+  `reminder` hook appends the dollar spend line to every turn (what is
+  spent, of what, and about how many turns remain at the last turn's rate,
+  the same line the researcher sees) and a wrap-up notice at 85 percent.
+  Beside it the provider's task budget (beta `task-budgets-2026-03-13`) gives
   a token countdown the model sees as it works, sized from the ceiling at
   60 percent of the ceiling's dollars at the model's output price (a 150-owl
   ceiling on the strong model is 1.8 million tokens; the provider's floor is
@@ -3812,14 +3822,20 @@ to test lemma statements before you try to prove them and to check each
 lemma as you go. lean_check runs the full check of a candidate proof or
 disproof against the statement and returns the verdict and, on failure,
 the gate that failed. It is bound to this statement and checks nothing
-else, it is the only verification there is, and it is capped per attempt,
-so do not spend it on fragments lean_elaborate can test. The code
+else, and it is the only verification there is. Each check is a full
+build billed to the attempt's budget, slower and dearer than
+lean_elaborate, so test fragments with lean_elaborate first; the checker
+also has a daily capacity, and a check it refuses for the day says so in
+its result. The code
 execution tool runs Python with sympy and mpmath for computation and
 exploration; it has no network access and cannot run Lean. notebook_write
 records your work under a section name and notebook_read returns it; the
 notebook outlives the attempt and is what a later attempt on this
 statement reads, so write each approach down when you start it and what
-happened when you leave it. report ends the attempt.
+happened when you leave it. When earlier attempts exist,
+read_earlier_attempt returns one in full, its notebook and its report with
+any Lean source, where the summary in the message shortens them. report
+ends the attempt.
 
 Working method. Search Mathlib for the relevant theory before you build
 anything, and record what exists and what does not. Explore numerically
@@ -3830,26 +3846,18 @@ you can state precisely to a longer argument nobody has verified.
 
 Budget. The attempt has a fixed budget of metered work, stated in dollars
 in the message that follows; it covers your own tokens, checker time, and
-container time. You will see a running count of the tokens you have left
-as you work, a notice when about fifteen percent of the budget remains,
-and a hard stop at the ceiling whether or not you have reported. There is
+container time. After every turn you will see what you have spent in
+dollars and about how many turns remain at your recent rate, a notice
+when about fifteen percent of the budget remains, and a hard stop at the
+ceiling whether or not you have reported. There is
 no credit for a proof you did not check, so keep enough for a final
 lean_check on any candidate and for the report.
 
 The report. Call report exactly once: when you have a checked proof or
 disproof, when you have exhausted the routes you can see, or when the
 notice says the budget is nearly spent. A negative report with a precise
-obstruction is a good outcome. Its fields: outcome (proof, disproof,
-partial, reduction, or negative); lean_proof and lean_check_id when an
-accepted check exists, otherwise null; informal_argument, the argument in
-prose a mathematician could follow; reduction_statement, when you reduced
-the problem to something you can state precisely; counterexample, with a
-description and the code that verifies it, when you found one you could
-not formalize; approaches_tried, one line each; obstruction, the specific
-thing that stopped you; what_would_help, the lemma, definition, or
-computation that would unblock the next attempt; and confidence in your
-own outcome, from 0 to 1. A proof outcome without an accepted check is
-recorded as partial.
+obstruction is a good outcome. A proof outcome without an accepted check
+is recorded as partial.
 ```
 
 ## Appendix D: Prize rules sketch
