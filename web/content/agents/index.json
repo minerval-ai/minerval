@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 19211,
-    "fullChars": 104165,
+    "roleChars": 19401,
+    "fullChars": 104355,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23574,
-    "fullChars": 108528,
+    "roleChars": 23778,
+    "fullChars": 108732,
     "skills": [
       {
         "name": "costing",
@@ -145,8 +145,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17824,
-    "fullChars": 102778,
+    "roleChars": 18028,
+    "fullChars": 102982,
     "skills": []
   },
   {
@@ -158,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13673,
-    "fullChars": 98627,
+    "roleChars": 13863,
+    "fullChars": 98817,
     "skills": [
       {
         "name": "costing",
@@ -199,8 +199,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 14445,
-    "fullChars": 99399,
+    "roleChars": 14635,
+    "fullChars": 99589,
     "skills": [
       {
         "name": "costing",
@@ -239,8 +239,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15830,
-    "fullChars": 100784,
+    "roleChars": 16020,
+    "fullChars": 100974,
     "skills": [
       {
         "name": "costing",
@@ -292,8 +292,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23077,
-    "fullChars": 108031,
+    "roleChars": 23267,
+    "fullChars": 108221,
     "skills": [
       {
         "name": "costing",
@@ -332,8 +332,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 15026,
-    "fullChars": 99980,
+    "roleChars": 15216,
+    "fullChars": 100170,
     "skills": [
       {
         "name": "costing",
@@ -392,12 +392,12 @@
     "name": "Researcher",
     "stage": 10,
     "group": "instruments",
-    "tagline": "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
+    "tagline": "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node, and returns a report the launcher weighs.",
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 14131,
-    "fullChars": 99085,
+    "roleChars": 14666,
+    "fullChars": 99620,
     "skills": [
       {
         "name": "costing",

@@ -422,8 +422,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       <CiteClaim claimId={claim.id} />
 
       {/* contribution record (#171) — the public exchanges, rendered as
-          history after the claim's own content. Hidden entirely when no
-          contribution has been made. */}
+          history after the claim's own content, behind a closed disclosure so no
+          contributor text shows until a reader opens it. Hidden entirely when
+          no contribution has been made. */}
       {record && record.length > 0 && <ContributionRecord record={record} />}
 
       {/* contribution entry (#174): the companion of the contribution record

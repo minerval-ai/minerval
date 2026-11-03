@@ -11,9 +11,11 @@ description: >-
   figures for the Steward to reason about; the verdict stays the Steward's.
 metadata:
   minerval:
-    version: 1
+    version: 2
     since_epoch: 2026-09-domain-skills
     kind: method
+    changelog:
+      2: The researcher a Steward launches may record the instances it finds, with record_claim_instance on a claim or record_question_instance on a question; the Steward owns the instance set.
 ---
 
 ## For every administrator
@@ -253,7 +255,13 @@ what you find. The procedure is the Steward's, above, and the tools are the
 same except the last two: begin with `provenance_get_map`, read with
 `provenance_read_source`, record readings with `provenance_record_reading`,
 edges with `provenance_record_edge`, and document relations with
-`provenance_record_source_relationship`. You do not write the map's summary
+`provenance_record_source_relationship`. Every reading and edge hangs on an
+instance, so where you find a source that asserts, denies or poses the
+claim in its own voice and is not yet an instance, record it with
+`record_claim_instance` as you read (on a question,
+`record_question_instance`, for a source that asks or answers it), by the
+Steward's rules for instances, and then map it. The instance is recorded as yours; the Steward
+owns the instance set and may correct or detach it. You do not write the map's summary
 or record where the story begins; the reader-facing account and the origins
 are the Steward's judgment. Put in your report any source you found to be
 the first record of the claim, and what you looked for upstream of it, and
