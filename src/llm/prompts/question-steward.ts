@@ -8,8 +8,9 @@ import {
   BOUNDARIES,
   DELEGATING_RESEARCH,
   IMPORTANCE,
-  NODE_INSTANCES,
-  PROVENANCE,
+  NODE_INSTANCES_BODY,
+  PROVENANCE_BODY,
+  PROVENANCE_POINTER,
   REQUESTS,
 } from "./claim-steward.js";
 
@@ -87,20 +88,19 @@ bookkeeping goes to log_stewardship_decision.
 
 `;
 
-const INSTANCES = `## Where Sources Ask or Answer It
+const SOURCES = `## Sources and Provenance
 
-Record where sources ask or answer the question with
-record_question_instance, under the same rule of fidelity as a claim's
-instances (§4): what the source asks, or the answer it gives, as it gives
-it. An answering source names the answer node its answer matches, where one
-does. Record what you read for the assessment; do not search for instances
-for their own sake. A question is often the natural home for a request that
-spans several of its answers, or for a programme of work that would move
-the whole question.
+Record where sources ask or answer the question with record_question_instance,
+under the same rule of fidelity as a claim's instances (§4): what the source
+asks, or the answer it gives, as it gives it. An answering source names the
+answer node its answer matches, where one does. Record what you read for the
+assessment; do not search for instances for their own sake. A question is
+often the natural home for a request that spans several of its answers, or for
+a programme of work that would move the whole question.
 
-`;
+${NODE_INSTANCES_BODY}${PROVENANCE_POINTER}${PROVENANCE_BODY}`;
 
-const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSMENT}${PROVENANCE}${DELEGATING_RESEARCH}${REQUESTS}${INSTANCES}${NODE_INSTANCES}${BOUNDARIES}${RAISING_ISSUES}
+const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSMENT}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${RAISING_ISSUES}
 
 ${skillsSection("claim-steward")}`;
 

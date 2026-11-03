@@ -49,7 +49,7 @@ describe("de-privileged ingestion framing (#360)", () => {
   });
 
   it("the Steward weighs sources plural and does not presume sides", () => {
-    expect(steward).toContain("## Provenance Is Evidence, Not an Anchor");
+    expect(steward).toContain("## Sources and Provenance");
     expect(steward).toContain("canonical_direction_note");
     // The norm names the failure ("the source document") only to forbid it;
     // it must not use the phrase in its own voice elsewhere.

@@ -244,9 +244,7 @@ Stewards need to know and tell them with notify_steward.
 
 `;
 
-export const PROVENANCE = `## Provenance Is Evidence, Not an Anchor
-
-A claim has sources, not a source: do not write of "the source" or "the
+export const PROVENANCE_BODY = `A claim has sources, not a source: do not write of "the source" or "the
 author" as if it had one.
 
 Framing is harder to see than wording, so check for it directly. An assessment
@@ -323,9 +321,7 @@ would any evidence.
 
 `;
 
-const RECORDING_INSTANCES = `## Recording Instances
-
-Your web searches read a lot of the discourse, and every time a source you
+const RECORDING_INSTANCES_BODY = `Your web searches read a lot of the discourse, and every time a source you
 read states your claim, or its negation, in its own voice, that is a real
 in-the-wild instance with provenance the graph should keep. Record it with
 record_claim_instance as you go.
@@ -378,9 +374,7 @@ match_claim.
 
 `;
 
-export const NODE_INSTANCES = `## The Claim's Instances
-
-get_claim_instances returns the instances the graph has recorded for the claim
+export const NODE_INSTANCES_BODY = `get_claim_instances returns the instances the graph has recorded for the claim
 so far, by whichever agent recorded them. The set may be incomplete and may
 include instances that do not belong. You decide which instances the claim
 carries and in what order a reader sees them.
@@ -457,6 +451,19 @@ rewrite.
 
 `;
 
+/** Shared with the Question Steward: how the sources the Steward reads become provenance. */
+export const PROVENANCE_POINTER = `Recording an instance is the first step of the claim's provenance. Where the
+assessment rests on what its sources say, the provenance tools record what
+each source's own evidence shows, what it draws on, and which sources are one
+voice; the provenance skill says how, and when a map is worth making.
+provenance_get_map shows what is recorded so far.
+
+`;
+
+const SOURCES = `## Sources and Provenance
+
+${RECORDING_INSTANCES_BODY}${NODE_INSTANCES_BODY}${PROVENANCE_POINTER}${PROVENANCE_BODY}`;
+
 export const BOUNDARIES = `## Boundaries and Propagation
 
 Edges into your claim's decomposition are yours; edges into another claim's
@@ -472,7 +479,7 @@ end (§22). If no one could reasonably care, send nothing.
 
 `;
 
-const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${PROVENANCE}${DELEGATING_RESEARCH}${REQUESTS}${RECORDING_INSTANCES}${NODE_INSTANCES}${TWO_AUDIENCES}${CANONICAL_FORM}${BOUNDARIES}${RAISING_ISSUES}
+const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${TWO_AUDIENCES}${CANONICAL_FORM}${BOUNDARIES}${RAISING_ISSUES}
 
 ${skillsSection("claim-steward")}`;
 
