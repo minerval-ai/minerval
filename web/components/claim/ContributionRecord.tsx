@@ -6,7 +6,8 @@ import type { ContributionExchange } from "@/lib/types";
 // reasoning, then any appeal and arbitration outcome. This is deliberately a
 // separate section from the assessment: the constitution's Burden of
 // Engagement puts the exchange on the claim's public record, but the reply to
-// a contributor lives in the review, never in the assessment prose.
+// a contributor lives in the review, never in the assessment prose. The
+// record sits behind a disclosure, so no contributor text shows until opened.
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -108,18 +109,24 @@ function Exchange({ exchange }: { exchange: ContributionExchange }) {
   );
 }
 
+// Closed by default: the record is public and one click away, but
+// contributors' own words never appear on the claim page until a reader asks
+// for them. The summary line names only how many exchanges there are.
 export function ContributionRecord({ record }: { record: ContributionExchange[] }) {
   if (record.length === 0) return null;
+  const n = record.length;
   return (
-    <section>
-      <h2>Contribution record</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+    <details className="reasoning-detail contribution-record">
+      <summary>
+        Contribution record · {n} {n === 1 ? "exchange" : "exchanges"}
+      </summary>
+      <p className="contribution-record-note">
         Challenges and proposals from contributors, with the review each received.
         Substantive exchanges stay on the claim&apos;s public record.
       </p>
       {record.map((exchange) => (
         <Exchange key={exchange.contribution.id} exchange={exchange} />
       ))}
-    </section>
+    </details>
   );
 }

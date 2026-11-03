@@ -896,10 +896,12 @@ export const claimInstances = pgTable(
     // Whether this source asserts the canonical claim ("affirms"), its
     // negation/contrary ("denies"), or states the proposition as an open
     // question without endorsing either side ("poses", #445: a survey
-    // stating a conjecture). Lets a claim and its denial share one canonical
-    // node while preserving which side each source takes, so the
-    // disagreement lives on the claim instead of in two mirror-image pages.
-    // Values are INSTANCE_STANCES in schemas/common.ts.
+    // stating a conjecture), or only refers to it, citing it or reporting
+    // the debate without taking a side ("mentions"). Lets a claim and its
+    // denial share one canonical node while preserving which side each
+    // source takes, so the disagreement lives on the claim instead of in two
+    // mirror-image pages. Values are INSTANCE_STANCES in schemas/common.ts;
+    // the column is free text, so a new value needs no migration.
     stance: text("stance").notNull().default("affirms"),
     // Kinds (§4, §7a). An instance of a quantity states its value
     // (stance 'states'): the figure as the source gives it, in the estimate

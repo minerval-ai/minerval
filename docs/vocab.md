@@ -13,7 +13,9 @@ it uses are listed under "MIRA export" below.
 Established ontologies are reused where they fit; `mv:` covers only what is
 ours. PROV-O carries provenance (`prov:wasDerivedFrom`, `prov:wasQuotedFrom`,
 `prov:generatedAtTime`), CiTO carries a source's stance toward a claim
-(`cito:supports` / `cito:disputes`), Dublin Core carries publication info
+(`cito:supports` / `cito:disputes`; a source posing the claim as an open
+question `cito:discusses` it, and one that only mentions it `cito:cites`
+it), Dublin Core carries publication info
 (`dct:creator`, `dct:title`, `dct:source`, `dct:license`), and the nanopub
 schema (`np:`) carries the graph structure. Every nanopub's publication-info
 graph declares the content license — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
@@ -53,7 +55,7 @@ undocumented predicate.
 | --- | --- |
 | `mv:reasoningTrace` | The assessment's full defensible chain, as prose (on the assertion graph node). |
 | `mv:quote` | An instance's verbatim quote. |
-| `mv:stance` | Whether an instance/argument affirms or denies (`affirms` / `denies`; arguments: `for` / `against`). |
+| `mv:stance` | Which side an instance/argument takes (instances: `affirms` / `denies`, or `poses` / `mentions` for a source that states the claim as an open question or only refers to it, taking no side; arguments: `for` / `against`). |
 | `mv:hasArgument` | Assertion → an argument carried on the claim. |
 | `mv:hasPremise` | Argument → a basis subclaim it rests on. |
 | `mv:verdict` | The Steward's rating of an argument's inference: how far the conclusion follows if the premises hold (`certain` / `likely` / `slight` / `none`). It rates the step, not the conclusion; whether the premises hold is read from their own assessments. Nanopublications exported before #540 carry the earlier values `holds` / `holds_with_caveats` / `fails` / `contested`, which are not mapped onto the new ones. |

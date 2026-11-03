@@ -1447,7 +1447,7 @@ suggests the statement is sound rather than vacuous; (3) record an argument (`ad
 `write_argument`, `evaluate_argument`), then `update_claim_assessment`
 (typically `verified` for a faithful compiled proof, `contradicted` for a
 faithful compiled disproof), `log_stewardship_decision`, and
-`notify_dependent_stewards`; (4) if a bounty is bound to the formalization,
+`notify_steward`; (4) if a bounty is bound to the formalization,
 the worker has already moved it to `house_result_pending` (section 8.1); the
 Steward either calls `mark_problem_solved_by_platform {formalization_id,
 attempt_id, lean_check_id}`, a mechanical tool that moves the bounty to
