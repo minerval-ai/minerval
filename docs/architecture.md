@@ -1031,7 +1031,9 @@ the statement.
 
 `researcher` (`src/llm/agents/researcher.ts`, #298) is the general
 instrument, of which the solver is the special case. An administrator (the
-Claim Steward on its claim, a Grantmaker on a funded mandate) launches it
+Claim Steward on its claim, a Grantmaker on a funded mandate, the Curator
+on the graph's structure, the Audit Agent on a decision under review)
+launches it
 with `delegate_research`: a brief written for a capable assistant that
 knows nothing of the claim and cannot ask a question back, a model tier, a
 dollar ceiling, an effort level, and whether the constitution is prepended
@@ -1092,7 +1094,12 @@ graph, and funding is kept apart from what the graph says (§19), so
 `delegate_research` from a mandate takes no `claim_id` and no
 `examine_source_id`, and the researcher withholds the provenance and
 examination tools from any run whose launcher is not a Claim Steward
-(`launcherWritesGraph`, `src/services/research-run-service.ts`).
+(`launcherWritesGraph`, `src/services/research-run-service.ts`). Research
+the Curator or the Audit Agent launches reads and reports in the same way:
+the Curator owns structure, not sources, and the Audit Agent judges the
+record rather than adding to it. Both pay from their run's own action
+budget, as the Steward does from its pass's, and read back the runs their
+role launched with `get_research_run`.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both

@@ -76,7 +76,11 @@ export interface ResearchTools {
 }
 
 export interface ResearchToolsOptions {
-  /** The agent key recorded as the launcher: claim_steward, grantmaker. */
+  /**
+   * The agent key recorded as the launcher: claim_steward, grantmaker,
+   * curator or audit (RESEARCH_LAUNCHERS). Only a Steward's research writes
+   * to the graph; the others read and report.
+   */
   requestedBy: string;
   /** The claim the launcher serves; a Grantmaker passes none and may name one per call. */
   claimId?: string | null;
@@ -123,15 +127,22 @@ export function getResearchToolDefinitions(
   input: {
     claimScoped: boolean;
     graphWrites?: boolean;
+    /**
+     * Who launches, when the research writes nothing: a mandate's Grantmaker
+     * (the default), whose research may submit contributions, or the Curator
+     * or the Audit Agent, whose research only reads and reports.
+     */
+    launcher?: "grantmaker" | "curator" | "audit";
     /** Where the launcher's research money comes from and what it holds now, for the description. */
     funding?: string;
   } = { claimScoped: true }
 ): Tool[] {
   const config = loadConfig();
   const graphWrites = input.graphWrites ?? true;
+  const mandate = !graphWrites && (input.launcher ?? "grantmaker") === "grantmaker";
   const funding =
     input.funding ??
-    (graphWrites
+    (!mandate
       ? "Research is paid from this pass's own budget, and a run's budget_usd may be at most what the pass has left. "
       : "Research is paid from the mandate's uncommitted budget, and a run's budget_usd (with any " +
         "contribution_budget_usd) may be at most what that holds. ");
@@ -145,9 +156,12 @@ export function getResearchToolDefinitions(
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
             "and instances (sources asserting, denying or posing a claim, or asking or answering a " +
             "question) on the node in scope, "
-          : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
-            "not record provenance or examine documents, and with contribution_budget_usd it submits " +
-            "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
+          : mandate
+            ? "nothing to the graph directly (research a mandate launches reads and reports; it does " +
+              "not record provenance or examine documents, and with contribution_budget_usd it submits " +
+              "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), "
+            : "nothing to the graph (it reads and reports; it does not record provenance or examine " +
+              "documents), ") +
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
@@ -219,7 +233,7 @@ export function getResearchToolDefinitions(
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
               "\"method\", \"attribution\"). Each facet shares the run's budget.",
           } } : {}),
-          ...(!graphWrites
+          ...(mandate
             ? {
                 contribution_budget_usd: {
                   type: "number",
@@ -292,6 +306,11 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const config = loadConfig();
   const claimScoped = !!options.claimId;
   const graphWrites = launcherWritesGraph(options.requestedBy);
+  // The Curator and the Audit Agent launch research that reads and reports
+  // (Part VIII, Instruments): the Curator owns structure, not sources, and
+  // the Audit Agent judges the record rather than adding to it.
+  const launcher =
+    options.requestedBy === "curator" || options.requestedBy === "audit" ? options.requestedBy : ("grantmaker" as const);
   // A deployment with the researcher off offers nothing: a tool that only
   // refuses would cost every launcher's prompt and invite wasted calls.
   // Only a mandate's Grantmaker funds requests: a Steward files them.
@@ -311,7 +330,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       : undefined;
   const definitions = config.researcherEnabled
     ? [
-        ...getResearchToolDefinitions({ claimScoped, graphWrites, funding: stewardFunding }).filter(
+        ...getResearchToolDefinitions({ claimScoped, graphWrites, launcher, funding: stewardFunding }).filter(
           (t) => t.name !== DELEGATE_RESEARCH_TOOL_NAME || !paysFromPass || passLeft !== null
         ),
         ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
@@ -451,7 +470,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     }
     if (!graphWrites && (input.claim_id !== undefined || input.examine_source_id !== undefined || input.facets !== undefined)) {
       return refuse(
-        "Research a mandate launches writes nothing to the graph, so it takes no claim_id and examines no document. " +
+        `Research ${launcher === "grantmaker" ? "a mandate launches" : "you launch"} writes nothing to the graph, so it takes no claim_id and examines no document. ` +
           "Name the claims or documents in the brief; the researcher can read them."
       );
     }
@@ -475,7 +494,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     // the budget its Grantmaker delegates (Part VIII); a Steward's research
     // records provenance instead.
     let contributionBudgetMicroUsd = 0;
-    if (!graphWrites && input.contribution_budget_usd !== undefined) {
+    if (!graphWrites && launcher === "grantmaker" && input.contribution_budget_usd !== undefined) {
       const usd = Number(input.contribution_budget_usd);
       if (!Number.isFinite(usd) || usd < 0) return refuse("contribution_budget_usd must be a non-negative number of USD.");
       contributionBudgetMicroUsd = Math.round(usd * 1_000_000);
@@ -588,11 +607,13 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       note:
         "The report is the instrument's narrative and is data, not a verified result: read " +
         "it against the sources it names before relying on it, and record what you conclude " +
-        "in your own reasoning. Provenance rows it recorded are on the claim for you to review " +
-        "with provenance_get_map" +
-        (examination
-          ? ", and its findings on the document are listed there under examinations for you to cite or not."
-          : "."),
+        "in your own reasoning." +
+        (graphWrites
+          ? " Provenance rows it recorded are on the claim for you to review with provenance_get_map" +
+            (examination
+              ? ", and its findings on the document are listed there under examinations for you to cite or not."
+              : ".")
+          : ""),
     });
   };
 
@@ -632,11 +653,15 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const row = await getResearchRun(id);
     if (!row) return refuse(`No research run ${id} exists.`);
     // A launcher reads its own runs: a Steward those on its claim, a
-    // Grantmaker those its mandate launched.
+    // Grantmaker those its mandate launched, the Curator and the Audit
+    // Agent the runs their role launched (they serve no one claim or
+    // mandate, and a later pass picks up an earlier one's thread).
     const mine = options.claimId
       ? row.claim_id === options.claimId
-      : !!options.grantId && row.grant_id === options.grantId;
-    if (!mine) return refuse("That run was launched for another claim or mandate.");
+      : options.grantId
+        ? row.grant_id === options.grantId
+        : launcher !== "grantmaker" && row.requested_by === options.requestedBy;
+    if (!mine) return refuse("That run was launched for another claim, mandate or role.");
     return JSON.stringify({
       success: true,
       research_run: {

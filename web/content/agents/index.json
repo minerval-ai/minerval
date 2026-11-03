@@ -158,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13725,
-    "fullChars": 94699,
+    "roleChars": 14199,
+    "fullChars": 95173,
     "skills": [
       {
         "name": "costing",
@@ -239,8 +239,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15882,
-    "fullChars": 96856,
+    "roleChars": 16298,
+    "fullChars": 97272,
     "skills": [
       {
         "name": "costing",
@@ -396,8 +396,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 17356,
-    "fullChars": 98330,
+    "roleChars": 17453,
+    "fullChars": 98427,
     "skills": [
       {
         "name": "costing",

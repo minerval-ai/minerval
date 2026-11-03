@@ -351,6 +351,26 @@ describe("toolset by model", () => {
     expect(task).toContain("launched by the Grantmaker of a funded mandate");
   });
 
+  it("serves the Curator and the Audit Agent with reads and a report, writing nothing to the graph", async () => {
+    for (const [launcher, name, serves] of [
+      ["curator", "the Curator, which keeps the graph's structure", "the Curator's work on the graph's structure"],
+      ["audit", "the Audit Agent, reviewing how decisions were made", "the Audit Agent's review of a decision"],
+    ] as const) {
+      const i = input({ claim: false });
+      i.run.requested_by = launcher;
+      await runResearcher(i);
+      const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+      expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+      expect(names).not.toContain("record_claim_instance");
+      expect(names).not.toContain("submit_contribution");
+      expect(names).toContain("get_source_examinations");
+      const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+      expect(task).toContain(`launched by ${name}`);
+      expect(task).toContain(`This investigation serves ${serves}. It writes nothing to the graph`);
+      expect(task).not.toContain("serves a mandate");
+    }
+  });
+
   it("withholds every graph-writing tool from a Grantmaker's run, whatever it was handed", async () => {
     const i = input();
     i.run.requested_by = "grantmaker";

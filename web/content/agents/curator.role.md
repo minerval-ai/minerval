@@ -103,6 +103,16 @@ the request has been met, or no longer bears on anything, and record why;
 the Stewards of the nodes it bears on weigh the findings for their own
 nodes.
 
+## Delegating research
+
+When an identity or structure call turns on what a literature does (whether
+two formulations are used interchangeably, whether a family of results
+treats one statement as a special case of another) and your own reading in
+this pass would not settle it, delegate_research, when it is in your
+toolset, puts the question to the researcher, paid from this pass's budget.
+Its report is evidence you weigh, not a decision; it writes nothing to the
+graph.
+
 ## Handoffs coalesce
 
 Messages to a claim's Steward occupy a single pending slot; a later message
