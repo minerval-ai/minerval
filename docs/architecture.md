@@ -116,7 +116,11 @@ soon a claim is stewarded and how much effort its Steward spends.
 Two further signals complete the picture (issue #172): `contestation` on the
 claim, how live the dispute is stated unfused from the consequence half, and
 `marginal_yield` on each assessment, the Steward's exit judgment of how much
-another, stronger pass would improve it. Both are live inputs to the
+another, stronger pass would improve it. A quantity's estimate and a
+question's assessment carry the same field (a question also records its
+confidence), and the allocation SQL reads yield and recency from whichever
+table the node's kind keeps its judgment in (`node-judgment-sql.ts`, #755).
+Both are live inputs to the
 expected-value estimate the allocation engine funds work by
 (docs/allocation.md): value = importance × contested-factor × expected
 quality gain, with cost on the other side of the ratio.

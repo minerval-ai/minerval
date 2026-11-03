@@ -39,15 +39,26 @@ import { getQuestionDetail } from "../../services/question-service.js";
 import { listRequests } from "../../services/request-service.js";
 import { EVALUATION_STALE_SQL } from "../../services/argument-service.js";
 
+/**
+ * How many findings and requests get_claim shows inline: enough for the
+ * common case at a bounded context cost. Each list says when there are more
+ * and which tool reads them (#762).
+ */
+const FINDINGS_SHOWN = 10;
+const REQUESTS_SHOWN = 20;
+
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
     {
       name: "get_claim",
       description:
         "Read a claim as the graph records it: its canonical text, type, " +
-        "state, current assessment, subclaims grouped by argument, arguments " +
-        "with their evaluations, related claims, formalization record, " +
-        "preliminary seed, findings already noted, and Steward state. A claim " +
+        "state, importance, contestation and domains; its current assessment " +
+        "(the reader-facing text, the reasoning trace, confidence, credence " +
+        "and marginal yield); subclaims grouped by argument, and related " +
+        "claims, each with its status, confidence and credence; arguments " +
+        "with their evaluations; formalization record, preliminary seed, the " +
+        "most recent findings and requests on it, and Steward state. A claim " +
         "is a proposition, not a passage in any document, so this returns no " +
         "sources; instance_count says how many instances it carries, and " +
         "get_claim_instances reads them. decomposition_status \"complete\" " +
@@ -148,8 +159,12 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_claim_dependents",
       description:
-        "Get all claims that depend on (have as a subclaim) a given claim. " +
-        "Useful for understanding the impact of changing a claim's assessment.",
+        "Get the nodes that depend on a given one: those that have it as a " +
+        "subclaim, answer, or subquestion, and, for a quantity, the claims " +
+        "that cut it (say which side of a figure it lies; relation 'cuts'), " +
+        "whose credence must agree with its estimate. Each comes with its " +
+        "status, confidence and credence. Use it to see whom a change of " +
+        "judgment could matter to.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -312,6 +327,7 @@ async function getClaim(claimId: string) {
     confidence: number;
     child_status: string | null;
     child_confidence: number | null;
+    child_credence: number | null;
     argument_id: string | null;
     argument_name: string | null;
     child_kind: string;
@@ -321,6 +337,7 @@ async function getClaim(claimId: string) {
     `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
+            a.claim_credence AS child_credence,
             am.argument_id, arg.name AS argument_name,
             c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
      FROM claim_relationships cr
@@ -395,7 +412,13 @@ async function getClaim(claimId: string) {
   // note_finding itself, for every role; this list is passive and carries no
   // instruction. `stale` marks a note whose cited assessment is no longer
   // current, so the Steward knows the graph has moved since it was written.
-  const findingsNoted = await listFindings({ claimId, limit: 10 }).catch(() => []);
+  // Capped at FINDINGS_SHOWN; the total says when there are more, and
+  // search_findings with this claim_id reads them (#762).
+  const findingsNoted = await listFindings({ claimId, limit: FINDINGS_SHOWN }).catch(() => []);
+  const [findingTotal] = await rawQuery<{ n: number }>(
+    `SELECT count(*)::int AS n FROM agent_findings WHERE claim_id = $1 AND status = 'published'`,
+    [claimId]
+  ).catch(() => [{ n: findingsNoted.length }]);
 
   // The claim's formal statement and the checks on it (#435): the published
   // version, any draft or reviewed one awaiting publication, every version's
@@ -423,22 +446,44 @@ async function getClaim(claimId: string) {
         WHERE claim_id = $1 AND stance = 'states' AND stated_estimate IS NULL AND detached_at IS NULL`,
       [claimId]
     );
+    // The Steward's exit judgment on the current estimate (#755).
+    const [qYield] = await rawQuery<{ marginal_yield: number | null }>(
+      `SELECT marginal_yield FROM quantity_estimates WHERE claim_id = $1 AND is_current = true`,
+      [claimId]
+    );
     kindRecord.quantity = {
       definition: q.definition,
       current_estimate: q.estimate,
       estimated: q.assessed,
+      marginal_yield: qYield?.marginal_yield ?? null,
       stated_estimates: q.estimates.length,
       figures_not_yet_recorded: unrecorded?.n ?? 0,
       readings: q.readings,
       cuts: q.cuts,
     };
   } else if (claim.kind === "question") {
-    kindRecord.question = await getQuestionDetail(claimId);
+    // The detail the page reads, plus the Steward's confidence in the
+    // standing and its exit judgment (#755).
+    const [qJudgment] = await rawQuery<{ confidence: number | null; marginal_yield: number | null }>(
+      `SELECT confidence, marginal_yield FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+      [claimId]
+    );
+    kindRecord.question = {
+      ...(await getQuestionDetail(claimId)),
+      confidence: qJudgment?.confidence ?? null,
+      marginal_yield: qJudgment?.marginal_yield ?? null,
+    };
   } else {
     const threshold = await getThresholdOf(claimId);
     if (threshold) kindRecord.threshold_of = threshold;
   }
-  const requests = await listRequests({ claimId, limit: 20 }).catch(() => ({ items: [], total: 0 }));
+  const requests = await listRequests({ claimId, limit: REQUESTS_SHOWN }).catch(() => ({ items: [], total: 0 }));
+  if (requests.total > requests.items.length) {
+    kindRecord.requests_total = requests.total;
+    kindRecord.requests_note =
+      `The ${requests.items.length} most recent of ${requests.total} requests on this node; ` +
+      `list_requests with this claim_id and an offset reads the rest.`;
+  }
   if (requests.items.length > 0) {
     kindRecord.requests = requests.items.map((r) => ({
       id: r.id,
@@ -470,6 +515,10 @@ async function getClaim(claimId: string) {
       steward_state: claim.stewardState,
       stewarded_at: claim.stewardedAt?.toISOString() ?? null,
       importance: claim.importance,
+      // The liveness and the domain tags the Steward keeps current with
+      // set_claim_importance and set_claim_domains (#760).
+      contestation: claim.contestation ?? null,
+      domains: claim.domains ?? [],
       // Derived from the subclaims loaded below, never from a stored counter
       // (#417): every edge in claim_relationships counts once, argument-grouped
       // or not — an edge shared by two arguments is two rows above but one
@@ -488,16 +537,28 @@ async function getClaim(claimId: string) {
     // The parent Steward's preliminary prior, when one exists and the claim is
     // still unassessed: one input among many, superseded by a real assessment.
     ...(preliminarySeed ? { preliminary_seed: preliminarySeed } : {}),
+    // The whole prior judgment, so a re-pass revises the reader-facing text
+    // it can see and does not drop a credence it cannot (#760; §21).
     current_assessment: assessment
       ? {
           status: assessment.status,
           confidence: assessment.confidence,
+          claim_credence: assessment.claimCredence ?? null,
+          marginal_yield: assessment.marginalYield ?? null,
+          summary: assessment.summary ?? null,
           reasoning: assessment.reasoningTrace,
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
     ...kindRecord,
     ...formalizationRecord,
+    ...((findingTotal?.n ?? 0) > findingsNoted.length
+      ? {
+          findings_note:
+            `The ${findingsNoted.length} most recent of ${findingTotal!.n} findings on this claim; ` +
+            `search_findings with this claim_id reads the rest.`,
+        }
+      : {}),
     findings_noted: findingsNoted.map((f) => ({
       id: f.id,
       noted_at: f.first_noted_at instanceof Date ? f.first_noted_at.toISOString() : f.first_noted_at,
@@ -514,6 +575,9 @@ async function getClaim(claimId: string) {
       kind: r.kind,
       reasoning: r.reasoning,
       assessment_status: r.assessment_status,
+      assessment_confidence: r.assessment_confidence,
+      // §21: rival explanations' credences must be jointly tenable.
+      assessment_credence: r.assessment_credence,
     })),
     subclaims: subclaims.map((sc) => ({
       id: sc.child_id,
@@ -523,6 +587,7 @@ async function getClaim(claimId: string) {
       confidence: sc.confidence,
       assessment_status: sc.child_status,
       assessment_confidence: sc.child_confidence,
+      assessment_credence: sc.child_credence,
       argument_id: sc.argument_id,
       argument_name: sc.argument_name,
       ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),
@@ -812,18 +877,54 @@ async function getContributorProfile(contributorId: string) {
 // behind the agents' historical field names so tool payloads don't change.
 async function getClaimDependents(claimId: string) {
   const rows = await fetchClaimDependents(claimId);
+  // A claim that says which side of a figure a quantity lies is joined to
+  // the quantity by a cut, not an edge, yet its credence must agree with the
+  // quantity's estimate (§21), so it is a dependent the quantity's Steward
+  // tells when the estimate moves (§22; #767).
+  const cuts = await rawQuery<{
+    id: string;
+    text: string;
+    claim_type: string;
+    direction: string;
+    value: number;
+    status: string | null;
+    confidence: number | null;
+    credence: number | null;
+  }>(
+    `SELECT c.id, c.text, c.claim_type, qc.direction, qc.value,
+            a.status, a.confidence, a.claim_credence AS credence
+       FROM quantity_cuts qc
+       JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
+       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+      WHERE qc.quantity_id = $1
+      ORDER BY c.importance DESC, c.id`,
+    [claimId]
+  );
 
-  return {
-    child_claim_id: claimId,
-    dependents: rows.map((r) => ({
+  const dependents = [
+    ...rows.map((r) => ({
       id: r.id,
       text: r.text,
       type: r.claim_type,
+      kind: r.node_kind,
       relation: r.relation_type,
       current_status: r.assessment_status,
+      confidence: r.assessment_confidence,
+      credence: r.assessment_credence,
     })),
-    count: rows.length,
-  };
+    ...cuts.map((c) => ({
+      id: c.id,
+      text: c.text,
+      type: c.claim_type,
+      kind: "claim",
+      relation: "cuts",
+      cut: { direction: c.direction, value: c.value },
+      current_status: c.status,
+      confidence: c.confidence,
+      credence: c.credence,
+    })),
+  ];
+  return { child_claim_id: claimId, dependents, count: dependents.length };
 }
 
 async function getRecentDecisions(

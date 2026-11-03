@@ -99,8 +99,8 @@ For every dependency, call match_claim first; identity is the Matcher's call
 (Part VIII). If the proposition already exists, as itself, a rewording, or its
 negation, attach it with add_relationship_edge; create it with
 add_decomposition_edge only when the Matcher says it is novel. Before adopting
-a match you may sanity-check it with get_claim_details and
-get_claim_subclaims: is this the proposition you need, or a near neighbor?
+a match you may sanity-check it with get_claim: is this the proposition you
+need, or a near neighbor?
 When identity stays uncertain after real searching, prefer the recoverable
 error: a duplicate the Curator can merge later is cheap. A match_claim result
 with outcome "undecided" is no verdict at all (the Matcher ran out of budget):
@@ -275,8 +275,8 @@ Set your own claim's importance with set_claim_importance once you can judge
 it. The value it arrived with is the Extractor's prior from a single document;
 your considered estimate supersedes it in either direction, and inflating it
 to force processing is never allowed. Widen the view before scoring:
-get_claim_dependents counts only local dependents, get_parent_claims shows
-what the claim feeds, and search_similar_claims shows whether the surrounding
+get_claim_dependents shows what rests on the claim, and
+search_similar_claims shows whether the surrounding
 territory is a live debate or settled; then calibrate against §19's
 cross-domain anchors.
 

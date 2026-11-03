@@ -54,6 +54,8 @@ export async function recordEstimate(input: {
   estimate: QuantityEstimate;
   summary?: string | null;
   work: string;
+  /** The Steward's exit judgment, 0..1 (#755); null when not stated. */
+  marginalYield?: number | null;
   model?: string | null;
   fundedByJobId?: string | null;
   trigger?: string | null;
@@ -71,8 +73,9 @@ export async function recordEstimate(input: {
     );
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO quantity_estimates
-         (claim_id, estimate, summary, work, model, funded_by_job_id, trigger, trigger_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+         (claim_id, estimate, summary, work, model, funded_by_job_id, trigger, trigger_context,
+          marginal_yield)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         input.claimId,
         JSON.stringify(estimate),
@@ -82,6 +85,7 @@ export async function recordEstimate(input: {
         input.fundedByJobId ?? null,
         input.trigger ?? null,
         input.triggerContext ?? null,
+        input.marginalYield ?? null,
       ]
     );
     return { id: row!.id };

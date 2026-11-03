@@ -68,6 +68,8 @@ import {
   type QuantityDefinitionInput,
 } from "../../schemas/kinds.js";
 import { getUsageContext } from "../usage-context.js";
+import { MARGINAL_YIELD_DESCRIPTION, QUESTION_CONFIDENCE_DESCRIPTION } from "./judgment-fields.js";
+import { ownershipRefusal } from "./steward-ownership.js";
 
 /** Who is calling, and on which node. */
 export interface KindToolContext {
@@ -235,7 +237,10 @@ export function getQuantityToolDefinitions(): Tool[] {
           quantity_id: { type: "string", description: "The quantity (find it with match_claim)." },
           instance_id: { type: "string" },
           ...SOURCE_PROPERTIES,
-          verbatim_text: { type: "string", description: "The passage that states the figure, verbatim." },
+          verbatim_text: {
+            type: "string",
+            description: "The passage that states the figure, verbatim, under 2,000 characters.",
+          },
           stated: ESTIMATE_SCHEMA,
           argument_id: { type: "string" },
         },
@@ -257,6 +262,7 @@ export function getQuantityToolDefinitions(): Tool[] {
           estimate: ESTIMATE_SCHEMA,
           assessment: { type: "string" },
           work: { type: "string" },
+          marginal_yield: { type: "number", description: MARGINAL_YIELD_DESCRIPTION },
         },
         required: ["claim_id", "estimate", "assessment", "work"],
       },
@@ -420,6 +426,8 @@ export function getQuestionToolDefinitions(): Tool[] {
           assessment: { type: "string" },
           reasoning_trace: { type: "string" },
           incomplete: { type: "string" },
+          confidence: { type: "number", description: QUESTION_CONFIDENCE_DESCRIPTION },
+          marginal_yield: { type: "number", description: MARGINAL_YIELD_DESCRIPTION },
         },
         required: ["claim_id", "standing", "assessment", "reasoning_trace"],
       },
@@ -437,7 +445,7 @@ export function getQuestionToolDefinitions(): Tool[] {
           instance_id: { type: "string" },
           ...SOURCE_PROPERTIES,
           role: { type: "string", enum: ["asks", "answers"] },
-          verbatim_text: { type: "string" },
+          verbatim_text: { type: "string", description: "The passage, verbatim, under 2,000 characters." },
           answer_id: { type: "string" },
         },
         required: ["question_id", "role"],
@@ -601,6 +609,11 @@ function str(v: unknown): string {
 function optStr(v: unknown): string | undefined {
   const s = str(v);
   return s || undefined;
+}
+/** A 0..1 score clamped into range, or null when absent or not a number. */
+function unitOrNull(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : null;
 }
 function ids(v: unknown): string[] {
   return Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : [];
@@ -775,6 +788,12 @@ export async function executeKindTool(
 ): Promise<string | null> {
   if (!KIND_TOOL_NAMES.has(name)) return null;
   try {
+    // A Steward writes only to its own node (Part VIII; #757). Other roles
+    // (Curator, Grantmaker, researcher) are bounded by their own toolsets.
+    if (ctx.role === "claim_steward" || ctx.role === "question_steward") {
+      const notOwn = await ownershipRefusal(name, input);
+      if (notOwn) return notOwn;
+    }
     return await executeKindToolImpl(name, input, ctx);
   } catch (err) {
     if (err instanceof ZodError) return refuse(`Not recorded: ${zodMessage(err)}.`);
@@ -859,6 +878,7 @@ async function executeKindToolImpl(
         estimate: input.estimate as never,
         summary: assessment,
         work,
+        marginalYield: unitOrNull(input.marginal_yield),
         model: ctx.model ?? null,
         fundedByJobId: usage.jobId ?? null,
         trigger: ctx.trigger ?? "steward_reassessment",
@@ -1013,6 +1033,8 @@ async function executeKindToolImpl(
         summary: assessment,
         reasoningTrace: trace,
         incomplete: optStr(input.incomplete) ?? null,
+        confidence: unitOrNull(input.confidence),
+        marginalYield: unitOrNull(input.marginal_yield),
         model: ctx.model ?? null,
         fundedByJobId: usage.jobId ?? null,
         trigger: ctx.trigger ?? "steward_reassessment",

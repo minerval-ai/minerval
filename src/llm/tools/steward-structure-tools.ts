@@ -30,7 +30,7 @@ import {
   retypeEdge,
   type EdgeRecord,
 } from "../../services/relationship-service.js";
-import { getUsageContext } from "../usage-context.js";
+import { notYourNode } from "./steward-ownership.js";
 
 export const STEWARD_STRUCTURE_TOOL_NAMES = [
   "remove_subclaim_edge",
@@ -161,21 +161,6 @@ function refuse(message: string): string {
   return JSON.stringify({ success: false, message });
 }
 
-/**
- * Refusal for a node that is not the one this run stewards, or null. The
- * run's node comes from the usage context the Steward's run sets (#757);
- * with none (a caller outside a Steward run) there is nothing to check.
- */
-export function notYourNode(nodeId: string, what: string): string | null {
-  const own = getUsageContext().claimId;
-  if (!own || own === nodeId) return null;
-  return refuse(
-    `${what} belongs to node ${nodeId}, not to ${own}, the node you steward. Only a node's own ` +
-      `Steward changes it (Part VIII): propose an edge into it with propose_parent_edge, file a ` +
-      `request (file_request), or raise a structural concern with escalate_to_curator.`
-  );
-}
-
 async function logStructureChange(claimId: string, action: string, reasoning: string): Promise<void> {
   await getDb().insert(auditLog).values({ claimId, action, reasoning, createdBy: "claim_steward" });
 }
@@ -229,7 +214,7 @@ async function liveArgument(
   if (argument.retiredAt) {
     return refuse(`Argument ${argumentId} was retired (${argument.retiredReason ?? "no reason recorded"}).`);
   }
-  const foreign = notYourNode(argument.claimId, `Argument ${argumentId}`);
+  const foreign = notYourNode(argument.claimId, `argument ${argumentId}`);
   if (foreign) return foreign;
   return argument;
 }
@@ -247,7 +232,7 @@ export async function executeStewardStructureTool(
       const parentId = String(input.parent_id ?? "");
       const childId = String(input.child_id ?? "");
       const relation = input.relation ? String(input.relation).toLowerCase() : null;
-      const foreign = notYourNode(parentId, "That edge");
+      const foreign = notYourNode(parentId, "that edge");
       if (foreign) return foreign;
       if (relation === "answers") {
         return refuse("An answer leaves a question's answer set through remove_answer, which keeps the set's bookkeeping.");
@@ -286,7 +271,7 @@ export async function executeStewardStructureTool(
       const childId = String(input.child_id ?? "");
       const relation = String(input.relation ?? "").toLowerCase();
       const fromRelation = input.from_relation ? String(input.from_relation).toLowerCase() : null;
-      const foreign = notYourNode(parentId, "That edge");
+      const foreign = notYourNode(parentId, "that edge");
       if (foreign) return foreign;
       if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
         return refuse(`Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`);

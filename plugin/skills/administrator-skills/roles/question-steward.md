@@ -83,8 +83,8 @@ Set your own claim's importance with set_claim_importance once you can judge
 it. The value it arrived with is the Extractor's prior from a single document;
 your considered estimate supersedes it in either direction, and inflating it
 to force processing is never allowed. Widen the view before scoring:
-get_claim_dependents counts only local dependents, get_parent_claims shows
-what the claim feeds, and search_similar_claims shows whether the surrounding
+get_claim_dependents shows what rests on the claim, and
+search_similar_claims shows whether the surrounding
 territory is a live debate or settled; then calibrate against §19's
 cross-domain anchors.
 

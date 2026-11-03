@@ -56,15 +56,17 @@ import { demotePublishedFormalization } from "../../services/formalization-servi
 import { setArgumentShows } from "../../services/quantity-service.js";
 import { NODE_KINDS, quantityDefinitionSchema, valueShownSchema } from "../../schemas/kinds.js";
 import {
-  executeStewardStructureTool,
-  getStewardStructureToolDefinitions,
-} from "./steward-structure-tools.js";
-import {
   ClaimInstanceError,
   detachClaimInstance,
   reattachClaimInstance,
   setInstanceOrder,
 } from "../../services/claim-instance-service.js";
+import { ownershipRefusal } from "./steward-ownership.js";
+import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
+import {
+  executeStewardStructureTool,
+  getStewardStructureToolDefinitions,
+} from "./steward-structure-tools.js";
 
 /** The assessment status enum the tool accepts and the graph stores (§10). */
 const ASSESSMENT_STATUSES = [
@@ -238,16 +240,7 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           marginal_yield: {
             type: "number",
-            description:
-              "Exit judgment (0.0-1.0): how much would another, stronger pass " +
-              "improve this assessment? Near 0 for an uncontested fact you have " +
-              "now assessed, or a values dispute mapped down to its terminal " +
-              "disagreement — more effort would not change the product. High " +
-              "when this pass hit evidence it could not fully digest (an " +
-              "unresolved empirical synthesis, sources you could not reach). " +
-              "Distinct from confidence: a saturated inconclusive verdict can be " +
-              "high-confidence AND zero-yield. Recorded for effort allocation; " +
-              "it does not affect the verdict.",
+            description: MARGINAL_YIELD_DESCRIPTION,
           },
         },
         required: ["claim_id", "status", "confidence", "assessment", "reasoning_trace"],
@@ -292,7 +285,8 @@ export function getStewardToolDefinitions(): Tool[] {
             description:
               "The passage as this source states the claim (or its " +
               "negation), verbatim — the statement itself, not your " +
-              "paraphrase.",
+              "paraphrase. Under 2,000 characters: the passage, not the " +
+              "document.",
           },
           context: {
             type: "string",
@@ -417,7 +411,8 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "Corrected passage, verbatim, where the recorded one is not " +
-              "the statement that carries the stance. Omit to leave as is.",
+              "the statement that carries the stance, under 2,000 " +
+              "characters. Omit to leave as is.",
           },
           context: {
             type: "string",
@@ -535,7 +530,7 @@ export function getStewardToolDefinitions(): Tool[] {
         "different claim, and rewording into the negation would flip every " +
         "recorded stance. Escalate those to the Curator instead. The form's " +
         "direction was chosen on the proposition's own terms (see the claim's " +
-        "canonical_direction_note in get_claim_details), never from whichever " +
+        "canonical_direction_note in get_claim), never from whichever " +
         "source arrived first; keep it.",
       input_schema: {
         type: "object" as const,
@@ -852,28 +847,17 @@ export function getStewardToolDefinitions(): Tool[] {
           importance: {
             type: "number",
             description:
-              "How much it is worth spending scarce intelligence to get this " +
-              "subclaim right, 0..1: roughly consequence-if-wrong × liveness, " +
-              "NOT logical necessity. A dependency can be maximally load-bearing " +
-              "(the parent is false without it) yet LOW importance because nobody " +
-              "disputes it: getting an uncontested fact right is free. Reserve " +
-              "high values for contested, consequential dependencies. " +
-              "This feeds the value estimates that decide what gets funded " +
-              "AND (below a threshold) leaves the subclaim an un-decomposed " +
-              "embedded stub, so score uncontested bedrock low. Defaults to " +
-              "0.5 if omitted.",
+              "The subclaim's importance, 0..1, judged as set_claim_importance " +
+              "describes (not logical necessity: uncontested bedrock scores " +
+              "low even when the parent is false without it). Below the " +
+              "decomposition threshold the subclaim is left an embedded stub. " +
+              "Defaults to 0.5 if omitted.",
           },
           contestation: {
             type: "number",
             description:
-              "How live this subclaim is in the discourse at large (0.0-1.0), " +
-              "disputed or actively consulted, recorded separately from " +
-              "importance: ~0 for settled bedrock nobody disputes or consults, " +
-              "~1 for an actively argued crux. This is the " +
-              "liveness half of the importance formula stated on its own; " +
-              "it multiplies importance in the expected-value estimate the " +
-              "allocation engine funds work by, so a live dispute genuinely " +
-              "draws attention sooner.",
+              "How live the subclaim is in the discourse at large (0.0-1.0), " +
+              "as set_claim_importance describes.",
           },
           seed_credence: {
             type: "number",
@@ -891,7 +875,7 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "Optional brief preliminary note to accompany seed_credence: a " +
-              "paragraph or two on why the prior sits where it does, written " +
+              "paragraph or two (under 2,000 characters) on why the prior sits where it does, written " +
               "in the reader-facing register. NOT a full assessment — no " +
               "sub-decomposition, no verdict language, and do not write 'this " +
               "is preliminary' yourself; the page labels the note preliminary " +
@@ -1055,7 +1039,9 @@ export function getStewardToolDefinitions(): Tool[] {
         "local signal: a claim central to a niche subfield is still low-importance " +
         "if the subfield is peripheral and the claim uncontested. An uncontested " +
         "fact is low importance even if much depends on it, because getting it " +
-        "right is free.",
+        "right is free; reserve high values for contested, consequential " +
+        "claims. The other tools that take importance and contestation " +
+        "(add_decomposition_edge, add_parent_claim) mean the same by them.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -1223,6 +1209,10 @@ export async function executeStewardTool(
   run: { trigger?: string; context?: string; model?: string } = {}
 ): Promise<string> {
   try {
+    // Only the owner writes (Part VIII): a write aimed at another node is
+    // refused with the route that reaches it (#757).
+    const notOwn = await ownershipRefusal(toolName, input);
+    if (notOwn) return notOwn;
     switch (toolName) {
       case "update_claim_assessment": {
         const claimId = input.claim_id as string;
@@ -1252,8 +1242,10 @@ export async function executeStewardTool(
         // signal from "credence that the claim is false".
         const claimCredence =
           typeof input.claim_credence === "number" ? input.claim_credence : null;
-        // Optional exit judgment for effort allocation (#172 phase 1): recorded
-        // on the assessment row, read by nothing yet. null = not stated.
+        // Optional exit judgment for effort allocation (#172): recorded on the
+        // assessment row and read by the valuer and the queue priority as the
+        // expected gain from another pass (NODE_MARGINAL_YIELD_SQL). null =
+        // not stated, read as 1.0.
         const marginalYield = clampUnit(input.marginal_yield) ?? null;
         const reasoningTrace = input.reasoning_trace as string;
         // Reader-facing assessment (still persisted to the `summary` column). Also
@@ -1288,7 +1280,7 @@ export async function executeStewardTool(
               success: false,
               message:
                 `These linked claims do not exist: ${unknown.join(", ")}. ` +
-                `Link only real claims (ids from get_claim_subclaims or from ` +
+                `Link only real claims (ids from get_claim or from ` +
                 `this run), or drop the link and name the claim in plain text.`,
             });
           }
@@ -2314,7 +2306,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${childId}. Link only real claims (ids from ` +
-              `match_claim, get_claim_subclaims, or add_decomposition_edge).`,
+              `match_claim, get_claim, or add_decomposition_edge).`,
           });
         }
 
@@ -2387,7 +2379,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
-              `match_claim or get_claim_details).`,
+              `match_claim or get_claim).`,
           });
         }
         const { linked, linkId } = await linkClaims({

@@ -33,6 +33,7 @@
  * to be covered on the cost side, never how valuable an action is, and
  * nothing here touches claims.importance or a verdict.
  */
+import { nodeAssessedAtSql, nodeMarginalYieldSql } from "./node-judgment-sql.js";
 import { rawQuery } from "../db/client.js";
 import {
   getGeneralMandate,
@@ -45,7 +46,8 @@ import {
  * boost, strong variants multiplied by the policy's gain knob.
  *
  * Expected quality gain is the best of three estimates: the Steward's own
- * marginal yield from its last pass (1.0 when unassessed), staleness, and
+ * marginal yield from its last pass (1.0 when unassessed or unstated), read
+ * from the table the node's kind keeps its judgment in (#755), staleness, and
  * an open consistency flag's expected_gain (#330): the Consistency
  * Checker's estimate, made after reading the claim against its neighbors,
  * that a fresh pass would change something. A flag counts while the assess
@@ -61,16 +63,9 @@ const GENERAL_VALUE_SQL = `
     c.importance
     * ($1::real + (1.0 - $1::real) * COALESCE(c.contestation, 0))
     * GREATEST(
-        COALESCE(
-          (SELECT x.marginal_yield FROM assessments x
-            WHERE x.claim_id = c.id AND x.is_current = true
-            ORDER BY x.assessed_at DESC LIMIT 1),
-          1.0),
+        COALESCE(${nodeMarginalYieldSql("c")}, 1.0),
         LEAST(1.0,
-          COALESCE(EXTRACT(EPOCH FROM (now() -
-            (SELECT x.assessed_at FROM assessments x
-              WHERE x.claim_id = c.id AND x.is_current = true
-              ORDER BY x.assessed_at DESC LIMIT 1))) / 86400.0
+          COALESCE(EXTRACT(EPOCH FROM (now() - ${nodeAssessedAtSql("c")})) / 86400.0
             / NULLIF($2::real, 0), 0)),
         COALESCE(
           (SELECT MAX(f.expected_gain) FROM consistency_flags f
