@@ -383,7 +383,8 @@ becomes the budget and opens the full work. Anyone may fund the row:
 mandates by valuing it, a Grantmaker directly with `fund_request`, readers
 with `POST /requests/:id/contribute`. Once it is covered the engine
 executor runs the Researcher on the request as filed, its ceiling the
-row's funding: the run writes nothing to the graph, its outcome is
+row's funding: the run records provenance (and, on one node, instances)
+on what the request bears on but no verdict, its outcome is
 recorded as work on the request with the run's id, and the keeper is asked
 to judge it while the Steward of every node it bears on is asked to weigh
 it for that node (a Steward keeper and those Stewards by a
@@ -1091,8 +1092,17 @@ writes only its notebook: a Grantmaker serves its mandate as well as the
 graph, and funding is kept apart from what the graph says (§19), so
 `delegate_research` from a mandate takes no `claim_id` and no
 `examine_source_id`, and the researcher withholds the provenance and
-examination tools from any run whose launcher is not a Claim Steward
-(`launcherWritesGraph`, `src/services/research-run-service.ts`).
+examination tools from any run whose launcher is not a Claim Steward or a
+request (`launcherWritesGraph`, `src/services/research-run-service.ts`).
+A run that takes up a request records as Part VIII has the Researcher
+record, since its brief is the request as filed and whoever funded it adds
+nothing: on a request bearing on one node it runs with that node (its
+provenance, its instances, its domain skills); on one bearing on several,
+its node provenance tools take a `claim_id` limited to those nodes; and it
+has `provenance_read_source` whatever the request bears on. A scoping run
+does not do the work and records nothing. Each run on a request opens with
+the latest earlier run's notebook and report, so a programme carried out
+in stages begins each stage where the last stopped.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both

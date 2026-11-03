@@ -387,6 +387,27 @@ describe("delegate_research", () => {
     );
     expect(mocks.checkResearcherBudget).not.toHaveBeenCalled();
   });
+
+  it("states the daily allowance for unfunded research up front, and what is left of it after each launch (#736)", async () => {
+    const runResearcher = vi.fn(async () => okResult());
+    await funded(async () => {
+      const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+      const description = tools.definitions.find((t) => t.name === "delegate_research")!.description!;
+      expect(description).toMatch(/not paid for by a funder/);
+      expect(description).toMatch(/daily allowance for research no funder pays for \(\$[\d.]+ a day, UTC\)/);
+      const out = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!);
+      expect(out.unfunded_daily_allowance_left).toMatch(/^\$[\d.]+ of \$[\d.]+ left today \(UTC\)$/);
+    });
+    // A funded pass is told nothing of it: it does not apply.
+    await runWithUsageContext({ jobId: "job-1" }, () =>
+      funded(async () => {
+        const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+        expect(tools.definitions.find((t) => t.name === "delegate_research")!.description).not.toMatch(/daily allowance/);
+        const out = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!);
+        expect(out.unfunded_daily_allowance_left).toBeUndefined();
+      })
+    );
+  });
 });
 
 describe("get_research_run", () => {

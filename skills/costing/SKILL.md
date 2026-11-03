@@ -115,8 +115,10 @@ part that can be set right.
 and does not do it. Look far enough to price it: search for the sources
 and confirm they exist and can be reached, see which tools or data the
 work needs and what they charge, and judge how many research steps it
-takes and on which tier. Then build the quote from the steps, as above,
-and report it in budget_quote_usd with the plan it prices in answer.
+takes. The full work runs on the tier the task message names, not one you
+choose, so price each step on that tier's line of cost_sheet. Then build
+the quote from the steps, as above, and report it in budget_quote_usd
+with the plan it prices in plan.
 Spend on scoping only what the quote needs; a scoping run that drifts into
 doing the work spends the scoping budget on work no one has yet agreed to
 fund.
