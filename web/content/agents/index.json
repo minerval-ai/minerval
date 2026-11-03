@@ -332,8 +332,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 13373,
-    "fullChars": 95899,
+    "roleChars": 13062,
+    "fullChars": 95588,
     "skills": [
       {
         "name": "costing",
