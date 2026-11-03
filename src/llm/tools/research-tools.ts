@@ -178,7 +178,8 @@ export function getResearchToolDefinitions(
             type: "string",
             description:
               "The brief, written for the instrument: the question, the context it needs, " +
-              "what a good answer looks like, where to start, what to avoid. At least a paragraph.",
+              "what a good answer looks like, where to start, what to avoid. At least 80 characters; " +
+              "a real brief is usually a paragraph or more.",
           },
           model_tier: {
             type: "string",
