@@ -402,16 +402,35 @@ describe("steward record_claim_instance", () => {
     expect(row?.stance).toBe("poses");
   });
 
+  it("records a mention: a source that refers to the claim without taking a side", async () => {
+    claimExists();
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/explainer",
+      verbatim_text: "The claim that the proof is complete has been widely cited in the debate.",
+      stance: "MENTIONS",
+      speaker: "An explainer",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(parsed.message).toMatch(/takes no side and is never counted as affirming or denying/);
+    const row = insertedValues.find((r) => "verbatimText" in r);
+    // Normalized like every stance, and recorded as the Steward's.
+    expect(row?.stance).toBe("mentions");
+    expect(row?.createdBy).toBe("claim_steward");
+  });
+
   it("bounces an out-of-enum stance without writing anything", async () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
       url: "https://example.org/a",
       verbatim_text: "Some passage.",
-      stance: "mentions",
+      stance: "cites",
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
     expect(parsed.message).toMatch(/affirms/);
+    expect(parsed.message).toMatch(/"mentions"/);
     expect(insertedValues).toHaveLength(0);
   });
 
@@ -538,15 +557,32 @@ describe("steward update_claim_instance", () => {
     const out = await executeStewardTool("update_claim_instance", {
       claim_id: CLAIM,
       instance_id: INSTANCE,
-      stance: "mentions",
-      reasoning: "It only mentions the claim.",
+      stance: "cites",
+      reasoning: "It only cites the claim.",
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
-    // A passing mention is detached, not demoted toward confidence 0.
-    expect(parsed.message).toMatch(/detach_claim_instance/);
+    // The refusal names the stance a source that only refers to the claim
+    // takes, rather than sending it to be detached or demoted.
+    expect(parsed.message).toMatch(/"mentions"/);
+    expect(parsed.message).not.toMatch(/detach_claim_instance/);
     expect(parsed.message).not.toMatch(/confidence near 0/);
     expect(updatedValues).toHaveLength(0);
+  });
+
+  it("re-stances an instance that only mentions the claim to mentions, not detaching it", async () => {
+    instanceExists();
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "Mentions",
+      reasoning: "The report says others hold the view; it takes no side itself.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(updatedValues[0]).toEqual({ stance: "mentions" });
+    const audit = insertedValues.find((r) => r.action === "updated_claim_instance");
+    expect(audit?.reasoning).toMatch(/was stance=affirms/);
   });
 
   it("bounces a call with nothing to change", async () => {
@@ -891,5 +927,29 @@ describe("steward set_claim_importance", () => {
     });
     const row = updatedValues.find((r) => "importance" in r);
     expect(row).not.toHaveProperty("contestation");
+  });
+});
+
+describe("instance tools: recording a mention", () => {
+  const tool = (name: string) => getStewardToolDefinitions().find((t) => t.name === name)!;
+  const props = (name: string) =>
+    (tool(name).input_schema as { properties: Record<string, { enum?: string[]; description?: string }> }).properties;
+
+  it("offers mentions on record and update, with the guide for when a mention is worth recording", () => {
+    expect(props("record_claim_instance").stance.enum).toEqual(["affirms", "denies", "poses", "mentions"]);
+    expect(props("update_claim_instance").stance.enum).toEqual(["affirms", "denies", "poses", "mentions"]);
+    const record = tool("record_claim_instance").description;
+    expect(record).toMatch(/worth a reader seeing: prominent, an origin, or telling/);
+    expect(record).toMatch(/not every passing occurrence/);
+    expect(record).toMatch(/never counted as affirming or denying/);
+    expect(record).not.toMatch(/is not an instance/);
+  });
+
+  it("keeps detach for a different proposition or a misreading, not for a mention", () => {
+    const detach = tool("detach_claim_instance").description;
+    expect(detach).toMatch(/states a different proposition/);
+    expect(detach).toMatch(/misreads the source/);
+    expect(detach).toMatch(/is not detached: correct its stance to mentions/);
+    expect(tool("update_claim_instance").description).not.toMatch(/detach_claim_instance instead/);
   });
 });

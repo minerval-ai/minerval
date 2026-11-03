@@ -167,7 +167,10 @@ and the tool description says what a call spends.
 - **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
   — canonical form, current assessment (status, confidence, reasoning),
   source instances, arguments, dependents, page link. With `"provenance"`,
-  each instance carries the Steward's `reading` of its source (whether the
+  each instance carries its `stance` (`affirms`, `denies`, `poses` an open
+  question, or `mentions`: it cites the claim or reports the debate without
+  taking a side, and is never a vote for either side) and the Steward's
+  `reading` of its source (whether the
   source's own evidence bears its assertion, the mechanical quote check,
   whether it is worth reading closely; null until recorded), and the payload
   carries `source_map` (the Steward's account of what the support rests on,

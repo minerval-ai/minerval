@@ -113,6 +113,10 @@ support matters:
 - Look at the claim's provenance: which instances rest on which documents,
   which sources are one voice, and the Steward's account of what the
   support rests on. None of it is a score; it is structure to reason with.
+- Read each instance's `stance`. A source that `poses` the claim as an open
+  question or only `mentions` it (cites it, reports the debate) takes no
+  side: it shows how the claim is used, never who holds it, so do not cite
+  it as support or opposition.
 - Prefer the primary source: the study, the dataset, the direct
   quotation, not the article about it (§9).
 - Read every source against today's date. A source can be out of date

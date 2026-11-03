@@ -118,6 +118,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
       affirming_instances: 1,
       denying_instances: 1,
       posing_instances: 0,
+      mentioning_instances: 0,
       arguments_on_unsettled_premises: [],
     },
     ...overrides,
@@ -242,6 +243,19 @@ describe("buildMiraDocument: a claim", () => {
     expect(evidence[1]).toMatchObject({ supports: uri(CLAIM_ID), sourceDocument: `${WEB}/sources/${SRC2_ID}` });
     expect(byId(doc, `${WEB}/sources/${SRC2_ID}`)).toMatchObject({ "@type": "SourceDocument", title: "An offline pamphlet" });
     expect(ofType(doc, "mv:Instance").map((i) => i["mv:stance"])).toEqual(["denies", "affirms"]);
+  });
+
+  it("records a mentioning source on its instance alone: it states no claim, so it is no Evidence", async () => {
+    const base = record();
+    const doc = buildMiraDocument(
+      input({ record: record({ instances: [{ ...base.instances[0], stance: "mentions" }] }) }),
+      opts
+    );
+    expect(ofType(doc, "Evidence")).toHaveLength(0);
+    const [inst] = ofType(doc, "mv:Instance");
+    expect(inst).toMatchObject({ "mv:stance": "mentions" });
+    expect(inst).not.toHaveProperty("mv:evidence");
+    await expectValid(doc);
   });
 
   it("links a claim to the questions it answers with MIRA's addresses", async () => {

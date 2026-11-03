@@ -11,11 +11,12 @@ description: >-
   figures for the Steward to reason about; the verdict stays the Steward's.
 metadata:
   minerval:
-    version: 2
+    version: 3
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
       2: The researcher a Steward launches may record the instances it finds, with record_claim_instance on a claim or record_question_instance on a question; the Steward owns the instance set.
+      3: "an instance may only mention the claim (stance mentions), citing it or reporting the debate without taking a side; it is no vote in any count"
 ---
 
 ## For every administrator
@@ -23,7 +24,9 @@ metadata:
 **What the source map is.** A claim accumulates instances: the places it
 has been asserted, each with the passage and the source. A count of those
 instances treats every appearance as one independent vote, and that is the
-one thing it usually is not. A news article asserting a finding rests on the
+one thing it usually is not. Some instances take no side at all: a source
+that only mentions the claim, citing it or reporting the debate, shows how
+the claim is used and is no vote in any count. A news article asserting a finding rests on the
 study it reports; a second article rests on the first; a commentary quotes
 the second; three of the four are one voice. The source map records that
 structure. For each instance, a reading: whether the source's own evidence

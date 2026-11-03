@@ -17,7 +17,7 @@ How the constitution applies to propositions of mathematics: what a mathematical
 
 Sections: For every administrator; For the Claim Steward; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the Audit Agent; For the Curator; For the Matcher; For the Extractor; Standards for judging; Failure modes.
 
-### Provenance (`skills/provenance.md`, version 2, method skill)
+### Provenance (`skills/provenance.md`, version 3, method skill)
 
 How to trace what a claim's support rests on: opening the sources behind a claim's instances and recording whether each source's own evidence bears the assertion it makes, which documents each assertion draws on and what survived the crossing, which sources are one voice appearing more than once, and a plain account for readers of what the support rests on, shown only where it matters. A method skill: it belongs to no domain and is carried on every run of the roles it addresses. It produces structure and figures for the Steward to reason about; the verdict stays the Steward's.
 
