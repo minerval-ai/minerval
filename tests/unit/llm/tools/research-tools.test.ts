@@ -198,7 +198,7 @@ describe("delegate_research", () => {
       })
     );
     const passed = runResearcher.mock.calls[0]![0];
-    expect(passed.claim).toEqual({ id: CLAIM, text: "The claim.", domains: [] });
+    expect(passed.claim).toEqual({ id: CLAIM, text: "The claim.", domains: [], kind: "claim" });
     expect(passed.run.include_constitution).toBe(false);
     expect(mocks.closeResearchRun).toHaveBeenCalledWith(
       "run-1",
