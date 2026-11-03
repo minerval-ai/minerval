@@ -380,10 +380,13 @@ export async function scopeForPartition(
   return {};
 }
 
-export async function startSweep(p: SweepPartition): Promise<string> {
+export async function startSweep(
+  p: SweepPartition,
+  variant: "standard" | "strong" | null = null
+): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO consistency_sweeps (tag_id, partition) VALUES ($1, $2) RETURNING id`,
-    [p.tagId, p.partition]
+    `INSERT INTO consistency_sweeps (tag_id, partition, variant) VALUES ($1, $2, $3) RETURNING id`,
+    [p.tagId, p.partition, variant]
   );
   return row!.id;
 }
@@ -396,11 +399,14 @@ export async function finishSweep(input: {
   flagsRaised: number;
   note?: string | null;
   error?: string | null;
+  /** What the run was metered at, when it ran under a pass meter (#756). */
+  costMicroUsd?: number | null;
 }): Promise<void> {
   await rawQuery(
     `UPDATE consistency_sweeps
         SET status = $2, run_id = COALESCE($3, run_id), claims_in_scope = $4,
-            flags_raised = $5, note = $6, error = $7, finished_at = now()
+            flags_raised = $5, note = $6, error = $7, finished_at = now(),
+            cost_micro_usd = COALESCE($8, cost_micro_usd)
       WHERE id = $1`,
     [
       input.sweepId,
@@ -410,6 +416,7 @@ export async function finishSweep(input: {
       input.flagsRaised,
       input.note ? input.note.slice(0, CONSISTENCY_BOUNDS.noteChars) : null,
       input.error ? input.error.slice(0, 2_000) : null,
+      input.costMicroUsd == null ? null : Math.round(input.costMicroUsd),
     ]
   );
 }
@@ -1116,6 +1123,51 @@ export async function openFlagsInScope(scope: PartitionScope): Promise<OpenFlag[
     repeats: Number(r.repeats),
     created_at: new Date(r.created_at).toISOString(),
   }));
+}
+
+/** What each variant's funded sweeps found, over a window (#756). */
+export interface SweepYield {
+  variant: "standard" | "strong";
+  /** Completed sweeps of this variant in which the checker ran. */
+  sweeps: number;
+  /** The assessed nodes those sweeps had in scope. */
+  nodes: number;
+  /** Their flags whose pass ran and moved the verdict, credence or estimate: flags a Steward upheld. */
+  upheld: number;
+}
+
+/**
+ * The yield of each variant's sweeps over the last `windowDays`: how many
+ * of its flags a Steward's pass upheld (moved the judgment, as the
+ * precision record reads it), per node read. The evidence the strong
+ * variant's expected gain is taken from once both variants have enough
+ * sweeps (allocation-service consistencyStrongExpectedGain).
+ */
+export async function sweepYieldByVariant(windowDays: number): Promise<SweepYield[]> {
+  const rows = await rawQuery<{ variant: "standard" | "strong"; sweeps: number; nodes: number; upheld: number }>(
+    `WITH s AS (
+       SELECT id, variant, claims_in_scope FROM consistency_sweeps
+        WHERE status = 'done' AND variant IN ('standard', 'strong')
+          AND claims_in_scope >= 2
+          AND started_at > now() - make_interval(days => $1)
+     )
+     SELECT s.variant,
+            COUNT(*)::int AS sweeps,
+            COALESCE(SUM(s.claims_in_scope), 0)::int AS nodes,
+            COALESCE(SUM((SELECT COUNT(*) FROM (${FLAG_SELECT}) fl
+                           WHERE fl.sweep_id = s.id AND fl.moved)), 0)::int AS upheld
+       FROM s GROUP BY s.variant`,
+    [windowDays]
+  );
+  return (["standard", "strong"] as const).map((variant) => {
+    const r = rows.find((x) => x.variant === variant);
+    return {
+      variant,
+      sweeps: Number(r?.sweeps ?? 0),
+      nodes: Number(r?.nodes ?? 0),
+      upheld: Number(r?.upheld ?? 0),
+    };
+  });
 }
 
 export interface ConsistencyPrecision {

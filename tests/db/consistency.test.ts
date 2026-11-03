@@ -22,12 +22,17 @@ import {
   listPartitions,
   partitionClaims,
   startSweep,
+  sweepYieldByVariant,
 } from "../../src/services/consistency-service.js";
 import {
   reconcileActions,
   ASSESS_GROUP,
-  consistencySweepCostMicroUsd,
+  priceConsistencySweep,
 } from "../../src/services/action-service.js";
+import {
+  estimateConsistencyNodeCostMicroUsd,
+  resetCostEstimateCache,
+} from "../../src/services/cost-estimate-service.js";
 import { refreshFormulaValuations } from "../../src/services/mandate-valuer-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
@@ -316,7 +321,7 @@ describe("partitions and sweeps (#330)", () => {
       const p = partitions.find((x) => (x.tag_id ?? "residual") === row.target_ref)!;
       expect(p).toBeDefined();
       expect(Number(row.cost)).toBe(
-        consistencySweepCostMicroUsd(row.variant as "standard" | "strong", p.assessed)
+        (await priceConsistencySweep(row.variant as "standard" | "strong", p.assessed)).microUsd
       );
     }
 
@@ -329,8 +334,8 @@ describe("partitions and sweeps (#330)", () => {
         WHERE al.exclusion_group LIKE 'consistency:%' AND al.grant_id = $1`,
       [grantId]
     );
-    // One variant bought per partition: at the default caps and multiplier,
-    // the standard one.
+    // One variant bought per partition: at the default estimates and
+    // expected gain, the standard one for partitions this small.
     expect(funded[0]!.n).toBe(open.length / 2);
     expect(funded[0]!.groups).toBe(open.length / 2);
     expect(funded[0]!.variants).toEqual(["standard"]);
@@ -343,11 +348,11 @@ describe("partitions and sweeps (#330)", () => {
     await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE kind = 'consistency_sweep'`);
     const funder = await seedUser("platform");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500_000_000, policy: "general" });
-    // A Grantmaker that judges the strong read worth ten times the cheap one:
-    // below both caps that is exactly the price ratio, so it buys strong.
+    // A Grantmaker that judges the strong read worth ten times the cheap one
+    // (an override): above the per-node price ratio (about 8), so it buys strong.
     await rawQuery(
       `UPDATE grants SET is_platform = true,
-              allocation_policy = '{"consistency_strong_gain_multiplier": 10}'::jsonb
+              allocation_policy = '{"consistency_strong_expected_gain": 10}'::jsonb
         WHERE id = $1`,
       [grantId]
     );
@@ -379,6 +384,55 @@ describe("partitions and sweeps (#330)", () => {
     expect(new Set(funded.map((f) => f.variant))).toEqual(new Set(["strong"]));
     await rawQuery(`UPDATE grants SET allocation_policy = NULL WHERE id = $1`, [grantId]);
     resetAllocationPolicyCache();
+  });
+});
+
+describe("what each variant's sweeps cost and found (#756)", () => {
+  it("records a funded sweep's variant and cost, and prices the variant from them once enough ran", async () => {
+    resetCostEstimateCache();
+    const before = await estimateConsistencyNodeCostMicroUsd("standard", 20);
+    expect(before.basis).not.toBe("observed");
+    const p = { partition: "residual" as const, tagId: null, label: "residual" };
+    for (let i = 0; i < 5; i++) {
+      const id = await startSweep(p, "standard");
+      // 40 nodes at 800 micro-USD a node.
+      await finishSweep({ sweepId: id, status: "done", claimsInScope: 40, flagsRaised: 0, costMicroUsd: 32_000 });
+    }
+    const [row] = await rawQuery<{ variant: string; cost_micro_usd: string }>(
+      `SELECT variant, cost_micro_usd::text FROM consistency_sweeps ORDER BY started_at DESC LIMIT 1`
+    );
+    expect(row).toEqual({ variant: "standard", cost_micro_usd: "32000" });
+    resetCostEstimateCache();
+    expect(await estimateConsistencyNodeCostMicroUsd("standard", 20)).toEqual({ microUsd: 800, basis: "observed" });
+    // The strong variant has no sweeps of its own: still its model's price.
+    expect((await estimateConsistencyNodeCostMicroUsd("strong", 20)).basis).toBe("model_price");
+  });
+
+  it("counts a variant's upheld flags per node read", async () => {
+    const before = await sweepYieldByVariant(60);
+    const p = { partition: "residual" as const, tagId: null, label: "residual" };
+    const sweepId = await startSweep(p, "strong");
+    const a = await seedClaim("primary");
+    const b = await seedClaim("neighbor");
+    await assess(a, { status: "supported", credence: 0.8 });
+    await assess(b, { status: "supported" });
+    await flagInconsistency({
+      sweepId,
+      kind: "stale_premise",
+      primaryClaimId: a,
+      claimIds: [b],
+      rationale: "The primary rests on the neighbor's old verdict, which has since changed.",
+      expectedGain: 0.8,
+    });
+    await finishSweep({ sweepId, status: "done", claimsInScope: 30, flagsRaised: 1 });
+    // The Steward's pass moves the verdict: the flag is upheld.
+    await assess(a, { status: "inconclusive", credence: 0.5 });
+    const after = await sweepYieldByVariant(60);
+    const strongBefore = before.find((y) => y.variant === "strong")!;
+    const strongAfter = after.find((y) => y.variant === "strong")!;
+    expect(strongAfter.sweeps - strongBefore.sweeps).toBe(1);
+    expect(strongAfter.nodes - strongBefore.nodes).toBe(30);
+    expect(strongAfter.upheld - strongBefore.upheld).toBe(1);
   });
 });
 

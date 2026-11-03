@@ -69,16 +69,24 @@ export interface AllocationPolicy {
   est_curate_cost_owls: number;
   /** Cost prior for one `audit` run, in owls, likewise. */
   est_audit_cost_owls: number;
-  /** Expected gain of a strong consistency sweep over a standard one of the
-   *  same partition (#756): value(strong) = value(standard) × this. A sweep
-   *  carries no value of its own to set against the day's bar, so the
-   *  marginal-return rule compares the upgrade with the sweep itself: the
-   *  strong variant is bought when its value per owl is at least the
-   *  standard's, that is when this × the standard's cost covers the strong
-   *  one's. Both are priced by the partition's size; at the default rates
-   *  (0.005 and 0.05 owl a node) that takes 10 below the caps, less for a
-   *  partition past 200 nodes, where the strong cap binds first. */
-  consistency_strong_gain_multiplier: number;
+  /** How much more a strong consistency sweep is expected to find than a
+   *  standard one of the same partition (#756): value(strong) =
+   *  value(standard) × this. A sweep carries no value of its own to set
+   *  against the day's bar, so the marginal-return rule compares the upgrade
+   *  with the sweep itself: the strong variant is bought when this × the
+   *  standard's price covers the strong one's (allocation-service
+   *  consistencySweepVariant). Setting it on a mandate is an override: once
+   *  each variant has enough sweeps, the General mandate otherwise reads it
+   *  from evidence, the ratio of the two variants' upheld flags per node
+   *  read (consistencyStrongExpectedGain), and this default stands only
+   *  until then. The corpus consistency eval (scripts/corpus/consistency.ts)
+   *  run on both tiers gives the recall ratio a Grantmaker would set it to. */
+  consistency_strong_expected_gain: number;
+  /** Expected cost of reading one assessed node in a consistency sweep, in
+   *  owls, for a reader whose model the rate table cannot price (an
+   *  OpenRouter model, whose provider reports each call's cost): the prior
+   *  until that variant's sweeps give an observed cost per node (#756). */
+  est_consistency_node_cost_owls: number;
   /** Formula weight of a reconcile-candidate request (a similarity scan's
    *  pair, times its score) relative to a Steward's escalation (1.0): a
    *  scan saw two texts; an agent read the claim. */
@@ -141,7 +149,8 @@ export const POLICY_BOUNDS: Record<
   maintenance_share: { min: 0, max: 1 },
   est_curate_cost_owls: { min: 0.01, max: 20 },
   est_audit_cost_owls: { min: 0.01, max: 20 },
-  consistency_strong_gain_multiplier: { min: 1, max: 50 },
+  consistency_strong_expected_gain: { min: 1, max: 50 },
+  est_consistency_node_cost_owls: { min: 0.0001, max: 1 },
   curate_candidate_weight: { min: 0, max: 1 },
   curate_matcher_quiet_days: { min: 0, max: 365 },
   reconcile_candidates_max_per_sweep: { min: 0, max: 200 },
@@ -272,11 +281,19 @@ function defaultsFromConfig(): AllocationPolicy {
     maintenance_share: 0.1,
     est_curate_cost_owls: 0.25,
     est_audit_cost_owls: 0.5,
-    // A guess for the General mandate's Grantmaker to revise once the
-    // corpus consistency eval compares the tiers (#756): below the 10 the
-    // default rates need, so sweeps stay on the cheap tier until a funder
-    // judges the stronger read worth it.
-    consistency_strong_gain_multiplier: 3,
+    // Until both variants have enough sweeps for the evidence (#756). At
+    // the default price-based estimates a strong sweep costs about 8 times
+    // a standard one below the caps and 5 times where both caps bind (400
+    // nodes and up), so 5 buys the strong read for the largest partitions
+    // and the standard for the rest: both variants run, which is what lets
+    // their upheld flags be compared. 3, the earlier guess, meant never.
+    consistency_strong_expected_gain: 5,
+    // The standard reader is an OpenRouter model (no rate-table entry).
+    // Its same-family direct listing (gpt-5.6-luna, $0.20/$1.20 a million
+    // tokens) at the sweep's per-node token assumption comes to about
+    // 0.004 owl a node; the first live sweeps metered about 0.0007. Set a
+    // little above the listing so the first sweeps can read everything.
+    est_consistency_node_cost_owls: 0.005,
     curate_candidate_weight: 0.5,
     curate_matcher_quiet_days: 7,
     reconcile_candidates_max_per_sweep: 0,

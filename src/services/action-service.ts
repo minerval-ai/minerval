@@ -22,8 +22,10 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import {
+  estimateConsistencyNodeCostMicroUsd,
   estimateLedgerKindCostMicroUsd,
   stewardTierCostEstimates,
+  type ConsistencyNodeCost,
 } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
@@ -601,8 +603,10 @@ export const CONSISTENCY_SWEEP_MIN_NODES = 20;
 export interface ConsistencySweepPrice {
   /** What the row is priced at, and so the sweep's budget, in micro-USD. */
   microUsd: number;
-  /** The variant's rate per assessed node, in micro-USD. */
+  /** The variant's expected cost per assessed node, in micro-USD. */
   perNodeMicroUsd: number;
+  /** Where that per-node figure came from (estimateConsistencyNodeCostMicroUsd). */
+  basis: ConsistencyNodeCost["basis"];
   /** The nodes priced: the partition's assessed nodes, at least CONSISTENCY_SWEEP_MIN_NODES. */
   nodesPriced: number;
   /** The variant's ceiling, in micro-USD. */
@@ -612,44 +616,47 @@ export interface ConsistencySweepPrice {
 }
 
 /**
- * What one sweep of a partition costs (#756): the variant's rate per
- * assessed node times the partition's assessed nodes (at least
- * CONSISTENCY_SWEEP_MIN_NODES), with the variant's cap as the ceiling. The
- * price follows the work, so a big tag or the residual bucket gets the
- * budget to be read, and the rate is set generously above the metered cost
- * (config.ts, capConsistencySweepOwls): a sweep that runs out before it has
- * read its partition is the failure this pricing exists to avoid, and what
- * it does not spend settles back.
+ * What one sweep of a partition costs (#756): the variant's expected cost
+ * per assessed node (observed once its sweeps have run, else its model's
+ * price times the expected tokens a node takes; cost-estimate-service
+ * estimateConsistencyNodeCostMicroUsd) times the partition's assessed
+ * nodes (at least CONSISTENCY_SWEEP_MIN_NODES), with the variant's cap as
+ * the ceiling only. The price follows the work, so a big tag or the
+ * residual bucket gets the budget to be read; what a sweep does not spend
+ * settles back.
  */
 export function consistencySweepPrice(
   variant: "standard" | "strong",
-  assessedNodes: number
+  assessedNodes: number,
+  perNode: ConsistencyNodeCost
 ): ConsistencySweepPrice {
   const config = loadConfig();
-  const perNodeMicroUsd = owlsToMicroUsd(
-    variant === "strong" ? config.consistencySweepStrongOwlsPerNode : config.consistencySweepOwlsPerNode
-  );
   const ceiling =
     variant === "strong"
       ? owlsToMicroUsd(config.capConsistencySweepStrongOwls)
       : capMicroUsd("consistency_sweep");
   const nodesPriced = Math.max(CONSISTENCY_SWEEP_MIN_NODES, Math.max(0, Math.floor(assessedNodes)));
-  const bySize = Math.round(perNodeMicroUsd * nodesPriced);
+  const bySize = Math.round(perNode.microUsd * nodesPriced);
   return {
     microUsd: Math.min(ceiling, bySize),
-    perNodeMicroUsd,
+    perNodeMicroUsd: perNode.microUsd,
+    basis: perNode.basis,
     nodesPriced,
     capMicroUsd: ceiling,
     capped: bySize > ceiling,
   };
 }
 
-/** What one sweep of each variant of a partition is priced at, in micro-USD (#756). */
-export function consistencySweepCostMicroUsd(
+/** A sweep of `variant` over `assessedNodes`, priced at the current per-node estimate (#756). */
+export async function priceConsistencySweep(
   variant: "standard" | "strong",
   assessedNodes: number
-): number {
-  return consistencySweepPrice(variant, assessedNodes).microUsd;
+): Promise<ConsistencySweepPrice> {
+  return consistencySweepPrice(
+    variant,
+    assessedNodes,
+    await estimateConsistencyNodeCostMicroUsd(variant, CONSISTENCY_SWEEP_MIN_NODES)
+  );
 }
 
 async function reconcileConsistencySweeps(): Promise<void> {
@@ -680,6 +687,10 @@ async function reconcileConsistencySweeps(): Promise<void> {
                            AND al.released_at IS NULL)`,
     [refs]
   );
+  const perNode = {
+    standard: await estimateConsistencyNodeCostMicroUsd("standard", CONSISTENCY_SWEEP_MIN_NODES),
+    strong: await estimateConsistencyNodeCostMicroUsd("strong", CONSISTENCY_SWEEP_MIN_NODES),
+  };
   for (const p of due) {
     const ref = partitionRef(p);
     // Each variant is priced by the partition's size (#756). A row still
@@ -701,7 +712,7 @@ async function reconcileConsistencySweeps(): Promise<void> {
           variant,
           ref,
           `Consistency sweep${variant === "strong" ? " (strong)" : ""}: ${p.label}`,
-          consistencySweepCostMicroUsd(variant, p.assessed),
+          consistencySweepPrice(variant, p.assessed, perNode[variant]).microUsd,
         ]
       );
     }

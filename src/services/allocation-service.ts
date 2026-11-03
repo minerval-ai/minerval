@@ -46,10 +46,12 @@ import {
 } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import {
+  POLICY_BOUNDS,
   getEffectiveAllocationPolicy,
   getGeneralMandate,
   getMandateAllocationPolicy,
 } from "./allocation-policy-service.js";
+import { sweepYieldByVariant } from "./consistency-service.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
 
@@ -709,20 +711,67 @@ export async function runGeneralAllocator(): Promise<MandateAllocationResult | n
  * given the two prices of one partition's rows. A sweep has no value
  * estimate of its own to set against the day's bar, so the marginal-return
  * rule compares the upgrade with the sweep itself: the strong variant is
- * worth `multiplier` times the standard, and is bought when that is at
- * least as much per owl (multiplier × standard cost ≥ strong cost).
- * Otherwise more partitions read on the cheap tier return more than fewer
- * read on the strong one. Both prices scale with the partition's size, so
- * the choice is made per partition: where a cap binds, the ratio between
- * them is not the ratio of their rates. fundGrantSelfActions makes the
- * same comparison in SQL; this is its statement.
+ * expected to find `expectedGain` times what the standard finds, and is
+ * bought when that is at least as much per owl (expectedGain × standard
+ * price ≥ strong price). Otherwise more partitions read on the cheap tier
+ * return more than fewer read on the strong one. Both prices scale with
+ * the partition's size, so the choice is made per partition: where a cap
+ * binds, the ratio between them is not the ratio of their per-node costs.
+ * fundGrantSelfActions makes the same comparison in SQL; this is its
+ * statement.
  */
 export function consistencySweepVariant(
-  multiplier: number,
+  expectedGain: number,
   standardMicroUsd: number,
   strongMicroUsd: number
 ): "standard" | "strong" {
-  return multiplier * standardMicroUsd >= strongMicroUsd ? "strong" : "standard";
+  return expectedGain * standardMicroUsd >= strongMicroUsd ? "strong" : "standard";
+}
+
+/** How far back the variants' yields are read, and how many sweeps of each the evidence needs. */
+export const CONSISTENCY_EVIDENCE = { windowDays: 60, minSweepsPerVariant: 10 } as const;
+
+export interface StrongExpectedGain {
+  gain: number;
+  /** override: the General mandate's own policy sets it; evidence: the variants' upheld flags; default: the policy default. */
+  source: "override" | "evidence" | "default";
+}
+
+/**
+ * How much more a strong sweep is expected to find than a standard one
+ * (#756), in order:
+ *
+ *   1. override: the General mandate's allocation policy sets
+ *      `consistency_strong_expected_gain` itself (its Grantmaker's
+ *      judgment, for instance from the corpus consistency eval's recall on
+ *      each tier, scripts/corpus/consistency.ts);
+ *   2. evidence: once each variant has CONSISTENCY_EVIDENCE.minSweepsPerVariant
+ *      completed sweeps in the window, the ratio of their upheld flags (a
+ *      flag whose pass moved the judgment) per node read, each count
+ *      smoothed by one so a variant with none yet is not read as zero,
+ *      held to the policy's bounds;
+ *   3. default: the shipped policy default.
+ */
+export async function consistencyStrongExpectedGain(): Promise<StrongExpectedGain> {
+  const mandate = await getGeneralMandate();
+  const own = mandate?.allocationPolicy?.consistency_strong_expected_gain;
+  const bounds = POLICY_BOUNDS.consistency_strong_expected_gain;
+  if (typeof own === "number" && Number.isFinite(own)) {
+    return { gain: Math.min(bounds.max, Math.max(bounds.min, own)), source: "override" };
+  }
+  const yields = await sweepYieldByVariant(CONSISTENCY_EVIDENCE.windowDays).catch(() => []);
+  const standard = yields.find((y) => y.variant === "standard");
+  const strong = yields.find((y) => y.variant === "strong");
+  if (
+    standard && strong &&
+    standard.sweeps >= CONSISTENCY_EVIDENCE.minSweepsPerVariant &&
+    strong.sweeps >= CONSISTENCY_EVIDENCE.minSweepsPerVariant &&
+    standard.nodes > 0 && strong.nodes > 0
+  ) {
+    const ratio = ((strong.upheld + 1) / strong.nodes) / ((standard.upheld + 1) / standard.nodes);
+    return { gain: Math.min(bounds.max, Math.max(bounds.min, ratio)), source: "evidence" };
+  }
+  return { gain: (await getEffectiveAllocationPolicy()).consistency_strong_expected_gain, source: "default" };
 }
 
 export async function fundGrantSelfActions(): Promise<number> {
@@ -830,7 +879,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- is a deployment off-switch. Of a partition's two variants it
         -- buys the one the marginal-return rule picks from that
         -- partition's two prices (consistencySweepVariant, with the
-        -- policy's multiplier as $4, #756), and never both.
+        -- strong read's expected gain as $4, #756), and never both.
         AND (a.kind <> 'consistency_sweep' OR ($1::boolean AND a.variant = (
               SELECT CASE WHEN $4::real * std.cost_est_micro_usd >= strong.cost_est_micro_usd
                           THEN 'strong' ELSE 'standard' END
@@ -844,7 +893,7 @@ export async function fundGrantSelfActions(): Promise<number> {
       loadConfig().mandateReviewEnabled !== false,
       loadConfig().lookoutRunsEnabled !== false,
       loadConfig().consistencySweepsEnabled === true
-        ? (await getEffectiveAllocationPolicy()).consistency_strong_gain_multiplier
+        ? (await consistencyStrongExpectedGain()).gain
         : 0,
     ]
   );

@@ -114,8 +114,10 @@ const MAINTENANCE_KEYS = [
   "audit_value_anomaly",
   "audit_value_suspension",
   "audit_value_sweep",
-  // The strong consistency sweep's expected gain over the standard (#756).
-  "consistency_strong_gain_multiplier",
+  // The strong consistency sweep's expected gain over the standard, and the
+  // per-node cost prior for an unpriced reader (#756).
+  "consistency_strong_expected_gain",
+  "est_consistency_node_cost_owls",
 ];
 
 describe("POLICY_BOUNDS (maintenance and audit keys, #363)", () => {

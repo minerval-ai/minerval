@@ -13,9 +13,10 @@
 import { loadConfig } from "../config.js";
 import {
   CONSISTENCY_SWEEP_MIN_NODES,
-  consistencySweepPrice,
+  priceConsistencySweep,
   type ConsistencySweepPrice,
 } from "../services/action-service.js";
+import { runBudget } from "../llm/usage-context.js";
 import { runConsistencyChecker, type ProposedFlag } from "../llm/agents/consistency-checker.js";
 import {
   finishSweep,
@@ -69,10 +70,19 @@ export async function runConsistencySweep(
   // A dry run is a fresh reader: no memory of earlier sweeps, no record.
   const lastSweep = opts.dryRun ? null : await lastSweepOf(partition);
   const { total: claimsInScope } = await partitionClaims(scope, { limit: 1 });
-  const sweepId = opts.dryRun ? null : await startSweep(partition);
+  const sweepId = opts.dryRun ? null : await startSweep(partition, opts.variant ?? null);
   const base = { sweepId, partition, claimsInScope };
+  // A funded sweep records what its run was metered at: the observed cost
+  // per node its variant's next prices read (#756).
   const close = async (fields: Omit<Parameters<typeof finishSweep>[0], "sweepId" | "claimsInScope">) => {
-    if (sweepId) await finishSweep({ sweepId, claimsInScope, ...fields });
+    if (sweepId) {
+      await finishSweep({
+        sweepId,
+        claimsInScope,
+        costMicroUsd: opts.variant ? (runBudget()?.spentMicroUsd ?? null) : null,
+        ...fields,
+      });
+    }
   };
 
   // One assessed node cannot be incoherent with anything in its partition.
@@ -92,7 +102,7 @@ export async function runConsistencySweep(
       model: opts.model,
       dryRun: opts.dryRun,
       budgetBasis: opts.variant
-        ? consistencySweepBudgetBasis(consistencySweepPrice(opts.variant, claimsInScope), claimsInScope)
+        ? consistencySweepBudgetBasis(await priceConsistencySweep(opts.variant, claimsInScope), claimsInScope)
         : undefined,
     });
     await close({ status: "done", runId: run.runId, flagsRaised: run.flagsRaised, note: run.note });
@@ -122,17 +132,23 @@ function usd(micro: number): string {
  * says where it stopped for the next sweep to resume.
  */
 export function consistencySweepBudgetBasis(price: ConsistencySweepPrice, assessedNodes: number): string {
+  const source =
+    price.basis === "observed"
+      ? "what this reader's recent sweeps actually cost per node (the 80th percentile)"
+      : price.basis === "model_price"
+        ? "this reader's model price for the tokens a node is expected to take, generously counted"
+        : "the expected cost a node takes on this reader, set generously until its sweeps have run";
   const head =
     `How this budget was set: by the partition's size, at ${usd(price.perNodeMicroUsd)} per ` +
-    `assessed node (counting at least ${CONSISTENCY_SWEEP_MIN_NODES}, since the briefing and ` +
-    `searches beyond the partition cost the same in a small one), up to a ceiling of ` +
-    `${usd(price.capMicroUsd)} for this reader. ${assessedNodes} node(s) come to ` +
+    `assessed node, which is ${source}, counting at least ${CONSISTENCY_SWEEP_MIN_NODES} nodes ` +
+    `(the briefing and searches beyond the partition cost the same in a small one), up to a ` +
+    `ceiling of ${usd(price.capMicroUsd)} for this reader. ${assessedNodes} node(s) come to ` +
     `${usd(price.microUsd)}. `;
   if (!price.capped) {
     return (
       head +
-      `The rate is generous on purpose: it is meant to cover reading every node here and ` +
-      `comparing what needs comparing, and what you do not spend goes back to the General mandate.`
+      `It is meant to cover reading every node here and comparing what needs comparing; ` +
+      `what you do not spend goes back to the General mandate.`
     );
   }
   const reach = Math.floor(price.capMicroUsd / Math.max(1, price.perNodeMicroUsd));
