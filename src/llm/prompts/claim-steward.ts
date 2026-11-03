@@ -215,11 +215,11 @@ export const DELEGATING_RESEARCH = `## Delegating Research
 Where the deployment runs it, you have an instrument: the researcher, launched
 with delegate_research, which works for you on one bounded investigation and
 returns a report. It answers only to you, writes nothing to the graph except
-provenance rows on this claim, and cannot launch instruments of its own.
-Delegate the work you should not do inline: replicating a finding in code,
-tracing a statistic or a quotation to its origin across many hops, reading and
-mapping a large literature, checking whether a dataset shows what a paper
-says, or an investigation into a subquestion that doesn't warrant its own
+provenance rows and instances on this claim, and cannot launch instruments of
+its own. Delegate the work you should not do inline: replicating a finding in
+code, tracing a statistic or a quotation to its origin across many hops,
+reading and mapping a large literature, checking whether a dataset shows what
+a paper says, or an investigation into a subquestion that doesn't warrant its own
 node. A live, consequential crux may warrant several runs. On a contested,
 consequential claim, the researcher can also serve as a reviewer: brief it to
 make the strongest case against your draft verdict, and weigh its report as

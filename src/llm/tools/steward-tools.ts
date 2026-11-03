@@ -214,6 +214,45 @@ function parseDomains(value: unknown): { domains: string[] } | { error: string }
   return { domains: cleaned };
 }
 
+/** Who may record a claim instance: the Steward, or a researcher it launched. */
+export type InstanceRecorder = "claim_steward" | "researcher";
+
+/**
+ * record_claim_instance as a researcher a Steward launched sees it: the
+ * Steward's tool, with claim_id dropped because the run records on its own
+ * claim alone and the harness fills it in, and the description addressed to
+ * an instrument rather than to the claim's Steward.
+ */
+export function getResearcherInstanceToolDefinition(): Tool {
+  const tool = getStewardToolDefinitions().find((t) => t.name === "record_claim_instance")!;
+  const schema = tool.input_schema as {
+    type: "object";
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+  const { claim_id: _claimId, ...properties } = schema.properties;
+  return {
+    name: tool.name,
+    description:
+      "Record a source for the claim this investigation serves: one you read " +
+      "that asserts the claim, denies it, poses it as an open question, or " +
+      "mentions it without taking a side, with the passage as it states it. " +
+      "Record a mention when a reader should see it: prominent, an origin, or " +
+      "telling about how the claim is used, not every passing occurrence; a " +
+      "mention is never counted as affirming or denying. A source quoting " +
+      "someone is an instance whose speaker is the person quoted. One instance " +
+      "per (claim, source, speaker): re-recording is deduplicated. Set speaker " +
+      "on each. The instance is recorded as yours, and the Steward owns the " +
+      "claim's instance set: it may correct or detach " +
+      "what you record. List what you recorded in your report.",
+    input_schema: {
+      type: "object" as const,
+      properties,
+      required: schema.required.filter((r) => r !== "claim_id"),
+    },
+  };
+}
+
 export function getStewardToolDefinitions(): Tool[] {
   return [
     {
@@ -1284,7 +1323,17 @@ export async function executeStewardTool(
   // than a generic "steward_reassessment". `model` is the raw API id of the
   // model running this stewardship, recorded on the assessment row (#294) so
   // every verdict names its assessor.
-  run: { trigger?: string; context?: string; model?: string } = {}
+  run: {
+    trigger?: string;
+    context?: string;
+    model?: string;
+    // Who is recording, for the one row a researcher may also write
+    // (record_claim_instance): the Steward by default. A researcher a
+    // Steward launched records instances on the run's claim and nothing
+    // else (researcher.ts holds that line); its rows carry "researcher" so
+    // the Steward and readers can tell who recorded them.
+    recordedBy?: InstanceRecorder;
+  } = {}
 ): Promise<string> {
   try {
     switch (toolName) {
@@ -1440,6 +1489,11 @@ export async function executeStewardTool(
 
       case "record_claim_instance": {
         const claimId = input.claim_id as string;
+        const recordedBy = run.recordedBy ?? "claim_steward";
+        // The Steward owns the instance set: it corrects, detaches and
+        // reattaches. A researcher has none of those tools, so what would be
+        // a next step for the Steward is, for it, a line in its report.
+        const byResearcher = recordedBy === "researcher";
         const url = typeof input.url === "string" ? input.url.trim() : "";
         const verbatimText =
           typeof input.verbatim_text === "string"
@@ -1568,10 +1622,15 @@ export async function executeStewardTool(
         // speaker's assertion or another's, and only the Steward can tell.
         const unattributedNote =
           existing && speaker && !existing.speaker
-            ? ` The existing instance names no speaker, so it may be this ` +
-              `voice or another one. If it is a different speaker's ` +
-              `assertion, attribute it with update_claim_instance ` +
-              `(instance_id ${existing.id}), then record ${speaker}'s again.`
+            ? byResearcher
+              ? ` The existing instance names no speaker, so it may be this ` +
+                `voice or another one. If it is a different speaker's ` +
+                `assertion, say so in your report (instance_id ${existing.id}, ` +
+                `and ${speaker}'s passage) for the Steward to attribute.`
+              : ` The existing instance names no speaker, so it may be this ` +
+                `voice or another one. If it is a different speaker's ` +
+                `assertion, attribute it with update_claim_instance ` +
+                `(instance_id ${existing.id}), then record ${speaker}'s again.`
             : "";
         // A detached instance from this source records a judgment that it
         // does not state the claim; a new row would silently overturn it.
@@ -1584,9 +1643,13 @@ export async function executeStewardTool(
               `This source has an instance${voice} on this claim that was detached` +
               (existing.detached_reason ? ` ("${existing.detached_reason}")` : "") +
               `; nothing new was written. If your reading shows the source ` +
-              `does belong to the claim, reattach it with ` +
-              `reattach_claim_instance (instance_id ${existing.id}) and correct ` +
-              `it with update_claim_instance if needed.` +
+              `does belong to the claim, ` +
+              (byResearcher
+                ? `say so in your report, with the passage, for the Steward ` +
+                  `to weigh reattaching it (instance_id ${existing.id}).`
+                : `reattach it with reattach_claim_instance (instance_id ` +
+                  `${existing.id}) and correct it with update_claim_instance ` +
+                  `if needed.`) +
               unattributedNote,
           });
         }
@@ -1599,12 +1662,18 @@ export async function executeStewardTool(
               `This source is already recorded as an instance${voice} of this ` +
               `claim (stance: ${existing.stance}); nothing new was written.` +
               (existing.stance !== stance
-                ? ` Note: the existing instance's stance differs from the one ` +
-                  `you just observed — if the source genuinely takes both ` +
-                  `sides, weigh that in your assessment and note it in your ` +
-                  `reasoning_trace; if the recorded stance is simply wrong, ` +
-                  `correct it with update_claim_instance (instance_id ` +
-                  `${existing.id}) and say why.`
+                ? byResearcher
+                  ? ` Note: the existing instance's stance differs from the ` +
+                    `one you just observed. Say in your report whether the ` +
+                    `source takes both sides or the recorded stance is wrong, ` +
+                    `with the passage (instance_id ${existing.id}); the ` +
+                    `Steward corrects instances.`
+                  : ` Note: the existing instance's stance differs from the one ` +
+                    `you just observed — if the source genuinely takes both ` +
+                    `sides, weigh that in your assessment and note it in your ` +
+                    `reasoning_trace; if the recorded stance is simply wrong, ` +
+                    `correct it with update_claim_instance (instance_id ` +
+                    `${existing.id}) and say why.`
                 : "") +
               (speaker
                 ? unattributedNote
@@ -1628,7 +1697,7 @@ export async function executeStewardTool(
             sourceDate: optText(input.source_date),
             link: optText(input.link),
             statedProbability,
-            createdBy: "claim_steward",
+            createdBy: recordedBy,
           })
           .returning();
 
@@ -1639,7 +1708,11 @@ export async function executeStewardTool(
           message:
             `Recorded a ${stance} instance of claim ${claimId} from ` +
             `${source.url ?? url}. ` +
-            (stance === "mentions"
+            (byResearcher
+              ? `It now counts among the claim's source instances, recorded ` +
+                `as yours; the Steward owns the instance set and may correct ` +
+                `or detach it. List it in your report.`
+              : stance === "mentions"
               ? `The claim page shows it among the sources that mention the ` +
                 `claim; it takes no side and is never counted as affirming or denying.`
               : `It now counts among the claim's source instances; weigh its ` +

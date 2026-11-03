@@ -143,7 +143,8 @@ export function getResearchToolDefinitions(
         "investigation and returns a report you weigh. It answers only to you, writes " +
         (graphWrites
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
-            "on the claim in scope, "
+            "and instances (sources asserting, denying or posing a claim, or asking or answering a " +
+            "question) on the node in scope, "
           : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
             "not record provenance or examine documents, and with contribution_budget_usd it submits " +
             "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
@@ -387,7 +388,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
    */
   const runOnRow = async (
     row: Awaited<ReturnType<typeof openResearchRun>>,
-    claim: { id: string; text: string; domains: string[] } | null,
+    claim: { id: string; text: string; domains: string[]; kind: string } | null,
     examination: ExaminationRow | null
   ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
     const ctx = getUsageContext();
@@ -489,14 +490,14 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
 
     const claimId = claimScoped ? options.claimId! : str(input.claim_id) || null;
     if (claimId && !UUID_RE.test(claimId)) return refuse(`claim_id "${claimId}" is not a claim id.`);
-    let claim: { id: string; text: string; domains: string[] } | null = null;
+    let claim: { id: string; text: string; domains: string[]; kind: string } | null = null;
     if (claimId) {
-      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null }>(
-        `SELECT id, text, domains FROM claims WHERE id = $1`,
+      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = $1`,
         [claimId]
       );
       if (!row) return refuse(`No claim ${claimId} exists.`);
-      claim = { id: row.id, text: row.text, domains: row.domains ?? [] };
+      claim = { id: row.id, text: row.text, domains: row.domains ?? [], kind: row.kind ?? "claim" };
     }
 
     // An examination of a document (#507): opened before the run so the
