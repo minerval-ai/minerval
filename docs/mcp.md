@@ -178,7 +178,7 @@ and the tool description says what a call spends.
   - `"arguments"`: each argument with its written form, its current
     evaluation, and the check record behind a machine-checked one.
   - `"subclaims"`: the direct subclaims, one row per argument each serves,
-    with their standing, and `subclaims_assessed`. `get_decomposition`
+    with the edge's reasoning and their standing, and `subclaims_assessed`. `get_decomposition`
     walks deeper.
   - `"provenance"`: the instances, each with the Steward's `reading` of its
     source (whether the source's own evidence bears its assertion, the

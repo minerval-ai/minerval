@@ -79,7 +79,8 @@ export const CLAIM_VIEW_DESCRIPTION =
   "rests on). Contestation (how actively the claim is disputed, 0..1) is " +
   "not a status. Add sections with `include`: `arguments` (each with its " +
   "written form and current evaluation), `subclaims` (the direct " +
-  "subclaims, one row per argument each serves, with their standing), " +
+  "subclaims, one row per argument each serves, with the edge's reasoning " +
+  "and their standing), " +
   "`provenance` (the instances with their readings, and the edges among " +
   "their sources), `dependents` (one page ranked by importance, with " +
   "`dependents_total`), `related` (lateral see-also links, never " +
@@ -397,6 +398,7 @@ async function listDirectSubclaims(claimId: string) {
     child_text: string;
     child_type: string;
     relation_type: string;
+    reasoning: string | null;
     confidence: number;
     child_status: string | null;
     child_confidence: number | null;
@@ -407,7 +409,7 @@ async function listDirectSubclaims(claimId: string) {
     child_standing: string | null;
   }>(
     `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
-            c.claim_type AS child_type, cr.relation_type, cr.confidence,
+            c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             am.argument_id, arg.name AS argument_name,
             c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
@@ -428,6 +430,8 @@ async function listDirectSubclaims(claimId: string) {
     text: sc.child_text,
     type: sc.child_type,
     relation: sc.relation_type,
+    // Why the edge holds, as its author wrote it.
+    reasoning: sc.reasoning,
     confidence: sc.confidence,
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,

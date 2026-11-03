@@ -465,6 +465,7 @@ describe("graph-read-tools", () => {
             child_text: "A subclaim",
             child_type: "empirical_derived",
             relation_type: "requires",
+            reasoning: "The parent needs the survey to hold.",
             confidence: 0.9,
             child_status: "supported",
             child_confidence: 0.7,
@@ -506,7 +507,13 @@ describe("graph-read-tools", () => {
           }),
         ]);
         expect(out.subclaims).toEqual([
-          expect.objectContaining({ id: "k1", edge_id: "e1", argument_id: "a1", assessment_status: "supported" }),
+          expect.objectContaining({
+            id: "k1",
+            edge_id: "e1",
+            reasoning: "The parent needs the survey to hold.",
+            argument_id: "a1",
+            assessment_status: "supported",
+          }),
         ]);
         expect(out.related).toEqual([
           expect.objectContaining({ id: "r1", link_kind: "see_also", reasoning: "Same survey" }),
