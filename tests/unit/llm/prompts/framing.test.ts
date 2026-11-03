@@ -61,7 +61,8 @@ describe("de-privileged ingestion framing (#360)", () => {
     expect(steward).not.toMatch(/between credible\s+sides/);
     // Instances describe the debate; they are not votes on the verdict.
     expect(steward).not.toMatch(/strong signal/);
-    expect(steward).toMatch(/They do not tell you whether the claim is true/);
+    expect(steward).not.toMatch(/stances feed your assessment/);
+    expect(steward).toMatch(/evidence to weigh on its merits, not a vote/);
   });
 
   it("no prompt names a source as the claim's origin or home", () => {
@@ -85,7 +86,9 @@ describe("the Steward and the claim's instances", () => {
   it("reads the claim with get_claim and reasons before reading instances", () => {
     expect(steward).toContain("get_claim");
     expect(steward).not.toContain("get_claim_with_context");
-    expect(steward).toMatch(/before any web_search or any reading of its instances/);
+    // The norm lives in the constitution (§9), which the role no longer restates;
+    // the task message repeats it for every ordinary pass.
+    expect(steward).toMatch(/Before reading what others concluded, the admin forms its own model of the question/);
   });
 
   it("decides membership and order, and detaches instead of lowering confidence", () => {
@@ -122,22 +125,23 @@ describe("assessment as thinking, not surveying", () => {
     expect(steward).not.toMatch(/demarcate scope/);
     expect(steward).not.toMatch(/carved out of/);
     expect(steward).not.toMatch(/usually settled/);
-    expect(steward).toMatch(/it does not limit what you consider/);
+    expect(steward).toMatch(/The rule governs what the graph records, not how far the admin reasons/);
     expect(steward).toMatch(/Nothing in this constitution limits what an admin may consider/);
   });
 
   it("the Steward forms its own view before searching", () => {
-    expect(steward).toMatch(/Reason about the question before you search/);
-    expect(steward).toMatch(/Do not cite a\s+consensus as a reason/);
+    // Stated once, in the constitution (§9), not restated in the role.
+    expect(steward).toMatch(/Sources then test and revise that model rather than replace it/);
+    expect(steward).toMatch(/The assessment says why a consensus holds, or where its reasons fail/);
   });
 
   it("decomposition follows the proposition, not one source's argument", () => {
     expect(steward).toMatch(/Decompose the proposition, not any one source's argument/);
     expect(steward).toMatch(/only as sound as the framework it depends on/);
-    expect(steward).toMatch(/the\s+decomposition is incomplete/);
+    expect(steward).toMatch(/its deepest cruxes may lie outside every argument yet offered for it/);
   });
 
   it("credence is the Steward's own judgment", () => {
-    expect(steward).toMatch(/not\s+the midpoint of the debate/);
+    expect(steward).toMatch(/not a summary of where the sources sit/);
   });
 });
