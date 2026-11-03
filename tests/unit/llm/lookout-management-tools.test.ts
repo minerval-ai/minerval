@@ -29,7 +29,6 @@ vi.mock("../../../src/services/feed-service.js", () => ({
     minWakeHours: { min: 0, max: 720, dflt: 4 },
     pollHours: { min: 1, max: 168, dflt: 6 },
     retainDays: { min: 1, max: 90, dflt: 14 },
-    dailyIngestCap: { min: 0, max: 50, dflt: 5 },
   },
   FEED_WAKE_RULES: ["batch", "each", "heartbeat", "paused", "auto_ingest"],
   LOOKOUT_SETTABLE_WAKE_RULES: ["batch", "each", "heartbeat", "paused"],
@@ -52,7 +51,7 @@ vi.mock("../../../src/services/feed-service.js", () => ({
 }));
 
 vi.mock("../../../src/services/lookout-service.js", () => ({
-  LOOKOUT_BOUNDS: { heartbeatHours: { max: 720 }, maxIngestsPerRun: { max: 20 }, noteChars: 2_000 },
+  LOOKOUT_BOUNDS: { heartbeatHours: { max: 720 }, noteChars: 2_000 },
   LOOKOUT_TRIGGER_KINDS: ["retraction", "manual"],
   createLookout: vi.fn(async (input: Record<string, unknown>) => {
     state.created.push(input);
@@ -120,7 +119,6 @@ describe("lookout management tools", () => {
       heartbeatHours: 12,
       triggers: ["retraction"],
       maxValue: 4,
-      maxIngestsPerRun: undefined,
       createdBy: "grantmaker:review",
     });
   });
@@ -162,7 +160,9 @@ describe("lookout management tools", () => {
       { lookout_id: L1, url: "https://www.lesswrong.com/tag/ai", wake: "auto_ingest", daily_ingest_cap: 3 },
       { createdBy: "grantmaker:review" }
     );
-    expect(state.feedsAdded[0]).toMatchObject({ rule: { wake: "auto_ingest", dailyIngestCap: 3 } });
+    // A daily count is no longer a rule (#695): an old caller's field is ignored.
+    expect(state.feedsAdded[0]).toMatchObject({ rule: { wake: "auto_ingest" } });
+    expect((state.feedsAdded[0] as { rule: Record<string, unknown> }).rule).not.toHaveProperty("dailyIngestCap");
 
     const upd = JSON.parse((await executeLookoutManagementTool("g-1", "update_feed", { lookout_id: L1, feed_id: "feed-1", status: "removed" }, { createdBy: "x" }))!);
     expect(upd).toEqual({ success: true, feed_id: "feed-1" });

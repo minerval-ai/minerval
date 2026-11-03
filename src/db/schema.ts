@@ -2359,11 +2359,14 @@ export const lookouts = pgTable(
     triggers: jsonb("triggers").notNull().default([]),
     // Per-lookout model override; null = config.lookoutModel.
     model: text("model"),
-    // The ceiling on the valuation a flag may write on the mandate's
-    // behalf (0–10). The Grantmaker delegates this much of its spending
-    // judgment and no more.
+    // The ceiling on the valuation anything the lookout raises (a
+    // reassessment, an ingest) may write on the mandate's behalf (0–10).
+    // The Grantmaker delegates this much of its spending judgment and no
+    // more.
     maxValue: real("max_value").notNull().default(6),
-    // How many ingests one run may append to the mandate's plan.
+    // No longer read or written (#695): ingests are valued within
+    // max_value and ranked by the allocator, not counted per run. Kept,
+    // with its default, so live rows need no migration; safe to drop.
     maxIngestsPerRun: integer("max_ingests_per_run").notNull().default(3),
     // The lookout's own durable notes, read back every run: what it has
     // already seen and flagged, sources checked and when, what to watch.
@@ -2568,7 +2571,10 @@ export const lookoutFeeds = pgTable(
     pollHours: integer("poll_hours").notNull().default(6),
     // Untriaged items expire after this many days (counted, never hidden).
     retainDays: integer("retain_days").notNull().default(14),
-    // auto_ingest only: ingests this feed may append per day.
+    // No longer read or written (#695): auto_ingest items are valued at
+    // the lookout's max_value and ranked by the allocator, not counted per
+    // day. Kept, with its default, so live rows need no migration; safe to
+    // drop.
     dailyIngestCap: integer("daily_ingest_cap").notNull().default(5),
     // The focus an ingest from this feed carries by default (auto_ingest,
     // and the lookout's triage unless it gives its own): "the author's

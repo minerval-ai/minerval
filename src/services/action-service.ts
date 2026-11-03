@@ -63,10 +63,10 @@ export type ActionKind =
   // One run of a mandate's lookout (docs/allocation.md, "Lookouts"): a
   // cheap standing watch that reads its brief, the graph, and the open
   // web on a heartbeat or when an event is queued for it, and raises
-  // CANDIDATES — a reassess valued on the mandate's behalf within its
-  // delegated ceiling, an ingest appended to the plan, a note for the
-  // next review pass. Group `lookout:<lookout_id>`; self-funded from the
-  // mandate's escrow like a review pass, bounded per day the same way.
+  // CANDIDATES — a reassess or an ingest valued on the mandate's behalf
+  // within its delegated ceiling (#695), a note for the next review pass.
+  // Group `lookout:<lookout_id>`; self-funded from the mandate's escrow
+  // like a review pass, out of the mandate's day the same way.
   | "lookout_run"
   // One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
   // sweeps"): a cheap agent reading one partition of the graph (a tag, or

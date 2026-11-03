@@ -292,8 +292,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23077,
-    "fullChars": 105603,
+    "roleChars": 23061,
+    "fullChars": 105587,
     "skills": [
       {
         "name": "costing",
@@ -332,8 +332,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 13062,
-    "fullChars": 95588,
+    "roleChars": 13250,
+    "fullChars": 95776,
     "skills": [
       {
         "name": "costing",

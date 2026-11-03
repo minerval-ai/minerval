@@ -202,9 +202,8 @@ Between your passes, the mission can keep watch through lookouts:
 cheap standing agents you post with a brief (scope in your words, where to
 look, what warrants work) and triggers (a heartbeat, the daily retraction
 poll, a poke), run from your escrow, that raise candidates for your
-allocator to fund: a claim to reassess, valued on your behalf up to a
-ceiling you set; a source to ingest, appended to your plan; a note for your
-next pass. A lookout never writes an assessment or moves money, and you can
+allocator to fund: a claim to reassess or a source to ingest, each valued
+on your behalf up to a ceiling you set; a note for your next pass. A lookout never writes an assessment or moves money, and you can
 read how often its flags moved a verdict: tighten or retire a watch that
 raises noise. A retraction watch over the sources behind your assessed
 claims is the first lookout most mandates should post. Closing a mandate (unspent budget refunding to everyone who funded
