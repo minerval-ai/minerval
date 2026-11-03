@@ -357,3 +357,93 @@ describe("Steward final-action nudge", () => {
     expect(opts.finalToolNudge.when()).toBe(false);
   });
 });
+
+/**
+ * What each pass owes (#706, #709): a first judgment must be recorded, a
+ * revisit of a node with a current assessment may end on a logged "no
+ * change", and the formalization, prize and attempt triggers are told and
+ * nudged toward their own tool rather than toward a generic assessment.
+ */
+describe("Steward pass task by trigger", () => {
+  const runTrigger = async (
+    trigger: string,
+    opts: { current?: boolean; domains?: string[]; context?: string } = {}
+  ): Promise<LoopOptions> => {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    const mocked = vi.mocked(rawQuery);
+    mocked.mockImplementation((async (sql: string) =>
+      opts.current && /is_current = true/.test(sql) ? [{ one: 1 }] : []) as never);
+    try {
+      mocks.claim = { id: CLAIM_ID, importance: 0.5, domains: opts.domains ?? [] };
+      await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, () =>
+        runClaimSteward({ trigger, claimId: CLAIM_ID, context: opts.context ?? "" })
+      );
+      return mocks.loopOptions.at(-1) as unknown as LoopOptions;
+    } finally {
+      mocked.mockImplementation((async () => []) as never);
+    }
+  };
+
+  it("lets a revisit with a current assessment end on a logged no-change", async () => {
+    const opts = await runTrigger("subclaim_change", { current: true });
+    const task = opts.initialMessages[0]!.content;
+    expect(task).toContain("no_action_needed");
+    expect(task).not.toContain("must record one");
+    expect(opts.finalToolNudge.when()).toBe(true);
+    await opts.executeTool("log_stewardship_decision", { action_taken: "no_action_needed" });
+    expect(opts.finalToolNudge.when()).toBe(false);
+  });
+
+  it("still requires an assessment on a revisit of a node that has none", async () => {
+    const opts = await runTrigger("subclaim_change", { current: false });
+    expect(opts.initialMessages[0]!.content).toContain("must record one");
+    await opts.executeTool("log_stewardship_decision", {});
+    expect(opts.finalToolNudge.when()).toBe(true);
+  });
+
+  it("states the budget with the shared line, not a hand-rolled assessment demand", async () => {
+    const task = (await runTrigger("subclaim_change", { current: true })).initialMessages[0]!.content;
+    expect(task).toContain("This run has a budget of $5.00");
+    expect(task).toContain("tool-use turns in this run");
+    expect(task).not.toContain("Make sure you have recorded an assessment");
+  });
+
+  it("never nudges a no-checker formalization toward an assessment", async () => {
+    const saved = mocks.config.leanCheckerUrl;
+    mocks.config.leanCheckerUrl = "";
+    try {
+      const opts = await runTrigger("formalize", { domains: ["mathematics"] });
+      expect(opts.initialMessages[0]!.content).toContain("Do not record or publish anything");
+      expect(opts.finalToolNudge.message).not.toContain("update_claim_assessment");
+      expect(opts.finalToolNudge.when()).toBe(true);
+      await opts.executeTool("log_stewardship_decision", {});
+      expect(opts.finalToolNudge.when()).toBe(false);
+    } finally {
+      mocks.config.leanCheckerUrl = saved;
+    }
+  });
+
+  it("gives a prize claim its own task and nudges toward decide_prize_claim", async () => {
+    const opts = await runTrigger("prize_claim", { domains: ["mathematics"] });
+    const task = opts.initialMessages[0]!.content;
+    expect(task).toContain("decide a prize claim");
+    expect(task).toContain("get_prize_claim");
+    expect(opts.finalToolNudge.message).toContain("decide_prize_claim");
+    // An assessment alone does not settle a prize claim.
+    await opts.executeTool("update_claim_assessment", { status: "verified" });
+    expect(opts.finalToolNudge.when()).toBe(true);
+  });
+
+  it("gives the window-closed, voided and attempt triggers their own tasks", async () => {
+    expect((await runTrigger("prize_window_closed")).initialMessages[0]!.content).toContain(
+      "without the provisional caveat"
+    );
+    expect((await runTrigger("prize_claim_voided")).initialMessages[0]!.content).toContain(
+      "without the voided result"
+    );
+    const attempt = await runTrigger("attempt_completed");
+    expect(attempt.initialMessages[0]!.content).toContain("get_proof_attempt");
+    await attempt.executeTool("log_stewardship_decision", {});
+    expect(attempt.finalToolNudge.when()).toBe(false);
+  });
+});
