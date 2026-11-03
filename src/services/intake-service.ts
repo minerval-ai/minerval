@@ -19,7 +19,7 @@
  */
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
-import { claims, arguments_, contributions } from "../db/schema.js";
+import { claims, contributions } from "../db/schema.js";
 import { intakeContributionTypeEnum, type InstanceStance } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
@@ -85,8 +85,6 @@ export function isIntakeContributionType(
  */
 export async function createClaimProposal(input: {
   claimText: string;
-  /** Optional: a proposal need not say why it belongs (stored as ""). */
-  argumentText?: string;
   contributorId: string;
   /** A question proposed directly is a propose_question (§7a). */
   kind?: "claim" | "question";
@@ -98,9 +96,10 @@ export async function createClaimProposal(input: {
       claimId: null,
       contributorId: input.contributorId,
       contributionType: input.kind === "question" ? "propose_question" : "propose_claim",
-      // The argument is the contribution's substance; the proposed claim text
-      // rides in proposed_canonical_form, same as a propose_edit.
-      content: input.argumentText ?? "",
+      // A proposal is its wording alone, which rides in
+      // proposed_canonical_form as a propose_edit's does; it carries no
+      // argument (the case for a node is a contribution on it once it exists).
+      content: "",
       proposedCanonicalForm: input.claimText,
     })
     .returning();
@@ -207,9 +206,14 @@ async function materializeProposedClaim(contribution: {
   proposedCanonicalForm: string | null;
 }): Promise<IntakeMaterializationResult> {
   // A question proposed directly enters as a question unless the Matcher
-  // finds it asks whether something is so, or for a value (§7a); its
-  // content says why the question matters, and is never stored as an
-  // argument for anything.
+  // finds it asks whether something is so, or for a value (§7a).
+  //
+  // Only the wording enters the graph. A mandate's proposal carries a
+  // content (why the mandate wants the node); that is the mandate's public
+  // record of its contribution, and is never stored as an argument or handed
+  // to the Steward: proposing a node and arguing about it are separate acts,
+  // and the case for or against a node comes through reviewed contributions
+  // on it.
   const proposedKind: NodeKind = contribution.contributionType === "propose_question" ? "question" : "claim";
   if (contribution.claimId) {
     return { action: "already_materialized", claimId: contribution.claimId };
@@ -252,8 +256,8 @@ async function materializeProposedClaim(contribution: {
       .set({ claimId: match.matched_claim_id })
       .where(eq(contributions.id, contribution.id));
 
-    // The claim exists, so its Steward owns integrating the proposal's
-    // argument — same handoff as an accepted challenge/support.
+    // The claim exists: tell its Steward the proposal landed here, in case
+    // the wording says something the node's canonical form should absorb.
     await enqueueSteward({
       claimId: match.matched_claim_id,
       trigger: "contribution_accepted",
@@ -262,12 +266,7 @@ async function materializeProposedClaim(contribution: {
         (match.instance_stance === "denies"
           ? " (the proposal asserts its negation)"
           : "") +
-        `. Proposed wording: "${claimText}".` +
-        (contribution.content.trim()
-          ? (proposedKind === "question"
-              ? ` Why the contributor asks it: `
-              : ` Supporting argument from the contributor: `) + contribution.content
-          : " The contributor gave no argument with it."),
+        `. Proposed wording: "${claimText}".`,
     });
 
     // The proposal was paid for: run that steward pass on the express lane.
@@ -316,18 +315,6 @@ async function materializeProposedClaim(contribution: {
         : {}),
     })
     .returning();
-
-  // A proposed claim's argument is an argument for it; a proposed
-  // question's reason for asking is not, whatever kind it became. A claim
-  // proposed without an argument starts with none.
-  if (proposedKind === "claim" && kind === "claim" && contribution.content.trim()) {
-    await db.insert(arguments_).values({
-      claimId: claim!.id,
-      stance: "for",
-      content: contribution.content,
-      createdBy: "user",
-    });
-  }
 
   await db
     .update(contributions)

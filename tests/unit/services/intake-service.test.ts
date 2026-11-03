@@ -133,7 +133,6 @@ describe("createClaimProposal", () => {
   it("stores a pending contribution — no claim row — and enqueues review", async () => {
     const contribution = await createClaimProposal({
       claimText: "The sky is blue",
-      argumentText: "Look up.",
       contributorId: "user-1",
     });
 
@@ -142,7 +141,8 @@ describe("createClaimProposal", () => {
     expect(state.inserts[0]!.values).toMatchObject({
       claimId: null,
       contributionType: "propose_claim",
-      content: "Look up.",
+      // A proposal is its wording alone: it carries no argument.
+      content: "",
       proposedCanonicalForm: "The sky is blue",
     });
     expect(mocks.enqueueContribution).toHaveBeenCalledWith({
@@ -154,8 +154,8 @@ describe("createClaimProposal", () => {
   });
 });
 
-describe("createClaimProposal — without an argument", () => {
-  it("stores an empty content: saying why it belongs is optional", async () => {
+describe("createClaimProposal — a question", () => {
+  it("files a propose_question, again with its wording alone", async () => {
     await createClaimProposal({
       claimText: "What sets the colour of the sky?",
       contributorId: "user-1",
@@ -210,12 +210,9 @@ describe("materializeAcceptedIntake — propose_claim", () => {
       createdBy: "user",
       importance: 0.3,
     });
-    const argumentInsert = state.inserts.find((i) => i.table === arguments_)!;
-    expect(argumentInsert.values).toMatchObject({
-      stance: "for",
-      content: "Because of X and Y.",
-      createdBy: "user",
-    });
+    // The proposal's content (here, a mandate's reason for wanting the
+    // node) never becomes an argument on it.
+    expect(state.inserts.find((i) => i.table === arguments_)).toBeUndefined();
     // The contribution now points at what it became.
     expect(state.updates[0]!.values).toMatchObject({ claimId: result.claimId });
     // A proposal never passed through extraction: its domain prior is made
@@ -287,8 +284,10 @@ describe("materializeAcceptedIntake — propose_claim", () => {
     });
   });
 
-  it("creates no argument for a claim proposed without one", async () => {
-    state.selectResults.push([pendingContribution({ content: "" })]);
+  it("creates no argument, whatever the proposal's content says", async () => {
+    state.selectResults.push([
+      pendingContribution({ content: "The mandate needs this node: it is the crux of its question." }),
+    ]);
     mocks.matchClaim.mockResolvedValue({
       is_match: false,
       matched_claim_id: null,
@@ -303,8 +302,10 @@ describe("materializeAcceptedIntake — propose_claim", () => {
     expect(state.inserts.find((i) => i.table === arguments_)).toBeUndefined();
   });
 
-  it("tells the matched claim's Steward when no argument came with it", async () => {
-    state.selectResults.push([pendingContribution({ content: "" })]);
+  it("tells the matched claim's Steward the wording, never the proposal's content", async () => {
+    state.selectResults.push([
+      pendingContribution({ content: "The mandate needs this node: it is the crux of its question." }),
+    ]);
     mocks.matchClaim.mockResolvedValue({
       is_match: true,
       matched_claim_id: "existing-9",
@@ -315,8 +316,8 @@ describe("materializeAcceptedIntake — propose_claim", () => {
     await materializeAcceptedIntake("contrib-1");
 
     const context = mocks.enqueueSteward.mock.calls[0]![0].context as string;
-    expect(context).toContain("The contributor gave no argument with it.");
-    expect(context).not.toContain("Supporting argument from the contributor");
+    expect(context).toContain('Proposed wording: "The sky is blue".');
+    expect(context).not.toContain("crux of its question");
   });
 
   it("attaches to the existing claim when the Matcher finds a match (no new claim)", async () => {

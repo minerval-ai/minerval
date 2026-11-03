@@ -54,16 +54,11 @@ export const claimDependentsParams = z.object({
 });
 
 export const claimProposeBody = z.object({
+  // The proposed wording, judged on its text alone. There is no argument
+  // field: the case for or against a node goes on it once it exists, as a
+  // contribution reviewed on its merits (an `argument` sent by an older
+  // client is dropped here, never stored).
   claim: z.string().min(1).max(2000),
-  // Optional: for a claim, the argument for it; for a question, why anyone
-  // reasoning about the subject would need to ask it (§7a). A proposal is
-  // judged on its text, so the case for it is welcome but never required.
-  // Blank reads as absent.
-  argument: z
-    .string()
-    .max(5000)
-    .optional()
-    .transform((v) => (v && v.trim() ? v : undefined)),
   kind: z.enum(["claim", "question"]).default("claim"),
 });
 

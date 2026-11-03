@@ -1167,15 +1167,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["claims"],
       summary:
-        "Propose a new claim or question, optionally with the argument for it or why it needs asking (user proposals enter the review queue)",
+        "Propose a new claim or question, judged on its wording alone (user proposals enter the review queue). Arguments and evidence go on the node once it exists, as contributions reviewed on their merits.",
       body: {
         type: "object",
         required: ["claim"],
         properties: {
+          // A proposal is its wording and nothing more: proposing a node
+          // and arguing about it are separate acts. The case for or against
+          // it goes on the node, once it exists, as a reviewed contribution.
           claim: { type: "string", minLength: 1, maxLength: 2000 },
-          // Optional: the argument for a claim, or why a question needs
-          // asking. A proposal is judged on its text.
-          argument: { type: "string", maxLength: 5000 },
           // A starting guess (§7a): the Matcher settles the node's kind, and
           // review never rejects a proposal for arriving as the wrong one.
           kind: {
@@ -1192,17 +1192,6 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           type: "object",
           properties: {
             claim: claimSchema,
-            argument: {
-              type: "object",
-              nullable: true,
-              properties: {
-                id: { type: "string", format: "uuid" },
-                stance: { type: "string" },
-                content: { type: "string" },
-                created_by: { type: "string" },
-                created_at: { type: "string", format: "date-time" },
-              },
-            },
             job_id: { type: "string", format: "uuid" },
           },
         },
@@ -1241,7 +1230,6 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       if (isDirectService(auth)) {
         const result = await proposeClaim({
           claim: body.claim,
-          argument: body.argument,
           kind: body.kind,
           // Provenance: after #157, created_by='user' means "user-proposed,
           // review-approved" — the unreviewed fast path is service seeding
@@ -1255,15 +1243,6 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
         return reply.code(201).send({
           claim: formatClaim(result.claim),
-          argument: result.argument
-            ? {
-                id: result.argument.id,
-                stance: result.argument.stance,
-                content: result.argument.content,
-                created_by: result.argument.createdBy,
-                created_at: result.argument.createdAt.toISOString(),
-              }
-            : null,
           job_id: result.jobId,
         });
       }
@@ -1287,7 +1266,6 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       try {
         contribution = await createClaimProposal({
           claimText: body.claim,
-          argumentText: body.argument,
           contributorId: contributor.id,
           kind: body.kind,
         });
