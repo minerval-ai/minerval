@@ -206,7 +206,7 @@ describe("charge-at-start helpers", () => {
     expect(result.entryId).toBe("entry-1");
     expect(mocks.chargeOwls).toHaveBeenCalledWith({
       userId: "user-1",
-      priceOwls: 1,
+      priceOwls: 2,
       op: "claim_proposal",
       claimId: "claim-9",
       contributionId: null,

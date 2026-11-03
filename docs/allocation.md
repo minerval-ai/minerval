@@ -293,9 +293,11 @@ ungameable by purchase: the leaderboard ranks lifetime owls *earned*.
 ## Caps, not prices
 
 Nothing has a fixed price; everything is metered at real cost. A quoted
-owl figure ("assess this claim: up to 1 owl") is a **cap** — the most the
-operation may cost, set near its average cost so a button can carry one
-honest number. The cap is charged when the work starts, the meter records
+owl figure ("assess this claim: up to 2 owls") is a **cap** — the most the
+operation may cost, so a button can carry one honest number. A cap bounds
+what the buyer pays, not what the work may spend: a paid assessment's
+Steward works to its own, larger budget (`PAID_ASSESSMENT_BUDGET_OWLS`),
+set for the work to be done properly, and the platform absorbs the gap. The cap is charged when the work starts, the meter records
 the real cost, and the unused fraction settles back to the balance
 (`meter_settlement` ledger rows). A run that exceeds its cap is absorbed
 by the platform: the ceiling is the user's to rely on, and with the whole

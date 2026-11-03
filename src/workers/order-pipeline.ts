@@ -33,7 +33,7 @@ import {
   settleMeteredCharge,
   OWL_REASONS,
 } from "../services/owl-ledger-service.js";
-import { microUsdToOwls } from "../services/owl.js";
+import { microUsdToOwls, owlsToMicroUsd } from "../services/owl.js";
 
 interface OrderRow {
   id: string;
@@ -206,9 +206,17 @@ export async function processNextOrderTask(
       { claimId: order.claim_id },
       () =>
         runWithUsageContext({ userId: order.user_id, jobId: order.id }, () =>
-          // The pass spends up to the cap the buyer was quoted.
+          // The pass works to the paid-assessment budget, not the buyer's
+          // cap: the buyer pays at most the cap and the platform absorbs
+          // the rest, so the cap never starves the work.
           withPassBudget(
-            { microUsd: Number(order.price_micro_usd), source: "the cap the buyer of this assessment was quoted" },
+            {
+              microUsd: Math.max(
+                owlsToMicroUsd(config.paidAssessmentBudgetOwls),
+                Number(order.price_micro_usd)
+              ),
+              source: "the budget for a paid assessment",
+            },
             () => runClaimSteward({ trigger, claimId: order.claim_id, context, model })
           )
         )

@@ -27,11 +27,13 @@ export function runBudgetSentence(): string {
   if (!budget) return "";
   return (
     `This run has a budget of ${usd(budget.ceilingMicroUsd)} (${budget.source}), ` +
-    `metered at real cost: model tokens and any paid tool. It is what you may ` +
-    `spend, not what you should: spend what the work warrants, and a short ` +
-    `run that settles the question is better than a long one that does not. ` +
-    `Paid tools say what they cost and decline a call the remaining budget ` +
-    `cannot cover.`
+    `metered at real cost: model tokens and any paid tool. It is a ceiling, ` +
+    `not a target: spend what the work warrants. It is there to be used on ` +
+    `the work, including the searching and the reading of sources the ` +
+    `question needs; a conclusion reached without that evidence to save ` +
+    `money is a worse result than a longer run, and a run that has settled ` +
+    `the question need not go on. Paid tools say what they cost and decline ` +
+    `a call the remaining budget cannot cover.`
   );
 }
 

@@ -68,8 +68,7 @@ export function capListOwls(): Record<PricedOp, number> {
   const c = loadConfig();
   return {
     // Proposing a claim commands a full Steward pass on it — the same work
-    // as an assessment order, so the same cap. This is what the signup
-    // grant's "5 free claims" buys.
+    // as an assessment order, so the same cap.
     claim_proposal: c.capClaimProposalOwls,
     // A user-ordered (re)assessment of an existing claim, best model.
     assessment: c.capAssessmentOwls,

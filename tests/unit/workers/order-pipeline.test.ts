@@ -30,6 +30,7 @@ const { state, runCalls } = vi.hoisted(() => ({
     orderUpdates: [] as Array<{ sql: string; params: unknown[] }>,
     claimReleases: [] as Array<{ id: string; to: string }>,
     throwFor: null as null | ((claimId: string) => Error | null),
+    passBudgets: [] as unknown[],
   },
 }));
 
@@ -70,15 +71,19 @@ vi.mock("../../../src/db/client.js", () => ({
   }),
 }));
 
-vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
-  runClaimSteward: vi.fn(
-    async (input: { claimId: string; trigger: string }) => {
-      runCalls.push({ claimId: input.claimId, trigger: input.trigger });
-      const err = state.throwFor?.(input.claimId);
-      if (err) throw err;
-    }
-  ),
-}));
+vi.mock("../../../src/llm/agents/claim-steward.js", async () => {
+  const { runBudget } = await import("../../../src/llm/usage-context.js");
+  return {
+    runClaimSteward: vi.fn(
+      async (input: { claimId: string; trigger: string }) => {
+        runCalls.push({ claimId: input.claimId, trigger: input.trigger });
+        state.passBudgets.push(runBudget());
+        const err = state.throwFor?.(input.claimId);
+        if (err) throw err;
+      }
+    ),
+  };
+});
 
 vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   OWL_REASONS: { refund: "refund" },
@@ -99,7 +104,11 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
 const { checkBudget } = vi.hoisted(() => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardModel: "claude-sonnet-5-5", owlCostMicroUsd: 1_000_000 }),
+  loadConfig: () => ({
+    stewardModel: "claude-sonnet-5-5",
+    owlCostMicroUsd: 1_000_000,
+    paidAssessmentBudgetOwls: 5,
+  }),
 }));
 
 import { processNextOrderTask } from "../../../src/workers/order-pipeline.js";
@@ -131,6 +140,7 @@ beforeEach(() => {
   state.orderUpdates = [];
   state.claimReleases = [];
   state.throwFor = null;
+  state.passBudgets = [];
   checkBudget.mockReset();
 });
 
@@ -173,6 +183,21 @@ describe("processNextOrderTask", () => {
       op: "assessment",
       claimId: "claim-1",
     });
+  });
+
+  it("gives the Steward the paid-assessment budget, not the buyer's cap", async () => {
+    // The buyer is charged at most the cap (here 2 owls); the pass works to
+    // its own 5-owl budget, and the settlement still runs against the cap,
+    // so the platform absorbs whatever the run costs above it.
+    state.orders = [order({ price_micro_usd: 2_000_000 })];
+    await processNextOrderTask();
+    expect(state.passBudgets).toHaveLength(1);
+    expect(state.passBudgets[0]).toMatchObject({
+      ceilingMicroUsd: 5_000_000,
+      source: "the budget for a paid assessment",
+    });
+    expect(state.charges[0]).toMatchObject({ priceOwls: 2 });
+    expect(state.settlements[0]).toMatchObject({ capMicroUsd: 2_000_000 });
   });
 
   it("runs a paid order while the unattributed breaker is spent", async () => {

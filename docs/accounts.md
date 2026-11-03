@@ -167,8 +167,8 @@ spent (§15):
 
 | operation | cap (default) | config |
 |---|---|---|
-| propose a claim (`POST /claims/propose`) | **up to 1 owl** | `CAP_CLAIM_PROPOSAL_OWLS` |
-| order a claim assessment | **up to 1 owl** | `CAP_ASSESSMENT_OWLS` |
+| propose a claim (`POST /claims/propose`) | **up to 2 owls** | `CAP_CLAIM_PROPOSAL_OWLS` |
+| order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
 | submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 0.1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
 | extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
@@ -180,8 +180,10 @@ them (see below).
 
 ## Assessment orders — immediate paid work
 
-`POST /claims/:id/order` (up to 1 owl) buys a Steward (re)assessment of a
-claim. A paid order is a purchase, not a request: it fully funds the
+`POST /claims/:id/order` (up to 2 owls) buys a Steward (re)assessment of a
+claim. The buyer's cap is not the pass's budget: the Steward works to
+`PAID_ASSESSMENT_BUDGET_OWLS` (default 5), and the platform absorbs
+whatever the run costs above the cap. A paid order is a purchase, not a request: it fully funds the
 action, and a fully funded action has nothing to wait for — the dispatcher
 (`src/workers/order-pipeline.ts`) is checked first on every runner tick.
 Semantics:
@@ -284,7 +286,8 @@ Pause/top-up/refund semantics are the budget job's:
 `GET /grants/:id` (spend, plan, the assessments the grant bought).
 
 **Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
-a claim you care about, get it assessed" ×5 — plus a 1 owl/month trickle
+a claim you care about, get it assessed": it covers two capped
+assessments, and the unused part of each cap settles back — plus a 1 owl/month trickle
 (`MONTHLY_GRANT_OWLS`). Both are lazy, idempotent ledger grants
 (`signup:<user>` / `monthly:<user>:<YYYY-MM>` idempotency keys) written by
 whichever entitlement read sees the user first.
@@ -322,7 +325,7 @@ returned after the meter ran), `refund`, `escrow_hold`/`escrow_refund`
 (budgeted jobs), `admin_adjust`, and `prize_award` (a prize paid in owls,
 below). Charges carry the operation (`op`) and
 link to the claim or contribution they paid for, so the account history
-reads as "up to 1 owl held for the assessment of claim X, 0.6 returned".
+reads as "up to 2 owls held for the assessment of claim X, 0.4 returned".
 Charges, escrow holds, and allocations are balance-guarded inserts taken
 under a per-user lock, so racing requests queue and can never overdraw a
 balance. Settlements are idempotent per settle key.

@@ -107,7 +107,7 @@ describe("the task message", () => {
         expect(line).toMatch(
           /^Budget: This run has a budget of \$1\.40 \(the allocations funding this pass\), metered at real cost/
         );
-        expect(line).toContain("It is what you may spend, not what you should");
+        expect(line).toContain("It is a ceiling, not a target");
         expect(line).toContain("Separately, you have up to 200 tool-use turns");
       });
   });
