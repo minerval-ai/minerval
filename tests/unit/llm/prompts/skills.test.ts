@@ -88,7 +88,7 @@ describe("the Mathematics skill", () => {
   it("loads with the frontmatter Appendix A specifies", () => {
     const m = getSkill("mathematics");
     expect(m.displayName).toBe("Mathematics");
-    expect(m.version).toBe(1);
+    expect(m.version).toBe(2);
     expect(m.sinceEpoch).toBe("2026-09-domain-skills");
     expect(m.domains).toEqual(["mathematics"]);
     expect(m.description).toMatch(/^How the constitution applies to propositions of mathematics/);
@@ -251,7 +251,7 @@ describe("views", () => {
 
   it("wraps the role's sections with the citable heading and the standing sentence", () => {
     const view = getSkillView(m, "claim-steward");
-    expect(view.startsWith("# Domain skill: Mathematics (version 1)\n\n" + SKILL_STANDING)).toBe(
+    expect(view.startsWith("# Domain skill: Mathematics (version 2)\n\n" + SKILL_STANDING)).toBe(
       true
     );
     for (const h of ROLE_VIEW["claim-steward"]) expect(view).toContain(`## ${h}\n`);
@@ -307,7 +307,7 @@ describe("views", () => {
     expect(catalog.split("\n")).toHaveLength(4);
     expect(catalog).toContain("- costing (version 1, a method skill; as first written). ");
     expect(catalog).toContain(
-      "- mathematics (version 1, a domain skill, for claims tagged mathematics; as first written). "
+      "- mathematics (version 2, a domain skill, for claims tagged mathematics; this version changed: requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)). "
     );
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
     expect(catalog).toContain("- provenance (version 1, a method skill; as first written). ");
