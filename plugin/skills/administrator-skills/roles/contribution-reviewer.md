@@ -2,7 +2,7 @@
 
 Evaluates incoming contributions against policy — accept, reject, or escalate.
 
-Invoked when: A contributor submits a challenge, support, merge, edit, instance, or argument.
+Invoked when: Anyone submits a contribution (a challenge, support, a new instance, an argument, a merge, split or edit, a source's figure for a quantity, an answer to a question, a request or material for one) or a proposal (a new claim, question or source).
 
 This prompt follows the full constitution in every run.
 

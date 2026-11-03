@@ -171,6 +171,9 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   "GET /tags": ["list_tags"],
   "POST /contributions": ["submit_contribution"],
   "GET /contributions/:id": ["get_contribution_status"],
+  // The URL hash is the only thing in the way: the native tool takes the
+  // page's URL and hashes it on the server (#752).
+  "GET /extension/shared/:url_hash": ["get_page_analysis"],
 };
 
 const SERVICE_ONLY =
@@ -194,7 +197,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PATCH /claims/:claim_id":
     "Writes an argument straight onto a claim without review. MCP's " +
     "governed path is submit_contribution with contribution_type " +
-    "'argument', which goes through the Contribution Reviewer.",
+    "'propose_argument', which goes through the Contribution Reviewer.",
 
   "POST /users/provision": SERVICE_ONLY,
   "GET /usage/allocation": SERVICE_ONLY,
@@ -241,8 +244,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "sharing by URL hash); assess_text and extract_claims are the MCP " +
     "equivalents for text an agent holds.",
   "GET /extension/analysis/:content_hash": "Polls POST /extension/analyze; see it.",
-  "GET /extension/shared": "Part of the extension's page protocol; see POST /extension/analyze.",
-  "GET /extension/shared/:url_hash": "Part of the extension's page protocol; see POST /extension/analyze.",
+  "GET /extension/shared":
+    "The extension's private lookup: it sends a 4-character hash prefix so " +
+    "the server never learns which page a reader is on. An MCP caller is " +
+    "authenticated and names its page anyway, so get_page_analysis takes " +
+    "the URL directly.",
   "POST /extension/chat":
     "The extension's chat over the page open in the browser; an MCP client " +
     "is itself the conversation, with the graph tools in hand.",

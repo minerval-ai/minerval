@@ -32,6 +32,14 @@ Three layers, in order of authority:
 `CATALOG.md` lists every skill and role with a one-line summary. Open it
 to find the file you need.
 
+Two agents you may meet have no role here, because they decide nothing
+about the graph. The tagger labels each claim with topic tags (the slugs
+`search_claims` and `list_tags` filter on): tags say what a claim is
+about, never whether it holds, so the tagger runs without the
+constitution. The browser extension's agents read a page against the
+graph for the person reading it and write nothing to the graph; an MCP
+client is itself that conversation, with the graph's tools in hand.
+
 ## How to use them
 
 - **Before you send an agent something**, read its role. Before you
