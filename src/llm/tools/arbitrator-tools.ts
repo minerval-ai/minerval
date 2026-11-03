@@ -26,11 +26,11 @@ import {
   AUDIT_SUSPENSION_PREFIX,
   BAD_FAITH_CATEGORIES,
 } from "../../services/reputation-service.js";
+import type { IntakeMaterializationResult } from "../../services/intake-service.js";
 import {
-  isIntakeContributionType,
-  materializeAcceptedIntake,
-  type IntakeMaterializationResult,
-} from "../../services/intake-service.js";
+  acceptanceSchemaProperties,
+  applyAcceptanceEffects,
+} from "../../services/contribution-acceptance.js";
 import { getContributionById } from "../../services/contribution-service.js";
 
 export function getArbitratorToolDefinitions(): Tool[] {
@@ -41,8 +41,10 @@ export function getArbitratorToolDefinitions(): Tool[] {
         "Record your arbitration decision. This writes the outcome, updates " +
         "the contribution and appeal status, and applies the consequences " +
         "mechanically: on an overturn the contributor is restored " +
-        "(reputation, standing, any reputation-imposed suspension) and an " +
-        "intake contribution is materialized through the Matcher; when the " +
+        "(reputation, standing, any reputation-imposed suspension) and the " +
+        "contribution takes effect as a Reviewer's accept would (an intake " +
+        "proposal materialized through the Matcher, a proposed request filed " +
+        "from request, material recorded on request_id); when the " +
         "case arrived by escalation and no outcome was ever applied, the " +
         "final accept or reject consequences (reputation, owl awards, and a " +
         "bad-faith finding's penalty and standing when you attach one) are " +
@@ -104,6 +106,7 @@ export function getArbitratorToolDefinitions(): Tool[] {
             description:
               "Required when suspected_bad_faith is true: which kind of abuse.",
           },
+          ...acceptanceSchemaProperties(),
           challenge_upheld: {
             type: "boolean",
             description:
@@ -261,20 +264,20 @@ export async function executeArbitratorTool(
           }
         }
 
-        // An overturn that ACCEPTS an intake contribution (#157) must
-        // materialize it, exactly as the reviewer's accept does — otherwise
-        // an escalated proposal arbitrated in the contributor's favor would
-        // read 'accepted' with nothing in the graph. Runs first so a failure
-        // surfaces to the arbitrator; the call is idempotent.
+        // An overturn ACCEPTS the contribution, so it has every effect a
+        // Reviewer's accept has (#724): an intake proposal is materialized
+        // (#157), a proposed request is filed, material for a request is
+        // recorded as work on it. Otherwise an overturned case would read
+        // 'accepted' with nothing on the graph. Runs before anything is
+        // written so a refusal (a request not stated) surfaces to the
+        // Arbitrator; a contribution already accepted had its effects then.
         let materialization: IntakeMaterializationResult | null = null;
-        if (outcome === "overturn") {
-          const contribution = target;
-          if (
-            contribution &&
-            isIntakeContributionType(contribution.contributionType)
-          ) {
-            materialization = await materializeAcceptedIntake(contributionId);
-          }
+        let acceptanceNote = "";
+        if (outcome === "overturn" && target && target.reviewStatus !== "accepted") {
+          const effects = await applyAcceptanceEffects(contributionId, input);
+          if (!effects.ok) return JSON.stringify({ success: false, error: effects.error });
+          materialization = effects.materialization;
+          acceptanceNote = effects.note;
         }
 
         await db.insert(arbitrationResults).values({
@@ -370,7 +373,7 @@ export async function executeArbitratorTool(
 
         return JSON.stringify({
           success: true,
-          message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}`,
+          message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}.${acceptanceNote}`,
           ...(prizeNote ? { prize_claim: prizeNote } : {}),
           ...(input.suspected_bad_faith === true && !suspectedBadFaith
             ? {

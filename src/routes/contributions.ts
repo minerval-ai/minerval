@@ -22,9 +22,16 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
       summary: "Submit a contribution for review",
       body: {
         type: "object",
-        required: ["claim_id", "contribution_type", "content"],
+        required: ["contribution_type", "content"],
         properties: {
-          claim_id: { type: "string", format: "uuid" },
+          claim_id: {
+            type: "string",
+            format: "uuid",
+            description:
+              "The node the contribution is about. Required for every type but " +
+              "propose_request, whose bearing (several nodes, sources, or something " +
+              "the graph does not hold yet) the content describes and the review settles.",
+          },
           contributor_display_name: { type: "string" },
           contribution_type: { type: "string" },
           content: { type: "string" },
@@ -108,12 +115,15 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const body = createContributionBody.parse(request.body);
 
-      // Verify claim exists
-      const claim = await getClaimById(body.claim_id);
-      if (!claim) {
-        return reply.code(404).send({
-          error: { code: "NOT_FOUND", message: "Claim not found" },
-        });
+      // Verify the claim exists, when one is named (a propose_request may
+      // name none, #724).
+      if (body.claim_id) {
+        const claim = await getClaimById(body.claim_id);
+        if (!claim) {
+          return reply.code(404).send({
+            error: { code: "NOT_FOUND", message: "Claim not found" },
+          });
+        }
       }
 
       // Shared gate (#71/#157): identity, suspension, standing, rate limit.
@@ -124,7 +134,7 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
 
       // Create contribution
       const contribution = await createContribution({
-        claimId: body.claim_id,
+        claimId: body.claim_id ?? null,
         contributorId: contributor.id,
         contributionType: body.contribution_type,
         content: body.content,

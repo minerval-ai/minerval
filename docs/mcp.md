@@ -227,9 +227,11 @@ and the tool description says what a call spends.
   and the text itself is not stored. The public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
-- **`submit_contribution`** `{claim_id, contribution_type, content,
+- **`submit_contribution`** `{claim_id?, contribution_type, content,
   evidence_urls?, merge_target_claim_id?, proposed_canonical_form?}` — file a
-  challenge / support / merge / split / edit / instance / argument. Requires
+  challenge / support / merge / split / edit / instance / argument. `claim_id`
+  is required for every type but `propose_request`, which may bear on several
+  nodes, sources, or something the graph does not hold yet (#724). Requires
   a key bound to a contributor identity; enters the standard Contribution
   Reviewer pipeline and is subject to suspension and reputation policy (#71).
 - **`get_contribution_status`** `{contribution_id}` — review decision,

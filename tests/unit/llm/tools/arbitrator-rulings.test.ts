@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => ({
   inserted: [] as Array<Record<string, unknown>>,
   updateSets: [] as Array<Record<string, unknown>>,
   applyArbitrationOutcome: vi.fn(async () => null),
+  applyAcceptanceEffects: vi.fn(
+    async (): Promise<
+      { ok: true; note: string; materialization: null } | { ok: false; error: string }
+    > => ({ ok: true, note: " Request req-1 filed.", materialization: null })
+  ),
 }));
 
 vi.mock("../../../../src/db/client.js", () => ({
@@ -53,6 +58,10 @@ vi.mock("../../../../src/services/intake-service.js", () => ({
 vi.mock("../../../../src/services/contribution-service.js", () => ({
   getContributionById: vi.fn(async () => mocks.contribution),
 }));
+vi.mock("../../../../src/services/contribution-acceptance.js", () => ({
+  acceptanceSchemaProperties: () => ({}),
+  applyAcceptanceEffects: mocks.applyAcceptanceEffects,
+}));
 
 import { executeArbitratorTool } from "../../../../src/llm/tools/arbitrator-tools.js";
 
@@ -75,6 +84,7 @@ beforeEach(() => {
   mocks.inserted.length = 0;
   mocks.updateSets.length = 0;
   mocks.applyArbitrationOutcome.mockClear();
+  mocks.applyAcceptanceEffects.mockClear();
 });
 
 describe("a challenge to a prize claim", () => {
@@ -136,5 +146,35 @@ describe("flag_for_human_review", () => {
     );
     expect(out.success).toBe(false);
     expect(mocks.updateSets).toHaveLength(0);
+  });
+});
+
+// An overturn accepts, so it takes effect as a Reviewer's accept would
+// (#724): an overturned propose_request is filed, not left "accepted" with
+// nothing on the graph.
+describe("an overturn takes effect", () => {
+  it("files an overturned request and says so", async () => {
+    mocks.contribution = { id: CONTRIBUTION_ID, contributionType: "propose_request", reviewStatus: "rejected" };
+    const out = await decide({ outcome: "overturn", request: { ask: "a", why: "b", satisfied_by: "c" } });
+    expect(out.success).toBe(true);
+    expect(out.message).toContain("Request req-1 filed.");
+    expect(mocks.applyAcceptanceEffects).toHaveBeenCalledWith(
+      CONTRIBUTION_ID,
+      expect.objectContaining({ request: { ask: "a", why: "b", satisfied_by: "c" } })
+    );
+  });
+
+  it("records nothing when the effects refuse", async () => {
+    mocks.contribution = { id: CONTRIBUTION_ID, contributionType: "propose_request", reviewStatus: "rejected" };
+    mocks.applyAcceptanceEffects.mockResolvedValueOnce({ ok: false, error: "needs request" });
+    const out = await decide({ outcome: "overturn" });
+    expect(out.success).toBe(false);
+    expect(mocks.inserted).toHaveLength(0);
+  });
+
+  it("does not repeat the effects of an accept already applied", async () => {
+    mocks.contribution = { id: CONTRIBUTION_ID, contributionType: "propose_request", reviewStatus: "accepted" };
+    await decide({ outcome: "overturn" });
+    expect(mocks.applyAcceptanceEffects).not.toHaveBeenCalled();
   });
 });

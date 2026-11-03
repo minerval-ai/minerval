@@ -111,7 +111,10 @@ process, and what changes on the page stays the owning admins' judgment.
   and the filer is recorded with it. When you accept, pass the request as it
   will be filed, in your words from the contributor's; a request that asks
   for a particular result is restated to ask for what would decide the
-  matter either way.
+  matter either way. A request may bear on several nodes, on sources, or on
+  something the graph does not hold yet, and may arrive with no target
+  claim: say what it bears on in request.bears_on (the nodes and sources,
+  and in words what the graph lacks).
 - **answer_request**: material offered to meet one of the node's requests;
   name the request with request_id. Your gate is form, good faith, and how
   the material was obtained; whether it meets the request is its keeper's

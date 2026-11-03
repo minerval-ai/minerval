@@ -314,7 +314,7 @@ describe("views", () => {
   it("lists the skills a role can load, with descriptions and the sections loading gives", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog.split("\n")).toHaveLength(4);
-    expect(catalog).toContain("- costing (version 1, a method skill; as first written). ");
+    expect(catalog).toContain("- costing (version 2, a method skill; this version changed: ");
     expect(catalog).toContain(
       "- mathematics (version 2, a domain skill, for claims tagged mathematics; this version changed: "
     );
