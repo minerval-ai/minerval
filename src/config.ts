@@ -132,17 +132,15 @@ const configSchema = z.object({
   // metered at cost-plus; the cap is charged up front, the unused fraction
   // settles back after the run, and overage past the cap is absorbed. Set
   // each cap near the operation's average cost so the figure on the button
-  // is honest, except where the cap is also an agent's budget (below). See
-  // src/services/owl.ts. Open-ended work (deep decomposition, grants) is
-  // budgeted, not capped per run.
+  // is honest. See src/services/owl.ts. Open-ended work (deep
+  // decomposition, grants) is budgeted, not capped per run.
   //
-  // A proposal and an assessment order fund the same Steward pass, and the
-  // cap is also that pass's budget: the Steward is shown it and works to it.
-  // At 1 owl a strong-tier pass ran out before it could search or read its
-  // sources, so it concluded on what it already knew; 5 owls leaves room for
-  // the evidence. Keep the two equal (a proposal's charge funds its order).
-  capClaimProposalOwls: z.coerce.number().default(5),
-  capAssessmentOwls: z.coerce.number().default(5),
+  // A proposal and an assessment order fund the same Steward pass, so the
+  // two caps stay equal (a proposal's charge funds its order). The cap is
+  // what the buyer pays at most, not what the pass may spend: that is
+  // paidAssessmentBudgetOwls below, and the platform absorbs the gap.
+  capClaimProposalOwls: z.coerce.number().default(2),
+  capAssessmentOwls: z.coerce.number().default(2),
   capSourceIngestOwls: z.coerce.number().default(0.1),
   capExtensionAnalysisOwls: z.coerce.number().default(0.1),
   capExtensionChatOwls: z.coerce.number().default(0.1),
@@ -158,9 +156,17 @@ const configSchema = z.object({
   // owl on the flash tier over a 30-claim partition) crowds out the passes
   // the sweep asks for. The lookout's cap.
   capConsistencySweepOwls: z.coerce.number().default(0.05),
+  // The budget a paid assessment's Steward pass works to (an order, or a
+  // proposal's first pass), shown to the Steward and enforced on its paid
+  // tools. Deliberately above the buyer's cap: the buyer pays at most
+  // capAssessmentOwls and the platform absorbs the rest. At a 1-owl budget
+  // a strong-tier pass ran out before it could search or read its sources
+  // and concluded on what it already knew; the budget is what the work
+  // needs, the cap what the buyer is asked to pay.
+  paidAssessmentBudgetOwls: z.coerce.number().positive().default(5),
   // Free tier: a one-time signup grant (the "see a claim you care about,
-  // get it assessed" hook — 5 owls covers one capped assessment, and most
-  // of the cap settles back after the run) plus a small monthly
+  // get it assessed" hook — 5 owls covers two capped assessments, and the
+  // unused part of each cap settles back after the run) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
   signupGrantOwls: z.coerce.number().default(5),
   monthlyGrantOwls: z.coerce.number().default(1),
@@ -1016,6 +1022,7 @@ export function loadConfig(): Config {
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
+    paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,

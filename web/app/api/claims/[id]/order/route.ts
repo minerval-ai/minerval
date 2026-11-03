@@ -56,7 +56,7 @@ export async function POST(
     if (err instanceof AccountApiError) {
       const error =
         err.code === "INSUFFICIENT_OWLS"
-          ? "An assessment holds up to 5 owls while it runs, and your balance " +
+          ? "An assessment holds up to 2 owls while it runs, and your balance " +
             "cannot cover that ceiling. You can buy owls from your account page."
           : err.code === "ORDER_ALREADY_OPEN"
             ? "You already have an open order for this claim."
