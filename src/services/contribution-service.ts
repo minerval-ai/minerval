@@ -156,9 +156,21 @@ export const MANDATE_CONTRIBUTION_TYPES = [
   "answer_request",
 ] as const;
 
-/** What a mandate's Grantmaker may submit: the same, and new claims and questions. */
+/**
+ * The structural proposals any caller may make (#699): two nodes that are
+ * one (propose_merge, naming the other node), one node that is two
+ * (propose_split), a better canonical wording (propose_edit). A Grantmaker
+ * or lookout surveying a territory is well placed to notice these (Part
+ * VIII), and §19 lets it contribute "like anyone". propose_source is not
+ * here: a mandate brings a source in directly, as an ingest plan item paid
+ * from its own escrow.
+ */
+export const CURATION_CONTRIBUTION_TYPES = ["propose_merge", "propose_split", "propose_edit"] as const;
+
+/** What a mandate's Grantmaker (and its lookouts) may submit: the same, structural proposals, and new claims and questions. */
 export const GRANTMAKER_CONTRIBUTION_TYPES = [
   ...MANDATE_CONTRIBUTION_TYPES,
+  ...CURATION_CONTRIBUTION_TYPES,
   "propose_claim",
   "propose_question",
 ] as const;
@@ -196,6 +208,17 @@ export async function submitGrantContribution(input: {
   } else {
     const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
     if (!node) return { success: false, message: `No active node ${claimId || "(none given)"}; ${type} is about an existing node.` };
+  }
+  const mergeTarget = text(input.input.merge_target_claim_id);
+  if (type === "propose_merge") {
+    const [other] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [mergeTarget]);
+    if (!other || mergeTarget === claimId) {
+      return { success: false, message: "propose_merge needs merge_target_claim_id: the other active node, which this one duplicates." };
+    }
+  }
+  if (type === "propose_edit") {
+    if (!proposed) return { success: false, message: "propose_edit needs proposed_text: the canonical wording you propose." };
+    if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim or question, not an essay." };
   }
   const urls = Array.isArray(input.input.evidence_urls)
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
@@ -235,17 +258,18 @@ export async function submitGrantContribution(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
          (claim_id, contributor_id, contribution_type, content, proposed_canonical_form,
-          evidence_urls, grant_id, funded_by_job_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+          evidence_urls, grant_id, funded_by_job_id, merge_target_claim_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         intake ? null : claimId,
         grant.funder_user_id,
         type,
         content.slice(0, 10_000),
-        intake ? proposed : null,
+        intake || type === "propose_edit" ? proposed : null,
         urls,
         input.grantId,
         grant.budget_job_id,
+        type === "propose_merge" ? mergeTarget : null,
       ]
     );
     return { success: true as const, id: row!.id, left: left - estimate };

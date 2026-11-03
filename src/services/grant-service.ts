@@ -111,7 +111,9 @@ export const PLAN_KIND_RULES =
 /**
  * The JSON schema of one plan item, as the Grantmaker's tools show it
  * (propose_mandate, adjust_plan, extend_plan, submit_plan). One schema, so
- * every mode of the mandate's agent proposes the same shape.
+ * every mode of the mandate's agent proposes the same shape. PLAN_KIND_RULES
+ * is not in it: each tool carries those rules once, on its own description
+ * or its items array (#692).
  */
 export const PLAN_ITEM_SCHEMA = {
   type: "object",
@@ -130,9 +132,7 @@ export const PLAN_ITEM_SCHEMA = {
     claim_id: {
       type: "string",
       description:
-        "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
-        "for ingest. " +
-        PLAN_KIND_RULES,
+        "Required for every kind but ingest: the node's id, as a tool result gave it.",
     },
     url: {
       type: "string",

@@ -30,7 +30,11 @@ import { annotateOpenActions } from "../../services/open-actions-service.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
-import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
+import {
+  CHAT_SECTION,
+  GRANTING_CONVERSATION_SECTION,
+  getGrantmakerSystemPromptBlocks,
+} from "../prompts/grantmaker.js";
 import { listSkills } from "../prompts/skills.js";
 import { modelSupportsLongRun } from "../models.js";
 import { skillsForGrant } from "./skill-selection.js";
@@ -49,6 +53,7 @@ import { createMandateTools } from "../tools/mandate-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import {
   PLAN_ITEM_SCHEMA,
+  PLAN_KIND_RULES,
   normalizePlanItems,
   validatePlanItems,
   type PlanItem,
@@ -83,7 +88,7 @@ import {
 } from "../tools/lookout-management-tools.js";
 
 export interface GrantMandate {
-  /** Agent-written working title, shown only on the funder's dashboard. */
+  /** Agent-written public title: on the mandate's page and, with the work it pays for, on claim pages. */
   title: string;
   objective: string;
   scope_claim_id?: string | null;
@@ -118,11 +123,26 @@ export interface GrantmakerTurnResult {
   declined?: { reason: string };
 }
 
+// The title is a heading on the mandate's page and claim pages, and the
+// stake is one line beside it: both are stated in the schema (maxLength)
+// and refused past it, never cut silently (#698).
+const TITLE_MAX_CHARS = 200;
+const FUNDER_STAKE_MAX_CHARS = 500;
+
+/**
+ * Tool-use turns in one chat reply. Not a spending limit (funded turns
+ * meter to the escrow, conversation turns are rate-limited): a person is
+ * waiting on the reply, so a turn that has not answered after this many
+ * steps should answer with what it has. Stated to the agent up front.
+ */
+const CHAT_MAX_TURNS = 16;
+
 const MANDATE_SCHEMA = {
   type: "object" as const,
   properties: {
     title: {
       type: "string",
+      maxLength: TITLE_MAX_CHARS,
       description:
         "The mandate's public title, shown on its page and with the work it " +
         "pays for on claim pages: neutral and faithful, what the work is, in " +
@@ -142,6 +162,7 @@ const MANDATE_SCHEMA = {
     },
     funder_stake: {
       type: "string",
+      maxLength: FUNDER_STAKE_MAX_CHARS,
       description:
         "The stake the funder declared in the mandate's subject, in words a " +
         "reader can weigh, or \"none\" when they declared none. Shown on the " +
@@ -171,7 +192,7 @@ const MANDATE_SCHEMA = {
         },
         items: {
           type: "array",
-          description: "The work, in execution order.",
+          description: "The work, in execution order. " + PLAN_KIND_RULES,
           items: PLAN_ITEM_SCHEMA,
         },
       },
@@ -218,6 +239,10 @@ export function validateMandate(raw: GrantMandate): string | null {
     }
   }
   if (!raw.title?.trim()) return "title is required";
+  if (String(raw.title).length > TITLE_MAX_CHARS) return `title is over ${TITLE_MAX_CHARS} characters: a title, not a summary`;
+  if (typeof raw.funder_stake === "string" && raw.funder_stake.length > FUNDER_STAKE_MAX_CHARS) {
+    return `funder_stake is over ${FUNDER_STAKE_MAX_CHARS} characters: one line a reader can weigh`;
+  }
   if (typeof raw.funder_named !== "boolean") {
     return "funder_named is required: ask the funder whether they want to be named on the mandate's page";
   }
@@ -340,8 +365,9 @@ async function runGrantmakerTurnImpl(input: {
     name: "grant_overview",
     description:
       "The live state of this conversation's funded grant: budget, metered " +
-      "spend, status, contributors, and the plan with each item's " +
-      "execution state.",
+      "spend, status, contributors, the plan with each item's execution " +
+      "state, the review passes' workspace and last note, any closure or " +
+      "bounty they have pending, and the notes they left for the funder.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   };
   const pipelineTool: Tool = {
@@ -421,7 +447,7 @@ async function runGrantmakerTurnImpl(input: {
       properties: {
         items: {
           type: "array",
-          description: "The new remaining plan, in execution order.",
+          description: "The new remaining plan, in execution order. " + PLAN_KIND_RULES,
           items: PLAN_ITEM_SCHEMA,
         },
         note: {
@@ -433,7 +459,13 @@ async function runGrantmakerTurnImpl(input: {
     },
   };
 
-  const bountyTools = getBountyToolDefinitions();
+  // The funder present in a person-funded mandate's chat may confirm a
+  // posting parked at the autonomy threshold; on a platform mandate that
+  // is the operator key's act.
+  const bountyTools = [
+    ...getBountyToolDefinitions(),
+    ...(input.funder === "platform" ? [] : [getConfirmBountyToolDefinition()]),
+  ];
   // The lookout tools (docs/allocation.md, "Lookouts"): standing watches
   // the mandate funds, shared with the review pass.
   const lookoutTools = getLookoutManagementToolDefinitions();
@@ -449,7 +481,7 @@ async function runGrantmakerTurnImpl(input: {
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
-  const findingTools = createFindingTools({ model });
+  const findingTools = createFindingTools({ model, mandate: true });
   // Web search on every provider (tools/web-search-tool.ts): a funder who
   // says "ingest the best writing on X" is asking the Grantmaker to go and
   // find it, in the conversation as much as on a review pass.
@@ -546,7 +578,10 @@ async function runGrantmakerTurnImpl(input: {
       `govern new mandates govern adjustments equally. Answer data ` +
       `questions from tool results, never from memory; give real numbers. ` +
       `Discuss the technical setup as deeply as the funder wants: you can ` +
-      `see the pipeline, the sources, the claims, and the spend.` +
+      `see the pipeline, the sources, the claims, and the spend. The ` +
+      `workspace is your review passes' working memory: read it ` +
+      `(grant_overview) before you write it, and prefer update_workspace's ` +
+      `append or replace_section to a whole rewrite.` +
       (funderNotes.length > 0
         ? `\n\nYour review passes left these notes for the funder (newest last); raise ` +
           `them when they bear on the conversation:\n` +
@@ -556,6 +591,15 @@ async function runGrantmakerTurnImpl(input: {
   if (input.funder === "platform") {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
   }
+  // The chat's own rules (#692): the planning and review passes share the
+  // role prompt but have nobody to talk to and no propose/decline tools.
+  blocks[0] =
+    blocks[0] +
+    CHAT_SECTION +
+    ` Each reply may take up to ${CHAT_MAX_TURNS} tool-use turns, because ` +
+    `the funder is waiting on it; if the work needs more, answer with what ` +
+    `you have and say what you would look at next.` +
+    (managed ? `` : GRANTING_CONVERSATION_SECTION);
   // One cached block for the constitution and role (management mode appended
   // to it).
   const system = blocks;
@@ -579,7 +623,7 @@ async function runGrantmakerTurnImpl(input: {
     stream: true,
     ...(modelSupportsLongRun(model) ? {} : { maxTokens: 16384 }),
     ...(input.onText ? { onText: input.onText } : {}),
-    maxIterations: 16,
+    maxIterations: CHAT_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const loaded = await skillLoader.execute(name, toolInput);
@@ -613,7 +657,7 @@ async function runGrantmakerTurnImpl(input: {
         const problem = validateMandate(raw);
         if (problem) return JSON.stringify({ success: false, problem });
         mandate = {
-          title: String(raw.title).slice(0, 200),
+          title: String(raw.title).trim(),
           objective: String(raw.objective),
           scope_claim_id: raw.scope_claim_id || null,
           scope_query: raw.scope_query || null,
@@ -622,7 +666,7 @@ async function runGrantmakerTurnImpl(input: {
           funder_named: raw.funder_named,
           funder_stake: /^none\.?$/i.test(String(raw.funder_stake).trim())
             ? null
-            : String(raw.funder_stake).trim().slice(0, 500),
+            : String(raw.funder_stake).trim(),
           ...(raw.notes ? { notes: String(raw.notes) } : {}),
           ...(raw.skills && raw.skills.length > 0
             ? { skills: [...new Set(raw.skills.map(String))].sort() }
@@ -679,16 +723,13 @@ async function runGrantmakerTurnImpl(input: {
 }
 
 /**
- * The funded-grant tool surface: live analytics over exactly the data the
- * public dashboard shows, plus the one write the framework allows
- * (amending the unexecuted remainder of the plan). Returns null for tool
- * names it doesn't own.
- *
- * Shared with the autonomous review pass (mandate-review.ts), which offers
- * a subset of these: one implementation, so a guard added here holds on
- * both paths rather than being reasoned about twice.
+ * The bounty tools (docs/mathematics.md §8.1), shared by the review pass
+ * and the management chat. Every bound the posting service enforces is
+ * stated here with its configured value (#698): an agent is never refused
+ * by a number it was not told.
  */
 export function getBountyToolDefinitions(): Tool[] {
+  const c = loadConfig();
   return [
     {
       name: "post_bounty",
@@ -696,8 +737,15 @@ export function getBountyToolDefinitions(): Tool[] {
         "Post a bounty, from this mandate's escrow, for a Lean proof or " +
         "disproof of a mathematical claim's published formal statement. " +
         "Only for mathematical claims with a published Lean statement; the " +
-        "mathematics skill says when and how, and the bounds that apply. " +
-        "Otherwise do not use.",
+        "mathematics skill says when and how. Otherwise do not use. Bounds: " +
+        `${c.minBountyPerClaimOwls} to ${c.maxBountyPerClaimOwls} owls per claim, one live bounty per claim, ` +
+        `covered by the mandate's headroom (budget less committed money), and at most ` +
+        `${c.bountyEscrowFractionPerPass} of the escrow posted in one pass and ` +
+        `${c.bountyEscrowFractionPerDay} in one day. Posting is two-pass: the first call records ` +
+        `the request, and a call from a later pass, within ${BOUNTY_CONFIRM_WINDOW_DAYS} days, opens it ` +
+        `(after that the request is stale and starts over). At or above ` +
+        `${c.bountyAutonomyThresholdOwls} owls it then waits for a person's confirmation, because a ` +
+        `public reward offer binds the company.`,
       input_schema: {
         type: "object" as const,
         properties: {
@@ -713,7 +761,7 @@ export function getBountyToolDefinitions(): Tool[] {
       name: "withdraw_bounty",
       description:
         "Give notice that a bounty is withdrawn: prospective only, with " +
-        "BOUNTY_NOTICE_DAYS of public notice on the claim page and the prize " +
+        `${c.bountyNoticeDays} days' public notice on the claim page and the prize ` +
         "listing; submissions received before the effective time are judged " +
         "under the prior terms, and the withdrawal waits while any prize " +
         "claim is live. A bounty not yet open withdraws at once.",
@@ -727,6 +775,28 @@ export function getBountyToolDefinitions(): Tool[] {
       },
     },
   ];
+}
+
+/**
+ * confirm_bounty, for the funder in the management chat of a mandate a
+ * person funds (§8.1): a posting at or above the autonomy threshold waits
+ * on a person, and the funder present in the chat is one. Not offered on
+ * the review pass (nobody is there) or on a platform mandate (the
+ * operator key confirms those).
+ */
+export function getConfirmBountyToolDefinition(): Tool {
+  return {
+    name: "confirm_bounty",
+    description:
+      "Open a bounty that waits at confirm_pending, on the funder's explicit " +
+      "say-so in this conversation: ask them first, quote the amount and " +
+      "the claim, and call this only when they confirm.",
+    input_schema: {
+      type: "object" as const,
+      properties: { bounty_id: { type: "string" } },
+      required: ["bounty_id"],
+    },
+  };
 }
 
 /**
@@ -1104,7 +1174,7 @@ async function executePostBounty(
       note:
         `${formatOwls(live!.amount_micro_usd)} is at or above the autonomy threshold; the posting waits for a ` +
         `person's confirmation (POST /bounties/${opened.bounty_id}/confirm with the operator key` +
-        (opts.confirmedBy ? ", or the funder here" : "") +
+        (opts.confirmedBy ? ", or the funder here with confirm_bounty once they say so" : "") +
         `). Say so in your note.`,
     });
   }
@@ -1118,6 +1188,16 @@ async function executePostBounty(
   });
 }
 
+/**
+ * The funded-grant tool surface: live analytics over exactly the data the
+ * public dashboard shows, and the writes a live mandate's steward holds
+ * (the plan's remainder, valuations, policy, pacing, money moves, bounties,
+ * lookouts). Returns null for tool names it doesn't own.
+ *
+ * Shared with the autonomous review pass (mandate-review.ts): one
+ * implementation, so a guard added here holds on both paths rather than
+ * being reasoned about twice.
+ */
 export async function executeManagementTool(
   grantId: string,
   name: string,
@@ -1165,10 +1245,17 @@ export async function executeManagementTool(
       budget_micro_usd: number;
       job_status: string;
       funder_notes: Array<{ at: string; note: string }> | null;
+      workspace: string | null;
+      last_review: unknown;
+      close_requested: unknown;
+      bounty_requests: unknown;
     }>(
       `SELECT g.status, g.plan, g.plan_cursor, g.budget_job_id,
               j.budget_micro_usd, j.status AS job_status,
-              g.mandate->'funder_notes' AS funder_notes
+              g.mandate->'funder_notes' AS funder_notes, g.workspace,
+              g.mandate->'last_review' AS last_review,
+              g.mandate->'close_requested' AS close_requested,
+              g.mandate->'bounty_requests' AS bounty_requests
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
         WHERE g.id = $1`,
       [grantId]
@@ -1194,6 +1281,13 @@ export async function executeManagementTool(
       plan: describePlanItems(grant.plan?.items ?? [], grant.plan_cursor),
       // What the review passes asked of the funder (note_to_funder, #701).
       funder_notes: grant.funder_notes ?? [],
+      // The review passes' working memory and record (#690): what the
+      // last pass did, a closure or bounty it has pending, and the
+      // workspace itself, so nothing writes the workspace without reading it.
+      last_review: grant.last_review ?? null,
+      close_requested: grant.close_requested ?? null,
+      bounty_requests: grant.bounty_requests ?? null,
+      workspace: grant.workspace ?? "",
     });
   }
   if (name === "list_funded_assessments") {

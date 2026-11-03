@@ -56,11 +56,14 @@ spawns, starts in `planning`: the ledger opens a `grant_planning` action,
 self-funded from its escrow, and the engine executor runs the mandate's
 Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
 no owl is spent until the funder approves the plan it proposes. The
-planner has the review pass's affordances, because the first territory
-survey is the same job as every later one: the graph (search_claims,
-survey_scope) AND the open web (web_search, read_page), the live price
-list (cost_sheet, from the costing skill), and the mandate's workspace, so its survey notes
-become the mandate's opening working memory. Its briefing is the mandate's
+planner has the review pass's survey affordances, because the first
+territory survey is the same job as every later one: the graph
+(search_claims, survey_scope, list_requests) AND the open web (web_search,
+read_page), the live price list (cost_sheet, from the costing skill), and
+the mandate's workspace, so its survey notes become the mandate's opening
+working memory. What it does not have is anything that spends or moves
+money before the funder approves: no valuations, lookouts, contributions,
+research, or money moves. Its briefing is the mandate's
 words, with any declared scope claim or query as a search aid rather than
 the scope; a mandate told to "map the nutrition literature" reaches its
 planner with no scope claim at all, and the planner's job is to find the
@@ -144,7 +147,9 @@ target's judgment — money moves between mandates; command never does.
 
 ## Lookouts: cheap standing watch
 
-A review pass is judgment at mandate scale, once a day at most; the
+A review pass is judgment at mandate scale: it wakes when the mandate's
+work produces something to judge, chains when it has more to do, and
+otherwise runs about once a day, each pass paid from the day's room; the
 world moves between passes, and most of what moves is cheap to notice
 and expensive to have missed: a retracted source under an assessed
 claim, a replication that failed, a dependency whose verdict changed. A
@@ -887,9 +892,13 @@ importance and contestation statistics per source (`grant_sources` +
 same page at any time: after funding, the conversation runs in management
 mode, where the agent has analytics tools over exactly the data the
 dashboard shows (overview, funded assessments, ingestion report,
-per-source claims, importance distributions) and the one write the
-framework allows — amending the unexecuted remainder of the plan — with
-the same refusal duties it had at mandate design time.
+per-source claims, importance distributions, the allocation report) and
+the writes a mandate's steward holds: amending the unexecuted remainder of
+the plan, valuations and the allocation policy it may set, pacing,
+regrants and spawns, lookouts, bounties (and confirming one parked at the
+threshold), contributions, request funding and research. It holds them
+under the same refusal duties it had at mandate design time, and it reads
+the review passes' workspace and notes before writing to them.
 
 ## Prizes and attempts
 
@@ -1073,9 +1082,10 @@ and legitimate — but the unit economics must stay visible
    and reduces nothing that remains to be covered.
 8. Prize money never enters a valuation, an importance, an assessment, or
    a standard; assessments and their reasoning never mention money.
-9. Owls never fund a prize. Prize money is cash in a fund the ledger cannot
-   see, and every prize owl is backed by a dollar the fund debited when the
-   owl was granted.
+9. A prize is held, not allocated. A prize of N owls is held against the
+   posting mandate's escrow from the day the bounty opens and retires N
+   owls of it when paid; it never enters an allocation, and every prize
+   owl is backed by escrow paid for before the offer was made.
 10. The platform is never a claimant. A house solve closes the bounty
     unpaid and publishes the proof.
 11. Maintenance is chosen, never induced. No mandate's activity creates a

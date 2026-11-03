@@ -24,8 +24,9 @@ export function getGrantContributionToolDefinition(): Tool {
     description:
       "Contribute to the graph under this mandate: evidence for or against a " +
       "node, an instance or an estimate from a source, an argument, an " +
-      "answer to a question, a request, or a claim or question the graph " +
-      "does not hold yet. It is reviewed like anyone's and shown as from " +
+      "answer to a question, a request, a structural proposal (two nodes " +
+      "that are one, one node that is two, a better canonical wording), or " +
+      "a claim or question the graph does not hold yet. It is reviewed like anyone's and shown as from " +
       "\"a funded mandate\"; the review is paid from the escrow (cost_sheet " +
       "lists what one costs), and the node's Steward decides what an " +
       "accepted contribution changes. A proposed claim or question enters " +
@@ -41,9 +42,14 @@ export function getGrantContributionToolDefinition(): Tool {
         },
         proposed_text: {
           type: "string",
+          maxLength: 2000,
           description:
-            "propose_claim and propose_question only: the wording you propose, " +
-            "neutral, presupposing no more than it must.",
+            "propose_claim, propose_question and propose_edit only: the wording " +
+            "you propose, neutral, presupposing no more than it must.",
+        },
+        merge_target_claim_id: {
+          type: "string",
+          description: "propose_merge only: the other node, which claim_id's node duplicates.",
         },
         content: {
           type: "string",

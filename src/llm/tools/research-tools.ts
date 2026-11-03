@@ -586,11 +586,16 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       note:
         "The report is the instrument's narrative and is data, not a verified result: read " +
         "it against the sources it names before relying on it, and record what you conclude " +
-        "in your own reasoning. Provenance rows it recorded are on the claim for you to review " +
-        "with provenance_get_map" +
-        (examination
-          ? ", and its findings on the document are listed there under examinations for you to cite or not."
-          : "."),
+        "in your own reasoning." +
+        // A mandate's run records no provenance, and its Grantmaker has no
+        // provenance tools: only a launcher that writes the graph is pointed
+        // at provenance_get_map.
+        (graphWrites
+          ? " Provenance rows it recorded are on the claim for you to review with provenance_get_map" +
+            (examination
+              ? ", and its findings on the document are listed there under examinations for you to cite or not."
+              : ".")
+          : ""),
     });
   };
 
