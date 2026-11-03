@@ -337,13 +337,20 @@ export function getQuestionToolDefinitions(): Tool[] {
       name: "add_subquestion",
       description:
         "Attach a subquestion whose answer this question needs. Pass subquestion_id for an " +
-        "existing question, or new_text after match_claim found none.",
+        "existing question, or new_text after match_claim found none; a new subquestion is " +
+        "always a question. A claim or quantity the question rests on is attached with " +
+        "add_decomposition_edge, or add_relationship_edge for one that exists.",
       input_schema: {
         type: "object" as const,
         properties: {
           question_id: { type: "string" },
           subquestion_id: { type: "string" },
-          ...NEW_NODE_PROPERTIES,
+          new_text: {
+            type: "string",
+            description:
+              "Instead of an existing id: the wording of a new subquestion, only after match_claim found none.",
+          },
+          importance: NEW_NODE_PROPERTIES.importance,
           reasoning: { type: "string" },
         },
         required: ["question_id", "reasoning"],

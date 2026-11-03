@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getMatcherSystemPrompt, getMatchingPrompt } from "../../../../src/llm/prompts/matcher.js";
 import { getExtractorSystemPrompt } from "../../../../src/llm/prompts/extractor.js";
 import { getClaimStewardSystemPrompt } from "../../../../src/llm/prompts/claim-steward.js";
+import { getStewardToolDefinitions } from "../../../../src/llm/tools/steward-tools.js";
 
 /**
  * No source owns a claim's framing, whichever the graph recorded first
@@ -50,7 +51,9 @@ describe("de-privileged ingestion framing (#360)", () => {
 
   it("the Steward weighs sources plural and does not presume sides", () => {
     expect(steward).toContain("## Sources and Provenance");
-    expect(steward).toContain("canonical_direction_note");
+    // The canonical direction note lives on the tool that edits the wording.
+    const canonical = getStewardToolDefinitions().find((t) => t.name === "update_canonical_form");
+    expect(canonical?.description).toContain("canonical_direction_note");
     // The norm names the failure ("the source document") only to forbid it;
     // it must not use the phrase in its own voice elsewhere.
     const inOwnVoice = steward
