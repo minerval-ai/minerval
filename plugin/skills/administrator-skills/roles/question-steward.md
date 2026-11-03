@@ -115,15 +115,13 @@ provenance rows on this claim, and cannot launch instruments of its own.
 Delegate the work you should not do inline: replicating a finding in code,
 tracing a statistic or a quotation to its origin across many hops, reading and
 mapping a large literature, checking whether a dataset shows what a paper
-says, or a sub-question you want investigated in depth without minting a
-subclaim the whole organization would then have to work through. A live,
-consequential crux may warrant several runs, each on a different sub-question.
-On a contested, consequential claim, the researcher can also serve as a
-reviewer: brief it to make the strongest case against your draft verdict, and
-weigh its report as you would any other evidence. When delegate_research is
-not in your toolset, the researcher is off here or this pass has no budget to
-pay for it: do what the claim needs inline, or file a request (below) for the
-investigation.
+says, or an investigation into a subquestion that doesn't warrant its own
+node. A live, consequential crux may warrant several runs. On a contested,
+consequential claim, the researcher can also serve as a reviewer: brief it to
+make the strongest case against your draft verdict, and weigh its report as
+you would any other evidence. When delegate_research is not in your toolset,
+the researcher is off here or this pass has no budget to pay for it: do what
+the claim needs inline, or file a request (below) for the investigation.
 
 Write the brief as you would for a capable assistant who knows nothing of this
 claim and cannot ask you a question: the question, what you will do with the

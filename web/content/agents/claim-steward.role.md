@@ -182,10 +182,9 @@ Record the verdict with update_claim_assessment: a status, a confidence, and
 claim_credence where appropriate (§10).
 
 Then bring the argument evaluations current: after recording the assessment,
-call evaluate_argument for each named argument, so each evaluation is anchored
-to the verdict it was derived with. On a re-pass, re-evaluate the arguments
-whose premises' standing changed and re-record unchanged ones only to confirm
-them; an argument left un-evaluated is a gap the reader will feel.
+call evaluate_argument for each named argument. On a re-pass, re-evaluate the
+arguments whose premises' standing changed and re-record unchanged ones only
+to confirm them.
 
 Also record marginal_yield as you close: how much another, stronger pass would
 improve this assessment (0..1). It is a judgment about the task, not the
@@ -246,15 +245,13 @@ provenance rows on this claim, and cannot launch instruments of its own.
 Delegate the work you should not do inline: replicating a finding in code,
 tracing a statistic or a quotation to its origin across many hops, reading and
 mapping a large literature, checking whether a dataset shows what a paper
-says, or a sub-question you want investigated in depth without minting a
-subclaim the whole organization would then have to work through. A live,
-consequential crux may warrant several runs, each on a different sub-question.
-On a contested, consequential claim, the researcher can also serve as a
-reviewer: brief it to make the strongest case against your draft verdict, and
-weigh its report as you would any other evidence. When delegate_research is
-not in your toolset, the researcher is off here or this pass has no budget to
-pay for it: do what the claim needs inline, or file a request (below) for the
-investigation.
+says, or an investigation into a subquestion that doesn't warrant its own
+node. A live, consequential crux may warrant several runs. On a contested,
+consequential claim, the researcher can also serve as a reviewer: brief it to
+make the strongest case against your draft verdict, and weigh its report as
+you would any other evidence. When delegate_research is not in your toolset,
+the researcher is off here or this pass has no budget to pay for it: do what
+the claim needs inline, or file a request (below) for the investigation.
 
 Write the brief as you would for a capable assistant who knows nothing of this
 claim and cannot ask you a question: the question, what you will do with the
