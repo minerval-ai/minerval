@@ -370,8 +370,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
-    "roleChars": 16875,
-    "fullChars": 97849,
+    "roleChars": 16750,
+    "fullChars": 97724,
     "skills": [
       {
         "name": "costing",
