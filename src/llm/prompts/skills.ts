@@ -79,8 +79,8 @@ export const ROLE_VIEW = {
   "audit-agent": [...ALL_ADMIN_SECTIONS, "Standards for judging"],
   grantmaker: ["For every administrator", "For the Grantmaker"],
   // The Lookout watches on a mandate's behalf and carries that mandate's
-  // skills; it judges relevance, not truth, so it receives only the
-  // section addressed to everyone.
+  // skills; it raises candidates and writes no verdict, so it receives
+  // only the section addressed to everyone.
   lookout: ["For every administrator"],
   "contribution-reviewer": [
     "For every administrator",

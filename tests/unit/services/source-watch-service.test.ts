@@ -32,6 +32,8 @@ import {
   htmlToText,
   readPage,
   recentRetractions,
+  recentRetractionsPage,
+  retractionNoticesSince,
 } from "../../../src/services/source-watch-service.js";
 
 beforeEach(() => {
@@ -112,6 +114,79 @@ describe("recentRetractions", () => {
     expect(rows).toEqual([
       { notice_doi: "10.2/n", retracted_dois: ["10.2/p"], type: "retraction", title: "Retraction notice", updated: null, source: "publisher" },
     ]);
+  });
+});
+
+describe("recentRetractionsPage", () => {
+  it("passes the offset and reports the total and where the next page starts", async () => {
+    state.responses.set(
+      "https://api.crossref.org/works?filter=",
+      JSON.stringify({
+        message: {
+          "total-results": 3,
+          items: [
+            { DOI: "10.2/A", "update-to": [{ DOI: "10.2/X", type: "retraction" }] },
+            { DOI: "10.2/B", "update-to": [{ DOI: "10.2/Y", type: "retraction" }] },
+          ],
+        },
+      })
+    );
+    const page = await recentRetractionsPage({ since: new Date("2026-09-01T00:00:00Z"), rows: 2, offset: 0 });
+    expect(state.fetched[0]).toContain("&rows=2&offset=0");
+    expect(page).toMatchObject({ total: 3, offset: 0, next_offset: 2 });
+    expect(page!.rows.map((r) => r.notice_doi)).toEqual(["10.2/a", "10.2/b"]);
+  });
+
+  it("returns null when Crossref cannot be read", async () => {
+    expect(await recentRetractionsPage({ since: new Date("2026-09-01T00:00:00Z") })).toBeNull();
+  });
+});
+
+describe("retractionNoticesSince", () => {
+  const item = (doi: string, deposited: string) => ({
+    DOI: doi, "update-to": [{ DOI: `${doi}-paper`, type: "retraction" }], deposited: { "date-time": deposited },
+  });
+
+  it("follows the cursor oldest first until the window is exhausted", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    const page = (body: unknown) => async (url: string) => {
+      state.fetched.push(url);
+      return JSON.stringify(body);
+    };
+    vi.mocked(fetchPublicUrl)
+      .mockImplementationOnce(page({ message: { items: [item("10.3/a", "2026-09-01T01:00:00Z"), item("10.3/b", "2026-09-01T02:00:00Z")], "next-cursor": "C2" } }))
+      .mockImplementationOnce(page({ message: { items: [item("10.3/c", "2026-09-02T00:00:00Z")], "next-cursor": "C3" } }));
+    const w = await retractionNoticesSince({ since: new Date("2026-09-01T00:00:00Z"), types: ["retraction"], pageRows: 2 });
+    expect(state.fetched).toHaveLength(2);
+    expect(state.fetched[0]).toContain("cursor=*");
+    expect(state.fetched[1]).toContain("cursor=C2");
+    expect(state.fetched[0]).toContain("order=asc");
+    expect(w).toEqual({
+      notices: expect.any(Array),
+      complete: true,
+      readThrough: new Date("2026-09-02T00:00:00Z"),
+    });
+    expect(w.notices.map((n) => n.notice_doi)).toEqual(["10.3/a", "10.3/b", "10.3/c"]);
+  });
+
+  it("stops early on a failed page or at maxPages, saying how far it read", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    const first = async (url: string) => {
+      state.fetched.push(url);
+      return JSON.stringify({ message: { items: [item("10.3/a", "2026-09-01T01:00:00Z")], "next-cursor": "C2" } });
+    };
+    vi.mocked(fetchPublicUrl)
+      .mockImplementationOnce(first)
+      .mockImplementationOnce(async () => {
+        throw new Error("network");
+      })
+      .mockImplementationOnce(first);
+    const failed = await retractionNoticesSince({ since: new Date("2026-09-01T00:00:00Z"), types: ["retraction"], pageRows: 1 });
+    expect(failed).toMatchObject({ complete: false, readThrough: new Date("2026-09-01T01:00:00Z") });
+    expect(failed.notices).toHaveLength(1);
+
+    const capped = await retractionNoticesSince({ since: new Date("2026-09-01T00:00:00Z"), types: ["retraction"], pageRows: 1, maxPages: 1 });
+    expect(capped).toMatchObject({ complete: false, readThrough: new Date("2026-09-01T01:00:00Z") });
   });
 });
 

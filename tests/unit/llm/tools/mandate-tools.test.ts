@@ -76,7 +76,11 @@ describe("createMandateTools", () => {
       surveyLimit: 25,
     });
     const blank = JSON.parse((await tools.execute("survey_scope", {}))!);
-    expect(blank).toEqual({ count: 1, claims: [{ id: "c1" }] });
+    // A short page has nothing behind it.
+    expect(blank).toEqual({ count: 1, next_offset: null, claims: [{ id: "c1" }] });
+    const full = JSON.parse((await createMandateTools({ surveyLimit: 1 }).execute("survey_scope", { query: "x", offset: 3 }))!);
+    expect(full.next_offset).toBe(4);
+    state.surveys.splice(1);
     expect(state.surveys[0]).toMatchObject({
       scopeClaimId: "root",
       scopeQuery: "nutrition",
