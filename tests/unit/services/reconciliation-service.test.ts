@@ -161,7 +161,7 @@ describe("reverseReconciliation", () => {
       },
     };
     rawQuery.mockImplementation(async (sql: unknown) =>
-      /SELECT operation, payload, reversed, created_at FROM reconciliation_events/.test(String(sql))
+      /SELECT operation, payload, reversed FROM reconciliation_events/.test(String(sql))
         ? [event]
         : []
     );
@@ -191,15 +191,14 @@ describe("reverseReconciliation", () => {
   it("refuses while a later operation touched the same nodes, naming it (#761)", async () => {
     rawQuery.mockImplementation(async (sql: unknown) => {
       const s = String(sql);
-      if (/SELECT operation, payload, reversed, created_at/.test(s)) {
+      if (/SELECT operation, payload, reversed FROM/.test(s)) {
         return [{
           operation: "merge",
           reversed: false,
-          created_at: new Date("2026-10-01"),
           payload: { survivor_id: "s", loser_id: "l" },
         }];
       }
-      if (/WHERE created_at > \$1 AND reversed = false/.test(s)) return [{ id: "evt-later" }];
+      if (/WHERE e.id <> \$1/.test(s)) return [{ id: "evt-later" }];
       return [];
     });
     const result = await reverseReconciliation("evt-3", { reasoning: "wrong merge" });
@@ -207,13 +206,15 @@ describe("reverseReconciliation", () => {
     const sqlsRun = rawQuery.mock.calls.map((c) => String(c[0]));
     expect(sqlsRun.some((s) => /UPDATE claims SET merged_into = NULL/.test(s))).toBe(false);
     // The check looks for the merge's own nodes in later payloads.
-    const check = rawQuery.mock.calls.find((c) => /WHERE created_at > \$1/.test(String(c[0])));
+    const check = rawQuery.mock.calls.find((c) => /WHERE e.id <> \$1/.test(String(c[0])));
     expect(check?.[1]?.[1]).toEqual(["%s%", "%l%"]);
+    // ...and compares against the event's own stored timestamp, by id, excluding itself.
+    expect(check?.[1]?.[0]).toBe("evt-3");
   });
 
   it("logs a reversal with its reasoning, and restores a reclassified node (#640)", async () => {
     rawQuery.mockImplementation(async (sql: unknown) =>
-      /SELECT operation, payload, reversed, created_at/.test(String(sql))
+      /SELECT operation, payload, reversed FROM/.test(String(sql))
         ? [{
             operation: "reclassify",
             reversed: false,
@@ -232,7 +233,7 @@ describe("reverseReconciliation", () => {
 
   it("will not reverse a reversal", async () => {
     rawQuery.mockImplementation(async (sql: unknown) =>
-      /SELECT operation, payload, reversed, created_at/.test(String(sql))
+      /SELECT operation, payload, reversed FROM/.test(String(sql))
         ? [{ operation: "reverse", reversed: false, payload: { reversed_event_id: "x" } }]
         : []
     );

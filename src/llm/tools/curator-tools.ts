@@ -64,11 +64,13 @@ export function getCuratorToolDefinitions(): Tool[] {
     {
       name: "merge_claims",
       description:
-        "Merge two claims that are the same proposition into one (a duplicate the " +
-        "Matcher missed, or a counterpart). Moves the loser's instances, arguments, " +
-        "and edges onto the survivor and marks the loser a merged alias. Set " +
-        "stance_relation='opposed' when the loser is the survivor's negation/" +
-        "counterpart; moved instance/argument stances are then flipped. After " +
+        "Merge two claims that are one node into one (a duplicate the Matcher " +
+        "missed, or a claim and its plain denial, §2). Moves the loser's instances, " +
+        "arguments, and edges onto the survivor and marks the loser a merged alias. " +
+        "Set stance_relation='opposed' when the loser is the survivor's negation; " +
+        "moved instance/argument stances are then flipped. A contrary (both could " +
+        "be false) is a distinct claim: link it as a rival_explanation, never " +
+        "merge it. After " +
         "merging, notify the survivor's Steward to reconcile wording/arguments and " +
         "re-assess. Returns the event_id that reverse_reconciliation takes. Nodes " +
         "merge within a kind; across kinds, only a claim that " +
@@ -85,8 +87,9 @@ export function getCuratorToolDefinitions(): Tool[] {
             type: "string",
             enum: ["same", "opposed"],
             description:
-              "'same' if both state the proposition the same way; 'opposed' if the " +
-              "loser is the survivor's negation/counterpart (flips moved stances)",
+              "'same' if both state the proposition the same way; 'opposed' only if " +
+              "the loser is the survivor's negation, its plain denial (flips moved " +
+              "stances). Never for a contrary.",
           },
           reasoning: { type: "string", description: "Why these are one claim" },
         },

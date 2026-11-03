@@ -963,8 +963,7 @@ export async function reverseReconciliation(
     operation: string;
     payload: Record<string, unknown>;
     reversed: boolean;
-    created_at?: Date;
-  }>(`SELECT operation, payload, reversed, created_at FROM reconciliation_events WHERE id = $1`, [eventId]);
+  }>(`SELECT operation, payload, reversed FROM reconciliation_events WHERE id = $1`, [eventId]);
 
   if (!event) return { reversed: false, reason: "event not found" };
   if (event.reversed) return { reversed: false, reason: "already reversed" };
@@ -974,13 +973,21 @@ export async function reverseReconciliation(
 
   const p = event.payload;
   const nodes = eventNodeIds(p ?? {});
-  if (nodes.length > 0 && event.created_at) {
+  if (nodes.length > 0) {
+    // "Later" is decided in SQL against the event's own stored timestamp,
+    // never a value round-tripped through JavaScript: a JS Date keeps
+    // milliseconds and Postgres microseconds, so a timestamp passed back
+    // in would read the event as later than itself. The event itself is
+    // excluded by id as well. Each operation logs its event in its own
+    // statement, so two events never share a timestamp in practice.
     const later = await rawQuery<{ id: string }>(
-      `SELECT id FROM reconciliation_events
-        WHERE created_at > $1 AND reversed = false AND operation <> 'reverse'
-          AND payload::text LIKE ANY($2::text[])
-        ORDER BY created_at DESC`,
-      [event.created_at, nodes.map((n) => `%${n}%`)]
+      `SELECT e.id FROM reconciliation_events e
+        WHERE e.id <> $1
+          AND e.created_at > (SELECT created_at FROM reconciliation_events WHERE id = $1)
+          AND e.reversed = false AND e.operation <> 'reverse'
+          AND e.payload::text LIKE ANY($2::text[])
+        ORDER BY e.created_at DESC`,
+      [eventId, nodes.map((n) => `%${n}%`)]
     );
     if (later.length > 0) {
       return {

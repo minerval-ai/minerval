@@ -2,7 +2,7 @@
  * Curator agent.
  *
  * The graph-level structure agent (#31): it reconciles claim identity over time —
- * merging duplicates/counterparts the Matcher missed, splitting conflated claims,
+ * merging duplicates and negations the Matcher missed, splitting conflated claims,
  * and suggesting cross-claim edges to the owning Stewards. Agentic tool-use loop;
  * acts through tools, no structured return value.
  */
@@ -115,7 +115,8 @@ Proceed:
 1. Use get_claim, search_claims and match_claim to examine the anchor and
    its neighborhood; get_claim_instances shows how its sources state it
    when wording or identity turns on that.
-2. Look for: duplicates or counterparts to merge; a conflated node to split;
+2. Look for: duplicates or negations to merge (a contrary is linked, not
+   merged); a conflated node to split;
    related but disconnected claims to link; a node of the wrong kind, type
    or domains; an earlier operation of yours that was wrong
    (list_reconciliation_events); and requests you keep that need
