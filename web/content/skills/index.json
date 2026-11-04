@@ -51,6 +51,10 @@
       "For every administrator",
       "For the Claim Steward",
       "For the researcher"
+    ],
+    "consistency-checker": [
+      "For every administrator",
+      "Standards for judging"
     ]
   },
   "skills": [
@@ -117,6 +121,12 @@
           "sections": [
             "For every administrator",
             "For the researcher"
+          ]
+        },
+        {
+          "key": "consistency-checker",
+          "sections": [
+            "For every administrator"
           ]
         }
       ],
@@ -230,6 +240,13 @@
           "sections": [
             "For every administrator",
             "For the Claim Steward"
+          ]
+        },
+        {
+          "key": "consistency-checker",
+          "sections": [
+            "For every administrator",
+            "Standards for judging"
           ]
         }
       ],
@@ -593,6 +610,13 @@
             "For every administrator",
             "For the Claim Steward",
             "For the researcher"
+          ]
+        },
+        {
+          "key": "consistency-checker",
+          "sections": [
+            "For every administrator",
+            "Standards for judging"
           ]
         }
       ],
@@ -1062,6 +1086,12 @@
           "sections": [
             "For every administrator",
             "For the researcher"
+          ]
+        },
+        {
+          "key": "consistency-checker",
+          "sections": [
+            "For every administrator"
           ]
         }
       ],

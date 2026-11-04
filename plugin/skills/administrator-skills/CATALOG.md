@@ -73,7 +73,7 @@ A standing watch a mandate funds: the cheapest agent with the narrowest question
 
 ### Consistency Checker (`roles/consistency-checker.md`)
 
-The sweep that reads assessments against one another. Each Steward reads its own claim; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises each find with the Steward whose claim looks wrong, as a reassessment the ledger prices and funds like any other; it writes no verdict and owns no claim.
+The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.
 
 ### Solver (`roles/math-solver.md`)
 

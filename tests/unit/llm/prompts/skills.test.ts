@@ -222,6 +222,12 @@ describe("ROLE_VIEW", () => {
       "For the Claim Steward",
       "For the researcher",
     ]);
+    // The Consistency Checker reads assessments against each other: the
+    // section for everyone and the standards a good assessment meets.
+    expect(ROLE_VIEW["consistency-checker"]).toEqual([
+      "For every administrator",
+      "Standards for judging",
+    ]);
     expect(SKILL_ROLES).toEqual([
       "claim-steward",
       "audit-agent",
@@ -233,13 +239,14 @@ describe("ROLE_VIEW", () => {
       "matcher",
       "extractor",
       "researcher",
+      "consistency-checker",
     ]);
   });
 
-  it("never hands Failure modes to any role, and Standards for judging only to Audit", () => {
+  it("never hands Failure modes to any role, and Standards for judging only to the roles that judge assessments", () => {
     for (const role of SKILL_ROLES) {
       expect(ROLE_VIEW[role]).not.toContain("Failure modes");
-      if (role !== "audit-agent") {
+      if (role !== "audit-agent" && role !== "consistency-checker") {
         expect(ROLE_VIEW[role]).not.toContain("Standards for judging");
       }
     }
