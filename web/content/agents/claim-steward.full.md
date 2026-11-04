@@ -509,8 +509,7 @@ match_claim first; identity is the Matcher's call (Part VIII). If the node
 already exists, as itself, a rewording, or (for a claim) its negation, attach
 it with add_relationship_edge; create it with add_decomposition_edge only when
 the Matcher says it is novel. Before adopting a match you may check it with
-get_claim_details and get_claim_subclaims: is this the node you need, or a
-near neighbor? A match_claim result with outcome "undecided" is no verdict at
+get_claim (include subclaims): is this the node you need, or a near neighbor? A match_claim result with outcome "undecided" is no verdict at
 all (the Matcher ran out of budget): never create from it; retry once, then
 create and let the Curator merge any duplicate.
 

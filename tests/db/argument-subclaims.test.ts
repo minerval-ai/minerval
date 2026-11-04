@@ -147,7 +147,7 @@ describe("argument_subclaims (#437)", () => {
     ]);
   });
 
-  it("counts a shared subclaim once in children_total while listing it per argument (#417)", async () => {
+  it("counts a shared subclaim once while listing it per argument (#417)", async () => {
     const parent = await seedClaim("parent");
     const shared = await seedClaim("shared");
     const basis = await seedClaim("basis");
@@ -159,11 +159,11 @@ describe("argument_subclaims (#437)", () => {
     await attachEdgeToArgument(argB, id);
 
     const out = JSON.parse(
-      await executeGovernanceTool("get_claim", { claim_id: parent })
+      await executeGovernanceTool("get_claim", { claim_id: parent, include: ["subclaims"] })
     );
     // Two edges, so two children — the shared one is not counted per argument.
-    expect(out.claim.children_total).toBe(2);
-    expect(out.claim.children_assessed).toBe(0);
+    expect(out.subclaim_count).toBe(2);
+    expect(out.subclaims_assessed).toBe(0);
     // ...but the listing shows the shared subclaim under each argument.
     expect(
       out.subclaims.map((sc: { id: string; argument_id: string | null }) => [sc.id, sc.argument_id])

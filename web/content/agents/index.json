@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 19444,
-    "fullChars": 105044,
+    "roleChars": 19514,
+    "fullChars": 105114,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 24039,
-    "fullChars": 109639,
+    "roleChars": 24027,
+    "fullChars": 109627,
     "skills": [
       {
         "name": "costing",

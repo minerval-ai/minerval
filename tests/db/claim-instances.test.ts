@@ -110,16 +110,22 @@ describe("a claim's instances and the Steward's control of them", () => {
     });
   });
 
-  it("get_claim returns the canonical record with a count and no instances", async () => {
-    const out = await gov("get_claim", { claim_id: claim });
+  it("get_claim returns the canonical record with a count, and instances only on request", async () => {
+    const out = await gov("get_claim", {
+      claim_id: claim,
+      include: ["arguments", "subclaims", "related", "findings"],
+    });
     expect(out.claim.id).toBe(claim);
     expect(out.instance_count).toBe(4);
     expect(out).not.toHaveProperty("instances");
     expect(JSON.stringify(out)).not.toMatch(/affirm|denies|verbatim_text/);
     expect(out).toHaveProperty("subclaims");
     expect(out).toHaveProperty("arguments");
-    expect(out).toHaveProperty("related_claims");
-    expect(out).toHaveProperty("findings_noted");
+    expect(out).toHaveProperty("related");
+    expect(out).toHaveProperty("findings");
+
+    const withProvenance = await gov("get_claim", { claim_id: claim, include: ["provenance"] });
+    expect(withProvenance.instances).toHaveLength(4);
   });
 
   it("get_claim_with_context is gone", async () => {

@@ -635,7 +635,7 @@ export function getStewardToolDefinitions(): Tool[] {
         "different claim, and rewording into the negation would flip every " +
         "recorded stance. Escalate those to the Curator instead. The form's " +
         "direction was chosen on the proposition's own terms (see the claim's " +
-        "canonical_direction_note in get_claim_details), never from whichever " +
+        "canonical_direction_note in get_claim), never from whichever " +
         "source arrived first; keep it.",
       input_schema: {
         type: "object" as const,
@@ -1401,7 +1401,7 @@ export async function executeStewardTool(
               success: false,
               message:
                 `These linked claims do not exist: ${unknown.join(", ")}. ` +
-                `Link only real claims (ids from get_claim_subclaims or from ` +
+                `Link only real claims (ids from get_claim or from ` +
                 `this run), or drop the link and name the claim in plain text.`,
             });
           }
@@ -2417,7 +2417,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${childId}. Link only real claims (ids from ` +
-              `match_claim, get_claim_subclaims, or add_decomposition_edge).`,
+              `match_claim, get_claim, or add_decomposition_edge).`,
           });
         }
 
@@ -2490,7 +2490,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
-              `match_claim or get_claim_details).`,
+              `match_claim or get_claim).`,
           });
         }
         const { linked, linkId } = await linkClaims({
@@ -3014,7 +3014,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${parentId}. Propose edges only into real claims ` +
-              `(ids from match_claim or get_claim_details); if the proposition ` +
+              `(ids from match_claim or get_claim); if the proposition ` +
               `does not exist, mint it with add_parent_claim.`,
           });
         }

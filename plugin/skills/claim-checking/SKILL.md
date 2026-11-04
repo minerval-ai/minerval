@@ -35,7 +35,10 @@ skill bundles it in full, and the section numbers below point into it.
   Metered; cap `max_claims` sensibly. `extract_claims` works the same way.
 - **Just looking**: `search_claims` / `get_claim` / `get_decomposition` are
   free reads: search the graph, fetch a claim's assessment, or see its
-  subclaim tree with unsettled-vs-settled structure.
+  subclaim tree with unsettled-vs-settled structure. `get_claim` returns the
+  record and its counts; ask for what else you need with `include`
+  (`arguments`, `provenance`, `dependents`, `related`, `findings`, …). It is
+  the same tool the graph's own agents read nodes with.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
 - **A whole document or diff to clear before shipping**: prefer delegating

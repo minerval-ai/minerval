@@ -14,6 +14,7 @@ import {
 } from "../tools/graph-tools.js";
 import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { executeGraphReadTool, getClaimToolDefinition } from "../tools/graph-read-tools.js";
 import type { MatchedInstanceStance } from "../../schemas/common.js";
 
 /**
@@ -187,7 +188,7 @@ async function extensionChatImpl(input: {
 
   const result = await toolUseLoop({
     initialMessages,
-    tools: [...getGraphToolDefinitions(), ...reportTools.definitions],
+    tools: [...getGraphToolDefinitions(), getClaimToolDefinition(), ...reportTools.definitions],
     system: getChatSystemPrompt(),
     // No maxTokens: the client default leaves room for the model's thinking,
     // which draws on the same allowance (4096 did not, on Sonnet 5.5).
@@ -203,6 +204,8 @@ async function extensionChatImpl(input: {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      // The one get_claim every agent reads a node with (#774).
+      if (name === "get_claim") return (await executeGraphReadTool(name, toolInput))!;
       return executeGraphTool(name, toolInput);
     },
   });
