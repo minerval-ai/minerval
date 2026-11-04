@@ -173,15 +173,19 @@ and the tool description says what a call spends.
   page link, `steward_state` and `stewarded_at`), `assessment` (status,
   confidence, credence, reasoning), the kind's record, `preliminary_seed`
   while the node is unassessed, the formalization record, `requests`,
-  `subclaim_count`, `instance_count` and `source_map`. Nothing else is
+  `subclaim_count`, `instance_count` and `source_map` (the Steward's account
+  of what the support rests on, with `material` saying whether the claim page
+  shows it). Nothing else is
   included by default; `include` adds sections:
   - `"arguments"`: each argument with its written form, its current
     evaluation, and the check record behind a machine-checked one.
   - `"subclaims"`: the direct subclaims, one row per argument each serves,
     with the edge's reasoning and their standing, and `subclaims_assessed`. `get_decomposition`
     walks deeper.
-  - `"provenance"`: the instances, each with the Steward's `reading` of its
-    source (whether the source's own evidence bears its assertion, the
+  - `"provenance"`: the instances, each with its `stance` (`affirms`,
+    `denies`, `poses` an open question, or `mentions`: it cites the claim or
+    reports the debate without taking a side, and is never a vote for either
+    side) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
     mechanical quote check, whether it is worth reading closely; null until
     recorded), plus `provenance_edges` (which assertions draw on which
     documents, with fidelity) and `source_relationships` (documents that are

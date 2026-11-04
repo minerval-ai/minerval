@@ -459,10 +459,18 @@ precedence), the surrounding `context`, a brief
 `summary_context` describing the circumstances ("said during a Senate hearing
 on banking regulation, in response to questioning about derivatives
 oversight"), a `stance` recording whether the quote affirms or denies the
-canonical claim, and a `confidence` that the quote really expresses it.
-Instances are how a single canonical claim accumulates provenance from many
-documents, and the stance field is what lets a claim and its negation share one
-node without losing track of who said which.
+canonical claim, poses it as an open question, or only mentions it (cites it,
+reports that others hold it, or raises it in passing), and a `confidence` that
+the quote carries that stance. Instances are how a single canonical claim
+accumulates provenance from many documents, and the stance field is what lets a
+claim and its negation share one node without losing track of who said which.
+Posing and mentioning instances take no side: every count of who affirms or
+denies leaves them out (the citation record counts them apart as
+`posing_instances` and `mentioning_instances`, and the monitors count only
+`affirms` and `denies`), and the claim page lists mentions apart from the
+voices that take a position. The Matcher assigns `affirms`, `denies` or
+`poses` at ingestion; a mention is the Steward's reading of a source, recorded
+with `record_claim_instance`.
 
 #### Source provenance: what the support rests on
 
@@ -539,7 +547,8 @@ returns the canonical record and an `instance_count`, and the instances only
 when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
 pages through them. The Steward decides
 which instances the claim carries and in what order: `detach_claim_instance`
-removes one whose source does not assert, deny or pose the proposition
+removes one whose source states a different proposition or that misreads its
+source, while one that only mentions the claim stays with stance `mentions`
 (`claim_instances.detached_at`, with the reason in the audit trail; the row
 stays for the provenance record, and `reattach_claim_instance` restores it),
 and `set_instance_order` ranks the instances a reader should see first
@@ -648,6 +657,12 @@ assessment, it notifies the Stewards of directly dependent claims, each of
 which re-judges with the same materiality test. Most changes are absorbed
 within a level or two, because a superior claim is rarely the right locus for a
 dispute about one of its subclaims.
+
+The same tool, `notify_steward`, reaches any node's Steward. A Steward that
+thinks a node its claim depends on is assessed wrongly sends that node's
+Steward its reasons (trigger `dependent_note`); one that writes to a node not
+joined to its own by an edge does so under `steward_note`. In every case the
+receiving Steward decides, since only the owner writes.
 
 ---
 
@@ -1057,7 +1072,9 @@ OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
 Elicit search tools and the Pangram tools (`pangram_check_ai`,
 `pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
-task, the Provenance skill's tools except `provenance_write_map`; on a
+task, the Provenance skill's tools except `provenance_write_map` and
+`provenance_record_root`, and `record_claim_instance` on a claim or
+`record_question_instance` on a question; on a
 mathematical claim with a checker configured it also has `lean_search` and
 `lean_elaborate`. The task message names the toolset, so the researcher
 knows what it can and cannot do, and the tool description names the tiers'
@@ -1065,11 +1082,18 @@ affordances, so the launcher can brief it accordingly.
 
 **What it may write.** Its notebook, the provenance tables through the
 skill's tools (a reading only for a source it opened, an edge only with the
-located passage), and the stored copy of a source it fetched. It has no
-tool that writes a claim, an assessment, an argument, an edge between
-claims, or an instance, and the executor refuses any tool name that was not
-offered and any provenance call that names a claim other than the run's, so
-a name read off a page or invented by the model runs nothing. A unit test
+located passage), the run's claim's instances through the Steward's
+`record_claim_instance` on a claim or `record_question_instance` on a
+question (on the same runs that get the provenance recording tools, never
+on a quantity, with the node's id filled from the run, an `instance_id` or
+`answer_id` outside the question refused, and the row's `created_by` set to
+`researcher`), and
+the stored copy of a source it fetched. It has no tool that writes a claim,
+an assessment, an argument, or an edge between claims, nor any that
+corrects, detaches or reattaches an instance: the Steward owns the instance
+set. The executor refuses any tool name that was not offered and any
+provenance or instance call that names a claim other than the run's, so a
+name read off a page or invented by the model runs nothing. A unit test
 holds the line. Its report is the instrument's narrative and is data: the
 launcher reads it against the sources it names and records what it
 concludes in its own reasoning (§9, §11). Provenance rows it recorded are

@@ -15,7 +15,7 @@ import {
 import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { executeGraphReadTool, getClaimToolDefinition } from "../tools/graph-read-tools.js";
-import type { InstanceStance } from "../../schemas/common.js";
+import type { MatchedInstanceStance } from "../../schemas/common.js";
 
 /**
  * The Extension Agent (issue #72) — lives with the browser extension, never
@@ -50,7 +50,7 @@ export interface ClaimForAssessment {
   on_page_text: string;
   canonical_form: string;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
-  stance: InstanceStance;
+  stance: MatchedInstanceStance;
   match_confidence: number;
   graph: {
     status: string;

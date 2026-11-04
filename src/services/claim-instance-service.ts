@@ -353,8 +353,9 @@ async function instanceOf(claimId: string, instanceId: string): Promise<Instance
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Detach an instance from its claim: the source does not assert, deny or pose
- * the proposition. The row stays for the provenance record; its rank is
+ * Detach an instance from its claim: the source states a different
+ * proposition, or the instance misreads it. A source that only mentions the
+ * claim belongs to it with stance "mentions". The row stays for the provenance record; its rank is
  * cleared, and the reason goes to the claim's audit trail.
  */
 export async function detachClaimInstance(input: {
@@ -366,7 +367,7 @@ export async function detachClaimInstance(input: {
   const reason = input.reason.trim();
   if (!reason) {
     throw new ClaimInstanceError(
-      "reason is required: say what you read that shows the source does not assert, deny or pose the claim."
+      "reason is required: say what you read that shows the instance does not belong to the claim."
     );
   }
   if (!UUID_RE.test(input.instanceId)) {

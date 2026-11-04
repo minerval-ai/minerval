@@ -179,7 +179,7 @@ describe("the Provenance skill", () => {
 
   it("is headed as a method skill with its own sentence of standing", () => {
     const view = getSkillView(p, "claim-steward");
-    expect(view.startsWith("# Method skill: Provenance (version 1)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 3)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
     expect(view).not.toContain("## Failure modes");
   });
 });
@@ -310,7 +310,9 @@ describe("views", () => {
       "- mathematics (version 2, a domain skill, for claims tagged mathematics; this version changed: requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)). "
     );
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
-    expect(catalog).toContain("- provenance (version 1, a method skill; as first written). ");
+    expect(catalog).toContain(
+      "- provenance (version 3, a method skill; this version changed: an instance may only mention the claim (stance mentions), citing it or reporting the debate without taking a side; it is no vote in any count). "
+    );
     expect(catalog).toContain(getSkill("provenance").description.replace(/\s+/g, " ").trim());
     expect(getSkillCatalog("claim-steward")).toContain(
       "Loading it gives you: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor."

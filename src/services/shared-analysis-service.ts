@@ -42,12 +42,12 @@ import {
   type PageAnalysis,
   type PageAnnotation,
 } from "./extension-service.js";
-import type { InstanceStance } from "../schemas/common.js";
+import type { MatchedInstanceStance } from "../schemas/common.js";
 
 /** What the cache keeps per claim: enough to anchor and explain, no more. */
 export interface StoredAnnotation {
   verbatim_text: string;
-  stance: InstanceStance;
+  stance: MatchedInstanceStance;
   verdict: AnnotationVerdict;
   why: string;
   confidence: number;

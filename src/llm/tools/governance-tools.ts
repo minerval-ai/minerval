@@ -36,7 +36,8 @@ export function getGovernanceToolDefinitions(): Tool[] {
       name: "get_claim_instances",
       description:
         "Read the instances the graph currently records for a claim: each " +
-        "source that asserts, denies or poses the proposition, with the " +
+        "source that asserts, denies, poses or mentions the proposition " +
+        "(each with its stance; a mention takes no side), with the " +
         "passage, its attribution (speaker, publication, date, link), any " +
         "reading recorded from opening the source, what it was recorded as " +
         "drawing on, and where the source sits in the claim's provenance " +

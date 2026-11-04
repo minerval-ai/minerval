@@ -118,7 +118,7 @@ order a reader sees them, is yours to decide.
 
 Before the run ends, the following must be recorded: ${record}, the ${noun}'s importance and contestation, and your
 decision (log_stewardship_decision). If the assessment changed materially,
-notify the dependents it could matter to (notify_dependent_stewards).`;
+notify the dependents it could matter to (notify_steward).`;
 }
 
 /**
@@ -341,8 +341,8 @@ than starting again.`;
 
 The elicit_* tools (scholarly search over papers and trials) are in your
 toolset, at $${config.elicitUsdPerCall.toFixed(2)} a call against this run's
-budget. For most claims web_search is enough; reach for Elicit when the
-verdict turns on the scientific literature and the claim warrants the cost.`
+budget. Reach for Elicit when the verdict turns on the scientific
+literature, in proportion to the claim's importance.`
       : "";
 
   const pangramNote =

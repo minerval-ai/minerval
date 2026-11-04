@@ -523,9 +523,20 @@ describe("MCP tools", () => {
         source_id: "s-1",
         verbatim_text: "quoted text",
         context: null,
+        stance: "affirms",
         confidence: 0.9,
         source_title: "A paper",
         source_url: "https://example.org/paper",
+      },
+      {
+        id: "i-2",
+        source_id: "s-2",
+        verbatim_text: "the claim, as debated",
+        context: null,
+        stance: "mentions",
+        confidence: 1,
+        source_title: "An explainer",
+        source_url: "https://example.org/explainer",
       },
     ] as never);
     const result = await client.callTool({
@@ -539,7 +550,10 @@ describe("MCP tools", () => {
       status: "well_supported",
       confidence: 0.82,
     });
-    expect(payload.instances).toHaveLength(1);
+    // Each instance carries its stance, so a caller can tell a source that
+    // only mentions the claim from the ones that take a side.
+    expect(payload.instances).toHaveLength(2);
+    expect(payload.instances.map((i: { stance: string }) => i.stance)).toEqual(["affirms", "mentions"]);
 
     const missing = await client.callTool({
       name: "get_claim",
