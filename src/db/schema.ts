@@ -2698,6 +2698,13 @@ export const consistencySweeps = pgTable(
     runId: uuid("run_id"),
     // Assessed claims in the partition when the sweep started.
     claimsInScope: integer("claims_in_scope").notNull().default(0),
+    // The ledger variant a funded sweep ran as ('standard' | 'strong'),
+    // null for an eval or one-off sweep (#756): what the per-variant cost
+    // and yield the sweep's pricing and variant choice read are keyed on.
+    variant: text("variant"),
+    // What the sweep's run was metered at, in micro-USD (null when it ran
+    // without a pass meter): the observed cost per node (#756).
+    costMicroUsd: bigint("cost_micro_usd", { mode: "number" }),
     flagsRaised: integer("flags_raised").notNull().default(0),
     note: text("note"),
     error: text("error"),
@@ -3186,7 +3193,7 @@ export const curationRequests = pgTable(
     otherClaimId: uuid("other_claim_id").references(() => claims.id, {
       onDelete: "cascade",
     }),
-    // steward_escalation | reconcile_candidate | operator
+    // steward_escalation | consistency_sweep | audit | matcher | reconcile_candidate | operator
     source: text("source").notNull(),
     concern: text("concern").notNull(),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
@@ -3223,7 +3230,7 @@ export const curationRequests = pgTable(
       .where(sql`consumed_at IS NULL`),
     check(
       "ck_curation_requests_source",
-      sql`source IN ('steward_escalation', 'reconcile_candidate', 'operator')`
+      sql`source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')`
     ),
   ]
 );

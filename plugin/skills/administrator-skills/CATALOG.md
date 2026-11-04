@@ -11,7 +11,7 @@ How to estimate what a piece of work will cost before anyone pays for it: a requ
 
 Sections: For every administrator; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the researcher; Failure modes.
 
-### Mathematics (`skills/mathematics.md`, version 2, domain skill)
+### Mathematics (`skills/mathematics.md`, version 3, domain skill)
 
 How the constitution applies to propositions of mathematics: what a mathematical claim is, how proofs are arguments, how the six statuses and credence read for theorems and conjectures, what a machine-checked proof is as evidence, how formal statements are published and checked in Lean 4 against a pinned Mathlib, how the platform's solver and prize program work, and what money may never touch. Applies to claims tagged mathematics and to contributions on them. Does not apply to claims that merely use a number or a model.
 
@@ -73,7 +73,7 @@ A standing watch a mandate funds: the cheapest agent with the narrowest question
 
 ### Consistency Checker (`roles/consistency-checker.md`)
 
-The sweep that reads assessments against one another. Each Steward reads its own claim; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises each find with the Steward whose claim looks wrong, as a reassessment the ledger prices and funds like any other; it writes no verdict and owns no claim.
+The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.
 
 ### Solver (`roles/math-solver.md`)
 

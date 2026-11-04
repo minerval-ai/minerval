@@ -2,14 +2,14 @@
  * The Consistency Checker's mechanism (#330) against real Postgres: the
  * flag write path and its folding, the flag's expected gain entering the
  * formula valuation, partitions and what makes one due, the partition
- * listing a sweep reads, the ledger rows a sweep runs on and their daily
- * cap, and the precision read.
+ * listing a sweep reads, the ledger rows a sweep runs on and their two
+ * variants, and the precision read.
  */
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeAll } from "vitest";
 
 // Read by loadConfig on first use, which is after this line.
-process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY = "2";
+process.env.CONSISTENCY_SWEEPS_ENABLED = "true";
 process.env.CONSISTENCY_MIN_TAG_CLAIMS = "3";
 
 import { rawQuery } from "../../src/db/client.js";
@@ -22,8 +22,17 @@ import {
   listPartitions,
   partitionClaims,
   startSweep,
+  sweepYieldByVariant,
 } from "../../src/services/consistency-service.js";
-import { reconcileActions, ASSESS_GROUP } from "../../src/services/action-service.js";
+import {
+  reconcileActions,
+  ASSESS_GROUP,
+  priceConsistencySweep,
+} from "../../src/services/action-service.js";
+import {
+  estimateConsistencyNodeCostMicroUsd,
+  resetCostEstimateCache,
+} from "../../src/services/cost-estimate-service.js";
 import { refreshFormulaValuations } from "../../src/services/mandate-valuer-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
@@ -287,7 +296,7 @@ describe("partitions and sweeps (#330)", () => {
     expect(claims[1]!.changed).toBe(false);
   });
 
-  it("opens sweep rows for due partitions and funds them from the General mandate within the daily cap", async () => {
+  it("opens a standard and a strong row per due partition and funds one of them from the General mandate", async () => {
     resetAllocationPolicyCache();
     await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true`);
     const funder = await seedUser("platform");
@@ -298,19 +307,132 @@ describe("partitions and sweeps (#330)", () => {
     const open = await rawQuery<{ id: string; exclusion_group: string }>(
       `SELECT id, exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
     );
-    // At most the day's cap of rows is opened.
+    // Two variants per due partition, an exclusive set (#756); no count.
     expect(open.length).toBeGreaterThan(0);
-    expect(open.length).toBeLessThanOrEqual(2);
+    expect(open.length % 2).toBe(0);
+
+    // Each row is priced by its partition's assessed nodes (#756).
+    const partitions = await listPartitions(3);
+    const priced = await rawQuery<{ target_ref: string; variant: string; cost: string }>(
+      `SELECT target_ref, variant, cost_est_micro_usd::text AS cost
+         FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    for (const row of priced) {
+      const p = partitions.find((x) => (x.tag_id ?? "residual") === row.target_ref)!;
+      expect(p).toBeDefined();
+      expect(Number(row.cost)).toBe(
+        (await priceConsistencySweep(row.variant as "standard" | "strong", p.assessed)).microUsd
+      );
+    }
 
     await fundGrantSelfActions();
     await fundGrantSelfActions();
-    const funded = await rawQuery<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM action_allocations
-        WHERE exclusion_group LIKE 'consistency:%' AND grant_id = $1`,
+    const funded = await rawQuery<{ n: number; groups: number; variants: string[] }>(
+      `SELECT COUNT(*)::int AS n, COUNT(DISTINCT al.exclusion_group)::int AS groups,
+              ARRAY_AGG(DISTINCT a.variant) AS variants
+         FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE al.exclusion_group LIKE 'consistency:%' AND al.grant_id = $1`,
       [grantId]
     );
-    expect(funded[0]!.n).toBe(open.length);
-    expect(funded[0]!.n).toBeLessThanOrEqual(2);
+    // One variant bought per partition: at the default estimates and
+    // expected gain, the standard one for partitions this small.
+    expect(funded[0]!.n).toBe(open.length / 2);
+    expect(funded[0]!.groups).toBe(open.length / 2);
+    expect(funded[0]!.variants).toEqual(["standard"]);
+  });
+
+  it("chooses a partition's variant from its own two prices, and reprices an open row when its partition grows", async () => {
+    resetAllocationPolicyCache();
+    await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true`);
+    await rawQuery(`DELETE FROM action_allocations WHERE exclusion_group LIKE 'consistency:%'`);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE kind = 'consistency_sweep'`);
+    const funder = await seedUser("platform");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500_000_000, policy: "general" });
+    // A Grantmaker that judges the strong read worth ten times the cheap one
+    // (an override): above the per-node price ratio (about 8), so it buys strong.
+    await rawQuery(
+      `UPDATE grants SET is_platform = true,
+              allocation_policy = '{"consistency_strong_expected_gain": 10}'::jsonb
+        WHERE id = $1`,
+      [grantId]
+    );
+    resetAllocationPolicyCache();
+
+    await reconcileActions();
+    const groups = await rawQuery<{ exclusion_group: string }>(
+      `SELECT DISTINCT exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    expect(groups.length).toBeGreaterThan(0);
+    // An open row whose stored price is stale takes the partition's price again.
+    await rawQuery(
+      `UPDATE actions SET cost_est_micro_usd = 1 WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    await reconcileActions();
+    const stale = await rawQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM actions
+        WHERE kind = 'consistency_sweep' AND status = 'open' AND cost_est_micro_usd = 1`
+    );
+    expect(stale[0]!.n).toBe(0);
+
+    await fundGrantSelfActions();
+    const funded = await rawQuery<{ variant: string }>(
+      `SELECT a.variant FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE al.exclusion_group LIKE 'consistency:%' AND al.grant_id = $1`,
+      [grantId]
+    );
+    expect(funded.length).toBe(groups.length);
+    expect(new Set(funded.map((f) => f.variant))).toEqual(new Set(["strong"]));
+    await rawQuery(`UPDATE grants SET allocation_policy = NULL WHERE id = $1`, [grantId]);
+    resetAllocationPolicyCache();
+  });
+});
+
+describe("what each variant's sweeps cost and found (#756)", () => {
+  it("records a funded sweep's variant and cost, and prices the variant from them once enough ran", async () => {
+    resetCostEstimateCache();
+    const before = await estimateConsistencyNodeCostMicroUsd("standard", 20);
+    expect(before.basis).not.toBe("observed");
+    const p = { partition: "residual" as const, tagId: null, label: "residual" };
+    for (let i = 0; i < 5; i++) {
+      const id = await startSweep(p, "standard");
+      // 40 nodes at 800 micro-USD a node.
+      await finishSweep({ sweepId: id, status: "done", claimsInScope: 40, flagsRaised: 0, costMicroUsd: 32_000 });
+    }
+    const [row] = await rawQuery<{ variant: string; cost_micro_usd: string }>(
+      `SELECT variant, cost_micro_usd::text FROM consistency_sweeps ORDER BY started_at DESC LIMIT 1`
+    );
+    expect(row).toEqual({ variant: "standard", cost_micro_usd: "32000" });
+    resetCostEstimateCache();
+    expect(await estimateConsistencyNodeCostMicroUsd("standard", 20)).toEqual({ microUsd: 800, basis: "observed" });
+    // The strong variant has no sweeps of its own: still its model's price.
+    expect((await estimateConsistencyNodeCostMicroUsd("strong", 20)).basis).toBe("model_price");
+  });
+
+  it("counts a variant's upheld flags per node read", async () => {
+    const before = await sweepYieldByVariant(60);
+    const p = { partition: "residual" as const, tagId: null, label: "residual" };
+    const sweepId = await startSweep(p, "strong");
+    const a = await seedClaim("primary");
+    const b = await seedClaim("neighbor");
+    await assess(a, { status: "supported", credence: 0.8 });
+    await assess(b, { status: "supported" });
+    await flagInconsistency({
+      sweepId,
+      kind: "stale_premise",
+      primaryClaimId: a,
+      claimIds: [b],
+      rationale: "The primary rests on the neighbor's old verdict, which has since changed.",
+      expectedGain: 0.8,
+    });
+    await finishSweep({ sweepId, status: "done", claimsInScope: 30, flagsRaised: 1 });
+    // The Steward's pass moves the verdict: the flag is upheld.
+    await assess(a, { status: "inconclusive", credence: 0.5 });
+    const after = await sweepYieldByVariant(60);
+    const strongBefore = before.find((y) => y.variant === "strong")!;
+    const strongAfter = after.find((y) => y.variant === "strong")!;
+    expect(strongAfter.sweeps - strongBefore.sweeps).toBe(1);
+    expect(strongAfter.nodes - strongBefore.nodes).toBe(30);
+    expect(strongAfter.upheld - strongBefore.upheld).toBe(1);
   });
 });
 

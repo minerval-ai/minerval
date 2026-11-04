@@ -88,7 +88,7 @@ describe("the Mathematics skill", () => {
   it("loads with the frontmatter Appendix A specifies", () => {
     const m = getSkill("mathematics");
     expect(m.displayName).toBe("Mathematics");
-    expect(m.version).toBe(2);
+    expect(m.version).toBe(3);
     expect(m.sinceEpoch).toBe("2026-09-domain-skills");
     expect(m.domains).toEqual(["mathematics"]);
     expect(m.description).toMatch(/^How the constitution applies to propositions of mathematics/);
@@ -222,6 +222,12 @@ describe("ROLE_VIEW", () => {
       "For the Claim Steward",
       "For the researcher",
     ]);
+    // The Consistency Checker reads assessments against each other: the
+    // section for everyone and the standards a good assessment meets.
+    expect(ROLE_VIEW["consistency-checker"]).toEqual([
+      "For every administrator",
+      "Standards for judging",
+    ]);
     expect(SKILL_ROLES).toEqual([
       "claim-steward",
       "audit-agent",
@@ -233,13 +239,14 @@ describe("ROLE_VIEW", () => {
       "matcher",
       "extractor",
       "researcher",
+      "consistency-checker",
     ]);
   });
 
-  it("never hands Failure modes to any role, and Standards for judging only to Audit", () => {
+  it("never hands Failure modes to any role, and Standards for judging only to the roles that judge assessments", () => {
     for (const role of SKILL_ROLES) {
       expect(ROLE_VIEW[role]).not.toContain("Failure modes");
-      if (role !== "audit-agent") {
+      if (role !== "audit-agent" && role !== "consistency-checker") {
         expect(ROLE_VIEW[role]).not.toContain("Standards for judging");
       }
     }
@@ -251,7 +258,7 @@ describe("views", () => {
 
   it("wraps the role's sections with the citable heading and the standing sentence", () => {
     const view = getSkillView(m, "claim-steward");
-    expect(view.startsWith("# Domain skill: Mathematics (version 2)\n\n" + SKILL_STANDING)).toBe(
+    expect(view.startsWith("# Domain skill: Mathematics (version 3)\n\n" + SKILL_STANDING)).toBe(
       true
     );
     for (const h of ROLE_VIEW["claim-steward"]) expect(view).toContain(`## ${h}\n`);
@@ -307,7 +314,7 @@ describe("views", () => {
     expect(catalog.split("\n")).toHaveLength(4);
     expect(catalog).toContain("- costing (version 1, a method skill; as first written). ");
     expect(catalog).toContain(
-      "- mathematics (version 2, a domain skill, for claims tagged mathematics; this version changed: requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)). "
+      "- mathematics (version 3, a domain skill, for claims tagged mathematics; this version changed: a solver attempt is funded through a mandate's plan and its result goes to the claim's Steward, which did not launch it; a Steward that needs an attempt files a request for funders (constitution Part VIII, instruments)). "
     );
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
     expect(catalog).toContain(

@@ -500,6 +500,7 @@ composition table:
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |
 | extractor | `For the Extractor` only |
+| consistency-checker | `For every administrator` + `Standards for judging` (it reads assessments against each other) |
 
 **Placement.** The skill is a separate cached system block after the
 constitution-plus-role block. The seam's `system` type widens from `string`
@@ -1307,6 +1308,19 @@ attempt per opening" stays a clean exclusive set. Two variants, `standard`
 so the marginal-return rule has meaning and the cost estimator gets two live
 series. A larger `campaign` variant and cross-day accumulation are deferred
 until the live series exists.
+
+Who starts an attempt (#768): only a mandate's plan. No admin launches the
+solver on its own judgment, the Steward included, because an attempt can
+cost a hundred owls or more and the money for it is a funder's choice; the
+constitution's instruments paragraph (Part VIII) says so. The result goes
+to the claim's Steward (`attempt_completed`, section 7.9), which did not
+launch it and judges it as the launching admin of any instrument would. A
+Steward whose verdict turns on an attempt that no plan funds files a
+request for one (skills/mathematics, "When your verdict needs an
+attempt"); a Grantmaker that reads it may plan the `attempt_proof` item.
+`delegate_research` is not a route to an attempt: the researcher has no
+`lean_check`, so it can bring back a sketch or a route, never a checked
+proof.
 
 Preconditions to open a group: the claim has a `published` formalization
 (calibration controls are formalized too; only the review period is waived
