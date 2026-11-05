@@ -79,8 +79,8 @@ export const ROLE_VIEW = {
   // makes itself: identity (Curator, Matcher) and recording instances and
   // domains (Extractor). Not the Grantmaker's, the Reviewer's or the Audit
   // Agent's procedures, which it never carries out (#765). Standards for
-  // judging and Failure modes stay out of every agent's view but Audit's:
-  // they feed the corpus judge and its rubric (docs/mathematics.md, the
+  // judging and Failure modes stay out of its view (only Audit reads both,
+  // and the Consistency Checker the standards): they feed the corpus judge and its rubric (docs/mathematics.md, the
   // skill's sections), and an agent shown the rubric writes to it.
   "claim-steward": [
     "For every administrator",
