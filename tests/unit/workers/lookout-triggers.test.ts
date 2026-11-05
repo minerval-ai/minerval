@@ -6,8 +6,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * one watches for retractions; honours its cadence through a
  * persisted high-water mark; joins Crossref notices to the graph's sources
  * and queues one event per matched source on every subscribed lookout;
- * never re-queues a notice a lookout already holds; advances the mark only
- * after a successful poll.
+ * never re-queues a notice a lookout already holds; advances the mark to
+ * now only when the whole window was read, and otherwise only as far as it
+ * read (#686).
  */
 
 const { state, queries } = vi.hoisted(() => ({
@@ -15,6 +16,10 @@ const { state, queries } = vi.hoisted(() => ({
     subscribed: 1,
     mark: null as null | { since: string; polled_at: string },
     notices: [] as Array<Record<string, unknown>>,
+    complete: true,
+    readThrough: null as null | Date,
+    windowInput: null as null | Record<string, unknown>,
+    doiBatches: [] as string[][],
     matches: [] as Array<Record<string, unknown>>,
     resting: [] as Array<Record<string, unknown>>,
     dupPending: 0,
@@ -37,8 +42,14 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({ lookoutRetractionPollHours: 24 }),
 }));
 vi.mock("../../../src/services/source-watch-service.js", () => ({
-  recentRetractions: vi.fn(async () => state.notices),
-  sourcesForDois: vi.fn(async () => state.matches),
+  retractionNoticesSince: vi.fn(async (input: Record<string, unknown>) => {
+    state.windowInput = input;
+    return { notices: state.notices, complete: state.complete, readThrough: state.readThrough };
+  }),
+  sourcesForDois: vi.fn(async (dois: string[]) => {
+    state.doiBatches.push(dois);
+    return state.doiBatches.length === 1 ? state.matches : [];
+  }),
   claimsRestingOnSources: vi.fn(async () => state.resting),
 }));
 vi.mock("../../../src/services/source-facts-service.js", () => ({
@@ -64,6 +75,10 @@ beforeEach(() => {
   state.subscribed = 1;
   state.mark = null;
   state.notices = [];
+  state.complete = true;
+  state.readThrough = null;
+  state.windowInput = null;
+  state.doiBatches = [];
   state.matches = [];
   state.resting = [];
   state.dupPending = 0;
@@ -106,7 +121,7 @@ describe("retractionPollTick", () => {
       { doi: "10.1/paper", source_id: "s-2", url: "https://x.org/10.1/paper", title: "Mirror", claim_ids: [] },
     ];
     const r = await retractionPollTick({ now: NOW });
-    expect(r).toEqual({ skipped: false, notices: 2, matchedSources: 2, sourceEvents: 2, eventsQueued: 2 });
+    expect(r).toEqual({ skipped: false, notices: 2, complete: true, matchedSources: 2, sourceEvents: 2, eventsQueued: 2 });
     // The orphan mirror (no claims resting on it) wakes nobody.
     expect(state.fanout).toHaveLength(1);
     expect(state.fanout[0]).toMatchObject({
@@ -121,7 +136,40 @@ describe("retractionPollTick", () => {
       },
     });
     const mark = queries.find((x) => x.q.includes("INSERT INTO platform_flags"))!;
-    expect(JSON.parse(mark.params[1] as string).since).toBe(new Date(NOW).toISOString());
+    expect(JSON.parse(mark.params[1] as string)).toEqual({
+      since: new Date(NOW).toISOString(),
+      polled_at: new Date(NOW).toISOString(),
+    });
+  });
+
+  it("reads the whole window and joins its DOIs in chunks (#686)", async () => {
+    state.notices = Array.from({ length: 1200 }, (_, i) => ({
+      notice_doi: `10.1/n${i}`, retracted_dois: [`10.1/p${i}`], type: "correction", title: null, updated: null, source: null,
+    }));
+    const r = await retractionPollTick({ now: NOW });
+    expect(state.windowInput).toMatchObject({ types: ["retraction", "correction", "expression_of_concern"] });
+    expect(r.notices).toBe(1200);
+    expect(state.doiBatches.map((b) => b.length)).toEqual([500, 500, 200]);
+  });
+
+  it("advances the mark only as far as it read when the window was not finished, and keeps the cadence open", async () => {
+    state.mark = { since: "2026-09-09T00:00:00Z", polled_at: "2026-09-09T00:00:00Z" };
+    state.complete = false;
+    state.readThrough = new Date("2026-09-10T03:00:00Z");
+    const r = await retractionPollTick({ now: NOW });
+    expect(r.complete).toBe(false);
+    const mark = queries.find((x) => x.q.includes("INSERT INTO platform_flags"))!;
+    expect(JSON.parse(mark.params[1] as string)).toEqual({
+      since: "2026-09-10T03:00:00.000Z",
+      polled_at: "2026-09-09T00:00:00.000Z",
+    });
+  });
+
+  it("leaves the mark alone when nothing could be read", async () => {
+    state.complete = false;
+    state.readThrough = null;
+    await retractionPollTick({ now: NOW });
+    expect(queries.some((x) => x.q.includes("INSERT INTO platform_flags"))).toBe(false);
   });
 
   it("reaches the claims resting on a source through provenance, even when none asserts it (#507)", async () => {

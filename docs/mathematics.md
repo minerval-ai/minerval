@@ -495,7 +495,7 @@ composition table:
 | claim-steward | every section except `Standards for judging` and `Failure modes` |
 | audit-agent | every section except `Failure modes` |
 | grantmaker | `For every administrator` + `For the Grantmaker` |
-| lookout | `For every administrator` only (it judges relevance on a mandate's behalf, never truth; it carries the mandate's skills as the review pass does) |
+| lookout | `For every administrator` only (it raises candidates on a mandate's behalf and writes no verdict; it carries the mandate's skills as the review pass does) |
 | contribution-reviewer, dispute-arbitrator | `For every administrator` + `For the Contribution Reviewer and the Dispute Arbitrator` |
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |

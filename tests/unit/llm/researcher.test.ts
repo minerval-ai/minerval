@@ -351,6 +351,26 @@ describe("toolset by model", () => {
     expect(task).toContain("launched by the Grantmaker of a funded mandate");
   });
 
+  it("serves the Curator and the Audit Agent with reads and a report, writing nothing to the graph", async () => {
+    for (const [launcher, name, serves] of [
+      ["curator", "the Curator, which keeps the graph's structure", "the Curator's work on the graph's structure"],
+      ["audit", "the Audit Agent, reviewing how decisions were made", "the Audit Agent's review of a decision"],
+    ] as const) {
+      const i = input({ claim: false });
+      i.run.requested_by = launcher;
+      await runResearcher(i);
+      const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+      expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+      expect(names).not.toContain("record_claim_instance");
+      expect(names).not.toContain("submit_contribution");
+      expect(names).toContain("get_source_examinations");
+      const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+      expect(task).toContain(`launched by ${name}`);
+      expect(task).toContain(`This investigation serves ${serves}. It writes nothing to the graph`);
+      expect(task).not.toContain("serves a mandate");
+    }
+  });
+
   it("withholds every graph-writing tool from a Grantmaker's run, whatever it was handed", async () => {
     const i = input();
     i.run.requested_by = "grantmaker";
@@ -367,7 +387,107 @@ describe("toolset by model", () => {
   });
 });
 
+describe("a run that works a request", () => {
+  const requestRun = (requestedBy: "request" | "request_scope") => {
+    const i = input({ claim: false, model: "claude-opus-5-5", model_tier: "strong" });
+    i.run.requested_by = requestedBy;
+    return i;
+  };
+
+  it("gets a long backstop rather than the delegated cap, and is told nobody waits on it (#734)", async () => {
+    (mocks.config as Record<string, unknown>).researcherRequestMaxWallMinutes = 240;
+    try {
+      await runResearcher(requestRun("request"));
+      expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(240 * 60_000);
+      const task = (mocks.longRunCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+      expect(task).toContain("a backstop of 240 minutes of wall-clock time ends a run that has stopped making progress");
+      expect(task).toContain("Nobody is waiting on this run");
+      expect(task).not.toContain("is waiting on the report");
+
+      await runResearcher(requestRun("request_scope"));
+      expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(240 * 60_000);
+
+      // A delegated run keeps the short cap and its reason.
+      await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
+      expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(20 * 60_000);
+      const delegated = (mocks.longRunCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+      expect(delegated).toContain("because whoever launched it is waiting on the report");
+    } finally {
+      delete (mocks.config as Record<string, unknown>).researcherRequestMaxWallMinutes;
+    }
+  });
+
+  it("reads requests on a request run only, and documents on every run (#746)", async () => {
+    await runResearcher(requestRun("request"));
+    let names = (mocks.longRunCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    for (const n of ["get_request", "list_requests", "get_source", "get_source_examinations", "file_request"]) {
+      expect(names).toContain(n);
+    }
+    expect(names).not.toContain("close_request");
+    expect(names).not.toContain("revise_request");
+
+    await runResearcher(requestRun("request_scope"));
+    names = (mocks.longRunCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names).toContain("get_request");
+    expect(names).toContain("list_requests");
+
+    await runResearcher(input());
+    names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names).toContain("get_source");
+    expect(names).toContain("get_source_examinations");
+    expect(names).not.toContain("get_request");
+    expect(names).not.toContain("list_requests");
+  });
+
+  it("refuses a malformed id on the document reads, writing nothing", async () => {
+    mocks.script.calls = [
+      { name: "get_source", input: { source_id: "not-an-id" } },
+      { name: "get_source_examinations", input: { source_id: "" } },
+    ];
+    await runResearcher(input());
+    expect(JSON.parse(mocks.script.outputs[0]!).message).toMatch(/is not a source id/);
+    expect(JSON.parse(mocks.script.outputs[1]!).message).toMatch(/is not a source id/);
+    expect(mocks.writes.filter((w) => w.table !== "research_runs")).toEqual([]);
+  });
+});
+
+describe("the issue channel (#743)", () => {
+  it("carries raise_issue and its companions, and the guidance on using them", async () => {
+    await runResearcher(input());
+    const names = (mocks.toolLoopCalls[0]!.tools as Array<{ name: string }>).map((t) => t.name);
+    for (const n of ["raise_issue", "update_issue", "search_issues", "get_issue"]) expect(names).toContain(n);
+    const system = mocks.toolLoopCalls[0]!.system as string[];
+    expect(system[0]).toContain("## Raising Issues");
+  });
+});
+
 describe("the prompt", () => {
+  it("says which of its writing readers see (#739)", async () => {
+    await runResearcher(input());
+    const system = (mocks.toolLoopCalls[0]!.system as string[])[0]!.replace(/\s+/g, " ");
+    expect(system).not.toContain("nothing you write is shown to the public");
+    expect(system).toContain("Your report and notebook go only to the administrator.");
+    expect(system).toContain("provenance notes, examination findings, and the instances you record");
+  });
+
+  it("restates §9's analysis paragraph only when the constitution is left out", async () => {
+    await runResearcher(input());
+    const withConstitution = (mocks.toolLoopCalls.at(-1)!.system as string[])[0]!;
+    expect(withConstitution).toContain("Hold your own analysis to §9's standard, and higher");
+    expect(withConstitution).not.toContain("try analyses until one comes out");
+    await runResearcher(input({ include_constitution: false }));
+    const without = (mocks.toolLoopCalls.at(-1)!.system as string[])[0]!;
+    expect(without).toContain("try analyses until one comes out");
+    expect(without).not.toContain("<<analysis>>");
+  });
+
+  it("leaves the answer's length to judgment", async () => {
+    const { RESEARCH_REPORT_TOOL } = await import("../../../src/llm/agents/researcher.js");
+    const answer = (RESEARCH_REPORT_TOOL.input_schema.properties as Record<string, { description: string }>).answer!;
+    expect(answer.description).not.toMatch(/sentences/);
+    expect(answer.description).toContain("as long as it needs to be");
+  });
+
   it("prepends the constitution by default and lists the skills it can load, splicing none", async () => {
     await runResearcher(input());
     const system = mocks.toolLoopCalls[0]!.system as string[];

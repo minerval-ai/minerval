@@ -806,8 +806,9 @@ These act through tools over the life of a claim and the graph:
   retraction record, and the open web and raises *candidates*: a claim to
   reassess, valued on the mandate's behalf up to a ceiling the Grantmaker
   delegated; a source to ingest, appended to the mandate's plan; a note for
-  the next review pass. It judges relevance, never truth: it writes no
-  assessment, sets no importance, and moves no money, and every flag is
+  the next review pass. A Steward or the Grantmaker decides on what it
+  raises: it writes no assessment, sets no importance, and moves no
+  money, and every flag is
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
   (docs/allocation.md, "Lookouts").
@@ -1056,7 +1057,9 @@ instrument, of which the solver is the special case (special too in how it
 starts: no administrator launches it; an attempt is funded through a
 mandate's plan and its result goes to the claim's Steward, which files a
 request when it needs one no plan funds; docs/mathematics.md 7.2, #768). An administrator (the
-Claim Steward on its claim, a Grantmaker on a funded mandate) launches it
+Claim Steward on its claim, a Grantmaker on a funded mandate, the Curator
+on the graph's structure, the Audit Agent on a decision under review)
+launches it
 with `delegate_research`: a brief written for a capable assistant that
 knows nothing of the claim and cannot ask a question back, a model tier, a
 dollar ceiling, an effort level, and whether the constitution is prepended
@@ -1078,7 +1081,10 @@ Cheap runs the ordinary loop on the cheap tier without the sandbox, and is
 the right choice for reading and mapping a large literature economically.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
-(`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
+(`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
+`get_source`, `get_source_examinations`, and on a request or scoping run
+`get_request` and `list_requests`, without who funded the work), the issue
+tools every agent carries (`raise_issue` and its companions), the
 Elicit search tools and the Pangram tools (`pangram_check_ai`,
 `pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
 task, the Provenance skill's tools except `provenance_write_map` and
@@ -1096,8 +1102,9 @@ located passage), the run's claim's instances through the Steward's
 question (on the same runs that get the provenance recording tools, never
 on a quantity, with the node's id filled from the run, an `instance_id` or
 `answer_id` outside the question refused, and the row's `created_by` set to
-`researcher`), and
-the stored copy of a source it fetched. It has no tool that writes a claim,
+`researcher`),
+the stored copy of a source it fetched, and the issue reports any agent may
+raise for the maintainers. It has no tool that writes a claim,
 an assessment, an argument, or an edge between claims, nor any that
 corrects, detaches or reattaches an instance: the Steward owns the instance
 set. The executor refuses any tool name that was not offered and any
@@ -1113,12 +1120,18 @@ graph, and funding is kept apart from what the graph says (§19), so
 `delegate_research` from a mandate takes no `claim_id` and no
 `examine_source_id`, and the researcher withholds the provenance and
 examination tools from any run whose launcher is not a Claim Steward
-(`launcherWritesGraph`, `src/services/research-run-service.ts`).
+(`launcherWritesGraph`, `src/services/research-run-service.ts`). Research
+the Curator or the Audit Agent launches reads and reports in the same way:
+the Curator owns structure, not sources, and the Audit Agent judges the
+record rather than adding to it. Both pay from their run's own action
+budget, as the Steward does from its pass's, and read back the runs their
+role launched with `get_research_run`.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both
 loops, a wrap-up notice at 85 percent of it, a wall cap
-(`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); on
+(`RESEARCHER_MAX_WALL_MINUTES` on a delegated run, a longer backstop on a
+request run) and a turn cap (`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
 then stopped. What a run may be given is the launcher's own money, and
@@ -1134,9 +1147,12 @@ spend, the research it already launched included; a pass with no budget is
 not offered `delegate_research`. A Grantmaker pays from its mandate's
 uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
 which covers a run's `budget_usd` and any `contribution_budget_usd`; there
-is no deployment cap on either, and no count of runs per pass; a run's
+is no deployment cap on either, and no count of runs per pass; a delegated run's
 wall-clock time is capped (`RESEARCHER_MAX_WALL_MINUTES`) because its
-launcher waits on it, and the launcher is told so. A durable daily
+launcher waits on it, and the launcher is told so. A request run from the
+ledger has no launcher waiting; its budget bounds it, and a long backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240) only ends a run that has
+stopped making progress, which the run is told with that reason. A durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
 it for research no funder pays for (a pass with neither a user nor a job
 on its usage context), as the LLM budget tracker's limits apply only to
@@ -1274,7 +1290,7 @@ non-Anthropic model. The tagger's is narrower still ("which of these
 existing tags, at what grain?"), makes no epistemic call, and runs over
 every claim, so it shares that tier: the cheapest capable model, in
 production as in dev. The Lookout's question ("did something happen that
-warrants work in my scope?") is relevance, not truth, and it runs often,
+warrants work in my scope?") raises candidates rather than verdicts, and it runs often,
 so it shares the tier too, and a Grantmaker can pin a stronger model on
 one lookout whose brief warrants it. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,

@@ -158,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11045,
-    "fullChars": 96166,
+    "roleChars": 11519,
+    "fullChars": 96640,
     "skills": [
       {
         "name": "costing",
@@ -239,8 +239,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13202,
-    "fullChars": 98323,
+    "roleChars": 13618,
+    "fullChars": 98739,
     "skills": [
       {
         "name": "costing",
@@ -328,12 +328,12 @@
     "name": "Lookout",
     "stage": 9,
     "group": "governance",
-    "tagline": "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    "tagline": "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.",
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 12398,
-    "fullChars": 97519,
+    "roleChars": 10434,
+    "fullChars": 95555,
     "skills": [
       {
         "name": "costing",
@@ -423,8 +423,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 15113,
-    "fullChars": 100234,
+    "roleChars": 14773,
+    "fullChars": 99894,
     "skills": [
       {
         "name": "costing",

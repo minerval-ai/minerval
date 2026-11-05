@@ -669,6 +669,12 @@ const configSchema = z.object({
   // average.
   contributionReviewEstimateUsd: z.coerce.number().min(0).default(0.25),
   researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
+  // A request run from the ledger (#734) has no launcher waiting on it, so
+  // the 20-minute cap above has no reason there: its budget, the quote its
+  // funders paid, bounds the work. This is only a backstop against a run
+  // that has stopped making progress without spending, and the run is told
+  // it with that reason.
+  researcherRequestMaxWallMinutes: z.coerce.number().min(1).default(240),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
   // turn re-reads the history, so no turn is free and the ceiling ends
@@ -874,7 +880,7 @@ const configSchema = z.object({
   taggerModel: modelId(OPENROUTER_MODELS.flash),
   // The Lookout: a standing watch a mandate funds (docs/allocation.md,
   // "Lookouts"). Its judgment is "did something happen that warrants work
-  // in my scope?" — relevance, not truth — and it runs often, so it belongs
+  // in my scope?" (it raises candidates, never verdicts) and it runs often, so it belongs
   // on the cheap tier (OPENROUTER_MODELS.flash), the Matcher's and the
   // tagger's model, with web search like every model (tools/web-search-tool.ts).
   // A Grantmaker pins a stronger model on a lookout (lookouts.model) where
@@ -1133,6 +1139,7 @@ export function loadConfig(): Config {
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
+    researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
     maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,

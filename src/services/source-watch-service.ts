@@ -76,6 +76,8 @@ type CrossrefWork = {
   issued?: { "date-parts"?: number[][] };
   published?: { "date-parts"?: number[][] };
   source?: string;
+  /** When the record was last deposited; Crossref's `updated` sort and filter use it. */
+  deposited?: { "date-time"?: string };
 };
 
 function dateOf(w: CrossrefWork): string | null {
@@ -169,40 +171,138 @@ export interface RetractionNotice {
   source: string | null;
 }
 
+type RetractionType = "retraction" | "correction" | "expression_of_concern";
+
+type CrossrefWorkList = {
+  message?: {
+    items?: CrossrefWork[];
+    "total-results"?: number;
+    "next-cursor"?: string;
+  };
+};
+
+function retractionFilter(since: Date, types: RetractionType[] | undefined): string {
+  const day = since.toISOString().slice(0, 10);
+  const ts = types?.length ? types : ["retraction"];
+  return [...ts.map((t) => `update-type:${t}`), `from-update-date:${day}`].join(",");
+}
+
+const NOTICE_SELECT = "DOI,title,type,update-to,source,deposited";
+
+function toNotice(n: CrossrefWork): RetractionNotice {
+  const ups = updatesOf(n);
+  return {
+    notice_doi: (n.DOI ?? "").toLowerCase(),
+    retracted_dois: ups.map((u) => u.doi).filter(Boolean),
+    type: ups[0]?.type ?? "retraction",
+    title: n.title?.[0] ?? null,
+    updated: ups[0]?.updated ?? null,
+    source: n.source ?? null,
+  };
+}
+
+export interface RetractionPage {
+  /** How many notices Crossref holds for this filter, when it says. */
+  total: number | null;
+  offset: number;
+  /** The offset of the next page, or null when this page reached the end. */
+  next_offset: number | null;
+  rows: RetractionNotice[];
+}
+
 /**
- * Retraction (and, with `types`, correction / concern) notices added to
- * Crossref since `since`, optionally narrowed by a free-text query. Both
- * publisher-deposited and Retraction Watch entries come back; `source`
- * says which.
+ * One page of retraction (and, with `types`, correction / concern) notices
+ * added to Crossref since `since`, newest first, optionally narrowed by a
+ * free-text query, with the total so a reader knows how much is left.
+ * Both publisher-deposited and Retraction Watch entries come back; `source`
+ * says which. Null when Crossref could not be read.
  */
+export async function recentRetractionsPage(input: {
+  since: Date;
+  query?: string | null;
+  types?: RetractionType[];
+  rows?: number;
+  offset?: number;
+}): Promise<RetractionPage | null> {
+  const filter = retractionFilter(input.since, input.types);
+  const q = input.query?.trim() ? `&query=${encodeURIComponent(input.query.trim())}` : "";
+  const rows = Math.min(200, Math.max(1, input.rows ?? 50));
+  // Crossref serves offsets up to 10,000; past that a reader narrows the query.
+  const offset = Math.min(10_000, Math.max(0, Math.floor(input.offset ?? 0) || 0));
+  const res = await crossrefJson<CrossrefWorkList>(
+    `/works?filter=${encodeURIComponent(filter)}${q}&rows=${rows}&offset=${offset}` +
+      `&sort=updated&order=desc&select=${NOTICE_SELECT}`
+  );
+  if (!res?.message) return null;
+  const items = res.message.items ?? [];
+  const total = typeof res.message["total-results"] === "number" ? res.message["total-results"] : null;
+  const end = offset + items.length;
+  return {
+    total,
+    offset,
+    next_offset: items.length === rows && (total === null || end < total) ? end : null,
+    rows: items.map(toNotice),
+  };
+}
+
+/** The first page of `recentRetractionsPage`, as a list (empty when Crossref could not be read). */
 export async function recentRetractions(input: {
   since: Date;
   query?: string | null;
-  types?: Array<"retraction" | "correction" | "expression_of_concern">;
+  types?: RetractionType[];
   rows?: number;
 }): Promise<RetractionNotice[]> {
-  const since = input.since.toISOString().slice(0, 10);
-  const types = input.types?.length ? input.types : ["retraction"];
-  const filter = [
-    ...types.map((t) => `update-type:${t}`),
-    `from-update-date:${since}`,
-  ].join(",");
-  const q = input.query?.trim() ? `&query=${encodeURIComponent(input.query.trim())}` : "";
-  const rows = Math.min(200, Math.max(1, input.rows ?? 50));
-  const res = await crossrefJson<{ message?: { items?: CrossrefWork[] } }>(
-    `/works?filter=${encodeURIComponent(filter)}${q}&rows=${rows}&sort=updated&order=desc&select=DOI,title,type,update-to,source`
-  );
-  return (res?.message?.items ?? []).map((n) => {
-    const ups = updatesOf(n);
-    return {
-      notice_doi: (n.DOI ?? "").toLowerCase(),
-      retracted_dois: ups.map((u) => u.doi).filter(Boolean),
-      type: ups[0]?.type ?? "retraction",
-      title: n.title?.[0] ?? null,
-      updated: ups[0]?.updated ?? null,
-      source: n.source ?? null,
-    };
-  });
+  return (await recentRetractionsPage(input))?.rows ?? [];
+}
+
+export interface RetractionWindow {
+  notices: RetractionNotice[];
+  /** True when every notice in the window was read. */
+  complete: boolean;
+  /**
+   * The Crossref record date of the newest notice read (they are read
+   * oldest first), so a poll that stopped early can resume from it.
+   */
+  readThrough: Date | null;
+}
+
+/**
+ * Every notice of `types` whose Crossref record changed since `since`,
+ * read oldest first with Crossref's deep-paging cursor until the window
+ * is exhausted (#686). The retraction poll used to read one page of the
+ * newest 200 and then move its mark past the rest. A failed page, or
+ * `maxPages` pages, ends the read early with `complete: false` and
+ * `readThrough` set, so the caller advances its mark only as far as it read.
+ */
+export async function retractionNoticesSince(input: {
+  since: Date;
+  types: RetractionType[];
+  pageRows?: number;
+  maxPages?: number;
+}): Promise<RetractionWindow> {
+  const filter = retractionFilter(input.since, input.types);
+  const rows = Math.min(1000, Math.max(1, input.pageRows ?? 1000));
+  const maxPages = Math.max(1, input.maxPages ?? 20);
+  const notices: RetractionNotice[] = [];
+  let readThrough: Date | null = null;
+  let cursor = "*";
+  for (let page = 0; page < maxPages; page++) {
+    const res = await crossrefJson<CrossrefWorkList>(
+      `/works?filter=${encodeURIComponent(filter)}&rows=${rows}` +
+        `&cursor=${encodeURIComponent(cursor)}&sort=updated&order=asc&select=${NOTICE_SELECT}`
+    );
+    if (!res?.message) return { notices, complete: false, readThrough };
+    const items = res.message.items ?? [];
+    for (const n of items) {
+      notices.push(toNotice(n));
+      const at = n.deposited?.["date-time"];
+      if (at) readThrough = new Date(at);
+    }
+    const next = res.message["next-cursor"];
+    if (items.length < rows || !next) return { notices, complete: true, readThrough };
+    cursor = next;
+  }
+  return { notices, complete: false, readThrough };
 }
 
 export interface ScopeSource {
@@ -217,11 +317,14 @@ export interface ScopeSource {
 
 /**
  * The sources behind a set of claims (a subtree root, or explicit ids),
- * with the DOIs their URLs carry — what a watch has to check.
+ * with the DOIs their URLs carry — what a watch has to check. Sources
+ * named by id (`sourceIds`, e.g. the one a retraction notice names, #685)
+ * come back with every claim that asserts them, not only claims in scope.
  */
 export async function scopeSources(input: {
   claimIds?: string[];
   rootClaimId?: string | null;
+  sourceIds?: string[];
   limit?: number;
 }): Promise<ScopeSource[]> {
   const limit = Math.min(200, Math.max(1, input.limit ?? 50));
@@ -229,6 +332,7 @@ export async function scopeSources(input: {
   // Model-supplied ids: a malformed one is dropped rather than failing the query.
   const ids = (input.claimIds ?? []).filter((id) => uuid.test(id));
   const root = input.rootClaimId && uuid.test(input.rootClaimId) ? input.rootClaimId : null;
+  const sourceIds = (input.sourceIds ?? []).filter((id) => uuid.test(id));
   const rows = await rawQuery<{
     source_id: string;
     url: string | null;
@@ -251,11 +355,12 @@ export async function scopeSources(input: {
             array_agg(DISTINCT ci.claim_id) AS claim_ids
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
-      WHERE ci.claim_id IN (SELECT id FROM wanted) AND ci.detached_at IS NULL
+      WHERE (ci.claim_id IN (SELECT id FROM wanted) OR ci.source_id = ANY($4::uuid[]))
+        AND ci.detached_at IS NULL
       GROUP BY s.id
       ORDER BY COUNT(DISTINCT ci.claim_id) DESC, s.retrieved_at DESC
       LIMIT $3`,
-    [ids, root, limit]
+    [ids, root, limit, sourceIds]
   );
   return rows.map((r) => ({
     source_id: r.source_id,

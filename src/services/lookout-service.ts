@@ -372,6 +372,16 @@ export async function pendingLookoutEvents(lookoutId: string, limit = 50): Promi
   );
 }
 
+/** How many inputs are waiting for a lookout, so a run can say how many it did not read. */
+export async function countPendingLookoutEvents(lookoutId: string): Promise<number> {
+  const [row] = await rawQuery<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM lookout_events
+      WHERE lookout_id = $1 AND consumed_at IS NULL`,
+    [lookoutId]
+  );
+  return Number(row?.n ?? 0);
+}
+
 export async function consumeLookoutEvents(lookoutId: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await rawQuery(
