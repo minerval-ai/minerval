@@ -315,7 +315,8 @@ describe("graph-read-tools", () => {
       mockGetClaim.mockResolvedValueOnce({ id: "k1", kind: "question", ...base } as never);
       const qn = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "k1" }))!);
       expect(qn.claim.kind).toBe("question");
-      expect(qn.question).toEqual({ standing: "open", answers: [] });
+      // The question's own judgment fields sit beside its record (#755).
+      expect(qn.question).toEqual({ standing: "open", answers: [], confidence: null, marginal_yield: null });
       expect(qn.quantity).toBeNull();
     });
 

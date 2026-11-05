@@ -149,6 +149,9 @@ export async function recordQuestionAssessment(input: {
   summary?: string | null;
   reasoningTrace: string;
   incomplete?: string | null;
+  /** How sure the Steward is of the standing, 0..1, and its exit judgment (#755); null when not stated. */
+  confidence?: number | null;
+  marginalYield?: number | null;
   model?: string | null;
   fundedByJobId?: string | null;
   trigger?: string | null;
@@ -181,8 +184,8 @@ export async function recordQuestionAssessment(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO question_assessments
          (claim_id, standing, favored_claim_ids, summary, reasoning_trace, incomplete,
-          model, funded_by_job_id, trigger, trigger_context)
-       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+          model, funded_by_job_id, trigger, trigger_context, confidence, marginal_yield)
+       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [
         input.claimId,
         input.standing,
@@ -194,6 +197,8 @@ export async function recordQuestionAssessment(input: {
         input.fundedByJobId ?? null,
         input.trigger ?? null,
         input.triggerContext ?? null,
+        input.confidence ?? null,
+        input.marginalYield ?? null,
       ]
     );
     return { id: row!.id };

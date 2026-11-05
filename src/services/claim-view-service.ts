@@ -72,10 +72,12 @@ export const CLAIM_VIEW_DESCRIPTION =
   "decomposition_status says); `assessment`, the current verdict with its " +
   "reasoning (a status, a confidence that the status is the right reading " +
   "of the evidence, and a credence that the claim is true where one number " +
-  "is honest, else null); the kind's record, since a quantity or a " +
+  "is honest, else null, and `marginal_yield`, how much another pass " +
+  "would add); the kind's record, since a quantity or a " +
   "question has no `assessment` (`quantity`: definition, the graph's " +
-  "estimate with its work, the figures sources state, readings and cuts; " +
-  "`question`: standing, answers, presuppositions, subquestions; " +
+  "estimate with its work and marginal_yield, the figures sources state, " +
+  "readings and cuts; `question`: standing with its confidence and " +
+  "marginal_yield, answers, presuppositions, subquestions; " +
   "`threshold_of` on a claim that cuts a quantity); `preliminary_seed`, the " +
   "parent Steward's prior, only while the node is unassessed; the " +
   "formalization record (`formalization`, `formalization_pending`, " +
@@ -88,11 +90,13 @@ export const CLAIM_VIEW_DESCRIPTION =
   "written form and current evaluation, and as `retired_arguments` any " +
   "its Steward retired, with the reason), `subclaims` (the direct " +
   "subclaims, one row per argument each serves, with the edge's reasoning " +
-  "and their standing), " +
+  "and their standing and credence), " +
   "`provenance` (the instances with their readings, and the edges among " +
   "their sources), `dependents` (one page ranked by importance, with " +
   "`dependents_total`), `related` (lateral see-also links, never " +
-  "dependencies), `findings` (findings already noted on the node), " +
+  "dependencies, with their standing and credence), `findings` (the " +
+  "newest findings already noted on the node, with `findings_note` when " +
+  "there are more), " +
   "`proofs` (every Lean check record). Free.";
 
 export const CLAIM_VIEW_INCLUDE_DESCRIPTION =
@@ -117,6 +121,7 @@ export function formatClaimViewAssessment(
     summary: string | null;
     reasoningTrace: string;
     assessedAt: Date;
+    marginalYield?: number | null;
     model?: string | null;
   } | null
 ) {
@@ -131,6 +136,10 @@ export function formatClaimViewAssessment(
     // Reader-facing body first; fall back to the trace for pre-split rows.
     summary: a.summary ?? a.reasoningTrace,
     reasoning_trace: a.reasoningTrace,
+    // The Steward's exit judgment: how much another, stronger pass would
+    // improve this assessment (0..1), so a re-pass sees the whole prior
+    // judgment (#760). null when not stated.
+    marginal_yield: a.marginalYield ?? null,
     assessed_at: a.assessedAt.toISOString(),
     // The assessor behind the verdict (#294); null for legacy rows.
     model: a.model ?? null,
@@ -166,6 +175,7 @@ export async function getClaimView(
     subclaimCount,
     instanceCount,
     sourceMap,
+    kindJudgment,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -186,6 +196,9 @@ export async function getClaimView(
     // The Steward's source map (#286): a claim-level summary, null until
     // written. A failure loses the map, never the read.
     getSourceMapSummary(claimId).catch(() => null),
+    // A quantity's or question's own judgment fields beside its record: the
+    // estimate's yield, and a question's confidence and yield (#755, #760).
+    kindJudgmentFields(claimId, kind),
   ]);
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left
@@ -233,9 +246,9 @@ export async function getClaimView(
     },
     assessment: formatClaimViewAssessment(assessment),
     ...(preliminarySeed ? { preliminary_seed: preliminarySeed } : {}),
-    quantity,
+    quantity: quantity ? { ...quantity, ...kindJudgment } : quantity,
     threshold_of: thresholdOf,
-    question,
+    question: question ? { ...question, ...kindJudgment } : question,
     ...formalizationRecord,
     requests: requests.items.map((r) => ({
       ...r,
@@ -366,6 +379,8 @@ export async function getClaimView(
           reasoning: r.reasoning,
           assessment_status: r.assessment_status,
           assessment_confidence: r.assessment_confidence,
+          // §21: rival explanations' credences must be jointly tenable.
+          assessment_credence: r.assessment_credence,
         }));
       })()
     );
@@ -378,7 +393,20 @@ export async function getClaimView(
         // that prevents a repeat lives in note_finding itself; this list is
         // passive. `stale` marks a note whose cited assessment is no longer
         // current, so a reader knows the graph has moved since.
-        const findings = await listFindings({ claimId, limit: FINDINGS_LIMIT }).catch(() => []);
+        const [findings, [findingTotal]] = await Promise.all([
+          listFindings({ claimId, limit: FINDINGS_LIMIT }).catch(() => []),
+          rawQuery<{ n: number }>(
+            `SELECT count(*)::int AS n FROM agent_findings WHERE claim_id = $1 AND status = 'published'`,
+            [claimId]
+          ).catch(() => [undefined]),
+        ]);
+        // Say when the list is cut, and which tool reads the rest (#762).
+        if ((findingTotal?.n ?? 0) > findings.length) {
+          payload.findings_total = findingTotal!.n;
+          payload.findings_note =
+            `The ${findings.length} most recent of ${findingTotal!.n} findings on this node; ` +
+            `search_findings with this claim_id reads the rest.`;
+        }
         payload.findings = findings.map((f) => ({
           id: f.id,
           noted_at: iso(f.first_noted_at as Date | string | null),
@@ -408,6 +436,33 @@ export async function getClaimView(
 }
 
 /**
+ * The judgment fields a quantity's estimate or a question's standing carries
+ * beside the kind's record (#755): the Steward's marginal_yield on both, and
+ * on a question its confidence in the standing. Empty for a claim, whose
+ * assessment carries them, and on a failed read.
+ */
+async function kindJudgmentFields(
+  claimId: string,
+  kind: string
+): Promise<Record<string, number | null>> {
+  if (kind === "quantity") {
+    const [row] = await rawQuery<{ marginal_yield: number | null }>(
+      `SELECT marginal_yield FROM quantity_estimates WHERE claim_id = $1 AND is_current = true`,
+      [claimId]
+    ).catch(() => []);
+    return { marginal_yield: row?.marginal_yield ?? null };
+  }
+  if (kind === "question") {
+    const [row] = await rawQuery<{ confidence: number | null; marginal_yield: number | null }>(
+      `SELECT confidence, marginal_yield FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+      [claimId]
+    ).catch(() => []);
+    return { confidence: row?.confidence ?? null, marginal_yield: row?.marginal_yield ?? null };
+  }
+  return {};
+}
+
+/**
  * The node's direct subclaims, one row per argument an edge is grouped
  * under (#437), so a Steward sees which line of reasoning each serves; an
  * ungrouped edge appears once with a null argument. Each child carries its
@@ -424,6 +479,7 @@ async function listDirectSubclaims(claimId: string) {
     confidence: number;
     child_status: string | null;
     child_confidence: number | null;
+    child_credence: number | null;
     argument_id: string | null;
     argument_name: string | null;
     child_kind: string;
@@ -433,6 +489,7 @@ async function listDirectSubclaims(claimId: string) {
     `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
+            a.claim_credence AS child_credence,
             am.argument_id, arg.name AS argument_name,
             c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
      FROM claim_relationships cr
@@ -457,6 +514,7 @@ async function listDirectSubclaims(claimId: string) {
     confidence: sc.confidence,
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,
+    assessment_credence: sc.child_credence,
     argument_id: sc.argument_id,
     argument_name: sc.argument_name,
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),

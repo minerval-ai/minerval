@@ -4418,6 +4418,10 @@ export const quantityEstimates = pgTable(
     // audit detail, as reasoning_trace is on an assessment.
     summary: text("summary"),
     work: text("work").notNull(),
+    // The Steward's exit judgment (#755): how much another, stronger pass
+    // would improve this estimate, as on assessments. The valuer reads it
+    // from whichever table the node's kind keeps (NODE_MARGINAL_YIELD_SQL).
+    marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
     isCurrent: boolean("is_current").notNull().default(true),
@@ -4511,6 +4515,11 @@ export const questionAssessments = pgTable(
     reasoningTrace: text("reasoning_trace").notNull(),
     // The Steward's note when it judges the set of answers incomplete.
     incomplete: text("incomplete"),
+    // How sure the Steward is that the standing is the right reading of the
+    // evidence, as an assessment's confidence; and its exit judgment, as on
+    // assessments (#755). Null when not stated.
+    confidence: real("confidence"),
+    marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
     isCurrent: boolean("is_current").notNull().default(true),

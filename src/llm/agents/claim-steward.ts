@@ -98,6 +98,12 @@ function withheldFor(kind: NodeKind): Set<string> {
   return new Set();
 }
 
+/**
+ * The graph read whose rows get_claim carries (include dependents, #760):
+ * the Curator keeps it; for the Steward it would only duplicate the view.
+ */
+const STEWARD_REDUNDANT_READS = new Set(["get_parent_claims"]);
+
 /** The tool that records each kind's assessment. */
 const ASSESSMENT_TOOL: Record<NodeKind, string> = {
   claim: "update_claim_assessment",
@@ -498,9 +504,11 @@ async function runClaimStewardImpl(input: {
   // (tools/web-search-tool.ts).
   const webSearch = createWebSearch(model);
 
-  // Same read/navigation set the Curator gets (#69): the Steward owns a claim's
-  // structure, so it must be able to read parents, subclaims, and neighbors.
-  const graphTools = getGraphToolDefinitions();
+  // The graph search the Curator also gets (#69). get_claim reads the claim,
+  // its subclaims and their credences, and get_claim_dependents what rests on
+  // it, so the narrower read the Curator keeps (get_parent_claims) would
+  // only duplicate them here (#760).
+  const graphTools = getGraphToolDefinitions().filter((t) => !STEWARD_REDUNDANT_READS.has(t.name));
   const graphNames = new Set(graphTools.map((t) => t.name));
 
   // Claim-scoped subset only: the contribution/contributor/decision tools in

@@ -7,7 +7,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, sql, desc } from "drizzle-orm";
-import { getDb } from "../../db/client.js";
+import { getDb, rawQuery } from "../../db/client.js";
 import {
   claims,
   sources,
@@ -116,8 +116,12 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_claim_dependents",
       description:
-        "Get all claims that depend on (have as a subclaim) a given claim. " +
-        "Useful for understanding the impact of changing a claim's assessment.",
+        "Get the nodes that depend on a given one: those that have it as a " +
+        "subclaim, answer, or subquestion, and, for a quantity, the claims " +
+        "that cut it (say which side of a figure it lies; relation 'cuts'), " +
+        "whose credence must agree with its estimate. Each comes with its " +
+        "status, confidence and credence. Use it to see whom a change of " +
+        "judgment could matter to.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -499,18 +503,54 @@ async function getContributorProfile(contributorId: string) {
 // behind the agents' historical field names so tool payloads don't change.
 async function getClaimDependents(claimId: string) {
   const rows = await fetchClaimDependents(claimId);
+  // A claim that says which side of a figure a quantity lies is joined to
+  // the quantity by a cut, not an edge, yet its credence must agree with the
+  // quantity's estimate (§21), so it is a dependent the quantity's Steward
+  // tells when the estimate moves (§22; #767).
+  const cuts = await rawQuery<{
+    id: string;
+    text: string;
+    claim_type: string;
+    direction: string;
+    value: number;
+    status: string | null;
+    confidence: number | null;
+    credence: number | null;
+  }>(
+    `SELECT c.id, c.text, c.claim_type, qc.direction, qc.value,
+            a.status, a.confidence, a.claim_credence AS credence
+       FROM quantity_cuts qc
+       JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
+       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+      WHERE qc.quantity_id = $1
+      ORDER BY c.importance DESC, c.id`,
+    [claimId]
+  );
 
-  return {
-    child_claim_id: claimId,
-    dependents: rows.map((r) => ({
+  const dependents = [
+    ...rows.map((r) => ({
       id: r.id,
       text: r.text,
       type: r.claim_type,
+      kind: r.node_kind,
       relation: r.relation_type,
       current_status: r.assessment_status,
+      confidence: r.assessment_confidence,
+      credence: r.assessment_credence,
     })),
-    count: rows.length,
-  };
+    ...cuts.map((c) => ({
+      id: c.id,
+      text: c.text,
+      type: c.claim_type,
+      kind: "claim",
+      relation: "cuts",
+      cut: { direction: c.direction, value: c.value },
+      current_status: c.status,
+      confidence: c.confidence,
+      credence: c.credence,
+    })),
+  ];
+  return { child_claim_id: claimId, dependents, count: dependents.length };
 }
 
 /** The most rows one get_recent_decisions page returns. */
