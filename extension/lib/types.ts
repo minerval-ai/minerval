@@ -58,15 +58,6 @@ export interface ChatResponse {
   citations: ChatCitation[];
 }
 
-/** The port the panel opens to the background worker for a streamed chat. */
-export const CHAT_PORT = "chat";
-
-/** What the background worker sends back over the chat port. */
-export type ChatStreamMessage =
-  | { type: "text"; delta: string; turn: number }
-  | { type: "done"; data: ChatResponse }
-  | { type: "error"; error: string };
-
 /** Markup levels, most→least conservative. Controls which verdicts render. */
 export type MarkupLevel = "off" | "conservative" | "moderate" | "aggressive";
 
@@ -155,6 +146,19 @@ export type AnalyzeProgress =
   | { done: true; analysis: PageAnalysis }
   | { done: false; content_hash: string };
 
+/** What the chat tells the agent about the page it is asked from. */
+export interface ChatPageContext {
+  url: string | null;
+  title: string | null;
+  claims: Array<{
+    verbatim_text: string;
+    verdict: string;
+    claim_id: string | null;
+    canonical_form: string | null;
+    status: string | null;
+  }>;
+}
+
 export type BackgroundRequest =
   | { type: "analyze"; url: string; title: string; content: string; share: boolean }
   | { type: "shared-lookup"; urlHash: string }
@@ -162,17 +166,18 @@ export type BackgroundRequest =
   | {
       type: "chat";
       messages: ChatTurn[];
-      page: {
-        url: string | null;
-        title: string | null;
-        claims: Array<{
-          verbatim_text: string;
-          verdict: string;
-          claim_id: string | null;
-          canonical_form: string | null;
-          status: string | null;
-        }>;
-      };
+      page: ChatPageContext;
+    }
+  /**
+   * Ask the next question in a tab's chat (lib/chat-store.ts). Answered once
+   * the question is stored; the answer is written to the stored chat.
+   */
+  | {
+      type: "chat-ask";
+      tabId: number;
+      page: string;
+      question: string;
+      context: ChatPageContext;
     }
   | { type: "claim-detail"; claimId: string }
   | { type: "badge"; count: number }
