@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./popup.css";
 import { Mark } from "~lib/mark";
+import { submissionLabel, submissionSettled } from "~lib/submission";
 import {
   getSettings,
   isCustomApiBaseUrl,
@@ -251,10 +252,13 @@ function contributionLink(sub: Submission) {
   return (
     <a href={`${WEB_BASE}/contributions/${sub.contribution_id}`}
        target="_blank" rel="noopener noreferrer">
-      track
+      {sub.review_status === "rejected" ? "see why" : "track"}
     </a>
   );
 }
+
+// How often the open popup asks after proposals still in flight.
+const SUBMISSION_POLL_MS = 15_000;
 
 function owls(n: number): string {
   const r = Math.round(n * 100) / 100;
@@ -279,6 +283,22 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
   const unknown = annotations.filter((a) => !a.claim);
   const submissions = page?.claimSubmissions ?? {};
   const open = unknown.filter((a) => !submissions[a.verbatim_text]);
+  const inFlight = Object.values(submissions).some((s) => !submissionSettled(s));
+
+  // Proposals don't stand still: ask after the open ones when the popup
+  // opens and every so often while it stays open, so an accepted claim moves
+  // into "In the graph" (and its first assessment shows) without the reader
+  // clicking through each one.
+  useEffect(() => {
+    if (!inFlight) return;
+    const check = async () => {
+      const r = await sendToTab<boolean>({ type: "refresh-submissions" });
+      if (r.ok && r.data) await refresh();
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), SUBMISSION_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [inFlight]);
 
   useEffect(() => {
     if (unknown.length === 0 || entitlement) return;
@@ -371,7 +391,7 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
                       </a>
                       {sub && (
                         <div className="muted">
-                          Proposed · pending review {contributionLink(sub)}
+                          {submissionLabel(sub)} {contributionLink(sub)}
                         </div>
                       )}
                       {errors[a.verbatim_text] && (
@@ -423,14 +443,20 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
           <section>
             <h3>In the graph ({known.length})</h3>
             <ul>
-              {known.map((a) => (
-                <li key={a.verbatim_text} className="claim-row">
-                  <span className={`badge s-${a.claim!.status}`}>{a.claim!.status}</span>
-                  <a href={a.claim!.url} target="_blank" rel="noopener noreferrer">
-                    {a.claim!.canonical_form}
-                  </a>
-                </li>
-              ))}
+              {known.map((a) => {
+                const sub = submissions[a.verbatim_text];
+                return (
+                  <li key={a.verbatim_text} className="claim-row">
+                    <span className={`badge s-${a.claim!.status}`}>{a.claim!.status}</span>
+                    <div>
+                      <a href={a.claim!.url} target="_blank" rel="noopener noreferrer">
+                        {a.claim!.canonical_form}
+                      </a>
+                      {sub && <div className="muted">{submissionLabel(sub)}</div>}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}

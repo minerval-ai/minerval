@@ -6,6 +6,7 @@ import type {
   Entitlement,
   PageAnalysis,
   Submission,
+  SubmissionProgress,
 } from "./types";
 
 /**
@@ -13,6 +14,8 @@ import type {
  * scripts never see the API key. Both agentic endpoints authenticate with the
  * user's API key and are metered per-token server-side (#70).
  */
+
+const WEB_BASE = "https://minerval.ai";
 
 class ApiError extends Error {
   constructor(
@@ -206,6 +209,44 @@ function submissionFrom(id?: string, at?: string): Submission {
   return {
     contribution_id: id ?? null,
     submitted_at: at ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Where a proposal stands (GET /contributions/:id), and, once it is accepted
+ * and admitted, the claim it became with that claim's current status (a
+ * cursory GET /claims/:id). Both are free reads.
+ */
+export async function getSubmissionProgress(
+  contributionId: string
+): Promise<SubmissionProgress> {
+  const { data } = await request<{
+    contribution: {
+      review_status: string;
+      became_claim_id: string | null;
+      page_url: string | null;
+    };
+  }>(`/contributions/${contributionId}`);
+  const c = data.contribution;
+  if (c.review_status !== "accepted" || !c.became_claim_id) {
+    return { review_status: c.review_status, claim: null };
+  }
+  const { data: detail } = await request<{
+    claim: { id: string; text: string };
+    assessment: { status: string; confidence: number } | null;
+    subclaim_count?: number;
+  }>(`/claims/${c.became_claim_id}?information_depth=cursory`);
+  return {
+    review_status: c.review_status,
+    claim: {
+      id: detail.claim.id,
+      canonical_form: detail.claim.text,
+      // Not yet assessed is not an assessed "unknown"; say which it is.
+      status: detail.assessment?.status ?? "unassessed",
+      status_confidence: detail.assessment?.confidence ?? 0,
+      subclaim_count: detail.subclaim_count ?? 0,
+      url: c.page_url ?? `${WEB_BASE}/claims/${detail.claim.id}`,
+    },
   };
 }
 

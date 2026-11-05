@@ -6,6 +6,7 @@ import {
   getEntitlement,
   lookupSharedAnalysis,
   proposeClaim,
+  getSubmissionProgress,
 } from "~lib/api";
 import {
   CHAT_PORT,
@@ -133,6 +134,12 @@ export function startBackground(): void {
                   claim: message.claim,
                   argument: message.argument,
                 }),
+              });
+              break;
+            case "submission-progress":
+              respond({
+                ok: true,
+                data: await getSubmissionProgress(message.contributionId),
               });
               break;
             case "shared-lookup": {
