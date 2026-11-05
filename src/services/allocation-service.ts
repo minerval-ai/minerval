@@ -418,6 +418,20 @@ export interface MandateAllocationResult {
   allocatedMicroUsd: number;
   /** Value-per-dollar of the last increment funded: the day's emergent bar. */
   thresholdRatio: number | null;
+  /**
+   * Valued increments passed over because today's room (or the maintenance
+   * share's) could not cover them whole (#688). The allocator never
+   * part-funds an increment, so these wait for a day with room; one larger
+   * than the whole daily rate waits forever. Reported so the Grantmaker who
+   * valued them is told, not left to wonder why nothing ran.
+   */
+  skippedForRoom?: Array<{
+    group: string;
+    actionId: string | null;
+    claimId: string | null;
+    neededMicroUsd: number;
+    reason: "day_room" | "daily_rate" | "maintenance_share";
+  }>;
 }
 
 /** One fundable increment, ranked by marginal value per marginal dollar. */
@@ -644,9 +658,27 @@ export async function runMandateAllocator(
     const ownRemaining = Number(own?.remaining ?? 0);
     const amount = inc.neededMicroUsd + ownRemaining;
     if (amount > dayRoom || inc.neededMicroUsd > escrowRoom) {
+      if (amount > dayRoom && inc.neededMicroUsd <= escrowRoom) {
+        (result.skippedForRoom ??= []).push({
+          group: inc.group,
+          actionId: inc.actionId,
+          claimId: inc.claimId,
+          neededMicroUsd: amount,
+          reason: amount > dailyRate ? "daily_rate" : "day_room",
+        });
+      }
       continue;
     }
-    if (inc.maintenance && amount > maintenanceRoom) continue;
+    if (inc.maintenance && amount > maintenanceRoom) {
+      (result.skippedForRoom ??= []).push({
+        group: inc.group,
+        actionId: inc.actionId,
+        claimId: inc.claimId,
+        neededMicroUsd: amount,
+        reason: "maintenance_share",
+      });
+      continue;
+    }
     if (own) {
       await tx.query(
         `UPDATE action_allocations SET released_at = now() WHERE id = $1`,

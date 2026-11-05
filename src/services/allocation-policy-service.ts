@@ -168,6 +168,77 @@ export const POLICY_BOUNDS: Record<
   est_request_scope_cost_owls: { min: 0.01, max: 20 },
 };
 
+/**
+ * Whether a mandate's valuations come from the formula rather than from
+ * its Grantmaker's own set_valuations calls: the platform's General lane
+ * (refreshFormulaValuations) and its Governance mandates
+ * (refreshAuditValuations). One predicate, so the review pass's tool
+ * choice and the update_allocation_policy guard can never disagree (#687).
+ */
+export function isFormulaPolicy(policy: string | null | undefined): boolean {
+  return policy === "general" || policy === "governance";
+}
+
+/**
+ * The knobs every mandate's own machinery reads, whatever its policy: its
+ * allocator's maintenance ceiling (allocation-service.runMandateAllocator)
+ * and the attempt priors and bounds its plan's attempt_proof items are
+ * priced and capped with (action-service, attempt-service). A judgment
+ * mandate may set these and only these: the rest of the policy is read by
+ * a formula that never runs for it.
+ */
+const MANDATE_KNOBS: readonly (keyof AllocationPolicy)[] = [
+  "maintenance_share",
+  "est_attempt_standard_cost_owls",
+  "est_attempt_max_cost_owls",
+  "attempt_claim_lifetime_cap_owls",
+  "attempt_cooldown_days",
+];
+
+/** What the Governance formula reads besides: its audit class weights. */
+const GOVERNANCE_KNOBS: readonly (keyof AllocationPolicy)[] = [
+  ...MANDATE_KNOBS,
+  "audit_value_prize",
+  "audit_value_bad_faith",
+  "audit_value_overturn",
+  "audit_value_anomaly",
+  "audit_value_suspension",
+  "audit_value_sweep",
+];
+
+/**
+ * The policy keys a mandate's own machinery actually reads, by its policy:
+ * every key for the General lane (its formula, the platform-wide priors it
+ * carries, and its audit weights for Governance's audits), the audit
+ * weights plus the mandate knobs for Governance, and the mandate knobs for
+ * a judgment mandate. update_allocation_policy accepts exactly these, so a
+ * write that would change nothing is refused rather than reported as done.
+ */
+export function policyKnobs(policy: string | null | undefined): (keyof AllocationPolicy)[] {
+  if (policy === "general") return Object.keys(POLICY_BOUNDS) as (keyof AllocationPolicy)[];
+  if (policy === "governance") return [...GOVERNANCE_KNOBS];
+  return [...MANDATE_KNOBS];
+}
+
+/**
+ * The knobs a mandate may set, each with its bounds and, when given, the
+ * value in force: the text a Grantmaker's update_allocation_policy shows,
+ * generated from POLICY_BOUNDS so a new key or a new bound is never
+ * missing from what the agent is told.
+ */
+export function describePolicyKnobs(
+  policy: string | null | undefined,
+  current?: Partial<AllocationPolicy> | null
+): string {
+  return policyKnobs(policy)
+    .map((k) => {
+      const b = POLICY_BOUNDS[k];
+      const now = current?.[k];
+      return `${k} (${b.min} to ${b.max}${now !== undefined ? `, now ${now}` : ""})`;
+    })
+    .join("; ");
+}
+
 export interface GeneralMandate {
   grantId: string;
   budgetJobId: string;
@@ -378,7 +449,9 @@ export type PolicyUpdateResult =
  */
 export async function updateAllocationPolicy(
   grantId: string,
-  updates: Record<string, unknown>
+  updates: Record<string, unknown>,
+  /** The keys this mandate's machinery reads (policyKnobs); default all. */
+  allowedKeys: readonly string[] = Object.keys(POLICY_BOUNDS)
 ): Promise<PolicyUpdateResult> {
   const keys = Object.keys(updates);
   if (keys.length === 0) return { ok: false, problem: "no keys to update" };
@@ -387,7 +460,15 @@ export async function updateAllocationPolicy(
     if (!(key in POLICY_BOUNDS)) {
       return {
         ok: false,
-        problem: `unknown policy key "${key}"; known keys: ${Object.keys(POLICY_BOUNDS).join(", ")}`,
+        problem: `unknown policy key "${key}"; keys this mandate reads: ${allowedKeys.join(", ")}`,
+      };
+    }
+    if (!allowedKeys.includes(key)) {
+      return {
+        ok: false,
+        problem:
+          `"${key}" is read only by a formula this mandate does not run, so setting it would ` +
+          `change nothing; keys this mandate reads: ${allowedKeys.join(", ")}`,
       };
     }
     const v = clampToBounds(key as keyof AllocationPolicy, updates[key]);
