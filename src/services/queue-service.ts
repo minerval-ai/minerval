@@ -88,6 +88,10 @@ export interface StewardMessage {
     // names the neighbors, their verdicts, and the checker's reading; the
     // ledger row it valued decides whether the pass runs.
     | "consistency_flag"
+    // The Audit sends this claim's assessment back for a fresh pass
+    // (recommend_reassessment, #693). The context carries the audit finding
+    // in its own words and what to look at again; the Steward decides.
+    | "audit_send_back"
     // Work on a request this claim's Steward keeps has come back (Part VIII,
     // Requests): the context names the request and the outcome. The keeper
     // decides whether the request has been met.

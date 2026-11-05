@@ -132,28 +132,43 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_recent_decisions",
       description:
-        "Get recent contribution review decisions, optionally filtered. " +
-        "Useful for audit agents analyzing patterns. Each row carries the " +
-        "contribution_id, so get_contribution_details can load the text " +
-        "that was reviewed.",
+        "List contribution review decisions in force, newest first, with " +
+        "each one's reasoning, confidence, the sections it cites, and any " +
+        "bad-faith flag. Superseded reviews (replaced by a re-review) are " +
+        "left out. Each row carries the contribution_id, so " +
+        "get_contribution_details can load what was reviewed. Paged: pass " +
+        "offset to continue when has_more is true.",
       input_schema: {
         type: "object" as const,
         properties: {
           limit: {
             type: "integer",
-            description: "Maximum number of results (default 20)",
+            description: `Maximum number of results (default 20, at most ${MAX_DECISION_PAGE})`,
+          },
+          offset: {
+            type: "integer",
+            description: "How many to skip, for the next page (default 0)",
           },
           decision_filter: {
             type: "string",
-            description: "Filter by decision type: accept, reject, escalate",
+            enum: ["accept", "reject", "escalate"],
+            description: "Only decisions of this kind",
           },
           contributor_id: {
             type: "string",
-            description: "Filter by contributor ID",
+            description: "Only decisions on this contributor's contributions",
           },
           claim_id: {
             type: "string",
-            description: "Filter to decisions on contributions targeting this claim",
+            description: "Only decisions on contributions targeting this claim",
+          },
+          since: {
+            type: "string",
+            description: "ISO 8601 time: only decisions made at or after it",
+          },
+          bad_faith_only: {
+            type: "boolean",
+            description: "Only decisions that flagged suspected bad faith",
           },
         },
       },
@@ -224,12 +239,15 @@ export async function executeGovernanceTool(
 
       case "get_recent_decisions":
         return JSON.stringify(
-          await getRecentDecisions(
-            (input.limit as number) ?? 20,
-            input.decision_filter as string | undefined,
-            input.contributor_id as string | undefined,
-            input.claim_id as string | undefined
-          ),
+          await getRecentDecisions({
+            limit: input.limit as number | undefined,
+            offset: input.offset as number | undefined,
+            decisionFilter: input.decision_filter as string | undefined,
+            contributorId: input.contributor_id as string | undefined,
+            claimId: input.claim_id as string | undefined,
+            since: input.since as string | undefined,
+            badFaithOnly: input.bad_faith_only === true,
+          }),
           null,
           2
         );
@@ -495,27 +513,56 @@ async function getClaimDependents(claimId: string) {
   };
 }
 
-async function getRecentDecisions(
-  limit: number,
-  decisionFilter?: string,
-  contributorId?: string,
-  claimId?: string
-) {
+/** The most rows one get_recent_decisions page returns. */
+export const MAX_DECISION_PAGE = 100;
+
+/**
+ * Review decisions in force, newest first. The pattern sweep asks the Audit
+ * to weigh bad-faith flags and to look at one window of time (#696), so the
+ * rows carry the flag and the read takes a window, a flag filter, and an
+ * offset to page past the first page.
+ */
+export async function getRecentDecisions(opts: {
+  limit?: number;
+  offset?: number;
+  decisionFilter?: string;
+  contributorId?: string;
+  claimId?: string;
+  since?: string;
+  badFaithOnly?: boolean;
+}) {
   const db = getDb();
+  const limit = Math.min(Math.max(Math.floor(Number(opts.limit ?? 20)) || 20, 1), MAX_DECISION_PAGE);
+  const offset = Math.max(Math.floor(Number(opts.offset ?? 0)) || 0, 0);
+
+  let since: Date | null = null;
+  if (opts.since) {
+    since = new Date(opts.since);
+    if (Number.isNaN(since.getTime())) {
+      return { error: `since "${opts.since}" is not an ISO 8601 time` };
+    }
+  }
 
   // Superseded reviews are history, not decisions in force — an audit
   // re-review replaced them (#180).
   let conditions = sql`${contributionReviews.superseded} = false`;
-  if (decisionFilter) {
-    conditions = sql`${conditions} AND ${contributionReviews.decision} = ${decisionFilter}`;
+  if (opts.decisionFilter) {
+    conditions = sql`${conditions} AND ${contributionReviews.decision} = ${opts.decisionFilter}`;
   }
-  if (contributorId) {
-    conditions = sql`${conditions} AND ${contributions.contributorId} = ${contributorId}`;
+  if (opts.contributorId) {
+    conditions = sql`${conditions} AND ${contributions.contributorId} = ${opts.contributorId}`;
   }
-  if (claimId) {
-    conditions = sql`${conditions} AND ${contributions.claimId} = ${claimId}`;
+  if (opts.claimId) {
+    conditions = sql`${conditions} AND ${contributions.claimId} = ${opts.claimId}`;
+  }
+  if (since) {
+    conditions = sql`${conditions} AND ${contributionReviews.reviewedAt} >= ${since}`;
+  }
+  if (opts.badFaithOnly) {
+    conditions = sql`${conditions} AND ${contributionReviews.suspectedBadFaith} = true`;
   }
 
+  // One extra row says whether another page exists.
   const rows = await db
     .select({
       reviewId: contributionReviews.id,
@@ -524,6 +571,8 @@ async function getRecentDecisions(
       reasoning: contributionReviews.reasoning,
       confidence: contributionReviews.confidence,
       policyCitations: contributionReviews.policyCitations,
+      suspectedBadFaith: contributionReviews.suspectedBadFaith,
+      badFaithCategory: contributionReviews.badFaithCategory,
       reviewedAt: contributionReviews.reviewedAt,
       contributionType: contributions.contributionType,
       contributorId: contributions.contributorId,
@@ -536,10 +585,12 @@ async function getRecentDecisions(
     )
     .where(conditions)
     .orderBy(desc(contributionReviews.reviewedAt))
-    .limit(limit);
+    .limit(limit + 1)
+    .offset(offset);
 
+  const page = rows.slice(0, limit);
   return {
-    decisions: rows.map((r) => ({
+    decisions: page.map((r) => ({
       review_id: r.reviewId,
       // The key get_contribution_details takes (#495): without it audit
       // can read a reviewer's reasoning but not what was reviewed.
@@ -548,11 +599,15 @@ async function getRecentDecisions(
       reasoning: r.reasoning,
       confidence: r.confidence,
       policy_citations: r.policyCitations,
+      suspected_bad_faith: r.suspectedBadFaith,
+      bad_faith_category: r.badFaithCategory,
       reviewed_at: r.reviewedAt.toISOString(),
       contribution_type: r.contributionType,
       contributor_id: r.contributorId,
       claim_id: r.claimId,
     })),
-    count: rows.length,
+    count: page.length,
+    offset,
+    has_more: rows.length > limit,
   };
 }

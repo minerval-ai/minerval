@@ -769,8 +769,9 @@ These act through tools over the life of a claim and the graph:
   decisions, a pattern analysis across recent ones, a contributor review, or an
   anomaly investigation) and a free-text context saying what prompted it.
   Runs are fed from two directions: event triggers at the places suspicion is
-  generated (every arbitration overturn and every bad-faith flag requests a
-  decision audit, at most once per contribution), and a scheduler that
+  generated (every arbitration overturn, and every bad-faith flag a reviewer
+  or an arbitrator records, requests a decision audit, at most once per
+  contribution and instance), and a scheduler that
   requests a periodic sweep over recent decisions plus a re-examination of
   any suspension that has stood unexamined too long — both idempotent through
   a DB dedupe key, so concurrent processes never double-run an audit. Each
@@ -786,7 +787,18 @@ These act through tools over the life of a claim and the graph:
   so the fresh review's effects don't stack on the old ones. Audit
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
-  suspension whose basis an appeal dissolves.
+  suspension whose basis an appeal dissolves; lifting one takes a reason,
+  which resolves the finding behind it or is recorded as one.
+  Audit reads decisions beyond contribution reviews (#693): a claim's
+  assessment history and event log (the services behind the
+  `get_assessment_history` and `get_claim_events` routes) and the
+  arbitration record. It sends a decision back to whoever made it:
+  a contribution to re-review (never a prize claim, whose review the
+  prize-check worker owns), an assessment to its Steward
+  (`recommend_reassessment`, trigger `audit_send_back` carrying the finding),
+  a structural question to the Curator (`recommend_recuration`, a curation
+  request), each requiring a finding. Curator merges and Matcher decisions
+  have no read of their own yet (#703).
   The allocation engine's decisions are judging too, so the Audit carries a
   read-only cross-cut of the action ledger and the mandate plan surface
   (`inspect_ledger`, services/ledger-inspection-service.ts): every row in

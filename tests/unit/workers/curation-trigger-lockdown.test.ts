@@ -12,8 +12,8 @@
  * request records a concern, a mandate values and funds the row, and the
  * engine executor runs it. This suite pins that shape rather than a number:
  * the Curator is reachable only through the executor, and requests come only
- * from an agent's judgment (a Steward's or the Consistency Checker's escalation)
- * or the bounded scan. It
+ * from an agent's judgment (a Steward's or the Consistency Checker's
+ * escalation, an Audit send-back) or the bounded scan. It
  * reads the sources, because the failure it prevents is a one-line
  * reintroduction of an automatic trigger somewhere in the pipeline — which no
  * behavioural test over the current wiring would catch (same approach as
@@ -59,10 +59,16 @@ describe("what can invoke the Curator", () => {
     ]);
   });
 
-  it("is requested only by an agent's escalation, a Steward's or the Consistency Checker's (the scan lives beside requestCuration)", () => {
+  it("is requested only by an agent's judgment: a Steward's or the Consistency Checker's escalation, or an Audit send-back (the scan lives beside requestCuration)", () => {
+    // The Audit's recommend_recuration (#693) requires a persisted finding,
+    // so it is a judgment, not an automatic trigger.
     expect(
       callersOf(/\brequestCuration\s*\(/, "src/services/curation-service.ts")
-    ).toEqual(["src/llm/agents/consistency-checker.ts", "src/llm/tools/steward-tools.ts"]);
+    ).toEqual([
+      "src/llm/agents/consistency-checker.ts",
+      "src/llm/tools/audit-tools.ts",
+      "src/llm/tools/steward-tools.ts",
+    ]);
   });
 
   it("records only the sources the table allows, and the briefing names each", () => {
