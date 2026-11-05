@@ -805,6 +805,13 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 }
 
 /* ----- contribution record (#171) ----- */
+/* A closed disclosure on the claim page: one quiet line until opened. */
+.contribution-record { margin: 1.4rem 0; }
+.contribution-record[open] > summary { margin-bottom: 0.6rem; }
+.contribution-record-note {
+  color: var(--muted); font-family: var(--sans); font-size: 0.8rem;
+  margin: 0 0 1rem;
+}
 .exchange {
   border-left: 2px solid var(--rule); padding: 0.1rem 0 0.1rem 1.1rem;
   margin: 0 0 1.8rem;

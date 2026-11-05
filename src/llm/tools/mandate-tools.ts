@@ -15,8 +15,8 @@
  *
  *  - survey_scope: the graph's allocation signals over a subtree and/or a
  *    keyword slice (services/scope-survey-service.ts);
- *  - read_page: one public page in full, for when a search snippet cannot
- *    tell you whether a source matters;
+ *  - read_page: one public page, read in windows to its end if it matters,
+ *    for when a search snippet cannot tell you whether a source matters;
  *  - update_workspace: the mandate's durable working memory
  *    (`grants.workspace`), read back in full at the start of every pass.
  *
@@ -73,7 +73,8 @@ export function getSurveyScopeToolDefinition(): Tool {
       "allocation signals: importance, contestation, assessment state and " +
       "age, expected gain from another pass, deferred subclaims; most " +
       "valuable first. A search aid, not the scope: the mandate's scope is " +
-      "its words. Paginate with offset.",
+      "its words. A page at a time; when next_offset is set there is more, " +
+      "so pass it as offset.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -232,13 +233,20 @@ export function createMandateTools(options: MandateToolOptions = {}): MandateToo
         // A call naming nothing surveys the mandate's declared hints; a
         // call naming a subtree or a query surveys exactly that.
         const useDefaults = !claimId && !query;
+        const offset = Math.max(0, Number(toolInput.offset ?? 0) || 0);
+        const limit = options.surveyLimit ?? 40;
         const rows = await surveyScope({
           scopeClaimId: useDefaults ? (options.scopeClaimId ?? null) : claimId,
           scopeQuery: useDefaults ? (options.scopeQuery ?? null) : query,
-          offset: Number(toolInput.offset ?? 0),
-          limit: options.surveyLimit ?? 40,
+          offset,
+          limit,
         });
-        return JSON.stringify({ count: rows.length, claims: rows });
+        // A full page may have more behind it; say where it continues (#689).
+        return JSON.stringify({
+          count: rows.length,
+          next_offset: rows.length === limit ? offset + rows.length : null,
+          claims: rows,
+        });
       }
       if (name === READ_PAGE_TOOL_NAME) return executeReadPage(name, toolInput);
       if (name === UPDATE_WORKSPACE_TOOL_NAME && options.grantId) {

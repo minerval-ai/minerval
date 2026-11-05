@@ -169,6 +169,7 @@ import { LlmRefusalError } from "../../../src/llm/errors.js";
 import { getUsageContext, runWithUsageContext, withCostMeter } from "../../../src/llm/usage-context.js";
 import { FakeLeanCheckerClient } from "../../../src/services/lean-checker-fake.js";
 import type { FormalizationRow } from "../../../src/services/attempt-service.js";
+import type { SolverPriorAttemptInput } from "../../../src/llm/prompts/math-solver.js";
 
 const formalization: FormalizationRow = {
   id: "f1f1f1f1-0000-4000-8000-000000000001",
@@ -204,7 +205,9 @@ const attempt = {
 
 const CEILING = 10_000_000;
 
-function run(opts: { checker?: FakeLeanCheckerClient | null; ceiling?: number } = {}) {
+function run(
+  opts: { checker?: FakeLeanCheckerClient | null; ceiling?: number; priorAttempts?: SolverPriorAttemptInput[] } = {}
+) {
   const checker = opts.checker === undefined ? new FakeLeanCheckerClient() : opts.checker;
   return withCostMeter(() =>
     runWithUsageContext({ jobId: "job-1", claimId: attempt.claim_id }, () =>
@@ -216,6 +219,7 @@ function run(opts: { checker?: FakeLeanCheckerClient | null; ceiling?: number } 
         effort: "max",
         ceilingMicroUsd: opts.ceiling ?? CEILING,
         checker,
+        ...(opts.priorAttempts ? { priorAttempts: opts.priorAttempts } : {}),
         now: () => 0,
       })
     )
@@ -268,10 +272,11 @@ describe("runMathSolver: the run shape", () => {
       "code_execution",
       "notebook_write",
       "notebook_read",
+      "raise_issue",
       "report",
     ]);
     expect((o.tools as unknown[])[3]).toBe(CODE_EXECUTION_TOOL);
-    expect((o.tools as unknown[])[6]).toBe(REPORT_TOOL);
+    expect((o.tools as unknown[])[7]).toBe(REPORT_TOOL);
     expect(o.fallbacks).toBe("none");
     expect(o.effort).toBe("max");
     expect(o.taskBudgetTokens).toBe(solverTaskBudgetTokens(CEILING, "claude-opus-5-5"));
@@ -291,7 +296,12 @@ describe("runMathSolver: the run shape", () => {
     expect(named[1]!.description).toBe(SOLVER_TOOL_DESCRIPTIONS.lean_elaborate);
     // lean_check is bound to the statement: no formalization_id in its schema.
     const leanCheck = (o.tools as Array<{ name: string; input_schema: { properties: Record<string, unknown>; required: string[] } }>)[2]!;
-    expect(Object.keys(leanCheck.input_schema.properties)).toEqual(["kind", "proof", "replay", "force"]);
+    // No replay option: a fresh replay does not exist yet, so none is offered (#758).
+    expect(Object.keys(leanCheck.input_schema.properties)).toEqual(["kind", "proof", "force"]);
+    expect((leanCheck as unknown as { description: string }).description).not.toContain("cold-lane");
+    // raise_issue in the solver's own words, with none of the platform's vocabulary (#743).
+    const issue = named.find((t) => t.name === "raise_issue")!;
+    for (const term of ["claim", "graph", "steward", "mandate"]) expect(issue.description.toLowerCase()).not.toContain(term);
     expect(leanCheck.input_schema.required).toEqual(["kind", "proof"]);
   });
 
@@ -318,10 +328,53 @@ describe("runMathSolver: the run shape", () => {
       "code_execution",
       "notebook_write",
       "notebook_read",
+      "raise_issue",
       "report",
     ]);
     const initial = o.initialMessages as Array<{ content: string }>;
     expect(initial[0]!.content).toContain("no checker is configured");
+  });
+});
+
+describe("runMathSolver: earlier attempts (#758)", () => {
+  const lean = "theorem t (n : ℕ) : n + 0 = n := by\n  simp";
+  const prior: SolverPriorAttemptInput = {
+    id: "a0a0a0a0-0000-4000-8000-000000000000",
+    variant: "standard",
+    effort: "high",
+    status: "completed",
+    outcome: "partial",
+    finishedAt: null,
+    report: { outcome: "partial", lean_proof: lean, obstruction: "stuck" },
+    notebook: { lemma: "```lean\n" + lean + "\n```", plan: "x".repeat(5_000) },
+  };
+
+  it("offers read_earlier_attempt only on a repeat attempt, and returns the record whole", async () => {
+    script.turns = [{ tools: [report()] }];
+    await run();
+    expect((script.options!.tools as Array<{ name: string }>).map((t) => t.name)).not.toContain("read_earlier_attempt");
+
+    script.turns = [
+      {
+        tools: [
+          { name: "read_earlier_attempt", input: { attempt_id: prior.id } },
+          { name: "read_earlier_attempt", input: { attempt_id: prior.id, section: "plan" } },
+          { name: "read_earlier_attempt", input: { attempt_id: "nope" } },
+          { name: "read_earlier_attempt", input: { attempt_id: prior.id, section: "missing" } },
+        ],
+      },
+      { tools: [report()] },
+    ];
+    await run({ priorAttempts: [prior] });
+    expect((script.options!.tools as Array<{ name: string }>).map((t) => t.name)).toContain("read_earlier_attempt");
+    const [whole, section, unknown, missing] = script.outputs.map((o) => JSON.parse(o));
+    expect(whole.report.lean_proof).toBe(lean);
+    expect(whole.notebook.lemma).toContain("by\n  simp");
+    expect(whole.notebook.plan).toHaveLength(5_000);
+    expect(section.content).toHaveLength(5_000);
+    expect(unknown.success).toBe(false);
+    expect(unknown.message).toContain(prior.id);
+    expect(missing.message).toContain("lemma, plan");
   });
 });
 
@@ -339,8 +392,12 @@ describe("runMathSolver: hooks", () => {
     expect(value.turns).toBe(2);
     expect(value.report).toBeNull();
     expect(billedMicroUsd).toBe(1.2 * CEILING);
-    // No reminder after turn 1 (60%), the notice after turn 2 (120%), once.
-    expect(script.reminders).toEqual([null, WRAP_UP_NOTICE]);
+    // The dollar spend line after every turn (#758); the notice joins it
+    // after turn 2 (120%), once, and not after turn 1 (60%).
+    expect(script.reminders[0]).toMatch(/^Budget: \$6\.00 of \$10\.00 spent \(60%\)\./);
+    expect(script.reminders[0]).not.toContain(WRAP_UP_NOTICE);
+    expect(script.reminders[1]).toMatch(/^Budget: \$12\.00 of \$10\.00 spent \(100%\)\./);
+    expect(script.reminders[1]).toContain(WRAP_UP_NOTICE);
   });
 
   it("sends the reminder once and then stays quiet", async () => {
@@ -351,7 +408,9 @@ describe("runMathSolver: hooks", () => {
     ];
     const { value } = await run();
     expect(value.status).toBe("completed");
-    expect(script.reminders).toEqual([WRAP_UP_NOTICE, null]);
+    expect(script.reminders[0]).toContain(WRAP_UP_NOTICE);
+    expect(script.reminders[1]).toMatch(/^Budget: \$9\.50 of \$10\.00 spent \(95%\)\. Your last turn cost \$0\.50/);
+    expect(script.reminders[1]).not.toContain(WRAP_UP_NOTICE);
   });
 
   it("stops when the operator pauses the solver", async () => {

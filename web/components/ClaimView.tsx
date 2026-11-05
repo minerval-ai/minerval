@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { ClaimDetail } from "@/lib/types";
+import type { ClaimDetail, Instance } from "@/lib/types";
+import { splitInstances, stanceTag } from "@/lib/instances";
 import {
   statusMeta, isStatus, claimTypeMeta, decompositionNote,
   DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
@@ -28,6 +29,45 @@ import {
   QuantityHead, QuantityEstimates, QuantityReadings, QuantityCuts, ThresholdPanel,
 } from "./quantity/QuantitySections";
 
+/** One source's appearance of the claim, with its stance where it is not simply affirming. */
+function InstanceCard({ inst }: { inst: Instance }) {
+  const tag = stanceTag(inst.stance);
+  return (
+    <div className="instance">
+      <blockquote>{inst.verbatim_text}</blockquote>
+      <div className="instance-cite">
+        {inst.source_url ? (
+          <a href={inst.source_url}>{inst.source_title}</a>
+        ) : (
+          <span>{inst.source_title}</span>
+        )}
+        {tag && (
+          <span className="tag" title={tag.title}>{tag.word}</span>
+        )}
+        {inst.source_type && inst.source_type !== "unknown" && (
+          <span className="tag">{inst.source_type.replace(/_/g, " ")}</span>
+        )}
+        {/* This score is the Extractor's, not the Matcher's: it says
+            "this passage states a genuine, well-formed claim", not how
+            well the passage matches the canonical form (#160). */}
+        <span
+          className="conf-num"
+          title="The Extractor's confidence that this passage states a genuine, well-formed claim."
+        >
+          extraction {inst.confidence.toFixed(2)}
+        </span>
+      </div>
+      {inst.context && (
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", margin: ".35rem 0 0" }}>
+          {inst.context}
+        </p>
+      )}
+      {/* The Steward's reading of this source (#286), when recorded. */}
+      <InstanceReadingLine reading={inst.reading} />
+    </div>
+  );
+}
+
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
@@ -37,6 +77,7 @@ function fmtDate(iso: string) {
 
 export function ClaimView({ detail }: { detail: ClaimDetail }) {
   const { claim, tree, instances, trajectory, record } = detail;
+  const { voices, mentions } = splitInstances(instances ?? []);
   // Mathematics (docs/mathematics.md §8.3): the formal statement, the derived
   // machine-checked badge, the bounty, the attempts, and the prize claims.
   // Each is null or empty until the API serves it, and each section renders
@@ -341,40 +382,19 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           {/* Origins first (#507): the sources as the claim's story, above
               the appearances themselves. Renders nothing without a story. */}
           <ProvenanceMap story={detail.provenance_story} />
-          {(instances ?? []).map((inst) => (
-            <div className="instance" key={inst.id}>
-              <blockquote>{inst.verbatim_text}</blockquote>
-              <div className="instance-cite">
-                {inst.source_url ? (
-                  <a href={inst.source_url}>{inst.source_title}</a>
-                ) : (
-                  <span>{inst.source_title}</span>
-                )}
-                {inst.stance === "denies" && (
-                  <span className="tag" title="This source denies the claim as stated.">denies</span>
-                )}
-                {inst.source_type && inst.source_type !== "unknown" && (
-                  <span className="tag">{inst.source_type.replace(/_/g, " ")}</span>
-                )}
-                {/* This score is the Extractor's, not the Matcher's: it says
-                    "this passage states a genuine, well-formed claim", not how
-                    well the passage matches the canonical form (#160). */}
-                <span
-                  className="conf-num"
-                  title="The Extractor's confidence that this passage states a genuine, well-formed claim."
-                >
-                  extraction {inst.confidence.toFixed(2)}
-                </span>
-              </div>
-              {inst.context && (
-                <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", margin: ".35rem 0 0" }}>
-                  {inst.context}
-                </p>
-              )}
-              {/* The Steward's reading of this source (#286), when recorded. */}
-              <InstanceReadingLine reading={inst.reading} />
-            </div>
-          ))}
+          {voices.map((inst) => <InstanceCard key={inst.id} inst={inst} />)}
+          {/* Sources that only mention the claim: who cites it and how it is
+              used. They take no side, so they sit apart from the voices and
+              are never counted as affirming or denying. */}
+          {mentions.length > 0 && (
+            <>
+              <h3 style={{ fontSize: "1rem", margin: "1rem 0 .2rem" }}>Mentioned in</h3>
+              <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem" }}>
+                Sources that refer to the claim without taking a side: they cite it, report the debate, or raise it in passing.
+              </p>
+              {mentions.map((inst) => <InstanceCard key={inst.id} inst={inst} />)}
+            </>
+          )}
           <ProvenanceRecord
             instances={instances ?? []}
             edges={detail.provenance_edges}
@@ -422,8 +442,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       <CiteClaim claimId={claim.id} />
 
       {/* contribution record (#171) — the public exchanges, rendered as
-          history after the claim's own content. Hidden entirely when no
-          contribution has been made. */}
+          history after the claim's own content, behind a closed disclosure so no
+          contributor text shows until a reader opens it. Hidden entirely when
+          no contribution has been made. */}
       {record && record.length > 0 && <ContributionRecord record={record} />}
 
       {/* contribution entry (#174): the companion of the contribution record

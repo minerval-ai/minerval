@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 2)
+# Domain skill: Mathematics (version 6)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -126,7 +126,10 @@ elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
 computer-algebra toolkit, works alone within a fixed budget of metered
-work, writes nothing to the graph, and reports to the steward. Its prompt
+work, and writes nothing to the graph. No administrator launches it on its
+own judgment: an attempt runs only as an `attempt_proof` action that a
+mandate's plan funds (For the Grantmaker, below), and its result goes to
+the claim's steward, which did not launch it but judges what it settles. Its prompt
 carries none of this document, so nothing it says uses the graph's terms
 or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
@@ -164,7 +167,10 @@ while the claim still lacks one. An `attempt_proof` item is `waiting`, not
 blocked, until a statement is published; the n-th item on a claim
 entitles the n-th attempt group, an earlier open group holds the next one
 back, and the mandate's attempt cooldown holds it back too unless the
-entitling item's rationale states a reason of at least twenty characters.
+entitling item's rationale says what changed since the last attempt (a new
+lemma formalized in the subtree, a route the prior report names and could
+not pursue). Whether that is reason enough is your judgment; the rationale
+is public and the Audit Agent reads it.
 Every item's standing (open, running, done, cancelled, waiting, blocked,
 with the reason) comes back from `extend_plan` in the same turn and from
 `grant_overview` at any time; read it before valuing, and before filing a

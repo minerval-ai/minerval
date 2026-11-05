@@ -3,7 +3,9 @@
 **What the source map is.** A claim accumulates instances: the places it
 has been asserted, each with the passage and the source. A count of those
 instances treats every appearance as one independent vote, and that is the
-one thing it usually is not. A news article asserting a finding rests on the
+one thing it usually is not. Some instances take no side at all: a source
+that only mentions the claim, citing it or reporting the debate, shows how
+the claim is used and is no vote in any count. A news article asserting a finding rests on the
 study it reports; a second article rests on the first; a commentary quotes
 the second; three of the four are one voice. The source map records that
 structure. For each instance, a reading: whether the source's own evidence
@@ -231,11 +233,33 @@ sentences, record both rather than a splice.
 
 You may be launched to build the map for a Steward to weigh: to open the
 sources behind a claim's instances, read each against the claim, and record
-what you find. The procedure is the Steward's, above, and the tools are the
-same except the last two: begin with `provenance_get_map`, read with
-`provenance_read_source`, record readings with `provenance_record_reading`,
-edges with `provenance_record_edge`, and document relations with
-`provenance_record_source_relationship`. You do not write the map's summary
+what you find. Begin with `provenance_get_map`: it lists the instances with
+the ids the recording tools take, says which sources have stored text, and
+shows what earlier passes recorded. Open a source with
+`provenance_read_source` and read it whole, the methods and the data and
+the reasoning, not the excerpt (§9). For each source you read, record a
+reading with `provenance_record_reading`: whether its own evidence bears
+its assertion, what it deploys the claim for, a note in the graph's voice
+where one would help a reader, and whether the Steward should open it and
+why. Read for what the source itself shows: a study supports its finding
+by its methods and data, a news report by the study it cites, and a
+commentary often asserts without evidence, which is worth recording rather
+than a fault. Where a source draws on another document for the assertion,
+record the edge with `provenance_record_edge`, naming the passage where it
+does so, the kind of dependency, and how the claim fared in the crossing.
+The commonest failure at a crossing is strengthening (a hedged finding
+stated as fact, a subgroup result stated for everyone, a correlation stated
+as a cause), and catching it is the main reason the map exists; say with
+`target_read` whether you opened the target. Where two documents are one
+voice, record the relation with `provenance_record_source_relationship`.
+When the first window of a source lists a retraction or correction, say so
+in its reading. Record as you go rather than at the end. Every reading and edge hangs on an
+instance, so where you find a source that asserts, denies or poses the
+claim in its own voice and is not yet an instance, record it with
+`record_claim_instance` as you read (on a question,
+`record_question_instance`, for a source that asks or answers it), by the
+Steward's rules for instances, and then map it. The instance is recorded as yours; the Steward
+owns the instance set and may correct or detach it. You do not write the map's summary
 or record where the story begins; the reader-facing account and the origins
 are the Steward's judgment. Put in your report any source you found to be
 the first record of the claim, and what you looked for upstream of it, and

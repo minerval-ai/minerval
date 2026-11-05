@@ -15,14 +15,17 @@
  * brief can be written with the instrument's affordances in mind. What
  * lives here is the mechanism around that judgment: the launcher's own
  * money (a Steward pays from its pass's budget, a Grantmaker from its
- * mandate's uncommitted budget, and each is shown what it has), the
- * per-launcher-run count cap, the daily cap on research no funder pays
- * for, the pause flag, the run row, and the synchronous run itself. The
+ * mandate's uncommitted budget, and each is shown what it has), the daily
+ * cap on research no funder pays for (stated in the description on such a
+ * pass, with what is left of it in each result), the pause flag, the run
+ * row, and the synchronous run itself. There is no count of runs: money
+ * bounds them (CLAUDE.md, "Prefer money to counts"). The
  * launcher's tool call blocks until the researcher reports; the report comes back as the tool result and is
  * also kept on the run row for `get_research_run` and for the record.
  *
- * Same factory shape as the report tools: per-run state (the count) lives
- * in a closure, and `execute` returns null for any name it does not own.
+ * Same factory shape as the report tools: per-run state (how many runs
+ * were launched, for the record and tests; nothing limits it) lives in a
+ * closure, and `execute` returns null for any name it does not own.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -33,6 +36,7 @@ import {
   reviewCostEstimateMicroUsd,
 } from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
+import { resolveProvider } from "../providers/routing.js";
 import { LlmBudgetExceededError } from "../errors.js";
 import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withPassBudget } from "../usage-context.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
@@ -45,10 +49,13 @@ import {
   modelForTier,
   openResearchRun,
   readResearcherPaused,
+  researcherSpentTodayMicroUsd,
   type ResearchModelTier,
+  type ResearchRunRow,
 } from "../../services/research-run-service.js";
 import { runResearcher, type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
 import { allocateMandateToRequest } from "../../services/allocation-service.js";
+import { owlsToMicroUsd } from "../../services/owl.js";
 import {
   ExaminationError,
   linkResearchRun,
@@ -71,12 +78,16 @@ export interface ResearchTools {
   definitions: Tool[];
   /** Returns null for any tool name this bundle does not own. */
   execute: (name: string, input: Record<string, unknown>) => Promise<string | null>;
-  /** Runs launched by this launcher run so far. */
+  /** Runs launched by this launcher run so far: a record, not a limit. */
   readonly launchedCount: number;
 }
 
 export interface ResearchToolsOptions {
-  /** The agent key recorded as the launcher: claim_steward, grantmaker. */
+  /**
+   * The agent key recorded as the launcher: claim_steward, grantmaker,
+   * curator or audit (RESEARCH_LAUNCHERS). Only a Steward's research writes
+   * to the graph; the others read and report.
+   */
   requestedBy: string;
   /** The claim the launcher serves; a Grantmaker passes none and may name one per call. */
   claimId?: string | null;
@@ -119,19 +130,51 @@ export function getFundRequestToolDefinition(): Tool {
   };
 }
 
+/**
+ * Which tiers carry the code-execution sandbox in this deployment. The
+ * sandbox is an Anthropic server tool, so a tier has it only when its
+ * configured model is Anthropic-served (agents/researcher.ts); the launcher
+ * is told which, since a replication on a tier without it cannot run code.
+ */
+export function sandboxTiersSentence(): string {
+  const withSandbox = RESEARCH_MODEL_TIERS.filter((t) => {
+    const model = modelForTier(t);
+    return !!model && resolveProvider(model) === "anthropic";
+  });
+  const list = (tiers: readonly string[]) => tiers.map((t) => `'${t}'`).join(" and ");
+  if (withSandbox.length === RESEARCH_MODEL_TIERS.length) {
+    return "Every tier has a code-execution sandbox (Python, no network). ";
+  }
+  if (withSandbox.length === 0) {
+    return "No tier has a code-execution sandbox here: the researcher cannot run code. ";
+  }
+  const without = RESEARCH_MODEL_TIERS.filter((t) => !withSandbox.includes(t));
+  return (
+    `${list(withSandbox)} ${withSandbox.length === 1 ? "has" : "have"} a code-execution sandbox ` +
+    `(Python, no network); ${list(without)} ${without.length === 1 ? "has" : "have"} none and cannot run code. `
+  );
+}
+
 export function getResearchToolDefinitions(
   input: {
     claimScoped: boolean;
     graphWrites?: boolean;
+    /**
+     * Who launches, when the research writes nothing: a mandate's Grantmaker
+     * (the default), whose research may submit contributions, or the Curator
+     * or the Audit Agent, whose research only reads and reports.
+     */
+    launcher?: "grantmaker" | "curator" | "audit";
     /** Where the launcher's research money comes from and what it holds now, for the description. */
     funding?: string;
   } = { claimScoped: true }
 ): Tool[] {
   const config = loadConfig();
   const graphWrites = input.graphWrites ?? true;
+  const mandate = !graphWrites && (input.launcher ?? "grantmaker") === "grantmaker";
   const funding =
     input.funding ??
-    (graphWrites
+    (!mandate
       ? "Research is paid from this pass's own budget, and a run's budget_usd may be at most what the pass has left. "
       : "Research is paid from the mandate's uncommitted budget, and a run's budget_usd (with any " +
         "contribution_budget_usd) may be at most what that holds. ");
@@ -143,26 +186,31 @@ export function getResearchToolDefinitions(
         "investigation and returns a report you weigh. It answers only to you, writes " +
         (graphWrites
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
-            "on the claim in scope, "
-          : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
-            "not record provenance or examine documents, and with contribution_budget_usd it submits " +
-            "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
+            "and instances (sources asserting, denying or posing a claim, or asking or answering a " +
+            "question) on the node in scope, "
+          : mandate
+            ? "nothing to the graph directly (research a mandate launches reads and reports; it does " +
+              "not record provenance or examine documents, and with contribution_budget_usd it submits " +
+              "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), "
+            : "nothing to the graph (it reads and reports; it does not record provenance or examine " +
+              "documents), ") +
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
-        "checking whether a dataset shows what a paper says, or a proof attempt outside " +
-        "the formal pipeline. Write the brief the way you would for a capable assistant " +
+        "checking whether a dataset shows what a paper says, or exploring a route to a proof " +
+        "(the researcher has no Lean checker, so it brings back a sketch or a lead to weigh, " +
+        "never a checked proof; a checked attempt is the solver's, funded through a mandate's " +
+        "plan). Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
         "Every tier has web search, read_page, the graph's read tools, scholarly search " +
         (graphWrites
           ? "where configured, a notebook, and the provenance tools on a claim-scoped task. "
           : "where configured, and a notebook. ") +
-        "Tiers: 'strong' runs the best model class on the long-run loop with a " +
-        "code-execution sandbox (Python, no network), for a replication or an analysis " +
-        "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
-        "for most delegated reading and checking; 'cheap' runs the cheap tier with no " +
-        "sandbox, and is right for reading and mapping a large literature economically. " +
+        "Tiers: 'strong' runs the best model class, for a replication or an analysis " +
+        "where the best model pays; 'standard' for most delegated reading and checking; " +
+        "'cheap' for reading and mapping a large literature economically. " +
+        sandboxTiersSentence() +
         "Budget is in USD of metered work. " +
         funding +
         "Each result says what is left after the run. " +
@@ -177,7 +225,8 @@ export function getResearchToolDefinitions(
             type: "string",
             description:
               "The brief, written for the instrument: the question, the context it needs, " +
-              "what a good answer looks like, where to start, what to avoid. At least a paragraph.",
+              "what a good answer looks like, where to start, what to avoid. At least 80 characters; " +
+              "a real brief is usually a paragraph or more.",
           },
           model_tier: {
             type: "string",
@@ -217,7 +266,7 @@ export function getResearchToolDefinitions(
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
               "\"method\", \"attribution\"). Each facet shares the run's budget.",
           } } : {}),
-          ...(!graphWrites
+          ...(mandate
             ? {
                 contribution_budget_usd: {
                   type: "number",
@@ -245,22 +294,113 @@ export function getResearchToolDefinitions(
         additionalProperties: false,
       },
     },
-    {
-      name: GET_RESEARCH_RUN_TOOL_NAME,
-      description:
-        "Read a research run: its brief, model, status, spend, report, and notebook. Use it " +
-        "to reread a report from an earlier pass, or to see what a run that ended without " +
-        "reporting had written to its notebook.",
-      input_schema: {
-        type: "object",
-        properties: {
-          research_run_id: { type: "string", description: "The run's id." },
-        },
-        required: ["research_run_id"],
-        additionalProperties: false,
-      },
-    },
+    getResearchRunReadToolDefinition(),
   ];
+}
+
+/**
+ * get_research_run: reading a run's report and notebook. A launcher reads
+ * the runs it launched; the keeper of a request, and the Steward of each
+ * node it bears on, read the runs that took it up or scoped it (#718). The
+ * Curator carries it even where the researcher is off, for the requests it
+ * keeps.
+ */
+export function getResearchRunReadToolDefinition(): Tool {
+  return {
+    name: GET_RESEARCH_RUN_TOOL_NAME,
+    description:
+      "Read a research run: its brief, model, status, spend, report, and notebook. Use it " +
+      "to reread a report from an earlier pass, to see what a run that ended without " +
+      "reporting had written to its notebook, or to read in full the work a Researcher " +
+      "returned on a request you keep or that bears on your node (the work's research_run_id, " +
+      "in list_requests or in the message that told you of it).",
+    input_schema: {
+      type: "object",
+      properties: {
+        research_run_id: { type: "string", description: "The run's id." },
+      },
+      required: ["research_run_id"],
+      additionalProperties: false,
+    },
+  };
+}
+
+/** Who is reading a run: a node's Steward, a mandate's Grantmaker, the Curator or the Audit Agent. */
+export interface ResearchRunReader {
+  /**
+   * The launcher role of a reader that serves no one node or mandate (the
+   * Curator, the Audit Agent): it reads the runs its role launched, so a
+   * later pass picks up an earlier one's thread.
+   */
+  role?: string | null;
+  /** The node the reader stewards. */
+  claimId?: string | null;
+  /** The mandate the reader serves. */
+  grantId?: string | null;
+  /** The Curator, keeper of the requests that bear on several nodes or none. */
+  curator?: boolean;
+}
+
+/**
+ * Whether `reader` may read `row`. A launcher reads its own runs: a Steward
+ * those on its node, a Grantmaker those its mandate launched, the Curator
+ * and the Audit Agent those their role launched. A run on a
+ * request is the request's (Part VIII: what it finds goes to the keeper and
+ * to the Steward of each node it bears on), so its keeper and those
+ * Stewards read it too.
+ */
+async function mayReadRun(row: ResearchRunRow, reader: ResearchRunReader): Promise<boolean> {
+  if (reader.claimId && row.claim_id === reader.claimId) return true;
+  if (!reader.claimId && reader.grantId && row.grant_id === reader.grantId) return true;
+  if (!reader.claimId && !reader.grantId && reader.role && row.requested_by === reader.role) return true;
+  if (!row.request_id || !(reader.claimId || reader.curator)) return false;
+  const [req] = await rawQuery<{ keeper_kind: string; keeper_claim_id: string | null; bears: boolean }>(
+    `SELECT r.keeper_kind, r.keeper_claim_id,
+            EXISTS (SELECT 1 FROM request_targets t
+                     WHERE t.request_id = r.id AND t.claim_id = $2) AS bears
+       FROM requests r WHERE r.id = $1`,
+    [row.request_id, reader.claimId ?? null]
+  );
+  if (!req) return false;
+  if (reader.curator) return req.keeper_kind === "curator";
+  return req.keeper_claim_id === reader.claimId || req.bears;
+}
+
+/** get_research_run's result for `reader`. */
+export async function readResearchRun(input: Record<string, unknown>, reader: ResearchRunReader): Promise<string> {
+  const id = str(input.research_run_id);
+  if (!id) return refuse("research_run_id is required.");
+  if (!UUID_RE.test(id)) return refuse(`"${id}" is not a research run id.`);
+  const row = await getResearchRun(id);
+  if (!row) return refuse(`No research run ${id} exists.`);
+  if (!(await mayReadRun(row, reader))) {
+    return refuse(
+      "That run was launched for another claim, mandate or role, and was not on a request " +
+        (reader.curator ? "you keep." : "you keep or that bears on your node.")
+    );
+  }
+  return JSON.stringify({
+    success: true,
+    research_run: {
+      id: row.id,
+      claim_id: row.claim_id,
+      ...(row.request_id ? { request_id: row.request_id } : {}),
+      requested_by: row.requested_by,
+      task: row.task,
+      model: row.model,
+      model_tier: row.model_tier,
+      status: row.status,
+      spent_usd: Math.round(row.spent_micro_usd / 10_000) / 100,
+      turns: row.turns,
+      tools: row.tools,
+      started_at: row.started_at,
+      finished_at: row.finished_at,
+      report: row.report,
+      notebook: row.notebook,
+      error: row.error,
+      ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
+    },
+  });
 }
 
 function str(v: unknown): string {
@@ -290,6 +430,11 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const config = loadConfig();
   const claimScoped = !!options.claimId;
   const graphWrites = launcherWritesGraph(options.requestedBy);
+  // The Curator and the Audit Agent launch research that reads and reports
+  // (Part VIII, Instruments): the Curator owns structure, not sources, and
+  // the Audit Agent judges the record rather than adding to it.
+  const launcher =
+    options.requestedBy === "curator" || options.requestedBy === "audit" ? options.requestedBy : ("grantmaker" as const);
   // A deployment with the researcher off offers nothing: a tool that only
   // refuses would cost every launcher's prompt and invite wasted calls.
   // Only a mandate's Grantmaker funds requests: a Steward files them.
@@ -301,15 +446,27 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const ctxAtStart = getUsageContext();
   const passLeft = passBudgetLeftMicroUsd(ctxAtStart);
   const paysFromPass = options.requestedBy !== "grantmaker";
+  // On a pass no funder pays for, research also shares the operator's
+  // daily allowance for such work (#736): stated up front with its reason,
+  // and what is left of it today comes back with every launch.
+  const unfunded = !ctxAtStart.jobId && !ctxAtStart.userId;
+  const unfundedCap =
+    unfunded
+      ? "This pass is not paid for by a funder, so research it launches also shares the platform's daily " +
+        `allowance for research no funder pays for (${usdText(owlsToMicroUsd(config.researcherDailyCapOwls))} a day, ` +
+        "UTC), the operator's bound on spend no one has chosen to fund. A launch whose budget_usd would take " +
+        "today's spend past it is refused; each result says what is left of it today. "
+      : "";
   const stewardFunding =
     paysFromPass && passLeft !== null
       ? `Research is paid from this pass's own budget (${ctxAtStart.passBudget!.source}), which holds ` +
         `${usdText(passLeft)} now, less what the pass spends as it goes; a run's budget_usd may be at most ` +
-        "what the pass has left when you launch it. "
+        "what the pass has left when you launch it. " +
+        unfundedCap
       : undefined;
   const definitions = config.researcherEnabled
     ? [
-        ...getResearchToolDefinitions({ claimScoped, graphWrites, funding: stewardFunding }).filter(
+        ...getResearchToolDefinitions({ claimScoped, graphWrites, launcher, funding: stewardFunding }).filter(
           (t) => t.name !== DELEGATE_RESEARCH_TOOL_NAME || !paysFromPass || passLeft !== null
         ),
         ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
@@ -343,9 +500,24 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   };
 
   /** What the launcher has left once a run is done, for its result. */
-  const budgetLeft = async (): Promise<{ budget_left?: string }> => {
+  const budgetLeft = async (): Promise<{ budget_left?: string; unfunded_daily_allowance_left?: string }> => {
     const have = await available();
-    return have ? { budget_left: `${usdText(have.microUsd)} left in ${have.source}` } : {};
+    return {
+      ...(have ? { budget_left: `${usdText(have.microUsd)} left in ${have.source}` } : {}),
+      ...(await unfundedAllowanceLeft()),
+    };
+  };
+
+  /** On an unfunded pass, what is left today of the daily allowance for unfunded research. */
+  const unfundedAllowanceLeft = async (): Promise<{ unfunded_daily_allowance_left?: string }> => {
+    const ctx = getUsageContext();
+    if (ctx.jobId || ctx.userId) return {};
+    const cap = owlsToMicroUsd(config.researcherDailyCapOwls);
+    const spent = await researcherSpentTodayMicroUsd().catch(() => null);
+    if (spent === null) return {};
+    return {
+      unfunded_daily_allowance_left: `${usdText(Math.max(0, cap - spent))} of ${usdText(cap)} left today (UTC)`,
+    };
   };
 
   /** Refuse a launch the launcher's own money does not cover, saying what it has. */
@@ -370,8 +542,11 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       return null;
     } catch (err) {
       if (err instanceof LlmBudgetExceededError) {
+        const left = (await unfundedAllowanceLeft()).unfunded_daily_allowance_left;
         return refuse(
-          `This pass is not paid for by a funder, and the daily cap on such research would be exceeded by this run (${err.message}). Do the work inline or leave it for a later pass.`
+          `This pass is not paid for by a funder, and this run's budget would take today's research no funder pays for past the platform's daily allowance` +
+            (left ? ` (${left})` : "") +
+            ". Ask for what is left, do the work inline, or leave it for a later pass."
         );
       }
       throw err;
@@ -387,7 +562,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
    */
   const runOnRow = async (
     row: Awaited<ReturnType<typeof openResearchRun>>,
-    claim: { id: string; text: string; domains: string[] } | null,
+    claim: { id: string; text: string; domains: string[]; kind: string } | null,
     examination: ExaminationRow | null
   ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
     const ctx = getUsageContext();
@@ -449,7 +624,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     }
     if (!graphWrites && (input.claim_id !== undefined || input.examine_source_id !== undefined || input.facets !== undefined)) {
       return refuse(
-        "Research a mandate launches writes nothing to the graph, so it takes no claim_id and examines no document. " +
+        `Research ${launcher === "grantmaker" ? "a mandate launches" : "you launch"} writes nothing to the graph, so it takes no claim_id and examines no document. ` +
           "Name the claims or documents in the brief; the researcher can read them."
       );
     }
@@ -473,7 +648,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     // the budget its Grantmaker delegates (Part VIII); a Steward's research
     // records provenance instead.
     let contributionBudgetMicroUsd = 0;
-    if (!graphWrites && input.contribution_budget_usd !== undefined) {
+    if (!graphWrites && launcher === "grantmaker" && input.contribution_budget_usd !== undefined) {
       const usd = Number(input.contribution_budget_usd);
       if (!Number.isFinite(usd) || usd < 0) return refuse("contribution_budget_usd must be a non-negative number of USD.");
       contributionBudgetMicroUsd = Math.round(usd * 1_000_000);
@@ -489,14 +664,14 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
 
     const claimId = claimScoped ? options.claimId! : str(input.claim_id) || null;
     if (claimId && !UUID_RE.test(claimId)) return refuse(`claim_id "${claimId}" is not a claim id.`);
-    let claim: { id: string; text: string; domains: string[] } | null = null;
+    let claim: { id: string; text: string; domains: string[]; kind: string } | null = null;
     if (claimId) {
-      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null }>(
-        `SELECT id, text, domains FROM claims WHERE id = $1`,
+      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = $1`,
         [claimId]
       );
       if (!row) return refuse(`No claim ${claimId} exists.`);
-      claim = { id: row.id, text: row.text, domains: row.domains ?? [] };
+      claim = { id: row.id, text: row.text, domains: row.domains ?? [], kind: row.kind ?? "claim" };
     }
 
     // An examination of a document (#507): opened before the run so the
@@ -628,40 +803,14 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     });
   };
 
-  const get = async (input: Record<string, unknown>): Promise<string> => {
-    const id = str(input.research_run_id);
-    if (!id) return refuse("research_run_id is required.");
-    if (!UUID_RE.test(id)) return refuse(`"${id}" is not a research run id.`);
-    const row = await getResearchRun(id);
-    if (!row) return refuse(`No research run ${id} exists.`);
-    // A launcher reads its own runs: a Steward those on its claim, a
-    // Grantmaker those its mandate launched.
-    const mine = options.claimId
-      ? row.claim_id === options.claimId
-      : !!options.grantId && row.grant_id === options.grantId;
-    if (!mine) return refuse("That run was launched for another claim or mandate.");
-    return JSON.stringify({
-      success: true,
-      research_run: {
-        id: row.id,
-        claim_id: row.claim_id,
-        requested_by: row.requested_by,
-        task: row.task,
-        model: row.model,
-        model_tier: row.model_tier,
-        status: row.status,
-        spent_usd: Math.round(row.spent_micro_usd / 10_000) / 100,
-        turns: row.turns,
-        tools: row.tools,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        report: row.report,
-        notebook: row.notebook,
-        error: row.error,
-        ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
-      },
+  const get = (input: Record<string, unknown>): Promise<string> =>
+    readResearchRun(input, {
+      claimId: options.claimId ?? null,
+      grantId: options.grantId ?? null,
+      // The Curator and the Audit Agent read the runs their role launched.
+      role: launcher !== "grantmaker" ? options.requestedBy : null,
+      curator: options.requestedBy === "curator",
     });
-  };
 
   const execute = async (name: string, input: Record<string, unknown>): Promise<string | null> => {
     if (name === DELEGATE_RESEARCH_TOOL_NAME) return delegate(input);

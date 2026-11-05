@@ -17,8 +17,9 @@ import type { ClaimPipelineMessage } from "../services/queue-service.js";
  * Termination is guaranteed without a depth limit: the Steward calls match_claim
  * before creating any subclaim, so any pre-existing claim (including an ancestor)
  * is found and merely linked — only genuinely new claims enqueue further work.
- * Spend is bounded globally by stewardMaxRuns and the LLM budget tracker, not by
- * decomposition depth.
+ * Spend is bounded by money, not by decomposition depth: the Steward lane
+ * runs only what the action ledger funds (steward-pipeline.ts); the rest
+ * waits.
  */
 export async function handleClaimPipeline(
   message: ClaimPipelineMessage
@@ -48,8 +49,10 @@ export async function handleClaimPipeline(
   await enqueueSteward({
     claimId: message.claimId,
     trigger: "structure_and_assess",
+    // How much structure a claim needs is a question of its importance (§6),
+    // so the context asks for the judgment rather than prescribing a split.
     context:
-      "New claim onboarded. Structure it (decompose, calling match_claim for each " +
-      "dependency to link existing claims or create new ones), then assess it.",
+      "New claim onboarded. Give it the structure and assessment its importance " +
+      "warrants; a minor or settled claim may need no decomposition.",
   });
 }

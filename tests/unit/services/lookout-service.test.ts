@@ -5,8 +5,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * mandate's standing watch. Creation enforces the bounds the brief cannot;
  * a reassess flag makes the claim a candidate and writes the mandate's
  * valuation CLAMPED to the delegated ceiling, folding repeats while the
- * earlier flag is still open; an ingest flag appends to the mandate's plan
- * and refuses a source already in the graph; the run stamp advances the
+ * earlier flag is still open; an ingest flag opens (or joins) the ingest
+ * row and values it the same way, never lowering a value already there,
+ * and refuses a source already in the graph (#695); the run stamp advances the
  * heartbeat and backs a failed run off. DB mocked.
  */
 
@@ -26,6 +27,9 @@ const { state, queries } = vi.hoisted(() => ({
     existingSource: null as null | { id: string; title: string },
     planned: false,
     lookout: null as null | Record<string, unknown>,
+    ingestRow: { id: "55555555-5555-4555-8555-555555555555", status: "open" } as null | { id: string; status: string },
+    ingestFlag: null as null | { id: string; created_at: Date },
+    existingValue: null as null | number,
     valuations: [] as Array<{ grantId: string; entries: unknown[] }>,
     enqueued: [] as Array<Record<string, unknown>>,
     ensured: [] as string[],
@@ -56,6 +60,13 @@ vi.mock("../../../src/db/client.js", () => ({
       return state.standardAction ? [{ id: state.standardAction }] : [];
     }
     if (q.includes("INSERT INTO lookout_flags")) return [{ id: "flag-1" }];
+    if (q.includes("FROM lookout_flags f JOIN actions a") && q.includes("f.kind = 'ingest'")) {
+      return state.ingestFlag ? [state.ingestFlag] : [];
+    }
+    if (q.includes("SELECT id, status FROM actions")) return state.ingestRow ? [state.ingestRow] : [];
+    if (q.includes("SELECT value_est FROM mandate_valuations")) {
+      return state.existingValue === null ? [] : [{ value_est: state.existingValue }];
+    }
     if (q.includes("SELECT id, title FROM sources WHERE url = $1")) {
       return state.existingSource ? [state.existingSource] : [];
     }
@@ -70,6 +81,7 @@ vi.mock("../../../src/db/client.js", () => ({
 
 vi.mock("../../../src/services/action-service.js", () => ({
   ASSESS_GROUP: (id: string) => `assess:${id}`,
+  INGEST_GROUP: (url: string, focus?: string | null) => (focus ? `ingest:${url}#focus` : `ingest:${url}`),
   ensureAssessActions: vi.fn(async (id: string) => {
     state.ensured.push(id);
   }),
@@ -85,6 +97,7 @@ vi.mock("../../../src/services/mandate-valuer-service.js", () => ({
     return { written: entries.length, unknownActionIds: [] };
   }),
 }));
+vi.mock("../../../src/services/owl.js", () => ({ capMicroUsd: () => 500_000 }));
 vi.mock("../../../src/services/url-guard.js", () => ({
   UnsafeUrlError: class UnsafeUrlError extends Error {},
   assertPublicHttpUrl: vi.fn(async (raw: string) => {
@@ -118,6 +131,9 @@ beforeEach(() => {
   state.existingSource = null;
   state.planned = false;
   state.lookout = null;
+  state.ingestRow = { id: "55555555-5555-4555-8555-555555555555", status: "open" };
+  state.ingestFlag = null;
+  state.existingValue = null;
   state.valuations = [];
   state.enqueued = [];
   state.ensured = [];
@@ -132,7 +148,6 @@ describe("createLookout", () => {
       heartbeatHours: 100_000,
       triggers: ["retraction", "retraction", "manual"],
       maxValue: 42,
-      maxIngestsPerRun: -3,
       createdBy: "grantmaker:review",
     });
     expect(res).toEqual({ ok: true, lookoutId: LOOKOUT });
@@ -145,9 +160,10 @@ describe("createLookout", () => {
       JSON.stringify(["retraction", "manual"]),
       null,
       10,
-      0,
       "grantmaker:review",
     ]);
+    // The retired per-run count is no longer written; the column keeps its default (#695).
+    expect(insert.q).not.toContain("max_ingests_per_run");
   });
 
   it("refuses a short brief, an unknown trigger, an unresolvable model, and a watch that never wakes", async () => {
@@ -244,26 +260,55 @@ describe("flagReassessment", () => {
 });
 
 describe("flagIngest", () => {
+  const ROW = "55555555-5555-4555-8555-555555555555";
   const ingest = (over: Partial<Parameters<typeof flagIngest>[0]> = {}) =>
     flagIngest({
       lookoutId: LOOKOUT,
       grantId: GRANT,
       url: "https://example.org/paper",
       rationale: "The primary source for the live crux; not yet in the graph.",
+      maxValue: 6,
+      urgency: 9,
       ...over,
     });
 
-  it("appends an ingest item to the mandate's plan and records the flag", async () => {
+  it("opens the ingest row and values it at the urgency clamped to the ceiling, off the plan (#695)", async () => {
     const res = await ingest();
-    expect(res).toMatchObject({ ok: true, duplicate: false });
-    const upd = queries.find((x) => x.q.includes("UPDATE grants") && x.q.includes("jsonb_set"))!;
-    expect(upd.params[0]).toBe(GRANT);
-    expect(JSON.parse(upd.params[1] as string)).toEqual([
-      { action: "ingest", url: "https://example.org/paper", rationale: expect.stringContaining("[lookout]") },
+    expect(res).toMatchObject({ ok: true, duplicate: false, action_id: ROW, value_written: 6 });
+    const open = queries.find((x) => x.q.includes("INSERT INTO actions"))!;
+    expect(open.params.slice(0, 2)).toEqual(["ingest:https://example.org/paper", "https://example.org/paper"]);
+    expect(state.valuations).toEqual([
+      { grantId: GRANT, entries: [{ action_id: ROW, value: 6, rationale: expect.stringContaining("[lookout]") }] },
     ]);
+    // Nothing is appended to the plan, where it would be self-funded outside the allocator.
+    expect(queries.some((x) => x.q.includes("UPDATE grants") && x.q.includes("jsonb_set"))).toBe(false);
+    const flag = queries.find((x) => x.q.includes("INSERT INTO lookout_flags"))!;
+    expect(flag.params).toEqual([LOOKOUT, "https://example.org/paper", ROW, expect.any(String), 9, 6]);
   });
 
-  it("refuses a source already in the graph, a planned URL, and an unsafe URL", async () => {
+  it("records a focus before opening a scoped row", async () => {
+    await ingest({ focus: "the housing claims" });
+    const focusAt = queries.findIndex((x) => x.q.includes("INSERT INTO ingest_focuses"));
+    const openAt = queries.findIndex((x) => x.q.includes("INSERT INTO actions"));
+    expect(focusAt).toBeGreaterThanOrEqual(0);
+    expect(focusAt).toBeLessThan(openAt);
+  });
+
+  it("never lowers a value the mandate already put on the row", async () => {
+    state.existingValue = 8;
+    expect(await ingest({ urgency: 3 })).toMatchObject({ ok: true, value_written: 8 });
+    expect(state.valuations).toEqual([]);
+  });
+
+  it("counts a URL it raised that still waits as a repeat", async () => {
+    state.ingestFlag = { id: "flag-0", created_at: new Date("2026-09-01T00:00:00Z") };
+    expect(await ingest()).toMatchObject({ ok: true, duplicate: true, flag_id: "flag-0" });
+    expect(queries.some((x) => x.q.includes("INSERT INTO actions"))).toBe(false);
+  });
+
+  it("refuses a 0 value, a source already in the graph, a planned URL, an unsafe URL, and a closed row", async () => {
+    expect(await ingest({ maxValue: 0 })).toMatchObject({ ok: false, code: "NO_VALUE" });
+    expect(await ingest({ urgency: 0 })).toMatchObject({ ok: false, code: "NO_VALUE" });
     state.existingSource = { id: "s-1", title: "Paper" };
     expect(await ingest()).toMatchObject({ ok: false, code: "ALREADY_IN_GRAPH" });
     state.existingSource = null;
@@ -271,6 +316,11 @@ describe("flagIngest", () => {
     expect(await ingest()).toMatchObject({ ok: false, code: "ALREADY_PLANNED" });
     state.planned = false;
     expect(await ingest({ url: "ftp://example.org/x" })).toMatchObject({ ok: false, code: "URL" });
+    state.ingestRow = { id: ROW, status: "running" };
+    expect(await ingest()).toMatchObject({ ok: false, code: "LEDGER" });
+    state.ingestRow = { id: ROW, status: "cancelled" };
+    expect(await ingest()).toMatchObject({ ok: false, code: "LEDGER" });
+    expect(state.valuations).toEqual([]);
   });
 });
 

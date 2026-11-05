@@ -34,6 +34,47 @@ export function sanitizeStoredText(text: string): string {
   return text.replace(UNSTORABLE_CONTROL, "");
 }
 
+/**
+ * The most text one read returns, and the default window. A window is a page
+ * of the document, not a limit on how much of it can be read: the caller
+ * pages with `offset`, and the run's budget is what bounds the reading.
+ */
+export const SOURCE_READ_MAX_CHARS = 20_000;
+export const SOURCE_READ_DEFAULT_CHARS = 12_000;
+
+/** One window of a document's text, and where the next one starts. */
+export interface TextWindow {
+  total_chars: number;
+  offset: number;
+  content: string;
+  /** True when more text follows this window. */
+  truncated: boolean;
+  /** The offset to pass for the next window, or null at the end. */
+  next_offset: number | null;
+}
+
+/**
+ * The window both readers return: provenance_read_source over a stored
+ * source, and read_page over any public page. One contract, so an agent
+ * that has paged one knows how to page the other.
+ */
+export function windowText(text: string, offset?: number, maxChars?: number): TextWindow {
+  const start = Math.max(0, Math.floor(Number.isFinite(offset) ? offset! : 0));
+  const size = Math.min(
+    SOURCE_READ_MAX_CHARS,
+    Math.max(1, Math.floor(Number.isFinite(maxChars) ? maxChars! : SOURCE_READ_DEFAULT_CHARS))
+  );
+  const content = text.slice(start, start + size);
+  const end = start + content.length;
+  return {
+    total_chars: text.length,
+    offset: start,
+    content,
+    truncated: end < text.length,
+    next_offset: end < text.length ? end : null,
+  };
+}
+
 /** Whether a body is a PDF: the header says so, or the server did. */
 export function looksLikePdf(body: Uint8Array, contentType?: string | null): boolean {
   if (body.byteLength >= PDF_MAGIC.length) {

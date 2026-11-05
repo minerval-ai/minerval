@@ -117,6 +117,7 @@ describe("record_review_decision on a claim_prize contribution", () => {
         contribution_id: CONTRIBUTION_ID,
         decision: "escalate",
         reasoning: "identity unclear",
+        escalation_reason: "Is the claimant a second account of an earlier one?",
         confidence: 0.5,
         policy_citations: [],
       })

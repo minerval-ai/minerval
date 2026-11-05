@@ -40,6 +40,42 @@ export async function getAssessmentHistory(
   return { assessments: rows, total: totalRows[0]?.count ?? 0 };
 }
 
+/**
+ * One assessment history row as the API and MCP serve it (and the Audit
+ * reads it), so every surface shows the same fields under the same names.
+ */
+export function formatAssessmentHistoryRow(a: {
+  id: string;
+  claimId: string;
+  status: string;
+  confidence: number;
+  claimCredence: number | null;
+  summary: string | null;
+  reasoningTrace: string;
+  isCurrent: boolean;
+  subclaimSummary: unknown;
+  trigger: string | null;
+  triggerContext: string | null;
+  assessedAt: Date;
+  model?: string | null;
+}) {
+  return {
+    id: a.id,
+    claim_id: a.claimId,
+    status: a.status,
+    confidence: a.confidence,
+    claim_credence: a.claimCredence ?? null,
+    summary: a.summary ?? a.reasoningTrace,
+    reasoning_trace: a.reasoningTrace,
+    is_current: a.isCurrent,
+    subclaim_summary: a.subclaimSummary ?? {},
+    trigger: a.trigger,
+    trigger_context: a.triggerContext,
+    assessed_at: a.assessedAt.toISOString(),
+    model: a.model ?? null,
+  };
+}
+
 export async function getAssessmentTrajectory(claimId: string) {
   const db = getDb();
   const rows = await db

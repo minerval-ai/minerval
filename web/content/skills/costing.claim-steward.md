@@ -1,4 +1,4 @@
-# Method skill: Costing (version 1)
+# Method skill: Costing (version 2)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -50,49 +50,3 @@ funders will pay, to what a mandate holds, or to how much you want the
 work done. Never shave one to make a request look cheaper or pad one to
 make it look serious. The value of the work is judged separately, by
 whoever funds it, against the cost you state.
-
-## For the Grantmaker
-
-A mandate's budget is the sum of the work it buys, priced from cost_sheet
-at the ceiling figures, plus your own passes. You work out the sum; quote
-it as an estimate, and say what it buys. What to count for each kind of
-work:
-
-- **assess and reassess**: one Steward pass each, on the standard or the
-  strong tier.
-- **deepen**: one pass on the node. The children it releases get open
-  rows of their own, each a pass when you fund it; get_decomposition and
-  survey_scope show how many are waiting. Price the first level from
-  that, and keep room for the levels after it, since nobody knows the
-  size of the tree in advance.
-- **ingest**: one ingestion per source. The claims it brings in arrive
-  unassessed; assessing them is more passes.
-- **formalize and attempt_proof**: their own lines. An attempt at the max
-  variant costs several times the standard one.
-- **curation**: one Curator run for each curate row you fund.
-- **requests**: a request's budget is the price of the work. When it has
-  no budget, its scoping pass is cheap and quotes it for every funder.
-  You weigh what meeting the request would change in your territory
-  against that price. A request that came back partly met, with a stated
-  remainder, is a fresh decision at the new price.
-- **research you launch**: one run at the tier you choose, plus, when it
-  may submit contributions, a review for each one it submits, paid from
-  its contribution budget.
-- **lookouts**: one run each time a trigger fires. A daily trigger fires
-  about thirty times a month.
-- **contributions you submit**: a review each.
-- **your own passes**: the planning pass, each review pass on your
-  cadence, and the granting conversation.
-
-The daily rate decides how fast the budget is spent, not how much.
-
-## For the Contribution Reviewer and the Dispute Arbitrator
-
-When a contributor proposes a request with a budget, check the budget the
-way you check the rest of the proposal: does it follow from the work the
-request asks for? Price the steps the request implies with cost_sheet. A
-stated budget well above what the work could plausibly need, or one too
-small to do it, is not carried into the filed request: file it without a
-budget, so that a scoping pass quotes it. Say why in your reasoning. Do
-not reject an otherwise good request for a poor budget; the budget is the
-part that can be set right.

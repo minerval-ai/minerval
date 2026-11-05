@@ -101,6 +101,8 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
 vi.mock("../../../src/llm/tools/kind-tools.js", () => ({
   getRequestToolDefinitions: () => [{ name: "list_requests" }],
   executeKindTool: async () => "{}",
+  // The researcher reaches this module through the research tools.
+  getResearcherQuestionInstanceToolDefinition: () => ({ name: "record_question_instance", input_schema: { type: "object", properties: {} } }),
 }));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: {
