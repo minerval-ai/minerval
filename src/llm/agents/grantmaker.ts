@@ -49,12 +49,22 @@ import { createMandateTools } from "../tools/mandate-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import {
   PLAN_ITEM_SCHEMA,
+  normalizePlanItems,
   validatePlanItems,
   type PlanItem,
 } from "../../services/grant-service.js";
 import { materializePlanItems } from "../../services/action-service.js";
 import { countPlanItems, describePlanItems } from "../../services/plan-state.js";
 import { getMandatePipeline } from "../../services/mandate-service.js";
+import {
+  describePolicyKnobs,
+  getMandateAllocationPolicy,
+  isFormulaPolicy,
+  policyKnobs,
+  updateAllocationPolicy,
+  type AllocationPolicy,
+} from "../../services/allocation-policy-service.js";
+import type { ValuationEntry } from "../../services/mandate-valuer-service.js";
 import {
   getJobContributions,
   getJobSpentMicroUsd,
@@ -334,23 +344,6 @@ async function runGrantmakerTurnImpl(input: {
       "execution state.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   };
-  const fundedTool: Tool = {
-    name: "list_funded_assessments",
-    description:
-      "The assessments this grant has paid for so far, newest first, with " +
-      "status, credence, importance, and cost attribution.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        status: {
-          type: "string",
-          description: "Optional status filter (supported, contradicted, …).",
-        },
-        limit: { type: "number", description: "Max rows, default 30." },
-      },
-      required: [],
-    },
-  };
   const pipelineTool: Tool = {
     name: "ingestion_report",
     description:
@@ -361,33 +354,6 @@ async function runGrantmakerTurnImpl(input: {
       "from' and source-quality questions.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   };
-  const sourceClaimsTool: Tool = {
-    name: "claims_from_source",
-    description:
-      "The nodes linked to one ingested source (by source_id from " +
-      "ingestion_report), with kind, importance, contestation, stance, " +
-      "and when each was last assessed. Pages through every node the " +
-      "source carries: the result gives the total and the next offset.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        source_id: { type: "string" },
-        assessed: {
-          type: "string",
-          enum: ["any", "assessed", "unassessed"],
-          description: "Only nodes with, or without, a current assessment. Default any.",
-        },
-        order: {
-          type: "string",
-          enum: ["importance", "contestation", "recent"],
-          description: "Default importance; recent is by when the node was last assessed.",
-        },
-        offset: { type: "number", description: "Rows to skip, default 0." },
-        limit: { type: "number", description: "Rows per page, default 40, at most 100." },
-      },
-      required: ["source_id"],
-    },
-  };
   const distributionTool: Tool = {
     name: "importance_distribution",
     description:
@@ -396,36 +362,6 @@ async function runGrantmakerTurnImpl(input: {
       "claims): decile histogram, mean, and counts by assessment status. " +
       "For data-analytics questions about the mandate's yield.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
-  };
-  const policyTool: Tool = {
-    name: "update_allocation_policy",
-    description:
-      "Amend the platform General mandate's allocation policy: the " +
-      "formula knobs its bulk valuer runs on (value heuristic, cost " +
-      "priors, strong-pass gain multiplier, reassessment cadence). Only " +
-      "the General mandate's spending is formula-driven. An ordinary " +
-      "mandate's spending follows its Grantmaker's own valuations " +
-      "(set_valuations), so this tool refuses on other mandates rather " +
-      "than pretending a write took effect. Every key is bounded by the " +
-      "framework; out-of-range values are clamped. Known keys: " +
-      "contestation_floor, staleness_saturation_days, " +
-      "user_provenance_boost, strong_gain_multiplier, " +
-      "est_steward_run_cost_owls, est_steward_run_cost_strong_owls, " +
-      "staleness_base_days.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        updates: {
-          type: "object",
-          description: "Key → number map of policy values to set.",
-        },
-        note: {
-          type: "string",
-          description: "One sentence recorded with the change: why.",
-        },
-      },
-      required: ["updates", "note"],
-    },
   };
   const regrantTool: Tool = {
     name: "regrant",
@@ -470,29 +406,6 @@ async function runGrantmakerTurnImpl(input: {
       type: "object" as const,
       properties: { owls_per_day: { type: "number" } },
       required: ["owls_per_day"],
-    },
-  };
-  const allocationReportTool: Tool = {
-    name: "allocation_report",
-    description:
-      "This mandate's live allocation view, the same data its public " +
-      "page renders: the policy in force, budget and daily rate, today's " +
-      "placements and the day's emergent value-per-owl bar, per-kind " +
-      "action tiles (candidates / valued / covered), and the mandate's " +
-      "best-ranked open actions with backing and marginal upgrade ratios. " +
-      "Use this for 'where is the money going and why' questions.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        kind: {
-          type: "string",
-          description:
-            "Optional drill-down filter: assess, reassess, ingest, or " +
-            "grant_planning.",
-        },
-        limit: { type: "number", description: "Max ranked rows, default 10." },
-      },
-      required: [],
     },
   };
   const adjustTool: Tool = {
@@ -555,6 +468,28 @@ async function runGrantmakerTurnImpl(input: {
   });
   // Contributions are paid from the escrow: a live mandate only (§19).
   const contributionTools = managed ? createGrantContributionTools(input.grantId!) : null;
+  // The live mandate's policy decides which spending lever the chat holds
+  // (#687): a judgment mandate revalues the ledger itself, as its review
+  // passes do; a formula mandate amends the formula. Either way
+  // update_allocation_policy lists exactly the knobs this mandate reads.
+  const [policyRow] = managed
+    ? await rawQuery<{ policy: string | null }>(
+        `SELECT policy FROM grants WHERE id = $1`,
+        [input.grantId]
+      ).catch(() => [])
+    : [];
+  const mandatePolicy = policyRow?.policy ?? null;
+  // What the review passes left for the funder (#701), newest last: the
+  // chat is where the funder hears it.
+  const [notesRow] = managed
+    ? await rawQuery<{ notes: Array<{ at: string; note: string }> | null }>(
+        `SELECT mandate->'funder_notes' AS notes FROM grants WHERE id = $1`,
+        [input.grantId]
+      ).catch(() => [])
+    : [];
+  const funderNotes = (notesRow?.notes ?? []).slice(-5);
+  const formula = isFormulaPolicy(mandatePolicy);
+  let valuationsWritten = 0;
   const tools: Tool[] = [
     ...graphReadTools,
     ...reportTools.definitions, ...findingTools.definitions,
@@ -567,13 +502,15 @@ async function runGrantmakerTurnImpl(input: {
     ...(managed
       ? [
           overviewTool,
-          fundedTool,
           pipelineTool,
-          sourceClaimsTool,
           distributionTool,
-          allocationReportTool,
+          ...getManagementReadToolDefinitions(),
+          ...(formula ? [] : getValuationToolDefinitions()),
           adjustTool,
-          policyTool,
+          getAllocationPolicyToolDefinition(
+            mandatePolicy,
+            await getMandateAllocationPolicy(input.grantId!).catch(() => null)
+          ),
           regrantTool,
           spawnTool,
           rateTool,
@@ -600,12 +537,21 @@ async function runGrantmakerTurnImpl(input: {
       `This conversation's mandate is funded and live. You have full ` +
       `visibility into its execution through your grant tools and ` +
       `near-total control of the remaining plan through adjust_plan, ` +
+      (formula
+        ? `and of the formula its spending follows (update_allocation_policy), `
+        : `and of its spending through your valuations over the open ledger ` +
+          `(list_open_actions, set_valuations), as on your review passes, `) +
       `within the framework: you cannot spend past the escrowed budget, ` +
       `cannot touch verdicts or importance, and the refusal duties that ` +
       `govern new mandates govern adjustments equally. Answer data ` +
       `questions from tool results, never from memory; give real numbers. ` +
       `Discuss the technical setup as deeply as the funder wants: you can ` +
-      `see the pipeline, the sources, the claims, and the spend.`;
+      `see the pipeline, the sources, the claims, and the spend.` +
+      (funderNotes.length > 0
+        ? `\n\nYour review passes left these notes for the funder (newest last); raise ` +
+          `them when they bear on the conversation:\n` +
+          funderNotes.map((n) => `- ${n.at}: ${n.note}`).join("\n")
+        : ``);
   }
   if (input.funder === "platform") {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
@@ -703,11 +649,24 @@ async function runGrantmakerTurnImpl(input: {
             ? { actor: "grantmaker:chat" }
             : { confirmedBy: "founder:management_chat" }),
         });
-        if (out != null) return out;
+        if (out != null) {
+          if (name === "set_valuations") valuationsWritten += writtenCount(out);
+          return out;
+        }
       }
       return `Unknown tool: ${name}`;
     },
   }));
+
+  // Fund what the turn valued now, as a review pass does when it ends: the
+  // allocator is idempotent, locked per mandate, and bounded by the daily
+  // rate and the escrow. A failure leaves the valuations for the sweep.
+  if (valuationsWritten > 0 && input.grantId) {
+    const { runMandateAllocator } = await import("../../services/allocation-service.js");
+    await runMandateAllocator(input.grantId).catch((err) =>
+      console.error(`[grantmaker] allocation after the turn failed for ${input.grantId}: ${err instanceof Error ? err.message : String(err)}`)
+    );
+  }
 
   const reply = (result?.content ?? "").trim();
   return {
@@ -768,6 +727,295 @@ export function getBountyToolDefinitions(): Tool[] {
       },
     },
   ];
+}
+
+/**
+ * The read tools both the management chat and the autonomous review pass
+ * carry (#683): what the mandate's money bought (list_funded_assessments),
+ * what one ingested source carries (claims_from_source), and today's
+ * placements against the day's bar (allocation_report). One definition and
+ * one handler (executeManagementTool), so the two paths read the same.
+ */
+export function getManagementReadToolDefinitions(): Tool[] {
+  return [
+    {
+      name: "list_funded_assessments",
+      description:
+        "The assessments this grant has paid for so far, newest first, with " +
+        "status, credence, importance, and cost attribution.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          status: {
+            type: "string",
+            description: "Optional status filter (supported, contradicted, …).",
+          },
+          limit: { type: "number", description: "Max rows, default 30." },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "claims_from_source",
+      description:
+        "The nodes linked to one ingested source (by the source_id the " +
+        "ingestion report gives), with kind, importance, contestation, stance, " +
+        "and when each was last assessed. Pages through every node the " +
+        "source carries: the result gives the total and the next offset.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          source_id: { type: "string" },
+          assessed: {
+            type: "string",
+            enum: ["any", "assessed", "unassessed"],
+            description: "Only nodes with, or without, a current assessment. Default any.",
+          },
+          order: {
+            type: "string",
+            enum: ["importance", "contestation", "recent"],
+            description: "Default importance; recent is by when the node was last assessed.",
+          },
+          offset: { type: "number", description: "Rows to skip, default 0." },
+          limit: { type: "number", description: "Rows per page, default 40, at most 100." },
+        },
+        required: ["source_id"],
+      },
+    },
+    {
+      name: "allocation_report",
+      description:
+        "This mandate's live allocation view, the same data its public " +
+        "page renders: the policy in force, budget and daily rate, today's " +
+        "placements and the day's emergent value-per-owl bar, per-kind " +
+        "action tiles (candidates / valued / covered), and the mandate's " +
+        "best-ranked open actions with backing and marginal upgrade ratios. " +
+        "Use this for 'where is the money going and why' questions.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          kind: {
+            type: "string",
+            description:
+              "Optional drill-down filter: assess, reassess, ingest, or " +
+              "grant_planning.",
+          },
+          limit: { type: "number", description: "Max ranked rows, default 10." },
+        },
+        required: [],
+      },
+    },
+  ];
+}
+
+/**
+ * The judgment mandate's spending lever (#687): list_open_actions and
+ * set_valuations, shared by the review pass and the management chat. A
+ * formula mandate (isFormulaPolicy) is not offered them: its bulk refresh
+ * upserts the same (grant, action) rows, so a hand-written valuation would
+ * last only until the next refresh.
+ */
+export function getValuationToolDefinitions(): Tool[] {
+  return [
+    {
+      name: "list_open_actions",
+      description:
+        "The open action ledger from your mandate's point of view: each " +
+        "row's cost, what its funders have put on it, the gap left to fund, " +
+        "and your valuation if you hold one, with the node it is on (kind, " +
+        "text, tags, importance, contestation, days since assessed), its " +
+        "alternatives (at most one of a set runs), and for a curate or " +
+        "request row what it is about. Filter by territory (query by " +
+        "meaning, tag, within a node's subtree, node kind, assessment " +
+        "state) and by money (unfunded only, a cost ceiling, valued by you " +
+        "or not); page with offset. The graph reads you make also carry " +
+        "each node's open actions. An audit row whose subject is your own " +
+        "mandate is never yours to fund.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "By meaning and keyword, over the nodes' text and the rows' labels." },
+          tag: { type: "string", description: "A topic tag's slug, as graph reads return it." },
+          within: { type: "string", description: "A node id: actions on it and the nodes beneath it." },
+          within_depth: { type: "number", description: "Levels beneath `within`, default 3, at most 6." },
+          kind: {
+            type: "string",
+            enum: [
+              "assess",
+              "reassess",
+              "ingest",
+              "grant_planning",
+              "formalize",
+              "attempt_proof",
+              "prize_review",
+              "curate",
+              "audit",
+              "request",
+            ],
+          },
+          node_kind: { type: "string", enum: ["claim", "quantity", "question"] },
+          assessed: { type: "string", enum: ["any", "assessed", "unassessed"] },
+          unfunded_only: { type: "boolean", description: "Only rows whose backing does not yet cover their cost." },
+          max_cost_owls: { type: "number" },
+          valued: { type: "string", enum: ["any", "mine", "not_mine"], description: "Rows you have valued, or have not." },
+          order: {
+            type: "string",
+            enum: ["relevance", "my_value", "value_per_owl", "gap", "importance", "contestation", "stale"],
+            description: "Default relevance with a query, my_value without.",
+          },
+          offset: { type: "number" },
+          limit: { type: "number", description: "Default 25, at most 50." },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "set_valuations",
+      description:
+        "Write your mandate's valuations: for each action you judge " +
+        "relevant, a value 0-10 (how much the action is worth to your " +
+        "mandate's mission) and a one-line rationale. Sparse by design: " +
+        "value only what you know and care about; actions you skip simply " +
+        "carry no opinion from you. Your allocator funds the best marginal " +
+        "value per owl among these, within your daily rate and escrow: on " +
+        "a review pass as soon as the pass ends, in the chat at the end of " +
+        "the turn. An action whose remaining cost is more than what is left " +
+        "of today's rate is skipped, not part-funded, and one dearer than " +
+        "the whole daily rate never funds by valuation: the result names " +
+        "each such row, so raise the rate, or use fund_request for a " +
+        "request, where it should run.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          entries: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                action_id: { type: "string" },
+                value: { type: "number" },
+                rationale: { type: "string" },
+              },
+              required: ["action_id", "value"],
+            },
+          },
+        },
+        required: ["entries"],
+      },
+    },
+  ];
+}
+
+/**
+ * update_allocation_policy, described for the mandate in hand (#687): the
+ * keys its own machinery reads (policyKnobs), each with its bounds and the
+ * value in force, generated from POLICY_BOUNDS. A judgment mandate's list
+ * is short (its maintenance ceiling and its attempt priors and bounds); a
+ * formula mandate's is its formula.
+ */
+export function getAllocationPolicyToolDefinition(
+  policy: string | null | undefined,
+  current?: Partial<AllocationPolicy> | null
+): Tool {
+  const formula = isFormulaPolicy(policy);
+  return {
+    name: "update_allocation_policy",
+    description:
+      (formula
+        ? "Amend your mandate's allocation policy: the formula its " +
+          "valuations are computed from, and the cadence and cost priors " +
+          "around it. This is the lever for what you learn about allocation " +
+          "itself rather than about one action: that uncontested work stays " +
+          "more fundable than the floor allows, that the staleness horizon " +
+          "is too short. "
+        : "Amend the parts of your mandate's allocation policy its own " +
+          "machinery reads: maintenance_share, the most of your daily rate " +
+          "your allocator places on curate rows in a day (funded first, " +
+          "best value per owl first; whatever they leave stays in the day " +
+          "for everything else), and the cost priors and bounds your " +
+          "attempt_proof items are priced and capped with. Your spending " +
+          "otherwise follows your own valuations (set_valuations). ") +
+      "Keys, with their bounds and the value in force: " +
+      describePolicyKnobs(policy, current) +
+      ". Out-of-range values are clamped; a key this mandate does not read " +
+      "is refused with the list. The change takes effect on the next " +
+      "allocation. The note is the public record of why.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        updates: {
+          type: "object",
+          description: "Key to number map of the policy values to set.",
+        },
+        note: {
+          type: "string",
+          description: "What you learned that justifies the change, in your own words.",
+        },
+      },
+      required: ["updates", "note"],
+    },
+  };
+}
+
+/**
+ * Of the actions a set_valuations call valued, the ones today's room (or
+ * the whole daily rate) cannot cover (#688): the allocator skips an
+ * increment larger than the day's room rather than part-fund it, so a
+ * valuation on one of these does nothing until the room exists. Unpaced
+ * mandates (rate 0) are bounded by escrow alone and get nothing here.
+ */
+export async function valuationRoomCheck(
+  grantId: string,
+  actionIds: string[]
+): Promise<{
+  day_room_owls: number;
+  daily_rate_owls: number;
+  over_todays_room: Array<{ action_id: string; gap_owls: number }>;
+  over_daily_rate: Array<{ action_id: string; gap_owls: number }>;
+} | null> {
+  if (actionIds.length === 0) return null;
+  const [g] = await rawQuery<{ rate: number; placed: number }>(
+    `SELECT g.daily_budget_micro_usd AS rate,
+            COALESCE((SELECT SUM(al.amount_micro_usd) FROM action_allocations al
+                       WHERE al.grant_id = g.id
+                         AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),
+                     0)::bigint AS placed
+       FROM grants g WHERE g.id = $1`,
+    [grantId]
+  );
+  const rate = Number(g?.rate ?? 0);
+  if (!g || rate <= 0) return null;
+  const room = Math.max(0, rate - Number(g.placed ?? 0));
+  const gaps = await rawQuery<{ action_id: string; gap: number }>(
+    `SELECT a.id AS action_id,
+            GREATEST(0, a.cost_est_micro_usd - COALESCE(
+              (SELECT SUM(al.amount_micro_usd - al.spent_micro_usd) FROM action_allocations al
+                WHERE al.exclusion_group = a.exclusion_group AND al.released_at IS NULL
+                  AND (al.action_id IS NULL OR al.action_id = a.id)), 0))::bigint AS gap
+       FROM actions a WHERE a.id = ANY($1::uuid[]) AND a.status = 'open'`,
+    [actionIds]
+  );
+  const overRate = gaps.filter((r) => Number(r.gap) > rate);
+  const overRoom = gaps.filter((r) => Number(r.gap) > room && Number(r.gap) <= rate);
+  const shape = (r: { action_id: string; gap: number }) => ({
+    action_id: r.action_id,
+    gap_owls: microUsdToOwls(Number(r.gap)),
+  });
+  return {
+    day_room_owls: microUsdToOwls(room),
+    daily_rate_owls: microUsdToOwls(rate),
+    over_todays_room: overRoom.map(shape),
+    over_daily_rate: overRate.map(shape),
+  };
+}
+
+/** How many valuations a set_valuations result says it wrote. */
+export function writtenCount(result: string): number {
+  try {
+    return Number((JSON.parse(result) as { written?: number }).written ?? 0) || 0;
+  } catch {
+    return 0;
+  }
 }
 
 export interface ManagementToolOptions {
@@ -916,9 +1164,11 @@ export async function executeManagementTool(
       budget_job_id: string;
       budget_micro_usd: number;
       job_status: string;
+      funder_notes: Array<{ at: string; note: string }> | null;
     }>(
       `SELECT g.status, g.plan, g.plan_cursor, g.budget_job_id,
-              j.budget_micro_usd, j.status AS job_status
+              j.budget_micro_usd, j.status AS job_status,
+              g.mandate->'funder_notes' AS funder_notes
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
         WHERE g.id = $1`,
       [grantId]
@@ -942,6 +1192,8 @@ export async function executeManagementTool(
       // the items whose work ran, not the cursor's position (#427).
       plan_counts: countPlanItems(grant.plan?.items ?? [], grant.plan_cursor),
       plan: describePlanItems(grant.plan?.items ?? [], grant.plan_cursor),
+      // What the review passes asked of the funder (note_to_funder, #701).
+      funder_notes: grant.funder_notes ?? [],
     });
   }
   if (name === "list_funded_assessments") {
@@ -1112,43 +1364,103 @@ export async function executeManagementTool(
     });
     return JSON.stringify(view ?? { error: "mandate not active" });
   }
+  if (name === "list_open_actions") {
+    const { listOpenActions } = await import("../../services/mandate-valuer-service.js");
+    const str = (k: string) => (typeof toolInput[k] === "string" && toolInput[k] ? (toolInput[k] as string) : null);
+    const res = await listOpenActions({
+      grantId,
+      query: str("query"),
+      tag: str("tag"),
+      within: str("within"),
+      withinDepth: toolInput.within_depth === undefined ? undefined : Number(toolInput.within_depth),
+      kind: str("kind"),
+      nodeKind: str("node_kind") as "claim" | "quantity" | "question" | null,
+      assessed: (str("assessed") ?? "any") as "any" | "assessed" | "unassessed",
+      unfundedOnly: toolInput.unfunded_only === true,
+      maxCostOwls: toolInput.max_cost_owls === undefined ? null : Number(toolInput.max_cost_owls),
+      valued: (str("valued") ?? "any") as "any" | "mine" | "not_mine",
+      order: (str("order") ?? undefined) as Parameters<typeof listOpenActions>[0]["order"],
+      offset: Number(toolInput.offset ?? 0),
+      limit: Number(toolInput.limit ?? 25),
+    });
+    return JSON.stringify(res);
+  }
+  if (name === "set_valuations") {
+    // A formula mandate's refresh would overwrite these rows (the reason
+    // the tool is not offered to one); refuse rather than write values
+    // that silently revert.
+    const [row] = await rawQuery<{ policy: string }>(`SELECT policy FROM grants WHERE id = $1`, [grantId]);
+    if (!row) return JSON.stringify({ success: false, problem: "mandate not found" });
+    if (isFormulaPolicy(row.policy)) {
+      return JSON.stringify({
+        success: false,
+        problem:
+          "This mandate's valuations come from its formula, which rewrites them on every " +
+          "refresh; amend the formula with update_allocation_policy instead.",
+      });
+    }
+    const { setMandateValuations } = await import("../../services/mandate-valuer-service.js");
+    const entries = (Array.isArray(toolInput.entries) ? toolInput.entries : []) as ValuationEntry[];
+    const res = await setMandateValuations(grantId, entries);
+    // Tell the agent now which of these the day cannot cover (#688),
+    // rather than leave it to find out that nothing happened.
+    const notWritten = new Set([...res.unknownActionIds, ...res.recusedActionIds]);
+    const room = await valuationRoomCheck(
+      grantId,
+      entries.map((e) => String(e.action_id)).filter((id) => UUID_RE.test(id) && !notWritten.has(id))
+    ).catch(() => null);
+    if (!room || (room.over_todays_room.length === 0 && room.over_daily_rate.length === 0)) {
+      return JSON.stringify(res);
+    }
+    return JSON.stringify({
+      ...res,
+      room,
+      note:
+        `Today's room is ${room.day_room_owls} of a ${room.daily_rate_owls}-owl daily rate. ` +
+        (room.over_todays_room.length > 0
+          ? `${room.over_todays_room.length} valued row(s) need more than today's room and wait for a later day. `
+          : "") +
+        (room.over_daily_rate.length > 0
+          ? `${room.over_daily_rate.length} need more than the whole daily rate and never fund by ` +
+            `valuation: raise the rate (set_daily_rate) or, for a request, use fund_request.`
+          : ""),
+    });
+  }
   if (name === "update_allocation_policy") {
     const note = String(toolInput.note ?? "").trim();
     if (!note) return JSON.stringify({ success: false, problem: "note required" });
-    const { updateAllocationPolicy } = await import(
-      "../../services/allocation-policy-service.js"
-    );
-    // Honesty guard, on the mandate's POLICY rather than its identity: the
-    // knobs are read by the formula valuer, so they are live for any
-    // formula mandate (the platform's General lane is one instance, no
-    // longer the only permitted one). For a judgment mandate the formula
-    // never runs, so reporting success here would teach the agent and its
-    // funder that a lever exists where none does.
+    // Honesty guard, on the mandate's POLICY rather than its identity
+    // (#687): each mandate may set exactly the keys its own machinery
+    // reads (policyKnobs). A formula mandate, General or Governance, reads
+    // its formula; a judgment mandate reads its maintenance ceiling and
+    // its attempt priors and bounds, and nothing else, so a formula knob is
+    // refused there rather than reported as a lever that does nothing.
     const [row] = await rawQuery<{ policy: string }>(
       `SELECT policy FROM grants WHERE id = $1`,
       [grantId]
     );
-    if (row?.policy !== "general") {
+    if (!row) return JSON.stringify({ success: false, problem: "mandate not found" });
+    const keys = policyKnobs(row.policy);
+    const result = await updateAllocationPolicy(
+      grantId,
+      (toolInput.updates ?? {}) as Record<string, unknown>,
+      keys
+    );
+    if (!result.ok) {
       return JSON.stringify({
         success: false,
         problem:
-          "This mandate's spending follows your own valuations " +
-          "(set_valuations), not formula knobs: allocation policy is read " +
-          "only where valuations come from the formula. Express your " +
-          "judgment by revaluing the open ledger instead.",
+          result.problem +
+          (isFormulaPolicy(row.policy)
+            ? ""
+            : ". Otherwise this mandate's spending follows your own valuations (set_valuations)."),
       });
     }
-    const result = await updateAllocationPolicy(
-      grantId,
-      (toolInput.updates ?? {}) as Record<string, unknown>
-    );
-    if (!result.ok) {
-      return JSON.stringify({ success: false, problem: result.problem });
-    }
+    const policy = result.policy as unknown as Record<string, number>;
     return JSON.stringify({
       success: true,
       changed: result.changed,
-      policy_in_force: result.policy,
+      policy_in_force: Object.fromEntries(keys.map((k) => [k, policy[k]])),
       note_recorded: note,
     });
   }
@@ -1166,6 +1478,8 @@ export async function executeManagementTool(
     };
     const problem = validateMandate(probe);
     if (problem) return JSON.stringify({ success: false, problem });
+    // Stored in the one plan-item form every path writes (#684).
+    const stored = normalizePlanItems(items);
     const rows = await rawQuery<{ plan_cursor: number }>(
       `UPDATE grants g
           SET plan = jsonb_set(
@@ -1177,7 +1491,7 @@ export async function executeManagementTool(
               updated_at = now()
         WHERE g.id = $1 AND g.status = 'active'
         RETURNING g.plan_cursor`,
-      [grantId, JSON.stringify(items)]
+      [grantId, JSON.stringify(stored)]
     );
     if (rows.length === 0) {
       return JSON.stringify({

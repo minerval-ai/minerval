@@ -16,7 +16,8 @@
  * and turn caps, and a terminal `report` tool. What the researcher may
  * write: its notebook, the provenance tables through the Provenance skill's
  * tools, the claim's instances through record_claim_instance, and the stored
- * copy of a source it fetched. Nothing else; a unit test holds that line. A run a Grantmaker launched writes only its
+ * copy of a source it fetched, besides the issue reports any agent may raise
+ * for the maintainers. Nothing else; a unit test holds that line. A run a Grantmaker launched writes only its
  * notebook: the provenance and examination tools are withheld from it
  * whatever it was given (research-run-service.ts says why).
  *
@@ -75,6 +76,8 @@ import {
   isElicitTool,
 } from "../tools/elicit-tools.js";
 import { createPangramTools } from "../tools/pangram-tools.js";
+import { createReportTools } from "../tools/report-tools.js";
+import { createResearcherReadTools } from "../tools/researcher-read-tools.js";
 import {
   executeKindTool,
   getRequestToolDefinitions,
@@ -152,6 +155,37 @@ type Tool = Anthropic.Tool;
 type ToolUnion = Anthropic.Messages.ToolUnion;
 
 const PROVENANCE_PREFIX = "provenance_";
+
+/**
+ * The provenance tools that read or record on one node. On a request run
+ * bearing on several nodes they take a claim_id naming one of them (#728);
+ * provenance_read_source and provenance_record_source_relationship work
+ * on sources alone.
+ */
+const NODE_PROVENANCE_TOOLS = new Set(["provenance_get_map", "provenance_record_reading", "provenance_record_edge"]);
+
+/** A node provenance tool with a required claim_id limited to the request's nodes. */
+function withRequestNodeId(tool: Tool, nodes: { id: string; text: string; kind: string }[]): Tool {
+  const schema = tool.input_schema as { type: "object"; properties?: Record<string, unknown>; required?: string[] };
+  return {
+    ...tool,
+    input_schema: {
+      ...schema,
+      properties: {
+        ...(schema.properties ?? {}),
+        claim_id: {
+          type: "string",
+          enum: nodes.map((n) => n.id),
+          description:
+            "The node this call reads or records on: one of the nodes the request bears on (" +
+            nodes.map((n) => `${n.id}, the ${n.kind} "${n.text.slice(0, 120)}"`).join("; ") +
+            ").",
+        },
+      },
+      required: [...new Set([...(schema.required ?? []), "claim_id"])],
+    },
+  };
+}
 const EXAMINATION_PREFIX = "examination_";
 
 /** Thrown from the ordinary loop's beforeTurn hook to end the run. */
@@ -196,8 +230,8 @@ export const RESEARCH_REPORT_TOOL: Tool = {
       answer: {
         type: "string",
         description:
-          "The direct answer in two to six sentences, conclusion first, with the reading of " +
-          "the brief you took if it was ambiguous.",
+          "The direct answer, conclusion first, as long as it needs to be and no longer, with the " +
+          "reading of the brief you took if it was ambiguous.",
       },
       findings: {
         type: "array",
@@ -285,14 +319,14 @@ export const REQUEST_REPORT_TOOL: Tool = {
 
 /**
  * The report a run that scopes a request ends with: the ordinary report,
- * with the plan in answer, plus the quote for the full work and what came
- * of the scoping.
+ * with the plan it prices in plan (#732), plus the quote for the full work and
+ * what came of the scoping.
  */
 export const REQUEST_SCOPE_REPORT_TOOL: Tool = {
   ...RESEARCH_REPORT_TOOL,
   description:
     RESEARCH_REPORT_TOOL.description +
-    " This run scopes a request: answer holds the plan for the full work, budget_quote_usd what it would cost.",
+    " This run scopes a request: plan holds the plan for the full work, budget_quote_usd what it would cost.",
   input_schema: {
     ...RESEARCH_REPORT_TOOL.input_schema,
     properties: {
@@ -303,6 +337,14 @@ export const REQUEST_SCOPE_REPORT_TOOL: Tool = {
         description:
           "scoped (ready to fund at your quote), met or negative (looking answered it), cannot_be_met or " +
           "declined (with the reason), or revise (the request should change first; say how in answer).",
+      },
+      plan: {
+        type: "string",
+        description:
+          "The plan the quote prices (#732): the steps of the full work in order, what each reads or " +
+          "runs, the sources and tools it needs and whether they can be reached, and what each step " +
+          "costs on the tier the full work runs on. Funders read it beside the quote. Required when " +
+          "request_outcome is scoped.",
       },
       budget_quote_usd: {
         type: "number",
@@ -358,9 +400,29 @@ export interface ResearcherInput {
    * recorded by this run (record_estimate stays the Steward's).
    */
   claim: { id: string; text: string; domains: string[]; kind?: string } | null;
+  /**
+   * For a run that takes up a request bearing on several nodes (#728): the
+   * nodes its provenance tools may record on, each call naming one. A
+   * request on one node runs with that node as `claim` instead.
+   */
+  requestNodes?: { id: string; text: string; domains: string[]; kind: string }[];
+  /**
+   * For a run on a request: the earlier run whose notebook (and report) the
+   * new one opens with (#730), so the next stage begins where it stopped.
+   */
+  priorRun?: { id: string; status: string; requestedBy: string } | null;
+  /**
+   * For a scoping run: the tier, model and effort the full work will run on
+   * (#732), which the quote must price.
+   */
+  fullWork?: { tier: string; model: string; effort: string | null } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
-  /** Wall-clock cap for the run; defaults to RESEARCHER_MAX_WALL_MINUTES. */
+  /**
+   * Wall-clock cap for the run. Defaults to RESEARCHER_MAX_WALL_MINUTES on a
+   * delegated run, whose launcher waits on it, and to the longer
+   * RESEARCHER_REQUEST_MAX_WALL_MINUTES backstop on a request run (#734).
+   */
   maxWallMs?: number;
   /** Turn cap for the ordinary loop; defaults to RESEARCHER_MAX_TURNS. */
   maxTurns?: number;
@@ -402,34 +464,62 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const sandbox = resolveProvider(model) === "anthropic";
   const longRun = sandbox && modelSupportsLongRun(model);
   const ceiling = Math.max(1, run.ceiling_micro_usd);
-  const maxWallMs = input.maxWallMs ?? config.researcherMaxWallMinutes * 60_000;
+  // A delegated run's launcher blocks on the report, so it gets the short
+  // cap; a request run from the ledger has nobody waiting, and its budget
+  // bounds it, so it gets only a long backstop (#734). The task message
+  // states whichever applies, with its reason.
+  const runsRequest = run.requested_by === "request" || run.requested_by === "request_scope";
+  const maxWallMs =
+    input.maxWallMs ??
+    (runsRequest ? config.researcherRequestMaxWallMinutes : config.researcherMaxWallMinutes) * 60_000;
   const maxTurns = input.maxTurns ?? RUN_TURN_GUARD;
 
   // Skills load on demand; the claim's recorded domains point to the domain
   // skills that cover its subject. The tools every skill declares for the
   // researcher are offered whether or not it loads the skill, subject to
   // the conditions below.
-  const claimDomains = sanitizeDomains(input.claim?.domains ?? []);
+  // A request on several nodes points to the skills of all of them (#728).
+  const requestNodes = input.claim ? [] : (input.requestNodes ?? []);
+  const claimDomains = sanitizeDomains([
+    ...(input.claim?.domains ?? []),
+    ...requestNodes.flatMap((n) => n.domains),
+  ]);
   const skillLoader = createSkillLoadTools("researcher", { domains: claimDomains });
   const checker = leanCheckerConfigured(config);
   // Mathlib tools only with a checker to run them; the provenance tools only
-  // on a claim, since they read or record on a claim, except that an
-  // examination needs provenance_read_source to read its document; the
+  // on a claim, since they read or record on a claim, or on the nodes a
+  // request bears on, except that an examination needs
+  // provenance_read_source to read its document, and a run taking up a
+  // request reads sources whole whatever it bears on (#728); the
   // examination tools only on a run launched as an examination.
   const examination = input.examination ?? null;
   const graphWrites = launcherWritesGraph(run.requested_by);
-  const skillTools = getActiveSkillToolDefinitions(listSkills(), "researcher").filter(
-    (t) =>
-      (graphWrites || (!t.name.startsWith(PROVENANCE_PREFIX) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
-      (checker || !isLeanTool(t.name)) &&
-      (!t.name.startsWith(PROVENANCE_PREFIX) || !!input.claim || (!!examination && t.name === "provenance_read_source")) &&
-      (!t.name.startsWith(EXAMINATION_PREFIX) || !!examination)
-  );
+  const takesUpRequest = run.requested_by === "request";
+  const scopesRequest = run.requested_by === "request_scope";
+  const onRequestNodes = takesUpRequest && requestNodes.length > 0;
+  const requestNodeIds = new Set(requestNodes.map((n) => n.id));
+  const skillTools = getActiveSkillToolDefinitions(listSkills(), "researcher")
+    .filter(
+      (t) =>
+        (graphWrites || (!t.name.startsWith(PROVENANCE_PREFIX) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
+        (checker || !isLeanTool(t.name)) &&
+        (!t.name.startsWith(PROVENANCE_PREFIX) ||
+          !!input.claim ||
+          onRequestNodes ||
+          ((!!examination || takesUpRequest) && t.name === "provenance_read_source")) &&
+        (!t.name.startsWith(EXAMINATION_PREFIX) || !!examination)
+    )
+    .map((t) => (onRequestNodes && NODE_PROVENANCE_TOOLS.has(t.name) ? withRequestNodeId(t, requestNodes) : t));
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
   const pangramTools = createPangramTools({ config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
+  // What the graph holds about documents, on every run, and about requests,
+  // on a run that works one (#746); and the channel to the maintainers that
+  // every agent carries, for a tool that failed or misled it (#743).
+  const readTools = createResearcherReadTools({ requests: runsRequest });
+  const reportTools = createReportTools({ model });
   // An instance is recorded on the run's node on exactly the runs that get
   // the provenance recording tools: a launcher that writes the graph, and a
   // run scoped to a node. A claim proper takes record_claim_instance, a
@@ -437,8 +527,6 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const nodeKind = input.claim ? (input.claim.kind ?? "claim") : null;
   const recordsInstances = graphWrites && nodeKind === "claim";
   const recordsQuestionInstances = graphWrites && nodeKind === "question";
-  const takesUpRequest = run.requested_by === "request";
-  const scopesRequest = run.requested_by === "request_scope";
   const submitsContributions =
     run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
 
@@ -456,6 +544,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const webSearch = createWebSearch(model);
   const tools: ToolUnion[] = [
     ...graphReadTools,
+    ...readTools.definitions,
     getReadPageToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
@@ -463,6 +552,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...skillTools,
     ...(recordsInstances ? [RECORD_INSTANCE_TOOL] : []),
     ...(recordsQuestionInstances ? [RECORD_QUESTION_INSTANCE_TOOL] : []),
+    ...reportTools.definitions,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
     // A run that takes up a request reports its outcome, and may file the
@@ -491,7 +581,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     task: run.task,
     requestedBy: run.requested_by,
     contributionBudget: submitsContributions ? await readContributionBudget() : null,
-    claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
+    claim: input.claim ? { id: input.claim.id, text: input.claim.text, kind: input.claim.kind ?? "claim" } : null,
+    requestNodes: requestNodes.map(({ id, text, kind }) => ({ id, text, kind })),
+    priorRun: input.priorRun ?? null,
+    fullWork: input.fullWork ?? null,
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
       : null,
@@ -618,6 +711,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       const out = await executeGraphReadTool(name, toolInput);
       if (out !== null) return out;
     }
+    const read = await readTools.execute(name, toolInput);
+    if (read !== null) return read;
+    const issue = await reportTools.execute(name, toolInput);
+    if (issue !== null) return issue;
     if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
     const pangram = await pangramTools.execute(name, toolInput);
     if (pangram !== null) return pangram;
@@ -630,6 +727,17 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
           return JSON.stringify({
             success: false,
             message: `This investigation serves claim ${input.claim.id}; provenance tools work on it alone.`,
+          });
+        }
+      }
+      // On a request bearing on several nodes, a call that records on a
+      // node names one of them, and only one of them (#728).
+      if (onRequestNodes && NODE_PROVENANCE_TOOLS.has(name)) {
+        const named = typeof toolInput.claim_id === "string" ? toolInput.claim_id.trim() : "";
+        if (!requestNodeIds.has(named)) {
+          return JSON.stringify({
+            success: false,
+            message: `${name} records on one of the nodes this request bears on: name it in claim_id (${[...requestNodeIds].join(", ")}).`,
           });
         }
       }
@@ -720,9 +828,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // ceiling or the operator's pause it allows one last turn, in which
     // every tool call is refused with the instruction to report, and then
     // ends the run. The spend line, and the wrap-up notice once past the
-    // reminder fraction, ride on every turn's note. Container time is not metered per turn on this
-    // path; the sandbox's free allowance covers a run of this size, and the
-    // token meter binds.
+    // reminder fraction, ride on every turn's note. toolUseLoop meters the
+    // container time of each turn that used the sandbox into the same meter.
     let turns = 0;
     let lastTurn = false;
     const startedAt = now();

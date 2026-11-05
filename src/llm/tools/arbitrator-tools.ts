@@ -14,18 +14,23 @@ import {
   contributors,
   appeals,
 } from "../../db/schema.js";
-import { enqueueSteward, requestAudit } from "../../services/queue-service.js";
+import { requestAudit } from "../../services/queue-service.js";
+import {
+  executeNotifyClaimSteward,
+  getNotifyClaimStewardToolDefinition,
+  NOTIFY_CLAIM_STEWARD,
+} from "./notify-claim-steward.js";
 import {
   applyArbitrationOutcome,
   reverseReviewOutcome,
   AUDIT_SUSPENSION_PREFIX,
   BAD_FAITH_CATEGORIES,
 } from "../../services/reputation-service.js";
+import type { IntakeMaterializationResult } from "../../services/intake-service.js";
 import {
-  isIntakeContributionType,
-  materializeAcceptedIntake,
-  type IntakeMaterializationResult,
-} from "../../services/intake-service.js";
+  acceptanceSchemaProperties,
+  applyAcceptanceEffects,
+} from "../../services/contribution-acceptance.js";
 import { getContributionById } from "../../services/contribution-service.js";
 
 export function getArbitratorToolDefinitions(): Tool[] {
@@ -36,12 +41,16 @@ export function getArbitratorToolDefinitions(): Tool[] {
         "Record your arbitration decision. This writes the outcome, updates " +
         "the contribution and appeal status, and applies the consequences " +
         "mechanically: on an overturn the contributor is restored " +
-        "(reputation, standing, any reputation-imposed suspension) and an " +
-        "intake contribution is materialized through the Matcher; when the " +
+        "(reputation, standing, any reputation-imposed suspension) and the " +
+        "contribution takes effect as a Reviewer's accept would (an intake " +
+        "proposal materialized through the Matcher, a proposed request filed " +
+        "from request, material recorded on request_id); when the " +
         "case arrived by escalation and no outcome was ever applied, the " +
         "final accept or reject consequences (reputation, owl awards, and a " +
         "bad-faith finding's penalty and standing when you attach one) are " +
-        "applied directly. Results are reported in the tool result.",
+        "applied directly. On a challenge to a prize claim, challenge_upheld " +
+        "is required and must agree with the outcome. Results are reported " +
+        "in the tool result.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -85,15 +94,10 @@ export function getArbitratorToolDefinitions(): Tool[] {
           suspected_bad_faith: {
             type: "boolean",
             description:
-              "Set true ONLY with an 'uphold_original' outcome when the full " +
-              "case record shows deliberate abuse (spam, vandalism, sybil " +
-              "coordination, deliberate misinformation), NOT for sincere " +
-              "contributions rejected on the merits. §13's high bar applies. " +
-              "The flag's consequences (reputation penalty, pay-to-contribute " +
-              "standing) apply when the case arrived by escalation and the " +
-              "outcome is being applied now; on an appeal of an " +
-              "already-applied rejection the finding is recorded but adds no " +
-              "late penalty. Appealable. Setting it requires " +
+              "Only with 'uphold_original': a finding of deliberate abuse " +
+              "under §13, as your role prompt sets out. Its consequences apply " +
+              "on an escalated case; on an appeal of a rejection already " +
+              "applied it is recorded without a late penalty. Requires " +
               "bad_faith_category.",
           },
           bad_faith_category: {
@@ -101,6 +105,17 @@ export function getArbitratorToolDefinitions(): Tool[] {
             enum: [...BAD_FAITH_CATEGORIES],
             description:
               "Required when suspected_bad_faith is true: which kind of abuse.",
+          },
+          ...acceptanceSchemaProperties(),
+          challenge_upheld: {
+            type: "boolean",
+            description:
+              "Only for a challenge to a prize claim, and required there with " +
+              "overturn or uphold_original: whether the challenge succeeds on " +
+              "its named ground. true goes with overturn (the prize claim is " +
+              "voided on that ground); false with uphold_original (the " +
+              "challenge fails and the prize claim's window runs on). A " +
+              "mismatch is refused, so the words cannot invert.",
           },
         },
         required: [
@@ -111,30 +126,7 @@ export function getArbitratorToolDefinitions(): Tool[] {
         ],
       },
     },
-    {
-      name: "notify_claim_steward",
-      description:
-        "Notify the claim steward about the arbitration outcome so they " +
-        "can update the claim accordingly.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim",
-          },
-          change_type: {
-            type: "string",
-            description: "Type of change resulting from arbitration",
-          },
-          details: {
-            type: "string",
-            description: "Details about the arbitration outcome",
-          },
-        },
-        required: ["claim_id", "change_type", "details"],
-      },
-    },
+    getNotifyClaimStewardToolDefinition("dispute_arbitrator"),
     {
       name: "lift_suspension",
       description:
@@ -161,8 +153,11 @@ export function getArbitratorToolDefinitions(): Tool[] {
     {
       name: "flag_for_human_review",
       description:
-        "Flag a specific contribution for human review. Use when the " +
-        "situation is beyond what automated arbitration can handle.",
+        "Send a contribution to human review without recording an " +
+        "arbitration. The reason is stored on the contribution for the " +
+        "humans who pick it up. Once you have reached a judgment, prefer " +
+        "record_arbitration_decision with the human_review outcome, so " +
+        "your reasoning is on the record.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -172,7 +167,9 @@ export function getArbitratorToolDefinitions(): Tool[] {
           },
           reason: {
             type: "string",
-            description: "Why human review is needed",
+            description:
+              "Why human review is needed, written for the person who will " +
+              "take the case up.",
           },
         },
         required: ["contribution_id", "reason"],
@@ -225,20 +222,62 @@ export async function executeArbitratorTool(
           ? (input.bad_faith_category as string)
           : null;
 
-        // An overturn that ACCEPTS an intake contribution (#157) must
-        // materialize it, exactly as the reviewer's accept does — otherwise
-        // an escalated proposal arbitrated in the contributor's favor would
-        // read 'accepted' with nothing in the graph. Runs first so a failure
-        // surfaces to the arbitrator; the call is idempotent.
-        let materialization: IntakeMaterializationResult | null = null;
-        if (outcome === "overturn") {
-          const contribution = await getContributionById(contributionId);
-          if (
-            contribution &&
-            isIntakeContributionType(contribution.contributionType)
-          ) {
-            materialization = await materializeAcceptedIntake(contributionId);
+        // A challenge to a prize claim arrives with the Reviewer's ADMISSION
+        // as the decision under review, so "uphold the original" reads as
+        // "the challenge stands" while the tools take it as "the challenge
+        // fails" (#710). The Arbitrator names the substance with
+        // challenge_upheld and the tool refuses any outcome that disagrees.
+        // Money moves on this: overturn voids the prize claim at the window
+        // closer's next pass (prize-window-closer.ts).
+        const target = await getContributionById(contributionId);
+        const challengedPrizeClaimId =
+          target?.contributionType === "challenge" ? (target.challengedPrizeClaimId ?? null) : null;
+        let prizeNote: string | null = null;
+        if (challengedPrizeClaimId) {
+          const refusal = (why: string) =>
+            JSON.stringify({ success: false, error: `${why} Nothing was recorded.` });
+          if (outcome === "modify" || outcome === "mark_contested") {
+            return refusal(
+              `This is a challenge to prize claim ${challengedPrizeClaimId}, and it succeeds or ` +
+                `it does not: overturn with challenge_upheld true, uphold_original with ` +
+                `challenge_upheld false, or human_review.`
+            );
           }
+          if (outcome === "overturn" || outcome === "uphold_original") {
+            if (typeof input.challenge_upheld !== "boolean") {
+              return refusal(
+                `This is a challenge to prize claim ${challengedPrizeClaimId}: say whether it ` +
+                  `succeeds with challenge_upheld (true with overturn, false with uphold_original).`
+              );
+            }
+            const expected = input.challenge_upheld ? "overturn" : "uphold_original";
+            if (outcome !== expected) {
+              return refusal(
+                `challenge_upheld ${input.challenge_upheld} goes with outcome ${expected}, not ${outcome}. ` +
+                  `overturn upholds the challenge and voids the prize claim; uphold_original rejects ` +
+                  `the challenge and lets the window run on.`
+              );
+            }
+            prizeNote = input.challenge_upheld
+              ? `The challenge is upheld: prize claim ${challengedPrizeClaimId} is voided on its ground at the window closer's next pass, and its Steward reassesses.`
+              : `The challenge is rejected: prize claim ${challengedPrizeClaimId}'s window runs on.`;
+          }
+        }
+
+        // An overturn ACCEPTS the contribution, so it has every effect a
+        // Reviewer's accept has (#724): an intake proposal is materialized
+        // (#157), a proposed request is filed, material for a request is
+        // recorded as work on it. Otherwise an overturned case would read
+        // 'accepted' with nothing on the graph. Runs before anything is
+        // written so a refusal (a request not stated) surfaces to the
+        // Arbitrator; a contribution already accepted had its effects then.
+        let materialization: IntakeMaterializationResult | null = null;
+        let acceptanceNote = "";
+        if (outcome === "overturn" && target && target.reviewStatus !== "accepted") {
+          const effects = await applyAcceptanceEffects(contributionId, input);
+          if (!effects.ok) return JSON.stringify({ success: false, error: effects.error });
+          materialization = effects.materialization;
+          acceptanceNote = effects.note;
         }
 
         await db.insert(arbitrationResults).values({
@@ -332,9 +371,36 @@ export async function executeArbitratorTool(
           });
         }
 
+        // A bad-faith finding gets a decision audit whichever instance made
+        // it (#696): the Reviewer's flag already requests one, and the
+        // second instance's is no less consequential. Keyed apart from the
+        // review's so both can stand; a failure to enqueue must not fail
+        // the arbitration that was already recorded.
+        if (suspectedBadFaith) {
+          try {
+            await requestAudit({
+              auditType: "decision_audit",
+              context:
+                `An arbitration recorded a bad-faith finding ` +
+                `(${badFaithCategory}) on contribution ${contributionId}. ` +
+                `Audit the arbitration fully: does the evidence clear the ` +
+                `deliberate-abuse bar, and is the contributor's wider record ` +
+                `consistent with it?`,
+              triggeredBy: "bad_faith_flag",
+              dedupeKey: `bad-faith-arb:${contributionId}`,
+            });
+          } catch (auditErr) {
+            console.error(
+              "Failed to request arbitration bad-faith audit:",
+              auditErr instanceof Error ? auditErr.message : auditErr
+            );
+          }
+        }
+
         return JSON.stringify({
           success: true,
-          message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}`,
+          message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}.${acceptanceNote}`,
+          ...(prizeNote ? { prize_claim: prizeNote } : {}),
           ...(input.suspected_bad_faith === true && !suspectedBadFaith
             ? {
                 note: "suspected_bad_faith was ignored because the outcome is not 'uphold_original'",
@@ -373,25 +439,8 @@ export async function executeArbitratorTool(
         });
       }
 
-      case "notify_claim_steward": {
-        const claimId = input.claim_id as string;
-        const changeType = input.change_type as string;
-        const details = input.details as string;
-
-        // Not contribution_accepted (#182): an arbitration can overturn as
-        // well as uphold, and the Steward should know it is integrating a
-        // ruling, not an acceptance.
-        await enqueueSteward({
-          claimId,
-          trigger: "arbitration_outcome",
-          context: `Arbitration outcome - ${changeType}: ${details}`,
-        });
-
-        return JSON.stringify({
-          success: true,
-          message: `Claim steward notified about claim ${claimId}`,
-        });
-      }
+      case NOTIFY_CLAIM_STEWARD:
+        return executeNotifyClaimSteward(input, "dispute_arbitrator");
 
       case "lift_suspension": {
         const contributorId = input.contributor_id as string;
@@ -461,15 +510,24 @@ export async function executeArbitratorTool(
         const contributionId = input.contribution_id as string;
         const reason = input.reason as string;
 
+        if (!reason?.trim()) {
+          return JSON.stringify({
+            success: false,
+            error: "reason is required: the humans who take the case up read it. Nothing was recorded.",
+          });
+        }
+
+        // The reason is stored (#713): a human opening the case reads why,
+        // and no action on a contribution is a quiet one (§11, §15).
         const db = getDb();
         await db
           .update(contributions)
-          .set({ reviewStatus: "human_review" })
+          .set({ reviewStatus: "human_review", humanReviewReason: reason.trim() })
           .where(eq(contributions.id, contributionId));
 
         return JSON.stringify({
           success: true,
-          message: `Contribution ${contributionId} flagged for human review: ${reason}`,
+          message: `Contribution ${contributionId} flagged for human review; the reason is recorded on it.`,
         });
       }
 

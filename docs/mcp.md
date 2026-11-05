@@ -164,33 +164,53 @@ and the tool description says what a call spends.
   machine-checked argument stands on the claim, the same derivation as the
   badge on the claim page), and the input accepts `with_prizes: true` to
   restrict results to claims with an open bounty.
-- **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
-  — canonical form, current assessment (status, confidence, reasoning),
-  source instances, arguments, dependents, page link. With `"provenance"`,
-  each instance carries the Steward's `reading` of its source (whether the
-  source's own evidence bears its assertion, the mechanical quote check,
-  whether it is worth reading closely; null until recorded), and the payload
-  carries `source_map` (the Steward's account of what the support rests on,
-  with `material` saying whether the claim page shows it), `provenance_edges`
-  (which assertions draw on which documents, with fidelity), and
-  `source_relationships` (documents that are one voice), per #286. None of
-  it is a score. `formalization` is
-  returned beside `assessment`: the published Lean 4 statement, its pin
-  (toolchain and Mathlib revision), both hashes, the correspondence note,
-  and the review-period end, or null when the claim has none. A formal
-  statement is the graph's own rendering of the proposition and is what
-  prizes, solver attempts, and machine-checked arguments bind to; the
-  assessment beside it remains the Steward's judgment of the claim as
-  worded. `include` also accepts `"proofs"`, which adds, to each argument
-  that carries one, the public check record (verdict, gates, pin, hashes,
-  and the submission source once public) behind a machine-checked proof or
-  disproof.
+- **`get_claim`** `{claim_id, include?: ["arguments"|"subclaims"|"provenance"|"dependents"|"related"|"findings"|"proofs"], dependents_limit?, dependents_offset?}`
+  — one node as the graph records it. This is the same tool, with the same
+  description and payload, that the graph's own agents call
+  (`src/services/claim-view-service.ts`, #774), so a skill that names
+  `get_claim` means one thing to every reader. Every read returns `claim`
+  (`kind`, canonical form, type, state, importance, contestation, tags,
+  page link, `steward_state` and `stewarded_at`), `assessment` (status,
+  confidence, credence, reasoning), the kind's record, `preliminary_seed`
+  while the node is unassessed, the formalization record, `requests`,
+  `subclaim_count`, `instance_count` and `source_map` (the Steward's account
+  of what the support rests on, with `material` saying whether the claim page
+  shows it). Nothing else is
+  included by default; `include` adds sections:
+  - `"arguments"`: each argument with its written form, its current
+    evaluation, and the check record behind a machine-checked one.
+  - `"subclaims"`: the direct subclaims, one row per argument each serves,
+    with the edge's reasoning and their standing, and `subclaims_assessed`. `get_decomposition`
+    walks deeper.
+  - `"provenance"`: the instances, each with its `stance` (`affirms`,
+    `denies`, `poses` an open question, or `mentions`: it cites the claim or
+    reports the debate without taking a side, and is never a vote for either
+    side) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
+    mechanical quote check, whether it is worth reading closely; null until
+    recorded), plus `provenance_edges` (which assertions draw on which
+    documents, with fidelity) and `source_relationships` (documents that are
+    one voice), per #286. None of it is a score.
+  - `"dependents"`: one page by importance (`dependents_limit`, default 25,
+    at most 100; `dependents_offset`), with `dependents_total`.
+  - `"related"`: lateral see-also links with the reason for each; never
+    dependencies.
+  - `"findings"`: findings already noted on the node.
+  - `"proofs"`: every Lean check record on any version of the statement.
+
+  `formalization` is returned beside `assessment`: the published Lean 4
+  statement, its pin (toolchain and Mathlib revision), both hashes, the
+  correspondence note, and the review-period end, or null when the claim has
+  none; `formalization_pending`, `formalization_history`, `verification` and
+  the newest `lean_checks` ride beside it. A formal statement is the graph's
+  own rendering of the proposition and is what prizes, solver attempts, and
+  machine-checked arguments bind to; the assessment beside it remains the
+  Steward's judgment of the claim as worded.
   The node's `kind` rides on `claim`: a quantity carries a `quantity`
   record (definition, the graph's estimate with its work, stated figures,
-  readings, cut claims) and no assessment, a question a `question` record
-  (standing, answers, presuppositions, subquestions), a cut claim
-  `threshold_of`, and every node its open `requests`, as
-  `GET /claims/:id` serves them.
+  figures not yet recorded, readings, cut claims) and no assessment, a
+  question a `question` record (standing, answers, presuppositions,
+  subquestions), a cut claim `threshold_of`, and every node its `requests`,
+  as `GET /claims/:id` serves them.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
 - **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion
@@ -227,13 +247,27 @@ and the tool description says what a call spends.
   and the text itself is not stored. The public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
-- **`submit_contribution`** `{claim_id, contribution_type, content,
-  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?}` — file a
-  challenge / support / merge / split / edit / instance / argument. Requires
-  a key bound to a contributor identity; enters the standard Contribution
-  Reviewer pipeline and is subject to suspension and reputation policy (#71).
-- **`get_contribution_status`** `{contribution_id}` — review decision,
-  reasoning, and policy citations once the reviewer has ruled.
+- **`submit_contribution`** `{claim_id?, contribution_type, content,
+  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
+  request_id?}` — file any of `contribution_type`'s values: challenge,
+  support, add_instance, propose_argument, propose_merge, propose_split,
+  propose_edit, add_estimate (a source's figure for a quantity),
+  propose_answer (a candidate answer to a question), propose_request, and
+  answer_request. `claim_id` is required for every type but
+  `propose_request`, which may bear on several nodes, sources, or something
+  the graph does not hold yet (#724). An `answer_request` names the request
+  it is offered for in `request_id` (the request must bear on `claim_id` and
+  be open); the id is carried to the reviewer at the head of the content,
+  since accepting one needs it (#723). Requires a key bound to a contributor
+  identity; enters the standard Contribution Reviewer pipeline and is
+  subject to suspension and reputation policy (#71). `POST /contributions`
+  takes the same `request_id`.
+- **`get_contribution_status`** `{contribution_id}` — the contribution in
+  the shape `GET /contributions/:id` serves (an accepted proposal carries
+  `became_claim_id` and `page_url`, the node it became), and the review
+  decision, reasoning, and policy citations once the reviewer has ruled. A
+  caller that has lost an id finds its own contributions with
+  `list_contributions` and `mine: true`.
 - **`get_bounty_terms`** `{claim_id}` returns the machine-readable terms of
   the live bounty on a claim, the same `terms` object `GET /claims/:id/bounty`
   serves: the amount and status, the formal statement's id, version, pin,
@@ -253,8 +287,10 @@ and the tool description says what a call spends.
   of the same title collapse into one report with an occurrence count, and
   a new report comes back with `related`, the reports on record that read
   like it; if one of them is yours, raise again with `joins` set to its id
-  and your body is added to it as a sighting instead. Free, attributed,
-  rate-limited; returns the report id.
+  and your body is added to it as a sighting instead. Free and
+  attributed, and so limited to `REPORT_RATE_LIMIT_PER_HOUR` (default 5)
+  reports an hour, stated in the description with its reason: each one
+  takes maintainer attention nothing prices. Returns the report id.
 
 ### Route tools
 

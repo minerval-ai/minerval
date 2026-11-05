@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 12118,
-    "fullChars": 94644,
+    "roleChars": 12522,
+    "fullChars": 97643,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 13610,
-    "fullChars": 96136,
+    "roleChars": 7484,
+    "fullChars": 92605,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 19506,
-    "fullChars": 102032,
+    "roleChars": 17045,
+    "fullChars": 102166,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 50464,
-    "fullChars": 132990,
+    "roleChars": 23118,
+    "fullChars": 108239,
     "skills": [
       {
         "name": "costing",
@@ -139,8 +139,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 26842,
-    "fullChars": 109368,
+    "roleChars": 16898,
+    "fullChars": 102019,
     "skills": []
   },
   {
@@ -152,8 +152,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13968,
-    "fullChars": 96494,
+    "roleChars": 11723,
+    "fullChars": 96844,
     "skills": [
       {
         "name": "costing",
@@ -193,8 +193,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 14740,
-    "fullChars": 97266,
+    "roleChars": 11682,
+    "fullChars": 96803,
     "skills": [
       {
         "name": "costing",
@@ -233,8 +233,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 16125,
-    "fullChars": 98651,
+    "roleChars": 12819,
+    "fullChars": 97940,
     "skills": [
       {
         "name": "costing",
@@ -286,8 +286,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23372,
-    "fullChars": 105898,
+    "roleChars": 20717,
+    "fullChars": 105838,
     "skills": [
       {
         "name": "costing",
@@ -322,12 +322,12 @@
     "name": "Lookout",
     "stage": 9,
     "group": "governance",
-    "tagline": "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    "tagline": "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.",
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 15321,
-    "fullChars": 97847,
+    "roleChars": 10826,
+    "fullChars": 95947,
     "skills": [
       {
         "name": "costing",
@@ -360,13 +360,40 @@
     "name": "Consistency Checker",
     "stage": 10,
     "group": "governance",
-    "tagline": "The sweep that reads assessments against one another. Each Steward reads its own claim; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises each find with the Steward whose claim looks wrong, as a reassessment the ledger prices and funds like any other; it writes no verdict and owns no claim.",
-    "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, capped per day) over the region of the graph most re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
-    "model": "GPT-6 Luna",
+    "tagline": "The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.",
+    "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
+    "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
-    "roleChars": 11395,
-    "fullChars": 93921,
-    "skills": []
+    "roleChars": 14829,
+    "fullChars": 99950,
+    "skills": [
+      {
+        "name": "costing",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "Standards for judging"
+        ]
+      },
+      {
+        "name": "provenance",
+        "sections": [
+          "For every administrator",
+          "Standards for judging"
+        ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      }
+    ]
   },
   {
     "key": "math-solver",
@@ -390,8 +417,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 14725,
-    "fullChars": 97251,
+    "roleChars": 15118,
+    "fullChars": 100239,
     "skills": [
       {
         "name": "costing",

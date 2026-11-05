@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 4)
+# Domain skill: Mathematics (version 6)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -126,7 +126,10 @@ elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
 computer-algebra toolkit, works alone within a fixed budget of metered
-work, writes nothing to the graph, and reports to the steward. Its prompt
+work, and writes nothing to the graph. No administrator launches it on its
+own judgment: an attempt runs only as an `attempt_proof` action that a
+mandate's plan funds (For the Grantmaker, below), and its result goes to
+the claim's steward, which did not launch it but judges what it settles. Its prompt
 carries none of this document, so nothing it says uses the graph's terms
 or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
@@ -163,7 +166,13 @@ A challenge to an accepted prize claim must name one of the enumerated
 grounds (statement defect, ineligibility, disallowed axioms or tactics the
 checker missed, plagiarism or theft, an earlier valid submission,
 sanctions) with followable evidence; accepting the case escalates it to the
-Arbitrator mechanically and is not upholding it. Prize-specific bad faith
-includes submitting another's proof as one's own, sock-puppet submissions
-to defeat priority, and challenges whose only ground is dislike of the
-result.
+Arbitrator mechanically and is not upholding it. The Arbitrator reads the
+prize claim with `get_prize_claim` and rules with `challenge_upheld`: true
+with `overturn`, which voids the prize claim on the ground; false with
+`uphold_original`, which closes the challenge and lets the window run on.
+A challenge that names no enumerated ground, dislike of the result
+included, is rejected on the merits without the bad-faith flag (§13).
+Prize-specific bad faith is flagged under the ordinary categories:
+submitting another's proof as one's own is `misinformation`, and
+sock-puppet submissions filed to defeat priority, or a run of groundless
+challenges from related accounts, are `sybil`.

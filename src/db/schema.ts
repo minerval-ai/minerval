@@ -514,6 +514,13 @@ export const arguments_ = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Soft retirement by the claim's Steward (retire_argument, #741): a
+    // poor or superseded argument is "usually better left out" (§7), but
+    // the row and its evaluations stay as history. Readers that list a
+    // claim's arguments skip retired ones; its subclaims were released to
+    // the basis (or their other arguments) when it was retired.
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    retiredReason: text("retired_reason"),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
 );
@@ -896,10 +903,12 @@ export const claimInstances = pgTable(
     // Whether this source asserts the canonical claim ("affirms"), its
     // negation/contrary ("denies"), or states the proposition as an open
     // question without endorsing either side ("poses", #445: a survey
-    // stating a conjecture). Lets a claim and its denial share one canonical
-    // node while preserving which side each source takes, so the
-    // disagreement lives on the claim instead of in two mirror-image pages.
-    // Values are INSTANCE_STANCES in schemas/common.ts.
+    // stating a conjecture), or only refers to it, citing it or reporting
+    // the debate without taking a side ("mentions"). Lets a claim and its
+    // denial share one canonical node while preserving which side each
+    // source takes, so the disagreement lives on the claim instead of in two
+    // mirror-image pages. Values are INSTANCE_STANCES in schemas/common.ts;
+    // the column is free text, so a new value needs no migration.
     stance: text("stance").notNull().default("affirms"),
     // Kinds (§4, §7a). An instance of a quantity states its value
     // (stance 'states'): the figure as the source gives it, in the estimate
@@ -2359,11 +2368,14 @@ export const lookouts = pgTable(
     triggers: jsonb("triggers").notNull().default([]),
     // Per-lookout model override; null = config.lookoutModel.
     model: text("model"),
-    // The ceiling on the valuation a flag may write on the mandate's
-    // behalf (0–10). The Grantmaker delegates this much of its spending
-    // judgment and no more.
+    // The ceiling on the valuation anything the lookout raises (a
+    // reassessment, an ingest) may write on the mandate's behalf (0–10).
+    // The Grantmaker delegates this much of its spending judgment and no
+    // more.
     maxValue: real("max_value").notNull().default(6),
-    // How many ingests one run may append to the mandate's plan.
+    // No longer read or written (#695): ingests are valued within
+    // max_value and ranked by the allocator, not counted per run. Kept,
+    // with its default, so live rows need no migration; safe to drop.
     maxIngestsPerRun: integer("max_ingests_per_run").notNull().default(3),
     // The lookout's own durable notes, read back every run: what it has
     // already seen and flagged, sources checked and when, what to watch.
@@ -2568,7 +2580,10 @@ export const lookoutFeeds = pgTable(
     pollHours: integer("poll_hours").notNull().default(6),
     // Untriaged items expire after this many days (counted, never hidden).
     retainDays: integer("retain_days").notNull().default(14),
-    // auto_ingest only: ingests this feed may append per day.
+    // No longer read or written (#695): auto_ingest items are valued at
+    // the lookout's max_value and ranked by the allocator, not counted per
+    // day. Kept, with its default, so live rows need no migration; safe to
+    // drop.
     dailyIngestCap: integer("daily_ingest_cap").notNull().default(5),
     // The focus an ingest from this feed carries by default (auto_ingest,
     // and the lookout's triage unless it gives its own): "the author's
@@ -2696,6 +2711,13 @@ export const consistencySweeps = pgTable(
     runId: uuid("run_id"),
     // Assessed claims in the partition when the sweep started.
     claimsInScope: integer("claims_in_scope").notNull().default(0),
+    // The ledger variant a funded sweep ran as ('standard' | 'strong'),
+    // null for an eval or one-off sweep (#756): what the per-variant cost
+    // and yield the sweep's pricing and variant choice read are keyed on.
+    variant: text("variant"),
+    // What the sweep's run was metered at, in micro-USD (null when it ran
+    // without a pass meter): the observed cost per node (#756).
+    costMicroUsd: bigint("cost_micro_usd", { mode: "number" }),
     flagsRaised: integer("flags_raised").notNull().default(0),
     note: text("note"),
     error: text("error"),
@@ -2980,10 +3002,14 @@ export const contributions = pgTable(
       .notNull()
       .defaultNow(),
     reviewStatus: text("review_status").notNull().default("pending"),
-    // Why the reviewer escalated (#178). Written by escalate_to_arbitrator so
-    // the reason reaches the Arbitrator even when no review row was recorded;
-    // the review record, when present, carries the fuller reasoning.
+    // Why the reviewer escalated (#178). Written by record_review_decision's
+    // escalate (formerly escalate_to_arbitrator) so the reason reaches the
+    // Arbitrator first; the review record carries the fuller reasoning.
     escalationReason: text("escalation_reason"),
+    // Why the Arbitrator sent the contribution to humans with
+    // flag_for_human_review (#713): a human opening the case reads why, and
+    // the action is not a quiet one (§11, §15).
+    humanReviewReason: text("human_review_reason"),
     mergeTargetClaimId: uuid("merge_target_claim_id").references(
       () => claims.id
     ),
@@ -3184,7 +3210,7 @@ export const curationRequests = pgTable(
     otherClaimId: uuid("other_claim_id").references(() => claims.id, {
       onDelete: "cascade",
     }),
-    // steward_escalation | reconcile_candidate | operator
+    // steward_escalation | consistency_sweep | audit | matcher | reconcile_candidate | operator
     source: text("source").notNull(),
     concern: text("concern").notNull(),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
@@ -3221,7 +3247,7 @@ export const curationRequests = pgTable(
       .where(sql`consumed_at IS NULL`),
     check(
       "ck_curation_requests_source",
-      sql`source IN ('steward_escalation', 'reconcile_candidate', 'operator')`
+      sql`source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')`
     ),
   ]
 );
@@ -4396,6 +4422,10 @@ export const quantityEstimates = pgTable(
     // audit detail, as reasoning_trace is on an assessment.
     summary: text("summary"),
     work: text("work").notNull(),
+    // The Steward's exit judgment (#755): how much another, stronger pass
+    // would improve this estimate, as on assessments. The valuer reads it
+    // from whichever table the node's kind keeps (NODE_MARGINAL_YIELD_SQL).
+    marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
     isCurrent: boolean("is_current").notNull().default(true),
@@ -4489,6 +4519,11 @@ export const questionAssessments = pgTable(
     reasoningTrace: text("reasoning_trace").notNull(),
     // The Steward's note when it judges the set of answers incomplete.
     incomplete: text("incomplete"),
+    // How sure the Steward is that the standing is the right reading of the
+    // evidence, as an assessment's confidence; and its exit judgment, as on
+    // assessments (#755). Null when not stated.
+    confidence: real("confidence"),
+    marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
     isCurrent: boolean("is_current").notNull().default(true),

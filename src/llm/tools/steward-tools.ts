@@ -22,6 +22,7 @@ import {
   getArgument,
   getArgumentSubclaims,
   getEvaluationStateForClaim,
+  hasWrittenForm,
   isArgumentVerdict,
   parseClaimLinks,
   setArgumentContent,
@@ -50,12 +51,17 @@ import {
   enqueueClaimPipeline,
 } from "../../services/queue-service.js";
 import { getUsageContext } from "../usage-context.js";
+import {
+  executeNotifySteward,
+  getNotifyStewardToolDefinition,
+} from "./notify-steward.js";
 import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
 import { setArgumentShows } from "../../services/quantity-service.js";
 import { addAnswer, addSubquestion } from "../../services/question-service.js";
 import {
   ANSWER_BASES,
+  KIND_INSTANCE_STANCES,
   KIND_RELATION_TYPES,
   NODE_KINDS,
   quantityDefinitionSchema,
@@ -69,6 +75,12 @@ import {
   reattachClaimInstance,
   setInstanceOrder,
 } from "../../services/claim-instance-service.js";
+import { ownershipRefusal } from "./steward-ownership.js";
+import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
+import {
+  executeStewardStructureTool,
+  getStewardStructureToolDefinitions,
+} from "./steward-structure-tools.js";
 
 /**
  * Relations a node can stand in to a parent above it (add_parent_claim,
@@ -230,15 +242,16 @@ export function getResearcherInstanceToolDefinition(): Tool {
   return {
     name: tool.name,
     description:
-      "Record an in-the-wild instance of the claim this investigation serves: " +
-      "a source you read that itself asserts the claim, denies it, or poses it " +
-      "as an open question, in its own voice. Record as you read; never search " +
-      "just to farm instances. A source that merely mentions the claim or " +
-      "reports on the debate without taking a side is not an instance; a source " +
-      "quoting someone who asserts it is an instance whose speaker is the person " +
-      "quoted. One instance per (claim, source, speaker): re-recording is " +
-      "deduplicated. Set speaker on each. The instance is recorded as yours, " +
-      "and the Steward owns the claim's instance set: it may correct or detach " +
+      "Record a source for the claim this investigation serves: one you read " +
+      "that asserts the claim, denies it, poses it as an open question, or " +
+      "mentions it without taking a side, with the passage as it states it. " +
+      "Record a mention when a reader should see it: prominent, an origin, or " +
+      "telling about how the claim is used, not every passing occurrence; a " +
+      "mention is never counted as affirming or denying. A source quoting " +
+      "someone is an instance whose speaker is the person quoted. One instance " +
+      "per (claim, source, speaker): re-recording is deduplicated. Set speaker " +
+      "on each. The instance is recorded as yours, and the Steward owns the " +
+      "claim's instance set: it may correct or detach " +
       "what you record. List what you recorded in your report.",
     input_schema: {
       type: "object" as const,
@@ -330,16 +343,7 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           marginal_yield: {
             type: "number",
-            description:
-              "Exit judgment (0.0-1.0): how much would another, stronger pass " +
-              "improve this assessment? Near 0 for an uncontested fact you have " +
-              "now assessed, or a values dispute mapped down to its terminal " +
-              "disagreement — more effort would not change the product. High " +
-              "when this pass hit evidence it could not fully digest (an " +
-              "unresolved empirical synthesis, sources you could not reach). " +
-              "Distinct from confidence: a saturated inconclusive verdict can be " +
-              "high-confidence AND zero-yield. Recorded for effort allocation; " +
-              "it does not affect the verdict.",
+            description: MARGINAL_YIELD_DESCRIPTION,
           },
         },
         required: ["claim_id", "status", "confidence", "assessment", "reasoning_trace"],
@@ -348,19 +352,20 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "record_claim_instance",
       description:
-        "Record an in-the-wild instance of the claim you steward: a source " +
-        "you read during this pass that itself asserts the claim (or its " +
-        "negation). A cheap side effect of the evidence reading you are " +
-        "doing anyway — never search just to farm instances. Record only " +
-        "genuine assertions: a source that merely mentions the claim, " +
-        "questions it, or reports on the debate without taking a side is " +
-        "not an instance; a source quoting someone who asserts it is an " +
-        "instance whose speaker is the person quoted. One instance per " +
-        "(claim, source, speaker): re-recording the same source is " +
-        "deduplicated, so re-assessments never pile up duplicates, but a " +
-        "document in which several people each assert the claim in their " +
-        "own voice (the signed sections of a jointly authored paper, a " +
-        "panel transcript) holds one instance per speaker. Set speaker on " +
+        "Record a source for the claim you steward: one you read that asserts " +
+        "the claim, denies it, poses it as an open question, or mentions it " +
+        "without taking a side, with the passage as it states it. Instances " +
+        "are what the claim page shows of the discourse, and the provenance " +
+        "tools record what each one rests on. Record a mention (it cites the " +
+        "claim, reports that others hold it, or raises it in passing) when the " +
+        "source is worth a reader seeing: prominent, an origin, or telling " +
+        "about how the claim is used, not every passing occurrence. A mention " +
+        "is never counted as affirming or denying. A source quoting " +
+        "someone is an instance whose speaker is the person quoted. One " +
+        "instance per (claim, source, speaker): re-recording the same source " +
+        "is deduplicated, but a document in which several people each speak " +
+        "in their own voice (the signed sections of a jointly authored paper, " +
+        "a panel transcript) holds one instance per speaker. Set speaker on " +
         "each; a call without one deduplicates against the whole source.",
       input_schema: {
         type: "object" as const,
@@ -383,8 +388,9 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "The passage as this source states the claim (or its " +
-              "negation), verbatim — the statement itself, not your " +
-              "paraphrase.",
+              "negation, or where it mentions it), verbatim — the statement " +
+              "itself, not your paraphrase. Under 2,000 characters: the " +
+              "passage, not the document.",
           },
           context: {
             type: "string",
@@ -397,9 +403,11 @@ export function getStewardToolDefinitions(): Tool[] {
             enum: [...INSTANCE_STANCES],
             description:
               "Whether this source asserts the canonical claim (affirms), " +
-              "its negation (denies), or states the proposition as an open " +
+              "its negation (denies), states the proposition as an open " +
               "question without endorsing either side (poses: a conjecture " +
-              "as a survey states it).",
+              "as a survey states it), or refers to it without asserting, " +
+              "denying or posing it (mentions: it cites the claim, reports " +
+              "that others hold it, or raises it in passing).",
           },
           speaker: {
             type: "string",
@@ -430,9 +438,9 @@ export function getStewardToolDefinitions(): Tool[] {
           confidence: {
             type: "number",
             description:
-              "0.0-1.0: how confident you are this is a genuine assertion " +
-              "of THIS claim (not a near-miss proposition or a passing " +
-              "mention). Defaults to 1.",
+              "0.0-1.0: how confident you are that the passage carries " +
+              "this stance on THIS claim (not a near-miss proposition). " +
+              "Defaults to 1.",
           },
           stated_probability: {
             type: "number",
@@ -454,11 +462,8 @@ export function getStewardToolDefinitions(): Tool[] {
         "this is the only way to fix an instance that misrepresents its source: a " +
         "quote attributed to the outlet instead of the person quoted, a " +
         "stance read backwards, a passage that is not the one carrying the " +
-        "stance. " +
-        "A source that only mentions the claim, or reports others' views " +
-        "on it without asserting, denying or posing it, is not an instance " +
-        "at all: detach " +
-        "it with detach_claim_instance instead of correcting it. Every " +
+        "stance, or a source recorded as affirming or denying that only " +
+        "mentions the claim (correct its stance to mentions). Every " +
         "correction requires a reasoning note, which is written to the " +
         "claim's audit trail.",
       input_schema: {
@@ -479,15 +484,18 @@ export function getStewardToolDefinitions(): Tool[] {
             enum: [...INSTANCE_STANCES],
             description:
               "Corrected stance: whether this source asserts the canonical " +
-              "claim (affirms), its negation (denies), or states the " +
+              "claim (affirms), its negation (denies), states the " +
               "proposition as an open question without taking a side " +
-              "(poses). Omit to leave as is.",
+              "(poses), or only refers to it without asserting, denying or " +
+              "posing it (mentions). Omit to leave as is; always omit it on a " +
+              "question's or quantity's instance, whose role (asks, answers, " +
+              "states) it would overwrite.",
           },
           confidence: {
             type: "number",
             description:
-              "Corrected 0.0-1.0 confidence that this is a genuine assertion " +
-              "of this claim. Omit to leave as is.",
+              "Corrected 0.0-1.0 confidence that the passage carries this " +
+              "stance on this claim. Omit to leave as is.",
           },
           speaker: {
             type: "string",
@@ -509,7 +517,8 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "Corrected passage, verbatim, where the recorded one is not " +
-              "the statement that carries the stance. Omit to leave as is.",
+              "the statement that carries the stance, under 2,000 " +
+              "characters. Omit to leave as is.",
           },
           context: {
             type: "string",
@@ -529,10 +538,12 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "detach_claim_instance",
       description:
-        "Detach an instance from the claim you steward: the source does not " +
-        "assert, deny or pose the proposition (a passing mention, a neutral " +
-        "report of others' views, a near-miss proposition, or a match to the " +
-        "wrong claim). The instance no longer belongs to the claim: it leaves " +
+        "Detach an instance from the claim you steward: the source states a " +
+        "different proposition (a near-miss, or a match to the wrong claim), " +
+        "or the instance misreads the source. A source that refers to this " +
+        "claim without taking a side is not detached: correct its stance to " +
+        "mentions with update_claim_instance. The instance no longer belongs " +
+        "to the claim: it leaves " +
         "the claim page, the instance count and every read of the claim's " +
         "instances. The row is kept for the provenance record, never deleted, " +
         "and reattach_claim_instance restores it. The reason is written to " +
@@ -551,8 +562,8 @@ export function getStewardToolDefinitions(): Tool[] {
           reason: {
             type: "string",
             description:
-              "What you read that shows the source does not assert, deny or " +
-              "pose this claim: the note the audit trail keeps.",
+              "What you read that shows the instance does not belong to this " +
+              "claim: the note the audit trail keeps.",
           },
         },
         required: ["claim_id", "instance_id", "reason"],
@@ -562,8 +573,8 @@ export function getStewardToolDefinitions(): Tool[] {
       name: "reattach_claim_instance",
       description:
         "Reattach an instance that was detached from the claim you steward, " +
-        "when reading the source shows it does assert, deny or pose the " +
-        "proposition after all. It returns at the default position. " +
+        "when reading the source shows it belongs to the claim after all. It " +
+        "returns at the default position. " +
         "get_claim_instances with include_detached lists detached instances " +
         "and why each was detached. The reason is written to the claim's " +
         "audit trail.",
@@ -627,7 +638,7 @@ export function getStewardToolDefinitions(): Tool[] {
         "different claim, and rewording into the negation would flip every " +
         "recorded stance. Escalate those to the Curator instead. The form's " +
         "direction was chosen on the proposition's own terms (see the claim's " +
-        "canonical_direction_note in get_claim_details), never from whichever " +
+        "canonical_direction_note in get_claim), never from whichever " +
         "source arrived first; keep it.",
       input_schema: {
         type: "object" as const,
@@ -726,12 +737,13 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "write_argument",
       description:
-        "Write or revise an argument's written form: one to three " +
-        "sentences stating plainly how its premises combine to reach its " +
-        "conclusion, e.g. 'Because [[claim:<uuid>]] and " +
-        "[[claim:<uuid>]], and given [[claim:<uuid>]], the claim " +
-        "follows.' Reference every attached subclaim inline as " +
-        "[[claim:<uuid>]] (or [[claim:<uuid>|inline phrasing]]). State " +
+        "Write or revise an argument's written form: brief prose stating " +
+        "plainly how its premises combine to reach its conclusion. " +
+        "Reference every attached subclaim inline as [[claim:<uuid>]] (or " +
+        "[[claim:<uuid>|inline phrasing]]); you may also link the claim's " +
+        "ungrouped basis subclaims. Premises that are settled and not " +
+        "claims in their own right (§7) may be stated in the prose, so an " +
+        "argument with no attached subclaims needs no links. State " +
         "the argument faithfully, as its proponents would recognize it, " +
         "at its most plausible intended reading, without weakening or " +
         "repairing it. Use no rhetoric. Include every premise the " +
@@ -751,7 +763,9 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "The written form: brief prose with inline [[claim:<uuid>]] " +
-              "references to the argument's subclaims",
+              "references to the argument's subclaims. Under 1,000 " +
+              "characters, links included (each costs about 46): enough " +
+              "for the inference, while detail belongs in the subclaims.",
           },
         },
         required: ["argument_id", "content"],
@@ -800,7 +814,8 @@ export function getStewardToolDefinitions(): Tool[] {
           evaluation: {
             type: "string",
             description:
-              "Two to four sentences, reader-facing (§12): how far the " +
+              "Reader-facing (§12), usually a few sentences and under 1,200 " +
+              "characters, links included: how far the " +
               "inference goes, phrased conditionally ('granting its " +
               "premises, ...'), and, for a rating of none, the flaw in " +
               "plain words; then which premises bear the weight, given " +
@@ -940,28 +955,17 @@ export function getStewardToolDefinitions(): Tool[] {
           importance: {
             type: "number",
             description:
-              "How much it is worth spending scarce intelligence to get this " +
-              "subclaim right, 0..1: roughly consequence-if-wrong × liveness, " +
-              "NOT logical necessity. A dependency can be maximally load-bearing " +
-              "(the parent is false without it) yet LOW importance because nobody " +
-              "disputes it: getting an uncontested fact right is free. Reserve " +
-              "high values for contested, consequential dependencies. " +
-              "This feeds the value estimates that decide what gets funded " +
-              "AND (below a threshold) leaves the subclaim an un-decomposed " +
-              "embedded stub, so score uncontested bedrock low. Defaults to " +
-              "0.5 if omitted.",
+              "The subclaim's importance, 0..1, judged as set_claim_importance " +
+              "describes (not logical necessity: uncontested bedrock scores " +
+              "low even when the parent is false without it). Below the " +
+              "decomposition threshold the subclaim is left an embedded stub. " +
+              "Defaults to 0.5 if omitted.",
           },
           contestation: {
             type: "number",
             description:
-              "How live this subclaim is in the discourse at large (0.0-1.0), " +
-              "disputed or actively consulted, recorded separately from " +
-              "importance: ~0 for settled bedrock nobody disputes or consults, " +
-              "~1 for an actively argued crux. This is the " +
-              "liveness half of the importance formula stated on its own; " +
-              "it multiplies importance in the expected-value estimate the " +
-              "allocation engine funds work by, so a live dispute genuinely " +
-              "draws attention sooner.",
+              "How live the subclaim is in the discourse at large (0.0-1.0), " +
+              "as set_claim_importance describes.",
           },
           seed_credence: {
             type: "number",
@@ -979,7 +983,7 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description:
               "Optional brief preliminary note to accompany seed_credence: a " +
-              "paragraph or two on why the prior sits where it does, written " +
+              "paragraph or two (under 2,000 characters) on why the prior sits where it does, written " +
               "in the reader-facing register. NOT a full assessment — no " +
               "sub-decomposition, no verdict language, and do not write 'this " +
               "is preliminary' yourself; the page labels the note preliminary " +
@@ -1076,17 +1080,15 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             enum: [...UPWARD_RELATION_TYPES],
             description:
-              "How YOUR node bears on the new parent, read from the parent's " +
+              "How your node bears on the new parent, read from the parent's " +
               "side. Under a claim or a quantity: supports when yours is " +
               "evidence or an argument for it (a claimed proof of P supports " +
               "P), specifies when yours is a special case, requires when the " +
-              "parent is false without yours. Under a question, the relations " +
-              "its own tools write: answers when yours is a candidate answer " +
-              "(a claim or quantity; pass basis), part_of when yours is a " +
-              "subquestion whose answer it needs, assumes or requires when the " +
-              "question presupposes yours. answers and part_of are for a " +
-              "question parent only. " +
-              RELATION_GUIDANCE,
+              "parent is false without yours. Under a question: answers when " +
+              "yours is a candidate answer (a claim or quantity; pass basis), " +
+              "part_of when yours is a subquestion whose answer it needs, " +
+              "assumes or requires when the question presupposes yours. The " +
+              "relation types are defined on add_decomposition_edge.",
           },
           basis: {
             type: "string",
@@ -1184,7 +1186,9 @@ export function getStewardToolDefinitions(): Tool[] {
         "local signal: a claim central to a niche subfield is still low-importance " +
         "if the subfield is peripheral and the claim uncontested. An uncontested " +
         "fact is low importance even if much depends on it, because getting it " +
-        "right is free.",
+        "right is free; reserve high values for contested, consequential " +
+        "claims. The other tools that take importance and contestation " +
+        "(add_decomposition_edge, add_parent_claim) mean the same by them.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -1272,36 +1276,7 @@ export function getStewardToolDefinitions(): Tool[] {
         required: ["claim_id", "action_taken", "reasoning"],
       },
     },
-    {
-      name: "notify_dependent_stewards",
-      description:
-        "Notify stewards of claims that depend on this claim, so they can " +
-        "evaluate whether the change is material to their claims. Which " +
-        "dependents to notify is your judgment (§22): pass parent_ids to " +
-        "reach only the dependents the change could actually be material to; " +
-        "omit it to notify all of them.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim whose assessment changed",
-          },
-          change_summary: {
-            type: "string",
-            description: "Brief summary of what changed",
-          },
-          parent_ids: {
-            type: "array",
-            items: { type: "string" },
-            description:
-              "Optional triage: UUIDs of the dependent (parent) claims to " +
-              "notify. Omit to notify every dependent.",
-          },
-        },
-        required: ["claim_id", "change_summary"],
-      },
-    },
+    getNotifyStewardToolDefinition("steward"),
     {
       name: "escalate_to_curator",
       description:
@@ -1335,6 +1310,9 @@ export function getStewardToolDefinitions(): Tool[] {
         required: ["claim_id", "concern"],
       },
     },
+    // Correcting structure already built (#741): remove, retype, ungroup,
+    // revise and retire.
+    ...getStewardStructureToolDefinitions(),
   ];
 }
 
@@ -1359,6 +1337,10 @@ export async function executeStewardTool(
   } = {}
 ): Promise<string> {
   try {
+    // Only the owner writes (Part VIII): a write aimed at another node is
+    // refused with the route that reaches it (#757).
+    const notOwn = await ownershipRefusal(toolName, input);
+    if (notOwn) return notOwn;
     switch (toolName) {
       case "update_claim_assessment": {
         const claimId = input.claim_id as string;
@@ -1388,8 +1370,10 @@ export async function executeStewardTool(
         // signal from "credence that the claim is false".
         const claimCredence =
           typeof input.claim_credence === "number" ? input.claim_credence : null;
-        // Optional exit judgment for effort allocation (#172 phase 1): recorded
-        // on the assessment row, read by nothing yet. null = not stated.
+        // Optional exit judgment for effort allocation (#172): recorded on the
+        // assessment row and read by the valuer and the queue priority as the
+        // expected gain from another pass (NODE_MARGINAL_YIELD_SQL). null =
+        // not stated, read as 1.0.
         const marginalYield = clampUnit(input.marginal_yield) ?? null;
         const reasoningTrace = input.reasoning_trace as string;
         // Reader-facing assessment (still persisted to the `summary` column). Also
@@ -1424,7 +1408,7 @@ export async function executeStewardTool(
               success: false,
               message:
                 `These linked claims do not exist: ${unknown.join(", ")}. ` +
-                `Link only real claims (ids from get_claim_subclaims or from ` +
+                `Link only real claims (ids from get_claim or from ` +
                 `this run), or drop the link and name the claim in plain text.`,
             });
           }
@@ -1560,9 +1544,10 @@ export async function executeStewardTool(
             success: false,
             message:
               `Unknown stance "${stance}". Use "affirms" (the source asserts ` +
-              `the canonical claim), "denies" (it asserts the negation), or ` +
+              `the canonical claim), "denies" (it asserts the negation), ` +
               `"poses" (it states the proposition as an open question ` +
-              `without taking a side).`,
+              `without taking a side), or "mentions" (it refers to the claim ` +
+              `without asserting, denying or posing it).`,
           });
         }
 
@@ -1665,7 +1650,7 @@ export async function executeStewardTool(
               `This source has an instance${voice} on this claim that was detached` +
               (existing.detached_reason ? ` ("${existing.detached_reason}")` : "") +
               `; nothing new was written. If your reading shows the source ` +
-              `does assert, deny or pose the claim, ` +
+              `does belong to the claim, ` +
               (byResearcher
                 ? `say so in your report, with the passage, for the Steward ` +
                   `to weigh reattaching it (instance_id ${existing.id}).`
@@ -1734,6 +1719,9 @@ export async function executeStewardTool(
               ? `It now counts among the claim's source instances, recorded ` +
                 `as yours; the Steward owns the instance set and may correct ` +
                 `or detach it. List it in your report.`
+              : stance === "mentions"
+              ? `The claim page shows it among the sources that mention the ` +
+                `claim; it takes no side and is never counted as affirming or denying.`
               : `It now counts among the claim's source instances; weigh its ` +
                 `stance in your assessment like any other.`),
         });
@@ -1776,10 +1764,9 @@ export async function executeStewardTool(
               message:
                 `Unknown stance "${stance}". Use "affirms" (the source ` +
                 `asserts the canonical claim), "denies" (it asserts the ` +
-                `negation), or "poses" (it states the proposition as an open ` +
-                `question without taking a side). A source that only ` +
-                `mentions the claim in passing is not an instance: detach it ` +
-                `with detach_claim_instance.`,
+                `negation), "poses" (it states the proposition as an open ` +
+                `question without taking a side), or "mentions" (it refers to ` +
+                `the claim without asserting, denying or posing it).`,
             });
           }
           patch.stance = stance;
@@ -1851,6 +1838,25 @@ export async function executeStewardTool(
             message:
               `Instance not found: ${instanceId} is not a recorded instance ` +
               `of claim ${claimId}.`,
+          });
+        }
+        // A question's instances ask or answer it and a quantity's state a
+        // figure (§7a, §10); the proposition stances would overwrite that
+        // role and drop the instance from its page (#711). Its other
+        // fields correct as on any instance.
+        if (
+          patch.stance !== undefined &&
+          (KIND_INSTANCE_STANCES as readonly string[]).includes(existing.stance)
+        ) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Instance ${instanceId} is recorded as "${existing.stance}", a role ` +
+              `the proposition stances do not describe. Leave stance out to ` +
+              `correct its other fields; if its role is wrong, detach it with ` +
+              `detach_claim_instance and record it again with ` +
+              (existing.stance === "states" ? "record_estimate" : "record_question_instance") +
+              `.`,
           });
         }
 
@@ -2187,52 +2193,71 @@ export async function executeStewardTool(
             message: `Argument not found: ${argumentId}`,
           });
         }
+        if (argument.retiredAt) {
+          return JSON.stringify({
+            success: false,
+            message: `Argument ${argumentId} was retired; it takes no written form.`,
+          });
+        }
 
         // Brief means brief: uuid links cost ~46 chars each, so the cap is
-        // roomier than the 1–3 sentences it is meant to hold, but it still
-        // stops essays.
+        // roomier than the few sentences it is meant to hold, but it still
+        // stops essays. The description states it.
         if (content.length > 1000) {
           return JSON.stringify({
             success: false,
             message:
               `Written form is ${content.length} chars; keep it under 1000. ` +
-              `State the inference in 1–3 sentences; detail belongs in the ` +
-              `subclaims themselves.`,
+              `State the inference briefly; detail belongs in the subclaims ` +
+              `themselves.`,
           });
         }
-
-        const links = parseClaimLinks(content);
-        if (links.length === 0) {
+        if (!hasWrittenForm({ content, description: argument.description })) {
           return JSON.stringify({
             success: false,
             message:
-              "The written form must reference the argument's subclaims inline " +
-              "as [[claim:<uuid>]]; a written form with no links is just a " +
-              "longer label.",
+              "That is the argument's label, not a written form: state how " +
+              "its premises combine to reach its conclusion.",
           });
         }
 
-        // Mutual checkability: every link must be a subclaim edge of this
-        // argument (or the parent claim itself), and every subclaim should be
-        // referenced. Unknown links fail; unreferenced subclaims only warn, so
-        // a steward mid-restructure is nudged, not wedged.
+        // Mutual checkability: every link must be a subclaim of this
+        // argument, one of the claim's ungrouped basis subclaims (#434), or
+        // the claim itself, the same targets evaluate_argument accepts; and
+        // when the argument has attached subclaims, the form must reference
+        // them. An argument whose settled premises live in the prose has no
+        // attached subclaims and needs no links (§6, §7; #747). Unknown
+        // links fail; unreferenced subclaims only warn, so a steward
+        // mid-restructure is nudged, not wedged.
+        const links = parseClaimLinks(content);
         const subclaims = await getArgumentSubclaims(argumentId);
+        const basis = await getClaimBasisSubclaims(argument.claimId);
         const subclaimIds = new Set(subclaims.map((s) => s.id));
+        const linkable = new Set([...subclaimIds, ...basis.map((s) => s.id), argument.claimId]);
         const linkedIds = new Set(links.map((l) => l.claimId));
 
-        const unknown = [...linkedIds].filter(
-          (id) => !subclaimIds.has(id) && id !== argument.claimId
-        );
+        const unknown = [...linkedIds].filter((id) => !linkable.has(id));
         if (unknown.length > 0) {
           return JSON.stringify({
             success: false,
             message:
-              `These linked claims are not subclaims of this argument: ` +
-              `${unknown.join(", ")}. Link only claims attached to the ` +
-              `argument via add_relationship_edge / add_decomposition_edge. ` +
-              `A claim that is already a subclaim (in the basis, or under ` +
-              `another argument) joins this one when you call ` +
-              `add_relationship_edge again with this argument_id.`,
+              `These linked claims are neither subclaims of this argument nor ` +
+              `ungrouped basis subclaims of its claim: ${unknown.join(", ")}. ` +
+              `Link only claims attached to the claim via add_relationship_edge / ` +
+              `add_decomposition_edge. A subclaim grouped under another argument ` +
+              `joins this one when you call add_relationship_edge again with ` +
+              `this argument_id.`,
+          });
+        }
+        if (subclaims.length > 0 && links.length === 0) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `This argument has ${subclaims.length} attached subclaim(s); the ` +
+              `written form must reference them inline as [[claim:<uuid>]] so a ` +
+              `reader can follow each premise to its page. If a subclaim does ` +
+              `not belong to this line of reasoning, take it out with ` +
+              `ungroup_subclaim.`,
           });
         }
 
@@ -2249,8 +2274,9 @@ export async function executeStewardTool(
                 unreferenced
                   .map((s) => `${s.id} ("${s.text.slice(0, 60)}")`)
                   .join("; ") +
-                `. Reference every subclaim, or detach edges that no longer ` +
-                `belong to this line of reasoning.`
+                `. Reference every subclaim, or take out of this argument any ` +
+                `that does not belong to it (ungroup_subclaim, or ` +
+                `remove_subclaim_edge if it does not bear on the claim at all).`
               : ""),
         });
       }
@@ -2278,6 +2304,12 @@ export async function executeStewardTool(
             message: `Argument not found: ${argumentId}`,
           });
         }
+        if (argument.retiredAt) {
+          return JSON.stringify({
+            success: false,
+            message: `Argument ${argumentId} was retired; it takes no evaluation.`,
+          });
+        }
         if (!argument.name) {
           return JSON.stringify({
             success: false,
@@ -2294,7 +2326,8 @@ export async function executeStewardTool(
           });
         }
         // Same brevity budget as the written form: links cost ~46 chars each,
-        // so the cap is roomier than the 2–4 sentences it should hold.
+        // so the cap is roomier than the few sentences it should hold. The
+        // description states it.
         if (content.length > 1200) {
           return JSON.stringify({
             success: false,
@@ -2404,6 +2437,17 @@ export async function executeStewardTool(
             message: "A claim cannot be its own subclaim (parent_id === child_id).",
           });
         }
+        // The enum is advisory to a model, so check it here (#658): an
+        // off-enum relation would be stored as given and read by nothing.
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown relation "${String(input.relation)}". Use one of: ` +
+              `${RELATION_TYPES.join(", ")}. To change an existing edge's ` +
+              `relation, use set_edge_relation.`,
+          });
+        }
 
         // Validate the grouping target before touching the graph, so a bad
         // argument id never leaves a half-done write behind.
@@ -2437,7 +2481,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${childId}. Link only real claims (ids from ` +
-              `match_claim, get_claim_subclaims, or add_decomposition_edge).`,
+              `match_claim, get_claim, or add_decomposition_edge).`,
           });
         }
 
@@ -2510,7 +2554,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
-              `match_claim or get_claim_details).`,
+              `match_claim or get_claim).`,
           });
         }
         const { linked, linkId } = await linkClaims({
@@ -2534,9 +2578,17 @@ export async function executeStewardTool(
       case "add_decomposition_edge": {
         const parentId = input.parent_id as string;
         const childText = input.child_text as string;
-        const relation = input.relation as string;
+        const relation = String(input.relation ?? "").toLowerCase();
         const reasoning = input.reasoning as string;
         const argumentId = (input.argument_id as string) ?? null;
+        // As in add_relationship_edge (#658): an off-enum relation is refused
+        // before anything is minted.
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown relation "${String(input.relation)}". Use one of: ${RELATION_TYPES.join(", ")}.`,
+          });
+        }
         // Validate the grouping target first: a bad argument id must not mint
         // an orphan subclaim on its way to failing.
         if (argumentId) {
@@ -3034,7 +3086,7 @@ export async function executeStewardTool(
             success: false,
             message:
               `Claim not found: ${parentId}. Propose edges only into real claims ` +
-              `(ids from match_claim or get_claim_details); if the proposition ` +
+              `(ids from match_claim or get_claim); if the proposition ` +
               `does not exist, mint it with add_parent_claim.`,
           });
         }
@@ -3108,56 +3160,11 @@ export async function executeStewardTool(
         });
       }
 
-      case "notify_dependent_stewards": {
-        const claimId = input.claim_id as string;
-        const changeSummary = input.change_summary as string;
-        // Optional triage (#182): the constitution assigns this steward the
-        // judgment of WHICH dependents a change is material to, so an explicit
-        // parent_ids list restricts the fan-out. Absent, all dependents are
-        // notified (the correct reading of "material to everyone").
-        const requested = Array.isArray(input.parent_ids)
-          ? (input.parent_ids as unknown[]).map(String)
-          : null;
-
-        const parents = await rawQuery<{ parent_id: string }>(
-          `SELECT DISTINCT parent_claim_id AS parent_id
-           FROM claim_relationships
-           WHERE child_claim_id = $1`,
-          [claimId]
+      case "notify_steward": {
+        return executeNotifySteward(
+          { role: "steward", claimId: String(input.claim_id ?? "") },
+          input
         );
-        const parentIds = parents.map((p) => p.parent_id);
-
-        // Intersect with the real dependent set so a hallucinated or stale id
-        // can't enqueue an unrelated claim's Steward; report what was dropped
-        // so the model can correct itself.
-        const targets = requested
-          ? parentIds.filter((id) => requested.includes(id))
-          : parentIds;
-        const skipped = requested
-          ? requested.filter((id) => !parentIds.includes(id))
-          : [];
-
-        for (const parentId of targets) {
-          await enqueueSteward({
-            claimId: parentId,
-            trigger: "subclaim_change",
-            context: `Subclaim ${claimId} changed: ${changeSummary}`,
-          });
-        }
-
-        return JSON.stringify({
-          success: true,
-          message: `Notified ${targets.length} dependent claim stewards`,
-          parent_claim_ids: targets,
-          ...(skipped.length > 0
-            ? {
-                skipped_not_dependents: skipped,
-                note:
-                  "These parent_ids are not dependents of this claim and were " +
-                  "not notified.",
-              }
-            : {}),
-        });
       }
 
       case "escalate_to_curator": {
@@ -3192,8 +3199,10 @@ export async function executeStewardTool(
         });
       }
 
-      default:
-        return `Error: Unknown steward tool: ${toolName}`;
+      default: {
+        const structure = await executeStewardStructureTool(toolName, input);
+        return structure ?? `Error: Unknown steward tool: ${toolName}`;
+      }
     }
   } catch (err) {
     return `Error: ${err instanceof Error ? err.message : String(err)}`;

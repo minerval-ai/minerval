@@ -32,6 +32,8 @@ import {
   htmlToText,
   readPage,
   recentRetractions,
+  recentRetractionsPage,
+  retractionNoticesSince,
 } from "../../../src/services/source-watch-service.js";
 
 beforeEach(() => {
@@ -115,6 +117,79 @@ describe("recentRetractions", () => {
   });
 });
 
+describe("recentRetractionsPage", () => {
+  it("passes the offset and reports the total and where the next page starts", async () => {
+    state.responses.set(
+      "https://api.crossref.org/works?filter=",
+      JSON.stringify({
+        message: {
+          "total-results": 3,
+          items: [
+            { DOI: "10.2/A", "update-to": [{ DOI: "10.2/X", type: "retraction" }] },
+            { DOI: "10.2/B", "update-to": [{ DOI: "10.2/Y", type: "retraction" }] },
+          ],
+        },
+      })
+    );
+    const page = await recentRetractionsPage({ since: new Date("2026-09-01T00:00:00Z"), rows: 2, offset: 0 });
+    expect(state.fetched[0]).toContain("&rows=2&offset=0");
+    expect(page).toMatchObject({ total: 3, offset: 0, next_offset: 2 });
+    expect(page!.rows.map((r) => r.notice_doi)).toEqual(["10.2/a", "10.2/b"]);
+  });
+
+  it("returns null when Crossref cannot be read", async () => {
+    expect(await recentRetractionsPage({ since: new Date("2026-09-01T00:00:00Z") })).toBeNull();
+  });
+});
+
+describe("retractionNoticesSince", () => {
+  const item = (doi: string, deposited: string) => ({
+    DOI: doi, "update-to": [{ DOI: `${doi}-paper`, type: "retraction" }], deposited: { "date-time": deposited },
+  });
+
+  it("follows the cursor oldest first until the window is exhausted", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    const page = (body: unknown) => async (url: string) => {
+      state.fetched.push(url);
+      return JSON.stringify(body);
+    };
+    vi.mocked(fetchPublicUrl)
+      .mockImplementationOnce(page({ message: { items: [item("10.3/a", "2026-09-01T01:00:00Z"), item("10.3/b", "2026-09-01T02:00:00Z")], "next-cursor": "C2" } }))
+      .mockImplementationOnce(page({ message: { items: [item("10.3/c", "2026-09-02T00:00:00Z")], "next-cursor": "C3" } }));
+    const w = await retractionNoticesSince({ since: new Date("2026-09-01T00:00:00Z"), types: ["retraction"], pageRows: 2 });
+    expect(state.fetched).toHaveLength(2);
+    expect(state.fetched[0]).toContain("cursor=*");
+    expect(state.fetched[1]).toContain("cursor=C2");
+    expect(state.fetched[0]).toContain("order=asc");
+    expect(w).toEqual({
+      notices: expect.any(Array),
+      complete: true,
+      readThrough: new Date("2026-09-02T00:00:00Z"),
+    });
+    expect(w.notices.map((n) => n.notice_doi)).toEqual(["10.3/a", "10.3/b", "10.3/c"]);
+  });
+
+  it("stops early on a failed page or at maxPages, saying how far it read", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    const first = async (url: string) => {
+      state.fetched.push(url);
+      return JSON.stringify({ message: { items: [item("10.3/a", "2026-09-01T01:00:00Z")], "next-cursor": "C2" } });
+    };
+    vi.mocked(fetchPublicUrl)
+      .mockImplementationOnce(first)
+      .mockImplementationOnce(async () => {
+        throw new Error("network");
+      })
+      .mockImplementationOnce(first);
+    const failed = await retractionNoticesSince({ since: new Date("2026-09-01T00:00:00Z"), types: ["retraction"], pageRows: 1 });
+    expect(failed).toMatchObject({ complete: false, readThrough: new Date("2026-09-01T01:00:00Z") });
+    expect(failed.notices).toHaveLength(1);
+
+    const capped = await retractionNoticesSince({ since: new Date("2026-09-01T00:00:00Z"), types: ["retraction"], pageRows: 1, maxPages: 1 });
+    expect(capped).toMatchObject({ complete: false, readThrough: new Date("2026-09-01T01:00:00Z") });
+  });
+});
+
 describe("htmlToText / readPage", () => {
   it("drops scripts, styles and tags, keeps line structure, and bounds the length", () => {
     const html = "<html><head><style>p{}</style><script>x()</script></head><body><h1>Title</h1><p>One &amp; two</p><p>Three</p></body></html>";
@@ -155,7 +230,47 @@ describe("htmlToText / readPage", () => {
     const start = performance.now();
     const res = await readPage("https://attacker.example/brief");
     expect(performance.now() - start).toBeLessThan(500);
-    expect(res).toEqual({ ok: true, text: `${"<".repeat(12_000)}\n[truncated]`, chars: 12_012 });
+    expect(res).toEqual({
+      ok: true,
+      url: "https://attacker.example/brief",
+      text: "<".repeat(12_000),
+      chars: 12_000,
+      total_chars: n,
+      offset: 0,
+      truncated: true,
+      next_offset: 12_000,
+    });
+  });
+
+  it("reads a long page whole by paging, with the window contract of provenance_read_source", async () => {
+    // A paper past the old 12,000-character cut: its methods sit at the end.
+    const body = `<html><body><p>${"Introduction. ".repeat(1_500)}</p><p>METHODS: n = 412, randomised.</p></body></html>`;
+    state.responses.set("https://journal.example/", body);
+    const first = await readPage("https://journal.example/paper");
+    expect(first).toMatchObject({ ok: true, offset: 0, chars: 12_000, truncated: true, next_offset: 12_000 });
+    if (!first.ok) throw new Error("unreachable");
+    expect(first.text).not.toContain("METHODS");
+
+    let window = first;
+    const read = [first.text];
+    while (window.ok && window.next_offset !== null) {
+      window = await readPage("https://journal.example/paper", { offset: window.next_offset });
+      if (window.ok) read.push(window.text);
+    }
+    expect(window).toMatchObject({ ok: true, truncated: false, next_offset: null });
+    expect(read.join("")).toHaveLength(first.total_chars);
+    expect(read.join("")).toContain("METHODS: n = 412, randomised.");
+  });
+
+  it("sizes a window by max_chars, within the reader's maximum", async () => {
+    state.responses.set("https://plain.example/", "x".repeat(50_000));
+    expect(await readPage("https://plain.example/a", { maxChars: 100, offset: 10 })).toMatchObject({
+      chars: 100, offset: 10, next_offset: 110, total_chars: 50_000,
+    });
+    expect(await readPage("https://plain.example/a", { maxChars: 1_000_000 })).toMatchObject({ chars: 20_000 });
+    expect(await readPage("https://plain.example/a", { offset: 60_000 })).toMatchObject({
+      chars: 0, truncated: false, next_offset: null,
+    });
   });
 
   it("returns a problem rather than throwing on an unfetchable page", async () => {

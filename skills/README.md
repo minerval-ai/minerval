@@ -138,8 +138,10 @@ Steward's section, whose tools it does not have. The Claim Steward receives
 its own section and the Curator's, Matcher's and Extractor's (identity
 calls and recording instances are its work too), and not the procedures of
 roles it never acts as. `Standards for judging` and `Failure modes` feed the
-corpus judge and its rubric; only the Audit Agent, which judges, reads the
-standards.
+corpus judge and its rubric; of the agents, only the Audit Agent and the
+Consistency Checker read the standards. The Consistency Checker, which reads
+assessments against each other as the Audit Agent reads them against the
+standards, receives `For every administrator` and `Standards for judging`.
 
 Rules enforced by `tests/unit/llm/prompts/skills.test.ts`: the file is under
 600 lines; only the headings above appear as H2s; the text contains no
