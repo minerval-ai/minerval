@@ -20,6 +20,7 @@ import { getCurrentAssessment } from "./assessment-service.js";
 import {
   getArgumentsForClaim,
   getEvaluationStateForClaim,
+  getRetiredArgumentsForClaim,
   hasWrittenForm,
 } from "./argument-service.js";
 import { getSubclaimCount, listClaimDependents } from "./tree-service.js";
@@ -84,7 +85,8 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`instance_count`, and `source_map` (the account of what the support " +
   "rests on). Contestation (how actively the claim is disputed, 0..1) is " +
   "not a status. Add sections with `include`: `arguments` (each with its " +
-  "written form and current evaluation), `subclaims` (the direct " +
+  "written form and current evaluation, and as `retired_arguments` any " +
+  "its Steward retired, with the reason), `subclaims` (the direct " +
   "subclaims, one row per argument each serves, with the edge's reasoning " +
   "and their standing), " +
   "`provenance` (the instances with their readings, and the edges among " +
@@ -255,8 +257,9 @@ export async function getClaimView(
   if (include.has("arguments")) {
     sections.push(
       (async () => {
-        const [args, evaluations, checks] = await Promise.all([
+        const [args, retired, evaluations, checks] = await Promise.all([
           getArgumentsForClaim(claimId),
+          getRetiredArgumentsForClaim(claimId),
           getEvaluationStateForClaim(claimId),
           // The checker record behind a machine-checked argument (§2.3).
           leanChecksByArgument(claimId).catch(() => new Map()),
@@ -271,8 +274,8 @@ export async function getClaimView(
             ...(a.shows ? { shows: a.shows } : {}),
             content: a.content,
             // False while content is still the creation-time label: the
-            // Steward owes this argument a write_argument call (#129).
-            has_written_form: hasWrittenForm(a.content),
+            // Steward owes this argument a write_argument call (#129, #747).
+            has_written_form: hasWrittenForm(a),
             evidence_urls: a.evidenceUrls,
             // The Steward's current judgment of the inference (#173); null
             // when never evaluated. `stale` means it was derived under an
@@ -284,6 +287,18 @@ export async function getClaimView(
             lean_check: checks.get(a.id) ?? null,
           };
         });
+        // Retired arguments (#741) are history: listed apart, by name and
+        // reason, so a Steward does not rebuild one it or a predecessor
+        // retired.
+        if (retired.length > 0) {
+          payload.retired_arguments = retired.map((a) => ({
+            id: a.id,
+            name: a.name,
+            stance: a.stance,
+            retired_at: iso(a.retiredAt),
+            reason: a.retiredReason,
+          }));
+        }
       })()
     );
   }

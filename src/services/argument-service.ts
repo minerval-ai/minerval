@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { getDb, rawQuery } from "../db/client.js";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations } from "../db/schema.js";
 
 /**
@@ -27,13 +27,25 @@ export function parseClaimLinks(writtenForm: string): ClaimLink[] {
 }
 
 /**
- * Does this argument's content carry a real written form? Steward-created
- * arguments start with their label copied into `content`; the written form
- * (issue #129) is distinguished by referencing its subclaims inline.
+ * Does this argument carry a real written form? Steward-created arguments
+ * start with their label (`description`) copied into `content`, so the
+ * written form (issue #129) is content that is no longer that label. Links
+ * are not the test (#747): an argument whose settled premises live in the
+ * prose (§6, §7) has a written form with nothing to link. An argument with
+ * no label (one a user posted through the API) is its own written form.
+ * LACKS_WRITTEN_FORM_SQL is its negation in SQL.
  */
-export function hasWrittenForm(content: string): boolean {
-  return parseClaimLinks(content).length > 0;
+export function hasWrittenForm(argument: { content: string; description: string | null }): boolean {
+  const content = argument.content.trim();
+  if (parseClaimLinks(content).length > 0) return true;
+  if (argument.description === null) return content.length > 0;
+  return content !== argument.description.trim();
 }
+
+/** hasWrittenForm's negation over an `arguments` row aliased `a`, for the backfill scripts. */
+export const LACKS_WRITTEN_FORM_SQL = `(a.content NOT LIKE '%[[claim:%'
+    AND a.description IS NOT NULL
+    AND btrim(a.content) = btrim(a.description))`;
 
 export async function addArgument(input: {
   claimId: string;
@@ -71,12 +83,23 @@ export async function getArgument(argumentId: string) {
   return argument ?? null;
 }
 
+/** A claim's arguments, leaving out any its Steward retired (#741). */
 export async function getArgumentsForClaim(claimId: string) {
   const db = getDb();
   return db
     .select()
     .from(arguments_)
-    .where(eq(arguments_.claimId, claimId));
+    .where(and(eq(arguments_.claimId, claimId), isNull(arguments_.retiredAt)));
+}
+
+/** The arguments a claim's Steward retired (#741): history, oldest retirement first. */
+export async function getRetiredArgumentsForClaim(claimId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(arguments_)
+    .where(and(eq(arguments_.claimId, claimId), isNotNull(arguments_.retiredAt)))
+    .orderBy(arguments_.retiredAt);
 }
 
 /**
@@ -228,7 +251,68 @@ export async function getEvaluationStateForClaim(
               ON cq.claim_id = a.claim_id AND cq.is_current = true
       WHERE a.claim_id = $1
         AND a.name IS NOT NULL
+        AND a.retired_at IS NULL
       ORDER BY a.created_at`,
     [claimId]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Correcting arguments (#741): rename, flip, retire
+// ---------------------------------------------------------------------------
+
+/**
+ * Rename an argument, or flip its stance (#670). A flip changes the
+ * conclusion the argument reaches (§7: an argument against has the claim's
+ * denial as its conclusion), so the current evaluation, which rated the
+ * inference to the old conclusion, stops being current. Returns whether an
+ * evaluation was retired.
+ */
+export async function reviseArgument(input: {
+  argumentId: string;
+  name?: string;
+  stance?: "for" | "against";
+}): Promise<{ evaluationRetired: boolean }> {
+  return withTransaction(async (tx) => {
+    if (input.name !== undefined) {
+      await tx.query(`UPDATE arguments SET name = $2 WHERE id = $1`, [input.argumentId, input.name]);
+    }
+    if (input.stance === undefined) return { evaluationRetired: false };
+    await tx.query(`UPDATE arguments SET stance = $2 WHERE id = $1`, [input.argumentId, input.stance]);
+    const retired = await tx.query<{ id: string }>(
+      `UPDATE argument_evaluations SET is_current = false
+        WHERE argument_id = $1 AND is_current = true RETURNING id`,
+      [input.argumentId]
+    );
+    return { evaluationRetired: retired.length > 0 };
+  });
+}
+
+/**
+ * Retire an argument (#741): stamp it retired with the reason, and release
+ * its subclaims, whose edges stay, to the claim's basis or to the other
+ * arguments they are grouped under. The row and its evaluations stay as
+ * history. Returns the child claims that were released.
+ */
+export async function retireArgument(input: {
+  argumentId: string;
+  reason: string;
+}): Promise<{ released: { id: string; text: string }[] }> {
+  return withTransaction(async (tx) => {
+    const released = await tx.query<{ id: string; text: string }>(
+      `SELECT c.id, c.text
+         FROM argument_subclaims am
+         JOIN claim_relationships cr ON cr.id = am.relationship_id
+         JOIN claims c ON c.id = cr.child_claim_id
+        WHERE am.argument_id = $1
+        ORDER BY am.created_at, cr.id`,
+      [input.argumentId]
+    );
+    await tx.query(`DELETE FROM argument_subclaims WHERE argument_id = $1`, [input.argumentId]);
+    await tx.query(
+      `UPDATE arguments SET retired_at = now(), retired_reason = $2 WHERE id = $1`,
+      [input.argumentId, input.reason]
+    );
+    return { released };
+  });
 }

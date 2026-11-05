@@ -514,6 +514,13 @@ export const arguments_ = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Soft retirement by the claim's Steward (retire_argument, #741): a
+    // poor or superseded argument is "usually better left out" (§7), but
+    // the row and its evaluations stay as history. Readers that list a
+    // claim's arguments skip retired ones; its subclaims were released to
+    // the basis (or their other arguments) when it was retired.
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    retiredReason: text("retired_reason"),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
 );

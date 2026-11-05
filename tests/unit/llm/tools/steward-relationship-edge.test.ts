@@ -170,6 +170,13 @@ describe("steward add_relationship_edge (#437)", () => {
     expect(insertRelationshipEdge).not.toHaveBeenCalled();
   });
 
+  it("refuses a relation outside the enum and points at set_edge_relation (#658)", async () => {
+    const parsed = JSON.parse(await call({ relation: "related" }));
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toContain("set_edge_relation");
+    expect(insertRelationshipEdge).not.toHaveBeenCalled();
+  });
+
   it("surfaces a write failure instead of reporting success", async () => {
     vi.mocked(insertRelationshipEdge).mockRejectedValue(new Error("connection reset"));
     const out = await call();

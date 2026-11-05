@@ -219,8 +219,21 @@ with every subclaim referenced inline as `[[claim:<uuid>]]` (or
 "Because [[claim:a]] and [[claim:b]], and given [[claim:c]], the claim
 follows." The links make the prose and the grouping mutually checkable: every
 subclaim edge in the argument should appear in the written form, and every
-reference must be an edge in the argument (the Steward's `write_argument` tool
-enforces the latter and warns on the former). Renderers resolve the ids to the
+reference must be an edge in the argument or the claim's ungrouped basis (the
+Steward's `write_argument` tool enforces the latter and warns on the former).
+Settled premises that are not claims of their own may live in the prose
+(constitution §7), so an argument with no attached subclaims needs no links;
+an argument "has a written form" once its content is no longer the
+creation-time label (#747).
+
+**Correcting the structure.** The Steward can undo what it built, on its own
+node only, and each change is written to the audit log with its reason (#741):
+`remove_subclaim_edge`, `set_edge_relation` (retypes an edge in place, keeping
+its argument groupings), `ungroup_subclaim`, `revise_argument` (rename, or flip
+a stance, which retires the current evaluation), and `retire_argument`. A
+retired argument keeps its row, evaluations and reason (`retired_at`,
+`retired_reason`) but leaves every listing; its subclaims return to the basis
+or their other arguments. Renderers resolve the ids to the
 claims' canonical text at display time, following `merged_into`, so links never
 dangle after a merge. The connective language that the claim bar expels from
 claim texts ("therefore", "because", "given that") lives here and only here.

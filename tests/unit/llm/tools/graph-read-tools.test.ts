@@ -13,8 +13,10 @@ vi.mock("../../../../src/services/assessment-service.js", () => ({
 }));
 vi.mock("../../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: vi.fn(async () => []),
+  getRetiredArgumentsForClaim: vi.fn(async () => []),
   getEvaluationStateForClaim: vi.fn(async () => []),
-  hasWrittenForm: (content: string | null) => !!content && content.length > 40,
+  // Written once the content is no longer the creation-time label (#747).
+  hasWrittenForm: (a: { content: string; description: string | null }) => a.content !== a.description,
 }));
 vi.mock("../../../../src/services/tree-service.js", () => ({
   getTransitiveDependents: vi.fn(),
@@ -74,6 +76,7 @@ import { getQuantityDetail } from "../../../../src/services/quantity-service.js"
 import { getQuestionDetail } from "../../../../src/services/question-service.js";
 import {
   getArgumentsForClaim,
+  getRetiredArgumentsForClaim,
   getEvaluationStateForClaim,
 } from "../../../../src/services/argument-service.js";
 import { listClaimDependents } from "../../../../src/services/tree-service.js";
@@ -453,7 +456,16 @@ describe("graph-read-tools", () => {
 
       it("serves arguments with evaluations, subclaims by argument, related links and findings on request", async () => {
         vi.mocked(getArgumentsForClaim).mockResolvedValue([
-          { id: "a1", name: "Survey", stance: "supports", content: "label", evidenceUrls: [], shows: null },
+          { id: "a1", name: "Survey", stance: "supports", content: "label", description: "label", evidenceUrls: [], shows: null },
+        ] as never);
+        vi.mocked(getRetiredArgumentsForClaim).mockResolvedValue([
+          {
+            id: "a0",
+            name: "Old survey",
+            stance: "supports",
+            retiredAt: new Date("2026-03-01T00:00:00Z"),
+            retiredReason: "Superseded by the newer survey.",
+          },
         ] as never);
         vi.mocked(getEvaluationStateForClaim).mockResolvedValue([
           { argument_id: "a1", argument_name: "Survey", verdict: "holds", decisive: true, content: "Sound.", stale: false },
@@ -505,6 +517,16 @@ describe("graph-read-tools", () => {
             has_written_form: false,
             evaluation: { verdict: "holds", decisive: true, content: "Sound.", stale: false },
           }),
+        ]);
+        // Retired arguments (#741) are listed apart, with their reason.
+        expect(out.retired_arguments).toEqual([
+          {
+            id: "a0",
+            name: "Old survey",
+            stance: "supports",
+            retired_at: "2026-03-01T00:00:00.000Z",
+            reason: "Superseded by the newer survey.",
+          },
         ]);
         expect(out.subclaims).toEqual([
           expect.objectContaining({
