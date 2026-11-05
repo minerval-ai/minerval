@@ -122,14 +122,29 @@ export const stanceEnum = z.enum(["for", "against", "neutral"]);
  * source asserts the claim as canonically stated. "denies": it asserts the
  * negation or contrary. "poses": it states the proposition as an open
  * question without endorsing either side, as a survey states a conjecture
- * ("the Jacobian conjecture asks whether..."). A posing instance is
- * provenance, a source that refers to the proposition, and not a vote on it:
- * stance counts and citation predicates keep it out of both camps.
+ * ("the Jacobian conjecture asks whether..."). "mentions": it refers to the
+ * claim without asserting, denying or posing it: it cites the claim, reports
+ * that others hold it, or raises it in passing in a way worth a reader
+ * seeing. Posing and mentioning instances are provenance, sources that refer
+ * to the proposition, and not votes on it: stance counts and citation
+ * predicates keep them out of both camps, and a mention is shown as its own
+ * category wherever stances are counted.
  */
-export const INSTANCE_STANCES = ["affirms", "denies", "poses"] as const;
+export const INSTANCE_STANCES = ["affirms", "denies", "poses", "mentions"] as const;
 export type InstanceStance = (typeof INSTANCE_STANCES)[number];
 export const isInstanceStance = (v: unknown): v is InstanceStance =>
   (INSTANCE_STANCES as readonly unknown[]).includes(v);
+
+/**
+ * The stances ingestion assigns. The Extractor surfaces passages that state a
+ * claim, and the Matcher decides which side each falls on; a source that
+ * only mentions a claim is a Steward's judgment from reading it, recorded
+ * with record_claim_instance, so "mentions" is not offered there.
+ */
+export const MATCHED_INSTANCE_STANCES = ["affirms", "denies", "poses"] as const;
+export type MatchedInstanceStance = (typeof MATCHED_INSTANCE_STANCES)[number];
+export const isMatchedInstanceStance = (v: unknown): v is MatchedInstanceStance =>
+  (MATCHED_INSTANCE_STANCES as readonly unknown[]).includes(v);
 
 // The types a caller may submit against an EXISTING claim via
 // POST /contributions.

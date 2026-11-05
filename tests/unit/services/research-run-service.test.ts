@@ -31,6 +31,7 @@ vi.mock("../../../src/config.js", async (importOriginal) => {
 
 import { LlmBudgetExceededError } from "../../../src/llm/errors.js";
 import {
+  carriedNotebook,
   checkResearcherBudget,
   closeResearchRun,
   modelForTier,
@@ -39,6 +40,19 @@ import {
 } from "../../../src/services/research-run-service.js";
 
 beforeEach(() => mocks.rawQuery.mockReset().mockResolvedValue([]));
+
+describe("carriedNotebook (#730)", () => {
+  it("carries an earlier run's sections and its report, labelled with the run, without the harness block", () => {
+    const carried = carriedNotebook({
+      id: "abcdef12-0000-4000-8000-000000000001",
+      notebook: { thread: "where it stood" },
+      report: { answer: "half done", suggested_next_steps: "read the 2019 survey", harness: { turns: 9 } },
+    } as never);
+    expect(carried["from run abcdef12: thread"]).toBe("where it stood");
+    const report = JSON.parse(carried["from run abcdef12: its report"]!);
+    expect(report).toEqual({ answer: "half done", suggested_next_steps: "read the 2019 survey" });
+  });
+});
 
 describe("modelForTier", () => {
   it("resolves each tier from config", () => {

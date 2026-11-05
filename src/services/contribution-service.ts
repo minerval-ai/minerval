@@ -5,6 +5,8 @@ import { eq, sql, desc, inArray } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { enqueueContribution } from "./queue-service.js";
+import { getRequest } from "./request-service.js";
+import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import {
   contributions,
@@ -477,4 +479,106 @@ export async function getArbitrationForContribution(contributionId: string) {
     .where(eq(arbitrationResults.contributionId, contributionId))
     .limit(1);
   return result ?? null;
+}
+
+/**
+ * A contribution as a caller sees it, on REST (`GET /contributions/:id`,
+ * `GET /contributions`) and MCP (get_contribution_status) alike, so the two
+ * cannot drift (#723).
+ */
+export function formatContribution(c: {
+  id: string;
+  // Null while an intake contribution is pending review (#157).
+  claimId: string | null;
+  contributorId: string;
+  contributionType: string;
+  content: string;
+  evidenceUrls: string[];
+  submittedAt: Date;
+  reviewStatus: string;
+  mergeTargetClaimId: string | null;
+  proposedCanonicalForm: string | null;
+  grantId?: string | null;
+}) {
+  return {
+    id: c.id,
+    claim_id: c.claimId,
+    // A mandate's contribution does not name its funder (§12/§19).
+    contributor_id: c.grantId ? null : c.contributorId,
+    contribution_type: c.contributionType,
+    content: c.content,
+    evidence_urls: c.evidenceUrls,
+    submitted_at: c.submittedAt.toISOString(),
+    review_status: c.reviewStatus,
+    merge_target_claim_id: c.mergeTargetClaimId,
+    proposed_canonical_form: c.proposedCanonicalForm,
+    // The node's page on the public site: the claim contributed to, or, for
+    // an accepted proposal, the claim, question or quantity it became (which
+    // may still be under assessment). Null while a proposal is pending.
+    page_url: c.claimId
+      ? `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${c.claimId}`
+      : null,
+    // Set only for an accepted propose_claim / propose_question: the node it
+    // became or landed on, so the contributor can follow it. (An accepted
+    // propose_source mints its claims through extraction, not here.)
+    became_claim_id:
+      c.claimId &&
+      (c.contributionType === "propose_claim" || c.contributionType === "propose_question")
+        ? c.claimId
+        : null,
+  };
+}
+
+/**
+ * An answer_request names the request it is offered for. The reviewer must
+ * name that request to accept it (review_contribution's request_id), and a
+ * contribution has no column for one, so the id rides at the head of the
+ * content where the reviewer reads it (#723). The request must bear on the
+ * node the contribution is filed on and still be open. Any other type takes
+ * no request_id.
+ */
+export async function withAnsweredRequest(input: {
+  contributionType: string;
+  // Absent only for a propose_request (#724); an answer_request always names its node.
+  claimId?: string | null;
+  requestId?: string | null;
+  content: string;
+}): Promise<{ ok: true; content: string } | { ok: false; code: string; message: string }> {
+  const requestId = input.requestId?.trim() || null;
+  if (input.contributionType !== "answer_request") {
+    if (!requestId) return { ok: true, content: input.content };
+    return {
+      ok: false,
+      code: "REQUEST_ID_NOT_EXPECTED",
+      message: "request_id goes only with contribution_type answer_request",
+    };
+  }
+  if (!requestId) {
+    return {
+      ok: false,
+      code: "REQUEST_ID_REQUIRED",
+      message:
+        "An answer_request needs request_id, the request the material is offered for " +
+        "(get_claim lists a node's open requests; list_requests finds others)",
+    };
+  }
+  const request = await getRequest(requestId);
+  if (!request) return { ok: false, code: "REQUEST_NOT_FOUND", message: `No request ${requestId}` };
+  if (!request.bears_on.some((n) => n.id === input.claimId)) {
+    return {
+      ok: false,
+      code: "REQUEST_NOT_ON_NODE",
+      message:
+        `Request ${requestId} does not bear on ${input.claimId}; file the answer on a node it bears on: ` +
+        (request.bears_on.map((n) => n.id).join(", ") || "it names none, so it cannot be answered here"),
+    };
+  }
+  if (CLOSED_REQUEST_STATES.includes(request.state)) {
+    return {
+      ok: false,
+      code: "REQUEST_CLOSED",
+      message: `Request ${requestId} is ${request.state}; it takes no more material`,
+    };
+  }
+  return { ok: true, content: `Answers request ${requestId}.\n\n${input.content}` };
 }

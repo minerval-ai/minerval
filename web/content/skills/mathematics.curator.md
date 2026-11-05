@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 3)
+# Domain skill: Mathematics (version 4)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -126,7 +126,10 @@ elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
 computer-algebra toolkit, works alone within a fixed budget of metered
-work, writes nothing to the graph, and reports to the steward. Its prompt
+work, and writes nothing to the graph. No administrator launches it on its
+own judgment: an attempt runs only as an `attempt_proof` action that a
+mandate's plan funds (For the Grantmaker, below), and its result goes to
+the claim's steward, which did not launch it but judges what it settles. Its prompt
 carries none of this document, so nothing it says uses the graph's terms
 or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
@@ -159,4 +162,4 @@ generalization and its special case are different claims. Whether two
 formulations the discourse treats as distinct are one claim or two is the
 same-considerations test, judged by how the discourse treats them, not by
 whether a proof connects them. A problem-list number is a strong identity
-signal; search it before concluding a claim is new.
+signal; search it as `keywords` before concluding a claim is new.
