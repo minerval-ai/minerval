@@ -36,7 +36,8 @@
  * The second is the feed poll (#305, feedPollTick): every due feed of an
  * active lookout is fetched and its new items recorded in the lookout's
  * inbox; a feed whose wake rule is met queues one `feed` event, and an
- * auto_ingest feed puts its new items on the plan (services/feed-service.ts).
+ * auto_ingest feed raises its new items as valued candidate ingests
+ * (services/feed-service.ts).
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -226,7 +227,7 @@ export async function retractionPollTick(
  * failures and backs off (feed-service pollFeed); one bad feed never stops
  * the rest. Polling is code: no ledger row, no model call. What it can
  * cause is a `feed` event on a lookout whose wake rule is met, or, for an
- * auto_ingest feed, ingest items on the mandate's plan.
+ * auto_ingest feed, candidate ingests valued at the lookout's ceiling.
  */
 export async function feedPollTick(
   opts: { now?: Date; maxFeeds?: number } = {}
@@ -239,7 +240,7 @@ export async function feedPollTick(
   const due = await rawQuery<FeedRow>(
     `SELECT f.id, f.lookout_id, f.url, f.site_url, f.title, f.status, f.wake, f.batch_size,
             f.max_wait_hours, f.min_wake_hours, f.poll_hours, f.retain_days,
-            f.daily_ingest_cap, f.ingest_focus, f.seeded_at, f.last_polled_at, f.next_poll_at,
+            f.ingest_focus, f.seeded_at, f.last_polled_at, f.next_poll_at,
             f.last_woke_at, f.consecutive_failures, f.last_error, f.created_by, f.created_at
        FROM lookout_feeds f
        JOIN lookouts l ON l.id = f.lookout_id

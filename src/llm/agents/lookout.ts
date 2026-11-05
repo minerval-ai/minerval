@@ -7,7 +7,7 @@
  * words, where to look, what to look out for), chose its triggers (a
  * heartbeat, the retraction poller, a manual poke) and delegated a bounded
  * slice of the mandate's spending judgment: a ceiling on the valuation a
- * flag may carry, a per-run limit on ingests. The ledger funds each run
+ * flag or an ingest may carry (#695). The ledger funds each run
  * from the mandate's escrow (`lookout_run`, fundGrantSelfActions) and the
  * engine executor runs this agent with the affordances a watcher needs —
  *
@@ -21,7 +21,8 @@
  *    many at a time (triage_items), and its own feeds' wake rules
  *    (set_feed_rule); read_listing for an archive or index;
  *  - three ways to raise a candidate: flag_reassessment (a valued reassess
- *    row), propose_ingest (a plan item), leave_note (for the next review);
+ *    row), propose_ingest (a valued ingest row), leave_note (for the next
+ *    review);
  *  - submit_contribution: what it found, through the Contribution Reviewer
  *    like anyone's, the review paid from the mandate's escrow (§19).
  *
@@ -204,7 +205,7 @@ async function runLookoutImpl(input: {
   const feedTools = createLookoutFeedTools({
     lookoutId: lookout.id,
     grantId: lookout.grant_id,
-    ingestsLeft: () => Math.max(0, lookout.max_ingests_per_run - ingestsProposed),
+    maxValue: Number(lookout.max_value),
     onIngested: (n) => {
       ingestsProposed += n;
       flagsRaised += n;
@@ -349,15 +350,14 @@ async function runLookoutImpl(input: {
     {
       name: "propose_ingest",
       description:
-        "Put a source you have actually seen onto the mandate's plan as an " +
-        "ingest item (extract and match its claims into the graph), priced " +
-        "against the mandate's escrow. Refused for a URL already in the " +
-        "graph or already planned. Your Grantmaker set a count of ingests " +
-        "per run (shared with ingests from your inbox; your briefing gives " +
-        "the number), because an ingest you propose is paid from the " +
-        "mandate's escrow without its allocator ranking it against " +
-        "everything else; spend it on sources that would seed or move live " +
-        "cruxes in scope. A focus scopes the ingest: the " +
+        "Raise a source you have actually seen for ingestion (extract and " +
+        "match its claims into the graph). It becomes a candidate ingest on " +
+        "the ledger with the mandate valuing it at your urgency (clamped to " +
+        "the ceiling your Grantmaker delegated to you), and the mandate's " +
+        "allocator decides whether that buys the ingest, against everything " +
+        "else it values. Refused for a URL already in the graph, already on " +
+        "the plan, or already ingested; one you raised that still waits is " +
+        "a repeat. A focus scopes the ingest: the " +
         "extractor reads the whole document but proposes only the claims " +
         "bearing on that subject. Use one when your brief wants one subject " +
         "from a document that ranges wider.",
@@ -366,12 +366,18 @@ async function runLookoutImpl(input: {
         properties: {
           url: { type: "string" },
           rationale: { type: "string" },
+          urgency: {
+            type: "number",
+            description:
+              "0–10: how much having this source in the graph matters relative " +
+              "to everything else the mandate could fund.",
+          },
           focus: {
             type: "string",
             description: "Optional: the subject to read the document for, in your brief's words. Omit for the whole document.",
           },
         },
-        required: ["url", "rationale"],
+        required: ["url", "rationale", "urgency"],
       },
     },
     {
@@ -448,7 +454,13 @@ async function runLookoutImpl(input: {
                     : f.action_status === "open" || f.action_status === "running"
                       ? "still waiting for its pass"
                       : "closed without a pass"
-                : f.kind;
+                : f.kind === "ingest" && f.action_status
+                  ? f.action_status === "open"
+                    ? "ingest waiting on the ledger"
+                    : f.action_status === "done"
+                      ? "ingested"
+                      : `ingest ${f.action_status}`
+                  : f.kind;
             return `- ${new Date(f.created_at).toISOString().slice(0, 10)} ${f.kind} ${target}: ${state}${f.repeats > 0 ? ` (repeated ${f.repeats}x)` : ""}`;
           })
           .join("\n");
@@ -463,10 +475,8 @@ async function runLookoutImpl(input: {
       : "") +
     `### Your brief\n\n${lookout.brief}\n\n` +
     `### Your delegated bounds\n\n` +
-    `- A flag's urgency is clamped to ${lookout.max_value}/10 on the mandate's ledger.\n` +
-    `- You may propose at most ${lookout.max_ingests_per_run} ingest${lookout.max_ingests_per_run === 1 ? "" : "s"} this run, ` +
-    `counting ingests from your inbox. Your Grantmaker set this count because an ingest goes onto the ` +
-    `mandate's plan and is paid from its escrow without the allocator ranking it against everything else.\n` +
+    `- The urgency of a flag or an ingest you raise is clamped to ${lookout.max_value}/10 on the mandate's ` +
+    `ledger; its allocator decides what that buys.\n` +
     `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
@@ -587,21 +597,14 @@ async function runLookoutImpl(input: {
             return JSON.stringify(res);
           }
           if (name === "propose_ingest") {
-            if (ingestsProposed >= lookout.max_ingests_per_run) {
-              return JSON.stringify({
-                ok: false,
-                code: "RUN_LIMIT",
-                problem:
-                  `You have proposed ${ingestsProposed} ingest(s) this run, the limit ` +
-                  `your Grantmaker set. Leave a note naming the rest if they matter.`,
-              });
-            }
             const res = await flagIngest({
               lookoutId: lookout.id,
               grantId: lookout.grant_id,
               url: String(toolInput.url ?? ""),
               rationale: String(toolInput.rationale ?? ""),
               focus: typeof toolInput.focus === "string" ? toolInput.focus : null,
+              maxValue: Number(lookout.max_value),
+              urgency: Number(toolInput.urgency ?? 5),
             });
             if (res.ok && !res.duplicate) {
               ingestsProposed++;

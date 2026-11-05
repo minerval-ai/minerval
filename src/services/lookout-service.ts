@@ -12,7 +12,7 @@
  * This module is the MECHANISM around it, in the ledger's sense:
  *   - the lookout's lifecycle (create, update, retire) with every bound the
  *     brief cannot enforce: the ceiling on the value a flag may carry on the
- *     mandate's behalf, the ingests a run may append, the heartbeat range;
+ *     mandate's behalf, and the heartbeat range;
  *   - the trigger queue (lookout_events) and the due computation the
  *     reconcile sweep reads;
  *   - the flag record (lookout_flags): what each run raised, folded so the
@@ -24,17 +24,18 @@
  * What a lookout can cause to happen is deliberately a candidate on the
  * ledger, never a conclusion: a reassess valued within its ceiling (its
  * mandate's allocator then funds it or not, best value per owl first, like
- * any other row), an ingest appended to its mandate's plan (priced and
- * escrow-bounded like any plan item), a note for the Grantmaker. Money it
- * never touches directly; importance and assessments it cannot reach.
+ * any other row), an ingest valued the same way (#695), a note for the
+ * Grantmaker. Money it never touches directly; importance and assessments
+ * it cannot reach.
  */
 import { rawQuery } from "../db/client.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
-import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
+import { ensureAssessActions, ASSESS_GROUP, INGEST_GROUP } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { setMandateValuations } from "./mandate-valuer-service.js";
 import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
-import { ingestCoverage, normalizeFocus } from "./ingest-focus-service.js";
+import { ingestCoverage, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
+import { capMicroUsd } from "./owl.js";
 
 /** Input kinds a lookout can wake on, beyond its heartbeat. */
 export const LOOKOUT_TRIGGER_KINDS = [
@@ -59,7 +60,6 @@ export const LOOKOUT_BOUNDS = {
   /** 0 = event-only; at most monthly. */
   heartbeatHours: { min: 0, max: 24 * 30 },
   maxValue: { min: 0, max: 10 },
-  maxIngestsPerRun: { min: 0, max: 20 },
   workspaceChars: 50_000,
   noteChars: 2_000,
   rationaleChars: 2_000,
@@ -75,7 +75,6 @@ export interface LookoutRow {
   triggers: LookoutTriggerKind[];
   model: string | null;
   max_value: number;
-  max_ingests_per_run: number;
   workspace: string | null;
   last_note: string | null;
   last_run_at: Date | null;
@@ -89,7 +88,7 @@ export interface LookoutRow {
 
 const LOOKOUT_SELECT = `
   SELECT id, grant_id, title, brief, status, heartbeat_hours, triggers, model,
-         max_value, max_ingests_per_run, workspace, last_note, last_run_at,
+         max_value, workspace, last_note, last_run_at,
          next_due_at, runs, flags, created_by, created_at, updated_at
     FROM lookouts`;
 
@@ -144,7 +143,6 @@ export async function createLookout(input: {
   triggers?: unknown;
   model?: string | null;
   maxValue?: number;
-  maxIngestsPerRun?: number;
   createdBy: string;
 }): Promise<LookoutWriteResult> {
   const [grant] = await rawQuery<{ id: string }>(
@@ -190,9 +188,8 @@ export async function createLookout(input: {
   }
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookouts
-       (grant_id, title, brief, heartbeat_hours, triggers, model, max_value,
-        max_ingests_per_run, created_by)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+       (grant_id, title, brief, heartbeat_hours, triggers, model, max_value, created_by)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
      RETURNING id`,
     [
       input.grantId,
@@ -202,12 +199,6 @@ export async function createLookout(input: {
       JSON.stringify(triggers),
       model,
       clampReal(input.maxValue, LOOKOUT_BOUNDS.maxValue.min, LOOKOUT_BOUNDS.maxValue.max, 6),
-      clampInt(
-        input.maxIngestsPerRun,
-        LOOKOUT_BOUNDS.maxIngestsPerRun.min,
-        LOOKOUT_BOUNDS.maxIngestsPerRun.max,
-        3
-      ),
       input.createdBy,
     ]
   );
@@ -229,7 +220,6 @@ export async function updateLookout(input: {
   triggers?: unknown;
   model?: string | null;
   maxValue?: number;
-  maxIngestsPerRun?: number;
 }): Promise<LookoutWriteResult> {
   const current = isUuid(input.lookoutId) ? await getLookout(input.lookoutId) : null;
   if (!current || current.grant_id !== input.grantId) {
@@ -281,12 +271,6 @@ export async function updateLookout(input: {
   }
   if (input.maxValue !== undefined) {
     set("max_value", clampReal(input.maxValue, LOOKOUT_BOUNDS.maxValue.min, LOOKOUT_BOUNDS.maxValue.max, current.max_value));
-  }
-  if (input.maxIngestsPerRun !== undefined) {
-    set(
-      "max_ingests_per_run",
-      clampInt(input.maxIngestsPerRun, LOOKOUT_BOUNDS.maxIngestsPerRun.min, LOOKOUT_BOUNDS.maxIngestsPerRun.max, current.max_ingests_per_run)
-    );
   }
   if (sets.length === 0) return { ok: true, lookoutId: input.lookoutId };
   await rawQuery(
@@ -576,13 +560,21 @@ export async function flagReassessment(input: {
 }
 
 /**
- * An ingest flag: append the URL to the funding mandate's plan as an
- * ingest item, priced and escrow-bounded like any plan item (the reconcile
- * sweep opens its row; fundGrantSelfActions covers it). A `focus` scopes
- * it to one subject (ingest-focus-service.ts). Refused when the source's
- * extraction record already covers it (read whole, or for the same
- * focus), when the same ingest is already planned, or when the URL is not
- * safely fetchable.
+ * An ingest flag (#695): open (or join) the ingest row on the action ledger
+ * for the URL, scoped to a focus when one is given, and write the funding
+ * mandate's valuation on it at the lookout's urgency clamped to the ceiling
+ * its Grantmaker delegated, exactly as flagReassessment does for a pass.
+ * The mandate's allocator then ranks the row by value per owl against
+ * everything else the mandate values and funds it or not out of the day's
+ * room. It used to be appended to the mandate's plan, where plan ingests
+ * are self-funded from escrow outside the allocator, so a count of ingests
+ * per run was the only check on a lookout's spending.
+ *
+ * Refused when the source's extraction record already covers it (read
+ * whole, or for the same focus), when the Grantmaker already planned the
+ * same ingest, when the URL is not safely fetchable, when the valuation
+ * would be 0, or when the ledger has the ingest running or retired. A URL
+ * this lookout already flagged and that is still waiting is a repeat.
  */
 export async function flagIngest(input: {
   lookoutId: string;
@@ -590,6 +582,10 @@ export async function flagIngest(input: {
   url: string;
   rationale: string;
   focus?: string | null;
+  /** The lookout's ceiling (`lookouts.max_value`). */
+  maxValue: number;
+  /** 0-10, the lookout's own judgment of how much this matters. */
+  urgency: number;
 }): Promise<FlagResult> {
   const focus = normalizeFocus(input.focus);
   const rationale = String(input.rationale ?? "").trim().slice(0, LOOKOUT_BOUNDS.rationaleChars);
@@ -604,6 +600,19 @@ export async function flagIngest(input: {
       ok: false,
       code: "URL",
       problem: err instanceof UnsafeUrlError ? err.message : "Not a fetchable public URL",
+    };
+  }
+  const urgency = clampReal(input.urgency, 0, 10, 5);
+  const ceiling = clampReal(input.maxValue, 0, 10, 0);
+  const value = Math.min(urgency, ceiling);
+  if (value <= 0) {
+    return {
+      ok: false,
+      code: "NO_VALUE",
+      problem:
+        ceiling <= 0
+          ? "Your Grantmaker's ceiling for you is 0, so an ingest you raise could carry no value on the ledger. Leave a note naming the source instead."
+          : "An urgency of 0 says it is not worth an ingest; leave a note if it matters at all.",
     };
   }
   const coverage = await ingestCoverage(url, focus);
@@ -626,42 +635,92 @@ export async function flagIngest(input: {
     [input.grantId, url, focus ?? ""]
   );
   if (planned) {
-    const [flag] = await rawQuery<{ id: string; created_at: Date }>(
-      `SELECT id, created_at FROM lookout_flags
-        WHERE lookout_id = $1 AND kind = 'ingest' AND url = $2
-        ORDER BY created_at DESC LIMIT 1`,
-      [input.lookoutId, url]
-    );
-    if (flag) {
-      await rawQuery(`UPDATE lookout_flags SET repeats = repeats + 1, updated_at = now() WHERE id = $1`, [flag.id]);
-      return { ok: true, flag_id: flag.id, duplicate: true, note: "Already on the mandate's plan from an earlier flag of yours; counted as a repeat." };
-    }
-    return { ok: false, code: "ALREADY_PLANNED", problem: "That URL is already on the mandate's plan" };
+    return { ok: false, code: "ALREADY_PLANNED", problem: "Your Grantmaker already has that ingest on the mandate's plan" };
   }
-  const item = { action: "ingest", url, rationale: `[lookout] ${rationale}`, ...(focus ? { focus } : {}) };
-  await rawQuery(
-    `UPDATE grants
-        SET plan = jsonb_set(
-              COALESCE(plan, '{"items": []}'::jsonb), '{items}',
-              COALESCE(plan->'items', '[]'::jsonb) || $2::jsonb),
-            updated_at = now()
-      WHERE id = $1 AND status = 'active'`,
-    [input.grantId, JSON.stringify([item])]
+  const group = INGEST_GROUP(url, focus);
+  // This lookout already raised it and the row still waits: a repeat, with
+  // nothing rewritten (as for a reassess flag).
+  const [open] = await rawQuery<{ id: string; created_at: Date }>(
+    `SELECT f.id, f.created_at
+       FROM lookout_flags f JOIN actions a ON a.id = f.action_id
+      WHERE f.lookout_id = $1 AND f.kind = 'ingest' AND a.exclusion_group = $2
+        AND a.status IN ('open', 'running')
+      ORDER BY f.created_at DESC LIMIT 1`,
+    [input.lookoutId, group]
   );
+  if (open) {
+    await rawQuery(`UPDATE lookout_flags SET repeats = repeats + 1, updated_at = now() WHERE id = $1`, [open.id]);
+    return {
+      ok: true,
+      flag_id: open.id,
+      duplicate: true,
+      note:
+        `Already raised on ${new Date(open.created_at).toISOString().slice(0, 10)} and still ` +
+        `waiting on the ledger; counted as a repeat, nothing rewritten.`,
+    };
+  }
+  // Open the row (or join one another lane opened). The focus is recorded
+  // first, so the executor never runs a scoped row without it.
+  if (focus) await recordIngestFocus(group, url, focus);
+  await rawQuery(
+    `INSERT INTO actions
+       (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+     VALUES ('ingest', $1, 'standard', $2, $3, $4)
+     ON CONFLICT (exclusion_group, variant) DO NOTHING`,
+    [
+      group,
+      url,
+      focus ? `Ingest ${url} (focus: ${focus.slice(0, 120)})` : `Ingest ${url}`,
+      capMicroUsd("source_ingest"),
+    ]
+  );
+  const [row] = await rawQuery<{ id: string; status: string }>(
+    `SELECT id, status FROM actions
+      WHERE exclusion_group = $1 AND variant = 'standard'
+      LIMIT 1`,
+    [group]
+  );
+  if (!row || row.status !== "open") {
+    return {
+      ok: false,
+      code: "LEDGER",
+      problem:
+        row?.status === "running"
+          ? "That source is being ingested right now."
+          : "The ledger has already closed an ingest of that URL (it ran, or was retired as unreadable); it cannot be raised again.",
+    };
+  }
+  // Never lower a value the mandate already put on the row (its
+  // Grantmaker's own, or an earlier flag's).
+  const [existing] = await rawQuery<{ value_est: number }>(
+    `SELECT value_est FROM mandate_valuations WHERE grant_id = $1 AND action_id = $2`,
+    [input.grantId, row.id]
+  );
+  let valueWritten: number | null = null;
+  if (existing && Number(existing.value_est) >= value) {
+    valueWritten = Number(existing.value_est);
+  } else {
+    const res = await setMandateValuations(input.grantId, [
+      { action_id: row.id, value, rationale: `[lookout] ${rationale}` },
+    ]);
+    if (res.written > 0) valueWritten = value;
+  }
   const [flag] = await rawQuery<{ id: string }>(
-    `INSERT INTO lookout_flags (lookout_id, kind, url, rationale)
-     VALUES ($1, 'ingest', $2, $3) RETURNING id`,
-    [input.lookoutId, url, rationale]
+    `INSERT INTO lookout_flags (lookout_id, kind, url, action_id, rationale, urgency, value_written)
+     VALUES ($1, 'ingest', $2, $3, $4, $5, $6) RETURNING id`,
+    [input.lookoutId, url, row.id, rationale, urgency, valueWritten]
   );
   return {
     ok: true,
     flag_id: flag!.id,
     duplicate: false,
-    action_id: null,
-    value_written: null,
+    action_id: row.id,
+    value_written: valueWritten,
     note:
-      `Appended to the mandate's plan as an ingest item${focus ? ` scoped to "${focus}"` : ""}; ` +
-      `it is priced against the escrow and runs when covered.`,
+      valueWritten === null
+        ? "Recorded, but no valuation could be written on the ingest row."
+        : `Recorded. The source${focus ? ` (scoped to "${focus}")` : ""} is a candidate ingest on the ledger ` +
+          `with your mandate valuing it at ${valueWritten}/10; its allocator decides whether that buys the ingest.`,
   };
 }
 
@@ -809,7 +868,6 @@ export interface LookoutSummary {
   triggers: LookoutTriggerKind[];
   model: string | null;
   max_value: number;
-  max_ingests_per_run: number;
   runs: number;
   flags: number;
   last_run_at: string | null;
@@ -889,7 +947,6 @@ export async function summarizeLookouts(grantId: string): Promise<LookoutSummary
       triggers: l.triggers ?? [],
       model: l.model,
       max_value: l.max_value,
-      max_ingests_per_run: l.max_ingests_per_run,
       runs: l.runs,
       flags: l.flags,
       last_run_at: l.last_run_at ? new Date(l.last_run_at).toISOString() : null,
