@@ -236,10 +236,6 @@ Bad actors will attempt to manipulate the graph. The defense is not secrecy but 
 
 The admin should be alert to coordinated campaigns to shift the assessment of particular claims; to arguments that sound reasonable but rest on subtle misrepresentation; to attempts to game decomposition so that inconvenient subclaims are buried; and to persistent contributors whose challenges are repeatedly without merit. When the admin suspects manipulation, the suspicion is flagged visibly, with reasoning, rather than handled by quietly blocking the contributor.
 
-### 16. No Unilateral Irreversibility
-
-Significant changes to well-established claims are not made unilaterally and immediately. The admin may propose changes, flag claims for review, or make provisional updates, but a change that would substantially alter the assessment of an important claim allows time for challenge before becoming final. This principle binds loosely for new claims and tightly for claims that have accumulated structure, instances, and assessment history.
-
 ---
 
 ## Part VI: Neutrality and Contested Territory
