@@ -26,6 +26,12 @@ import {
 } from "../../services/claim-instance-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 import { executeGraphReadTool, getClaimToolDefinition } from "./graph-read-tools.js";
+import { MANDATE_LABEL } from "../../services/contribution-service.js";
+
+const HISTORY_DEFAULT = 10;
+const HISTORY_MAX = 30;
+/** How much of each listed contribution's text and reasoning the history carries. */
+const HISTORY_EXCERPT = 1500;
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -75,12 +81,16 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_contribution_details",
       description:
-        "Get full details about a contribution, including the contributor, " +
-        "the target claim, any existing review, the reviewer's escalation " +
-        "reason, any appeals (with the appellant's reasoning), and prior " +
-        "arbitration results. Pass contribution_id, or a review_id (as " +
-        "get_recent_decisions returns) to load the contribution that " +
-        "review decided.",
+        "Get full details about a contribution: what was submitted (type, " +
+        "content, evidence, proposed wording, merge target), who filed it " +
+        "(a contributor's id and name, or \"a funded mandate\"), the target " +
+        "claim, any existing review, the reviewer's escalation reason, any " +
+        "appeals (with the appellant's reasoning), and prior arbitration " +
+        "results. Reputation is not here: " +
+        "get_contributor_profile has it, for when bad faith or coordination " +
+        "is in question. Pass contribution_id, or a review_id (as " +
+        "get_recent_decisions returns) to load the contribution that review " +
+        "decided.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -100,8 +110,13 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_contributor_profile",
       description:
-        "Get a contributor's profile including reputation score, acceptance " +
-        "history, and trust level.",
+        "Get a contributor's profile: reputation score, trust level, " +
+        "standing, bad-faith flags, acceptance history, and how many appeals " +
+        "they have filed. It bears on bad faith and coordination (§13, §15), " +
+        "never on the merits of a contribution. Pass contributor_id, or the " +
+        "contribution_id of the contribution in question. A contribution a " +
+        "funded mandate filed has no contributor profile: a mandate has no " +
+        "reputation, and the account behind it is not shown.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -109,8 +124,43 @@ export function getGovernanceToolDefinitions(): Tool[] {
             type: "string",
             description: "The UUID of the contributor",
           },
+          contribution_id: {
+            type: "string",
+            description: "Alternatively, a contribution whose filer to look up",
+          },
         },
-        required: ["contributor_id"],
+      },
+    },
+    {
+      name: "get_review_history",
+      description:
+        "The record a review is judged against, for one contribution: the " +
+        "other contributions on the same target, and the same filer's earlier " +
+        "contributions (a mandate's, for a contribution a mandate filed). " +
+        "Each comes with its text (the first 1,500 characters, marked when " +
+        "cut), the decision in force with its reasoning, and its appeals and " +
+        "arbitrations. This is how you find an argument already answered " +
+        "(§14), contributions that conflict on the same claim, and earlier " +
+        "appeals of similar rejections. Decided contributions only, unless " +
+        "include_pending is true. Newest first.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          contribution_id: {
+            type: "string",
+            description: "The contribution under review",
+          },
+          include_pending: {
+            type: "boolean",
+            description:
+              "Also list contributions still awaiting review or arbitration. Default false.",
+          },
+          limit: {
+            type: "integer",
+            description: `How many of each list to return (default ${HISTORY_DEFAULT}, at most ${HISTORY_MAX}).`,
+          },
+        },
+        required: ["contribution_id"],
       },
     },
     {
@@ -181,14 +231,17 @@ export function getGovernanceToolDefinitions(): Tool[] {
 }
 
 // The claim-facing subset of the bundle. The Steward and Curator work on
-// claims, not contributions — their prompts never mention the contribution/
-// contributor/decision tools, so attaching the whole bundle was pure extra
-// context surface (#100). Those agents get just the claim readers; the
-// Reviewer, Arbitrator, and Audit Agent keep the full bundle.
+// claims, not contributions, so the contributor and decision-history tools
+// stay out of their toolsets (#100). They do get get_contribution_details:
+// an accepted contribution or an arbitration ruling is handed to the
+// Steward by id, and the Steward integrates the record itself, not a
+// paraphrase of it (#697). The Reviewer, Arbitrator, and Audit Agent keep
+// the full bundle.
 const CLAIM_CONTEXT_TOOL_NAMES = new Set([
   "get_claim",
   "get_claim_instances",
   "get_claim_dependents",
+  "get_contribution_details",
 ]);
 
 export function getClaimContextToolDefinitions(): Tool[] {
@@ -229,7 +282,21 @@ export async function executeGovernanceTool(
 
       case "get_contributor_profile":
         return JSON.stringify(
-          await getContributorProfile(input.contributor_id as string),
+          await getContributorProfile(
+            input.contributor_id as string | undefined,
+            input.contribution_id as string | undefined
+          ),
+          null,
+          2
+        );
+
+      case "get_review_history":
+        return JSON.stringify(
+          await getReviewHistory(
+            input.contribution_id as string,
+            input.include_pending === true,
+            input.limit as number | undefined
+          ),
           null,
           2
         );
@@ -398,16 +465,27 @@ async function getContributionDetails(
           },
         }
       : {}),
-    contributor: contributor
+    // Who filed it, and nothing about their standing (#702): reputation is
+    // for weighing bad faith or coordination, read deliberately with
+    // get_contributor_profile, never set beside the merits. A mandate's
+    // contribution is filed under its funder's account but shown, here as
+    // everywhere, as the arrangement (#705): a mandate has no reputation, and
+    // the account behind it is not the reviewer's business.
+    ...(contribution.grantId
       ? {
-          id: contributor.id,
-          display_name: contributor.displayName,
-          reputation_score: contributor.reputationScore,
-          contributions_accepted: contributor.contributionsAccepted,
-          contributions_rejected: contributor.contributionsRejected,
-          is_verified: contributor.isVerified,
+          filed_by: MANDATE_LABEL,
+          contributor: null,
+          mandate_note:
+            "A funded mandate filed this. It has no reputation and no " +
+            "contributor profile: judge the contribution alone. A bad-faith " +
+            "flag on it is recorded and audited, with no reputation consequence.",
         }
-      : null,
+      : {
+          filed_by: contributor?.displayName ?? null,
+          contributor: contributor
+            ? { id: contributor.id, display_name: contributor.displayName }
+            : null,
+        }),
     target_claim: claim
       ? { id: claim.id, text: claim.text, type: claim.claimType }
       : null,
@@ -452,8 +530,34 @@ async function getContributionDetails(
   };
 }
 
-async function getContributorProfile(contributorId: string) {
+async function getContributorProfile(
+  contributorIdInput: string | undefined,
+  contributionId: string | undefined
+) {
   const db = getDb();
+
+  let contributorId = contributorIdInput;
+  if (!contributorId && contributionId) {
+    const [row] = await db
+      .select({ contributorId: contributions.contributorId, grantId: contributions.grantId })
+      .from(contributions)
+      .where(eq(contributions.id, contributionId))
+      .limit(1);
+    if (!row) return { error: `Contribution not found: ${contributionId}` };
+    // A mandate's contribution sits under its funder's personal account,
+    // which the graph never shows in the mandate's place (#705).
+    if (row.grantId) {
+      return {
+        filed_by: MANDATE_LABEL,
+        profile: null,
+        note:
+          "A funded mandate filed this contribution. A mandate has no " +
+          "reputation or standing to read: judge the contribution alone.",
+      };
+    }
+    contributorId = row.contributorId;
+  }
+  if (!contributorId) return { error: "Pass contributor_id or contribution_id" };
 
   const [contributor] = await db
     .select()
@@ -468,6 +572,11 @@ async function getContributorProfile(contributorId: string) {
     contributor.contributionsAccepted +
     contributor.contributionsRejected +
     contributor.contributionsEscalated;
+
+  const [appealsFiled] = await rawQuery<{ n: number }>(
+    `SELECT count(*)::int AS n FROM appeals WHERE appellant_id = $1`,
+    [contributorId]
+  );
 
   const trustLevel = trustLevelFor(
     contributor.reputationScore,
@@ -491,6 +600,7 @@ async function getContributorProfile(contributorId: string) {
     contributions_rejected: contributor.contributionsRejected,
     contributions_escalated: contributor.contributionsEscalated,
     total_contributions: total,
+    appeals_filed: appealsFiled?.n ?? 0,
     acceptance_rate:
       total > 0
         ? Math.round((contributor.contributionsAccepted / total) * 100)
@@ -649,5 +759,122 @@ export async function getRecentDecisions(opts: {
     count: page.length,
     offset,
     has_more: rows.length > limit,
+  };
+}
+
+interface HistoryRow {
+  id: string;
+  contribution_type: string;
+  claim_id: string | null;
+  content: string;
+  evidence_urls: string[] | null;
+  review_status: string;
+  submitted_at: Date | string;
+  same_filer: boolean;
+  decision: string | null;
+  decision_reasoning: string | null;
+  appeals: Array<{ status: string; reasoning: string }> | null;
+  arbitrations: Array<{ outcome: string; decision: string }> | null;
+}
+
+function historyExcerpt(text: string | null | undefined): string | null {
+  if (!text) return text ?? null;
+  return text.length > HISTORY_EXCERPT
+    ? `${text.slice(0, HISTORY_EXCERPT)} [first ${HISTORY_EXCERPT} of ${text.length} characters; get_contribution_details reads it whole]`
+    : text;
+}
+
+/**
+ * The record a review is judged against (#702): the same target's other
+ * contributions and the same filer's earlier ones, each with the decision in
+ * force, appeals and arbitrations. Keyed on the contribution, so a mandate's
+ * history is the mandate's, never its funder's personal one (#705).
+ */
+async function getReviewHistory(
+  contributionId: string,
+  includePending: boolean,
+  limitInput: number | undefined
+) {
+  const [subject] = await rawQuery<{
+    claim_id: string | null;
+    contributor_id: string;
+    grant_id: string | null;
+  }>(
+    `SELECT claim_id, contributor_id, grant_id FROM contributions WHERE id = $1`,
+    [contributionId]
+  );
+  if (!subject) return { error: `Contribution not found: ${contributionId}` };
+  const limit = Math.min(
+    HISTORY_MAX,
+    Math.max(1, Math.floor(Number(limitInput) || HISTORY_DEFAULT))
+  );
+
+  const sameFiler = subject.grant_id
+    ? `c.grant_id = $2`
+    : `(c.contributor_id = $2 AND c.grant_id IS NULL)`;
+  const filerKey = subject.grant_id ?? subject.contributor_id;
+  const decidedOnly = includePending
+    ? ""
+    : `AND c.review_status NOT IN ('pending', 'escalated')`;
+
+  const select = (where: string) => `
+    SELECT c.id, c.contribution_type, c.claim_id, c.content, c.evidence_urls,
+           c.review_status, c.submitted_at,
+           (${sameFiler}) AS same_filer,
+           r.decision, r.reasoning AS decision_reasoning,
+           (SELECT json_agg(json_build_object('status', a.status, 'reasoning', a.appeal_reasoning)
+                            ORDER BY a.submitted_at DESC)
+              FROM appeals a WHERE a.contribution_id = c.id) AS appeals,
+           (SELECT json_agg(json_build_object('outcome', ar.outcome, 'decision', ar.decision)
+                            ORDER BY ar.arbitrated_at DESC)
+              FROM arbitration_results ar WHERE ar.contribution_id = c.id) AS arbitrations
+      FROM contributions c
+      LEFT JOIN LATERAL (
+        SELECT decision, reasoning FROM contribution_reviews
+         WHERE contribution_id = c.id AND superseded = false
+         ORDER BY reviewed_at DESC LIMIT 1
+      ) r ON true
+     WHERE c.id <> $1 ${decidedOnly} AND ${where}
+     ORDER BY c.submitted_at DESC
+     LIMIT ${limit}`;
+
+  const onTarget = subject.claim_id
+    ? await rawQuery<HistoryRow>(select(`c.claim_id = $3`), [
+        contributionId,
+        filerKey,
+        subject.claim_id,
+      ])
+    : [];
+  const fromFiler = await rawQuery<HistoryRow>(select(sameFiler), [
+    contributionId,
+    filerKey,
+  ]);
+
+  const shape = (r: HistoryRow) => ({
+    id: r.id,
+    type: r.contribution_type,
+    target_claim_id: r.claim_id,
+    review_status: r.review_status,
+    submitted_at:
+      r.submitted_at instanceof Date ? r.submitted_at.toISOString() : r.submitted_at,
+    same_filer: r.same_filer,
+    content: historyExcerpt(r.content),
+    evidence_urls: r.evidence_urls ?? [],
+    decision_in_force: r.decision
+      ? { decision: r.decision, reasoning: historyExcerpt(r.decision_reasoning) }
+      : null,
+    appeals: (r.appeals ?? []).map((a) => ({
+      status: a.status,
+      reasoning: historyExcerpt(a.reasoning),
+    })),
+    arbitrations: r.arbitrations ?? [],
+  });
+
+  return {
+    filed_by: subject.grant_id ? MANDATE_LABEL : "this contributor",
+    on_same_target: subject.claim_id
+      ? onTarget.map(shape)
+      : "This contribution proposes new content and has no target yet.",
+    from_same_filer: fromFiler.map(shape),
   };
 }

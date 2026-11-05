@@ -48,8 +48,9 @@ export function getGrantContributionToolDefinition(): Tool {
         content: {
           type: "string",
           description:
-            "For the Reviewer and the Steward: what you found and what it rests " +
-            "on, with locators. For propose_claim and propose_question, why the " +
+            "For the Reviewer and, once it is accepted, the node's Steward, who " +
+            "receives it as filed with the evidence: what you found and what it " +
+            "rests on, with locators. For propose_claim and propose_question, why the " +
             "graph needs the node: that stays on the mandate's public record of " +
             "the contribution and never enters the graph or reaches the Steward " +
             "(the Reviewer judges the wording alone). An argument for the node, " +

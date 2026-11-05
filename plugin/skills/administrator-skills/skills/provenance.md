@@ -11,12 +11,13 @@ description: >-
   figures for the Steward to reason about; the verdict stays the Steward's.
 metadata:
   minerval:
-    version: 3
+    version: 4
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
       2: The researcher a Steward launches may record the instances it finds, with record_claim_instance on a claim or record_question_instance on a question; the Steward owns the instance set.
       3: "an instance may only mention the claim (stance mentions), citing it or reporting the debate without taking a side; it is no vote in any count"
+      4: The Contribution Reviewer and the Dispute Arbitrator may open a cited source with provenance_read_source, so a quote, a figure or a counter-source is checked against the text, not taken on faith.
 ---
 
 ## For every administrator

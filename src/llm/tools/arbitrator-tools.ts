@@ -14,7 +14,12 @@ import {
   contributors,
   appeals,
 } from "../../db/schema.js";
-import { enqueueSteward, requestAudit } from "../../services/queue-service.js";
+import { requestAudit } from "../../services/queue-service.js";
+import {
+  executeNotifyClaimSteward,
+  getNotifyClaimStewardToolDefinition,
+  NOTIFY_CLAIM_STEWARD,
+} from "./notify-claim-steward.js";
 import {
   applyArbitrationOutcome,
   reverseReviewOutcome,
@@ -85,15 +90,10 @@ export function getArbitratorToolDefinitions(): Tool[] {
           suspected_bad_faith: {
             type: "boolean",
             description:
-              "Set true ONLY with an 'uphold_original' outcome when the full " +
-              "case record shows deliberate abuse (spam, vandalism, sybil " +
-              "coordination, deliberate misinformation), NOT for sincere " +
-              "contributions rejected on the merits. §13's high bar applies. " +
-              "The flag's consequences (reputation penalty, pay-to-contribute " +
-              "standing) apply when the case arrived by escalation and the " +
-              "outcome is being applied now; on an appeal of an " +
-              "already-applied rejection the finding is recorded but adds no " +
-              "late penalty. Appealable. Setting it requires " +
+              "Only with 'uphold_original': a finding of deliberate abuse " +
+              "under §13, as your role prompt sets out. Its consequences apply " +
+              "on an escalated case; on an appeal of a rejection already " +
+              "applied it is recorded without a late penalty. Requires " +
               "bad_faith_category.",
           },
           bad_faith_category: {
@@ -111,30 +111,7 @@ export function getArbitratorToolDefinitions(): Tool[] {
         ],
       },
     },
-    {
-      name: "notify_claim_steward",
-      description:
-        "Notify the claim steward about the arbitration outcome so they " +
-        "can update the claim accordingly.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim",
-          },
-          change_type: {
-            type: "string",
-            description: "Type of change resulting from arbitration",
-          },
-          details: {
-            type: "string",
-            description: "Details about the arbitration outcome",
-          },
-        },
-        required: ["claim_id", "change_type", "details"],
-      },
-    },
+    getNotifyClaimStewardToolDefinition("dispute_arbitrator"),
     {
       name: "lift_suspension",
       description:
@@ -399,25 +376,8 @@ export async function executeArbitratorTool(
         });
       }
 
-      case "notify_claim_steward": {
-        const claimId = input.claim_id as string;
-        const changeType = input.change_type as string;
-        const details = input.details as string;
-
-        // Not contribution_accepted (#182): an arbitration can overturn as
-        // well as uphold, and the Steward should know it is integrating a
-        // ruling, not an acceptance.
-        await enqueueSteward({
-          claimId,
-          trigger: "arbitration_outcome",
-          context: `Arbitration outcome - ${changeType}: ${details}`,
-        });
-
-        return JSON.stringify({
-          success: true,
-          message: `Claim steward notified about claim ${claimId}`,
-        });
-      }
+      case NOTIFY_CLAIM_STEWARD:
+        return executeNotifyClaimSteward(input, "dispute_arbitrator");
 
       case "lift_suspension": {
         const contributorId = input.contributor_id as string;

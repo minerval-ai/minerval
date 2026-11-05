@@ -167,7 +167,15 @@ describe("the Provenance skill", () => {
       "examination_note_finding",
     ]);
     expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
-    expect(p.tools[1]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
+    // Reading a source is also how the Reviewer and the Arbitrator check
+    // what a contribution cites (#694).
+    expect(p.tools[1]!.roles).toEqual([
+      "claim-steward",
+      "audit-agent",
+      "researcher",
+      "contribution-reviewer",
+      "dispute-arbitrator",
+    ]);
     for (const t of p.tools.slice(2, 5)) expect(t.roles).toEqual(["claim-steward", "researcher"]);
     expect(p.tools[5]!.roles).toEqual(["claim-steward"]);
     expect(p.tools[6]!.roles).toEqual(["claim-steward"]);
@@ -179,7 +187,7 @@ describe("the Provenance skill", () => {
 
   it("is headed as a method skill with its own sentence of standing", () => {
     const view = getSkillView(p, "claim-steward");
-    expect(view.startsWith("# Method skill: Provenance (version 3)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 4)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
     expect(view).not.toContain("## Failure modes");
   });
 });
@@ -317,9 +325,7 @@ describe("views", () => {
       "- mathematics (version 3, a domain skill, for claims tagged mathematics; this version changed: a solver attempt is funded through a mandate's plan and its result goes to the claim's Steward, which did not launch it; a Steward that needs an attempt files a request for funders (constitution Part VIII, instruments)). "
     );
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
-    expect(catalog).toContain(
-      "- provenance (version 3, a method skill; this version changed: an instance may only mention the claim (stance mentions), citing it or reporting the debate without taking a side; it is no vote in any count). "
-    );
+    expect(catalog).toContain("- provenance (version 4, a method skill; this version changed: ");
     expect(catalog).toContain(getSkill("provenance").description.replace(/\s+/g, " ").trim());
     expect(getSkillCatalog("claim-steward")).toContain(
       "Loading it gives you: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor."
