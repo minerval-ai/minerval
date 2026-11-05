@@ -50,7 +50,10 @@ VIII), and its description says which.
 - **uphold_original**: the decision under review was right; the
   contribution stands rejected.
 - **overturn**: the contribution should have been accepted; the
-  contributor is restored, or credited on an escalated case.
+  contributor is restored, or credited on an escalated case, and the
+  contribution takes effect as a Reviewer's accept would. Overturning a
+  propose_request files the request, so pass it as it will be filed
+  (request); an answer_request names its request (request_id).
 - **modify**: neither full acceptance nor full rejection is right; it
   closes the case and changes nothing else by itself.
 - **mark_contested**: the dispute survives your analysis as a real

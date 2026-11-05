@@ -7,13 +7,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq } from "drizzle-orm";
-import { getDb, rawQuery } from "../../db/client.js";
+import { getDb } from "../../db/client.js";
 import {
-  fileRequest,
-  getRequest,
-  notifyRequestKeeper,
-  recordWork,
-} from "../../services/request-service.js";
+  acceptanceSchemaProperties,
+  applyAcceptanceEffects,
+} from "../../services/contribution-acceptance.js";
 import {
   contributions,
   contributionReviews,
@@ -31,12 +29,8 @@ import {
   applyReviewOutcome,
   BAD_FAITH_CATEGORIES,
 } from "../../services/reputation-service.js";
-import {
-  isIntakeContributionType,
-  materializeAcceptedIntake,
-  type IntakeMaterializationResult,
-} from "../../services/intake-service.js";
-import { getContributionById, MANDATE_LABEL } from "../../services/contribution-service.js";
+import type { IntakeMaterializationResult } from "../../services/intake-service.js";
+import { getContributionById } from "../../services/contribution-service.js";
 import {
   admitPrizeClaim,
   prizeClaimReviewBlock,
@@ -106,31 +100,7 @@ export function getReviewerToolDefinitions(): Tool[] {
             description:
               "Required when suspected_bad_faith is true: which kind of abuse.",
           },
-          request: {
-            type: "object",
-            description:
-              "Required to accept a propose_request: the request as it will be filed, in your " +
-              "words from the contributor's (Part VIII). ask, why (what the judgments it bears " +
-              "on would become under its outcomes), satisfied_by; who_could and addressed_to " +
-              "where known. A request that asks for a particular result is restated to ask for " +
-              "what would decide the matter either way. budget_usd: what doing it should cost, " +
-              "when the contributor stated one you judge plausible for the work (the costing skill " +
-              "says how to check one); omit it otherwise, and a scoping pass will quote it.",
-            properties: {
-              ask: { type: "string" },
-              why: { type: "string" },
-              satisfied_by: { type: "string" },
-              who_could: { type: "string" },
-              addressed_to: { type: "string" },
-              budget_usd: { type: "number" },
-            },
-            required: ["ask", "why", "satisfied_by"],
-          },
-          request_id: {
-            type: "string",
-            description:
-              "Required to accept an answer_request: the request the material is offered for.",
-          },
+          ...acceptanceSchemaProperties(),
         },
         required: [
           "contribution_id",
@@ -284,78 +254,20 @@ export async function executeReviewerTool(
           });
         }
 
-        // Intake contributions (#157): an accept is what admits the content
-        // into the graph, so materialize FIRST — the Matcher decides identity
-        // (dedup/canonicalization), then the claim goes live or the source is
-        // extracted. Deliberately mechanical: the reviewer judged the
-        // suggestion; code applies it. Runs before the review is recorded so
-        // a failure surfaces to the reviewer instead of stranding an
-        // "accepted" contribution that never materialized (the call is
-        // idempotent, so a retry after partial failure is safe).
+        // What accepting does beyond the record (#724): a proposed request
+        // is filed, material offered for one is recorded as work on it, and
+        // an intake proposal is materialized through the Matcher (#157). The
+        // same service runs on an Arbitrator's overturn. It runs before the
+        // review is recorded so a refusal or failure surfaces to the reviewer
+        // instead of stranding an "accepted" contribution that never took
+        // effect (materialization is idempotent, so a retry is safe).
         let materialization: IntakeMaterializationResult | null = null;
-        // A request a contributor proposes is filed in the request's own
-        // form, and material offered to meet one is recorded as work on it
-        // for its keeper (Part VIII). Checked before anything is written.
         let requestNote = "";
-        if (decision === "accept" && reviewed?.contributionType === "propose_request") {
-          const r = (input.request ?? null) as Record<string, unknown> | null;
-          const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-          if (!r || !text(r.ask) || !text(r.why) || !text(r.satisfied_by)) {
-            return JSON.stringify({
-              success: false,
-              error:
-                "Accepting a propose_request needs request: {ask, why, satisfied_by}, the request as " +
-                "it will be filed. Nothing was recorded.",
-            });
-          }
-          const filed = await fileRequest({
-            ask: text(r.ask),
-            why: text(r.why),
-            satisfiedBy: text(r.satisfied_by),
-            budgetUsd: typeof r.budget_usd === "number" && r.budget_usd > 0 ? r.budget_usd : null,
-            whoCould: text(r.who_could) || null,
-            addressedTo: text(r.addressed_to) || null,
-            claimIds: reviewed.claimId ? [reviewed.claimId] : [],
-            bearsOnText: reviewed.claimId ? null : reviewed.content.slice(0, 1000),
-            // A mandate's research proposes under the mandate (Part VIII).
-            filer: reviewed.grantId
-              ? { kind: "mandate", grantId: reviewed.grantId }
-              : { kind: "contributor", contributorId: reviewed.contributorId },
-          });
-          requestNote = ` Request ${filed.id} filed.`;
-        }
-        if (decision === "accept" && reviewed?.contributionType === "answer_request") {
-          const requestId = typeof input.request_id === "string" ? input.request_id.trim() : "";
-          const request = requestId ? await getRequest(requestId) : null;
-          if (!request) {
-            return JSON.stringify({
-              success: false,
-              error: "Accepting an answer_request needs request_id, the request the material is offered for. Nothing was recorded.",
-            });
-          }
-          const [contributor] = await rawQuery<{ display_name: string }>(
-            `SELECT display_name FROM contributors WHERE id = $1`,
-            [reviewed.contributorId]
-          );
-          await recordWork({
-            requestId,
-            byLabel: reviewed.grantId ? MANDATE_LABEL : (contributor?.display_name ?? "a contributor"),
-            contributorId: reviewed.grantId ? null : reviewed.contributorId,
-            fundedByJobId: reviewed.fundedByJobId ?? null,
-            outcome: null,
-            summary: reviewed.content.slice(0, 4000),
-          });
-          await notifyRequestKeeper(requestId, `a contributor offered material for it (contribution ${contributionId}).`);
-          requestNote = ` Recorded as work on request ${requestId}; its keeper is notified.`;
-        }
         if (decision === "accept") {
-          const contribution = await getContributionById(contributionId);
-          if (
-            contribution &&
-            isIntakeContributionType(contribution.contributionType)
-          ) {
-            materialization = await materializeAcceptedIntake(contributionId);
-          }
+          const effects = await applyAcceptanceEffects(contributionId, input);
+          if (!effects.ok) return JSON.stringify({ success: false, error: effects.error });
+          materialization = effects.materialization;
+          requestNote = effects.note;
         }
 
         // Write review record

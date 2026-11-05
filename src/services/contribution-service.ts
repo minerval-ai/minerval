@@ -192,10 +192,14 @@ export async function submitGrantContribution(input: {
     return { success: false, message: "content must say what you found and what it rests on, or why the question needs asking." };
   }
   const intake = type === "propose_claim" || type === "propose_question";
+  // A request may bear on several nodes, sources, or something the graph
+  // does not hold yet (Part VIII, #724): with no node named, content says
+  // what it bears on and the review settles it.
+  const unanchoredRequest = type === "propose_request" && !claimId;
   if (intake) {
     if (!proposed) return { success: false, message: `${type} needs proposed_text: the wording you propose.` };
     if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim or question, not an essay." };
-  } else {
+  } else if (!unanchoredRequest) {
     const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
     if (!node) return { success: false, message: `No active node ${claimId || "(none given)"}; ${type} is about an existing node.` };
   }
@@ -240,7 +244,7 @@ export async function submitGrantContribution(input: {
           evidence_urls, grant_id, funded_by_job_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [
-        intake ? null : claimId,
+        intake || unanchoredRequest ? null : claimId,
         grant.funder_user_id,
         type,
         content.slice(0, 10_000),
@@ -268,7 +272,8 @@ export async function submitGrantContribution(input: {
 export const MANDATE_LABEL = "a funded mandate";
 
 export async function createContribution(input: {
-  claimId: string;
+  /** Null only for a propose_request that names no node (#724). */
+  claimId: string | null;
   contributorId: string;
   contributionType: string;
   content: string;
@@ -534,7 +539,8 @@ export function formatContribution(c: {
  */
 export async function withAnsweredRequest(input: {
   contributionType: string;
-  claimId: string;
+  // Absent only for a propose_request (#724); an answer_request always names its node.
+  claimId?: string | null;
   requestId?: string | null;
   content: string;
 }): Promise<{ ok: true; content: string } | { ok: false; code: string; message: string }> {

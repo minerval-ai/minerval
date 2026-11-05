@@ -165,6 +165,19 @@ export const contributionTypeEnum = z.enum([
   "answer_request",
 ]);
 
+/**
+ * A request may bear on several nodes, on sources, or on something the
+ * graph does not hold yet (Part VIII), so a propose_request needs no target
+ * claim (#724); the Reviewer settles what it bears on. Every other type is
+ * about one existing node.
+ */
+export function contributionMayOmitClaim(type: string): boolean {
+  return type === "propose_request";
+}
+
+export const CLAIM_ID_REQUIRED_MESSAGE =
+  "claim_id is required: every contribution type but propose_request is about an existing node";
+
 // Intake types (#157): suggestions that would mint NEW graph content. They are
 // created internally by POST /claims/propose and POST /sources (never through
 // the /contributions body, which requires a target claim) and have a null

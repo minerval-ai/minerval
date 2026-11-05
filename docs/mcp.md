@@ -247,19 +247,21 @@ and the tool description says what a call spends.
   and the text itself is not stored. The public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
-- **`submit_contribution`** `{claim_id, contribution_type, content,
+- **`submit_contribution`** `{claim_id?, contribution_type, content,
   evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
   request_id?}` — file any of `contribution_type`'s values: challenge,
   support, add_instance, propose_argument, propose_merge, propose_split,
   propose_edit, add_estimate (a source's figure for a quantity),
   propose_answer (a candidate answer to a question), propose_request, and
-  answer_request. An `answer_request` names the request it is offered for
-  in `request_id` (the request must bear on `claim_id` and be open); the id
-  is carried to the reviewer at the head of the content, since accepting
-  one needs it (#723). Requires a key bound to a contributor identity;
-  enters the standard Contribution Reviewer pipeline and is subject to
-  suspension and reputation policy (#71). `POST /contributions` takes the
-  same `request_id`.
+  answer_request. `claim_id` is required for every type but
+  `propose_request`, which may bear on several nodes, sources, or something
+  the graph does not hold yet (#724). An `answer_request` names the request
+  it is offered for in `request_id` (the request must bear on `claim_id` and
+  be open); the id is carried to the reviewer at the head of the content,
+  since accepting one needs it (#723). Requires a key bound to a contributor
+  identity; enters the standard Contribution Reviewer pipeline and is
+  subject to suspension and reputation policy (#71). `POST /contributions`
+  takes the same `request_id`.
 - **`get_contribution_status`** `{contribution_id}` — the contribution in
   the shape `GET /contributions/:id` serves (an accepted proposal carries
   `became_claim_id` and `page_url`, the node it became), and the review

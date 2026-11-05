@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 16673,
-    "fullChars": 101794,
+    "roleChars": 17054,
+    "fullChars": 102175,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23182,
-    "fullChars": 108303,
+    "roleChars": 23325,
+    "fullChars": 108446,
     "skills": [
       {
         "name": "costing",
@@ -145,8 +145,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 16962,
-    "fullChars": 102083,
+    "roleChars": 17105,
+    "fullChars": 102226,
     "skills": []
   },
   {
@@ -158,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11589,
-    "fullChars": 96710,
+    "roleChars": 11732,
+    "fullChars": 96853,
     "skills": [
       {
         "name": "costing",
@@ -199,8 +199,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11337,
-    "fullChars": 96458,
+    "roleChars": 11691,
+    "fullChars": 96812,
     "skills": [
       {
         "name": "costing",
@@ -239,8 +239,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12685,
-    "fullChars": 97806,
+    "roleChars": 12828,
+    "fullChars": 97949,
     "skills": [
       {
         "name": "costing",
@@ -292,8 +292,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 20583,
-    "fullChars": 105704,
+    "roleChars": 20726,
+    "fullChars": 105847,
     "skills": [
       {
         "name": "costing",
@@ -332,8 +332,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 10692,
-    "fullChars": 95813,
+    "roleChars": 10835,
+    "fullChars": 95956,
     "skills": [
       {
         "name": "costing",
@@ -370,8 +370,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
-    "roleChars": 14695,
-    "fullChars": 99816,
+    "roleChars": 14838,
+    "fullChars": 99959,
     "skills": [
       {
         "name": "costing",
@@ -423,8 +423,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 15030,
-    "fullChars": 100151,
+    "roleChars": 15173,
+    "fullChars": 100294,
     "skills": [
       {
         "name": "costing",

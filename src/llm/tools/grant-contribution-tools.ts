@@ -37,7 +37,10 @@ export function getGrantContributionToolDefinition(): Tool {
         contribution_type: { type: "string", enum: [...GRANTMAKER_CONTRIBUTION_TYPES] },
         claim_id: {
           type: "string",
-          description: "The node it bears on. Omit for propose_claim and propose_question.",
+          description:
+            "The node it bears on. Omit for propose_claim and propose_question, and for a " +
+            "propose_request that bears on several nodes, on sources, or on something the " +
+            "graph does not hold yet (say what in content).",
         },
         proposed_text: {
           type: "string",

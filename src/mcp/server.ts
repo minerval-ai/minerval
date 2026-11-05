@@ -79,6 +79,8 @@ import { getOrCreateContributor } from "../services/contributor-service.js";
 import { checkContributionRateLimit } from "../services/reputation-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import {
+  CLAIM_ID_REQUIRED_MESSAGE,
+  contributionMayOmitClaim,
   contributionTypeEnum,
   reportKindEnum,
   reportSeverityEnum,
@@ -836,7 +838,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "(add_estimate); on a question, a candidate answer (propose_answer); " +
         "on any node, a request for work (propose_request) or material " +
         "offered to meet one of its requests (answer_request, naming it in " +
-        "request_id). A contribution gets a hearing, not " +
+        "request_id). A request may " +
+        "bear on several nodes, on sources, or on something the graph does " +
+        "not hold yet: omit claim_id and say in content what it bears on. " +
+        "A contribution gets a hearing, not " +
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +
@@ -847,7 +852,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "review nobody pays for; past it you get CONTRIBUTION_RATE_LIMITED. " +
         "Priced proposals (propose_claim, submit_source) do not count toward it.",
       inputSchema: {
-        claim_id: z.guid(),
+        claim_id: z
+          .guid()
+          .optional()
+          .describe("The node the contribution is about. Required for every type but propose_request."),
         contribution_type: contributionTypeEnum,
         content: z.string().min(1).max(10_000),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
@@ -874,8 +882,15 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         );
       }
 
-      const claim = await getClaimById(input.claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      // A propose_request may name no node (#724); every other type is
+      // about one.
+      if (!input.claim_id && !contributionMayOmitClaim(input.contribution_type)) {
+        return errorResult("VALIDATION_ERROR", CLAIM_ID_REQUIRED_MESSAGE);
+      }
+      if (input.claim_id) {
+        const claim = await getClaimById(input.claim_id);
+        if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      }
 
       const answered = await withAnsweredRequest({
         contributionType: input.contribution_type,
@@ -921,7 +936,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       }
 
       const contribution = await createContribution({
-        claimId: input.claim_id,
+        claimId: input.claim_id ?? null,
         contributorId: contributor.id,
         contributionType: input.contribution_type,
         content: answered.content,
