@@ -3274,7 +3274,9 @@ export type CurationRequest = typeof curationRequests.$inferSelect;
 // ---------------------------------------------------------------------------
 export const reconciliationEvents = pgTable("reconciliation_events", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // 'merge' | 'create_claim' | 'add_edge' | 'remove_edge' | 'reassign_instance'
+  // 'merge' | 'change_kind' | 'create_claim' | 'add_edge' | 'remove_edge' |
+  // 'reassign_instance' | 'link_claims' | 'unlink_claims' | 'set_definition' |
+  // 'reclassify' | 'reverse' (a reversal, naming the event it undid)
   operation: text("operation").notNull(),
   reasoning: text("reasoning").notNull().default(""),
   // Operation-specific snapshot sufficient to reverse the change (moved ids,

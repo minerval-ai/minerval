@@ -170,7 +170,7 @@ const SHOWS_SCHEMA = {
   required: ["text"],
 } as const;
 
-const DEFINITION_PROPERTIES = {
+export const DEFINITION_PROPERTIES = {
   measures: {
     type: "string",
     description: "What the value is a value of, stated so that it settles what would count as the value.",
@@ -487,6 +487,8 @@ export function getResearcherQuestionInstanceToolDefinition(): Tool {
     },
   };
 }
+/** The most requests one list_requests call returns; offset pages past it. */
+const LIST_REQUESTS_MAX = 50;
 
 export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[] {
   const tools: Tool[] = [
@@ -522,14 +524,22 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
     {
       name: "list_requests",
       description:
-        "List requests: those bearing on a node (claim_id), or with live: true only the ones " +
-        "still open to work. Each comes with its keeper and the work done on it.",
+        "List requests, newest first, or by relevance with q. Each comes with its keeper and the " +
+        "work done on it. Filters: claim_id (those bearing on a node), live: true (only those " +
+        "still open to work), keeper (curator: those bearing on several nodes or on none; " +
+        "steward: those bearing on one node), and q, a search of what requests ask and why by " +
+        "meaning and by keyword, which is how to find one that asks for the same thing wherever " +
+        `it was filed. Up to ${LIST_REQUESTS_MAX} per call; total says how many match, and ` +
+        "offset pages through the rest.",
       input_schema: {
         type: "object" as const,
         properties: {
           claim_id: { type: "string" },
           live: { type: "boolean" },
-          limit: { type: "number" },
+          keeper: { type: "string", enum: ["curator", "steward"] },
+          q: { type: "string", description: "What to look for, in words." },
+          limit: { type: "number", description: `At most ${LIST_REQUESTS_MAX}; default 20.` },
+          offset: { type: "number" },
         },
       },
     },
@@ -599,7 +609,8 @@ export function getChangeKindToolDefinition(): Tool {
       "asks whether X is so becomes the claim X, one that asks for a value becomes the quantity, " +
       "a claim that names a value becomes the quantity. The old kind's verdict, estimate or " +
       "standing is retired to history, instance stances are mapped, and the node's Steward is " +
-      "asked to re-judge. A quantity needs its definition. Reversible.",
+      "asked to re-judge. A quantity needs its definition. Logged; reversible with " +
+      "reverse_reconciliation (the result carries the event_id).",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1172,11 +1183,22 @@ async function executeKindToolImpl(
 
     case "list_requests": {
       const claimId = optStr(input.claim_id);
-      const limit = Math.min(50, Math.max(1, Number(input.limit) || 20));
-      const { items, total } = await listRequests({ claimId, live: input.live === true, limit });
+      const limit = Math.min(LIST_REQUESTS_MAX, Math.max(1, Number(input.limit) || 20));
+      const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
+      const keeper = input.keeper === "curator" || input.keeper === "steward" ? input.keeper : undefined;
+      const { items, total } = await listRequests({
+        claimId,
+        live: input.live === true,
+        keeper,
+        q: optStr(input.q),
+        limit,
+        offset,
+      });
       return JSON.stringify({
         success: true,
         total,
+        offset,
+        ...(offset + items.length < total ? { next_offset: offset + items.length } : {}),
         requests: items.map((r) => ({
           id: r.id,
           ask: r.ask,

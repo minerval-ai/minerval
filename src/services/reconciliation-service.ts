@@ -587,12 +587,23 @@ export async function changeNodeKind(input: {
   return { changed: true, from, eventId };
 }
 
-/** Create a new claim node (embedded). Logs a reversible `create_claim` event. */
+/**
+ * Create a new node (embedded): a claim, a quantity with its definition, or
+ * a question (§2, §7a), so a split can mint what each part actually is
+ * (#764). Logs a reversible `create_claim` event.
+ */
 export async function createClaim(input: {
   text: string;
   claimType?: string;
+  kind?: "claim" | "quantity" | "question";
+  /** Required for a quantity: what its value is a value of (§3). */
+  definition?: QuantityDefinitionInput | null;
   createdBy?: string;
 }): Promise<{ id: string; eventId?: string }> {
+  const kind = input.kind ?? "claim";
+  // Validated before anything is written: a quantity without a definition
+  // is not a quantity (§3).
+  const definition = kind === "quantity" ? quantityDefinitionSchema.parse(input.definition ?? undefined) : null;
   const db = getDb();
   let embedding: number[] | undefined;
   try {
@@ -604,16 +615,207 @@ export async function createClaim(input: {
     .insert(claims)
     .values({
       text: input.text,
+      kind,
       claimType: input.claimType ?? "empirical_derived",
       embedding: embedding ?? undefined,
       pipelineEpoch: loadConfig().pipelineEpoch,
       createdBy: input.createdBy ?? "curator",
     })
     .returning();
+  if (definition) {
+    await rawQuery(
+      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        claim!.id,
+        definition.measures,
+        definition.population ?? null,
+        definition.conditions ?? null,
+        JSON.stringify(definition.unit),
+        input.createdBy ?? "curator",
+      ]
+    );
+  }
   const eventId = await logEvent("create_claim", "split: new claim", {
     claim_id: claim!.id,
+    kind,
   });
   return { id: claim!.id, eventId };
+}
+
+/**
+ * Complete or correct a quantity's definition (Part VIII: the Curator
+ * "completes ... a quantity whose definition leaves its value open"; #764).
+ * Logs a reversible `set_definition` event holding the prior definition,
+ * so the completion can be undone like any other surgery. A definition
+ * that different considerations would bear on is a different quantity:
+ * that is a split (createClaim with kind quantity), not this.
+ */
+export async function setQuantityDefinition(input: {
+  claimId: string;
+  definition: QuantityDefinitionInput;
+  reasoning: string;
+}): Promise<{ eventId?: string }> {
+  const definition = quantityDefinitionSchema.parse(input.definition);
+  const [row] = await rawQuery<{ kind: string; state: string }>(
+    `SELECT kind, state FROM claims WHERE id = $1`,
+    [input.claimId]
+  );
+  if (!row) throw new Error(`Node ${input.claimId} not found`);
+  if (row.state !== "active") throw new Error(`Node ${input.claimId} is ${row.state}, not active`);
+  if (row.kind !== "quantity") {
+    throw new Error(
+      `Node ${input.claimId} is a ${row.kind}, not a quantity. Change its kind first ` +
+        `(change_node_kind takes the definition).`
+    );
+  }
+  const [prior] = await rawQuery<Record<string, unknown>>(
+    `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions WHERE claim_id = $1`,
+    [input.claimId]
+  );
+  await rawQuery(
+    `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
+     VALUES ($1, $2, $3, $4, $5, 'curator')
+     ON CONFLICT (claim_id) DO UPDATE
+       SET measures = EXCLUDED.measures, population = EXCLUDED.population,
+           conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
+    [
+      input.claimId,
+      definition.measures,
+      definition.population ?? null,
+      definition.conditions ?? null,
+      JSON.stringify(definition.unit),
+    ]
+  );
+  const eventId = await logEvent("set_definition", input.reasoning, {
+    claim_id: input.claimId,
+    prior_definition: prior ?? null,
+  });
+  return { eventId };
+}
+
+/**
+ * Correct a node's proposition type (claims.claim_type) and its domain
+ * tags (claims.domains), which point every run on it to its domain skills
+ * (#640). Either may be omitted. Logs a reversible `reclassify` event
+ * holding the prior values. The values are validated by the caller (the
+ * closed lists live with the tools).
+ */
+export async function reclassifyClaim(input: {
+  claimId: string;
+  claimType?: string;
+  domains?: string[];
+  reasoning: string;
+}): Promise<{ changed: boolean; eventId?: string }> {
+  const [row] = await rawQuery<{
+    state: string;
+    claim_type: string;
+    domains: string[] | null;
+    domains_source: string | null;
+  }>(`SELECT state, claim_type, domains, domains_source FROM claims WHERE id = $1`, [input.claimId]);
+  if (!row) throw new Error(`Node ${input.claimId} not found`);
+  if (row.state !== "active") throw new Error(`Node ${input.claimId} is ${row.state}, not active`);
+  const sameType = input.claimType === undefined || input.claimType === row.claim_type;
+  const sameDomains =
+    input.domains === undefined ||
+    JSON.stringify([...input.domains].sort()) === JSON.stringify([...(row.domains ?? [])].sort());
+  if (sameType && sameDomains) return { changed: false };
+  await rawQuery(
+    `UPDATE claims
+        SET claim_type = COALESCE($2, claim_type),
+            domains = COALESCE($3::text[], domains),
+            domains_source = CASE WHEN $3::text[] IS NULL THEN domains_source ELSE 'curator' END,
+            updated_at = now()
+      WHERE id = $1`,
+    [input.claimId, input.claimType ?? null, input.domains ?? null]
+  );
+  const eventId = await logEvent("reclassify", input.reasoning, {
+    claim_id: input.claimId,
+    prior_claim_type: row.claim_type,
+    prior_domains: row.domains ?? [],
+    prior_domains_source: row.domains_source,
+  });
+  return { changed: true, eventId };
+}
+
+/** One logged reconciliation operation, as the Curator reads it. */
+export interface ReconciliationEventRow {
+  id: string;
+  operation: string;
+  reasoning: string;
+  /** The nodes the operation touched. */
+  node_ids: string[];
+  reversed: boolean;
+  created_at: string;
+}
+
+/** The payload keys that name a node, across every operation. */
+const NODE_KEYS = [
+  "survivor_id",
+  "loser_id",
+  "claim_id",
+  "other_claim_id",
+  "parent_id",
+  "child_id",
+  "from_claim_id",
+  "to_claim_id",
+] as const;
+
+function eventNodeIds(payload: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  for (const key of NODE_KEYS) {
+    const v = payload[key];
+    if (typeof v === "string" && v) ids.add(v);
+  }
+  for (const e of (payload.deleted_edges as EdgeRow[] | undefined) ?? []) {
+    ids.add(e.parent_claim_id);
+    ids.add(e.child_claim_id);
+  }
+  for (const l of [
+    ...((payload.deleted_links as ClaimLinkRow[] | undefined) ?? []),
+    ...((payload.moved_links as ClaimLinkRow[] | undefined) ?? []),
+  ]) {
+    ids.add(l.claim_a_id);
+    ids.add(l.claim_b_id);
+  }
+  return [...ids];
+}
+
+/** How many events list_reconciliation_events returns at most, newest first. */
+export const RECONCILIATION_EVENTS_LIMIT = 30;
+
+/**
+ * The logged operations that touched a node, newest first: what the Curator
+ * reads to find the event a wrong merge, kind change or split step left,
+ * and to reverse it (#761).
+ */
+export async function listReconciliationEvents(
+  claimId: string,
+  limit = RECONCILIATION_EVENTS_LIMIT
+): Promise<ReconciliationEventRow[]> {
+  const rows = await rawQuery<{
+    id: string;
+    operation: string;
+    reasoning: string;
+    payload: Record<string, unknown>;
+    reversed: boolean;
+    created_at: Date;
+  }>(
+    `SELECT id, operation, reasoning, payload, reversed, created_at
+       FROM reconciliation_events
+      WHERE payload::text LIKE '%' || $1 || '%'
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [claimId, Math.min(RECONCILIATION_EVENTS_LIMIT, Math.max(1, limit))]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    operation: r.operation,
+    reasoning: r.reasoning,
+    node_ids: eventNodeIds(r.payload ?? {}),
+    reversed: r.reversed,
+    created_at: new Date(r.created_at).toISOString(),
+  }));
 }
 
 /** Add a relationship edge between two existing claims. Logs an `add_edge` event. */
@@ -754,10 +956,17 @@ export async function reassignInstance(input: {
 /**
  * Reverse a logged reconciliation event, restoring the prior state as faithfully
  * as the recorded payload allows. Idempotent: a `reversed` event is a no-op.
+ *
+ * Refused while a later, unreversed operation touched any of the same nodes:
+ * each payload records the state it found, so undoing an older operation
+ * under a newer one would restore a state the newer one no longer matches.
+ * Reverse newest first. With `reasoning` (the Curator's tool), the reversal
+ * is itself logged, as a `reverse` event naming the one it undid (#761).
  */
 export async function reverseReconciliation(
-  eventId: string
-): Promise<{ reversed: boolean; reason?: string }> {
+  eventId: string,
+  opts: { reasoning?: string } = {}
+): Promise<{ reversed: boolean; reason?: string; blockedBy?: string[] }> {
   const [event] = await rawQuery<{
     operation: string;
     payload: Record<string, unknown>;
@@ -766,8 +975,37 @@ export async function reverseReconciliation(
 
   if (!event) return { reversed: false, reason: "event not found" };
   if (event.reversed) return { reversed: false, reason: "already reversed" };
+  if (event.operation === "reverse") {
+    return { reversed: false, reason: "a reversal cannot itself be reversed; redo the operation instead" };
+  }
 
   const p = event.payload;
+  const nodes = eventNodeIds(p ?? {});
+  if (nodes.length > 0) {
+    // "Later" is decided in SQL against the event's own stored timestamp,
+    // never a value round-tripped through JavaScript: a JS Date keeps
+    // milliseconds and Postgres microseconds, so a timestamp passed back
+    // in would read the event as later than itself. The event itself is
+    // excluded by id as well. Each operation logs its event in its own
+    // statement, so two events never share a timestamp in practice.
+    const later = await rawQuery<{ id: string }>(
+      `SELECT e.id FROM reconciliation_events e
+        WHERE e.id <> $1
+          AND e.created_at > (SELECT created_at FROM reconciliation_events WHERE id = $1)
+          AND e.reversed = false AND e.operation <> 'reverse'
+          AND e.payload::text LIKE ANY($2::text[])
+        ORDER BY e.created_at DESC`,
+      [eventId, nodes.map((n) => `%${n}%`)]
+    );
+    if (later.length > 0) {
+      return {
+        reversed: false,
+        reason:
+          "later operations touched the same nodes; reverse them first, newest first",
+        blockedBy: later.map((r) => r.id),
+      };
+    }
+  }
 
   switch (event.operation) {
     case "merge": {
@@ -886,6 +1124,35 @@ export async function reverseReconciliation(
       break;
     }
 
+    case "set_definition": {
+      const claimId = p.claim_id as string;
+      const prior = p.prior_definition as Record<string, unknown> | null;
+      if (prior) {
+        await rawQuery(
+          `UPDATE quantity_definitions SET measures = $2, population = $3, conditions = $4, unit = $5, updated_at = now()
+            WHERE claim_id = $1`,
+          [claimId, prior.measures, prior.population ?? null, prior.conditions ?? null, JSON.stringify(prior.unit)]
+        );
+      } else {
+        await rawQuery(`DELETE FROM quantity_definitions WHERE claim_id = $1`, [claimId]);
+      }
+      break;
+    }
+
+    case "reclassify": {
+      await rawQuery(
+        `UPDATE claims SET claim_type = $2, domains = $3::text[], domains_source = $4, updated_at = now()
+          WHERE id = $1`,
+        [
+          p.claim_id as string,
+          p.prior_claim_type as string,
+          (p.prior_domains as string[]) ?? [],
+          (p.prior_domains_source as string | null) ?? null,
+        ]
+      );
+      break;
+    }
+
     case "add_edge": {
       await rawQuery(
         `DELETE FROM claim_relationships
@@ -923,5 +1190,8 @@ export async function reverseReconciliation(
   }
 
   await rawQuery(`UPDATE reconciliation_events SET reversed = true WHERE id = $1`, [eventId]);
+  if (opts.reasoning !== undefined) {
+    await logEvent("reverse", opts.reasoning, { reversed_event_id: eventId, operation: event.operation });
+  }
   return { reversed: true };
 }
