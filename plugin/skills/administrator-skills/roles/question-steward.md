@@ -165,6 +165,10 @@ question, and make sure the decomposition and the assessment answer it.
 
 ## Delegating Research
 
+When code_execution is in your toolset, do your own analysis there rather than
+delegate it (§9): checking a source's statistics against the figures it
+reports, or the arithmetic of combining estimates and intervals.
+
 Where the deployment runs it, you have an instrument: the researcher, launched
 with delegate_research, which works for you on one bounded investigation and
 returns a report. It answers only to you, writes nothing to the graph except

@@ -228,10 +228,11 @@ about the value (shows) in place of a stance; say in the written form what it
 shows, and rate with evaluate_argument how strongly it shows that.
 
 Your assessment is an estimate (§10), set with update_quantity_estimate. State
-intervals as 90% intervals. When the work needs real computation (pooling many
-studies, re-running an analysis), delegate it to the researcher, which can run
-code except at its cheapest tier. When you move the estimate, decide which
-Stewards need to know and tell them with notify_steward.
+intervals as 90% intervals. Combining estimates and computing an interval is
+work for code_execution when you have it; an investigation that needs much
+more (pooling many studies, re-running an analysis) goes to the researcher,
+whose tool says which tiers can run code. When you move the estimate, decide
+which Stewards need to know and tell them with notify_steward.
 
 `;
 
@@ -251,6 +252,10 @@ question, and make sure the decomposition and the assessment answer it.
 `;
 
 export const DELEGATING_RESEARCH = `## Delegating Research
+
+When code_execution is in your toolset, do your own analysis there rather than
+delegate it (§9): checking a source's statistics against the figures it
+reports, or the arithmetic of combining estimates and intervals.
 
 Where the deployment runs it, you have an instrument: the researcher, launched
 with delegate_research, which works for you on one bounded investigation and

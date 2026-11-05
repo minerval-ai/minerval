@@ -38,6 +38,7 @@ import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
+import { CODE_EXECUTION_TOOL, meterCodeExecution, turnUsedCodeExecution } from "./instrument-harness.js";
 import type {
   CompletionResult,
   EffortLevel,
@@ -459,9 +460,19 @@ export async function toolUseLoop(options: {
   // 0: no notice yet; 1: the wrap-up notice went out; 2: the spent one did.
   let budgetWarned = 0;
 
+  // The code-execution sandbox is billed by container time, which no token
+  // count carries. A loop that offers it meters each turn that used it by
+  // the turn's wall-clock seconds, at the published container rate
+  // (instrument-harness.ts), into the enclosing meter, so the run's budget
+  // binds it like any paid tool.
+  const offersSandbox = options.tools.some(
+    (t) => (t as { name?: string }).name === CODE_EXECUTION_TOOL.name
+  );
+
   for (let i = 0; i < maxIter; i++) {
     if (options.beforeTurn) await options.beforeTurn(i);
     const spentAtTurnStart = runBudget()?.spentMicroUsd ?? 0;
+    const turnStartedAt = Date.now();
     const turn = i;
     const result = streaming
       ? await (() => {
@@ -496,6 +507,9 @@ export async function toolUseLoop(options: {
 
     lastResult = result;
     if (result.container) containerId = result.container;
+    if (offersSandbox && turnUsedCodeExecution(result)) {
+      await meterCodeExecution((Date.now() - turnStartedAt) / 1000);
+    }
     if (!streaming && options.onText && result.content) options.onText(result.content, turn);
 
     // One step per model turn, whatever the loop decides to do with it —

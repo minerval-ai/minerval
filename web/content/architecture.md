@@ -1100,10 +1100,13 @@ load-bearing ones cheaply.
 the vendor (`RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`,
 `RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort` and
 the task budget, for work where the best model class pays, such as a
-replication. Standard runs the ordinary loop on a Claude model. Both carry
-the code-execution sandbox (Python, no network), an Anthropic server tool.
-Cheap runs the ordinary loop on the cheap tier without the sandbox, and is
-the right choice for reading and mapping a large literature economically.
+replication. Standard runs the ordinary loop on a Claude model. Cheap runs
+the ordinary loop on the cheap tier, and is the right choice for reading and
+mapping a large literature economically. A tier carries the code-execution
+sandbox (Python, no network), an Anthropic server tool, when its configured
+model is Anthropic-served; by default that is strong and standard, and the
+`delegate_research` description names the tiers that have it in the
+deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
@@ -1387,7 +1390,20 @@ shape that the loop executes through OpenRouter's web plugin
 completion on the cheap tier whose citation annotations are the hits). A
 request that still carries a server tool to a non-Anthropic model fails
 immediately with a message naming the capability, rather than silently
-dropping it. OpenAI's own hosted tools are not wired up
+dropping it.
+
+The code-execution sandbox is offered the same way, by provider: the
+researcher and the Claim, Quantity and Question Stewards carry
+`code_execution` when their model is Anthropic-served, and no other
+provider has a server sandbox, so on another model the tool is absent and
+nothing tells the agent it exists. The Steward's task message states the
+price. `toolUseLoop` meters each turn that used the sandbox by its
+wall-clock seconds at the published container rate
+(`CODE_EXECUTION_USD_PER_HOUR` in `instrument-harness.ts`) into the
+enclosing meter, so the pass budget binds it like any paid tool; the
+long-run loop meters it in the solver's and researcher's own hooks.
+
+OpenAI's own hosted tools are not wired up
 yet, but they are ordinary entries in the Responses `tools` array, so the slot
 for them is the one `toResponsesTools` already builds. OpenAI gets automatic
 prefix caching with a stable `prompt_cache_key` per agent instead of explicit

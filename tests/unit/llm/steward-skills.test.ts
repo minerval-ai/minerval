@@ -159,7 +159,7 @@ describe("Steward toolset without a domain tag", () => {
       ...PROVENANCE_TOOLS,
     ];
     expect(names.slice(first + 1, first + 1 + skillTools.length)).toEqual(skillTools);
-    expect(names.slice(-9)).toEqual([
+    expect(names.slice(-10)).toEqual([
       "delegate_research",
       "get_research_run",
       "raise_issue",
@@ -169,6 +169,7 @@ describe("Steward toolset without a domain tag", () => {
       "note_finding",
       "search_findings",
       "web_search",
+      "code_execution",
     ]);
     // One block: the constitution and role, with the catalog of skills to load.
     expect(opts.system).toHaveLength(1);
@@ -297,7 +298,7 @@ describe("Steward toolset with the mathematics tag but no checker", () => {
     const names = opts.tools.map((t) => t.name);
     expect(names.filter((n) => n.startsWith("lean_"))).toEqual([]);
     expect(names).not.toContain("publish_formalization");
-    expect(names.at(-1)).toBe("web_search");
+    expect(names.at(-2)).toBe("web_search");
     const task = opts.initialMessages[0]!.content;
     expect(task).toContain("the Mathematics skill (mathematics)");
     expect(task).toContain("formal tools are unavailable this run");
@@ -337,11 +338,12 @@ describe("Steward toolset on a non-Anthropic model", () => {
     expect(opts.initialMessages[0]!.content).not.toContain("web_search is unavailable");
   });
 
-  it("keeps the server web_search on a Claude model", async () => {
+  it("keeps the server web_search on a Claude model, with the sandbox after it", async () => {
     const opts = await onModel("claude-sonnet-5-5");
-    const last = opts.tools.at(-1)!;
-    expect(last.name).toBe("web_search");
-    expect("input_schema" in last).toBe(false);
+    const search = opts.tools.at(-2)!;
+    expect(search.name).toBe("web_search");
+    expect("input_schema" in search).toBe(false);
+    expect(opts.tools.at(-1)!.name).toBe("code_execution");
   });
 });
 
