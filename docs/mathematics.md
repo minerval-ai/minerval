@@ -500,6 +500,7 @@ composition table:
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |
 | extractor | `For the Extractor` only |
+| consistency-checker | `For every administrator` + `Standards for judging` (it reads assessments against each other) |
 
 **Placement.** The skill is a separate cached system block after the
 constitution-plus-role block. The seam's `system` type widens from `string`
@@ -1308,6 +1309,19 @@ so the marginal-return rule has meaning and the cost estimator gets two live
 series. A larger `campaign` variant and cross-day accumulation are deferred
 until the live series exists.
 
+Who starts an attempt (#768): only a mandate's plan. No admin launches the
+solver on its own judgment, the Steward included, because an attempt can
+cost a hundred owls or more and the money for it is a funder's choice; the
+constitution's instruments paragraph (Part VIII) says so. The result goes
+to the claim's Steward (`attempt_completed`, section 7.9), which did not
+launch it and judges it as the launching admin of any instrument would. A
+Steward whose verdict turns on an attempt that no plan funds files a
+request for one (skills/mathematics, "When your verdict needs an
+attempt"); a Grantmaker that reads it may plan the `attempt_proof` item.
+`delegate_research` is not a route to an attempt: the researcher has no
+`lean_check`, so it can bring back a sketch or a route, never a checked
+proof.
+
 Preconditions to open a group: the claim has a `published` formalization
 (calibration controls are formalized too; only the review period is waived
 for them); the claim's lifetime attempt spend is under its
@@ -1446,7 +1460,7 @@ suggests the statement is sound rather than vacuous; (3) record an argument (`ad
 `write_argument`, `evaluate_argument`), then `update_claim_assessment`
 (typically `verified` for a faithful compiled proof, `contradicted` for a
 faithful compiled disproof), `log_stewardship_decision`, and
-`notify_dependent_stewards`; (4) if a bounty is bound to the formalization,
+`notify_steward`; (4) if a bounty is bound to the formalization,
 the worker has already moved it to `house_result_pending` (section 8.1); the
 Steward either calls `mark_problem_solved_by_platform {formalization_id,
 attempt_id, lean_check_id}`, a mechanical tool that moves the bounty to
@@ -2146,11 +2160,10 @@ money waits on them.
 
 ### 8.5 The challenge window, audit, and sign-off
 
-Constitution §16: a change that would substantially alter the assessment of
-an important claim allows time for challenge before becoming final.
-Accepting a proof of an open conjecture is such a change, and a paid prize
-is irreversible in practice, so the window sits between the Steward's
-acceptance and payment. It is not for re-judging the proof, which is
+A paid prize is irreversible in practice: money that has left cannot be
+recalled, and the claimant, the funders and the record all act on it. So a
+public challenge window sits between the Steward's acceptance and payment,
+long enough for anyone to raise what a single acceptance could miss. It is not for re-judging the proof, which is
 deterministic and public; it is for what the checker cannot see: a
 defective statement, an ineligible or sanctioned claimant, a stolen proof,
 an axiom or tactic the policy missed, an earlier submission mishandled.
@@ -2210,8 +2223,7 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   in which case the bounty does not rebind. Funders confirm nothing.
 - **Status during the window.** The Steward records the assessment at
   acceptance, `verified` or `contradicted` as the proof warrants, marked
-  provisional in its own reasoning, which is the provisional update §16
-  allows; the page says "accepted; prize payable after DATE unless a
+  provisional in its own reasoning until the window closes; the page says "accepted; prize payable after DATE unless a
   challenge succeeds." A successful challenge on the statement retires it
   and the Steward reassesses; a prediction market that resolves on a
   Minerval status should read the provisional marker, which the API
@@ -2904,7 +2916,9 @@ Issue #301's thesis is that Minerval directs other tools, and those tools
 speak MCP:
 - `get_claim` returns `formalization` beside `assessment` and accepts
   `include: "proofs"` for the check records; its description gains one
-  sentence about formal statements and machine-checked arguments.
+  sentence about formal statements and machine-checked arguments. (Since
+  #774 the agents' `get_claim` is the same tool, and both carry the whole
+  formalization record.)
 - `search_claims` results carry `prize_micro_usd` and `checked`; the input
   gains `with_prizes`.
 - New `get_bounty_terms {claim_id}` returns the machine-readable terms of
