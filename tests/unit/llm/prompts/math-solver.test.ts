@@ -25,8 +25,10 @@ describe("getMathSolverSystemPromptBlocks", () => {
     const blocks = getMathSolverSystemPromptBlocks();
     expect(blocks).toEqual([SOLVER_SYSTEM_PROMPT]);
     expect(blocks[0]).toMatch(/^You are working alone on one open problem in mathematics\./);
-    expect(blocks[0]).toContain("report ends the attempt.");
-    expect(blocks[0]).toContain("A proof outcome without an accepted check is\nrecorded as partial.");
+    expect(blocks[0]).toContain("report\nends the attempt.");
+    expect(blocks[0]).toContain("A proof outcome without an accepted check\nis recorded as partial.");
+    // The report's fields are the schema's to describe (#759).
+    expect(blocks[0]).not.toContain("Its fields:");
   });
 
   it("assumes no knowledge of the platform: none of the graph's terms appear", () => {
@@ -34,11 +36,16 @@ describe("getMathSolverSystemPromptBlocks", () => {
     for (const term of ["minerval", "claim graph", "steward", "constitution", "mandate", "owl", "importance", "bounty", "prize", "administrator", "skill"]) {
       expect(text, term).not.toContain(term);
     }
-    // No clock or turn budget: the budget is metered work in dollars, paced by a token countdown.
+    // No clock or turn budget: the budget is metered work in dollars, and
+    // the running state the solver is promised is in dollars too (#758).
     expect(text).not.toMatch(/\bhours?\b/);
     expect(text).not.toMatch(/\bturns?\b/);
     expect(text).toContain("stated in dollars");
-    expect(text).toContain("running count of the tokens you have left");
+    expect(text).toContain("what you have spent in dollars");
+    expect(text).not.toContain("running count of the tokens");
+    // No count on checks: the budget bounds them, and the prompt says so (#759).
+    expect(text).not.toContain("capped per attempt");
+    expect(text).toContain("billed to the attempt's budget");
     // Under 100 lines: short enough to leave the problem in front of it.
     expect(SOLVER_SYSTEM_PROMPT.split("\n").length).toBeLessThan(100);
   });
@@ -135,6 +142,37 @@ describe("buildMathSolverTaskMessage", () => {
     expect(msg).toContain("obstruction: the lemma Nat.add_zero was not found");
     expect(msg).toContain("[plan] try induction first");
     expect(msg).toContain("[dead end] simp did nothing");
+    expect(msg).toContain("read_earlier_attempt returns one in full");
+  });
+
+  it("keeps fenced Lean as written, names a recorded proof, and points to the full record (#758)", () => {
+    const lemma = "```lean\ntheorem t (n : ℕ) : n + 0 = n := by\n  simp\n```";
+    const msg = buildMathSolverTaskMessage({
+      canonicalForm: "c",
+      statement,
+      variant: "standard",
+      effort: "high",
+      budget: { usd: 10 },
+      priorAttempts: [
+        {
+          id: "a1", variant: "standard", effort: "high", status: "completed", outcome: "partial", finishedAt: null,
+          report: { outcome: "partial", lean_proof: "theorem t : True := trivial", obstruction: "x" },
+          notebook: { lemma: `A lemma   that   checked:\n\n${lemma}\n\nthen   stuck.`, long: "y".repeat(2_000) },
+        },
+      ],
+    });
+    // Prose collapsed, the fenced block kept line for line.
+    expect(msg).toContain("[lemma] A lemma that checked:");
+    expect(msg).toContain("theorem t (n : ℕ) : n + 0 = n := by\n  simp\n```");
+    expect(msg).toContain("then stuck.");
+    expect(msg).toContain("lean_proof: 27 characters of Lean; read_earlier_attempt returns it");
+    expect(msg).toContain("[…; read_earlier_attempt has the rest]");
+  });
+
+  it("says raise_issue is for a tool that fails, not a hard problem", () => {
+    const msg = buildMathSolverTaskMessage({ canonicalForm: "c", statement, variant: "standard", effort: "high", budget: { usd: 10 } });
+    expect(msg).toContain("raise_issue reports it to the people who maintain the tools");
+    expect(msg).toContain("a hard problem is not a tool failure");
   });
 
   it("appends the tools note when the formal tools are absent", () => {

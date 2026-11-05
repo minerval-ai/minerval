@@ -12,8 +12,9 @@
  * request records a concern, a mandate values and funds the row, and the
  * engine executor runs it. This suite pins that shape rather than a number:
  * the Curator is reachable only through the executor, and requests come only
- * from an agent's judgment (a Steward's escalation, or the Matcher's
- * curator_review on a node it minted on balance, #738) or the bounded scan. It
+ * from an agent's judgment (a Steward's or the Consistency Checker's
+ * escalation, an Audit send-back, or the Matcher's curator_review on a node
+ * it minted on balance, #738) or the bounded scan. It
  * reads the sources, because the failure it prevents is a one-line
  * reintroduction of an automatic trigger somewhere in the pipeline — which no
  * behavioural test over the current wiring would catch (same approach as
@@ -23,6 +24,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
+import {
+  CURATION_SOURCES,
+  describeCurationRequests,
+} from "../../../src/services/curation-service.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const src = join(repoRoot, "src");
@@ -55,17 +60,44 @@ describe("what can invoke the Curator", () => {
     ]);
   });
 
-  it("is requested only by an agent's judgment (the scan lives beside requestCuration)", () => {
-    // A Steward's escalation, and the Matcher's curator_review at ingestion.
+  it("is requested only by an agent's judgment: a Steward's or the Consistency Checker's escalation, an Audit send-back, or the Matcher's curator_review at ingestion (the scan lives beside requestCuration)", () => {
+    // The Audit's recommend_recuration (#693) requires a persisted finding,
+    // so it is a judgment, not an automatic trigger.
     expect(
       callersOf(/\brequestCuration\s*\(/, "src/services/curation-service.ts")
-    ).toEqual(["src/llm/tools/steward-tools.ts", "src/workers/url-extraction.ts"]);
+    ).toEqual([
+      "src/llm/agents/consistency-checker.ts",
+      "src/llm/tools/audit-tools.ts",
+      "src/llm/tools/steward-tools.ts",
+      "src/workers/url-extraction.ts",
+    ]);
+  });
+
+  it("records only the sources the table allows, and the briefing names each", () => {
+    // A source the CHECK lacks fails at insert time, on a live run: the
+    // type, the constraint and the briefing move together.
+    const schema = readFileSync(join(src, "db/schema.ts"), "utf8");
+    const check = schema.match(/ck_curation_requests_source",\s*sql`source IN \(([^)]*)\)`/);
+    expect(check).not.toBeNull();
+    const allowed = check![1]!.split(",").map((s) => s.trim().replace(/'/g, ""));
+    expect([...allowed].sort()).toEqual([...CURATION_SOURCES].sort());
+    for (const source of CURATION_SOURCES) {
+      const line = describeCurationRequests([
+        { id: "r", other_claim_id: null, source, concern: "c", signal: 0.95, created_at: new Date() },
+      ]);
+      expect(line, source).not.toContain("undefined");
+    }
   });
 
   it("has no curate row opened outside the ledger's own producer", () => {
     expect(
       callersOf(/\bensureCurateAction\s*\(/, "src/services/action-service.ts")
     ).toEqual(["src/services/curation-service.ts", "src/workers/engine-executor.ts"]);
+    // A request the Curator keeps opens its row only when work on it comes
+    // back for the keeper to judge (#722).
+    expect(
+      callersOf(/\bensureRequestCurateAction\s*\(/, "src/services/action-service.ts")
+    ).toEqual(["src/services/request-service.ts"]);
     // No hand-rolled INSERT of a curate row anywhere else.
     for (const { file, text } of sources) {
       if (file === "src/services/action-service.ts") continue;

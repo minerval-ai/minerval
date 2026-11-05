@@ -226,11 +226,14 @@ export class ApiStack extends cdk.Stack {
         // on the cheap tier. Pinned to the config default so the model
         // guard covers it; a lookout can carry its own model override.
         LOOKOUT_MODEL: "openai/gpt-6-luna",
-        // The Consistency Checker (#330): judges which pre-filter tensions
-        // are real and raises them as ledger candidates; the flagged claim's
-        // Steward decides. Cheap tier, pinned to the config default. Sweeps
-        // stay off until CONSISTENCY_SWEEP_INTERVAL_HOURS is set.
+        // The Consistency Checker (#330): reads a partition's assessments
+        // against each other and raises flags the owning Steward decides.
+        // A sweep is an exclusive set (#756): the standard variant on the
+        // cheap tier, the strong one on the standard tier, each pinned to
+        // its config default. Sweeps stay off until
+        // CONSISTENCY_SWEEPS_ENABLED is "true".
         CONSISTENCY_MODEL: "openai/gpt-6-luna",
+        CONSISTENCY_STRONG_MODEL: "claude-sonnet-5-5",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses

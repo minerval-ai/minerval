@@ -209,19 +209,22 @@ describe("attempt_proof rows from plan items", () => {
     state.publishedFor.add(CLAIM_B);
     state.attemptGroups = { groups: 1, live: 0 };
     state.lastAttemptFinishedAt = new Date(Date.now() - 3 * DAY);
-    // The second item entitles the second group; a bare rationale waives nothing.
+    // The second item entitles the second group; with no reason on it, the
+    // cooldown holds it back.
     state.grant.plan.items = [
       { action: "attempt_proof", claim_id: CLAIM_B, rationale: "a new lemma in the subtree was formalized since" },
-      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "again" },
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "  " },
     ];
     await reconcileActions();
     expect(inserts("attempt_proof")).toHaveLength(0);
 
-    // A reason of at least twenty characters on the entitling item opens it.
+    // A stated reason opens it, however short: whether it is reason enough is
+    // the Grantmaker's judgment, public and open to audit, not a test of its
+    // length (#763).
     queries.length = 0;
     state.grant.plan.items = [
       { action: "attempt_proof", claim_id: CLAIM_B, rationale: "first" },
-      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "the prior report names a route it could not pursue for budget" },
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "new lemma" },
     ];
     await reconcileActions();
     expect(inserts("attempt_proof")).toHaveLength(2);

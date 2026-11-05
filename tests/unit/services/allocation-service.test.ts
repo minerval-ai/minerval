@@ -207,6 +207,17 @@ describe("runMandateAllocator (marginal increments)", () => {
     const r = await runMandateAllocator("g1");
     expect(r.allocated).toBe(1);
     expect(state.placed[0]!.group).toBe("assess:c3");
+    // The one that did not fit is reported, so its Grantmaker is told (#688).
+    expect(r.skippedForRoom).toEqual([
+      { group: "assess:c1", actionId: null, claimId: "c1", neededMicroUsd: 150_000, reason: "day_room" },
+    ]);
+  });
+
+  it("reports an increment dearer than the whole daily rate as one that never funds", async () => {
+    state.valued = [row({ cost_est_micro_usd: 2_000_000 })];
+    const r = await runMandateAllocator("g1");
+    expect(r.allocated).toBe(0);
+    expect(r.skippedForRoom?.[0]?.reason).toBe("daily_rate");
   });
 
   it("never promises money the escrow does not hold", async () => {

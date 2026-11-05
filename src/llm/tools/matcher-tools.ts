@@ -118,7 +118,7 @@ export async function executeMatcherTool(
       reasoning: decision.reasoning,
       // The near-misses the Matcher weighed and its notes on how they relate —
       // exactly the signal the caller needs to decide link-vs-escalate, so
-      // don't strip them (#100). Inspect candidates with get_claim_details.
+      // don't strip them (#100). Inspect candidates with get_claim.
       alternative_matches: decision.alternative_matches ?? [],
       relationship_notes: decision.relationship_notes ?? null,
     });

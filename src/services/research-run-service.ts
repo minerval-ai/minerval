@@ -52,6 +52,8 @@ export interface ResearchRunRow {
   id: string;
   claim_id: string | null;
   grant_id: string | null;
+  /** The request the run takes up or scopes (Part VIII); null for a delegated run. */
+  request_id: string | null;
   requested_by: string;
   requester_run_id: string | null;
   run_id: string | null;
@@ -75,7 +77,7 @@ export interface ResearchRunRow {
   error: string | null;
 }
 
-const COLUMNS = `id, claim_id, grant_id, requested_by, requester_run_id, run_id, job_id, task,
+const COLUMNS = `id, claim_id, grant_id, request_id, requested_by, requester_run_id, run_id, job_id, task,
   model, model_tier, effort, include_constitution, status, tools,
   ceiling_micro_usd::bigint AS ceiling_micro_usd, spent_micro_usd::bigint AS spent_micro_usd,
   contribution_budget_micro_usd::bigint AS contribution_budget_micro_usd,
@@ -109,12 +111,14 @@ export async function openResearchRun(input: {
   requestId?: string | null;
   /** For a mandate's research: the delegated budget for reviewing its contributions. */
   contributionBudgetMicroUsd?: number;
+  /** The notebook the run opens with: a request's earlier run's, for the next stage (#730). */
+  notebook?: Record<string, string> | null;
 }): Promise<ResearchRunRow> {
   const rows = await rawQuery<ResearchRunRow>(
     `INSERT INTO research_runs
        (claim_id, grant_id, requested_by, requester_run_id, job_id, task, model, model_tier,
-        effort, include_constitution, ceiling_micro_usd, request_id, contribution_budget_micro_usd)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        effort, include_constitution, ceiling_micro_usd, request_id, contribution_budget_micro_usd, notebook)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '{}'::jsonb))
      RETURNING ${COLUMNS}`,
     [
       input.claimId,
@@ -130,9 +134,42 @@ export async function openResearchRun(input: {
       Math.max(1, Math.round(input.ceilingMicroUsd)),
       input.requestId ?? null,
       Math.max(0, Math.round(input.contributionBudgetMicroUsd ?? 0)),
+      input.notebook && Object.keys(input.notebook).length > 0 ? JSON.stringify(input.notebook) : null,
     ]
   );
   return normalize(rows[0]!);
+}
+
+/**
+ * The latest finished run on a request, scoping or taking it up, for the
+ * next run to open with (#730): a programme carried out in stages begins
+ * each stage where the last stopped. Null when none has finished.
+ */
+export async function latestRequestRun(requestId: string): Promise<ResearchRunRow | null> {
+  const rows = await rawQuery<ResearchRunRow>(
+    `SELECT ${COLUMNS} FROM research_runs
+      WHERE request_id = $1 AND status <> 'running'
+      ORDER BY started_at DESC LIMIT 1`,
+    [requestId]
+  );
+  return rows[0] ? normalize(rows[0]) : null;
+}
+
+/**
+ * The notebook a request's next run opens with (#730): the earlier run's
+ * sections, and its report as a section of its own, since the report says
+ * what the next stage would need. Section names say where they came from.
+ */
+export function carriedNotebook(prior: ResearchRunRow): Record<string, string> {
+  const carried: Record<string, string> = {};
+  for (const [section, content] of Object.entries(prior.notebook ?? {})) {
+    carried[`from run ${prior.id.slice(0, 8)}: ${section}`.slice(0, 200)] = content;
+  }
+  if (prior.report) {
+    const { harness: _harness, ...report } = prior.report as Record<string, unknown>;
+    carried[`from run ${prior.id.slice(0, 8)}: its report`] = JSON.stringify(report, null, 2);
+  }
+  return carried;
 }
 
 /** Stamp the researcher's own agent_runs id and the tools it was offered, once known. */
@@ -272,12 +309,32 @@ export async function readResearcherPaused(): Promise<boolean> {
 }
 
 /**
+ * Who opens research runs, as `research_runs.requested_by`: the four
+ * administrators that may launch the researcher with delegate_research, and
+ * the ledger's request runs.
+ */
+export const RESEARCH_LAUNCHERS = [
+  "claim_steward",
+  "grantmaker",
+  "curator",
+  "audit",
+  "request",
+  "request_scope",
+] as const;
+
+/**
  * Launchers whose research runs may record on the graph (provenance rows,
  * examinations). A Grantmaker serves its mandate as well as the graph, and
  * funding is kept apart from what the graph says (constitution §19), so the
  * runs it launches read and report and write nothing but their notebook.
+ * The Curator owns structure, not sources, and the Audit Agent judges the
+ * record rather than adding to it, so their research reads and reports too.
+ * A run taking up a request does record (#728): Part VIII has the
+ * Researcher write its own sources and provenance, and its brief is the
+ * request as filed, to which whoever funded it adds nothing. A scoping run
+ * does not do the work, so it records nothing.
  */
-const GRAPH_WRITING_LAUNCHERS = new Set(["claim_steward"]);
+const GRAPH_WRITING_LAUNCHERS = new Set<string>(["claim_steward", "request"]);
 
 export function launcherWritesGraph(requestedBy: string): boolean {
   return GRAPH_WRITING_LAUNCHERS.has(requestedBy);

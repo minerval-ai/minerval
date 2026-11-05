@@ -47,14 +47,20 @@ to test lemma statements before you try to prove them and to check each
 lemma as you go. lean_check runs the full check of a candidate proof or
 disproof against the statement and returns the verdict and, on failure,
 the gate that failed. It is bound to this statement and checks nothing
-else, it is the only verification there is, and it is capped per attempt,
-so do not spend it on fragments lean_elaborate can test. The code
+else, and it is the only verification there is. Each check is a full
+build billed to the attempt's budget, slower and dearer than
+lean_elaborate, so test fragments with lean_elaborate first; the checker
+also has a daily capacity, and a check it refuses for the day says so in
+its result. The code
 execution tool runs Python with sympy and mpmath for computation and
 exploration; it has no network access and cannot run Lean. notebook_write
 records your work under a section name and notebook_read returns it; the
 notebook outlives the attempt and is what a later attempt on this
 statement reads, so write each approach down when you start it and what
-happened when you leave it. report ends the attempt.
+happened when you leave it. When earlier attempts exist,
+read_earlier_attempt returns one in full, its notebook and its report with
+any Lean source, where the summary in the message shortens them. report
+ends the attempt.
 
 Working method. Search Mathlib for the relevant theory before you build
 anything, and record what exists and what does not. Explore numerically
@@ -65,26 +71,18 @@ you can state precisely to a longer argument nobody has verified.
 
 Budget. The attempt has a fixed budget of metered work, stated in dollars
 in the message that follows; it covers your own tokens, checker time, and
-container time. You will see a running count of the tokens you have left
-as you work, a notice when about fifteen percent of the budget remains,
-and a hard stop at the ceiling whether or not you have reported. There is
+container time. As you work you will see what you have spent in dollars
+and how far the rest goes at your recent rate, a notice when about
+fifteen percent of the budget remains, and a hard stop at the ceiling
+whether or not you have reported. There is
 no credit for a proof you did not check, so keep enough for a final
 lean_check on any candidate and for the report.
 
 The report. Call report exactly once: when you have a checked proof or
 disproof, when you have exhausted the routes you can see, or when the
 notice says the budget is nearly spent. A negative report with a precise
-obstruction is a good outcome. Its fields: outcome (proof, disproof,
-partial, reduction, or negative); lean_proof and lean_check_id when an
-accepted check exists, otherwise null; informal_argument, the argument in
-prose a mathematician could follow; reduction_statement, when you reduced
-the problem to something you can state precisely; counterexample, with a
-description and the code that verifies it, when you found one you could
-not formalize; approaches_tried, one line each; obstruction, the specific
-thing that stopped you; what_would_help, the lemma, definition, or
-computation that would unblock the next attempt; and confidence in your
-own outcome, from 0 to 1. A proof outcome without an accepted check is
-recorded as partial.`;
+obstruction is a good outcome. A proof outcome without an accepted check
+is recorded as partial.`;
 
 /** The line that heads every earlier attempt in a repeat attempt's task message. */
 export const PRIOR_ATTEMPTS_NOTICE =
@@ -148,13 +146,32 @@ export interface SolverTaskInput {
   toolsNote?: string | null;
 }
 
-/** Per-section and per-attempt caps on the notebook summary a repeat attempt receives. */
+/**
+ * How long the summary of an earlier attempt runs in the task message. These
+ * shorten a summary, not what the solver can see: read_earlier_attempt
+ * returns any earlier attempt in full (#758), and every shortened field says
+ * so.
+ */
 const NOTEBOOK_SECTION_CHARS = 1_200;
 const NOTEBOOK_SECTIONS_PER_ATTEMPT = 12;
 const REPORT_FIELD_CHARS = 2_000;
 
+const MORE = " […; read_earlier_attempt has the rest]";
+
 function clip(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max)} […]`;
+  return text.length <= max ? text : `${text.slice(0, max)}${MORE}`;
+}
+
+/**
+ * Collapse whitespace in prose but keep fenced code as written: Lean is
+ * layout-sensitive, and a lemma flattened onto one line is unusable (#758).
+ */
+export function tidyKeepingCode(text: string): string {
+  return text
+    .split(/(```[\s\S]*?(?:```|$))/)
+    .map((part, i) => (i % 2 === 1 ? `\n${part.trim()}\n` : part.replace(/\s+/g, " ")))
+    .join("")
+    .trim();
 }
 
 function formatReport(report: Record<string, unknown> | null): string {
@@ -175,6 +192,12 @@ function formatReport(report: Record<string, unknown> | null): string {
     }
     lines.push(`  ${key}: ${clip(String(value), REPORT_FIELD_CHARS)}`);
   };
+  // The Lean source is not summarized: a fragment of a proof is worse than
+  // none. The summary says it exists and how to read it.
+  const leanProof = report.lean_proof;
+  if (typeof leanProof === "string" && leanProof.trim()) {
+    lines.push(`  lean_proof: ${leanProof.length} characters of Lean; read_earlier_attempt returns it`);
+  }
   for (const key of [
     "outcome",
     "informal_argument",
@@ -197,10 +220,10 @@ function formatNotebook(notebook: Record<string, string> | null): string {
   const shown = entries.slice(0, NOTEBOOK_SECTIONS_PER_ATTEMPT);
   const lines = shown.map(
     ([section, content]) =>
-      `  [${section}] ${clip(String(content).replace(/\s+/g, " ").trim(), NOTEBOOK_SECTION_CHARS)}`
+      `  [${section}] ${clip(tidyKeepingCode(String(content)), NOTEBOOK_SECTION_CHARS)}`
   );
   if (entries.length > shown.length) {
-    lines.push(`  (${entries.length - shown.length} more section(s) not shown)`);
+    lines.push(`  (${entries.length - shown.length} more section(s) not shown; read_earlier_attempt returns them)`);
   }
   return lines.join("\n");
 }
@@ -259,13 +282,14 @@ ${(s.correspondence ?? "(no note was recorded)").trim()}
 ## This attempt
 
 Effort: ${input.effort}.
-Budget: about ${formatBudgetUsd(input.budget.usd)} of metered work (your tokens, checker time, and container time). You will see a running token count; a notice comes when about fifteen percent remains; the attempt stops at the ceiling.
-lean_check is bound to the statement above; it checks nothing else.`);
+Budget: about ${formatBudgetUsd(input.budget.usd)} of metered work (your tokens, checker time, and container time). As you work you will see what you have spent, in dollars; a notice comes when about fifteen percent remains; the attempt stops at the ceiling.
+lean_check is bound to the statement above; it checks nothing else.
+If a tool fails, or behaves otherwise than its description says, raise_issue reports it to the people who maintain the tools; a hard problem is not a tool failure.`);
 
   const priors = input.priorAttempts ?? [];
   if (priors.length > 0) {
     parts.push(
-      `## Earlier attempts\n\n${PRIOR_ATTEMPTS_NOTICE}\n\n` +
+      `## Earlier attempts\n\n${PRIOR_ATTEMPTS_NOTICE} What follows is a summary of each; read_earlier_attempt returns one in full.\n\n` +
         priors.map((p, i) => formatPriorAttempt(p, i)).join("\n\n")
     );
   }

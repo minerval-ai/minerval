@@ -11,10 +11,14 @@ description: >-
   merely use a number or a model.
 metadata:
   minerval:
-    version: 2
+    version: 6
     since_epoch: 2026-09-domain-skills
     changelog:
       2: "requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)"
+      3: "a solver attempt is funded through a mandate's plan and its result goes to the claim's Steward, which did not launch it; a Steward that needs an attempt files a request for funders (constitution Part VIII, instruments)"
+      4: "a challenge whose only ground is dislike of the result is rejected without the bad-faith flag; the prize-specific abuses map to the misinformation and sybil categories; the Arbitrator reads the prize claim and records challenge_upheld"
+      5: "a section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section"
+      6: "inside the attempt cooldown a further attempt opens on a rationale that says what changed since the last one, judged by the Grantmaker, not on a rationale of a set length"
     domains: [mathematics]
 ---
 
@@ -142,7 +146,10 @@ elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
 computer-algebra toolkit, works alone within a fixed budget of metered
-work, writes nothing to the graph, and reports to the steward. Its prompt
+work, and writes nothing to the graph. No administrator launches it on its
+own judgment: an attempt runs only as an `attempt_proof` action that a
+mandate's plan funds (For the Grantmaker, below), and its result goes to
+the claim's steward, which did not launch it but judges what it settles. Its prompt
 carries none of this document, so nothing it says uses the graph's terms
 or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
@@ -265,6 +272,18 @@ dependents may rely on; notify their stewards. For open problems, set
 literature has low yield from another pass and high yield from a
 formalization or an attempt, which is the mandate's decision, not yours.
 
+**When your verdict needs an attempt.** You cannot launch the solver. If
+whether the claim, or a lemma it rests on, can be proved would decide your
+verdict and no attempt is funded, say so in two places: set
+`marginal_yield` as above, and file a request (`file_request`) whose ask is
+an attempt on the published statement, whose why says what your verdict
+would become if it succeeds and if it does not, and whose satisfied_by
+names a Lean-checked proof or disproof of that statement. A request is
+for funders: a mandate whose Grantmaker reads it may plan an
+`attempt_proof` item, and the result comes back to you. A researcher you
+delegate to is not a substitute: it has no `lean_check`, so what it brings
+back is a route or a sketch to weigh as a lead, never a checked proof.
+
 ## For the Grantmaker
 
 You value three new kinds of action for the Mathematics mandate.
@@ -291,7 +310,10 @@ while the claim still lacks one. An `attempt_proof` item is `waiting`, not
 blocked, until a statement is published; the n-th item on a claim
 entitles the n-th attempt group, an earlier open group holds the next one
 back, and the mandate's attempt cooldown holds it back too unless the
-entitling item's rationale states a reason of at least twenty characters.
+entitling item's rationale says what changed since the last attempt (a new
+lemma formalized in the subtree, a route the prior report names and could
+not pursue). Whether that is reason enough is your judgment; the rationale
+is public and the Audit Agent reads it.
 Every item's standing (open, running, done, cancelled, waiting, blocked,
 with the reason) comes back from `extend_plan` in the same turn and from
 `grant_overview` at any time; read it before valuing, and before filing a
@@ -311,10 +333,11 @@ version means one ran and stopped short.
 Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. The
 bounty is owls from your own mandate's escrow, held there from the day it
-opens until it resolves. Its mechanical bounds: an amount between the
-minimum and the maximum per claim, within the per-pass and per-day
-fractions of the escrow, covered by the mandate's headroom (budget less
-committed money), and one live bounty per claim. The first call records
+opens until it resolves. Its mechanical bounds, with their values, are in
+`post_bounty`'s description: an amount between the minimum and the maximum
+per claim, within the per-pass and per-day fractions of the escrow, covered
+by the mandate's headroom (budget less committed money), and one live
+bounty per claim. The first call records
 the request; only a call from a later pass opens it. Set the amount from what the discourse would gain,
 what the problem appears to require of a capable claimant, and the
 mandate's headroom; where your mandate funds both attempts and prizes, say
@@ -333,7 +356,8 @@ is assessed.
 
 A pattern across the territory that the literature has not remarked, such
 as several open problems resting on one unformalized lemma, is a finding
-for `note_finding`. The attempts and bounties you fund never are, whatever
+for `note_finding`, citing the assessments and decompositions already
+recorded that show it (constitution §19: you make none yourself). The attempts and bounties you fund never are, whatever
 they cost or return.
 
 ## For the Contribution Reviewer and the Dispute Arbitrator
@@ -361,10 +385,16 @@ A challenge to an accepted prize claim must name one of the enumerated
 grounds (statement defect, ineligibility, disallowed axioms or tactics the
 checker missed, plagiarism or theft, an earlier valid submission,
 sanctions) with followable evidence; accepting the case escalates it to the
-Arbitrator mechanically and is not upholding it. Prize-specific bad faith
-includes submitting another's proof as one's own, sock-puppet submissions
-to defeat priority, and challenges whose only ground is dislike of the
-result.
+Arbitrator mechanically and is not upholding it. The Arbitrator reads the
+prize claim with `get_prize_claim` and rules with `challenge_upheld`: true
+with `overturn`, which voids the prize claim on the ground; false with
+`uphold_original`, which closes the challenge and lets the window run on.
+A challenge that names no enumerated ground, dislike of the result
+included, is rejected on the merits without the bad-faith flag (§13).
+Prize-specific bad faith is flagged under the ordinary categories:
+submitting another's proof as one's own is `misinformation`, and
+sock-puppet submissions filed to defeat priority, or a run of groundless
+challenges from related accounts, are `sybil`.
 
 ## For the Audit Agent
 
@@ -413,6 +443,25 @@ are not. Definitions are setup. Importance prior: settled results near
 0.15; open problems in the notable range unless the discourse prices them
 higher; contestation from how live the problem is in the literature, not
 from how hard it is.
+
+## For the researcher
+
+You may be launched on a mathematical claim to read its literature, check
+what a paper proves, or find what Mathlib holds. Where a checker is
+configured, `lean_search` finds Mathlib declarations at the pinned
+revision and `lean_elaborate` type-checks a Lean fragment against it: use
+them to say whether a lemma or definition exists in Mathlib, and whether a
+statement as written elaborates. Neither checks a proof, and no research
+run can: a checked result comes only from the solver's check against a
+published statement. Report a proof you find as an argument with its
+source, and a Lean fragment as elaborating or not, never as verified.
+Publishing a formal statement, deciding a prize claim, and planning
+attempts belong to the Steward and the Grantmaker; where your work bears
+on them (a formal statement that looks unfaithful to the claim, a lemma the
+literature already proves, a route an attempt report names), say so in
+your report. What this skill says above about what a mathematical claim
+is, how its statuses read, and that money never enters the reasoning holds
+for what you report.
 
 ## Standards for judging
 

@@ -1,5 +1,5 @@
 {
-  "id": "e1131b18-9c95-4215-903a-fae177525cd6",
+  "id": "5d8ed5e7-b322-4f2c-bd9b-5f665ba24475",
   "prevId": "727c6110-c2dc-46ca-a5cb-236b8ffce29c",
   "version": "7",
   "dialect": "postgresql",
@@ -6822,7 +6822,7 @@
       "checkConstraints": {
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
-          "value": "source IN ('steward_escalation', 'reconcile_candidate', 'operator', 'matcher')"
+          "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
         }
       },
       "isRLSEnabled": false
@@ -13133,31 +13133,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "claims_undecided": {
-          "name": "claims_undecided",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "undecided": {
-          "name": "undecided",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "document_problem": {
-          "name": "document_problem",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "document_problem_note": {
-          "name": "document_problem_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",

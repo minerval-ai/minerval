@@ -13,10 +13,18 @@ const mocks = vi.hoisted(() => ({
   domains: [] as string[],
   skillCalls: [] as Array<{ name: string; input: Record<string, unknown>; ctx: Record<string, unknown> }>,
   auditCalls: [] as string[],
+  researcherEnabled: false,
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ auditModel: "audit-model", env: "test", traceLevel: "off", promptCacheTtl: "5m" }),
+  loadConfig: () => ({
+    auditModel: "audit-model",
+    env: "test",
+    traceLevel: "off",
+    promptCacheTtl: "5m",
+    researcherEnabled: mocks.researcherEnabled,
+    researcherMaxWallMinutes: 20,
+  }),
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -54,6 +62,7 @@ vi.mock("../../../src/llm/client.js", () => ({
 }));
 
 import { runAudit } from "../../../src/llm/agents/audit-agent.js";
+import { withPassBudget } from "../../../src/llm/usage-context.js";
 
 type LoopOptions = {
   tools: Array<{ name: string }>;
@@ -136,5 +145,26 @@ describe("Audit toolset with the mathematics domain", () => {
     await opts.executeTool("record_prize_audit_outcome", { prize_claim_id: "pc-1", outcome: "clear", note: "holds" });
     expect(mocks.auditCalls).toEqual(["record_prize_audit_outcome"]);
     expect(mocks.skillCalls).toHaveLength(1);
+  });
+});
+
+describe("Audit research (Part VIII, Instruments)", () => {
+  it("offers delegate_research, paid from the run's own budget, only with the researcher on and a budget to pay from", async () => {
+    mocks.researcherEnabled = true;
+    try {
+      let names = (await run([])).tools.map((t) => t.name);
+      expect(names).not.toContain("delegate_research");
+      await withPassBudget({ microUsd: 3_000_000, source: "the allocations funding this audit" }, () => run([]));
+      const opts = mocks.loopOptions.at(-1) as unknown as LoopOptions & { tools: Array<{ name: string; description?: string }> };
+      names = opts.tools.map((t) => t.name);
+      expect(names).toContain("delegate_research");
+      expect(names).toContain("get_research_run");
+      const delegate = opts.tools.find((t) => t.name === "delegate_research")!;
+      expect(delegate.description).toContain("nothing to the graph (it reads and reports");
+      expect(delegate.description).toContain("the allocations funding this audit");
+      expect(opts.system[0]).toContain("delegate_research, when it is in your toolset, has the\nresearcher check whether the cited source says what the agent claimed");
+    } finally {
+      mocks.researcherEnabled = false;
+    }
   });
 });

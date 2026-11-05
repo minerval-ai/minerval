@@ -4,6 +4,8 @@ import {
   paginationSchema,
   contributionTypeEnum,
   anyContributionTypeEnum,
+  contributionMayOmitClaim,
+  CLAIM_ID_REQUIRED_MESSAGE,
 } from "./common.js";
 
 // ---- Request schemas ----
@@ -11,20 +13,45 @@ import {
 // The acting contributor is derived from the authenticated API key (issue #10),
 // never from the request body. The optional display name is only used when the
 // contributor record is first created.
-export const createContributionBody = z.object({
-  claim_id: uuidSchema,
-  contributor_display_name: z.string().min(1).optional(),
-  contribution_type: contributionTypeEnum,
-  content: z.string().min(1).max(10000),
-  evidence_urls: z.array(z.string().url()).optional(),
-  merge_target_claim_id: uuidSchema.optional(),
-  proposed_canonical_form: z.string().max(2000).optional(),
-});
+export const createContributionBody = z
+  .object({
+    // Required except for a propose_request, which may bear on several
+    // nodes, on sources, or on something the graph does not hold yet
+    // (Part VIII, #724): its bearing is settled at review.
+    claim_id: uuidSchema.optional(),
+    contributor_display_name: z.string().min(1).optional(),
+    contribution_type: contributionTypeEnum,
+    content: z.string().min(1).max(10000),
+    evidence_urls: z.array(z.string().url()).optional(),
+    merge_target_claim_id: uuidSchema.optional(),
+    proposed_canonical_form: z.string().max(2000).optional(),
+    // answer_request only: the request the material is offered for (#723).
+    request_id: uuidSchema.optional(),
+  })
+  .refine((b) => b.claim_id !== undefined || contributionMayOmitClaim(b.contribution_type), {
+    message: CLAIM_ID_REQUIRED_MESSAGE,
+    path: ["claim_id"],
+  });
+
+/**
+ * Where a contribution's review stands. `human_review` is an arbitration
+ * held for a person; `checking` is a prize filing under the Lean checker.
+ */
+export const CONTRIBUTION_REVIEW_STATUSES = [
+  "pending",
+  "accepted",
+  "rejected",
+  "escalated",
+  "human_review",
+  "checking",
+] as const;
 
 export const listContributionsParams = paginationSchema.extend({
   claim_id: uuidSchema.optional(),
-  status: z.string().optional(),
+  status: z.enum(CONTRIBUTION_REVIEW_STATUSES).optional(),
   type: anyContributionTypeEnum.optional(),
+  // Only the caller's own contributions (#723); needs credentials.
+  mine: z.union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")]).optional(),
 });
 
 export const createAppealBody = z.object({

@@ -11,7 +11,10 @@
  *
  * The tools are not given to the extension chat, the MCP surface, the
  * Extractor, the Matcher, or the solver: findings are the administrators'
- * to note, and an outside agent's discovery is a contribution.
+ * to note, and an outside agent's discovery is a contribution. A mandate's
+ * Grantmaker notes them too (constitution §19, Part VIII), with its own
+ * description: it makes no assessment, so its finding cites records
+ * already on the graph, and never mentions the mandate or its funder.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -36,7 +39,25 @@ export interface FindingTools {
   ) => Promise<string | null>;
 }
 
-export function getFindingToolDefinitions(): Tool[] {
+/**
+ * What a mandate's agent is told in place of "make the assessment first"
+ * (constitution §19, Part VIII): it makes no assessment, argument, or merge,
+ * so its finding cites only what is already recorded, and like every
+ * finding it never mentions the mandate or who funds it.
+ */
+const MANDATE_FINDING_BASIS =
+  "It does not change the graph, and you make no assessment, argument, or " +
+  "merge: cite only assessments, arguments, and merges already recorded, by " +
+  "id, and say nothing the records do not. Write it as the graph's finding, " +
+  "never as your mandate's: no mention of the mandate, its funder, or what " +
+  "the work cost. ";
+
+const ADMIN_FINDING_BASIS =
+  "It does not change the graph, so make the " +
+  "assessment, argument, or merge it rests on with its own tool first, " +
+  "and cite it here. ";
+
+export function getFindingToolDefinitions(options: { mandate?: boolean } = {}): Tool[] {
   return [
     {
       name: NOTE_FINDING_TOOL_NAME,
@@ -46,9 +67,9 @@ export function getFindingToolDefinitions(): Tool[] {
         "turns out to have a clear answer, an unexpected result, a pattern " +
         "across many claims. Any " +
         "field counts. It is published on the findings page as you write it, " +
-        "in the graph's voice. It does not change the graph, so make the " +
-        "assessment, argument, or merge it rests on with its own tool first, " +
-        "and cite it here. Search the findings on record first " +
+        "in the graph's voice. " +
+        (options.mandate ? MANDATE_FINDING_BASIS : ADMIN_FINDING_BASIS) +
+        "Search the findings on record first " +
         "(search_findings); if yours is already there, pass its id as joins. " +
         "A finding is more than routine work done well: it is something you " +
         "would point out to a colleague who cares about the question. " +
@@ -150,8 +171,14 @@ function describeDropped(refs: { kind: string; id: string }[]): string {
 const CONTINUE = "Continue with your task.";
 
 /** Build the tool handle. `model` is recorded on each finding. */
-export function createFindingTools(options: { model?: string } = {}): FindingTools {
-  const definitions = getFindingToolDefinitions();
+export function createFindingTools(
+  options: {
+    model?: string;
+    /** A mandate's agent (the Grantmaker): cites records, makes none. */
+    mandate?: boolean;
+  } = {}
+): FindingTools {
+  const definitions = getFindingToolDefinitions({ mandate: options.mandate });
 
   const execute = async (
     name: string,

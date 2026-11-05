@@ -192,15 +192,20 @@ describe("record_review_decision", () => {
   });
 });
 
-describe("escalate_to_arbitrator", () => {
-  // The escalation reason must survive the call (#178): without it, an
-  // escalation recorded without a review row reaches the Arbitrator with no
-  // reasoning at all.
-  it("persists the escalation reason on the contribution", async () => {
+describe("escalation", () => {
+  // One call escalates (#717): the review, the reason the Arbitrator reads
+  // first (#178), and the enqueue.
+  it("persists the escalation reason and enqueues arbitration", async () => {
+    const { enqueueArbitration } = await import("../../../../src/services/queue-service.js");
+    vi.mocked(enqueueArbitration).mockClear();
     const out = JSON.parse(
-      await executeReviewerTool("escalate_to_arbitrator", {
+      await executeReviewerTool("record_review_decision", {
         contribution_id: CONTRIBUTION_ID,
-        reason: "credible sources conflict; needs deeper adjudication",
+        decision: "escalate",
+        reasoning: "Two credible sources conflict on the figure.",
+        escalation_reason: "credible sources conflict; needs deeper adjudication",
+        confidence: 0.5,
+        policy_citations: ["§9"],
       })
     );
 
@@ -213,5 +218,29 @@ describe("escalate_to_arbitrator", () => {
       reviewClaimedAt: null,
       reviewAttempts: 0,
     });
+    expect(enqueueArbitration).toHaveBeenCalledWith({
+      contributionId: CONTRIBUTION_ID,
+      trigger: "escalated_review",
+    });
+  });
+
+  it("refuses an escalation without a reason, before anything is written", async () => {
+    const out = JSON.parse(
+      await executeReviewerTool("record_review_decision", {
+        contribution_id: CONTRIBUTION_ID,
+        decision: "escalate",
+        reasoning: "Close call.",
+        confidence: 0.5,
+        policy_citations: [],
+      })
+    );
+    expect(out.success).toBe(false);
+    expect(mocks.insertedReviews).toHaveLength(0);
+    expect(mocks.updateSets).toHaveLength(0);
+  });
+
+  it("no longer offers a separate escalate_to_arbitrator", async () => {
+    const { getReviewerToolDefinitions } = await import("../../../../src/llm/tools/reviewer-tools.js");
+    expect(getReviewerToolDefinitions().map((t) => t.name)).not.toContain("escalate_to_arbitrator");
   });
 });

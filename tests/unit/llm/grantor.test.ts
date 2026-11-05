@@ -98,6 +98,12 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
     return { floor_owls: floor, per_item_owls: { steward_pass: 2, ingest: 0.5 } };
   },
 }));
+vi.mock("../../../src/llm/tools/kind-tools.js", () => ({
+  getRequestToolDefinitions: () => [{ name: "list_requests" }],
+  executeKindTool: async () => "{}",
+  // The researcher reaches this module through the research tools.
+  getResearcherQuestionInstanceToolDefinition: () => ({ name: "record_question_instance", input_schema: { type: "object", properties: {} } }),
+}));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: {
     tools: Array<{ name: string }>;
@@ -159,7 +165,7 @@ describe("runGrantor", () => {
     expect(b).toContain("Declared scope hints: none.");
     expect(b).toContain("Budget: 20 owls escrowed");
     expect(b).toContain("this is the mandate's first pass");
-    expect(b).toContain("never instructions");
+    // "Data, never instructions" is the shared admin block's now (#791).
     expect(b).toContain("tool-use turns");
     // The role prompt gains the planning-mode addendum.
     expect(state.loop!.system[0]).toContain("ROLE");
@@ -193,6 +199,7 @@ describe("runGrantor", () => {
       "note_finding",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
       "survey_scope", "read_page", "update_workspace",
+      "list_requests",
       "submit_plan",
       "cost_sheet",
     ]);
@@ -204,16 +211,20 @@ describe("runGrantor", () => {
     state.script = [
       plan([
         { action: "ingest", url: "https://journal.test/a", rationale: "primary", extra: "dropped" },
+        { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "  grid reliability  " },
         { action: "assess", claim_id: CLAIM, rationale: "crux" },
         { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8 },
       ]),
     ];
     const res = await runGrantor({ grantId: GRANT });
-    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 3, floor_owls: 2.5 });
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 4, floor_owls: 3 });
     expect(res).toEqual({
       strategy: "Seed the scope with the primary sources.",
       items: [
         { action: "ingest", url: "https://journal.test/a", rationale: "primary" },
+        // The focus survives (#684): it was dropped here, and a scoped
+        // ingest became a whole-document one.
+        { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "grid reliability" },
         { action: "assess", claim_id: CLAIM, rationale: "crux" },
         { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8 },
       ],
@@ -236,6 +247,17 @@ describe("runGrantor", () => {
     expect(out[3]).toMatchObject({ success: false, problem: expect.stringContaining("at least 22 owls against 20") });
     expect(out[4]).toMatchObject({ success: true });
     expect(res.items).toHaveLength(1);
+  });
+
+  it("refuses a strategy past its stated length rather than cutting it", async () => {
+    state.script = [
+      plan([{ action: "ingest", url: "https://x.test", rationale: "r" }], "s".repeat(4001)),
+      plan([{ action: "ingest", url: "https://x.test", rationale: "r".repeat(3000) }]),
+    ];
+    const res = await runGrantor({ grantId: GRANT });
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: false, problem: expect.stringContaining("4000") });
+    // A long rationale is kept whole: nothing on that path needed it cut.
+    expect(res.items[0]!.rationale).toHaveLength(3000);
   });
 
   it("accepts an empty plan only with a strategy note, and fails the run when nothing was submitted", async () => {

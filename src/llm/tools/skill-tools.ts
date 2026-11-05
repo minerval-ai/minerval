@@ -181,6 +181,8 @@ const AGENT_INLINE_TOOL_NAMES = [
   "update_workspace",
   "continue_review",
   "complete_mandate",
+  "note_to_funder",
+  "confirm_bounty",
   "ingestion_report",
   "submit_plan",
   "read_page",

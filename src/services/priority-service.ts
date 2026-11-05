@@ -37,6 +37,7 @@
  * Computed in one SQL statement so refreshes are cheap enough to run at
  * enqueue and in the allocation scheduler's periodic sweep.
  */
+import { nodeAssessedAtSql, nodeMarginalYieldSql } from "./node-judgment-sql.js";
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
@@ -70,16 +71,11 @@ async function valueSql(): Promise<{ sql: string; params: number[] }> {
         c.importance
         * ($2::real + (1.0 - $2::real) * COALESCE(c.contestation, 0))
         * GREATEST(
-            COALESCE(
-              (SELECT a.marginal_yield FROM assessments a
-                WHERE a.claim_id = c.id AND a.is_current = true
-                ORDER BY a.assessed_at DESC LIMIT 1),
-              1.0),
+            -- Yield and recency from whichever table the node's kind
+            -- keeps its judgment in (#755).
+            COALESCE(${nodeMarginalYieldSql("c")}, 1.0),
             LEAST(1.0,
-              COALESCE(EXTRACT(EPOCH FROM (now() -
-                (SELECT a.assessed_at FROM assessments a
-                  WHERE a.claim_id = c.id AND a.is_current = true
-                  ORDER BY a.assessed_at DESC LIMIT 1))) / 86400.0
+              COALESCE(EXTRACT(EPOCH FROM (now() - ${nodeAssessedAtSql("c")})) / 86400.0
                 / NULLIF($3::real, 0), 0)),
             -- An open consistency flag's expected gain (#330), as in
             -- mandate-valuer-service.ts's GENERAL_VALUE_SQL.

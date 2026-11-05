@@ -211,12 +211,15 @@ function buildGraphs(
           s: srcUri,
           // A posing source (#445) states the proposition without taking a
           // side: it discusses the claim, it neither supports nor disputes it.
+          // A mentioning source only refers to the claim: it cites it.
           p:
             inst.stance === "denies"
               ? "cito:disputes"
               : inst.stance === "poses"
                 ? "cito:discusses"
-                : "cito:supports",
+                : inst.stance === "mentions"
+                  ? "cito:cites"
+                  : "cito:supports",
           o: iri(claimUri),
         }
       );

@@ -119,6 +119,8 @@ describe("Matcher decision validation", () => {
     await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
     const { executeTool, onFinalTool } = mocks.loopOptions!;
     await executeTool("search_similar_claims", { query: "x" });
+    // "mentions" is a claim-instance stance, but the Steward's reading of a
+    // source, never one ingestion assigns (MATCHED_INSTANCE_STANCES).
     const bad = { ...whole, instance_stance: "mentions" };
     expect(onFinalTool("submit_match_decision", bad)).toBeNull();
     const reply = JSON.parse(await executeTool("submit_match_decision", bad));

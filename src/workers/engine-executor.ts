@@ -80,7 +80,9 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
 import {
+  carriedNotebook,
   closeResearchRun,
+  latestRequestRun,
   modelForTier,
   openResearchRun,
   readResearcherPaused,
@@ -91,6 +93,7 @@ import {
   recordWork,
   requestBrief,
   setRequestBudget,
+  type RequestView,
 } from "../services/request-service.js";
 import { REQUEST_OUTCOMES, type RequestOutcome } from "../schemas/kinds.js";
 import {
@@ -247,6 +250,28 @@ function actionBudget(action: RunnableAction, source: string): { microUsd: numbe
 }
 
 /**
+ * A Curator or Audit run's budget: the larger of what its allocations
+ * cover and the configured run budget (curateRunBudgetOwls,
+ * auditRunBudgetOwls; 5 owls). The allocations are priced at the action's
+ * expected cost, which is what funders are asked to cover; the run works
+ * to what the work needs, and what it spends past its allocations is
+ * metered to the funding mandate (#671's split of price and budget).
+ */
+function maintenanceBudget(
+  action: RunnableAction,
+  kind: "curate" | "audit",
+  what: string
+): { microUsd: number; source: string } {
+  const config = loadConfig();
+  const owls = kind === "curate" ? config.curateRunBudgetOwls : config.auditRunBudgetOwls;
+  const floor = Math.round((owls ?? 5) * (config.owlCostMicroUsd ?? 1_000_000));
+  const covered = actionBudgetMicroUsd(action);
+  return covered >= floor
+    ? { microUsd: covered, source: `the allocations funding ${what}` }
+    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers` };
+}
+
+/**
  * curate (#363): one Curator run around the anchor claim, reading every
  * live curation request on it. The requests it read are consumed when the
  * run ends, whatever the outcome short of a retryable failure (a genuine
@@ -255,6 +280,8 @@ function actionBudget(action: RunnableAction, source: string): { microUsd: numbe
  * mid-run reopens the row for the next funding pass.
  */
 async function runCurateAction(action: RunnableAction): Promise<EngineProcessResult> {
+  // A request the Curator keeps has its own row, with no anchor claim (#722).
+  if (!action.claim_id && action.target_ref) return runRequestCurateAction(action);
   const anchorClaimId = action.claim_id;
   const [claim] = anchorClaimId
     ? await rawQuery<{ state: string }>(`SELECT state FROM claims WHERE id = $1`, [anchorClaimId])
@@ -291,7 +318,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
     const metered = await runWithUsageContext(
       { userId: funder.userId, jobId: funder.jobId, claimId: anchorClaimId },
       () =>
-        withPassBudget(actionBudget(action, "the allocations funding this curation"), () =>
+        withPassBudget(maintenanceBudget(action, "curate", "this curation"), () =>
           runCurator({
             trigger: "curation_request",
             claimId: anchorClaimId,
@@ -337,6 +364,97 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
       error: msg,
     };
   }
+}
+
+/**
+ * curate, on a request the Curator keeps (#722): work on it has come back,
+ * and the keeper decides whether it has been met (Part VIII). The run is
+ * anchored on the request rather than a claim: its brief is the request as
+ * filed and the work returned, each with the research run whose full
+ * report get_research_run serves. A request closed, or passed to a
+ * Steward, while its row waited is cancelled.
+ */
+async function runRequestCurateAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const requestId = action.target_ref ?? "";
+  const request = requestId ? await getRequest(requestId) : null;
+  if (!request || request.keeper.kind !== "curator" || ["met", "declined", "withdrawn", "moot"].includes(request.state)) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder = await funderContext(action);
+  const settle = async (billedMicroUsd: number) => {
+    await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`
+      )
+    );
+  };
+  let billedMicroUsd = 0;
+  try {
+    const metered = await runWithUsageContext({ userId: funder.userId, jobId: funder.jobId }, () =>
+      withPassBudget(actionBudget(action, "the allocations funding this curation"), () =>
+        runCurator({
+          trigger: "request_returned",
+          claimId: null,
+          requestId,
+          context: requestKeeperBrief(request),
+        })
+      )
+    );
+    billedMicroUsd = metered.billedMicroUsd;
+    await settle(billedMicroUsd);
+    return { status: "processed", actionId: action.id, kind: "curate", grantId: funder.grantId, ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "transient", actionId: action.id, kind: "curate", grantId: funder.grantId, error: msg };
+    }
+    await settle(billedMicroUsd);
+    return { status: "processed", actionId: action.id, kind: "curate", grantId: funder.grantId, ok: false, error: msg };
+  }
+}
+
+/**
+ * The Curator's brief for a request it keeps: the request as filed, and
+ * every piece of work on it with the run that holds its full report. No
+ * funder is named (the agents that judge a request never see who paid).
+ */
+export function requestKeeperBrief(request: RequestView): string {
+  const work = request.work.length
+    ? request.work
+        .map(
+          (w, i) =>
+            `${i + 1}. ${w.by}${w.outcome ? ` (${w.outcome})` : " (under way)"}: ${w.summary}` +
+            (w.research_run_id ? ` [get_research_run ${w.research_run_id}]` : "")
+        )
+        .join("\n")
+    : "No work is recorded on it yet.";
+  return [
+    `Work has come back on a request you keep (Part VIII: you keep the requests that bear on several nodes, on a source, or on nothing the graph holds yet). Read what was found, from the full report where a research run holds it, and decide whether the request has been met: close it as met, or as declined or moot with why, or sharpen it with revise_request (budget_usd prices what the rest would take) and leave it open. The Steward of each node it bears on has been told separately and weighs the work for that node.`,
+    "",
+    `Request ${request.id}`,
+    `Asks for: ${request.ask}`,
+    `Why: ${request.why}`,
+    `What would satisfy it: ${request.satisfied_by}`,
+    request.bears_on.length
+      ? `Bears on: ${request.bears_on.map((n) => `${n.kind} ${n.id} ("${n.text}")`).join("; ")}`
+      : null,
+    request.bears_on_sources.length
+      ? `Bears on sources: ${request.bears_on_sources.map((src) => `${src.title}${src.url ? ` (${src.url})` : ""}`).join("; ")}`
+      : null,
+    request.bears_on_text ? `Bears on, in words: ${request.bears_on_text}` : null,
+    `State: ${request.state}`,
+    "",
+    "Work on it:",
+    work,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
 }
 
 /**
@@ -391,19 +509,38 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   const funder = await funderContext(action);
   const ceiling = actionBudgetMicroUsd(action);
   const tier = scoping ? "standard" : "strong";
+  // The tier and effort the full work runs on, which a scoping run prices
+  // (#732): fixed here, so the quote is for the run it funds.
+  const fullWork = { tier: "strong", model: modelForTier("strong"), effort: "high" } as const;
+  // What the run may record on (#728): a run taking up a request on one
+  // node runs with that node (provenance, instances, its domain skills);
+  // one on several records on any of them, each call naming its node.
+  const nodes = scoping || request.bears_on.length === 0
+    ? []
+    : await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = ANY($1::uuid[]) AND state = 'active'`,
+        [request.bears_on.map((n) => n.id)]
+      ).catch(() => []);
+  const asNode = (n: (typeof nodes)[number]) => ({ id: n.id, text: n.text, domains: n.domains ?? [], kind: n.kind ?? "claim" });
+  const claim = nodes.length === 1 ? asNode(nodes[0]!) : null;
+  const requestNodes = nodes.length > 1 ? nodes.map(asNode) : [];
+  // The next stage begins where the last stopped (#730): the run opens
+  // with the latest earlier run's notebook and report.
+  const prior = await latestRequestRun(requestId).catch(() => null);
   const run = await openResearchRun({
-    claimId: null,
+    claimId: claim?.id ?? null,
     grantId: funder.grantId ?? null,
     requestedBy: scoping ? "request_scope" : "request",
     requesterRunId: null,
     jobId: funder.jobId,
     task: requestBrief(request),
-    model: modelForTier(tier),
-    modelTier: tier,
-    effort: scoping ? null : "high",
+    model: scoping ? modelForTier(tier) : fullWork.model,
+    modelTier: scoping ? tier : fullWork.tier,
+    effort: scoping ? null : fullWork.effort,
     includeConstitution: true,
     ceilingMicroUsd: ceiling,
     requestId,
+    notebook: prior ? carriedNotebook(prior) : null,
   });
   await recordWork({
     requestId,
@@ -419,13 +556,13 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   let failure: unknown = null;
   try {
     const metered = await runWithUsageContext(
-      { userId: funder.userId, jobId: funder.jobId },
+      { userId: funder.userId, jobId: funder.jobId, ...(claim ? { claimId: claim.id } : {}) },
       () =>
         withPassBudget({ microUsd: ceiling, source: "the allocations funding this request" }, () =>
           runResearcher({
             run: {
               id: run.id,
-              claim_id: null,
+              claim_id: run.claim_id,
               grant_id: run.grant_id,
               requested_by: run.requested_by,
               task: run.task,
@@ -437,7 +574,10 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
               notebook: run.notebook,
               job_id: run.job_id,
             },
-            claim: null,
+            claim,
+            requestNodes,
+            priorRun: prior ? { id: prior.id, status: prior.status, requestedBy: prior.requested_by } : null,
+            fullWork: scoping ? fullWork : null,
           })
         )
     );
@@ -485,6 +625,8 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
 
   if (scoping) {
     const quote = usd(report?.budget_quote_usd);
+    // The plan the quote prices (#732), recorded with it for funders.
+    const plan = typeof report?.plan === "string" ? report.plan.trim() : "";
     const terminal = outcomeRaw && outcomeRaw !== "scoped" && (REQUEST_OUTCOMES as readonly string[]).includes(outcomeRaw)
       ? (outcomeRaw as RequestOutcome)
       : null;
@@ -497,14 +639,19 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
         summary: (answer || `Scoping returned ${terminal}.`).slice(0, 4000),
         fundedByJobId: funder.jobId,
       }).catch(() => null);
-      await notifyRequestKeeper(requestId, `scoping it returned ${terminal}: ${answer.slice(0, 600)}`).catch(() => false);
+      // The work as recorded, and where the full report is (#718).
+      await notifyRequestKeeper(
+        requestId,
+        `scoping it returned ${terminal}: ${(answer || `Scoping returned ${terminal}.`).slice(0, 4000)}`,
+        { researchRunId: run.id }
+      ).catch(() => false);
     } else if (quote) {
       await recordWork({
         requestId,
         byLabel: "Researcher",
         researchRunId: run.id,
         outcome: null,
-        summary: `Scoped at about $${quote.toFixed(2)}. ${answer}`.slice(0, 4000),
+        summary: (`Scoped at about $${quote.toFixed(2)}. ${answer}` + (plan ? `\n\nPlan: ${plan}` : "")).slice(0, 8000),
         fundedByJobId: funder.jobId,
       }).catch(() => null);
       // The quote is the request's budget: the full work opens at that price.
@@ -539,7 +686,9 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
       fundedByJobId: funder.jobId,
     }).catch(() => null);
     if (outcome) {
-      await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 600)}`).catch(() => false);
+      await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 4000)}`, {
+        researchRunId: run.id,
+      }).catch(() => false);
     } else {
       await ensureRequestActions(requestId).catch(() => null);
     }
@@ -610,7 +759,7 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: context.userId, jobId: context.jobId },
       () =>
-        withPassBudget(actionBudget(action, "the allocations funding this audit"), () =>
+        withPassBudget(maintenanceBudget(action, "audit", "this audit"), () =>
           runAudit({ auditType: run.audit_type, context: run.context, runId: run.id })
         )
     );
@@ -873,7 +1022,8 @@ async function runLookoutAction(
  * consistency_sweep (#330): one Consistency Checker sweep over the
  * partition named in target_ref, under the General mandate's funder,
  * metered and consumed against the covering allocation. The checker runs
- * on its own model (CONSISTENCY_MODEL), not the Steward override the drain
+ * on its own model (CONSISTENCY_MODEL, or CONSISTENCY_STRONG_MODEL for the
+ * strong variant, #756), not the Steward override the drain
  * may carry. A partition that no longer exists cancels the row; a failed
  * sweep cancels it too, and the reconcile sweep reopens it while the
  * partition is still due.
@@ -900,8 +1050,16 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
       () =>
-        withPassBudget(actionBudget(action, "the General mandate's allocation for this sweep"), () =>
-          runConsistencySweep({ partition })
+        withPassBudget(
+          actionBudget(action, "the General mandate's allocation for this sweep, priced by the partition's size"),
+          () =>
+            // The strong variant reads with the stronger model (#756), and
+            // the sweep is told how its budget was priced.
+            runConsistencySweep({
+              partition,
+              variant: action.variant === "strong" ? "strong" : "standard",
+              model: action.variant === "strong" ? loadConfig().consistencyStrongModel : undefined,
+            })
         )
     );
     await completeAction(action.id, billedMicroUsd, {

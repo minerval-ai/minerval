@@ -15,6 +15,7 @@
  * credentials ARE presented (the web BFF acting for a session), they are
  * honoured so the payload can include manager-only fields.
  */
+import { FUNDING_CALL_MAX_OWLS, FUNDING_CALL_MAX_NOTE } from "../services/owl.js";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   listPublicMandates,
@@ -165,7 +166,13 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           type: "object",
           required: ["owls"],
           properties: {
-            owls: { type: "number", exclusiveMinimum: 0, maximum: 10000 },
+            // One call's ceiling against a mistyped amount; see owl.ts (#729).
+            owls: {
+              type: "number",
+              exclusiveMinimum: 0,
+              maximum: FUNDING_CALL_MAX_OWLS,
+              description: FUNDING_CALL_MAX_NOTE,
+            },
           },
         },
       },
@@ -235,7 +242,6 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
             triggers: lookout.triggers ?? [],
             model: lookout.model,
             max_value: lookout.max_value,
-            max_ingests_per_run: lookout.max_ingests_per_run,
             workspace: lookout.workspace,
             last_note: lookout.last_note,
             last_run_at: lookout.last_run_at ? new Date(lookout.last_run_at).toISOString() : null,
