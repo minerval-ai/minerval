@@ -282,9 +282,13 @@ export async function listOpenActions(
               WHERE o.exclusion_group = r.exclusion_group AND o.id <> r.action_id
                 AND o.status = 'open') AS alternatives,
             CASE r.kind
-              WHEN 'curate' THEN (SELECT string_agg(LEFT(q.concern, 200), ' | ')
-                                    FROM curation_requests q
-                                   WHERE q.anchor_claim_id = r.claim_id AND q.consumed_at IS NULL)
+              WHEN 'curate' THEN COALESCE(
+                                   (SELECT string_agg(LEFT(q.concern, 200), ' | ')
+                                      FROM curation_requests q
+                                     WHERE q.anchor_claim_id = r.claim_id AND q.consumed_at IS NULL),
+                                   -- A request the Curator keeps (#722).
+                                   (SELECT LEFT(rq.ask, 300) FROM requests rq
+                                     WHERE r.claim_id IS NULL AND rq.id::text = r.target_ref))
               WHEN 'request' THEN (SELECT LEFT(rq.ask, 300) FROM requests rq
                                     WHERE rq.id::text = r.target_ref)
               ELSE NULL END AS about

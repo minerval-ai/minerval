@@ -511,8 +511,21 @@ consumes them when it ends. Three producers, each bounded:
 - an operator (scripts/sweep-fallback-matches.ts).
 
 A repeat of a live request (same anchor, other claim and source) is a
-repeat. Nothing else opens a curate row, and nothing runs the Curator but
-the executor (tests/unit/workers/curation-trigger-lockdown.test.ts).
+repeat.
+
+One more row runs the Curator: a request it keeps (constitution Part
+VIII: one that bears on several nodes, on a source, or on nothing the
+graph holds yet) has no anchor claim, so when work on it comes back
+(`notifyRequestKeeper`) it opens `curate:request:<request_id>`, `claim_id`
+null and `target_ref` the request. The run's brief is the request and the
+work returned, each with the research run whose full report
+`get_research_run` serves, and the Curator decides whether the request
+has been met. A formula mandate values the row at the importance of the
+most important live node the request bears on, or the policy's
+`request_untargeted_importance` when it bears on none; it is closed when
+the request closes or passes to a Steward. Nothing else opens a curate
+row, and nothing runs the Curator but the executor
+(tests/unit/workers/curation-trigger-lockdown.test.ts).
 
 **How much curation, and which.** Policy sets the amount; valuations set
 the order. `maintenance_share` (default 0.1) is the most of a mandate's

@@ -43,6 +43,12 @@ import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
+import {
+  GET_RESEARCH_RUN_TOOL_NAME,
+  getResearchRunReadToolDefinition,
+  readResearchRun,
+} from "../tools/research-tools.js";
+import { rawQuery } from "../../db/client.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -54,7 +60,10 @@ export function runCurator(
 
 async function runCuratorImpl(input: {
   trigger: string;
-  claimId: string;
+  /** The anchor claim; null for a run on a request the Curator keeps (#722). */
+  claimId: string | null;
+  /** The request the run is about, when work on one it keeps came back. */
+  requestId?: string | null;
   context: string;
   model?: string;
 }): Promise<void> {
@@ -80,8 +89,19 @@ async function runCuratorImpl(input: {
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
 
   // Skills load on demand; the anchor claim's recorded domains point to the
-  // domain skills that cover its subject.
-  const claimDomains = await domainsForClaim(input.claimId);
+  // domain skills that cover its subject. A request-anchored run takes the
+  // domains of every node the request bears on.
+  const anchors = input.claimId
+    ? [input.claimId]
+    : input.requestId
+      ? (
+          await rawQuery<{ claim_id: string }>(
+            `SELECT claim_id FROM request_targets WHERE request_id = $1 AND claim_id IS NOT NULL`,
+            [input.requestId]
+          )
+        ).map((r) => r.claim_id)
+      : [];
+  const claimDomains = [...new Set((await Promise.all(anchors.map((c) => domainsForClaim(c)))).flat())];
   const skillLoader = createSkillLoadTools("curator", { domains: claimDomains });
 
   const tools = [
@@ -93,6 +113,11 @@ async function runCuratorImpl(input: {
     // keeping the requests that bear on several nodes or on none.
     getChangeKindToolDefinition(),
     ...getRequestToolDefinitions("curator"),
+    // The full report of work returned on a request it keeps (#718), even
+    // where the researcher is off and the research bundle offers nothing.
+    ...(researchTools.definitions.some((t) => t.name === GET_RESEARCH_RUN_TOOL_NAME)
+      ? []
+      : [getResearchRunReadToolDefinition()]),
     ...skillLoader.definitions,
     // The tools the skills declare for this role (a price list, say), in
     // the toolset whether or not the run loads the skill.
@@ -104,7 +129,7 @@ async function runCuratorImpl(input: {
   const system = getCuratorSystemPromptBlocks();
 
   const CURATOR_MAX_TURNS = RUN_TURN_GUARD;
-  const userMessage = `You have been triggered to curate the graph around a claim.
+  const userMessage = input.claimId ? `You have been triggered to curate the graph around a claim.
 
 Trigger: ${input.trigger}
 Anchor claim ID: ${input.claimId}
@@ -123,6 +148,20 @@ Proceed:
    suggest_edge_to_steward (do not write it yourself).
 4. Be conservative: act only when the structure is clearly wrong. Doing
    nothing is a fine outcome.
+
+${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}` : `You have been triggered to keep a request.
+
+Trigger: ${input.trigger}
+${input.context}
+
+Proceed:
+1. Read the work returned, in full where a research run holds it
+   (get_research_run), and what the request bears on (get_claim).
+2. Decide whether the request has been met, and act with close_request,
+   revise_request or set_request_targets. Judge it by what the work
+   established, not by what it was hoped to show.
+3. Look for structure the work exposes as wrong only where it is plain; the
+   nodes' Stewards weigh the findings for their own nodes.
 
 ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
 
@@ -144,6 +183,7 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
       if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "curator" });
+      if (name === GET_RESEARCH_RUN_TOOL_NAME) return readResearchRun(toolInput, { curator: true, role: "curator" });
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

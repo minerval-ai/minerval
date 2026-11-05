@@ -60,6 +60,7 @@ import { ExaminationError } from "../../../../src/services/examination-service.j
 import {
   createResearchTools,
   getResearchToolDefinitions,
+  readResearchRun,
 } from "../../../../src/llm/tools/research-tools.js";
 import type { ResearcherInput, ResearcherResult } from "../../../../src/llm/agents/researcher.js";
 import { getUsageContext, runWithUsageContext, withPassBudget } from "../../../../src/llm/usage-context.js";
@@ -414,6 +415,39 @@ describe("get_research_run", () => {
     expect(mocks.getResearchRun.mock.calls.length).toBe(calls);
     mocks.getResearchRun.mockResolvedValueOnce(null);
     expect(JSON.parse((await tools.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+  });
+  it("serves a request's run to its keeper and to the Steward of each node it bears on, and to no one else (#718)", async () => {
+    const OTHER = "bbbbbbbb-0000-4000-8000-000000000001";
+    const REQUEST = "dddddddd-0000-4000-8000-000000000001";
+    mocks.getResearchRun.mockResolvedValue({
+      id: RUN, claim_id: null, grant_id: null, request_id: REQUEST, requested_by: "request", task: BRIEF,
+      model: "m", model_tier: "strong", status: "completed", spent_micro_usd: 1, turns: 3, tools: [],
+      started_at: new Date(0), finished_at: new Date(1), report: { answer: "a" }, notebook: {}, error: null,
+    });
+    // The request is the Curator's, and bears on CLAIM but not on OTHER.
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) =>
+      sql.includes("FROM requests r")
+        ? [{ keeper_kind: "curator", keeper_claim_id: null, bears: params?.[1] === CLAIM }]
+        : []
+    );
+    const bearsOn = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM });
+    const read = JSON.parse((await bearsOn.execute("get_research_run", { research_run_id: RUN }))!);
+    expect(read.success).toBe(true);
+    expect(read.research_run.request_id).toBe(REQUEST);
+    expect(read.research_run.report).toEqual({ answer: "a" });
+    const elsewhere = createResearchTools({ requestedBy: "claim_steward", claimId: OTHER });
+    expect(JSON.parse((await elsewhere.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+    // The Curator reads it because it keeps the request.
+    expect(JSON.parse(await readResearchRun({ research_run_id: RUN }, { curator: true })).success).toBe(true);
+    // A Grantmaker does not, whoever funded the work.
+    const gm = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1" });
+    expect(JSON.parse((await gm.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+    // The Steward that keeps a request reads it too.
+    mocks.rawQuery.mockImplementation(async (sql: string) =>
+      sql.includes("FROM requests r") ? [{ keeper_kind: "steward", keeper_claim_id: OTHER, bears: false }] : []
+    );
+    expect(JSON.parse((await elsewhere.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(true);
+    expect(JSON.parse(await readResearchRun({ research_run_id: RUN }, { curator: true })).message).toMatch(/request you keep/);
   });
 });
 

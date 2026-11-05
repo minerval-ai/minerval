@@ -92,9 +92,11 @@ export interface StewardMessage {
     // (recommend_reassessment, #693). The context carries the audit finding
     // in its own words and what to look at again; the Steward decides.
     | "audit_send_back"
-    // Work on a request this claim's Steward keeps has come back (Part VIII,
-    // Requests): the context names the request and the outcome. The keeper
-    // decides whether the request has been met.
+    // Work on a request bearing on this claim has come back (Part VIII,
+    // Requests): the context names the request, the outcome, the research
+    // run holding the full report, and whether this Steward keeps it. The
+    // keeper decides whether the request has been met; every bears-on
+    // Steward weighs what it found for its node (#718).
     | "request_returned"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"

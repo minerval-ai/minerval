@@ -91,6 +91,7 @@ import {
   recordWork,
   requestBrief,
   setRequestBudget,
+  type RequestView,
 } from "../services/request-service.js";
 import { REQUEST_OUTCOMES, type RequestOutcome } from "../schemas/kinds.js";
 import {
@@ -277,6 +278,8 @@ function maintenanceBudget(
  * mid-run reopens the row for the next funding pass.
  */
 async function runCurateAction(action: RunnableAction): Promise<EngineProcessResult> {
+  // A request the Curator keeps has its own row, with no anchor claim (#722).
+  if (!action.claim_id && action.target_ref) return runRequestCurateAction(action);
   const anchorClaimId = action.claim_id;
   const [claim] = anchorClaimId
     ? await rawQuery<{ state: string }>(`SELECT state FROM claims WHERE id = $1`, [anchorClaimId])
@@ -359,6 +362,97 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
       error: msg,
     };
   }
+}
+
+/**
+ * curate, on a request the Curator keeps (#722): work on it has come back,
+ * and the keeper decides whether it has been met (Part VIII). The run is
+ * anchored on the request rather than a claim: its brief is the request as
+ * filed and the work returned, each with the research run whose full
+ * report get_research_run serves. A request closed, or passed to a
+ * Steward, while its row waited is cancelled.
+ */
+async function runRequestCurateAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const requestId = action.target_ref ?? "";
+  const request = requestId ? await getRequest(requestId) : null;
+  if (!request || request.keeper.kind !== "curator" || ["met", "declined", "withdrawn", "moot"].includes(request.state)) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder = await funderContext(action);
+  const settle = async (billedMicroUsd: number) => {
+    await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`
+      )
+    );
+  };
+  let billedMicroUsd = 0;
+  try {
+    const metered = await runWithUsageContext({ userId: funder.userId, jobId: funder.jobId }, () =>
+      withPassBudget(actionBudget(action, "the allocations funding this curation"), () =>
+        runCurator({
+          trigger: "request_returned",
+          claimId: null,
+          requestId,
+          context: requestKeeperBrief(request),
+        })
+      )
+    );
+    billedMicroUsd = metered.billedMicroUsd;
+    await settle(billedMicroUsd);
+    return { status: "processed", actionId: action.id, kind: "curate", grantId: funder.grantId, ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "transient", actionId: action.id, kind: "curate", grantId: funder.grantId, error: msg };
+    }
+    await settle(billedMicroUsd);
+    return { status: "processed", actionId: action.id, kind: "curate", grantId: funder.grantId, ok: false, error: msg };
+  }
+}
+
+/**
+ * The Curator's brief for a request it keeps: the request as filed, and
+ * every piece of work on it with the run that holds its full report. No
+ * funder is named (the agents that judge a request never see who paid).
+ */
+export function requestKeeperBrief(request: RequestView): string {
+  const work = request.work.length
+    ? request.work
+        .map(
+          (w, i) =>
+            `${i + 1}. ${w.by}${w.outcome ? ` (${w.outcome})` : " (under way)"}: ${w.summary}` +
+            (w.research_run_id ? ` [get_research_run ${w.research_run_id}]` : "")
+        )
+        .join("\n")
+    : "No work is recorded on it yet.";
+  return [
+    `Work has come back on a request you keep (Part VIII: you keep the requests that bear on several nodes, on a source, or on nothing the graph holds yet). Read what was found, from the full report where a research run holds it, and decide whether the request has been met: close it as met, or as declined or moot with why, or sharpen it with revise_request (budget_usd prices what the rest would take) and leave it open. The Steward of each node it bears on has been told separately and weighs the work for that node.`,
+    "",
+    `Request ${request.id}`,
+    `Asks for: ${request.ask}`,
+    `Why: ${request.why}`,
+    `What would satisfy it: ${request.satisfied_by}`,
+    request.bears_on.length
+      ? `Bears on: ${request.bears_on.map((n) => `${n.kind} ${n.id} ("${n.text}")`).join("; ")}`
+      : null,
+    request.bears_on_sources.length
+      ? `Bears on sources: ${request.bears_on_sources.map((src) => `${src.title}${src.url ? ` (${src.url})` : ""}`).join("; ")}`
+      : null,
+    request.bears_on_text ? `Bears on, in words: ${request.bears_on_text}` : null,
+    `State: ${request.state}`,
+    "",
+    "Work on it:",
+    work,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
 }
 
 /**
@@ -519,7 +613,12 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
         summary: (answer || `Scoping returned ${terminal}.`).slice(0, 4000),
         fundedByJobId: funder.jobId,
       }).catch(() => null);
-      await notifyRequestKeeper(requestId, `scoping it returned ${terminal}: ${answer.slice(0, 600)}`).catch(() => false);
+      // The work as recorded, and where the full report is (#718).
+      await notifyRequestKeeper(
+        requestId,
+        `scoping it returned ${terminal}: ${(answer || `Scoping returned ${terminal}.`).slice(0, 4000)}`,
+        { researchRunId: run.id }
+      ).catch(() => false);
     } else if (quote) {
       await recordWork({
         requestId,
@@ -561,7 +660,9 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
       fundedByJobId: funder.jobId,
     }).catch(() => null);
     if (outcome) {
-      await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 600)}`).catch(() => false);
+      await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 4000)}`, {
+        researchRunId: run.id,
+      }).catch(() => false);
     } else {
       await ensureRequestActions(requestId).catch(() => null);
     }

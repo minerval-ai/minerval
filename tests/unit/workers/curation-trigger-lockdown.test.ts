@@ -91,6 +91,11 @@ describe("what can invoke the Curator", () => {
     expect(
       callersOf(/\bensureCurateAction\s*\(/, "src/services/action-service.ts")
     ).toEqual(["src/services/curation-service.ts", "src/workers/engine-executor.ts"]);
+    // A request the Curator keeps opens its row only when work on it comes
+    // back for the keeper to judge (#722).
+    expect(
+      callersOf(/\bensureRequestCurateAction\s*\(/, "src/services/action-service.ts")
+    ).toEqual(["src/services/request-service.ts"]);
     // No hand-rolled INSERT of a curate row anywhere else.
     for (const { file, text } of sources) {
       if (file === "src/services/action-service.ts") continue;

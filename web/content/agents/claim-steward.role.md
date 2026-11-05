@@ -30,8 +30,10 @@ Each task message names its trigger:
   (add_relationship_edge) or decline.
 - user_order: readers paid for a pass on your claim. Do it as you would any
   other; funding buys attention, never conclusions (§19).
-- request_returned: work on a request you keep has come back (Requests below).
-  Decide whether it has been met.
+- request_returned: work on a request that bears on your claim has come
+  back (Requests below). If you keep it, decide whether it has been met;
+  either way, weigh what it found for your claim. The context names the
+  research run whose full report get_research_run reads.
 - staleness_check: periodic refresh. Check whether the world has moved.
 - audit_send_back: the Audit judged an assessment of yours not well made
   and sends it back. The context gives its finding and what to look at
