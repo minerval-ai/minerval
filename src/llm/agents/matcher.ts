@@ -4,13 +4,18 @@ import { toolUseLoop } from "../client.js";
 import { getMatcherSystemPromptBlocks, getMatchingPrompt } from "../prompts/matcher.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
-import { findSimilarClaims } from "../../services/search-service.js";
+import { findSimilarClaims, keywordClaimSearch } from "../../services/search-service.js";
+import { SIMILAR_CLAIMS_FLOOR } from "../tools/graph-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { getUsageContext, runBudget, withAgent, withPassBudget, withSkills } from "../usage-context.js";
+import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { INSTANCE_STANCES, isInstanceStance, type InstanceStance } from "../../schemas/common.js";
+import {
+  MATCHED_INSTANCE_STANCES,
+  isMatchedInstanceStance,
+  type MatchedInstanceStance,
+} from "../../schemas/common.js";
 import { NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
-import { rawQuery } from "../../db/client.js";
 
 /**
  * How the Matcher's run ended (#419). `match` and `new` are verdicts the
@@ -27,13 +32,15 @@ export interface MatchDecision {
   new_canonical_form: string | null;
   /**
    * Whether this source asserts the claim as canonically stated ("affirms"),
-   * asserts its negation/contrary ("denies"), or states the proposition as an
+   * asserts its negation ("denies"; a contrary is a rival claim, not a
+   * denial, #716), or states the proposition as an
    * open question without taking a side ("poses", #445). Lets a claim and its
    * denial share one canonical node while preserving which side each source
    * takes, and lets a conjecture statement be recorded without a polarity it
-   * does not have.
+   * does not have. Never "mentions": that is a Steward's reading of a source
+   * that refers to the claim without stating it (MATCHED_INSTANCE_STANCES).
    */
-  instance_stance: InstanceStance;
+  instance_stance: MatchedInstanceStance;
   /**
    * For a new claim: one sentence on why the canonical form is stated in the
    * direction it is (#360). The direction is chosen on the proposition's own
@@ -57,29 +64,37 @@ export interface MatchDecision {
 const MATCH_DECISION_SCHEMA = {
   type: "object" as const,
   properties: {
-    is_match: { type: "boolean", description: "Whether the claim matches an existing claim (including its negation/counterpart)" },
+    is_match: { type: "boolean", description: "Whether the proposition is an existing node, under any wording or as its negation. A contrary (both could be false) is a different claim: not a match." },
     matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True, copied exactly from a search_similar_claims result" },
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
-    instance_stance: { type: "string", enum: [...INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
+    instance_stance: { type: "string", enum: [...MATCHED_INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
     kind: { type: ["string", "null"], enum: [...NODE_KINDS, null], description: "For a new node: its kind (claim, quantity, or question), when it differs from the kind proposed; null to keep the proposed kind. A question that asks whether X is so is the claim X; one that asks how much, how many, how often, or when is a quantity." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
     alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered, each copied exactly from a search_similar_claims result" },
-    relationship_notes: { type: ["string", "null"], description: "Notes on relationships to other claims" },
+    relationship_notes: { type: ["string", "null"], description: "How the near-misses relate to this proposition: specification, generalization, rival (a contrary), or possibly the same node. The caller reads this to decide whether to link or escalate." },
   },
   required: ["is_match", "confidence", "reasoning", "instance_stance"],
 };
 
 /**
- * The first run's tool-use turn cap (#467). A halting guard in the
- * constitution's sense (Part IX), so it sits clear of normal use: the role
- * prompt asks for four or more framings plus the decision, and a max_tokens
- * recovery, a nudge, a refused submission, or a raise_issue call each cost a
- * turn without a search. The Matcher is told this number in its prompt so it
- * can pace itself, and may batch several searches into one turn.
+ * The first run's tool-use turn cap (#727). The decision's budget
+ * (config.matcherBudgetUsd) is what bounds the searching; this is the
+ * backstop for a loop that has stopped spending (a provider returning empty
+ * turns, a harness fault) while a caller is blocked on the decision, which
+ * money cannot catch. It sits well above what the budget buys in normal
+ * use (the old cap of 12 was the limit runs hit, #419, #467). The Matcher
+ * is told both numbers up front and sees the spend after every turn.
  */
-const MATCHER_TURN_BUDGET = 12;
+export const MATCHER_TURN_GUARD = 30;
+/** The retry's turns: one more search, the decision, and one spare. */
+export const MATCHER_RETRY_TURNS = 3;
+/** The retry's money, as a fraction of the first run's. */
+const MATCHER_RETRY_BUDGET_FRACTION = 0.25;
+
+/** Thrown from beforeTurn when the decision's budget is spent. */
+class MatcherBudgetSpent extends Error {}
 
 /**
  * The agentic Matcher is the single decider of claim identity (issue #25).
@@ -88,7 +103,7 @@ const MATCHER_TURN_BUDGET = 12;
  * is *retrieval*, not decision: the search is NOT gated at a high threshold, and
  * the matcher is expected to issue multiple queries — the claim, rewordings, and
  * the negation — before concluding a claim is novel. The final judgment ("same
- * proposition? counterpart? specification?") is the model's, reported via the
+ * proposition? its negation? a rival? a specification?") is the model's, reported via the
  * `submit_match_decision` tool.
  *
  * Every new claim — top-level and subclaim — flows through this one matcher.
@@ -118,36 +133,70 @@ async function matchClaimImpl(input: {
   domains?: readonly string[];
   /** The kind of node proposed (§2, §7a); claim when absent. */
   kind?: NodeKind;
+  /**
+   * The passage around the source text, when the caller has it (#721). The
+   * stance recorded on the instance is the reading the author most
+   * plausibly meant, judged from context (§4).
+   */
+  context?: string | null;
   model?: string;
 }): Promise<MatchDecision> {
   const config = loadConfig();
   const skillLoader = createSkillLoadTools("matcher", { domains: input.domains });
   const skills = skillLoader.pointed;
-  const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical, {
-    kind: input.kind ?? "claim",
-    domains: input.domains ?? [],
-    skills,
-    turnBudget: MATCHER_TURN_BUDGET,
-  });
+
+  // The decision's money (#727): its own pass budget, never more than the
+  // caller's pass has left, so a Matcher nested in a Steward's run cannot
+  // spend past the Steward's ceiling.
+  const callerLeft = runBudget()?.remainingMicroUsd;
+  const ownMicroUsd = Math.round(config.matcherBudgetUsd * 1_000_000);
+  const firstBudgetMicroUsd = Math.max(
+    0,
+    callerLeft === undefined ? ownMicroUsd : Math.min(ownMicroUsd, callerLeft)
+  );
+  const retryBudgetMicroUsd = Math.round(firstBudgetMicroUsd * MATCHER_RETRY_BUDGET_FRACTION);
+  const promptFor = (turns: number, budgetMicroUsd: number) =>
+    getMatchingPrompt(input.extractedText, input.proposedCanonical, {
+      context: input.context ?? null,
+      kind: input.kind ?? "claim",
+      domains: input.domains ?? [],
+      skills,
+      turnBudget: turns,
+      budgetUsd: budgetMicroUsd / 1_000_000,
+    });
   const system = getMatcherSystemPromptBlocks();
 
   const searchTool: Tool = {
     name: "search_similar_claims",
     description:
-      "Search existing claims by semantic similarity. Returns the top matches " +
-      "ranked by similarity, above only a low floor that trims noise; results " +
-      "are retrieval for your judgment, not a decision. A true counterpart can " +
-      "score low or miss the floor under one framing, so call this multiple " +
-      "times with different framings of the claim (its wording, paraphrases, " +
-      "and especially its negation) before concluding the claim is novel.",
+      "Search existing nodes (claims, quantities, questions). `query` is " +
+      "matched by meaning: results are ranked by similarity, scoring at " +
+      `least ${SIMILAR_CLAIMS_FLOOR}, a low floor that only trims noise, as ` +
+      "retrieval for your judgment, not a decision. A true match, " +
+      "especially a negation, can score low or miss the floor under one " +
+      "framing, so search several framings (the wording, paraphrases, and " +
+      "the negation) before concluding the proposition is new. `keywords` " +
+      "adds a keyword search: nodes whose wording contains every term, for " +
+      "what embeddings serve badly (a problem-list number, a theorem's or a " +
+      "person's name). Each hit says how it was found.",
     input_schema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "A claim phrasing to search for" },
+        query: { type: "string", description: "A phrasing of the proposition to search for by meaning" },
+        keywords: {
+          type: "string",
+          description:
+            "Optional. Terms that must all appear in a node's wording; a quoted phrase stays a phrase.",
+        },
       },
       required: ["query"],
     },
   };
+  // Two of the shared free reads (#725): the role prompt names a candidate's
+  // decomposition as an identity diagnostic, and a search hit carries only
+  // its wording. Reads cost no tokens of their own and write nothing.
+  const MATCHER_READS = new Set(["get_claim", "get_decomposition"]);
+  const readTools = getGraphReadToolDefinitions().filter((t) => MATCHER_READS.has(t.name));
   const submitTool: Tool = {
     name: "submit_match_decision",
     description: "Submit the final claim-identity decision once you have searched enough.",
@@ -165,7 +214,14 @@ async function matchClaimImpl(input: {
   // the part of that record the agent itself already holds, so it is kept
   // here rather than asked for through one more tool call the budget cannot
   // spare.
-  type SearchHit = { id: string; canonical_form: string; score: number; kind?: NodeKind };
+  type SearchHit = {
+    id: string;
+    canonical_form: string;
+    score: number;
+    kind?: NodeKind;
+    /** How the hit was found when not by meaning alone (#725). */
+    found_by?: "keywords";
+  };
   const searchLog: Array<{ query: string; results: SearchHit[] }> = [];
 
   // Every claim id the Matcher has been shown (#470). Its searches are its
@@ -205,7 +261,7 @@ async function matchClaimImpl(input: {
         `any search_similar_claims call in this run; copy the id exactly from a search result`
       );
     }
-    if (!isInstanceStance(raw.instance_stance)) {
+    if (!isMatchedInstanceStance(raw.instance_stance)) {
       return 'instance_stance must be "affirms", "denies", or "poses"';
     }
     if (raw.kind != null && !(NODE_KINDS as readonly unknown[]).includes(raw.kind)) {
@@ -254,122 +310,182 @@ async function matchClaimImpl(input: {
     return finalResult;
   };
 
-  // One search loop. `retryNote`, when set, is the second attempt's framing
-  // (#419): the first run spent its budget without submitting, so this one
-  // is short and told to decide.
-  const runLoop = (opts: { maxIterations: number; retryNote?: string }) =>
-    toolUseLoop({
-    initialMessages: [
-      {
-        role: "user",
-        content: opts.retryNote
-          ? [
-              { type: "text", text: userPrompt },
-              { type: "text", text: opts.retryNote },
-            ]
-          : userPrompt,
-      },
-    ],
-    tools: [searchTool, submitTool, ...skillLoader.definitions, ...reportTools.definitions],
-    system,
-    model,
-    // A cap, not a target: the decision itself is a few hundred tokens. But a
-    // model that writes its reasoning into the turn (GLM 5.3 Flash) hit 4096
-    // mid-thought on a third of the golden pairs, and a turn cut at
-    // max_tokens ends the loop with no decision — a duplicate node.
-    maxTokens: 16384,
-    maxIterations: opts.maxIterations,
-    // Tell the Matcher before it is cut off (#419): a run that ends without a
-    // submission is an undecided result the caller cannot act on, so a
-    // decision at honest confidence beats one more search.
-    iterationBudgetNotice: {
-      warnWithin: 2,
-      message: (remaining) =>
-        `Search budget notice: ${remaining} tool-use iteration(s) remain. ` +
-        `Call submit_match_decision on your next turn with your best ` +
-        `judgment from the searches so far, at honest confidence. A run ` +
-        `that ends without a submission counts as no decision at all.`,
-    },
-    // A turn that ends in prose with no decision (GLM 5.3 Flash, after a
-    // refused submission: "Resubmitting with every required field." and then
-    // end_turn) would otherwise end the run undecided. One nudge.
-    finalToolNudge: {
-      max: 1,
-      message:
-        "No decision has been recorded. Call submit_match_decision now with " +
-        "every required field (is_match, matched_claim_id when is_match is " +
-        "true, instance_stance, confidence, reasoning).",
-    },
-    executeTool: async (name, toolInput) => {
-      const loaded = await skillLoader.execute(name, toolInput);
-      if (loaded !== null) return loaded;
-      // The report channel first (#366): null means "not my tool".
-      const report = await reportTools.execute(name, toolInput);
-      if (report !== null) return report;
-      if (name === "submit_match_decision") {
-        const defect = decisionDefect(toolInput);
-        if (defect) return rejectDecision(defect);
-        acceptDecision(toolInput);
-        return JSON.stringify({ success: true });
-      }
-      if (name === "search_similar_claims") {
-        const query = String(toolInput.query ?? "");
-        let results: Array<{ id: string; text: string; similarity_score: number }> = [];
-        try {
-          const embedding = await generateEmbedding(query);
-          results = await findSimilarClaims(embedding, {
-            limit: config.matchingTopK,
-            // Retrieval, not decision: keep a low floor so counterparts and
-            // alternate framings that embed far apart still surface (#25).
-            minSimilarity: 0.4,
-            excludeId: input.excludeClaimId,
-          });
-        } catch (err) {
-          return `Error searching: ${err instanceof Error ? err.message : String(err)}`;
-        }
-        // A hit's kind, where it is not a claim: identity is judged within a
-        // kind, and a figure matches the quantity it is a value of.
-        const kinds = new Map<string, NodeKind>();
-        if (results.length > 0) {
-          const rows = await rawQuery<{ id: string; kind: NodeKind }>(
-            `SELECT id, kind FROM claims WHERE id = ANY($1::uuid[]) AND kind != 'claim'`,
-            [results.map((r) => r.id)]
-          ).catch(() => []);
-          for (const r of rows) kinds.set(r.id, r.kind);
-        }
-        const hits: SearchHit[] = results.map((r) => ({
+  // One search loop under its own pass budget (#727). `retryNote`, when set,
+  // is the second attempt's framing (#419): the first run ended without
+  // submitting, so this one is short, has a smaller allowance, and is told
+  // to decide. Each loop's prompt states its own turns and money (#727: the
+  // retry used to repeat the first run's "12 turns" while it had 3).
+  const runLoop = async (opts: { maxIterations: number; budgetMicroUsd: number; retryNote?: string }) => {
+    const prompt = promptFor(opts.maxIterations, opts.budgetMicroUsd);
+    // The run ends once its budget is spent, after the one turn the loop's
+    // "budget spent" notice gives it to submit.
+    let graceTurnUsed = false;
+    const loop = () =>
+      toolUseLoop({
+        initialMessages: [
+          {
+            role: "user",
+            content: opts.retryNote
+              ? [
+                  { type: "text", text: prompt },
+                  { type: "text", text: opts.retryNote },
+                ]
+              : prompt,
+          },
+        ],
+        tools: [searchTool, ...readTools, submitTool, ...skillLoader.definitions, ...reportTools.definitions],
+        system,
+        model,
+        // A cap, not a target: the decision itself is a few hundred tokens. But a
+        // model that writes its reasoning into the turn (GLM 5.3 Flash) hit 4096
+        // mid-thought on a third of the golden pairs, and a turn cut at
+        // max_tokens ends the loop with no decision — a duplicate node.
+        maxTokens: 16384,
+        maxIterations: opts.maxIterations,
+        beforeTurn: () => {
+          const budget = runBudget();
+          if (!budget || budget.spentMicroUsd < budget.ceilingMicroUsd) return;
+          if (graceTurnUsed) throw new MatcherBudgetSpent();
+          graceTurnUsed = true;
+        },
+        // Tell the Matcher before the turn guard cuts it off (#419): a run that
+        // ends without a submission is an undecided result the caller cannot act
+        // on, so a decision at honest confidence beats one more search. The
+        // budget's own notices come from the loop.
+        iterationBudgetNotice: {
+          warnWithin: 2,
+          message: (remaining) =>
+            `Turn notice: ${remaining} tool-use turn(s) remain. ` +
+            `Call submit_match_decision on your next turn with your best ` +
+            `judgment from the searches so far, at honest confidence. A run ` +
+            `that ends without a submission counts as no decision at all.`,
+        },
+        // A turn that ends in prose with no decision (GLM 5.3 Flash, after a
+        // refused submission: "Resubmitting with every required field." and then
+        // end_turn) would otherwise end the run undecided. One nudge.
+        finalToolNudge: {
+          max: 1,
+          message:
+            "No decision has been recorded. Call submit_match_decision now with " +
+            "every required field (is_match, matched_claim_id when is_match is " +
+            "true, instance_stance, confidence, reasoning).",
+        },
+        executeTool: async (name, toolInput) => {
+          const loaded = await skillLoader.execute(name, toolInput);
+          if (loaded !== null) return loaded;
+          // The report channel first (#366): null means "not my tool".
+          const report = await reportTools.execute(name, toolInput);
+          if (report !== null) return report;
+          if (MATCHER_READS.has(name)) {
+            return (await executeGraphReadTool(name, toolInput)) ?? `Error: Unknown tool: ${name}`;
+          }
+          if (name === "submit_match_decision") {
+            const defect = decisionDefect(toolInput);
+            if (defect) return rejectDecision(defect);
+            acceptDecision(toolInput);
+            return JSON.stringify({ success: true });
+          }
+          if (name === "search_similar_claims") {
+            return search(String(toolInput.query ?? ""), toolInput.keywords);
+          }
+          return `Error: Unknown tool: ${name}`;
+        },
+        onFinalTool: (name, toolInput) => {
+          if (name === "submit_match_decision") {
+            // A defective submission is not final: executeTool answers it with
+            // the refusal above and the loop continues.
+            if (decisionDefect(toolInput)) return null;
+            return acceptDecision(toolInput);
+          }
+          return null;
+        },
+      }).catch((err) => {
+        if (!(err instanceof MatcherBudgetSpent)) throw err;
+        return null;
+      });
+    // The pass's meter shadows the caller's, so what this run billed is
+    // added back to the caller's, where its action and allocation
+    // accounting (and an ingest's settlement) read it.
+    const callerMeter = getUsageContext().meter;
+    const { billedMicroUsd } = await withPassBudget(
+      { microUsd: opts.budgetMicroUsd, source: "this match decision's budget" },
+      loop
+    );
+    if (callerMeter) callerMeter.billedMicroUsd += billedMicroUsd;
+  };
+
+  /**
+   * One search: by meaning on `query`, and by keywords when given (#725).
+   * When the embedding fails, the query falls back to a keyword search, so
+   * a search still returns what it can, including nodes minted without an
+   * embedding, which the cosine search never sees.
+   */
+  const search = async (query: string, rawKeywords: unknown): Promise<string> => {
+    const keywords = typeof rawKeywords === "string" && rawKeywords.trim() ? rawKeywords.trim() : null;
+    const byId = new Map<string, SearchHit>();
+    const add = (
+      rows: Array<{ id: string; text: string; similarity_score: number; kind?: NodeKind }>,
+      foundBy?: "keywords"
+    ) => {
+      for (const r of rows) {
+        if (byId.has(r.id)) continue;
+        byId.set(r.id, {
           id: r.id,
           canonical_form: r.text,
           score: Number(r.similarity_score.toFixed(3)),
-          ...(kinds.has(r.id) ? { kind: kinds.get(r.id) } : {}),
-        }));
-        searchLog.push({ query, results: hits });
-        for (const hit of hits) retrievedIds.add(hit.id);
-        return JSON.stringify({ query, count: hits.length, results: hits });
+          // A hit's kind, where it is not a claim: identity is judged within
+          // a kind, and a figure matches the quantity it is a value of.
+          ...(r.kind && r.kind !== "claim" ? { kind: r.kind } : {}),
+          ...(foundBy ? { found_by: foundBy } : {}),
+        });
       }
-      return `Error: Unknown tool: ${name}`;
-    },
-    onFinalTool: (name, toolInput) => {
-      if (name === "submit_match_decision") {
-        // A defective submission is not final: executeTool answers it with
-        // the refusal above and the loop continues.
-        if (decisionDefect(toolInput)) return null;
-        return acceptDecision(toolInput);
+    };
+    const searchOpts = { limit: config.matchingTopK, excludeId: input.excludeClaimId };
+    let note: string | undefined;
+    try {
+      let embedding: number[] | null = null;
+      try {
+        embedding = await generateEmbedding(query);
+      } catch (err) {
+        note =
+          `Search by meaning is unavailable (${err instanceof Error ? err.message : String(err)}); ` +
+          `these results are a keyword search on your query.`;
       }
-      return null;
-    },
-  });
+      if (embedding) {
+        // Retrieval, not decision: keep a low floor so negations and
+        // alternate framings that embed far apart still surface (#25).
+        add(await findSimilarClaims(embedding, { ...searchOpts, minSimilarity: SIMILAR_CLAIMS_FLOOR }));
+      } else {
+        add(await keywordClaimSearch(query, searchOpts), "keywords");
+      }
+      if (keywords) add(await keywordClaimSearch(keywords, searchOpts), "keywords");
+    } catch (err) {
+      return `Error searching: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    const hits = [...byId.values()];
+    searchLog.push({ query: keywords ? `${query} [keywords: ${keywords}]` : query, results: hits });
+    for (const hit of hits) retrievedIds.add(hit.id);
+    return JSON.stringify({
+      query,
+      ...(keywords ? { keywords } : {}),
+      count: hits.length,
+      results: hits,
+      ...(note ? { note } : {}),
+    });
+  };
 
   await withSkills([], async () => {
-    await runLoop({ maxIterations: MATCHER_TURN_BUDGET });
+    await runLoop({ maxIterations: MATCHER_TURN_GUARD, budgetMicroUsd: firstBudgetMicroUsd });
     if (finalResult) return;
-    // One bounded retry (#419): most timeouts are a Matcher mid-search, not
-    // stuck, so a short second run told to decide usually yields a verdict.
+    // One bounded retry (#419): most runs that end undecided are a Matcher
+    // mid-search, not stuck, so a short second run told to decide usually
+    // yields a verdict.
     await runLoop({
-      maxIterations: 3,
+      maxIterations: MATCHER_RETRY_TURNS,
+      budgetMicroUsd: retryBudgetMicroUsd,
       retryNote:
-        "Your previous attempt at this decision ran out of search budget " +
-        "without calling submit_match_decision. " +
+        "Your previous attempt at this decision ended without calling " +
+        "submit_match_decision. " +
         priorSearchesNote(searchLog) +
         "Run at most one more search_similar_claims query, then submit " +
         "your decision at honest confidence. Do not end without submitting.",
@@ -392,7 +508,7 @@ async function matchClaimImpl(input: {
     direction_note: null,
     confidence: 0,
     reasoning:
-      "Matcher did not submit a decision within its search budget (after one retry). " +
+      "Matcher did not submit a decision within its budget (after one retry). " +
       "No identity verdict was reached: this is not a finding that the claim is new.",
     alternative_matches: [],
     relationship_notes: null,

@@ -54,6 +54,10 @@ Each task message names its trigger:
   stand with a neighbor's as the edge between them reads. Reconcile: revise
   yours, tell the neighbor's Steward (notify_steward), raise the edge with
   its owner, or say why both stand.
+- audit_send_back: the Audit judged an assessment of yours not well made
+  and sends it back with its finding. It judges how the decision was made,
+  not what is true: decide afresh, and revise the verdict or say why it
+  stands.
 
 ${BATCHED_CONTEXT}`;
 

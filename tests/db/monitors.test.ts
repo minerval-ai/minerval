@@ -70,7 +70,7 @@ async function source(label: string): Promise<string> {
   return row!.id;
 }
 
-async function instance(claimId: string, sourceId: string, stance: "affirms" | "denies"): Promise<void> {
+async function instance(claimId: string, sourceId: string, stance: "affirms" | "denies" | "poses" | "mentions"): Promise<void> {
   await rawQuery(
     `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, stance) VALUES ($1, $2, 'monitor test', $3)`,
     [claimId, sourceId, stance]
@@ -146,6 +146,13 @@ describe("performed settling", () => {
     await instance(agreed, srcA, "affirms");
     await instance(agreed, srcB, "affirms");
 
+    // control: one source affirms and another only mentions the claim. A
+    // mention takes no side, so there is no opposition on record.
+    const mentioned = await claim("affirmed-and-mentioned");
+    await assess(mentioned, { status: "verified", confidence: 0.9, credence: 0.9 });
+    await instance(mentioned, srcA, "affirms");
+    await instance(mentioned, srcB, "mentions");
+
     // 2. recent accepted challenge under a contradicted verdict
     const challenged = await claim("challenged");
     await assess(challenged, { status: "contradicted", confidence: 0.85, credence: 0.1 });
@@ -187,7 +194,7 @@ describe("performed settling", () => {
     expect(byId.get(challenged)?.reasons).toEqual(["recent_accepted_challenge"]);
     expect(byId.get(parent)?.reasons).toEqual(["inconclusive_requires_child"]);
     expect(byId.get(parent)?.inconclusiveRequiresChildren).toBe(1);
-    for (const control of [lowConf, oneSource, agreed, rejected, stale, parent2, child]) {
+    for (const control of [lowConf, oneSource, agreed, mentioned, rejected, stale, parent2, child]) {
       expect(byId.has(control)).toBe(false);
     }
   });
@@ -201,6 +208,23 @@ describe("empty chairs", () => {
     await assess(oneSided, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
     await instance(oneSided, srcA, "affirms");
     await instance(oneSided, srcB, "affirms");
+
+    // Mentions take no side, so a claim whose instances all affirm it, and
+    // which is otherwise only mentioned, is still one-sided; the mentions are
+    // not counted among its instances' stances.
+    const mentionedOneSided = await claim("one-sided-with-mentions");
+    await assess(mentionedOneSided, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
+    await instance(mentionedOneSided, srcA, "affirms");
+    await instance(mentionedOneSided, srcB, "affirms");
+    await instance(mentionedOneSided, srcB, "mentions");
+
+    // control: one affirming source and two mentions are below the minimum,
+    // since the mentions are not voices
+    const mentionsOnly = await claim("affirm-plus-mentions");
+    await assess(mentionsOnly, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
+    await instance(mentionsOnly, srcA, "affirms");
+    await instance(mentionsOnly, srcA, "mentions");
+    await instance(mentionsOnly, srcB, "mentions");
 
     const oneSidedArgs = await claim("one-sided-args");
     await assess(oneSidedArgs, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
@@ -229,9 +253,12 @@ describe("empty chairs", () => {
     const byId = new Map(report.candidates.map((c) => [c.claimId, c]));
     expect(byId.get(oneSided)?.reasons).toEqual(["instances_one_stance"]);
     expect(byId.get(oneSided)?.instanceStance).toBe("affirms");
+    expect(byId.get(mentionedOneSided)?.reasons).toEqual(["instances_one_stance"]);
+    expect(byId.get(mentionedOneSided)?.instances).toBe(2);
+    expect(byId.get(mentionedOneSided)?.instanceStance).toBe("affirms");
     expect(byId.get(oneSidedArgs)?.reasons).toEqual(["arguments_one_stance"]);
     expect(byId.get(oneSidedArgs)?.argumentStance).toBe("against");
-    for (const control of [mixed, single, settled]) expect(byId.has(control)).toBe(false);
+    for (const control of [mixed, single, settled, mentionsOnly]) expect(byId.has(control)).toBe(false);
   });
 });
 

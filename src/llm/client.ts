@@ -12,6 +12,9 @@
  * (streaming, betas, task budgets, per-turn hooks); it fails with a capability
  * message on any other provider rather than degrading silently.
  *
+ * Being the one path, it is also where every call with a system prompt is
+ * told today's date (run-date.ts, #771).
+ *
  * This file does dispatch and provider-independent control flow only. The
  * request-building, wire format, and response parsing for each backend live in
  * src/llm/providers/ — see providers/routing.ts for how a model id picks one.
@@ -34,6 +37,7 @@ import { recordAgentStep } from "../services/trace-service.js";
 import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
+import { withRunDate } from "./run-date.js";
 import { CODE_EXECUTION_TOOL, meterCodeExecution, turnUsedCodeExecution } from "./instrument-harness.js";
 import type {
   CompletionResult,
@@ -68,6 +72,7 @@ export async function complete(options: {
   effort?: EffortLevel;
 }): Promise<CompletionResult> {
   checkBudget();
+  options = { ...options, system: withRunDate(options.system) };
   const model = options.model ?? DEFAULT_MODEL;
   // Sonnet 5.5 runs adaptive thinking by default and thinking spend counts
   // against max_tokens, so the old 4096 default left too little room for the
@@ -193,6 +198,7 @@ export async function completeWithTools(options: {
 }): Promise<ToolCompletionResult> {
   checkBudget();
   const model = options.model ?? DEFAULT_MODEL;
+  options = { ...options, system: withRunDate(options.system) };
   return getAdapter(model).completeWithTools({
     ...options,
     model,
@@ -221,6 +227,7 @@ export async function completeStructured<T>(options: {
   effort?: EffortLevel;
 }): Promise<T> {
   checkBudget();
+  options = { ...options, system: withRunDate(options.system) };
   const model = options.model ?? DEFAULT_MODEL;
   const result = await getAdapter(model).completeStructured<T>({
     ...options,
@@ -413,6 +420,8 @@ export async function toolUseLoop(options: {
    */
   onText?: (delta: string, turn: number) => void;
 }): Promise<ToolCompletionResult> {
+  // Dated once for the whole loop, so every turn sends the same prompt.
+  options = { ...options, system: withRunDate(options.system) };
   const messages = [...options.initialMessages];
   const streamModel = options.model ?? DEFAULT_MODEL;
   const streamAdapter = getAdapter(streamModel);
@@ -771,6 +780,8 @@ export async function longRunToolLoop(options: {
   afterTurn?: (state: LongRunLoopState, result: ToolCompletionResult) => Promise<void>;
   reminder?: (state: LongRunLoopState) => string | null;
 }): Promise<LongRunLoopResult> {
+  // Dated once for the whole run, so every turn sends the same prompt.
+  options = { ...options, system: withRunDate(options.system) };
   const model = options.model ?? DEFAULT_MODEL;
   const adapter = getAdapter(model);
   const streaming = adapter.completeWithToolsStreaming;

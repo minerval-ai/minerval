@@ -41,6 +41,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
@@ -69,6 +70,11 @@ async function runCuratorImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
+  // The researcher, for an identity or structure call that turns on what a
+  // literature does (Part VIII, Instruments), paid from this pass's budget;
+  // what it finds comes back as a report and writes nothing to the graph.
+  // Offered only when the pass has a budget and the researcher is enabled.
+  const researchTools = createResearchTools({ requestedBy: "curator" });
 
   const graphNames = new Set(graphTools.map((t) => t.name));
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
@@ -92,6 +98,7 @@ async function runCuratorImpl(input: {
     // the toolset whether or not the run loads the skill.
     ...getActiveSkillToolDefinitions(listSkills(), "curator"),
     ...reportTools.definitions, ...findingTools.definitions,
+    ...researchTools.definitions,
   ];
 
   const system = getCuratorSystemPromptBlocks();
@@ -104,8 +111,8 @@ Anchor claim ID: ${input.claimId}
 Context: ${input.context}
 
 Proceed:
-1. Use get_claim and search_similar_claims (and match_claim) to examine the
-   anchor claim and its neighborhood; get_claim_instances shows how its
+1. Use get_claim (include related and subclaims) and search_similar_claims
+   (and match_claim) to examine the anchor claim and its neighborhood; get_claim_instances shows how its
    sources state it when wording or identity turns on that.
 2. Look for: duplicates / counterparts to merge; a conflated claim to split;
    related-but-disconnected claims that should be linked; a node of the wrong
@@ -142,6 +149,8 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      const research = await researchTools.execute(name, toolInput);
+      if (research !== null) return research;
       // The Matcher receives the domains its caller knows.
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput, { domains: claimDomains });

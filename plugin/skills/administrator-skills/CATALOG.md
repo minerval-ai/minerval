@@ -11,13 +11,13 @@ How to estimate what a piece of work will cost before anyone pays for it: a requ
 
 Sections: For every administrator; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the researcher; Failure modes.
 
-### Mathematics (`skills/mathematics.md`, version 2, domain skill)
+### Mathematics (`skills/mathematics.md`, version 3, domain skill)
 
 How the constitution applies to propositions of mathematics: what a mathematical claim is, how proofs are arguments, how the six statuses and credence read for theorems and conjectures, what a machine-checked proof is as evidence, how formal statements are published and checked in Lean 4 against a pinned Mathlib, how the platform's solver and prize program work, and what money may never touch. Applies to claims tagged mathematics and to contributions on them. Does not apply to claims that merely use a number or a model.
 
 Sections: For every administrator; For the Claim Steward; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the Audit Agent; For the Curator; For the Matcher; For the Extractor; Standards for judging; Failure modes.
 
-### Provenance (`skills/provenance.md`, version 1, method skill)
+### Provenance (`skills/provenance.md`, version 3, method skill)
 
 How to trace what a claim's support rests on: opening the sources behind a claim's instances and recording whether each source's own evidence bears the assertion it makes, which documents each assertion draws on and what survived the crossing, which sources are one voice appearing more than once, and a plain account for readers of what the support rests on, shown only where it matters. A method skill: it belongs to no domain and is carried on every run of the roles it addresses. It produces structure and figures for the Steward to reason about; the verdict stays the Steward's.
 
@@ -69,11 +69,11 @@ Designs and stewards funded mandates: surveys the territory, writes its mandate'
 
 ### Lookout (`roles/lookout.md`)
 
-A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.
+A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.
 
 ### Consistency Checker (`roles/consistency-checker.md`)
 
-The sweep that reads assessments against one another. Each Steward reads its own claim; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises each find with the Steward whose claim looks wrong, as a reassessment the ledger prices and funds like any other; it writes no verdict and owns no claim.
+The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.
 
 ### Solver (`roles/math-solver.md`)
 
@@ -81,4 +81,4 @@ The platform's own prover, an instrument rather than an administrator: it receiv
 
 ### Researcher (`roles/researcher.md`)
 
-An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.
+An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node, and returns a report the launcher weighs.

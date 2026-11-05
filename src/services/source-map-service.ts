@@ -23,7 +23,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { fetchPublicUrl } from "./url-guard.js";
-import { sanitizeStoredText } from "./document-text.js";
+import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
 import { getOrCreateSource } from "./source-service.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
@@ -285,19 +285,12 @@ export function quoteCheck(quote: string, content: string | null | undefined): Q
 // Reading a source
 // ---------------------------------------------------------------------------
 
-/** The most text one read returns; the caller pages with `offset`. */
-export const SOURCE_READ_MAX_CHARS = 20_000;
-export const SOURCE_READ_DEFAULT_CHARS = 12_000;
+export { SOURCE_READ_MAX_CHARS, SOURCE_READ_DEFAULT_CHARS } from "./document-text.js";
 
-export interface SourceReadResult {
+export interface SourceReadResult extends TextWindow {
   source: { id: string; url: string | null; title: string; source_type: string };
   /** Where the text came from: the stored copy, or a fetch made for this read and stored. */
   origin: "stored" | "fetched";
-  total_chars: number;
-  offset: number;
-  content: string;
-  /** True when more text follows this window. */
-  truncated: boolean;
 }
 
 interface SourceRow {
@@ -380,20 +373,10 @@ export async function readSourceContent(input: {
     await refreshSourceFactsOnce(source.id);
     await segmentSourceOnce(source.id);
   }
-  const text = htmlToText(raw);
-  const offset = Math.max(0, Math.floor(input.offset ?? 0));
-  const maxChars = Math.min(
-    SOURCE_READ_MAX_CHARS,
-    Math.max(1, Math.floor(input.maxChars ?? SOURCE_READ_DEFAULT_CHARS))
-  );
-  const content = text.slice(offset, offset + maxChars);
   return {
     source: { id: source.id, url: source.url, title: source.title, source_type: source.source_type },
     origin,
-    total_chars: text.length,
-    offset,
-    content,
-    truncated: offset + content.length < text.length,
+    ...windowText(htmlToText(raw), input.offset, input.maxChars),
   };
 }
 
