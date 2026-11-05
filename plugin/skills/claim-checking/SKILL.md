@@ -35,7 +35,10 @@ skill bundles it in full, and the section numbers below point into it.
   Metered; cap `max_claims` sensibly. `extract_claims` works the same way.
 - **Just looking**: `search_claims` / `get_claim` / `get_decomposition` are
   free reads: search the graph, fetch a claim's assessment, or see its
-  subclaim tree with unsettled-vs-settled structure.
+  subclaim tree with unsettled-vs-settled structure. `get_claim` returns the
+  record and its counts; ask for what else you need with `include`
+  (`arguments`, `provenance`, `dependents`, `related`, `findings`, …). It is
+  the same tool the graph's own agents read nodes with.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
 - **A whole document or diff to clear before shipping**: prefer delegating
@@ -64,7 +67,10 @@ skill bundles it in full, and the section numbers below point into it.
   that reading, not the probability the claim is true; that is `credence`,
   given only where one number is an honest summary.
 - `stance: denies` means the checked text asserts the claim's negation, so
-  invert the reading for the text as written.
+  invert the reading for the text as written. `stance: poses` means the
+  text asks the question rather than asserting either side, so it makes no
+  claim to check; report the graph's verdict as context, not as a judgment
+  of the text.
 
 ## Calibration: don't round
 
@@ -100,6 +106,16 @@ splits the two sides (§1, §6). Name that crux for your user. "This turns
 on whether X, which the evidence does not yet settle" is more useful than
 "it's disputed".
 
+`get_claim` with `include: ["arguments"]` shows the named arguments and
+the Steward's `evaluation` of each (§7). Its `verdict` rates the
+inference, how far the conclusion follows if the premises hold (certain,
+likely, slight, none), not whether the conclusion is true; an argument
+rated `certain` can rest on a false premise. Its `content` names the
+premises the argument lives or dies on, and `decisive: true` means it
+settles the claim as its premises now stand; when one is decisive, say so
+plainly. `stale: true` means the evaluation predates the current
+assessment.
+
 The same habit helps when you reason without the graph: ask what would
 make the claim true or false, and which sub-question the answer depends
 on, before reaching for sources (§9).
@@ -113,6 +129,10 @@ support matters:
 - Look at the claim's provenance: which instances rest on which documents,
   which sources are one voice, and the Steward's account of what the
   support rests on. None of it is a score; it is structure to reason with.
+- Read each instance's `stance`. A source that `poses` the claim as an open
+  question or only `mentions` it (cites it, reports the debate) takes no
+  side: it shows how the claim is used, never who holds it, so do not cite
+  it as support or opposition.
 - Prefer the primary source: the study, the dataset, the direct
   quotation, not the article about it (§9).
 - Read every source against today's date. A source can be out of date
@@ -125,8 +145,9 @@ support matters:
 
 ## Silence and gaps are contributions
 
-- `unknown` with `matched: false` (no such claim) and `unassessed` (no
-  assessment yet) mean the graph is silent. That is not evidence for or
+- `not_in_graph` (from `assess_text`; `matched: false` from
+  `match_claim`: no such claim) and `unassessed` (no assessment yet) mean
+  the graph is silent. That is not evidence for or
   against, and not a license to answer from recollection. Say the graph
   has no assessment; if you then give your own view, label it as yours.
 - `matched: null` / `undecided` means the Matcher ran out of budget

@@ -60,6 +60,7 @@ import { ExaminationError } from "../../../../src/services/examination-service.j
 import {
   createResearchTools,
   getResearchToolDefinitions,
+  readResearchRun,
 } from "../../../../src/llm/tools/research-tools.js";
 import type { ResearcherInput, ResearcherResult } from "../../../../src/llm/agents/researcher.js";
 import { getUsageContext, runWithUsageContext, withPassBudget } from "../../../../src/llm/usage-context.js";
@@ -197,7 +198,7 @@ describe("delegate_research", () => {
       })
     );
     const passed = runResearcher.mock.calls[0]![0];
-    expect(passed.claim).toEqual({ id: CLAIM, text: "The claim.", domains: [] });
+    expect(passed.claim).toEqual({ id: CLAIM, text: "The claim.", domains: [], kind: "claim" });
     expect(passed.run.include_constitution).toBe(false);
     expect(mocks.closeResearchRun).toHaveBeenCalledWith(
       "run-1",
@@ -386,6 +387,27 @@ describe("delegate_research", () => {
     );
     expect(mocks.checkResearcherBudget).not.toHaveBeenCalled();
   });
+
+  it("states the daily allowance for unfunded research up front, and what is left of it after each launch (#736)", async () => {
+    const runResearcher = vi.fn(async () => okResult());
+    await funded(async () => {
+      const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+      const description = tools.definitions.find((t) => t.name === "delegate_research")!.description!;
+      expect(description).toMatch(/not paid for by a funder/);
+      expect(description).toMatch(/daily allowance for research no funder pays for \(\$[\d.]+ a day, UTC\)/);
+      const out = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!);
+      expect(out.unfunded_daily_allowance_left).toMatch(/^\$[\d.]+ of \$[\d.]+ left today \(UTC\)$/);
+    });
+    // A funded pass is told nothing of it: it does not apply.
+    await runWithUsageContext({ jobId: "job-1" }, () =>
+      funded(async () => {
+        const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+        expect(tools.definitions.find((t) => t.name === "delegate_research")!.description).not.toMatch(/daily allowance/);
+        const out = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!);
+        expect(out.unfunded_daily_allowance_left).toBeUndefined();
+      })
+    );
+  });
 });
 
 describe("get_research_run", () => {
@@ -402,7 +424,7 @@ describe("get_research_run", () => {
     expect(out.research_run.report).toEqual({ answer: "a" });
     expect(out.research_run.notebook).toEqual({ n: "x" });
     const other = createResearchTools({ requestedBy: "claim_steward", claimId: "bbbbbbbb-0000-4000-8000-000000000001" });
-    expect(JSON.parse((await other.execute("get_research_run", { research_run_id: RUN }))!).message).toMatch(/another claim or mandate/);
+    expect(JSON.parse((await other.execute("get_research_run", { research_run_id: RUN }))!).message).toMatch(/another claim, mandate or role/);
     // A Grantmaker reads only what its mandate launched.
     const grantmaker = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1" });
     expect(JSON.parse((await grantmaker.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
@@ -414,5 +436,81 @@ describe("get_research_run", () => {
     expect(mocks.getResearchRun.mock.calls.length).toBe(calls);
     mocks.getResearchRun.mockResolvedValueOnce(null);
     expect(JSON.parse((await tools.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+  });
+  it("serves a request's run to its keeper and to the Steward of each node it bears on, and to no one else (#718)", async () => {
+    const OTHER = "bbbbbbbb-0000-4000-8000-000000000001";
+    const REQUEST = "dddddddd-0000-4000-8000-000000000001";
+    mocks.getResearchRun.mockResolvedValue({
+      id: RUN, claim_id: null, grant_id: null, request_id: REQUEST, requested_by: "request", task: BRIEF,
+      model: "m", model_tier: "strong", status: "completed", spent_micro_usd: 1, turns: 3, tools: [],
+      started_at: new Date(0), finished_at: new Date(1), report: { answer: "a" }, notebook: {}, error: null,
+    });
+    // The request is the Curator's, and bears on CLAIM but not on OTHER.
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) =>
+      sql.includes("FROM requests r")
+        ? [{ keeper_kind: "curator", keeper_claim_id: null, bears: params?.[1] === CLAIM }]
+        : []
+    );
+    const bearsOn = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM });
+    const read = JSON.parse((await bearsOn.execute("get_research_run", { research_run_id: RUN }))!);
+    expect(read.success).toBe(true);
+    expect(read.research_run.request_id).toBe(REQUEST);
+    expect(read.research_run.report).toEqual({ answer: "a" });
+    const elsewhere = createResearchTools({ requestedBy: "claim_steward", claimId: OTHER });
+    expect(JSON.parse((await elsewhere.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+    // The Curator reads it because it keeps the request.
+    expect(JSON.parse(await readResearchRun({ research_run_id: RUN }, { curator: true })).success).toBe(true);
+    // A Grantmaker does not, whoever funded the work.
+    const gm = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1" });
+    expect(JSON.parse((await gm.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+    // The Steward that keeps a request reads it too.
+    mocks.rawQuery.mockImplementation(async (sql: string) =>
+      sql.includes("FROM requests r") ? [{ keeper_kind: "steward", keeper_claim_id: OTHER, bears: false }] : []
+    );
+    expect(JSON.parse((await elsewhere.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(true);
+    expect(JSON.parse(await readResearchRun({ research_run_id: RUN }, { curator: true })).message).toMatch(/request you keep/);
+  });
+});
+
+describe("research the Curator and the Audit Agent launch", () => {
+  it("reads and reports: no claim, no document, no contributions, paid from the run's own budget", async () => {
+    for (const launcher of ["curator", "audit"] as const) {
+      await funded(async () => {
+        const tools = createResearchTools({ requestedBy: launcher, runResearcher: async () => okResult() });
+        const delegate = tools.definitions.find((t) => t.name === "delegate_research")!;
+        expect(delegate.description).toContain("nothing to the graph (it reads and reports");
+        expect(delegate.description).not.toContain("research a mandate launches");
+        expect(delegate.description).toContain("paid from this pass's own budget (the test lane)");
+        const props = Object.keys((delegate.input_schema as { properties: Record<string, unknown> }).properties);
+        for (const p of ["claim_id", "examine_source_id", "facets", "contribution_budget_usd"]) expect(props).not.toContain(p);
+
+        const refused = JSON.parse((await tools.execute("delegate_research", {
+          task: BRIEF, model_tier: "standard", budget_usd: 1, claim_id: CLAIM,
+        }))!);
+        expect(refused.success).toBe(false);
+        expect(refused.message).toContain("Research you launch writes nothing to the graph");
+
+        // More than the run's own budget holds is refused, saying what it has.
+        const over = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "standard", budget_usd: 50 }))!);
+        expect(over.message).toMatch(/has \$5\.00 left/);
+
+        const out = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "standard", budget_usd: 1 }))!);
+        expect(out.success).toBe(true);
+        expect(out.note).not.toContain("provenance_get_map");
+        expect(mocks.openResearchRun).toHaveBeenLastCalledWith(
+          expect.objectContaining({ requestedBy: launcher, claimId: null, grantId: null, contributionBudgetMicroUsd: 0 })
+        );
+      });
+    }
+  });
+
+  it("reads back the runs its role launched, and no other role's", async () => {
+    const curator = createResearchTools({ requestedBy: "curator" });
+    mocks.getResearchRun.mockResolvedValueOnce({ id: RUN, claim_id: null, grant_id: null, requested_by: "curator", tools: [], notebook: {} });
+    expect(JSON.parse((await curator.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(true);
+    mocks.getResearchRun.mockResolvedValueOnce({ id: RUN, claim_id: null, grant_id: null, requested_by: "audit", tools: [], notebook: {} });
+    expect(JSON.parse((await curator.execute("get_research_run", { research_run_id: RUN }))!).message).toMatch(/another claim, mandate or role/);
+    mocks.getResearchRun.mockResolvedValueOnce({ id: RUN, claim_id: CLAIM, grant_id: null, requested_by: "claim_steward", tools: [], notebook: {} });
+    expect(JSON.parse((await curator.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
   });
 });

@@ -24,9 +24,10 @@ Input: `$ARGUMENTS`
    attributed to the user's Minerval account.
 3. Interpret each judgment carefully:
    - The `verdict` comes from the graph: `verified`, `supported`,
-     `inconclusive`, `doubtful`, `contradicted`, `unknown` — or `unassessed`
-     (the claim exists but has no assessment yet). `unknown` with
-     `matched: false` means the graph holds no such claim.
+     `inconclusive`, `doubtful`, `contradicted`, `unknown` (assessed: the
+     evidence is insufficient) — or `unassessed` (the claim exists but has
+     no assessment yet), `not_in_graph` (the graph holds no such claim), or
+     `undecided` (the Matcher reached no verdict; not the same as absent).
    - Watch `stance`. `denies` means the passage asserts the **negation** of
      the canonical claim, so read the assessment inverted: denying a
      `contradicted` claim is fine; denying a `verified` one is the problem.
@@ -46,8 +47,10 @@ Group the results, worst first:
 - **Misleading as written** — technically matched, but inconclusive or
   over-asserted relative to the assessment.
 - **Supported** — sentences the graph affirms.
-- **Not in the graph** — `unknown`/`unassessed` claims; the graph is silent,
-  which is not evidence either way. Offer `/minerval:contribute` if one seems
+- **Insufficient evidence** — claims the graph assessed as `unknown`: a
+  finding, so say the evidence does not settle them.
+- **Not in the graph** — `not_in_graph`/`unassessed` claims; the graph is
+  silent, which is not evidence either way. Offer `/minerval:contribute` if one seems
   worth filing.
 
 For every matched claim, cite its canonical form, the verdict with its

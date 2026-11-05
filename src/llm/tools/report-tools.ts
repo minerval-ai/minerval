@@ -54,6 +54,33 @@ function iso(d: Date | string | null | undefined): string | null {
 }
 import { getUsageContext } from "../usage-context.js";
 
+/**
+ * What each raise_issue field is for: the agents' tool below and the MCP
+ * server's raise_issue (src/mcp/server.ts) both describe their fields with
+ * these, so an outside caller writes reports that collapse with the agents'
+ * (repeats are matched by title) (#752).
+ */
+export const REPORT_FIELD_GUIDANCE = {
+  kind:
+    "system_failure: something broke. tool_gap: a tool is missing, " +
+    "misdescribed, or cannot express what you need. improvement: a " +
+    "concrete proposal.",
+  severity:
+    "blocking: you could not complete the task because of it. " +
+    "degraded: you completed it, worse than you should have. " +
+    "annoyance: friction without a worse outcome. idea: an " +
+    "improvement, not a defect.",
+  title:
+    "One line, written as a claim about what is wrong or what " +
+    "should exist, e.g. 'add_relationship_edge has no relation " +
+    "type for counterparts under different framings'. Reuse the " +
+    "same wording for the same problem so repeats collapse.",
+  body:
+    "What you were trying to do, what happened, what you expected, " +
+    "and for an improvement the concrete proposal. Cite ids, not " +
+    "content: do not paste source text or contribution bodies.",
+} as const;
+
 export const RAISE_ISSUE_TOOL_NAME = "raise_issue";
 export const UPDATE_ISSUE_TOOL_NAME = "update_issue";
 export const SEARCH_ISSUES_TOOL_NAME = "search_issues";
@@ -92,7 +119,10 @@ export function getReportToolDefinitions(): Tool[] {
         "express what you need to say, or its result omits what you were " +
         "told to reason over (tool_gap); or when doing this work showed you a " +
         "specific, actionable improvement to the graph or its machinery " +
-        "(improvement). Always recorded in one call: a verbatim repeat joins " +
+        "(improvement); an idea from having just done the work is as welcome " +
+        "as a defect. You are the reader who understood what the system meant " +
+        "to do, so say what a stack trace cannot. Always recorded in one " +
+        "call: a verbatim repeat joins " +
         "its report as a sighting, and a new report is filed as an issue for " +
         "the maintainers and comes back with the reports on record that read " +
         "like it, with their status and the maintainers' note, as advice. If " +
@@ -102,41 +132,28 @@ export function getReportToolDefinitions(): Tool[] {
         "blocks, and never changes this run's outcome. Raising an issue is " +
         "not a substitute for acting: report, then proceed with the best " +
         "action still available to you. Do not report when nothing is wrong; " +
-        "a few per run at most.",
+        "when much is wrong, report each real problem (there is no per-run " +
+        "cap; repeats are folded together).",
       input_schema: {
         type: "object" as const,
         properties: {
           kind: {
             type: "string",
             enum: [...REPORT_KINDS],
-            description:
-              "system_failure: something broke. tool_gap: a tool is missing, " +
-              "misdescribed, or cannot express what you need. improvement: a " +
-              "concrete proposal.",
+            description: REPORT_FIELD_GUIDANCE.kind,
           },
           severity: {
             type: "string",
             enum: [...REPORT_SEVERITIES],
-            description:
-              "blocking: you could not complete the task because of it. " +
-              "degraded: you completed it, worse than you should have. " +
-              "annoyance: friction without a worse outcome. idea: an " +
-              "improvement, not a defect.",
+            description: REPORT_FIELD_GUIDANCE.severity,
           },
           title: {
             type: "string",
-            description:
-              "One line, written as a claim about what is wrong or what " +
-              "should exist, e.g. 'add_relationship_edge has no relation " +
-              "type for counterparts under different framings'. Reuse the " +
-              "same wording for the same problem so repeats collapse.",
+            description: REPORT_FIELD_GUIDANCE.title,
           },
           body: {
             type: "string",
-            description:
-              "What you were trying to do, what happened, what you expected, " +
-              "and for an improvement the concrete proposal. Cite ids, not " +
-              "content: do not paste source text or contribution bodies.",
+            description: REPORT_FIELD_GUIDANCE.body,
           },
           surface: {
             type: "string",

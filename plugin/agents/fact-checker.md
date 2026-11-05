@@ -43,9 +43,10 @@ For each judged claim:
 
 1. **Take the verdict from the graph.** `verified` / `supported` /
    `inconclusive` / `doubtful` / `contradicted` / `unknown` are the graph's
-   assessment statuses; `unassessed` means the claim exists without an
-   assessment; `unknown` with `matched: false` means the graph holds no such
-   claim.
+   assessment statuses (`unknown` is a finding: the evidence is insufficient
+   to assess); `unassessed` means the claim exists without an assessment;
+   `not_in_graph` means the graph holds no such claim; `undecided` means the
+   Matcher reached no verdict, so the claim may or may not be there.
 2. **Apply the stance.** `stance: denies` means the checked text asserts the
    negation of the canonical claim, so the assessment reads inverted for the
    text as written: denying a `contradicted` claim is sound; denying a
@@ -68,8 +69,8 @@ Return a structured report the calling agent can act on directly:
   stance, verdict, confidence/credence, a one-line reading of what that means
   for the text, and the claim's `page_url`.
 - Order entries worst-first: contradicted/doubtful-as-written, then
-  misleading-as-written, then supported, then graph-silent
-  (`unknown`/`unassessed`).
+  misleading-as-written, then supported, then assessed `unknown`
+  (insufficient evidence), then graph-silent (`not_in_graph`/`unassessed`).
 - End with a bottom line: whether the text is safe to ship as-is, and the
   minimal edits that would fix what isn't.
 

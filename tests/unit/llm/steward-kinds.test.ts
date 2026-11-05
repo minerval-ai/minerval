@@ -155,6 +155,10 @@ describe("Steward runner by kind", () => {
       expect(names).toContain(t);
     }
     expect(names).not.toContain("add_answer");
+    // Both always refuse a quantity (#711); the Quantities section maps them.
+    expect(names).not.toContain("update_claim_assessment");
+    expect(names).not.toContain("record_claim_instance");
+    expect(opts.system[0]).toMatch(/update_quantity_estimate and record_estimate\s+take the place of/);
     expect(opts.initialMessages[0]!.content).toContain("Quantity ID:");
     expect(opts.initialMessages[0]!.content).toContain("update_quantity_estimate");
   });

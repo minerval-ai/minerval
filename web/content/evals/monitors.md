@@ -84,7 +84,8 @@ Steward is broken, not that the detector is good.
 shows *live disagreement*, on any of three grounds:
 
 1. `opposed_instances` — instances on both stances (`affirms` and `denies`)
-   from at least 2 distinct sources;
+   from at least 2 distinct sources (an instance that `poses` the claim or
+   only `mentions` it takes no side and is not counted);
 2. `recent_accepted_challenge` — a `challenge` contribution accepted by the
    reviewer within the last 30 days;
 3. `inconclusive_requires_child` — a claim it `requires` whose current
@@ -159,8 +160,9 @@ SELECT s.id, s.text, s.importance, s.status, s.confidence, s.claim_credence, s.a
 ## empty_chairs — candidate detector
 
 **Is:** a claim whose current status is `inconclusive` but whose record
-carries only one side: every instance on one stance (at least 2 of them),
-or every named argument on one stance (`for` / `against`). The assessment
+carries only one side: every instance on one stance (at least 2 of them,
+counting only `affirms` and `denies`; posing and mentioning instances take
+no side), or every named argument on one stance (`for` / `against`). The assessment
 says the question is open; nobody sitting in the other chair is on record.
 #289's coverage / omission probe, speaking to §18 (representing disagreement
 fairly).

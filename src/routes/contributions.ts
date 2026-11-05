@@ -2,17 +2,21 @@ import type { FastifyInstance } from "fastify";
 import {
   createContributionBody,
   listContributionsParams,
+  CONTRIBUTION_REVIEW_STATUSES,
 } from "../schemas/governance.js";
+import { anyContributionTypeEnum } from "../schemas/common.js";
+import { presentsCredentials } from "../server/plugins/auth.js";
 import {
   createContribution,
   getContributionById,
   listContributions,
   getReviewForContribution,
+  formatContribution,
+  withAnsweredRequest,
 } from "../services/contribution-service.js";
 import { getClaimById } from "../services/claim-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
-import { loadConfig } from "../config.js";
 
 export async function contributionRoutes(app: FastifyInstance): Promise<void> {
   // POST /contributions
@@ -22,15 +26,28 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
       summary: "Submit a contribution for review",
       body: {
         type: "object",
-        required: ["claim_id", "contribution_type", "content"],
+        required: ["contribution_type", "content"],
         properties: {
-          claim_id: { type: "string", format: "uuid" },
+          claim_id: {
+            type: "string",
+            format: "uuid",
+            description:
+              "The node the contribution is about. Required for every type but " +
+              "propose_request, whose bearing (several nodes, sources, or something " +
+              "the graph does not hold yet) the content describes and the review settles.",
+          },
           contributor_display_name: { type: "string" },
           contribution_type: { type: "string" },
           content: { type: "string" },
           evidence_urls: { type: "array", items: { type: "string" } },
           merge_target_claim_id: { type: "string", format: "uuid" },
           proposed_canonical_form: { type: "string" },
+          request_id: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Required with answer_request, and only with it: the request the material is offered for. It must bear on claim_id and be open.",
+          },
         },
       },
       response: {
@@ -90,6 +107,20 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
             },
           },
         },
+        // An answer_request whose request_id is missing, unknown, closed,
+        // or on another node (#723).
+        422: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: { type: "string" },
+                message: { type: "string" },
+              },
+            },
+          },
+        },
         429: {
           type: "object",
           properties: {
@@ -108,11 +139,26 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const body = createContributionBody.parse(request.body);
 
-      // Verify claim exists
-      const claim = await getClaimById(body.claim_id);
-      if (!claim) {
-        return reply.code(404).send({
-          error: { code: "NOT_FOUND", message: "Claim not found" },
+      // Verify the claim exists, when one is named (a propose_request may
+      // name none, #724).
+      if (body.claim_id) {
+        const claim = await getClaimById(body.claim_id);
+        if (!claim) {
+          return reply.code(404).send({
+            error: { code: "NOT_FOUND", message: "Claim not found" },
+          });
+        }
+      }
+
+      const answered = await withAnsweredRequest({
+        contributionType: body.contribution_type,
+        claimId: body.claim_id,
+        requestId: body.request_id,
+        content: body.content,
+      });
+      if (!answered.ok) {
+        return reply.code(422).send({
+          error: { code: answered.code, message: answered.message },
         });
       }
 
@@ -124,10 +170,10 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
 
       // Create contribution
       const contribution = await createContribution({
-        claimId: body.claim_id,
+        claimId: body.claim_id ?? null,
         contributorId: contributor.id,
         contributionType: body.contribution_type,
-        content: body.content,
+        content: answered.content,
         evidenceUrls: body.evidence_urls,
         mergeTargetClaimId: body.merge_target_claim_id,
         proposedCanonicalForm: body.proposed_canonical_form,
@@ -151,8 +197,13 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         type: "object",
         properties: {
           claim_id: { type: "string", format: "uuid" },
-          status: { type: "string" },
-          type: { type: "string" },
+          status: { type: "string", enum: [...CONTRIBUTION_REVIEW_STATUSES] },
+          type: { type: "string", enum: [...anyContributionTypeEnum.options] },
+          mine: {
+            type: "boolean",
+            description:
+              "Only your own contributions, newest first: how to find one whose id you no longer have. Needs your credentials.",
+          },
           limit: { type: "integer", minimum: 1, maximum: 100, default: 20 },
           offset: { type: "integer", minimum: 0, default: 0 },
         },
@@ -183,10 +234,21 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
+    // Reads stay open; credentials are read when presented, for `mine`.
+    preHandler: async (request, reply) => {
+      if (presentsCredentials(request)) await app.authenticate(request, reply);
+    },
     handler: async (request, reply) => {
       const params = listContributionsParams.parse(request.query);
+      const mine = params.mine === true;
+      if (mine && !request.auth?.userId) {
+        return reply.code(401).send({
+          error: { code: "UNAUTHENTICATED", message: "mine=true needs credentials bound to an account" },
+        });
+      }
 
       const rows = await listContributions({
+        ...(mine ? { contributorId: request.auth!.userId! } : {}),
         claimId: params.claim_id,
         status: params.status,
         contributionType: params.type,
@@ -263,47 +325,4 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
       });
     },
   });
-}
-
-function formatContribution(c: {
-  id: string;
-  // Null while an intake contribution is pending review (#157).
-  claimId: string | null;
-  contributorId: string;
-  contributionType: string;
-  content: string;
-  evidenceUrls: string[];
-  submittedAt: Date;
-  reviewStatus: string;
-  mergeTargetClaimId: string | null;
-  proposedCanonicalForm: string | null;
-  grantId?: string | null;
-}) {
-  return {
-    id: c.id,
-    claim_id: c.claimId,
-    // A mandate's contribution does not name its funder (§12/§19).
-    contributor_id: c.grantId ? null : c.contributorId,
-    contribution_type: c.contributionType,
-    content: c.content,
-    evidence_urls: c.evidenceUrls,
-    submitted_at: c.submittedAt.toISOString(),
-    review_status: c.reviewStatus,
-    merge_target_claim_id: c.mergeTargetClaimId,
-    proposed_canonical_form: c.proposedCanonicalForm,
-    // The node's page on the public site: the claim contributed to, or, for
-    // an accepted proposal, the claim, question or quantity it became (which
-    // may still be under assessment). Null while a proposal is pending.
-    page_url: c.claimId
-      ? `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${c.claimId}`
-      : null,
-    // Set only for an accepted propose_claim / propose_question: the node it
-    // became or landed on, so the contributor can follow it. (An accepted
-    // propose_source mints its claims through extraction, not here.)
-    became_claim_id:
-      c.claimId &&
-      (c.contributionType === "propose_claim" || c.contributionType === "propose_question")
-        ? c.claimId
-        : null,
-  };
 }

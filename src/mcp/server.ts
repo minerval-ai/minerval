@@ -44,49 +44,34 @@ import {
 } from "../server/plugins/quota.js";
 import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext, untraced } from "../llm/usage-context.js";
-import { hybridSearch } from "../services/search-service.js";
-import {
-  attachClaimTags,
-  getTagsForSubject,
-  listTags,
-  resolveTagBySlug,
-  searchTags,
-} from "../services/tag-service.js";
+import { listTags, searchTags } from "../services/tag-service.js";
+import { graphReadDefinitions, runGraphRead } from "../services/graph-read-service.js";
 import {
   getClaimById,
-  getClaimInstances,
   listClaims,
 } from "../services/claim-service.js";
-import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getCurrentAssessment } from "../services/assessment-service.js";
-import {
-  getClaimTree,
-  getSubclaimCount,
-  getTransitiveDependents,
-  listClaimDependents,
-} from "../services/tree-service.js";
-import { getArgumentsForClaim } from "../services/argument-service.js";
+import { getClaimTree } from "../services/tree-service.js";
 import {
   getBountyTerms,
-  getFormalizationSummary,
-  getVerificationSummary,
-  leanChecksByArgument,
-  listLeanChecksForClaim,
 } from "../services/formalization-service.js";
-import { claimTypeEnum } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
+  formatContribution,
   getContributionById,
   getReviewForContribution,
+  withAnsweredRequest,
 } from "../services/contribution-service.js";
 import { getOrCreateContributor } from "../services/contributor-service.js";
 import { checkContributionRateLimit } from "../services/reputation-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import {
+  CLAIM_ID_REQUIRED_MESSAGE,
+  contributionMayOmitClaim,
   contributionTypeEnum,
   reportKindEnum,
   reportSeverityEnum,
@@ -98,6 +83,17 @@ import {
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
+import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
+import { getSharedAnalysis } from "../services/shared-analysis-service.js";
+import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
+import {
+  CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_INCLUDE_DESCRIPTION,
+  CLAIM_VIEW_INCLUDES,
+  DEFAULT_DEPENDENTS_PAGE,
+  MAX_DEPENDENTS_PAGE,
+  getClaimView,
+} from "../services/claim-view-service.js";
 import {
   getTextAnalysis,
   startTextAnalysis,
@@ -105,13 +101,8 @@ import {
   type TextAnalysisType,
 } from "../services/text-analysis-service.js";
 import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
-import {
-  getCurrentEstimate,
-  getQuantityDetail,
-  getThresholdOf,
-} from "../services/quantity-service.js";
-import { getCurrentStanding, getQuestionDetail } from "../services/question-service.js";
-import { listRequests } from "../services/request-service.js";
+import { getCurrentEstimate } from "../services/quantity-service.js";
+import { getCurrentStanding } from "../services/question-service.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -277,11 +268,18 @@ async function matchAssertion(
   assertion: string,
   context?: string,
   domains?: readonly string[],
-  kind?: NodeKind
+  kind?: NodeKind,
+  /**
+   * The Extractor's proposed canonical form, when the assertion came out of
+   * an extraction (#721): the Matcher's best search query. A bare assertion
+   * is its own proposal.
+   */
+  proposedCanonical?: string
 ) {
   const decision = await matchClaim({
-    extractedText: context ? `${assertion}\n\nContext: ${context}` : assertion,
-    proposedCanonical: assertion,
+    extractedText: assertion,
+    proposedCanonical: proposedCanonical?.trim() || assertion,
+    context: context ?? null,
     // The kind of node proposed (§2, §7a): a figure is matched to the
     // quantity it is a value of, a question to the question it asks.
     kind,
@@ -363,88 +361,27 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
 
   // ---- free read tools ----
 
-  server.registerTool(
-    "search_claims",
-    {
-      title: "Search claims",
-      description:
-        "Search Minerval's claim graph. A claim is a single reusable " +
-        "proposition about the world, assessable with evidence and reasons; " +
-        "each is stored once, under a neutral canonical " +
-        "wording shared by the claim and its denial. The graph also holds " +
-        "quantities (values it estimates) and questions (which it answers); " +
-        "search reaches all three, each result says its `kind`, and `kind` " +
-        "narrows to one. Combined semantic and " +
-        "keyword search, ranked by similarity; each result carries its " +
-        "current assessment status (for a question its `standing`, for a " +
-        "quantity its `estimate` and `unit`), the amount of any live prize offered " +
-        "for a machine-checked proof or disproof of its formal statement " +
-        "(prize_micro_usd), whether such a check exists (checked), its " +
-        "topic tags, and a link to its minerval.ai page. Narrow to one " +
-        "topic with `tag` (a slug from list_tags). Free.",
-      inputSchema: {
-        query: z.string().min(1).max(500).describe("Free-text search query"),
-        limit: z.number().int().min(1).max(50).default(10),
-        assessed: z
-          .enum(["all", "assessed", "unassessed"])
-          .default("all")
-          .describe("Filter on whether a claim carries a current assessment"),
-        min_importance: z.number().min(0).max(1).default(0),
-        with_prizes: z
-          .boolean()
-          .default(false)
-          .describe("Only claims with a live prize on their formal statement"),
-        claim_type: claimTypeEnum
-          .optional()
-          .describe("Only claims of this type; `mathematical` for propositions of mathematics"),
-        tag: z
-          .string()
-          .max(100)
-          .optional()
-          .describe("Only claims carrying this topic tag (slug); an unknown tag matches nothing"),
-        kind: nodeKindEnum
-          .optional()
-          .describe("Only nodes of this kind: claims, quantities, or questions"),
+  // search_claims, get_decomposition and get_dependents, defined once with
+  // the agents' (graph-read-service.ts, #726): the same inputs and payloads
+  // on both sides, with a caller-facing description suffix. get_claim is
+  // claim-view-service.ts's, below.
+  for (const def of graphReadDefinitions("caller")) {
+    server.registerTool(
+      def.name,
+      {
+        title: def.title,
+        description: def.description,
+        inputSchema: z.fromJSONSchema(
+          def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
+        ) as z.ZodObject,
       },
-    },
-    async ({ query, limit, assessed, min_importance, with_prizes, claim_type, tag, kind }) => {
-      let tagId: string | undefined;
-      if (tag?.trim()) {
-        const resolved = await resolveTagBySlug(tag);
-        if (!resolved) return jsonResult({ results: [], note: `no tag "${tag}"` });
-        tagId = resolved.id;
+      async (args: Record<string, unknown>) => {
+        const result = await runGraphRead(def.name, args);
+        if (!result) return errorResult("NOT_FOUND", `No read named ${def.name}`);
+        return result.ok ? jsonResult(result.payload) : errorResult(result.code, result.message);
       }
-      const { results } = await hybridSearch(query, {
-        limit,
-        assessed,
-        minImportance: min_importance,
-        withPrizes: with_prizes,
-        claimType: claim_type,
-        tagId,
-        kind,
-      });
-      const tagged = await attachClaimTags(results);
-      return jsonResult({
-        results: tagged.map((r) => ({
-          id: r.id,
-          kind: r.kind,
-          canonical_form: r.text,
-          claim_type: r.claim_type,
-          state: r.state,
-          similarity_score: r.similarity_score,
-          importance: r.importance,
-          assessment_status: r.assessment_status,
-          assessment_confidence: r.assessment_confidence,
-          prize_micro_usd: r.prize_micro_usd ?? null,
-          checked: r.checked ?? null,
-          ...(r.kind === "question" ? { standing: r.standing ?? null } : {}),
-          ...(r.kind === "quantity" ? { estimate: r.estimate ?? null, unit: r.unit ?? null } : {}),
-          tags: r.tags.map((t) => ({ slug: t.slug, name: t.name })),
-          page_url: claimPageUrl(r.id),
-        })),
-      });
-    }
-  );
+    );
+  }
 
   server.registerTool(
     "list_tags",
@@ -494,208 +431,32 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     "get_claim",
     {
       title: "Get claim",
-      description:
-        "Fetch one claim in full: canonical form, current assessment, and, " +
-        "via `include`, its source instances (provenance), the named " +
-        "arguments bearing on it, and the claims that depend on it. An " +
-        "assessment is a verdict reached by direct examination of the " +
-        "evidence, with the reasoning included: a status (verified, " +
-        "supported, inconclusive, doubtful, contradicted, or unknown), a " +
-        "confidence that the status is the right reading of the evidence, " +
-        "and a credence that the claim is true where a single number is an " +
-        "honest summary (null where it would be false precision). How " +
-        "actively the claim is disputed is not a status: it is the claim's " +
-        "`contestation` (0..1, null until judged). " +
-        "Dependents come back as the most load-bearing page by importance " +
-        "with `dependents_total` beside them, since a hub claim has " +
-        "hundreds; page through the rest with `dependents_offset`. A " +
-        "mathematical claim may carry a published formal statement " +
-        "(`formalization`: Lean 4 against a pinned Mathlib, with a " +
-        "correspondence note) and a machine-checked argument whose evidence " +
-        "is a checker verdict (`verification`; `include: \"proofs\"` lists " +
-        "the check records). A node is a claim, a quantity, or a question " +
-        "(`claim.kind`): a quantity has no assessment but a `quantity` " +
-        "record (definition, the graph's estimate with its work, the " +
-        "figures sources state, instrument readings, and the cut claims on " +
-        "it); a question has a `question` record (standing, favored and " +
-        "candidate answers, presuppositions, subquestions). A claim that " +
-        "cuts a quantity carries `threshold_of`. `requests` lists the work " +
-        "someone could do on the node that would improve what the graph " +
-        "knows. Free.",
+      // One description and one view for MCP and the graph's own agents
+      // (#774): src/services/claim-view-service.ts.
+      description: CLAIM_VIEW_DESCRIPTION,
       inputSchema: {
         claim_id: z.guid(),
         include: z
-          .array(z.enum(["provenance", "arguments", "dependents", "proofs"]))
-          .default(["provenance"])
-          .describe("Optional detail sections to include"),
-        dependents_limit: z.number().int().min(1).max(100).default(25),
+          .array(z.enum(CLAIM_VIEW_INCLUDES))
+          .default([])
+          .describe(CLAIM_VIEW_INCLUDE_DESCRIPTION),
+        dependents_limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_DEPENDENTS_PAGE)
+          .default(DEFAULT_DEPENDENTS_PAGE),
         dependents_offset: z.number().int().min(0).default(0),
       },
     },
     async ({ claim_id, include, dependents_limit, dependents_offset }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-
-      const assessment = await getCurrentAssessment(claim_id);
-      const [formalization, verification, quantity, thresholdOf, question, requests] =
-        await Promise.all([
-          getFormalizationSummary(claim_id),
-          getVerificationSummary(claim_id),
-          // The kinds' records (§7a), as GET /claims/:id serves them.
-          claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
-          claim.kind === "claim" ? getThresholdOf(claim_id) : null,
-          claim.kind === "question" ? getQuestionDetail(claim_id) : null,
-          // Requests degrade to none rather than failing the claim, as tags do.
-          listRequests({ claimId: claim_id, limit: 20 }).catch(() => ({
-            items: [],
-            total: 0,
-          })),
-        ]);
-      const payload: Record<string, unknown> = {
-        claim: {
-          id: claim.id,
-          kind: claim.kind ?? "claim",
-          canonical_form: claim.text,
-          claim_type: claim.claimType,
-          state: claim.state,
-          decomposition_status: claim.decompositionStatus,
-          importance: claim.importance,
-          // How actively the claim is disputed or consulted (0..1), kept apart
-          // from the status (#524): a status says where the evidence points,
-          // this says how live the dispute is. null = not yet judged.
-          contestation: claim.contestation ?? null,
-          domains: claim.domains,
-          // Navigation, never the payload: a tag read failure is an empty
-          // list, not a failed claim.
-          tags: (await getTagsForSubject("claim", claim_id).catch(() => [])).map((t) => ({
-            slug: t.slug,
-            name: t.name,
-          })),
-          created_at: claim.createdAt.toISOString(),
-          updated_at: claim.updatedAt.toISOString(),
-          page_url: claimPageUrl(claim.id),
-        },
-        assessment: formatAssessment(assessment),
-        // The published formal statement and the derived machine-checked
-        // badge (docs/mathematics.md §11.2); null when the claim has none.
-        formalization,
-        verification,
-        quantity,
-        threshold_of: thresholdOf,
-        question,
-        requests: requests.items,
-        subclaim_count: await getSubclaimCount(claim_id),
-      };
-      if (include.includes("provenance")) {
-        // The instances, each with the reading recorded from opening its
-        // source against the claim (#286), and the claim's source map when
-        // one has been written: the account of what the support rests on.
-        const [instances, sourceMap] = await Promise.all([
-          getClaimInstances(claim_id),
-          getClaimSourceMap(claim_id).catch(() => null),
-        ]);
-        payload.instances = instances.map((inst) => ({
-          ...inst,
-          reading: sourceMap?.readings[inst.id] ?? null,
-        }));
-        payload.source_map = sourceMap?.map ?? null;
-        payload.provenance_edges = sourceMap?.edges ?? [];
-        payload.source_relationships = sourceMap?.source_relationships ?? [];
-      }
-      if (include.includes("arguments")) {
-        const args = await getArgumentsForClaim(claim_id);
-        const checks = await leanChecksByArgument(claim_id);
-        payload.arguments = args.map((a) => ({
-          id: a.id,
-          name: a.name,
-          stance: a.stance,
-          content: a.content,
-          evidence_urls: a.evidenceUrls,
-          lean_check: checks.get(a.id) ?? null,
-        }));
-      }
-      if (include.includes("proofs")) {
-        // Every check the platform ran on any version of the statement:
-        // verdict, mode, kind, gate, pin, and hash, never the source.
-        payload.proofs = await listLeanChecksForClaim(claim_id);
-      }
-      if (include.includes("dependents")) {
-        // Paginated: an unbounded list let one hub claim push hundreds of rows
-        // at a client. `dependents` stays an array so existing callers keep
-        // iterating it; the count they were previously deriving from its
-        // length now lives in `dependents_total`.
-        const { dependents, total } = await listClaimDependents(claim_id, {
-          limit: dependents_limit,
-          offset: dependents_offset,
-        });
-        payload.dependents = dependents;
-        payload.dependents_total = total;
-      }
-      return jsonResult(payload);
-    }
-  );
-
-  server.registerTool(
-    "get_decomposition",
-    {
-      title: "Get decomposition",
-      description:
-        "Fetch the tree of subclaims a claim rests on. Each edge is typed " +
-        "(requires, supports, contradicts, and so on) and grouped into a " +
-        "named argument where one exists; each node carries its own " +
-        "assessment status, so a disputed subclaim under a well-supported " +
-        "parent marks exactly where the disagreement lives. Descends only: " +
-        "for what rests ON this claim, use get_dependents. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        max_depth: z.number().int().min(1).max(8).default(3),
-      },
-    },
-    async ({ claim_id, max_depth }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const tree = await getClaimTree(claim_id, max_depth);
-      return jsonResult({
-        claim_id,
-        page_url: claimPageUrl(claim_id),
-        tree,
+      const view = await getClaimView(claim_id, {
+        include,
+        dependentsLimit: dependents_limit,
+        dependentsOffset: dependents_offset,
       });
-    }
-  );
-
-  server.registerTool(
-    "get_dependents",
-    {
-      title: "Get dependents",
-      description:
-        "Walk UP from a claim: everything that rests on it, directly or " +
-        "through a chain, ranked by importance and tagged with how many " +
-        "edges away it sits. This is what shows whether a claim is " +
-        "LOAD-BEARING, which is not readable off the claim itself — a modest " +
-        "lemma carrying six high-importance dependents matters more than an " +
-        "isolated claim that scores higher alone. The mirror of " +
-        "get_decomposition, and the question 'what would move if this " +
-        "verdict changed'. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        max_depth: z
-          .number()
-          .int()
-          .min(1)
-          .max(8)
-          .default(3)
-          .describe("Edges to walk upward; 1 is direct dependents only."),
-      },
-    },
-    async ({ claim_id, max_depth }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const walk = await getTransitiveDependents(claim_id, max_depth);
-      return jsonResult({
-        claim_id,
-        page_url: claimPageUrl(claim_id),
-        ...walk,
-      });
+      if (!view) return errorResult("NOT_FOUND", "Claim not found");
+      return jsonResult(view);
     }
   );
 
@@ -727,6 +488,37 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     }
   );
 
+  server.registerTool(
+    "get_page_analysis",
+    {
+      title: "Get a web page's shared analysis",
+      description:
+        "The analysis of a public web page that a reader of the Minerval " +
+        "browser extension chose to share: the claims the page makes, each " +
+        "matched into the graph with its stance and the claim's status read " +
+        "now. Pass the page's URL; it is normalized and hashed on the " +
+        "server. Only pages someone shared, and the server confirmed are " +
+        "public, have one: otherwise NOT_SHARED, and assess_text on the " +
+        "page's text is the way to check it. Free.",
+      inputSchema: {
+        url: z.string().url().max(4000).describe("The page's address"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ url }) => {
+      const normalized = normalizePageUrl(url);
+      if (!normalized) return errorResult("NOT_A_PAGE", "Only an http or https page has a shared analysis");
+      const analysis = await getSharedAnalysis(pageUrlHash(normalized));
+      if (!analysis) {
+        return errorResult(
+          "NOT_SHARED",
+          "No shared analysis for this page; assess_text on its text checks it"
+        );
+      }
+      return jsonResult(analysis);
+    }
+  );
+
   // ---- agentic (metered) tools ----
 
   server.registerTool(
@@ -737,8 +529,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Ask Minerval's Matcher whether an assertion is already a claim in " +
         "the graph, under any wording or as its negation (a claim and its " +
         "denial are one node). On a match, returns the canonical claim, " +
-        "whether the assertion affirms or denies it, and its current " +
-        "assessment; otherwise, a proposed canonical form. A node is a " +
+        "its `stance` (affirms: the assertion states the claim; denies: it " +
+        "states the negation, so read the assessment inverted; poses: it asks " +
+        "the question and takes no side, so it makes no claim to check), and " +
+        "its current assessment; otherwise, a proposed canonical form. A node is a " +
         "claim, a quantity, or a question (`kind`): pass `kind: \"quantity\"` " +
         "for a figure, matched to the quantity it is a value of, or " +
         "`\"question\"` for a question. A matched quantity carries its " +
@@ -781,7 +575,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "form is its definition with its unit), and provisional importance. " +
         "Claims worth minting are scarce " +
         "relative to text, so most sentences yield none. Runs a model: metered to your " +
-        "account and quota-gated." +
+        "account and quota-gated. At most 100,000 characters and 50 claims per " +
+        "call, so one call stays within the text_analysis charge; split longer text." +
         RUNS_IN_BACKGROUND +
         " While it runs, the result holds the claims recorded so far.",
       inputSchema: {
@@ -826,14 +621,20 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "come from assessments reached by direct examination of evidence, " +
         "with the reasoning included, never from a model's recollection. " +
         "Statuses run verified, supported, inconclusive, doubtful, " +
-        "contradicted, unknown. 'unknown' with matched: false means the graph " +
-        "holds no such claim; on a matched claim it is the assessed status " +
-        "(not enough information to assess). 'unassessed' means the claim " +
-        "exists but has no assessment yet. A figure is matched to the " +
+        "contradicted, unknown; 'unknown' is an assessed finding (the " +
+        "evidence is insufficient to assess). 'not_in_graph' means the graph " +
+        "holds no such claim, 'unassessed' that it exists but has no " +
+        "assessment yet, and 'undecided' that the Matcher reached no verdict. " +
+        "Each judgment's `stance` says whether the passage affirms, denies " +
+        "(read the assessment inverted) or poses (asks, asserting nothing) " +
+        "the claim. A figure is matched to the " +
         "quantity it is a value of ('estimated', with the graph's " +
         "`estimate`) and a question to the question it asks (its standing: " +
         "answered, leaning, open, ill_posed, or unknown). Runs a model: " +
-        "metered to your account and quota-gated." +
+        "metered to your account and quota-gated. At most 50,000 characters " +
+        "and 20 judged claims per call, because each claim is a Matcher run " +
+        "and one call must stay within the text_analysis charge; split a " +
+        "longer document into passages." +
         RUNS_IN_BACKGROUND +
         " While it runs, the result holds the judgments made so far.",
       inputSchema: {
@@ -870,14 +671,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               c.verbatim_text,
               c.context ?? undefined,
               sanitizeDomains(c.domains),
-              kind
+              kind,
+              c.proposed_canonical_form
             );
             judgments.push({
               verbatim_text: c.verbatim_text,
               proposed_canonical_form: c.proposed_canonical_form,
               claim_type: c.claim_type,
               kind,
-              // "unknown": the graph has no canonical claim for this assertion.
+              // "not_in_graph": the graph has no canonical claim for this
+              // assertion. Its own value, not "unknown", which is an assessed
+              // status (insufficient evidence) and meant both until #752.
               // "undecided": the Matcher reached no verdict (#419).
               // "unassessed": it exists but has no current judgment yet.
               // A matched quantity is "estimated" (its `estimate` beside it),
@@ -886,7 +690,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
                 match.matched === null
                   ? "undecided"
                   : !match.matched
-                    ? "unknown"
+                    ? "not_in_graph"
                     : match.claim.kind === "quantity"
                       ? match.estimate
                         ? "estimated"
@@ -935,12 +739,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     {
       title: "Submit a contribution",
       description:
-        "Contribute to an existing claim: a challenge, supporting evidence, " +
-        "a new source appearance, a proposed merge, split, or edit, or an " +
-        "argument for or against it; on a quantity, a source's figure " +
-        "(add_estimate); on a question, a candidate answer (propose_answer); " +
-        "on any node, a request for work (propose_request) or material " +
-        "offered to meet one of its requests (answer_request). A contribution gets a hearing, not " +
+        "Contribute to an existing node; contribution_type says what kind of " +
+        "contribution it is. A request (propose_request) may bear on several " +
+        "nodes, on sources, or on something the graph does not hold yet: omit " +
+        "claim_id and say in content what it bears on. " +
+        "A contribution gets a hearing, not " +
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +
@@ -951,12 +754,37 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "review nobody pays for; past it you get CONTRIBUTION_RATE_LIMITED. " +
         "Priced proposals (propose_claim, submit_source) do not count toward it.",
       inputSchema: {
-        claim_id: z.guid(),
-        contribution_type: contributionTypeEnum,
-        content: z.string().min(1).max(10_000),
+        claim_id: z
+          .guid()
+          .optional()
+          .describe("The node the contribution is about. Required for every type but propose_request."),
+        contribution_type: contributionTypeEnum.describe(
+          "challenge: dispute the claim or its assessment. support: evidence " +
+            "or reasoning for it. add_instance: a source where it appears. " +
+            "propose_argument: a named argument for or against it. " +
+            "propose_merge (with merge_target_claim_id), propose_split, " +
+            "propose_edit (usually with proposed_canonical_form). On a " +
+            "quantity, add_estimate: a source's figure for it. On a question, " +
+            "propose_answer: a candidate answer. On any node, propose_request: " +
+            "work that would improve what the graph knows; answer_request: " +
+            "material offered to meet one of its requests (with request_id)."
+        ),
+        content: z
+          .string()
+          .min(1)
+          .max(10_000)
+          .describe("The contribution itself, engaging what the node already records; cite ids, not pasted text"),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
         merge_target_claim_id: z.guid().optional(),
         proposed_canonical_form: z.string().max(2000).optional(),
+        request_id: z
+          .guid()
+          .optional()
+          .describe(
+            "Required with answer_request, and only with it: the request the " +
+              "material is offered for. It must bear on claim_id and be open " +
+              "(get_claim lists the node's requests)."
+          ),
       },
     },
     async (input) => {
@@ -970,8 +798,23 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         );
       }
 
-      const claim = await getClaimById(input.claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      // A propose_request may name no node (#724); every other type is
+      // about one.
+      if (!input.claim_id && !contributionMayOmitClaim(input.contribution_type)) {
+        return errorResult("VALIDATION_ERROR", CLAIM_ID_REQUIRED_MESSAGE);
+      }
+      if (input.claim_id) {
+        const claim = await getClaimById(input.claim_id);
+        if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      }
+
+      const answered = await withAnsweredRequest({
+        contributionType: input.contribution_type,
+        claimId: input.claim_id,
+        requestId: input.request_id,
+        content: input.content,
+      });
+      if (!answered.ok) return errorResult(answered.code, answered.message);
 
       const contributor = await getOrCreateContributor({
         externalId,
@@ -992,7 +835,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           "DEPOSIT_REQUIRED",
           "A suspected bad-faith contribution moved this account to " +
             "pay-to-contribute standing. Deposits are not yet available; " +
-            "the flag can be appealed via POST /appeals."
+            "the flag can be appealed with submit_appeal (REST: POST /appeals)."
         );
       }
 
@@ -1009,25 +852,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       }
 
       const contribution = await createContribution({
-        claimId: input.claim_id,
+        claimId: input.claim_id ?? null,
         contributorId: contributor.id,
         contributionType: input.contribution_type,
-        content: input.content,
+        content: answered.content,
         evidenceUrls: input.evidence_urls,
         mergeTargetClaimId: input.merge_target_claim_id,
         proposedCanonicalForm: input.proposed_canonical_form,
       });
       await enqueueContribution({ contributionId: contribution.id });
 
-      return jsonResult({
-        contribution: {
-          id: contribution.id,
-          claim_id: contribution.claimId,
-          contribution_type: contribution.contributionType,
-          review_status: contribution.reviewStatus,
-          submitted_at: contribution.submittedAt.toISOString(),
-        },
-      });
+      return jsonResult({ contribution: formatContribution(contribution) });
     }
   );
 
@@ -1047,12 +882,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "actionable improvement to the graph or its machinery (improvement). " +
         "Reports go to the people who maintain the graph; they never affect a " +
         "claim, a contribution, or its review. Cite ids, never paste content. " +
-        "Free, attributed to your account, and rate-limited.",
+        "Free and attributed to your account, and so limited to " +
+        `${loadConfig().reportRateLimitPerHour} reports an hour, because each ` +
+        "one takes maintainer attention nothing prices; past it you get " +
+        "REPORT_RATE_LIMITED. Joining an existing report counts as one.",
       inputSchema: {
-        kind: reportKindEnum,
-        severity: reportSeverityEnum,
-        title: z.string().min(1).max(REPORT_TITLE_MAX_CHARS),
-        body: z.string().min(1).max(REPORT_BODY_MAX_CHARS),
+        // The agents' raise_issue explains each field (report-tools.ts);
+        // callers get the same guidance, since repeats collapse by title.
+        kind: reportKindEnum.describe(REPORT_FIELD_GUIDANCE.kind),
+        severity: reportSeverityEnum.describe(REPORT_FIELD_GUIDANCE.severity),
+        title: z.string().min(1).max(REPORT_TITLE_MAX_CHARS).describe(REPORT_FIELD_GUIDANCE.title),
+        body: z.string().min(1).max(REPORT_BODY_MAX_CHARS).describe(REPORT_FIELD_GUIDANCE.body),
         surface: z.string().max(200).optional(),
         context_refs: z
           .record(z.string(), z.union([z.string().max(500), z.number(), z.boolean()]))
@@ -1141,7 +981,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       description:
         "Check the outcome of a submitted contribution: pending until " +
         "reviewed, then the decision (accept, reject, or escalate) with the " +
-        "reviewer's reasoning and policy citations. Free.",
+        "reviewer's reasoning and policy citations. An accepted proposal " +
+        "carries became_claim_id and page_url, the node it became. Lost the " +
+        "id? list_contributions with mine: true lists yours. Free.",
       inputSchema: { contribution_id: z.guid() },
     },
     async ({ contribution_id }) => {
@@ -1151,13 +993,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       }
       const review = await getReviewForContribution(contribution_id);
       return jsonResult({
-        contribution: {
-          id: contribution.id,
-          claim_id: contribution.claimId,
-          contribution_type: contribution.contributionType,
-          review_status: contribution.reviewStatus,
-          submitted_at: contribution.submittedAt.toISOString(),
-        },
+        // The same shape GET /contributions/:id serves (#723).
+        contribution: formatContribution(contribution),
         review: review
           ? {
               decision: review.decision,
@@ -1325,18 +1162,21 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             type: "text",
             text:
               "Fact-check the following document against the Minerval claim graph.\n\n" +
-              "Use the `assess_text` tool on the document, chunking it if it is " +
-              "long. For each judged claim, report the verdict the graph " +
-              "returned, not your own recollection. A verdict of `unknown` " +
-              "with `matched: false` means the graph holds no canonical claim " +
-              "for that assertion; on a matched claim, `unknown` is the " +
-              "assessed status (not enough information to assess); " +
+              "Use the `assess_text` tool on the document. For each judged " +
+              "claim, report the verdict the graph " +
+              "returned, not your own recollection. `not_in_graph` means the " +
+              "graph holds no canonical claim for that assertion; `unknown` " +
+              "is an assessed status (the evidence is insufficient to " +
+              "assess), a finding to report as such; " +
               "`undecided` means the Matcher reached no verdict (say so, do " +
               "not read it as unknown); " +
               "`unassessed` means the claim exists but has no assessment yet. " +
               "Watch the `stance` field: `denies` means the document asserts " +
               "the negation of the canonical claim, so invert the assessment " +
-              "when judging the document's sentence. Cite each claim's " +
+              "when judging the document's sentence, and `poses` means the " +
+              "document asks the question without asserting either side. " +
+              "assess_text takes at most 50,000 characters a call, so " +
+              "split a longer document on section boundaries. Cite each claim's " +
               "`page_url`.\n\n" +
               "Document:\n\n" +
               document,

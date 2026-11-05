@@ -14,7 +14,10 @@ import {
   NATIVE_TOOL_ROUTES,
   ROUTE_TOOLS,
   routeInput,
+  urlParams,
 } from "../../../src/mcp/route-tools.js";
+import { CHALLENGE_GROUNDS } from "../../../src/services/prize-claim-service.js";
+import { z } from "zod";
 import { routeKey } from "../../../src/server/plugins/route-catalog.js";
 import { buildMcpServer } from "../../../src/mcp/server.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -95,6 +98,36 @@ describe("MCP parity with the REST API", () => {
       if (!(routeKey(route.method, route.url) in ROUTE_TOOLS)) continue;
       expect(() => routeInput(route)).not.toThrow();
     }
+  });
+
+  // #715: a route with no params schema once produced a tool that took
+  // nothing and dispatched to a URL with `:id` left in it.
+  it("takes every path param of an exposed route as a required input", () => {
+    const missing: string[] = [];
+    for (const route of app.routeCatalog) {
+      const key = routeKey(route.method, route.url);
+      if (!(key in ROUTE_TOOLS)) continue;
+      const input = routeInput(route);
+      const shape = input.schema.shape as Record<string, { isOptional(): boolean }>;
+      for (const name of urlParams(route.url)) {
+        if (!input.params.includes(name) || !shape[name] || shape[name].isOptional()) {
+          missing.push(`${key} :${name}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("lists the challenge grounds on challenge_prize_claim", () => {
+    const route = app.routeCatalog.find(
+      (r) => routeKey(r.method, r.url) === "POST /prize-claims/:id/challenge"
+    )!;
+    const schema = z.toJSONSchema(routeInput(route).schema) as {
+      properties: Record<string, { enum?: string[] }>;
+      required: string[];
+    };
+    expect(schema.properties.ground?.enum).toEqual([...CHALLENGE_GROUNDS]);
+    expect(schema.required).toEqual(expect.arrayContaining(["id", "ground", "content"]));
   });
 
   it("registers every tool under a unique name, native tools included", async () => {

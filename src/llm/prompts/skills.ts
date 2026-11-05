@@ -75,12 +75,25 @@ const ALL_ADMIN_SECTIONS: readonly SkillSection[] = [
  * can load skills and is offered the tools a skill declares for it.
  */
 export const ROLE_VIEW = {
-  "claim-steward": ALL_ADMIN_SECTIONS,
+  // The Steward's own section and the sections on the structural calls it
+  // makes itself: identity (Curator, Matcher) and recording instances and
+  // domains (Extractor). Not the Grantmaker's, the Reviewer's or the Audit
+  // Agent's procedures, which it never carries out (#765). Standards for
+  // judging and Failure modes stay out of its view (only Audit reads both,
+  // and the Consistency Checker the standards): they feed the corpus judge and its rubric (docs/mathematics.md, the
+  // skill's sections), and an agent shown the rubric writes to it.
+  "claim-steward": [
+    "For every administrator",
+    "For the Claim Steward",
+    "For the Curator",
+    "For the Matcher",
+    "For the Extractor",
+  ],
   "audit-agent": [...ALL_ADMIN_SECTIONS, "Standards for judging"],
   grantmaker: ["For every administrator", "For the Grantmaker"],
   // The Lookout watches on a mandate's behalf and carries that mandate's
-  // skills; it judges relevance, not truth, so it receives only the
-  // section addressed to everyone.
+  // skills; it raises candidates and writes no verdict, so it receives
+  // only the section addressed to everyone.
   lookout: ["For every administrator"],
   "contribution-reviewer": [
     "For every administrator",
@@ -93,11 +106,17 @@ export const ROLE_VIEW = {
   curator: ["For every administrator", "For the Curator", "For the Matcher"],
   matcher: ["For the Matcher"],
   extractor: ["For the Extractor"],
-  // The researcher often does a Steward's work on the Steward's behalf (a
-  // provenance map, a literature search), so it reads the sections that
-  // describe that work as well as its own, which says what it leaves to the
-  // Steward.
-  researcher: ["For every administrator", "For the Claim Steward", "For the researcher"],
+  // The researcher reads its own section, which carries the procedure it
+  // follows when it does a Steward's work on the Steward's behalf (a
+  // provenance map) and says what it leaves to the Steward. Not the
+  // Steward's section, whose tools it does not have (#765).
+  researcher: ["For every administrator", "For the researcher"],
+  // The Consistency Checker reads other administrators' assessments against
+  // each other, as the Audit Agent reads them against the standards, so it
+  // receives the standards a good assessment in the domain meets: a
+  // mathematics standard ("a checked proof against any status other than
+  // verified ... is a coherence failure") is exactly its reading (#742).
+  "consistency-checker": ["For every administrator", "Standards for judging"],
 } as const satisfies Record<string, readonly SkillSection[]>;
 
 export type SkillRole = keyof typeof ROLE_VIEW;
@@ -700,10 +719,10 @@ ${getSkillCatalog(role)}`;
 
 /**
  * The Extractor's skills section. The Extractor is the one role whose
- * skills are spliced in rather than loaded: it makes a single structured
- * call with no tools and so no turn in which to load anything, and its
- * sections (how to tag a claim's domains, how to record a passage) bear on
- * every extraction.
+ * skills are spliced in rather than loaded: it has no load_skill tool (its
+ * only tools record claims and end the extraction), and its sections (how
+ * to tag a claim's domains, how to record a passage) bear on every
+ * extraction.
  */
 function extractorSkillsSection(): string {
   const skills = listSkills();

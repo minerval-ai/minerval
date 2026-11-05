@@ -146,3 +146,13 @@ describe("withdraw_bounty", () => {
     expect(await executeManagementTool(GRANT, "not_a_tool", {})).toBeNull();
   });
 });
+
+describe("bounty tool text (#698)", () => {
+  it("states every bound with its configured value, and no constant names", () => {
+    const [post, withdraw] = getBountyToolDefinitions();
+    expect(post!.description).toMatch(/\d+ to \d+ owls per claim/);
+    expect(post!.description).toContain("within 7 days");
+    expect(withdraw!.description).toMatch(/\d+ days' public notice/);
+    expect(withdraw!.description).not.toContain("BOUNTY_NOTICE_DAYS");
+  });
+});

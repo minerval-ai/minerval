@@ -171,6 +171,9 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   "GET /tags": ["list_tags"],
   "POST /contributions": ["submit_contribution"],
   "GET /contributions/:id": ["get_contribution_status"],
+  // The URL hash is the only thing in the way: the native tool takes the
+  // page's URL and hashes it on the server (#752).
+  "GET /extension/shared/:url_hash": ["get_page_analysis"],
 };
 
 const SERVICE_ONLY =
@@ -194,7 +197,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PATCH /claims/:claim_id":
     "Writes an argument straight onto a claim without review. MCP's " +
     "governed path is submit_contribution with contribution_type " +
-    "'argument', which goes through the Contribution Reviewer.",
+    "'propose_argument', which goes through the Contribution Reviewer.",
 
   "POST /users/provision": SERVICE_ONLY,
   "GET /usage/allocation": SERVICE_ONLY,
@@ -241,8 +244,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "sharing by URL hash); assess_text and extract_claims are the MCP " +
     "equivalents for text an agent holds.",
   "GET /extension/analysis/:content_hash": "Polls POST /extension/analyze; see it.",
-  "GET /extension/shared": "Part of the extension's page protocol; see POST /extension/analyze.",
-  "GET /extension/shared/:url_hash": "Part of the extension's page protocol; see POST /extension/analyze.",
+  "GET /extension/shared":
+    "The extension's private lookup: it sends a 4-character hash prefix so " +
+    "the server never learns which page a reader is on. An MCP caller is " +
+    "authenticated and names its page anyway, so get_page_analysis takes " +
+    "the URL directly.",
   "POST /extension/chat":
     "The extension's chat over the page open in the browser; an MCP client " +
     "is itself the conversation, with the graph tools in hand.",
@@ -272,6 +278,11 @@ interface RouteInput {
 
 const inputCache = new WeakMap<CatalogRoute, RouteInput>();
 
+/** The path params a route URL names: `:claim_id` in `/claims/:claim_id/x`. */
+export function urlParams(url: string): string[] {
+  return [...url.matchAll(/:([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]!);
+}
+
 /**
  * One input object for the tool: the route's params, querystring, and body
  * properties merged, with each name remembered by where it goes back. The
@@ -282,7 +293,18 @@ export function routeInput(route: CatalogRoute): RouteInput {
   if (cached) return cached;
 
   const part = (s: unknown) => (s ?? {}) as JsonSchemaObject;
-  const params = part(route.schema?.params);
+  // Every `:name` in the URL is an input, whether or not the route declares
+  // a params schema: a route without one once produced tools that took
+  // nothing and dispatched to a URL with `:id` left in it (#715). A declared
+  // schema's property wins; an undeclared one is a plain string.
+  const declared = part(route.schema?.params);
+  const params: JsonSchemaObject = {
+    ...declared,
+    properties: { ...(declared.properties ?? {}) },
+  };
+  for (const name of urlParams(route.url)) {
+    if (!(name in params.properties!)) params.properties![name] = { type: "string" };
+  }
   const query = part(route.schema?.querystring);
   const body = route.schema?.body ? part(route.schema.body) : null;
 

@@ -34,8 +34,20 @@ const ASSESSMENT_ROW = {
   assessedAt: new Date("2026-01-03T00:00:00Z"),
 };
 
+const EMPTY_FORMALIZATION_RECORD = vi.hoisted(() => ({
+  formalization: null,
+  formalization_pending: null,
+  formalization_history: [],
+  verification: null,
+  lean_checks: [],
+  lean_checks_total: 0,
+}));
+
 const mocks = vi.hoisted(() => ({
   hybridSearch: vi.fn(),
+  // The search signals (graph-read-service.ts) read contestation and
+  // recency by the hit ids.
+  rawQuery: vi.fn(async (..._args: unknown[]) => [] as unknown[]),
   getClaimById: vi.fn(),
   getClaimInstances: vi.fn(async () => []),
   listClaims: vi.fn(async () => ({ results: [], next_cursor: null })),
@@ -49,8 +61,7 @@ const mocks = vi.hoisted(() => ({
     truncated: false,
   })),
   getArgumentsForClaim: vi.fn(async () => []),
-  getFormalizationSummary: vi.fn(async () => null as unknown),
-  getVerificationSummary: vi.fn(async () => null as unknown),
+  getClaimFormalizationRecord: vi.fn(async () => ({ ...EMPTY_FORMALIZATION_RECORD }) as Record<string, unknown>),
   leanChecksByArgument: vi.fn(async () => new Map()),
   listLeanChecksForClaim: vi.fn(async () => [] as unknown[]),
   getBountyTerms: vi.fn(async () => null as unknown),
@@ -75,9 +86,15 @@ const mocks = vi.hoisted(() => ({
   getQuestionDetail: vi.fn(async () => null as unknown),
   getCurrentStanding: vi.fn(async () => null as unknown),
   listRequests: vi.fn(async () => ({ items: [] as unknown[], total: 0 })),
+  getRequest: vi.fn(async () => null as unknown),
+  getSharedAnalysis: vi.fn(async () => null as unknown),
   usageContexts: [] as unknown[],
 }));
 
+vi.mock("../../../src/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/db/client.js")>()),
+  rawQuery: mocks.rawQuery,
+}));
 vi.mock("../../../src/services/search-service.js", () => ({
   hybridSearch: mocks.hybridSearch,
 }));
@@ -97,10 +114,30 @@ vi.mock("../../../src/services/tree-service.js", () => ({
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
+  getEvaluationStateForClaim: vi.fn(async () => []),
+  hasWrittenForm: (content: string | null) => !!content,
+}));
+// The rest of the view get_claim reads (#774): counts, the source map, related
+// links and findings, each from its own service.
+vi.mock("../../../src/services/claim-instance-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/claim-instance-service.js")>()),
+  countClaimInstances: vi.fn(async () => 1),
+}));
+vi.mock("../../../src/services/source-map-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/source-map-service.js")>()),
+  getSourceMapSummary: vi.fn(async () => null),
+  getClaimSourceMap: vi.fn(async () => null),
+}));
+vi.mock("../../../src/services/claim-link-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/claim-link-service.js")>()),
+  listRelatedClaims: vi.fn(async () => []),
+}));
+vi.mock("../../../src/services/finding-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/finding-service.js")>()),
+  listFindings: vi.fn(async () => []),
 }));
 vi.mock("../../../src/services/formalization-service.js", () => ({
-  getFormalizationSummary: mocks.getFormalizationSummary,
-  getVerificationSummary: mocks.getVerificationSummary,
+  getClaimFormalizationRecord: mocks.getClaimFormalizationRecord,
   leanChecksByArgument: mocks.leanChecksByArgument,
   listLeanChecksForClaim: mocks.listLeanChecksForClaim,
   getBountyTerms: mocks.getBountyTerms,
@@ -114,7 +151,9 @@ vi.mock("../../../src/llm/agents/extractor.js", () => ({
 vi.mock("../../../src/llm/agents/domain-prior.js", () => ({
   inferDomainPrior: mocks.inferDomainPrior,
 }));
-vi.mock("../../../src/services/contribution-service.js", () => ({
+// The formatter and the answer_request check are the real ones.
+vi.mock("../../../src/services/contribution-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/contribution-service.js")>()),
   createContribution: mocks.createContribution,
   getContributionById: mocks.getContributionById,
   getReviewForContribution: mocks.getReviewForContribution,
@@ -137,6 +176,10 @@ vi.mock("../../../src/services/question-service.js", () => ({
 }));
 vi.mock("../../../src/services/request-service.js", () => ({
   listRequests: mocks.listRequests,
+  getRequest: mocks.getRequest,
+}));
+vi.mock("../../../src/services/shared-analysis-service.js", () => ({
+  getSharedAnalysis: mocks.getSharedAnalysis,
 }));
 vi.mock("../../../src/services/api-key-service.js", () => ({
   resolveApiKey: mocks.resolveApiKey,
@@ -455,6 +498,7 @@ describe("MCP tools", () => {
       "get_contribution_status",
       "get_decomposition",
       "get_dependents",
+      "get_page_analysis",
       "get_text_analysis",
       "list_tags",
       "match_claim",
@@ -495,22 +539,37 @@ describe("MCP tools", () => {
         source_id: "s-1",
         verbatim_text: "quoted text",
         context: null,
+        stance: "affirms",
         confidence: 0.9,
         source_title: "A paper",
         source_url: "https://example.org/paper",
       },
+      {
+        id: "i-2",
+        source_id: "s-2",
+        verbatim_text: "the claim, as debated",
+        context: null,
+        stance: "mentions",
+        confidence: 1,
+        source_title: "An explainer",
+        source_url: "https://example.org/explainer",
+      },
     ] as never);
     const result = await client.callTool({
       name: "get_claim",
-      arguments: { claim_id: CLAIM_ID },
+      arguments: { claim_id: CLAIM_ID, include: ["provenance"] },
     });
     const payload = parseText(result);
-    expect(payload.claim).toMatchObject({ id: CLAIM_ID });
+    expect(payload.claim).toMatchObject({ id: CLAIM_ID, steward_state: "done" });
+    expect(payload.instance_count).toBe(1);
     expect(payload.assessment).toMatchObject({
       status: "well_supported",
       confidence: 0.82,
     });
-    expect(payload.instances).toHaveLength(1);
+    // Each instance carries its stance, so a caller can tell a source that
+    // only mentions the claim from the ones that take a side.
+    expect(payload.instances).toHaveLength(2);
+    expect(payload.instances.map((i: { stance: string }) => i.stance)).toEqual(["affirms", "mentions"]);
 
     const missing = await client.callTool({
       name: "get_claim",
@@ -730,7 +789,8 @@ describe("MCP tools", () => {
     const progress = [...analyses.values()].at(-1)!.progress as Array<{ judgments: unknown[] }>;
     expect(progress.map((p) => p.judgments.length)).toEqual([0, 1, 2]);
     expect(payload.judgments[0]).toMatchObject({ verdict: "well_supported" });
-    expect(payload.judgments[1]).toMatchObject({ verdict: "unknown" });
+    // Not "unknown", which is an assessed status (#752).
+    expect(payload.judgments[1]).toMatchObject({ verdict: "not_in_graph", matched: false });
     expect(mocks.extractClaims).toHaveBeenCalledWith(
       expect.objectContaining({ maxClaims: 5 })
     );
@@ -878,8 +938,11 @@ describe("MCP tools", () => {
       formalization_id: formalization.id,
       pin_id: "mathlib-v4.33.0",
     };
-    mocks.getFormalizationSummary.mockResolvedValueOnce(formalization);
-    mocks.getVerificationSummary.mockResolvedValueOnce(verification);
+    mocks.getClaimFormalizationRecord.mockResolvedValueOnce({
+      ...EMPTY_FORMALIZATION_RECORD,
+      formalization,
+      verification,
+    });
     mocks.listLeanChecksForClaim.mockResolvedValueOnce([
       { id: "lc-1", kind: "proof", verdict: "accepted", mode: "steward", formalization_id: formalization.id },
     ]);
@@ -943,6 +1006,43 @@ describe("MCP tools", () => {
       await client.callTool({ name: "search_claims", arguments: { query: "inflation" } })
     ) as { results: Array<Record<string, unknown>> };
     expect(plain.results[0]).toMatchObject({ prize_micro_usd: null, checked: null });
+    await client.close();
+  });
+
+  // #726: callers get the signals the agents do, from the same builder.
+  it("search_claims carries contestation and days_since_assessed, as the agents' search does", async () => {
+    mocks.hybridSearch.mockResolvedValueOnce({
+      results: [
+        {
+          id: CLAIM_ID,
+          kind: "claim",
+          text: "Inflation in 2022 was primarily driven by supply-chain disruption",
+          claim_type: "causal",
+          state: "active",
+          similarity_score: 0.8,
+          importance: 0.9,
+          assessment_status: "supported",
+          assessment_confidence: 0.7,
+        },
+      ],
+      total: 1,
+    });
+    mocks.rawQuery.mockResolvedValueOnce([
+      { id: CLAIM_ID, contestation: 0.4, steward_state: "done", days_since_assessed: 12 },
+    ]);
+    const payload = parseText(
+      await client.callTool({ name: "search_claims", arguments: { query: "inflation", kind: "claim" } })
+    ) as { results: Array<Record<string, unknown>> };
+    expect(payload.results[0]).toMatchObject({
+      id: CLAIM_ID,
+      canonical_form: "Inflation in 2022 was primarily driven by supply-chain disruption",
+      contestation: 0.4,
+      days_since_assessed: 12,
+    });
+    expect(mocks.hybridSearch).toHaveBeenLastCalledWith(
+      "inflation",
+      expect.objectContaining({ kind: "claim", limit: 10 })
+    );
     await client.close();
   });
 
@@ -1115,6 +1215,41 @@ describe("MCP tools", () => {
     await client.close();
   });
 
+  // #752: GET /extension/shared/:url_hash was excluded because a caller
+  // cannot compute the hash; the tool takes the URL and hashes it here.
+  it("get_page_analysis hashes the page's normalized URL on the server", async () => {
+    const { normalizePageUrl, pageUrlHash } = await import(
+      "../../../src/services/page-url.js"
+    );
+    mocks.getSharedAnalysis.mockResolvedValueOnce({ shared: true, annotations: [] });
+    const result = await client.callTool({
+      name: "get_page_analysis",
+      arguments: { url: "http://www.example.org/post/?utm_source=x#top" },
+    });
+    expect(parseText(result)).toEqual({ shared: true, annotations: [] });
+    expect(mocks.getSharedAnalysis).toHaveBeenCalledWith(
+      pageUrlHash(normalizePageUrl("https://example.org/post")!)
+    );
+
+    const missing = await client.callTool({
+      name: "get_page_analysis",
+      arguments: { url: "https://example.org/other" },
+    });
+    expect(missing.isError).toBe(true);
+    expect((parseText(missing).error as { code: string }).code).toBe("NOT_SHARED");
+    await client.close();
+  });
+
+  it("describes raise_issue's fields as the agents' raise_issue does, and states its rate", async () => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === "raise_issue")!;
+    const props = tool.inputSchema.properties as Record<string, { description?: string }>;
+    expect(props.title?.description).toContain("so repeats collapse");
+    expect(props.severity?.description).toContain("blocking:");
+    expect(tool.description).toMatch(/limited to \d+ reports an hour/);
+    await client.close();
+  });
+
   it("raise_issue is rate-limited per contributor", async () => {
     const { loadConfig } = await import("../../../src/config.js");
     const limit = loadConfig().reportRateLimitPerHour;
@@ -1235,7 +1370,12 @@ describe("MCP tools on quantities and questions (§7a)", () => {
     expect(payload.quantity).toMatchObject({ estimate: { kind: "point", value: 8 } });
     expect(payload.question).toBeNull();
     expect(payload.threshold_of).toBeNull();
-    expect(payload.requests).toEqual([{ id: "req-1", ask: "A second source for the 2022 figure" }]);
+    expect(payload.requests).toEqual([
+      { id: "req-1", ask: "A second source for the 2022 figure", kept_by_this_node: false },
+    ]);
+    // One page inline, and the total says when there are more (#729).
+    expect(payload.requests_total).toBe(1);
+    expect(mocks.listRequests).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
     expect(mocks.getQuestionDetail).not.toHaveBeenCalled();
     await client.close();
   });

@@ -492,14 +492,16 @@ composition table:
 
 | Role | View |
 |---|---|
-| claim-steward | every section except `Standards for judging` and `Failure modes` |
+| claim-steward | `For every administrator` + `For the Claim Steward` + `For the Curator` + `For the Matcher` + `For the Extractor` (the structural calls it makes itself, not other roles' procedures) |
 | audit-agent | every section except `Failure modes` |
 | grantmaker | `For every administrator` + `For the Grantmaker` |
-| lookout | `For every administrator` only (it judges relevance on a mandate's behalf, never truth; it carries the mandate's skills as the review pass does) |
+| lookout | `For every administrator` only (it raises candidates on a mandate's behalf and writes no verdict; it carries the mandate's skills as the review pass does) |
 | contribution-reviewer, dispute-arbitrator | `For every administrator` + `For the Contribution Reviewer and the Dispute Arbitrator` |
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |
 | extractor | `For the Extractor` only |
+| researcher | `For every administrator` + `For the researcher` |
+| consistency-checker | `For every administrator` + `Standards for judging` (it reads assessments against each other) |
 
 **Placement.** The skill is a separate cached system block after the
 constitution-plus-role block. The seam's `system` type widens from `string`
@@ -1263,7 +1265,10 @@ its context competes with the problem for attention; a test pins that
 absence. Its user message is in the same register: the problem in words,
 the formal statement and pin, the note relating the two, the effort, the
 budget in dollars of metered work, and, for a repeat attempt, the earlier
-attempts' reports and notebook summaries marked as unverified. The two
+attempts' reports and notebook summaries marked as unverified, prose
+collapsed and fenced code kept as written, each pointing to
+`read_earlier_attempt`, which returns an earlier attempt's report (with its
+Lean source) and notebook in full. The two
 Mathlib search tools carry descriptions written for the solver; their input
 schemas are the skill's, so the executors are shared with the Steward.
 
@@ -1278,7 +1283,10 @@ ceiling bounds them); the provider's code-execution tool as the computer-algebra
 (sympy and mpmath are preinstalled; the container has one CPU, five
 gibibytes, no network, and cannot hold Mathlib, which is why Lean is a client
 tool); `notebook_write {section, content}` and `notebook_read {}` backed by
-`proof_attempts.notebook`; and a terminal `report` tool with strict schema.
+`proof_attempts.notebook`; `read_earlier_attempt {attempt_id, section?}` on
+a repeat attempt; `raise_issue`, described for the solver without the
+platform's vocabulary, for a tool that failed or misbehaved; and a
+terminal `report` tool with strict schema.
 No `web_search`: the Steward does the literature before and after, a proof
 found on the web is not the platform solving the problem, and a
 bounty-bearing problem was established as open by the Steward. This is
@@ -1308,13 +1316,28 @@ so the marginal-return rule has meaning and the cost estimator gets two live
 series. A larger `campaign` variant and cross-day accumulation are deferred
 until the live series exists.
 
+Who starts an attempt (#768): only a mandate's plan. No admin launches the
+solver on its own judgment, the Steward included, because an attempt can
+cost a hundred owls or more and the money for it is a funder's choice; the
+constitution's instruments paragraph (Part VIII) says so. The result goes
+to the claim's Steward (`attempt_completed`, section 7.9), which did not
+launch it and judges it as the launching admin of any instrument would. A
+Steward whose verdict turns on an attempt that no plan funds files a
+request for one (skills/mathematics, "When your verdict needs an
+attempt"); a Grantmaker that reads it may plan the `attempt_proof` item.
+`delegate_research` is not a route to an attempt: the researcher has no
+`lean_check`, so it can bring back a sketch or a route, never a checked
+proof.
+
 Preconditions to open a group: the claim has a `published` formalization
 (calibration controls are formalized too; only the review period is waived
 for them); the claim's lifetime attempt spend is under its
 cap; no attempt on the formalization is `running`; the previous attempt
 closed at least `ATTEMPT_COOLDOWN_DAYS` (30) ago unless the Grantmaker states
 a reason (a new lemma in the subtree was formalized; a prior report names a
-route it could not pursue for budget). `reconcileActions` opens rows from
+route it could not pursue for budget). Whether the reason is good enough is
+the Grantmaker's judgment, stated in the item's public rationale and open
+to audit, not a test of its length (#763). `reconcileActions` opens rows from
 plan items of action `attempt_proof`, cancels rows whose formalization was
 superseded, and changes its reopen rule: the 60-minute clause at
 `action-service.ts:257-262` becomes `kind NOT IN ('ingest','attempt_proof')`
@@ -1346,8 +1369,10 @@ select.
   in dollars of metered work (the same number as owls at cost). The
   `beforeTurn` hook reads `ctx.meter.billedMicroUsd` (which includes Lean
   and code-execution metering) and stops the loop at the ceiling; the
-  `reminder` hook appends a wrap-up notice at 85 percent. The model-facing
-  pacing signal is the provider's task budget (beta `task-budgets-2026-03-13`):
+  `reminder` hook appends the dollar spend line to every turn (what is
+  spent, of what, and about how many turns remain at the last turn's rate,
+  the same line the researcher sees) and a wrap-up notice at 85 percent.
+  Beside it the provider's task budget (beta `task-budgets-2026-03-13`) gives
   a token countdown the model sees as it works, sized from the ceiling at
   60 percent of the ceiling's dollars at the model's output price (a 150-owl
   ceiling on the strong model is 1.8 million tokens; the provider's floor is
@@ -1446,7 +1471,7 @@ suggests the statement is sound rather than vacuous; (3) record an argument (`ad
 `write_argument`, `evaluate_argument`), then `update_claim_assessment`
 (typically `verified` for a faithful compiled proof, `contradicted` for a
 faithful compiled disproof), `log_stewardship_decision`, and
-`notify_dependent_stewards`; (4) if a bounty is bound to the formalization,
+`notify_steward`; (4) if a bounty is bound to the formalization,
 the worker has already moved it to `house_result_pending` (section 8.1); the
 Steward either calls `mark_problem_solved_by_platform {formalization_id,
 attempt_id, lean_check_id}`, a mechanical tool that moves the bounty to
@@ -2134,7 +2159,8 @@ anywhere (section 9.1). Identical source from two accounts: the earlier keeps
 priority and the later is surfaced to the Reviewer as `duplicate_of`.
 
 **Human review has an exit.** `flag_for_human_review` sets `review_status =
-'human_review'` (`src/llm/tools/arbitrator-tools.ts:458-472`), and the only
+'human_review'` and stores its reason in `human_review_reason`
+(`src/llm/tools/arbitrator-tools.ts`), and the only
 exit today is the Audit agent's `recommend_re_review`
 (`src/llm/tools/audit-tools.ts:414-420`); no operator path exists. Prize claims need an operator path
 from day one: `POST /prize-claims/:id/sign-off {note}` and `POST
@@ -2146,11 +2172,10 @@ money waits on them.
 
 ### 8.5 The challenge window, audit, and sign-off
 
-Constitution §16: a change that would substantially alter the assessment of
-an important claim allows time for challenge before becoming final.
-Accepting a proof of an open conjecture is such a change, and a paid prize
-is irreversible in practice, so the window sits between the Steward's
-acceptance and payment. It is not for re-judging the proof, which is
+A paid prize is irreversible in practice: money that has left cannot be
+recalled, and the claimant, the funders and the record all act on it. So a
+public challenge window sits between the Steward's acceptance and payment,
+long enough for anyone to raise what a single acceptance could miss. It is not for re-judging the proof, which is
 deterministic and public; it is for what the checker cannot see: a
 defective statement, an ineligible or sanctioned claimant, a stolen proof,
 an axiom or tactic the policy missed, an earlier submission mishandled.
@@ -2169,8 +2194,10 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   or theft, an earlier valid submission, sanctions) with followable
   evidence; "I do not like this proof" is not a challenge. A challenge the
   Reviewer accepts is escalated to the Arbitrator mechanically (accepting
-  the case is not upholding it); `overturn` voids the prize claim with the
-  ground, `uphold_original` closes the challenge and the window continues.
+  the case is not upholding it); the Arbitrator rules with
+  `challenge_upheld`, which must agree with the outcome: `overturn` voids
+  the prize claim with the ground, `uphold_original` closes the challenge
+  and the window continues.
   When the upheld ground is the claimant rather than the statement
   (ineligibility, sanctions, theft), the bounty considers only claims filed
   before the verdict, in order, and if none passes it closes as
@@ -2210,8 +2237,7 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   in which case the bounty does not rebind. Funders confirm nothing.
 - **Status during the window.** The Steward records the assessment at
   acceptance, `verified` or `contradicted` as the proof warrants, marked
-  provisional in its own reasoning, which is the provisional update §16
-  allows; the page says "accepted; prize payable after DATE unless a
+  provisional in its own reasoning until the window closes; the page says "accepted; prize payable after DATE unless a
   challenge succeeds." A successful challenge on the statement retires it
   and the Steward reassesses; a prediction market that resolves on a
   Minerval status should read the provisional marker, which the API
@@ -2904,7 +2930,9 @@ Issue #301's thesis is that Minerval directs other tools, and those tools
 speak MCP:
 - `get_claim` returns `formalization` beside `assessment` and accepts
   `include: "proofs"` for the check records; its description gains one
-  sentence about formal statements and machine-checked arguments.
+  sentence about formal statements and machine-checked arguments. (Since
+  #774 the agents' `get_claim` is the same tool, and both carry the whole
+  formalization record.)
 - `search_claims` results carry `prize_micro_usd` and `checked`; the input
   gains `with_prizes`.
 - New `get_bounty_terms {claim_id}` returns the machine-readable terms of
@@ -3621,10 +3649,16 @@ A challenge to an accepted prize claim must name one of the enumerated
 grounds (statement defect, ineligibility, disallowed axioms or tactics the
 checker missed, plagiarism or theft, an earlier valid submission,
 sanctions) with followable evidence; accepting the case escalates it to the
-Arbitrator mechanically and is not upholding it. Prize-specific bad faith
-includes submitting another's proof as one's own, sock-puppet submissions
-to defeat priority, and challenges whose only ground is dislike of the
-result.
+Arbitrator mechanically and is not upholding it. The Arbitrator reads the
+prize claim with `get_prize_claim` and rules with `challenge_upheld`: true
+with `overturn`, which voids the prize claim on the ground; false with
+`uphold_original`, which closes the challenge and lets the window run on.
+A challenge that names no enumerated ground, dislike of the result
+included, is rejected on the merits without the bad-faith flag (§13).
+Prize-specific bad faith is flagged under the ordinary categories:
+submitting another's proof as one's own is `misinformation`, and
+sock-puppet submissions filed to defeat priority, or a run of groundless
+challenges from related accounts, are `sybil`.
 
 ## For the Audit Agent
 
@@ -3811,14 +3845,20 @@ to test lemma statements before you try to prove them and to check each
 lemma as you go. lean_check runs the full check of a candidate proof or
 disproof against the statement and returns the verdict and, on failure,
 the gate that failed. It is bound to this statement and checks nothing
-else, it is the only verification there is, and it is capped per attempt,
-so do not spend it on fragments lean_elaborate can test. The code
+else, and it is the only verification there is. Each check is a full
+build billed to the attempt's budget, slower and dearer than
+lean_elaborate, so test fragments with lean_elaborate first; the checker
+also has a daily capacity, and a check it refuses for the day says so in
+its result. The code
 execution tool runs Python with sympy and mpmath for computation and
 exploration; it has no network access and cannot run Lean. notebook_write
 records your work under a section name and notebook_read returns it; the
 notebook outlives the attempt and is what a later attempt on this
 statement reads, so write each approach down when you start it and what
-happened when you leave it. report ends the attempt.
+happened when you leave it. When earlier attempts exist,
+read_earlier_attempt returns one in full, its notebook and its report with
+any Lean source, where the summary in the message shortens them. report
+ends the attempt.
 
 Working method. Search Mathlib for the relevant theory before you build
 anything, and record what exists and what does not. Explore numerically
@@ -3829,26 +3869,18 @@ you can state precisely to a longer argument nobody has verified.
 
 Budget. The attempt has a fixed budget of metered work, stated in dollars
 in the message that follows; it covers your own tokens, checker time, and
-container time. You will see a running count of the tokens you have left
-as you work, a notice when about fifteen percent of the budget remains,
-and a hard stop at the ceiling whether or not you have reported. There is
+container time. After every turn you will see what you have spent in
+dollars and about how many turns remain at your recent rate, a notice
+when about fifteen percent of the budget remains, and a hard stop at the
+ceiling whether or not you have reported. There is
 no credit for a proof you did not check, so keep enough for a final
 lean_check on any candidate and for the report.
 
 The report. Call report exactly once: when you have a checked proof or
 disproof, when you have exhausted the routes you can see, or when the
 notice says the budget is nearly spent. A negative report with a precise
-obstruction is a good outcome. Its fields: outcome (proof, disproof,
-partial, reduction, or negative); lean_proof and lean_check_id when an
-accepted check exists, otherwise null; informal_argument, the argument in
-prose a mathematician could follow; reduction_statement, when you reduced
-the problem to something you can state precisely; counterexample, with a
-description and the code that verifies it, when you found one you could
-not formalize; approaches_tried, one line each; obstruction, the specific
-thing that stopped you; what_would_help, the lemma, definition, or
-computation that would unblock the next attempt; and confidence in your
-own outcome, from 0 to 1. A proof outcome without an accepted check is
-recorded as partial.
+obstruction is a good outcome. A proof outcome without an accepted check
+is recorded as partial.
 ```
 
 ## Appendix D: Prize rules sketch

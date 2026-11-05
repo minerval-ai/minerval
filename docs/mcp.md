@@ -89,7 +89,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
+| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_dependents`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap. `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — capped at 10 an hour, 3 for new/low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), stated in the tool description; priced proposals (`propose_claim`, `submit_source`) are bounded by the caller's balance instead and don't count, and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
@@ -138,64 +138,98 @@ else the route sent (an entitlement, owl packs, a cap).
   residency, documents, one-time codes);
 - the route bypasses governance that MCP's equivalent applies
   (`PATCH /claims/:id` writes an argument without review;
-  `submit_contribution` with `argument` is the reviewed path);
+  `submit_contribution` with `propose_argument` is the reviewed path);
 - it is protocol plumbing (OAuth, discovery, Stripe's webhook, health) or a
   rendering of something MCP already has (the Atom feed), or another
   client's own protocol (the browser extension's page analysis and chat,
-  whose MCP equivalents are `assess_text` and `extract_claims`).
+  whose MCP equivalents are `assess_text` and `extract_claims`, and its
+  private prefix lookup; the shared analysis itself is `get_page_analysis`,
+  which takes the URL and hashes it on the server).
 
 "It spends owls" is not a reason: owls are the limiter on both surfaces,
 and the tool description says what a call spends.
 
 ## Tools
 
-- **`search_claims`** `{query, limit?, assessed?, min_importance?, tag?, kind?}` — hybrid
-  vector + keyword search over canonical claims, quantities and questions
-  (all three live in `claims`). Each result carries its `kind`, its
+`search_claims`, `get_decomposition` and `get_dependents` are defined once,
+in `src/services/graph-read-service.ts`, and served both here and to the
+graph's own agents (`src/llm/tools/graph-read-tools.ts`), as `get_claim` is
+from `src/services/claim-view-service.ts`, so the two cannot drift (#726).
+The definitions differ only in a description suffix: a caller is told the
+read is free, an agent which signals allocation turns on.
+
+- **`search_claims`** `{query, limit?, kind?, tag?, assessed?,
+  min_importance?, claim_type?, with_prizes?}` — hybrid vector + keyword
+  search over canonical claims, quantities and questions (all three live in
+  `claims`). Each result carries its `kind`, importance, `contestation`,
   current assessment status/confidence (a question's `standing`, a
-  quantity's `estimate` and `unit`), its topic `tags`, and a
-  `minerval.ai` page link; `tag` (a slug) narrows the search to one topic
-  and `kind` to one kind. `assessed` judges each kind by its own verdict.
+  quantity's `estimate` and `unit`), `days_since_assessed`, its topic
+  `tags`, and a `minerval.ai` page link. It also carries `prize_micro_usd`
+  (the live bounty on the claim, or null) and `checked` (`proof`,
+  `disproof`, or null: whether a machine-checked argument stands on the
+  claim, the same derivation as the badge on the claim page). `tag` (a
+  slug) narrows the search to one topic, `kind` to one kind, `claim_type`
+  to one type, and `with_prizes: true` to claims with an open bounty;
+  `assessed` judges each kind by its own verdict.
 - **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
   claims carry, with how many claims carry each; with `query`, ranked by
   meaning. A tag says what a claim is about, never whether it holds.
-  Each result also carries `prize_micro_usd` (the live bounty on the claim,
-  or null) and `checked` (`proof`, `disproof`, or null: whether a
-  machine-checked argument stands on the claim, the same derivation as the
-  badge on the claim page), and the input accepts `with_prizes: true` to
-  restrict results to claims with an open bounty.
-- **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
-  — canonical form, current assessment (status, confidence, reasoning),
-  source instances, arguments, dependents, page link. With `"provenance"`,
-  each instance carries the Steward's `reading` of its source (whether the
-  source's own evidence bears its assertion, the mechanical quote check,
-  whether it is worth reading closely; null until recorded), and the payload
-  carries `source_map` (the Steward's account of what the support rests on,
-  with `material` saying whether the claim page shows it), `provenance_edges`
-  (which assertions draw on which documents, with fidelity), and
-  `source_relationships` (documents that are one voice), per #286. None of
-  it is a score. `formalization` is
-  returned beside `assessment`: the published Lean 4 statement, its pin
-  (toolchain and Mathlib revision), both hashes, the correspondence note,
-  and the review-period end, or null when the claim has none. A formal
-  statement is the graph's own rendering of the proposition and is what
-  prizes, solver attempts, and machine-checked arguments bind to; the
-  assessment beside it remains the Steward's judgment of the claim as
-  worded. `include` also accepts `"proofs"`, which adds, to each argument
-  that carries one, the public check record (verdict, gates, pin, hashes,
-  and the submission source once public) behind a machine-checked proof or
-  disproof.
+- **`get_claim`** `{claim_id, include?: ["arguments"|"subclaims"|"provenance"|"dependents"|"related"|"findings"|"proofs"], dependents_limit?, dependents_offset?}`
+  — one node as the graph records it. This is the same tool, with the same
+  description and payload, that the graph's own agents call
+  (`src/services/claim-view-service.ts`, #774), so a skill that names
+  `get_claim` means one thing to every reader. Every read returns `claim`
+  (`kind`, canonical form, type, state, importance, contestation, tags,
+  page link, `steward_state` and `stewarded_at`), `assessment` (status,
+  confidence, credence, reasoning), the kind's record, `preliminary_seed`
+  while the node is unassessed, the formalization record, `requests`,
+  `subclaim_count`, `instance_count` and `source_map` (the Steward's account
+  of what the support rests on, with `material` saying whether the claim page
+  shows it). Nothing else is
+  included by default; `include` adds sections:
+  - `"arguments"`: each argument with its written form, its current
+    evaluation, and the check record behind a machine-checked one.
+  - `"subclaims"`: the direct subclaims, one row per argument each serves,
+    with the edge's reasoning and their standing, and `subclaims_assessed`. `get_decomposition`
+    walks deeper.
+  - `"provenance"`: the instances, each with its `stance` (`affirms`,
+    `denies`, `poses` an open question, or `mentions`: it cites the claim or
+    reports the debate without taking a side, and is never a vote for either
+    side) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
+    mechanical quote check, whether it is worth reading closely; null until
+    recorded), plus `provenance_edges` (which assertions draw on which
+    documents, with fidelity) and `source_relationships` (documents that are
+    one voice), per #286. None of it is a score.
+  - `"dependents"`: one page by importance (`dependents_limit`, default 25,
+    at most 100; `dependents_offset`), with `dependents_total`.
+  - `"related"`: lateral see-also links with the reason for each; never
+    dependencies.
+  - `"findings"`: findings already noted on the node.
+  - `"proofs"`: every Lean check record on any version of the statement.
+
+  `formalization` is returned beside `assessment`: the published Lean 4
+  statement, its pin (toolchain and Mathlib revision), both hashes, the
+  correspondence note, and the review-period end, or null when the claim has
+  none; `formalization_pending`, `formalization_history`, `verification` and
+  the newest `lean_checks` ride beside it. A formal statement is the graph's
+  own rendering of the proposition and is what prizes, solver attempts, and
+  machine-checked arguments bind to; the assessment beside it remains the
+  Steward's judgment of the claim as worded.
   The node's `kind` rides on `claim`: a quantity carries a `quantity`
   record (definition, the graph's estimate with its work, stated figures,
-  readings, cut claims) and no assessment, a question a `question` record
-  (standing, answers, presuppositions, subquestions), a cut claim
-  `threshold_of`, and every node its open `requests`, as
-  `GET /claims/:id` serves them.
+  figures not yet recorded, readings, cut claims) and no assessment, a
+  question a `question` record (standing, answers, presuppositions,
+  subquestions), a cut claim `threshold_of`, and every node its `requests`,
+  as `GET /claims/:id` serves them.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
+- **`get_dependents`** `{claim_id, max_depth?}` — the walk up: everything
+  that rests on the claim, ranked by importance, with each one's distance.
+  Being load-bearing is not being important (constitution §19).
 - **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion
-  through the Matcher agent → the canonical claim it states (or negates — see
-  `stance`) plus its assessment, `matched: false` for new/unknown, or
+  through the Matcher agent → the canonical claim it states, negates, or
+  asks about (`stance`: `affirms`, `denies`, `poses`) plus its assessment,
+  `matched: false` for a claim the graph does not hold, or
   `matched: null` when the Matcher ran out of search budget without a
   verdict (not a finding that the claim is new; retry). `kind` (`claim`,
   the default, `quantity`, or `question`) says what the assertion is: a
@@ -208,15 +242,20 @@ and the tool description says what a call spends.
   forms, each with its `kind`.
 - **`assess_text`** `{text, max_claims?}` — the judgment surface: extract the
   passage's claims, match each into the graph, and return per-claim verdicts
-  (`well_supported`/`disputed`/… from the graph's assessments, `unassessed`
-  if matched but not yet assessed, `unknown` if the graph has no such claim,
-  `undecided` if the Matcher reached no verdict for that claim).
+  (`verified`, `supported`, `inconclusive`, `doubtful`, `contradicted`, or
+  `unknown` from the graph's assessments, `unknown` being an assessed
+  finding of insufficient evidence; `unassessed` if matched but not yet
+  assessed; `not_in_graph` if the graph has no such claim, a value of its
+  own since #752; `undecided` if the Matcher reached no verdict for that
+  claim). At most 50,000 characters and 20 judged claims a call, so one
+  call stays within the `text_analysis` charge.
   A figure's verdict is `estimated` when its quantity has an estimate
   (beside it as `estimate`); a question's verdict is its standing
   (`answered`, `leaning`, `open`, `ill_posed`, `unknown`).
   Verdicts come from pre-computed assessments, not model recollection. When
   `stance` is `"denies"`, the passage asserts the claim's negation, so the
-  assessment applies inverted.
+  assessment applies inverted; `"poses"` means it asks the question and
+  asserts neither side.
 - **`get_text_analysis`** `{job_id}` — `extract_claims` and `assess_text` run
   in the background, because an extraction plus a Matcher loop per claim
   takes minutes, longer than an MCP tool call should be held open. Each
@@ -227,13 +266,27 @@ and the tool description says what a call spends.
   and the text itself is not stored. The public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
-- **`submit_contribution`** `{claim_id, contribution_type, content,
-  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?}` — file a
-  challenge / support / merge / split / edit / instance / argument. Requires
-  a key bound to a contributor identity; enters the standard Contribution
-  Reviewer pipeline and is subject to suspension and reputation policy (#71).
-- **`get_contribution_status`** `{contribution_id}` — review decision,
-  reasoning, and policy citations once the reviewer has ruled.
+- **`submit_contribution`** `{claim_id?, contribution_type, content,
+  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
+  request_id?}` — file any of `contribution_type`'s values: challenge,
+  support, add_instance, propose_argument, propose_merge, propose_split,
+  propose_edit, add_estimate (a source's figure for a quantity),
+  propose_answer (a candidate answer to a question), propose_request, and
+  answer_request. `claim_id` is required for every type but
+  `propose_request`, which may bear on several nodes, sources, or something
+  the graph does not hold yet (#724). An `answer_request` names the request
+  it is offered for in `request_id` (the request must bear on `claim_id` and
+  be open); the id is carried to the reviewer at the head of the content,
+  since accepting one needs it (#723). Requires a key bound to a contributor
+  identity; enters the standard Contribution Reviewer pipeline and is
+  subject to suspension and reputation policy (#71). `POST /contributions`
+  takes the same `request_id`.
+- **`get_contribution_status`** `{contribution_id}` — the contribution in
+  the shape `GET /contributions/:id` serves (an accepted proposal carries
+  `became_claim_id` and `page_url`, the node it became), and the review
+  decision, reasoning, and policy citations once the reviewer has ruled. A
+  caller that has lost an id finds its own contributions with
+  `list_contributions` and `mine: true`.
 - **`get_bounty_terms`** `{claim_id}` returns the machine-readable terms of
   the live bounty on a claim, the same `terms` object `GET /claims/:id/bounty`
   serves: the amount and status, the formal statement's id, version, pin,
@@ -241,10 +294,15 @@ and the tool description says what a call spends.
   the allowed axioms and a summary of the static policy a submission must
   pass, the state of any challenge window, the rules version in force with
   its link, open-since and expiry dates, the count of submissions so far,
-  and the platform's own attempt disclosure. Returns `bounty: null` when
-  the claim carries no live bounty. An outside solver needs nothing else
+  and the platform's own attempt disclosure. A claim with no live bounty
+  is a `NO_BOUNTY` tool error, with the claim's `page_url`. An outside solver needs nothing else
   to know what would count as a solution; the statement file itself is at
   `GET /claims/:id/formalization.lean`.
+- **`get_page_analysis`** `{url}` — the shared analysis of a public page
+  (`GET /extension/shared/:url_hash`): the claims a reader of the browser
+  extension found on it, matched into the graph, with each claim's status
+  read now. The URL is normalized and hashed on the server, as the
+  extension does; a page nobody shared is `NOT_SHARED`. Free.
 - **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
   joins?}` — report a problem with this server or its tools
   (`system_failure`, `tool_gap`) or a concrete improvement idea
@@ -253,8 +311,13 @@ and the tool description says what a call spends.
   of the same title collapse into one report with an occurrence count, and
   a new report comes back with `related`, the reports on record that read
   like it; if one of them is yours, raise again with `joins` set to its id
-  and your body is added to it as a sighting instead. Free, attributed,
-  rate-limited; returns the report id.
+  and your body is added to it as a sighting instead. Free and
+  attributed, and so limited to `REPORT_RATE_LIMIT_PER_HOUR` (default 5)
+  reports an hour, stated in the description with its reason: each one
+  takes maintainer attention nothing prices. Returns the report id. Its
+  field descriptions are the agents' own (`REPORT_FIELD_GUIDANCE` in
+  `src/llm/tools/report-tools.ts`), so an outside report is titled the way
+  the agents' are and collapses with theirs.
 
 ### Route tools
 

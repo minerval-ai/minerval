@@ -10,7 +10,8 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../../../src/db/client.js", () => ({ rawQuery: vi.fn(async () => []) }));
 
-import { ingestGroup, normalizeFocus, FOCUS_MAX_CHARS } from "../../../src/services/ingest-focus-service.js";
+import { ingestCoverage, ingestGroup, normalizeFocus, FOCUS_MAX_CHARS } from "../../../src/services/ingest-focus-service.js";
+import { rawQuery } from "../../../src/db/client.js";
 import { getExtractionPrompt } from "../../../src/llm/prompts/extractor.js";
 import { validatePlanItems, type PlanItem } from "../../../src/services/grant-service.js";
 
@@ -61,5 +62,27 @@ describe("validatePlanItems", () => {
     expect(validatePlanItems(ok)).toBeNull();
     const bad = [{ action: "ingest", url: URL, rationale: "r", focus: 7 }] as unknown as PlanItem[];
     expect(validatePlanItems(bad)).toMatch(/focus must be text/);
+  });
+});
+
+describe("ingestCoverage: only a complete reading covers (#738, #740)", () => {
+  const source = { id: "s1", title: "Essay" };
+  const answer = (records: Array<{ focus: string | null; complete: boolean }>) =>
+    vi.mocked(rawQuery).mockImplementation(async (sql: string) =>
+      (/FROM sources/.test(sql) ? [source] : /FROM source_extractions/.test(sql) ? records : []) as never
+    );
+
+  it("treats a whole reading that left proposals undecided or could not read the page as not covering", async () => {
+    answer([{ focus: null, complete: false }]);
+    expect(await ingestCoverage(URL, null)).toEqual({ covered: false });
+    answer([{ focus: null, complete: true }]);
+    expect(await ingestCoverage(URL, null)).toMatchObject({ covered: true, by: "whole" });
+  });
+});
+
+describe("the extraction prompt's confidence floor (#748)", () => {
+  it("is stated when the caller has one", () => {
+    expect(getExtractionPrompt("article", undefined, 0, null, 0.3)).toMatch(/confidence below 0\.3 are dropped/);
+    expect(getExtractionPrompt("article")).not.toMatch(/are dropped/);
   });
 });
