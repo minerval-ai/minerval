@@ -25,30 +25,28 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { rawQuery } from "../../db/client.js";
 import { hybridSearch } from "../../services/search-service.js";
-import { getClaimById, getClaimInstances } from "../../services/claim-service.js";
-import { getCurrentAssessment } from "../../services/assessment-service.js";
-import { getArgumentsForClaim } from "../../services/argument-service.js";
+import { getClaimById } from "../../services/claim-service.js";
 import {
   getTransitiveDependents,
   getClaimTree,
-  getSubclaimCount,
-  listClaimDependents,
 } from "../../services/tree-service.js";
 import {
   attachClaimTags,
-  getTagsForSubject,
   resolveTagBySlug,
 } from "../../services/tag-service.js";
-import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
-import { getQuantityDetail } from "../../services/quantity-service.js";
-import { getQuestionDetail } from "../../services/question-service.js";
+import {
+  CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_INCLUDE_DESCRIPTION,
+  CLAIM_VIEW_INCLUDES,
+  DEFAULT_DEPENDENTS_PAGE,
+  MAX_DEPENDENTS_PAGE,
+  getClaimView,
+} from "../../services/claim-view-service.js";
 import type { NodeKind } from "../../schemas/kinds.js";
 
 /** Depth defaults shared with the MCP/REST surfaces: shallow unless asked. */
 const DEFAULT_TREE_DEPTH = 3;
 const MAX_TREE_DEPTH = 8;
-/** A hub claim must not dump hundreds of dependents into an agent's context. */
-const DEFAULT_DEPENDENTS_LIMIT = 25;
 
 export const GRAPH_READ_TOOL_NAMES = [
   "search_claims",
@@ -56,6 +54,43 @@ export const GRAPH_READ_TOOL_NAMES = [
   "get_decomposition",
   "get_dependents",
 ] as const;
+
+/**
+ * The one `get_claim` (#774). Every agent that reads a node carries this
+ * definition, and MCP registers the same description and sections, so a
+ * skill that says `get_claim` means the same payload to every reader.
+ */
+export function getClaimToolDefinition(): Tool {
+  return {
+    name: "get_claim",
+    description: CLAIM_VIEW_DESCRIPTION,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        claim_id: { type: "string" },
+        include: {
+          type: "array",
+          items: { type: "string", enum: [...CLAIM_VIEW_INCLUDES] },
+          description: CLAIM_VIEW_INCLUDE_DESCRIPTION,
+        },
+        dependents_limit: {
+          type: "number",
+          description: `With include "dependents": how many, ${DEFAULT_DEPENDENTS_PAGE} by default, ${MAX_DEPENDENTS_PAGE} at most.`,
+        },
+        dependents_offset: {
+          type: "number",
+          description: `With include "dependents": how many to skip, for the next page.`,
+        },
+      },
+      required: ["claim_id"],
+    },
+  };
+}
+
+function optionalNumber(raw: unknown): number | undefined {
+  const n = Number(raw);
+  return raw == null || !Number.isFinite(n) ? undefined : n;
+}
 
 export function getGraphReadToolDefinitions(): Tool[] {
   return [
@@ -88,36 +123,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
         required: ["query"],
       },
     },
-    {
-      name: "get_claim",
-      description:
-        "Open one node (a claim, quantity or question) in full: its canonical " +
-        "wording and its current assessment with the reasoning behind the " +
-        "verdict, plus (via `include`) the named arguments bearing on it, its " +
-        "provenance, and the nodes that depend on it. Mathematical claims also " +
-        "carry `formalization`, `formalization_pending`, " +
-        "`formalization_history`, `verification`, and `lean_checks`. Every " +
-        "node carries its `kind`: claim, quantity, or question. On a quantity " +
-        "or a question `assessment` is null: its assessment is the estimate " +
-        "(in `quantity`) or the standing (in `question`).",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: { type: "string" },
-          include: {
-            type: "array",
-            items: {
-              type: "string",
-              enum: ["arguments", "provenance", "dependents"],
-            },
-            description:
-              "Extra sections. Dependents are paginated and ranked by " +
-              "importance; for the transitive picture use get_dependents.",
-          },
-        },
-        required: ["claim_id"],
-      },
-    },
+    getClaimToolDefinition(),
     {
       name: "get_decomposition",
       description:
@@ -162,32 +168,6 @@ function clampDepth(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return DEFAULT_TREE_DEPTH;
   return Math.min(MAX_TREE_DEPTH, Math.max(1, Math.floor(n)));
-}
-
-function formatAssessment(
-  a: {
-    status: string;
-    confidence: number;
-    claimCredence: number | null;
-    summary: string | null;
-    reasoningTrace: string;
-    assessedAt: Date;
-    model?: string | null;
-  } | null
-) {
-  if (!a) return null;
-  return {
-    status: a.status,
-    // Verdict confidence — how sure the Steward is of the status, not P(true).
-    confidence: a.confidence,
-    // Credence the claim is true; null where one number would be false
-    // precision (constitution §10).
-    claim_credence: a.claimCredence ?? null,
-    summary: a.summary ?? a.reasoningTrace,
-    reasoning_trace: a.reasoningTrace,
-    assessed_at: a.assessedAt.toISOString(),
-    model: a.model ?? null,
-  };
 }
 
 /**
@@ -282,65 +262,12 @@ async function executeGraphReadToolUnchecked(
   }
 
   if (name === "get_claim") {
-    const claimId = String(input.claim_id ?? "");
-    const claim = await getClaimById(claimId);
-    if (!claim) return JSON.stringify({ error: "claim not found" });
-    const include = Array.isArray(input.include) ? input.include.map(String) : [];
-    const payload: Record<string, unknown> = {
-      claim: {
-        id: claim.id,
-        kind: claim.kind,
-        canonical_form: claim.text,
-        claim_type: claim.claimType,
-        state: claim.state,
-        decomposition_status: claim.decompositionStatus,
-        importance: claim.importance,
-        tags: (await getTagsForSubject("claim", claimId).catch(() => [])).map((t) => t.slug),
-      },
-      assessment: formatAssessment(await getCurrentAssessment(claimId)),
-      // The formalization record (#435): a Grantmaker valuing attempt_proof
-      // must read the published statement for fidelity, and one valuing
-      // formalize must see whether an earlier run left a draft, a reviewed
-      // row, or a retirement behind. One query for a claim with no
-      // statement, so every claim pays for it.
-      ...(await getClaimFormalizationRecord(claimId)),
-      subclaim_count: await getSubclaimCount(claimId),
-    };
-    // A quantity's estimate and a question's standing are their assessment
-    // (`assessment` above holds verdicts on propositions only), so an
-    // allocator valuing work on one reads it here.
-    if (claim.kind === "quantity") {
-      const q = await getQuantityDetail(claimId);
-      payload.quantity = {
-        definition: q.definition,
-        current_estimate: q.estimate,
-        estimated: q.assessed,
-        stated_estimates: q.estimates.length,
-        readings: q.readings,
-        cuts: q.cuts,
-      };
-    } else if (claim.kind === "question") {
-      payload.question = await getQuestionDetail(claimId);
-    }
-    if (include.includes("arguments")) {
-      payload.arguments = (await getArgumentsForClaim(claimId)).map((a) => ({
-        id: a.id,
-        name: a.name,
-        stance: a.stance,
-        content: a.content,
-        evidence_urls: a.evidenceUrls,
-      }));
-    }
-    if (include.includes("provenance")) {
-      payload.instances = await getClaimInstances(claimId);
-    }
-    if (include.includes("dependents")) {
-      // The paginated variant deliberately: a hub claim has hundreds.
-      payload.dependents = await listClaimDependents(claimId, {
-        limit: DEFAULT_DEPENDENTS_LIMIT,
-      });
-    }
-    return JSON.stringify(payload);
+    const view = await getClaimView(String(input.claim_id ?? ""), {
+      include: Array.isArray(input.include) ? input.include.map(String) : [],
+      dependentsLimit: optionalNumber(input.dependents_limit),
+      dependentsOffset: optionalNumber(input.dependents_offset),
+    });
+    return JSON.stringify(view ?? { error: "claim not found" });
   }
 
   if (name === "get_decomposition") {

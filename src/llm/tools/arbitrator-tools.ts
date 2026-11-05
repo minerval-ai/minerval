@@ -332,6 +332,32 @@ export async function executeArbitratorTool(
           });
         }
 
+        // A bad-faith finding gets a decision audit whichever instance made
+        // it (#696): the Reviewer's flag already requests one, and the
+        // second instance's is no less consequential. Keyed apart from the
+        // review's so both can stand; a failure to enqueue must not fail
+        // the arbitration that was already recorded.
+        if (suspectedBadFaith) {
+          try {
+            await requestAudit({
+              auditType: "decision_audit",
+              context:
+                `An arbitration recorded a bad-faith finding ` +
+                `(${badFaithCategory}) on contribution ${contributionId}. ` +
+                `Audit the arbitration fully: does the evidence clear the ` +
+                `deliberate-abuse bar, and is the contributor's wider record ` +
+                `consistent with it?`,
+              triggeredBy: "bad_faith_flag",
+              dedupeKey: `bad-faith-arb:${contributionId}`,
+            });
+          } catch (auditErr) {
+            console.error(
+              "Failed to request arbitration bad-faith audit:",
+              auditErr instanceof Error ? auditErr.message : auditErr
+            );
+          }
+        }
+
         return JSON.stringify({
           success: true,
           message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}`,

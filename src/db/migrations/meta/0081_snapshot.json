@@ -1,5 +1,5 @@
 {
-  "id": "1f3d22da-5f54-44dc-9db2-27251d7718d3",
+  "id": "5d8ed5e7-b322-4f2c-bd9b-5f665ba24475",
   "prevId": "727c6110-c2dc-46ca-a5cb-236b8ffce29c",
   "version": "7",
   "dialect": "postgresql",
@@ -2201,18 +2201,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "retired_at": {
-          "name": "retired_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retired_reason": {
-          "name": "retired_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -6834,7 +6822,7 @@
       "checkConstraints": {
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
-          "value": "source IN ('steward_escalation', 'reconcile_candidate', 'operator')"
+          "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
         }
       },
       "isRLSEnabled": false

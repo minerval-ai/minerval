@@ -1,8 +1,7 @@
 /**
- * get_claim carries the whole prior judgment and every credence the Steward
- * must keep coherent (#760, §21), says when its findings and requests lists
- * are cut and where the rest is (#762); get_claim_dependents lists the
- * claims that cut a quantity (#767).
+ * get_claim_dependents lists the claims that cut a quantity, with their
+ * credence (#767). What get_claim itself carries is tested on the unified
+ * view (tests/unit/services/claim-view-judgment.test.ts).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -157,38 +156,6 @@ beforeEach(() => {
       assessedAt: new Date("2026-10-01T00:00:00Z"),
     },
   ];
-});
-
-describe("get_claim", () => {
-  it("carries the prior summary, credence, yield, contestation and domains", async () => {
-    const out = JSON.parse(await executeGovernanceTool("get_claim", { claim_id: CLAIM }));
-    expect(out.claim).toMatchObject({ contestation: 0.7, domains: ["economics"], importance: 0.6 });
-    expect(out.current_assessment).toMatchObject({
-      summary: "The reader-facing account.",
-      reasoning: "The trace.",
-      claim_credence: 0.75,
-      marginal_yield: 0.2,
-    });
-  });
-
-  it("gives each subclaim and related claim its credence (§21)", async () => {
-    const out = JSON.parse(await executeGovernanceTool("get_claim", { claim_id: CLAIM }));
-    expect(out.subclaims[0]).toMatchObject({ id: SUB, assessment_credence: 0.8 });
-    expect(out.related_claims[0]).toMatchObject({ id: RIVAL, assessment_credence: 0.4, assessment_confidence: 0.5 });
-  });
-
-  it("says when findings are cut and where the rest is", async () => {
-    mocks.findingTotal = 14;
-    const out = JSON.parse(await executeGovernanceTool("get_claim", { claim_id: CLAIM }));
-    expect(out.findings_noted).toHaveLength(10);
-    expect(out.findings_note).toMatch(/10 most recent of 14/);
-    expect(out.findings_note).toMatch(/search_findings/);
-  });
-
-  it("adds no note when every finding is shown", async () => {
-    const out = JSON.parse(await executeGovernanceTool("get_claim", { claim_id: CLAIM }));
-    expect(out.findings_note).toBeUndefined();
-  });
 });
 
 describe("get_claim_dependents", () => {

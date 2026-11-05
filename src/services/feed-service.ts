@@ -13,9 +13,10 @@
  * waiting items are worth a funded run (feedWakeDue); when it is met the
  * poller queues one `feed` event on the lookout, never one per item, and
  * the reconcile sweep opens the run like any other. `auto_ingest` is the
- * one rule with no run at all: each new item goes onto the mandate's plan
- * as an ingest, priced against the escrow, up to a daily cap — the
- * Grantmaker's explicit decision to trust that feed.
+ * one rule with no run at all: each new item becomes a candidate ingest on
+ * the ledger valued at the lookout's ceiling, which the mandate's allocator
+ * funds or not like anything else it values (#695) — the Grantmaker's
+ * explicit decision to trust that feed.
  *
  * The first poll of a feed records what is already there and queues
  * nothing, so subscribing does not flood the inbox with a back-catalogue.
@@ -51,7 +52,6 @@ export const FEED_BOUNDS = {
   minWakeHours: { min: 0, max: 24 * 30, dflt: 4 },
   pollHours: { min: 1, max: 24 * 7, dflt: 6 },
   retainDays: { min: 1, max: 90, dflt: 14 },
-  dailyIngestCap: { min: 0, max: 50, dflt: 5 },
   /** Items one poll reads from a feed, newest first. */
   itemsPerPoll: 100,
   /** A feed is marked broken after this many failed polls in a row. */
@@ -634,7 +634,6 @@ export interface FeedRow {
   min_wake_hours: number;
   poll_hours: number;
   retain_days: number;
-  daily_ingest_cap: number;
   /** The focus this feed's ingests carry by default; null = the whole document. */
   ingest_focus: string | null;
   seeded_at: Date | null;
@@ -650,7 +649,7 @@ export interface FeedRow {
 const FEED_SELECT = `
   SELECT id, lookout_id, url, site_url, title, status, wake, batch_size,
          max_wait_hours, min_wake_hours, poll_hours, retain_days,
-         daily_ingest_cap, ingest_focus, seeded_at, last_polled_at, next_poll_at,
+         ingest_focus, seeded_at, last_polled_at, next_poll_at,
          last_woke_at, consecutive_failures, last_error, created_by, created_at
     FROM lookout_feeds`;
 
@@ -670,7 +669,6 @@ export interface FeedRuleInput {
   minWakeHours?: unknown;
   pollHours?: unknown;
   retainDays?: unknown;
-  dailyIngestCap?: unknown;
 }
 
 type FeedRuleColumns = {
@@ -680,7 +678,6 @@ type FeedRuleColumns = {
   min_wake_hours: number;
   poll_hours: number;
   retain_days: number;
-  daily_ingest_cap: number;
 };
 
 /** Clamp a rule against the current one (or the defaults); a string is a refusal. */
@@ -699,9 +696,6 @@ export function normalizeFeedRule(
     min_wake_hours: clampInt(input.minWakeHours, B.minWakeHours, current.min_wake_hours ?? B.minWakeHours.dflt),
     poll_hours: clampInt(input.pollHours, B.pollHours, current.poll_hours ?? B.pollHours.dflt),
     retain_days: clampInt(input.retainDays, B.retainDays, current.retain_days ?? B.retainDays.dflt),
-    daily_ingest_cap: clampInt(
-      input.dailyIngestCap, B.dailyIngestCap, current.daily_ingest_cap ?? B.dailyIngestCap.dflt
-    ),
   };
 }
 
@@ -775,8 +769,8 @@ export async function addFeed(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookout_feeds
        (lookout_id, url, site_url, title, wake, batch_size, max_wait_hours,
-        min_wake_hours, poll_hours, retain_days, daily_ingest_cap, created_by, ingest_focus)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        min_wake_hours, poll_hours, retain_days, created_by, ingest_focus)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (lookout_id, url) DO UPDATE
        SET status = 'active', site_url = EXCLUDED.site_url,
            title = COALESCE(EXCLUDED.title, lookout_feeds.title),
@@ -784,7 +778,6 @@ export async function addFeed(input: {
            max_wait_hours = EXCLUDED.max_wait_hours,
            min_wake_hours = EXCLUDED.min_wake_hours,
            poll_hours = EXCLUDED.poll_hours, retain_days = EXCLUDED.retain_days,
-           daily_ingest_cap = EXCLUDED.daily_ingest_cap,
            ingest_focus = EXCLUDED.ingest_focus,
            seeded_at = CASE WHEN lookout_feeds.status = 'removed' THEN NULL ELSE lookout_feeds.seeded_at END,
            consecutive_failures = 0, last_error = NULL, updated_at = now()
@@ -800,7 +793,6 @@ export async function addFeed(input: {
       rule.min_wake_hours,
       rule.poll_hours,
       rule.retain_days,
-      rule.daily_ingest_cap,
       input.createdBy,
       normalizeFocus(input.ingestFocus),
     ]
@@ -885,16 +877,16 @@ export async function updateFeed(input: {
   await rawQuery(
     `UPDATE lookout_feeds
         SET wake = $2, batch_size = $3, max_wait_hours = $4, min_wake_hours = $5,
-            poll_hours = $6, retain_days = $7, daily_ingest_cap = $8, status = $9,
-            consecutive_failures = CASE WHEN $10 THEN 0 ELSE consecutive_failures END,
-            next_poll_at = CASE WHEN $10 THEN now() ELSE next_poll_at END,
-            seeded_at = CASE WHEN $10 AND status = 'removed' THEN NULL ELSE seeded_at END,
-            ingest_focus = $11,
+            poll_hours = $6, retain_days = $7, status = $8,
+            consecutive_failures = CASE WHEN $9 THEN 0 ELSE consecutive_failures END,
+            next_poll_at = CASE WHEN $9 THEN now() ELSE next_poll_at END,
+            seeded_at = CASE WHEN $9 AND status = 'removed' THEN NULL ELSE seeded_at END,
+            ingest_focus = $10,
             updated_at = now()
       WHERE id = $1`,
     [
       feed.id, rule.wake, rule.batch_size, rule.max_wait_hours, rule.min_wake_hours,
-      rule.poll_hours, rule.retain_days, rule.daily_ingest_cap, status, reactivated,
+      rule.poll_hours, rule.retain_days, status, reactivated,
       ingestFocus,
     ]
   );
@@ -1072,25 +1064,25 @@ async function maybeWake(feed: FeedRow, now: Date): Promise<boolean> {
   return queued;
 }
 
+/**
+ * auto_ingest: each new item becomes a candidate ingest valued at the
+ * lookout's ceiling, the most its Grantmaker delegated (#695). Nothing is
+ * counted: the mandate's allocator funds those rows against everything
+ * else it values, out of the day's room, so a busy feed spends what the
+ * mandate judges it worth and no more. Items are taken a poll's worth at
+ * a time; the rest wait for the next poll.
+ */
 async function autoIngest(feed: FeedRow, now: Date): Promise<number> {
-  const [lookout] = await rawQuery<{ grant_id: string; status: string }>(
-    `SELECT grant_id, status FROM lookouts WHERE id = $1`,
+  const [lookout] = await rawQuery<{ grant_id: string; status: string; max_value: number }>(
+    `SELECT grant_id, status, max_value FROM lookouts WHERE id = $1`,
     [feed.lookout_id]
   );
   if (!lookout || lookout.status !== "active") return 0;
-  const [today] = await rawQuery<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM lookout_feed_items
-      WHERE feed_id = $1 AND status = 'ingested' AND triaged_by = 'auto'
-        AND triaged_at > $2::timestamptz - interval '1 day'`,
-    [feed.id, now]
-  );
-  const room = feed.daily_ingest_cap - Number(today?.n ?? 0);
-  if (room <= 0) return 0;
   const waiting = await rawQuery<{ id: string; url: string | null; title: string | null }>(
     `SELECT id, url, title FROM lookout_feed_items
       WHERE feed_id = $1 AND status = 'new'
       ORDER BY first_seen_at ASC, published_at ASC NULLS LAST LIMIT $2`,
-    [feed.id, room]
+    [feed.id, FEED_BOUNDS.itemsPerPoll]
   );
   let ingested = 0;
   for (const item of waiting) {
@@ -1104,6 +1096,8 @@ async function autoIngest(feed: FeedRow, now: Date): Promise<number> {
       url: item.url,
       rationale: `[feed auto_ingest] "${feed.title ?? feed.url}": ${item.title ?? item.url}`,
       focus: feed.ingest_focus,
+      maxValue: Number(lookout.max_value),
+      urgency: Number(lookout.max_value),
     });
     if (res.ok && !res.duplicate) {
       await markItem(item.id, "ingested", "auto", null, now);
@@ -1377,9 +1371,9 @@ export interface TriageOutcome {
 
 /**
  * Record the lookout's decisions on inbox items. `ingest` goes through
- * flagIngest (priced against the escrow, refused for a URL already in the
- * graph or on the plan) and is bounded by `ingestAllowance`, the run's
- * remaining ingests, and carries a focus: the decision's own, else the
+ * flagIngest (a candidate ingest on the ledger valued at the decision's
+ * urgency within the lookout's ceiling, refused for a URL already in the
+ * graph or on the plan) and carries a focus: the decision's own, else the
  * feed's default (an empty focus asks for the whole document); `skip` and
  * `defer` record the judgment. `skipRest`
  * skips every item still waiting from one feed (optionally only those that
@@ -1388,9 +1382,10 @@ export interface TriageOutcome {
 export async function triageItems(input: {
   lookoutId: string;
   grantId: string;
-  decisions?: Array<{ item_id?: unknown; decision?: unknown; reason?: unknown; focus?: unknown }>;
+  decisions?: Array<{ item_id?: unknown; decision?: unknown; reason?: unknown; focus?: unknown; urgency?: unknown }>;
   skipRest?: { feedId: string; before?: string | null; reason?: string | null } | null;
-  ingestAllowance: number;
+  /** The lookout's ceiling (`lookouts.max_value`). */
+  maxValue: number;
 }): Promise<{ outcomes: TriageOutcome[]; ingested: number; skipped_in_bulk: number }> {
   const outcomes: TriageOutcome[] = [];
   let ingested = 0;
@@ -1422,13 +1417,6 @@ export async function triageItems(input: {
       continue;
     }
     if (decision === "ingest") {
-      if (ingested >= input.ingestAllowance) {
-        outcomes.push({
-          item_id: itemId, decision, ok: false, status: item.status,
-          note: "No ingests left this run (your per-run limit). Defer it, or leave a note.",
-        });
-        continue;
-      }
       if (!item.url) {
         outcomes.push({ item_id: itemId, decision, ok: false, status: item.status, note: "The item carries no link" });
         continue;
@@ -1439,12 +1427,14 @@ export async function triageItems(input: {
         url: item.url,
         rationale: reason && reason.length >= 10 ? reason : `From the feed "${item.feed ?? ""}": ${item.title ?? item.url}`,
         focus: typeof d.focus === "string" ? normalizeFocus(d.focus) : item.ingest_focus,
+        maxValue: input.maxValue,
+        urgency: d.urgency === undefined || d.urgency === null ? 5 : Number(d.urgency),
       });
       if (res.ok && !res.duplicate) {
         await markItem(item.id, "ingested", "lookout", reason);
         ingested++;
         outcomes.push({ item_id: itemId, decision, ok: true, status: "ingested", note: res.note });
-      } else if (!res.ok && res.code === "URL") {
+      } else if (!res.ok && (res.code === "URL" || res.code === "NO_VALUE")) {
         outcomes.push({ item_id: itemId, decision, ok: false, status: item.status, note: res.problem });
       } else {
         // Already in the graph or on the plan: nothing to ingest, so the item is done.
@@ -1548,7 +1538,7 @@ export async function feedReport(lookoutId: string): Promise<FeedReportRow[]> {
       wake: f.wake,
       rule: {
         batch_size: f.batch_size, max_wait_hours: f.max_wait_hours, min_wake_hours: f.min_wake_hours,
-        poll_hours: f.poll_hours, retain_days: f.retain_days, daily_ingest_cap: f.daily_ingest_cap,
+        poll_hours: f.poll_hours, retain_days: f.retain_days,
       },
       ingest_focus: f.ingest_focus,
       last_polled_at: iso(f.last_polled_at),

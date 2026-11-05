@@ -572,15 +572,29 @@
     {
       "idx": 81,
       "version": "7",
-      "when": 1793728820478,
-      "tag": "0081_argument_retirement",
+      "when": 1793730261478,
+      "tag": "0081_curation_request_sources",
       "breakpoints": true
     },
     {
       "idx": 82,
       "version": "7",
-      "when": 1793730390505,
-      "tag": "0082_kind_marginal_yield",
+      "when": 1793737001882,
+      "tag": "0082_consistency_sweep_variant",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1793899135340,
+      "tag": "0083_argument_retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1793899900483,
+      "tag": "0084_kind_marginal_yield",
       "breakpoints": true
     }
   ]

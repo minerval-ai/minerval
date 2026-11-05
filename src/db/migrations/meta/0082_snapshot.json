@@ -1,6 +1,6 @@
 {
-  "id": "509095ab-5e5e-4b2b-b925-bf0a2ed71a57",
-  "prevId": "1f3d22da-5f54-44dc-9db2-27251d7718d3",
+  "id": "e591e611-d911-4d2e-a98b-bd0571a91f90",
+  "prevId": "5d8ed5e7-b322-4f2c-bd9b-5f665ba24475",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2201,18 +2201,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "retired_at": {
-          "name": "retired_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retired_reason": {
-          "name": "retired_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -5972,6 +5960,18 @@
           "notNull": true,
           "default": 0
         },
+        "variant": {
+          "name": "variant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_micro_usd": {
+          "name": "cost_micro_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "flags_raised": {
           "name": "flags_raised",
           "type": "integer",
@@ -6834,7 +6834,7 @@
       "checkConstraints": {
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
-          "value": "source IN ('steward_escalation', 'reconcile_candidate', 'operator')"
+          "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
         }
       },
       "isRLSEnabled": false
@@ -11221,12 +11221,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "marginal_yield": {
-          "name": "marginal_yield",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
         "model": {
           "name": "model",
           "type": "text",
@@ -11490,18 +11484,6 @@
         "incomplete": {
           "name": "incomplete",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "marginal_yield": {
-          "name": "marginal_yield",
-          "type": "real",
           "primaryKey": false,
           "notNull": false
         },

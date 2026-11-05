@@ -33,6 +33,7 @@ import {
   reviewCostEstimateMicroUsd,
 } from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
+import { resolveProvider } from "../providers/routing.js";
 import { LlmBudgetExceededError } from "../errors.js";
 import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withPassBudget } from "../usage-context.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
@@ -76,7 +77,11 @@ export interface ResearchTools {
 }
 
 export interface ResearchToolsOptions {
-  /** The agent key recorded as the launcher: claim_steward, grantmaker. */
+  /**
+   * The agent key recorded as the launcher: claim_steward, grantmaker,
+   * curator or audit (RESEARCH_LAUNCHERS). Only a Steward's research writes
+   * to the graph; the others read and report.
+   */
   requestedBy: string;
   /** The claim the launcher serves; a Grantmaker passes none and may name one per call. */
   claimId?: string | null;
@@ -119,19 +124,51 @@ export function getFundRequestToolDefinition(): Tool {
   };
 }
 
+/**
+ * Which tiers carry the code-execution sandbox in this deployment. The
+ * sandbox is an Anthropic server tool, so a tier has it only when its
+ * configured model is Anthropic-served (agents/researcher.ts); the launcher
+ * is told which, since a replication on a tier without it cannot run code.
+ */
+export function sandboxTiersSentence(): string {
+  const withSandbox = RESEARCH_MODEL_TIERS.filter((t) => {
+    const model = modelForTier(t);
+    return !!model && resolveProvider(model) === "anthropic";
+  });
+  const list = (tiers: readonly string[]) => tiers.map((t) => `'${t}'`).join(" and ");
+  if (withSandbox.length === RESEARCH_MODEL_TIERS.length) {
+    return "Every tier has a code-execution sandbox (Python, no network). ";
+  }
+  if (withSandbox.length === 0) {
+    return "No tier has a code-execution sandbox here: the researcher cannot run code. ";
+  }
+  const without = RESEARCH_MODEL_TIERS.filter((t) => !withSandbox.includes(t));
+  return (
+    `${list(withSandbox)} ${withSandbox.length === 1 ? "has" : "have"} a code-execution sandbox ` +
+    `(Python, no network); ${list(without)} ${without.length === 1 ? "has" : "have"} none and cannot run code. `
+  );
+}
+
 export function getResearchToolDefinitions(
   input: {
     claimScoped: boolean;
     graphWrites?: boolean;
+    /**
+     * Who launches, when the research writes nothing: a mandate's Grantmaker
+     * (the default), whose research may submit contributions, or the Curator
+     * or the Audit Agent, whose research only reads and reports.
+     */
+    launcher?: "grantmaker" | "curator" | "audit";
     /** Where the launcher's research money comes from and what it holds now, for the description. */
     funding?: string;
   } = { claimScoped: true }
 ): Tool[] {
   const config = loadConfig();
   const graphWrites = input.graphWrites ?? true;
+  const mandate = !graphWrites && (input.launcher ?? "grantmaker") === "grantmaker";
   const funding =
     input.funding ??
-    (graphWrites
+    (!mandate
       ? "Research is paid from this pass's own budget, and a run's budget_usd may be at most what the pass has left. "
       : "Research is paid from the mandate's uncommitted budget, and a run's budget_usd (with any " +
         "contribution_budget_usd) may be at most what that holds. ");
@@ -143,26 +180,31 @@ export function getResearchToolDefinitions(
         "investigation and returns a report you weigh. It answers only to you, writes " +
         (graphWrites
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
-            "on the claim in scope, "
-          : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
-            "not record provenance or examine documents, and with contribution_budget_usd it submits " +
-            "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
+            "and instances (sources asserting, denying or posing a claim, or asking or answering a " +
+            "question) on the node in scope, "
+          : mandate
+            ? "nothing to the graph directly (research a mandate launches reads and reports; it does " +
+              "not record provenance or examine documents, and with contribution_budget_usd it submits " +
+              "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), "
+            : "nothing to the graph (it reads and reports; it does not record provenance or examine " +
+              "documents), ") +
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
-        "checking whether a dataset shows what a paper says, or a proof attempt outside " +
-        "the formal pipeline. Write the brief the way you would for a capable assistant " +
+        "checking whether a dataset shows what a paper says, or exploring a route to a proof " +
+        "(the researcher has no Lean checker, so it brings back a sketch or a lead to weigh, " +
+        "never a checked proof; a checked attempt is the solver's, funded through a mandate's " +
+        "plan). Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
         "Every tier has web search, read_page, the graph's read tools, scholarly search " +
         (graphWrites
           ? "where configured, a notebook, and the provenance tools on a claim-scoped task. "
           : "where configured, and a notebook. ") +
-        "Tiers: 'strong' runs the best model class on the long-run loop with a " +
-        "code-execution sandbox (Python, no network), for a replication or an analysis " +
-        "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
-        "for most delegated reading and checking; 'cheap' runs the cheap tier with no " +
-        "sandbox, and is right for reading and mapping a large literature economically. " +
+        "Tiers: 'strong' runs the best model class, for a replication or an analysis " +
+        "where the best model pays; 'standard' for most delegated reading and checking; " +
+        "'cheap' for reading and mapping a large literature economically. " +
+        sandboxTiersSentence() +
         "Budget is in USD of metered work. " +
         funding +
         "Each result says what is left after the run. " +
@@ -177,7 +219,8 @@ export function getResearchToolDefinitions(
             type: "string",
             description:
               "The brief, written for the instrument: the question, the context it needs, " +
-              "what a good answer looks like, where to start, what to avoid. At least a paragraph.",
+              "what a good answer looks like, where to start, what to avoid. At least 80 characters; " +
+              "a real brief is usually a paragraph or more.",
           },
           model_tier: {
             type: "string",
@@ -217,7 +260,7 @@ export function getResearchToolDefinitions(
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
               "\"method\", \"attribution\"). Each facet shares the run's budget.",
           } } : {}),
-          ...(!graphWrites
+          ...(mandate
             ? {
                 contribution_budget_usd: {
                   type: "number",
@@ -290,6 +333,11 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const config = loadConfig();
   const claimScoped = !!options.claimId;
   const graphWrites = launcherWritesGraph(options.requestedBy);
+  // The Curator and the Audit Agent launch research that reads and reports
+  // (Part VIII, Instruments): the Curator owns structure, not sources, and
+  // the Audit Agent judges the record rather than adding to it.
+  const launcher =
+    options.requestedBy === "curator" || options.requestedBy === "audit" ? options.requestedBy : ("grantmaker" as const);
   // A deployment with the researcher off offers nothing: a tool that only
   // refuses would cost every launcher's prompt and invite wasted calls.
   // Only a mandate's Grantmaker funds requests: a Steward files them.
@@ -309,7 +357,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       : undefined;
   const definitions = config.researcherEnabled
     ? [
-        ...getResearchToolDefinitions({ claimScoped, graphWrites, funding: stewardFunding }).filter(
+        ...getResearchToolDefinitions({ claimScoped, graphWrites, launcher, funding: stewardFunding }).filter(
           (t) => t.name !== DELEGATE_RESEARCH_TOOL_NAME || !paysFromPass || passLeft !== null
         ),
         ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
@@ -387,7 +435,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
    */
   const runOnRow = async (
     row: Awaited<ReturnType<typeof openResearchRun>>,
-    claim: { id: string; text: string; domains: string[] } | null,
+    claim: { id: string; text: string; domains: string[]; kind: string } | null,
     examination: ExaminationRow | null
   ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
     const ctx = getUsageContext();
@@ -449,7 +497,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     }
     if (!graphWrites && (input.claim_id !== undefined || input.examine_source_id !== undefined || input.facets !== undefined)) {
       return refuse(
-        "Research a mandate launches writes nothing to the graph, so it takes no claim_id and examines no document. " +
+        `Research ${launcher === "grantmaker" ? "a mandate launches" : "you launch"} writes nothing to the graph, so it takes no claim_id and examines no document. ` +
           "Name the claims or documents in the brief; the researcher can read them."
       );
     }
@@ -473,7 +521,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     // the budget its Grantmaker delegates (Part VIII); a Steward's research
     // records provenance instead.
     let contributionBudgetMicroUsd = 0;
-    if (!graphWrites && input.contribution_budget_usd !== undefined) {
+    if (!graphWrites && launcher === "grantmaker" && input.contribution_budget_usd !== undefined) {
       const usd = Number(input.contribution_budget_usd);
       if (!Number.isFinite(usd) || usd < 0) return refuse("contribution_budget_usd must be a non-negative number of USD.");
       contributionBudgetMicroUsd = Math.round(usd * 1_000_000);
@@ -489,14 +537,14 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
 
     const claimId = claimScoped ? options.claimId! : str(input.claim_id) || null;
     if (claimId && !UUID_RE.test(claimId)) return refuse(`claim_id "${claimId}" is not a claim id.`);
-    let claim: { id: string; text: string; domains: string[] } | null = null;
+    let claim: { id: string; text: string; domains: string[]; kind: string } | null = null;
     if (claimId) {
-      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null }>(
-        `SELECT id, text, domains FROM claims WHERE id = $1`,
+      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = $1`,
         [claimId]
       );
       if (!row) return refuse(`No claim ${claimId} exists.`);
-      claim = { id: row.id, text: row.text, domains: row.domains ?? [] };
+      claim = { id: row.id, text: row.text, domains: row.domains ?? [], kind: row.kind ?? "claim" };
     }
 
     // An examination of a document (#507): opened before the run so the
@@ -586,11 +634,13 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       note:
         "The report is the instrument's narrative and is data, not a verified result: read " +
         "it against the sources it names before relying on it, and record what you conclude " +
-        "in your own reasoning. Provenance rows it recorded are on the claim for you to review " +
-        "with provenance_get_map" +
-        (examination
-          ? ", and its findings on the document are listed there under examinations for you to cite or not."
-          : "."),
+        "in your own reasoning." +
+        (graphWrites
+          ? " Provenance rows it recorded are on the claim for you to review with provenance_get_map" +
+            (examination
+              ? ", and its findings on the document are listed there under examinations for you to cite or not."
+              : ".")
+          : ""),
     });
   };
 
@@ -630,11 +680,15 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const row = await getResearchRun(id);
     if (!row) return refuse(`No research run ${id} exists.`);
     // A launcher reads its own runs: a Steward those on its claim, a
-    // Grantmaker those its mandate launched.
+    // Grantmaker those its mandate launched, the Curator and the Audit
+    // Agent the runs their role launched (they serve no one claim or
+    // mandate, and a later pass picks up an earlier one's thread).
     const mine = options.claimId
       ? row.claim_id === options.claimId
-      : !!options.grantId && row.grant_id === options.grantId;
-    if (!mine) return refuse("That run was launched for another claim or mandate.");
+      : options.grantId
+        ? row.grant_id === options.grantId
+        : launcher !== "grantmaker" && row.requested_by === options.requestedBy;
+    if (!mine) return refuse("That run was launched for another claim, mandate or role.");
     return JSON.stringify({
       success: true,
       research_run: {
