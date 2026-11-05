@@ -466,7 +466,11 @@ metered runs on the ledger (`actions.metered_cost_micro_usd`) once
 (`est_curate_cost_owls`, `est_audit_cost_owls`), and both run through the
 engine executor under their largest funder, metered and settled like any
 other action. The action row is the queue, so neither is lost to a
-restart.
+restart. The expected cost is the price funders are asked to cover; the
+run works to the larger of its coverage and its run budget
+(`CURATE_RUN_BUDGET_OWLS`, `AUDIT_RUN_BUDGET_OWLS`, 5 owls each, as a paid
+assessment's pass does), and what it spends past its allocations is
+metered to the funding mandate.
 
 **What opens a curate row.** A **curation request**
 (`curation_requests`, services/curation-service.ts) records a structural

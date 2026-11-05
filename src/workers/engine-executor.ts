@@ -247,6 +247,28 @@ function actionBudget(action: RunnableAction, source: string): { microUsd: numbe
 }
 
 /**
+ * A Curator or Audit run's budget: the larger of what its allocations
+ * cover and the configured run budget (curateRunBudgetOwls,
+ * auditRunBudgetOwls; 5 owls). The allocations are priced at the action's
+ * expected cost, which is what funders are asked to cover; the run works
+ * to what the work needs, and what it spends past its allocations is
+ * metered to the funding mandate (#671's split of price and budget).
+ */
+function maintenanceBudget(
+  action: RunnableAction,
+  kind: "curate" | "audit",
+  what: string
+): { microUsd: number; source: string } {
+  const config = loadConfig();
+  const owls = kind === "curate" ? config.curateRunBudgetOwls : config.auditRunBudgetOwls;
+  const floor = Math.round((owls ?? 5) * (config.owlCostMicroUsd ?? 1_000_000));
+  const covered = actionBudgetMicroUsd(action);
+  return covered >= floor
+    ? { microUsd: covered, source: `the allocations funding ${what}` }
+    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers` };
+}
+
+/**
  * curate (#363): one Curator run around the anchor claim, reading every
  * live curation request on it. The requests it read are consumed when the
  * run ends, whatever the outcome short of a retryable failure (a genuine
@@ -291,7 +313,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
     const metered = await runWithUsageContext(
       { userId: funder.userId, jobId: funder.jobId, claimId: anchorClaimId },
       () =>
-        withPassBudget(actionBudget(action, "the allocations funding this curation"), () =>
+        withPassBudget(maintenanceBudget(action, "curate", "this curation"), () =>
           runCurator({
             trigger: "curation_request",
             claimId: anchorClaimId,
@@ -610,7 +632,7 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: context.userId, jobId: context.jobId },
       () =>
-        withPassBudget(actionBudget(action, "the allocations funding this audit"), () =>
+        withPassBudget(maintenanceBudget(action, "audit", "this audit"), () =>
           runAudit({ auditType: run.audit_type, context: run.context, runId: run.id })
         )
     );
