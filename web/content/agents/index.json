@@ -423,8 +423,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 15113,
-    "fullChars": 100234,
+    "roleChars": 14676,
+    "fullChars": 99797,
     "skills": [
       {
         "name": "costing",

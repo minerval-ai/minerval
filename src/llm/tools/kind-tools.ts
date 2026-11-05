@@ -1105,11 +1105,14 @@ async function executeKindToolImpl(
         filer: { kind: "admin", agent: ctx.role, runId: usage.runId ?? null },
       });
       const others = [...new Map(open.map((r) => [r.id, r])).values()];
+      // Closing is the keeper's (close_request); the researcher has no such
+      // tool, so it is asked to name the duplicate for the keeper (#746).
+      const duplicateNote =
+        ctx.role === "researcher"
+          ? ` Other open requests already bear on these nodes; if one asks for the same thing, name it in your report, and this request's keeper decides whether to close one of them.`
+          : ` Other open requests already bear on these nodes; if one asks for the same thing, close this one as moot and name it.`;
       return ok(
-        `Request ${id} filed.` +
-          (others.length
-            ? ` Other open requests already bear on these nodes; if one asks for the same thing, close this one as moot and name it.`
-            : ""),
+        `Request ${id} filed.` + (others.length ? duplicateNote : ""),
         { request_id: id, ...(others.length ? { open_requests: others.map((r) => ({ id: r.id, ask: r.ask })) } : {}) }
       );
     }
