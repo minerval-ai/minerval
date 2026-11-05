@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 12522,
-    "fullChars": 98033,
+    "roleChars": 8857,
+    "fullChars": 94368,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 7484,
-    "fullChars": 92995,
+    "roleChars": 7726,
+    "fullChars": 93237,
     "skills": [
       {
         "name": "mathematics",

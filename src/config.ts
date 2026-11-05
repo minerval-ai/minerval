@@ -280,6 +280,11 @@ const configSchema = z.object({
   // Cap on claims extracted per analyzed page — extension pages are ephemeral
   // reading surfaces, not corpus ingestion, so keep fan-out tight by default.
   extensionMaxClaims: z.coerce.number().default(25),
+  // The extension's confidence floor, above ingestion's (extractionMinConfidence):
+  // a reader is waiting on the page, and each claim that passes costs a
+  // Matcher run before the page can be annotated. Stated to the Extractor
+  // in its task message (#748).
+  extensionMinConfidence: z.coerce.number().min(0).max(1).default(0.5),
 
   // Budget limits (0 = unlimited)
   llmHourlyCallLimit: z.coerce.number().default(0),
@@ -1088,6 +1093,7 @@ export function loadConfig(): Config {
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
+    extensionMinConfidence: process.env.EXTENSION_MIN_CONFIDENCE,
     agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,

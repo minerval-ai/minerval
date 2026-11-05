@@ -34,7 +34,8 @@ import { recordEnqueueEvent } from "./enqueue-events-service.js";
 //    (two nodes that are one, a conflation, a wrong kind, a mislabeled edge)
 //    while reading a partition side by side (#742);
 //  - audit: the Audit Agent, on a finding it recorded (#784);
-//  - matcher: the Matcher, on a near-miss it judged worth a Curator's look;
+//  - matcher: at ingestion, the Matcher minted a node on balance and named
+//    a near-miss a Curator should check (curator_review, #738);
 //  - reconcile_candidate: the similarity scan;
 //  - operator: a person running the platform.
 export const CURATION_SOURCES = [
@@ -206,7 +207,7 @@ function describeSource(r: Pick<LiveCurationRequest, "source" | "signal">): stri
     case "audit":
       return "The Audit asked, on a recorded finding,";
     case "matcher":
-      return "The Matcher flagged a near-miss";
+      return "The Matcher minted it on balance and flagged a near-miss";
     case "reconcile_candidate":
       return `The reconcile-candidate scan paired it (similarity ${Number(r.signal ?? 0).toFixed(3)})`;
     case "operator":

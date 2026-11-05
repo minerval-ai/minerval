@@ -125,7 +125,13 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
   };
   const submitTool: Tool = {
     name: TAGGER_SUBMIT_TOOL_NAME,
-    description: "Submit the final tags for this claim, once you have searched enough.",
+    description:
+      "Submit the final tags for this claim, once you have searched enough. " +
+      `A submission with more than ${MAX_TAGS_PER_CLAIM} tags, a name over ` +
+      `${TAG_NAME_MAX_CHARS} characters, a description over ` +
+      `${TAG_DESCRIPTION_MAX_CHARS}, or a tag giving both slug and name is ` +
+      "refused with what to fix, rather than cut to fit. A new name that " +
+      "means nearly the same as an existing tag is filed under that tag.",
     input_schema: SUBMIT_SCHEMA as Tool["input_schema"],
   };
   const reportTools = createReportTools({ model });
@@ -155,6 +161,10 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
       submitted: true,
     };
   };
+  // The write path would otherwise cut an over-long name or description to
+  // fit and drop tags past the limit, and the tagger would never know (#750):
+  // a submission over a stated limit is refused instead, and the loop goes on.
+  const defect = (toolInput: Record<string, unknown>) => submissionDefect(toolInput);
 
   const TAGGER_MAX_TURNS = 8;
   await toolUseLoop({
@@ -181,6 +191,13 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       if (name === TAGGER_SUBMIT_TOOL_NAME) {
+        const problem = defect(toolInput);
+        if (problem) {
+          return JSON.stringify({
+            success: false,
+            message: `Tags not recorded: ${problem}. Fix it and call ${TAGGER_SUBMIT_TOOL_NAME} again.`,
+          });
+        }
         decision = accept(toolInput);
         return JSON.stringify({ success: true });
       }
@@ -208,6 +225,8 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
     },
     onFinalTool: (name, toolInput) => {
       if (name === TAGGER_SUBMIT_TOOL_NAME) {
+        // A refused submission is not final: executeTool answers it.
+        if (defect(toolInput)) return null;
         decision = accept(toolInput);
         return decision;
       }
@@ -220,4 +239,39 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
   // talking). Nothing is written from an empty decision; the pipeline
   // counts it as an attempt and the claim comes round again.
   return { tags: [], reasoning: "The tagger did not submit within its search budget.", submitted: false };
+}
+
+/**
+ * What is wrong with a submit_tags call against the limits its description
+ * states (#750), or null when it can be written as given. Lengths are
+ * counted as the write path counts them, after whitespace is collapsed.
+ */
+export function submissionDefect(toolInput: Record<string, unknown>): string | null {
+  const raw = Array.isArray(toolInput.tags) ? toolInput.tags : [];
+  const named = raw.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const t = item as Record<string, unknown>;
+    return [t.slug, t.name].some((v) => typeof v === "string" && v.trim());
+  });
+  if (named.length > MAX_TAGS_PER_CLAIM) {
+    return `${named.length} tags given; at most ${MAX_TAGS_PER_CLAIM}`;
+  }
+  const squash = (s: string) => s.replace(/\s+/g, " ").trim();
+  for (const [i, item] of raw.entries()) {
+    if (!item || typeof item !== "object") continue;
+    const t = item as Record<string, unknown>;
+    const slug = typeof t.slug === "string" && t.slug.trim() ? t.slug.trim() : null;
+    const name = typeof t.name === "string" && t.name.trim() ? squash(t.name) : null;
+    if (slug && name) return `tag ${i + 1} gives both slug and name; give the slug of an existing tag or the name of a new one`;
+    if (name && name.length > TAG_NAME_MAX_CHARS) {
+      return `tag ${i + 1}'s name "${name}" is ${name.length} characters; at most ${TAG_NAME_MAX_CHARS}`;
+    }
+    if (typeof t.description === "string") {
+      const d = squash(t.description);
+      if (d.length > TAG_DESCRIPTION_MAX_CHARS) {
+        return `tag ${i + 1}'s description is ${d.length} characters; at most ${TAG_DESCRIPTION_MAX_CHARS}`;
+      }
+    }
+  }
+  return null;
 }
