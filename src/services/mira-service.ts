@@ -71,12 +71,14 @@ export interface MiraOpts {
 }
 
 // An instance's stance as MIRA's argument relation from its Evidence to the
-// claim it states. Posing, and stating a quantity's value, take no side.
+// claim it states. Posing, and stating a quantity's value, take no side; a
+// mention states nothing and has no Evidence at all.
 const STANCE_RELATION: Record<string, "supports" | "opposes" | null> = {
   affirms: "supports",
   denies: "opposes",
   answers: "supports",
   poses: null,
+  mentions: null,
   states: null,
 };
 
@@ -297,7 +299,9 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     if (inst.quote) instNode["mv:quote"] = inst.quote;
 
     const answer = answerByInstance.get(inst.id);
-    const statement = question ? (answer ? nodeUri(answer) : null) : rootUri;
+    // A source that only mentions the claim states no claim, so, like one
+    // that asks a question, it has an mv:Instance and no Evidence.
+    const statement = question ? (answer ? nodeUri(answer) : null) : inst.stance === "mentions" ? null : rootUri;
     if (!statement) continue;
     const evidenceIri = `${rootUri}#evidence-${inst.id}`;
     const evidence = node(evidenceIri, {

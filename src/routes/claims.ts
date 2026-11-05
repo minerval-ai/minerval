@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { assessments } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
-import { getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
+import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
@@ -149,6 +149,10 @@ export const claimSchema = {
     // judged. Shown beside the verdict, never folded into it (#524).
     contestation: { type: "number", nullable: true },
     steward_state: { type: "string" },
+    // When a Steward run last started on it; null = never worked (#415).
+    stewarded_at: { type: "string", format: "date-time", nullable: true },
+    // Why the canonical form runs in the direction it does (#360).
+    canonical_direction_note: { type: "string", nullable: true },
     created_by: { type: "string" },
     created_at: { type: "string", format: "date-time" },
     updated_at: { type: "string", format: "date-time" },
@@ -1518,7 +1522,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         });
 
         return reply.send({
-          assessments: result.assessments.map(formatAssessmentHistory),
+          assessments: result.assessments.map(formatAssessmentHistoryRow),
           total: result.total,
         });
       },
@@ -1776,7 +1780,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-function formatClaim(claim: { id: string; kind?: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
+function formatClaim(claim: { id: string; kind?: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; stewardedAt?: Date | null; canonicalDirectionNote?: string | null; createdBy: string; createdAt: Date; updatedAt: Date }) {
   return {
     id: claim.id,
     kind: claim.kind ?? "claim",
@@ -1791,6 +1795,10 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
     // The Steward work-queue lifecycle (pending → running → done | error). Lets the
     // UI distinguish a not-yet-stewarded stub from a claim found genuinely atomic.
     steward_state: claim.stewardState,
+    // get_claim serves these too (#774): a claim that has never been worked
+    // reads stewarded_at null, whatever decomposition_status says.
+    stewarded_at: claim.stewardedAt?.toISOString() ?? null,
+    canonical_direction_note: claim.canonicalDirectionNote ?? null,
     created_by: claim.createdBy,
     created_at: claim.createdAt.toISOString(),
     updated_at: claim.updatedAt.toISOString(),
@@ -1814,38 +1822,6 @@ export function formatAssessment(a: { id: string; status: string; confidence: nu
     subclaim_summary: a.subclaimSummary ?? {},
     assessed_at: a.assessedAt.toISOString(),
     // The assessor behind the verdict (#294); null for legacy rows.
-    model: a.model ?? null,
-  };
-}
-
-function formatAssessmentHistory(a: {
-  id: string;
-  claimId: string;
-  status: string;
-  confidence: number;
-  claimCredence: number | null;
-  summary: string | null;
-  reasoningTrace: string;
-  isCurrent: boolean;
-  subclaimSummary: unknown;
-  trigger: string | null;
-  triggerContext: string | null;
-  assessedAt: Date;
-  model?: string | null;
-}) {
-  return {
-    id: a.id,
-    claim_id: a.claimId,
-    status: a.status,
-    confidence: a.confidence,
-    claim_credence: a.claimCredence ?? null,
-    summary: a.summary ?? a.reasoningTrace,
-    reasoning_trace: a.reasoningTrace,
-    is_current: a.isCurrent,
-    subclaim_summary: a.subclaimSummary ?? {},
-    trigger: a.trigger,
-    trigger_context: a.triggerContext,
-    assessed_at: a.assessedAt.toISOString(),
     model: a.model ?? null,
   };
 }

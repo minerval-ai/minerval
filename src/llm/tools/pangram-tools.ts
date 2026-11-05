@@ -138,7 +138,7 @@ async function resolveText(
   if (!url) return { error: "text or url is required." };
   const page = await readPage(url);
   if (!page.ok) return { error: `Could not read ${url}: ${page.problem}` };
-  return { text: page.text.replace(/\n\[truncated\]$/, ""), url };
+  return { text: page.text, url };
 }
 
 async function pangramFetch(

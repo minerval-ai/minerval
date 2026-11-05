@@ -20,6 +20,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { hasExplicitRates, ratesForModel } from "../llm/pricing.js";
 import {
   getEffectiveAllocationPolicy,
   getMandateAllocationPolicy,
@@ -241,4 +242,81 @@ export async function estimateLedgerKindCostMicroUsd(
         ? policy.est_audit_cost_owls
         : policy.est_request_scope_cost_owls;
   return Math.round(priorOwls * (config.owlCostMicroUsd ?? 1_000_000));
+}
+
+/**
+ * The tokens a consistency sweep is expected to spend per assessed node in
+ * its partition (#756): the listing page the node arrives on, its share of
+ * the side-by-side comparisons and full reads, and, the larger part, the
+ * history every later turn re-reads, counted as uncached input (cache
+ * reads are cheaper, so this errs high); and the reasoning written about
+ * it. A sweep is one conversation whose turns grow with what it has read,
+ * so the per-node figure is an average over a partition of a hundred or
+ * so; generous on purpose, since a sweep that runs out before it has read
+ * its partition is the failure the price exists to avoid.
+ */
+export const CONSISTENCY_SWEEP_TOKENS_PER_NODE = { input: 12_000, output: 1_500 } as const;
+
+export interface ConsistencyNodeCost {
+  microUsd: number;
+  /** Where the figure came from, as the sweep's briefing states it. */
+  basis: "observed" | "model_price" | "policy_prior";
+}
+
+/**
+ * Expected cost of reading one assessed node in a sweep of `variant`, in
+ * micro-USD (#756). In order:
+ *
+ *   1. observed: the live percentile (p80 by default, as every ledger
+ *      action's estimate) of what that variant's recent sweeps were metered
+ *      at per node (consistency_sweeps.cost_micro_usd over its nodes,
+ *      counting at least `minNodes`), once COST_ESTIMATE_MIN_RUNS exist;
+ *   2. model_price: the variant's model's list rates (llm/pricing.ts) times
+ *      CONSISTENCY_SWEEP_TOKENS_PER_NODE;
+ *   3. policy_prior: for a model the rate table cannot price (an OpenRouter
+ *      model, whose provider reports each call's cost instead), the
+ *      policy's `est_consistency_node_cost_owls`.
+ */
+export async function estimateConsistencyNodeCostMicroUsd(
+  variant: "standard" | "strong",
+  minNodes: number
+): Promise<ConsistencyNodeCost> {
+  const config = loadConfig();
+  const windowDays = config.costEstimateWindowDays ?? 14;
+  const minRuns = config.costEstimateMinRuns ?? 5;
+  const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
+  const key = `consistency_node:${variant}:${minNodes}:${percentile}`;
+  const cached = cache.get(key);
+  let live: number | null = null;
+  if (cached && cached.expiresAt > Date.now()) {
+    live = cached.value || null;
+  } else if (windowDays > 0 && minRuns > 0) {
+    const [row] = await rawQuery<{ runs: number; est_cost: number | null }>(
+      `SELECT COUNT(*)::int AS runs,
+              percentile_cont($3) WITHIN GROUP (
+                ORDER BY cost_micro_usd::float8 / GREATEST($4::int, claims_in_scope))::bigint AS est_cost
+         FROM consistency_sweeps
+        WHERE variant = $1 AND status = 'done'
+          AND cost_micro_usd IS NOT NULL AND claims_in_scope >= 2
+          AND started_at > now() - make_interval(days => $2)`,
+      [variant, windowDays, percentile, minNodes]
+    ).catch(() => []);
+    const enough = (row?.runs ?? 0) >= minRuns && row?.est_cost != null;
+    live = enough ? Number(row!.est_cost) : null;
+    cache.set(key, { value: live ?? 0, expiresAt: Date.now() + CACHE_TTL_MS });
+  }
+  if (live != null && live > 0) return { microUsd: live, basis: "observed" };
+  const model = variant === "strong" ? config.consistencyStrongModel : config.consistencyModel;
+  if (hasExplicitRates(model)) {
+    const rates = ratesForModel(model);
+    const usd =
+      (CONSISTENCY_SWEEP_TOKENS_PER_NODE.input / 1_000_000) * rates.inputPerMtok +
+      (CONSISTENCY_SWEEP_TOKENS_PER_NODE.output / 1_000_000) * rates.outputPerMtok;
+    return { microUsd: Math.round(usd * 1_000_000), basis: "model_price" };
+  }
+  const policy = await getEffectiveAllocationPolicy();
+  return {
+    microUsd: Math.round(policy.est_consistency_node_cost_owls * (config.owlCostMicroUsd ?? 1_000_000)),
+    basis: "policy_prior",
+  };
 }

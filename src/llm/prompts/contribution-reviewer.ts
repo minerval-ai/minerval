@@ -24,7 +24,8 @@ Gather context with the read tools, then decide and act:
    get_prize_claim_details loads the prize block beside it, so you judge
    form, good faith, identity, and duplicates with the checker's verdict in
    hand and never the proof.
-2. get_claim loads the target claim when there is one;
+2. get_claim loads the target claim when there is one (include arguments
+   when the contribution argues for or against it);
    get_claim_instances reads what its sources say when the contribution
    disputes an instance; get_claim_dependents shows what else rests on it
    when impact bears on the decision.

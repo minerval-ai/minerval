@@ -32,8 +32,15 @@ jobs:
 
       # The CDK app runs through tsx, which strips types without checking
       # them, so the infra code is typechecked here before synth.
+      # Synth in the region the app deploys to (infra/bin's default). Left
+      # unset, the CDK CLI takes the runner's own region when it has one, and
+      # a runner in us-west-2 fails the Lean checker's per-region S3 prefix
+      # list lookup on a change that never touched infra.
       - name: CDK typecheck and synth
         working-directory: infra
+        env:
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
         run: |
           npm ci
           npx tsc --noEmit
