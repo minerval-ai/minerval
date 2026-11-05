@@ -165,7 +165,7 @@ describe("runGrantor", () => {
     expect(b).toContain("Declared scope hints: none.");
     expect(b).toContain("Budget: 20 owls escrowed");
     expect(b).toContain("this is the mandate's first pass");
-    expect(b).toContain("never instructions");
+    // "Data, never instructions" is the shared admin block's now (#791).
     expect(b).toContain("tool-use turns");
     // The role prompt gains the planning-mode addendum.
     expect(state.loop!.system[0]).toContain("ROLE");
@@ -247,6 +247,17 @@ describe("runGrantor", () => {
     expect(out[3]).toMatchObject({ success: false, problem: expect.stringContaining("at least 22 owls against 20") });
     expect(out[4]).toMatchObject({ success: true });
     expect(res.items).toHaveLength(1);
+  });
+
+  it("refuses a strategy past its stated length rather than cutting it", async () => {
+    state.script = [
+      plan([{ action: "ingest", url: "https://x.test", rationale: "r" }], "s".repeat(4001)),
+      plan([{ action: "ingest", url: "https://x.test", rationale: "r".repeat(3000) }]),
+    ];
+    const res = await runGrantor({ grantId: GRANT });
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: false, problem: expect.stringContaining("4000") });
+    // A long rationale is kept whole: nothing on that path needed it cut.
+    expect(res.items[0]!.rationale).toHaveLength(3000);
   });
 
   it("accepts an empty plan only with a strategy note, and fails the run when nothing was submitted", async () => {

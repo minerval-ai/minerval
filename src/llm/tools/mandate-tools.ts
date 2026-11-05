@@ -160,8 +160,8 @@ export function applyWorkspaceWrite(
 }
 
 /**
- * The least a plan's ledger items can cost, in owls: one strong Steward pass
- * for each assess, reassess, and deepen item (a deepen costs more, by the
+ * A floor on what a plan's ledger items cost, in owls: one strong Steward
+ * pass (not the cheapest tier, so submit_plan says "strong") for each assess, reassess, and deepen item (a deepen costs more, by the
  * children it releases) and one ingestion for each ingest item, at the
  * estimates the ledger itself prices rows with. The planning pass refuses a
  * plan whose floor already overruns the escrow; it is a backstop, not a

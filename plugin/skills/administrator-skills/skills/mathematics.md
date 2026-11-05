@@ -333,10 +333,11 @@ version means one ran and stopped short.
 Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. The
 bounty is owls from your own mandate's escrow, held there from the day it
-opens until it resolves. Its mechanical bounds: an amount between the
-minimum and the maximum per claim, within the per-pass and per-day
-fractions of the escrow, covered by the mandate's headroom (budget less
-committed money), and one live bounty per claim. The first call records
+opens until it resolves. Its mechanical bounds, with their values, are in
+`post_bounty`'s description: an amount between the minimum and the maximum
+per claim, within the per-pass and per-day fractions of the escrow, covered
+by the mandate's headroom (budget less committed money), and one live
+bounty per claim. The first call records
 the request; only a call from a later pass opens it. Set the amount from what the discourse would gain,
 what the problem appears to require of a capable claimant, and the
 mandate's headroom; where your mandate funds both attempts and prizes, say
@@ -355,7 +356,8 @@ is assessed.
 
 A pattern across the territory that the literature has not remarked, such
 as several open problems resting on one unformalized lemma, is a finding
-for `note_finding`. The attempts and bounties you fund never are, whatever
+for `note_finding`, citing the assessments and decompositions already
+recorded that show it (constitution §19: you make none yourself). The attempts and bounties you fund never are, whatever
 they cost or return.
 
 ## For the Contribution Reviewer and the Dispute Arbitrator
