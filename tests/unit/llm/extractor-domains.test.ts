@@ -59,7 +59,7 @@ describe("extractor prompt", () => {
     expect(blocks[0]).toContain("follows this role as its own block");
     expect(blocks[0]).not.toContain("load_skill");
     const math = blocks[1]!;
-    expect(math.startsWith("# Domain skill: Mathematics (version 5)")).toBe(true);
+    expect(math.startsWith("# Domain skill: Mathematics (version 6)")).toBe(true);
     expect(math.split("\n").filter((l) => l.startsWith("## "))).toEqual(["## For the Extractor"]);
   });
 });

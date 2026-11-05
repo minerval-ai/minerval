@@ -11,13 +11,14 @@ description: >-
   merely use a number or a model.
 metadata:
   minerval:
-    version: 5
+    version: 6
     since_epoch: 2026-09-domain-skills
     changelog:
       2: "requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)"
       3: "a solver attempt is funded through a mandate's plan and its result goes to the claim's Steward, which did not launch it; a Steward that needs an attempt files a request for funders (constitution Part VIII, instruments)"
       4: "a challenge whose only ground is dislike of the result is rejected without the bad-faith flag; the prize-specific abuses map to the misinformation and sybil categories; the Arbitrator reads the prize claim and records challenge_upheld"
       5: "a section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section"
+      6: "inside the attempt cooldown a further attempt opens on a rationale that says what changed since the last one, judged by the Grantmaker, not on a rationale of a set length"
     domains: [mathematics]
 ---
 
@@ -309,7 +310,10 @@ while the claim still lacks one. An `attempt_proof` item is `waiting`, not
 blocked, until a statement is published; the n-th item on a claim
 entitles the n-th attempt group, an earlier open group holds the next one
 back, and the mandate's attempt cooldown holds it back too unless the
-entitling item's rationale states a reason of at least twenty characters.
+entitling item's rationale says what changed since the last attempt (a new
+lemma formalized in the subtree, a route the prior report names and could
+not pursue). Whether that is reason enough is your judgment; the rationale
+is public and the Audit Agent reads it.
 Every item's standing (open, running, done, cancelled, waiting, blocked,
 with the reason) comes back from `extend_plan` in the same turn and from
 `grant_overview` at any time; read it before valuing, and before filing a

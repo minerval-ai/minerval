@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 7462,
-    "fullChars": 92583,
+    "roleChars": 7484,
+    "fullChars": 92605,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 17023,
-    "fullChars": 102144,
+    "roleChars": 17045,
+    "fullChars": 102166,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23096,
-    "fullChars": 108217,
+    "roleChars": 23118,
+    "fullChars": 108239,
     "skills": [
       {
         "name": "costing",
@@ -139,8 +139,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 16876,
-    "fullChars": 101997,
+    "roleChars": 16898,
+    "fullChars": 102019,
     "skills": []
   },
   {
@@ -152,8 +152,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11701,
-    "fullChars": 96822,
+    "roleChars": 11723,
+    "fullChars": 96844,
     "skills": [
       {
         "name": "costing",
@@ -193,8 +193,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11660,
-    "fullChars": 96781,
+    "roleChars": 11682,
+    "fullChars": 96803,
     "skills": [
       {
         "name": "costing",
@@ -233,8 +233,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12797,
-    "fullChars": 97918,
+    "roleChars": 12819,
+    "fullChars": 97940,
     "skills": [
       {
         "name": "costing",
@@ -286,8 +286,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 20695,
-    "fullChars": 105816,
+    "roleChars": 20717,
+    "fullChars": 105838,
     "skills": [
       {
         "name": "costing",
@@ -326,8 +326,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 10804,
-    "fullChars": 95925,
+    "roleChars": 10826,
+    "fullChars": 95947,
     "skills": [
       {
         "name": "costing",
@@ -364,8 +364,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
-    "roleChars": 14807,
-    "fullChars": 99928,
+    "roleChars": 14829,
+    "fullChars": 99950,
     "skills": [
       {
         "name": "costing",
@@ -404,8 +404,8 @@
     "invokedWhen": "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
     "model": "Claude Opus 5.5",
     "hasConstitution": false,
-    "roleChars": 4526,
-    "fullChars": 4526,
+    "roleChars": 4244,
+    "fullChars": 4244,
     "skills": []
   },
   {
@@ -417,8 +417,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 15096,
-    "fullChars": 100217,
+    "roleChars": 15118,
+    "fullChars": 100239,
     "skills": [
       {
         "name": "costing",
