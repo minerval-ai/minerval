@@ -39,18 +39,30 @@ async function answerIds(tx: TxQuery, questionId: string): Promise<Set<string>> 
   return new Set(rows.map((r) => r.child_claim_id));
 }
 
-/** Add a candidate answer to a question, or change why it is in the set. */
-export async function addAnswer(input: {
-  questionId: string;
-  answerId: string;
-  basis: AnswerBasis;
-  reasoning: string;
-  createdBy: string;
-}): Promise<{ id: string }> {
+/** Run `fn` in the caller's transaction when there is one, else in a new one. */
+function inTransaction<T>(outer: TxQuery | undefined, fn: (tx: TxQuery) => Promise<T>): Promise<T> {
+  return outer ? fn(outer) : withTransaction(fn);
+}
+
+/**
+ * Add a candidate answer to a question, or change why it is in the set.
+ * Pass `outer` to write inside the caller's transaction, as add_parent_claim
+ * does when it mints a question and attaches its first answer together.
+ */
+export async function addAnswer(
+  input: {
+    questionId: string;
+    answerId: string;
+    basis: AnswerBasis;
+    reasoning: string;
+    createdBy: string;
+  },
+  outer?: TxQuery
+): Promise<{ id: string }> {
   if (!(ANSWER_BASES as readonly string[]).includes(input.basis)) {
     throw new KindError(`Unknown answer basis "${input.basis}"`);
   }
-  return withTransaction(async (tx) => {
+  return inTransaction(outer, async (tx) => {
     await requireQuestion(tx, input.questionId);
     const kind = await lockNodeKind(tx, input.answerId);
     if (kind === "question") throw new KindError("A question answers no question; add it as a subquestion");
@@ -67,14 +79,17 @@ export async function addAnswer(input: {
   });
 }
 
-/** Add a subquestion: a question whose answer is part of this one's. */
-export async function addSubquestion(input: {
-  questionId: string;
-  subquestionId: string;
-  reasoning: string;
-  createdBy: string;
-}): Promise<{ id: string }> {
-  return withTransaction(async (tx) => {
+/** Add a subquestion: a question whose answer is part of this one's. `outer` as for addAnswer. */
+export async function addSubquestion(
+  input: {
+    questionId: string;
+    subquestionId: string;
+    reasoning: string;
+    createdBy: string;
+  },
+  outer?: TxQuery
+): Promise<{ id: string }> {
+  return inTransaction(outer, async (tx) => {
     await requireQuestion(tx, input.questionId);
     await requireQuestion(tx, input.subquestionId);
     const [row] = await tx.query<{ id: string }>(
@@ -134,6 +149,9 @@ export async function recordQuestionAssessment(input: {
   summary?: string | null;
   reasoningTrace: string;
   incomplete?: string | null;
+  /** How sure the Steward is of the standing, 0..1, and its exit judgment (#755); null when not stated. */
+  confidence?: number | null;
+  marginalYield?: number | null;
   model?: string | null;
   fundedByJobId?: string | null;
   trigger?: string | null;
@@ -166,8 +184,8 @@ export async function recordQuestionAssessment(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO question_assessments
          (claim_id, standing, favored_claim_ids, summary, reasoning_trace, incomplete,
-          model, funded_by_job_id, trigger, trigger_context)
-       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+          model, funded_by_job_id, trigger, trigger_context, confidence, marginal_yield)
+       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [
         input.claimId,
         input.standing,
@@ -179,6 +197,8 @@ export async function recordQuestionAssessment(input: {
         input.fundedByJobId ?? null,
         input.trigger ?? null,
         input.triggerContext ?? null,
+        input.confidence ?? null,
+        input.marginalYield ?? null,
       ]
     );
     return { id: row!.id };

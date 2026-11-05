@@ -26,7 +26,27 @@ import { rawQuery } from "../db/client.js";
 import { ensureCurateAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
-export type CurationSource = "steward_escalation" | "reconcile_candidate" | "operator";
+// Who asked. Every source but the scan is an agent's or a person's
+// judgment, so it is valued as a Steward's escalation is, not as the scan's
+// pair (mandate-valuer-service.ts):
+//  - steward_escalation: a Steward, about its own claim;
+//  - consistency_sweep: the Consistency Checker found a structural defect
+//    (two nodes that are one, a conflation, a wrong kind, a mislabeled edge)
+//    while reading a partition side by side (#742);
+//  - audit: the Audit Agent, on a finding it recorded (#784);
+//  - matcher: at ingestion, the Matcher minted a node on balance and named
+//    a near-miss a Curator should check (curator_review, #738);
+//  - reconcile_candidate: the similarity scan;
+//  - operator: a person running the platform.
+export const CURATION_SOURCES = [
+  "steward_escalation",
+  "consistency_sweep",
+  "audit",
+  "matcher",
+  "reconcile_candidate",
+  "operator",
+] as const;
+export type CurationSource = (typeof CURATION_SOURCES)[number];
 
 export interface CurationRequestInput {
   anchorClaimId: string;
@@ -44,6 +64,13 @@ export type CurationRequestResult =
   | { ok: false; problem: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The longest concern a request records: the Curator's run reads every
+ * concern on its anchor in its briefing. An over-long one is refused with
+ * the limit named, never cut, so the requester can say it more briefly.
+ */
+export const CURATION_CONCERN_MAX_CHARS = 4_000;
 
 /**
  * Record a structural concern about an anchor claim and make sure its curate
@@ -64,6 +91,14 @@ export async function requestCuration(
     return { ok: false, problem: "other_claim_id is the anchor claim itself" };
   }
   if (!concern) return { ok: false, problem: "a concern is required" };
+  if (concern.length > CURATION_CONCERN_MAX_CHARS) {
+    return {
+      ok: false,
+      problem:
+        `the concern is ${concern.length} characters; it may be at most ` +
+        `${CURATION_CONCERN_MAX_CHARS}. Nothing was recorded: state it more briefly.`,
+    };
+  }
 
   const [anchor] = await rawQuery<{ id: string }>(
     `SELECT id FROM claims WHERE id = $1 AND state = 'active'`,
@@ -93,7 +128,7 @@ export async function requestCuration(
       input.anchorClaimId,
       input.otherClaimId ?? null,
       input.source,
-      concern.slice(0, 4000),
+      concern,
       input.signal ?? null,
       input.requestedByClaimId ?? null,
       input.requestedByRunId ?? null,
@@ -162,17 +197,30 @@ export async function consumeCurationRequests(
   );
 }
 
+/** Who raised a request, as the Curator's briefing says it. */
+function describeSource(r: Pick<LiveCurationRequest, "source" | "signal">): string {
+  switch (r.source) {
+    case "steward_escalation":
+      return "A Steward escalated";
+    case "consistency_sweep":
+      return "A consistency sweep found, reading its partition side by side,";
+    case "audit":
+      return "The Audit asked, on a recorded finding,";
+    case "matcher":
+      return "The Matcher minted it on balance and flagged a near-miss";
+    case "reconcile_candidate":
+      return `The reconcile-candidate scan paired it (similarity ${Number(r.signal ?? 0).toFixed(3)})`;
+    case "operator":
+      return "An operator asked";
+  }
+}
+
 /** The run's briefing: the concerns, in the requesters' words. */
 export function describeCurationRequests(requests: LiveCurationRequest[]): string {
   if (requests.length === 0) return "(no live requests)";
   return requests
     .map((r, i) => {
-      const who =
-        r.source === "steward_escalation"
-          ? "A Steward escalated"
-          : r.source === "reconcile_candidate"
-            ? `The reconcile-candidate scan paired it (similarity ${Number(r.signal ?? 0).toFixed(3)})`
-            : "An operator asked";
+      const who = describeSource(r);
       const other = r.other_claim_id ? ` with claim ${r.other_claim_id}` : "";
       return `${i + 1}. ${who}${other}: ${r.concern}`;
     })

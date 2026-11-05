@@ -27,7 +27,13 @@ vi.mock("../../../../src/db/client.js", async () => {
       leftJoin: () => c,
       where: () => c,
       orderBy: () => c,
-      limit: (n: number) => Promise.resolve(rows.slice(0, n)),
+      limit: (n: number) => {
+        const page = Promise.resolve(rows.slice(0, n)) as Promise<unknown> & {
+          offset: (o: number) => Promise<unknown>;
+        };
+        page.offset = (o: number) => Promise.resolve(rows.slice(o, o + n));
+        return page;
+      },
       then: (
         resolve: (rows: unknown) => unknown,
         reject: (err: unknown) => unknown
@@ -58,7 +64,12 @@ vi.mock("../../../../src/services/formalization-service.js", async (importOrigin
   })),
 }));
 
-import { executeGovernanceTool } from "../../../../src/llm/tools/governance-tools.js";
+import {
+  executeGovernanceTool,
+  getClaimContextToolDefinitions,
+} from "../../../../src/llm/tools/governance-tools.js";
+import { rawQuery } from "../../../../src/db/client.js";
+import { MANDATE_LABEL } from "../../../../src/services/contribution-service.js";
 
 function baseContribution(overrides: Record<string, unknown> = {}) {
   return {
@@ -80,6 +91,8 @@ function baseContribution(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   for (const key of Object.keys(mocks.rows)) delete mocks.rows[key];
+  vi.mocked(rawQuery).mockReset();
+  vi.mocked(rawQuery).mockImplementation(async () => []);
 });
 
 describe("get_contribution_details", () => {
@@ -206,6 +219,43 @@ describe("decision → contribution link", () => {
     });
   });
 
+  it("get_recent_decisions carries the bad-faith flag and says when another page exists", async () => {
+    const row = (i: number) => ({
+      reviewId: `r${i}`,
+      contributionId: CONTRIBUTION_ID,
+      decision: "reject",
+      reasoning: "Spam.",
+      confidence: 0.9,
+      policyCitations: ["§13"],
+      suspectedBadFaith: true,
+      badFaithCategory: "spam",
+      reviewedAt: new Date("2026-07-02T00:00:00Z"),
+      contributionType: "challenge",
+      contributorId: CONTRIBUTOR_ID,
+      claimId: null,
+    });
+    mocks.rows.contribution_reviews = [row(1), row(2), row(3)];
+
+    const out = JSON.parse(
+      await executeGovernanceTool("get_recent_decisions", {
+        limit: 2,
+        since: "2026-07-01T00:00:00Z",
+        bad_faith_only: true,
+      })
+    );
+    expect(out.decisions).toHaveLength(2);
+    expect(out.decisions[0]).toMatchObject({ suspected_bad_faith: true, bad_faith_category: "spam" });
+    expect(out.has_more).toBe(true);
+    expect(out.offset).toBe(0);
+  });
+
+  it("get_recent_decisions refuses an unparseable since", async () => {
+    const out = JSON.parse(
+      await executeGovernanceTool("get_recent_decisions", { since: "last tuesday" })
+    );
+    expect(out.error).toMatch(/not an ISO 8601 time/);
+  });
+
   it("get_contribution_details accepts a review_id", async () => {
     mocks.rows.contributions = [baseContribution()];
     mocks.rows.contribution_reviews = [
@@ -243,5 +293,138 @@ describe("decision → contribution link", () => {
       await executeGovernanceTool("get_contribution_details", {})
     );
     expect(neither.error).toBe("Pass contribution_id or review_id");
+  });
+});
+
+// Who filed a contribution, without their standing beside the merits
+// (#702), and a mandate's contribution shown as the mandate (#705).
+describe("who filed it", () => {
+  const ADA = {
+    id: CONTRIBUTOR_ID,
+    displayName: "Ada",
+    reputationScore: 50,
+    contributionsAccepted: 3,
+    contributionsRejected: 1,
+    contributionsEscalated: 0,
+    isVerified: false,
+    isSuspended: false,
+    owlsEarnedMicroUsd: 0,
+    lastActiveAt: new Date("2026-07-01T00:00:00Z"),
+  };
+
+  it("names the contributor and leaves reputation to the profile", async () => {
+    mocks.rows.contributions = [baseContribution()];
+    mocks.rows.contributors = [ADA];
+    const out = JSON.parse(
+      await executeGovernanceTool("get_contribution_details", { contribution_id: CONTRIBUTION_ID })
+    );
+    expect(out.filed_by).toBe("Ada");
+    expect(out.contributor).toEqual({ id: CONTRIBUTOR_ID, display_name: "Ada" });
+  });
+
+  it("shows a mandate's contribution as the mandate, with no account behind it", async () => {
+    mocks.rows.contributions = [baseContribution({ grantId: "99999999-9999-9999-9999-999999999999" })];
+    mocks.rows.contributors = [ADA];
+    const out = JSON.parse(
+      await executeGovernanceTool("get_contribution_details", { contribution_id: CONTRIBUTION_ID })
+    );
+    expect(out.filed_by).toBe(MANDATE_LABEL);
+    expect(out.contributor).toBeNull();
+    expect(JSON.stringify(out)).not.toContain("Ada");
+
+    const profile = JSON.parse(
+      await executeGovernanceTool("get_contributor_profile", { contribution_id: CONTRIBUTION_ID })
+    );
+    expect(profile.profile).toBeNull();
+    expect(profile.filed_by).toBe(MANDATE_LABEL);
+  });
+
+  it("profile counts the appeals a contributor has filed", async () => {
+    mocks.rows.contributors = [ADA];
+    vi.mocked(rawQuery).mockImplementation(async (sql: string) =>
+      sql.includes("FROM appeals") ? ([{ n: 2 }] as never) : ([] as never)
+    );
+    const out = JSON.parse(
+      await executeGovernanceTool("get_contributor_profile", { contributor_id: CONTRIBUTOR_ID })
+    );
+    expect(out.appeals_filed).toBe(2);
+    expect(out.reputation_score).toBe(50);
+  });
+});
+
+describe("get_review_history", () => {
+  const CLAIM = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+  const row = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    contribution_type: "challenge",
+    claim_id: CLAIM,
+    content: "The same objection as before.",
+    evidence_urls: [],
+    review_status: "rejected",
+    submitted_at: new Date("2026-06-01T00:00:00Z"),
+    same_filer: false,
+    decision: "reject",
+    decision_reasoning: "Answered: the study was replicated.",
+    appeals: [{ status: "resolved", reasoning: "I disagree." }],
+    arbitrations: [{ outcome: "uphold_original", decision: "Stands." }],
+    ...overrides,
+  });
+
+  it("lists the claim's other contributions and the filer's, with decisions and appeals", async () => {
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    vi.mocked(rawQuery).mockImplementation(async (sql: string, params?: unknown[]) => {
+      calls.push({ sql, params: params ?? [] });
+      if (sql.includes("SELECT claim_id, contributor_id, grant_id")) {
+        return [{ claim_id: CLAIM, contributor_id: CONTRIBUTOR_ID, grant_id: null }] as never;
+      }
+      if (sql.includes("c.claim_id = $3")) return [row("11111111-1111-1111-1111-111111111111")] as never;
+      return [row("22222222-2222-2222-2222-222222222222", { same_filer: true, content: "y".repeat(2000) })] as never;
+    });
+    const out = JSON.parse(
+      await executeGovernanceTool("get_review_history", { contribution_id: CONTRIBUTION_ID })
+    );
+    expect(out.on_same_target[0]).toMatchObject({
+      decision_in_force: { decision: "reject", reasoning: "Answered: the study was replicated." },
+      appeals: [{ status: "resolved" }],
+      arbitrations: [{ outcome: "uphold_original" }],
+    });
+    expect(out.from_same_filer[0].content).toMatch(/first 1500 of 2000 characters/);
+    // Decided contributions only by default.
+    expect(calls[1]!.sql).toContain("NOT IN ('pending', 'escalated')");
+    // A personal filer's history leaves out what a mandate filed under the account.
+    expect(calls[2]!.sql).toContain("c.grant_id IS NULL");
+  });
+
+  it("keys a mandate's history on the mandate, and includes pending on request", async () => {
+    const GRANT = "99999999-9999-9999-9999-999999999999";
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    vi.mocked(rawQuery).mockImplementation(async (sql: string, params?: unknown[]) => {
+      calls.push({ sql, params: params ?? [] });
+      if (sql.includes("SELECT claim_id, contributor_id, grant_id")) {
+        return [{ claim_id: null, contributor_id: CONTRIBUTOR_ID, grant_id: GRANT }] as never;
+      }
+      return [] as never;
+    });
+    const out = JSON.parse(
+      await executeGovernanceTool("get_review_history", {
+        contribution_id: CONTRIBUTION_ID,
+        include_pending: true,
+      })
+    );
+    expect(out.filed_by).toBe(MANDATE_LABEL);
+    expect(typeof out.on_same_target).toBe("string");
+    expect(calls[1]!.sql).toContain("c.grant_id = $2");
+    expect(calls[1]!.params[1]).toBe(GRANT);
+    expect(calls[1]!.sql).not.toContain("NOT IN ('pending'");
+  });
+});
+
+describe("claim-context set", () => {
+  // The Steward is handed contributions by id (#697) and can read them.
+  it("includes get_contribution_details but not the contributor or history tools", () => {
+    const names = getClaimContextToolDefinitions().map((t) => t.name);
+    expect(names).toContain("get_contribution_details");
+    expect(names).not.toContain("get_contributor_profile");
+    expect(names).not.toContain("get_review_history");
   });
 });

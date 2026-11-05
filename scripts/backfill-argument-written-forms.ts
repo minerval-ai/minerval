@@ -19,6 +19,7 @@
  */
 import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
+import { LACKS_WRITTEN_FORM_SQL } from "../src/services/argument-service.js";
 import { enqueueSteward } from "../src/services/queue-service.js";
 
 async function main(): Promise<void> {
@@ -37,7 +38,8 @@ async function main(): Promise<void> {
        JOIN claims c ON c.id = a.claim_id
       WHERE c.state = 'active'
         AND a.name IS NOT NULL
-        AND a.content NOT LIKE '%[[claim:%'
+        AND a.retired_at IS NULL
+        AND ${LACKS_WRITTEN_FORM_SQL}
       GROUP BY c.id, c.text`
   );
 
@@ -63,9 +65,10 @@ async function main(): Promise<void> {
       trigger: "argument_written_form_backfill",
       context:
         `Named argument(s) on this claim lack a written form: ` +
-        `${r.argument_names.join(", ")}. For each, state in 1–3 sentences how ` +
-        `its subclaims combine to bear on the claim, referencing every ` +
-        `subclaim inline as [[claim:<uuid>]], via write_argument.`,
+        `${r.argument_names.join(", ")}. For each, state briefly how its ` +
+        `premises combine to bear on the claim, referencing every attached ` +
+        `subclaim inline as [[claim:<uuid>]], via write_argument; or retire ` +
+        `an argument that should not be there with retire_argument.`,
     });
   }
   console.log(`\nEnqueued ${rows.length} Stewards. The drain will re-drive them.`);

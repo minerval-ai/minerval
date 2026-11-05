@@ -8,9 +8,11 @@ description: >-
   Steward's.
 metadata:
   minerval:
-    version: 1
+    version: 2
     since_epoch: 2026-10-assessment-as-thinking
     kind: method
+    changelog:
+      2: The researcher's section, which repeated the section for every administrator, is gone; the researcher reads that section.
 ---
 
 ## For every administrator
@@ -33,13 +35,3 @@ evidence it does not exist to the degree that the search would have found
 it if it did. A careful search of the places it would appear makes an
 absence weigh; a search that never reached them leaves it saying little.
 Say which it was.
-
-## For the researcher
-
-Before searching, ask what evidence would bear on the question and where
-it would appear, including under other names in other fields, and search
-those places rather than one framing of the brief. Your report should say
-what you looked for, where, and what you left unsearched. An absence
-weighs only as much as the search that failed to find it: when you report
-that something does not exist, say whether the places you looked are where
-it would have appeared.

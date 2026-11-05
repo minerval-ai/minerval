@@ -35,7 +35,10 @@ skill bundles it in full, and the section numbers below point into it.
   Metered; cap `max_claims` sensibly. `extract_claims` works the same way.
 - **Just looking**: `search_claims` / `get_claim` / `get_decomposition` are
   free reads: search the graph, fetch a claim's assessment, or see its
-  subclaim tree with unsettled-vs-settled structure.
+  subclaim tree with unsettled-vs-settled structure. `get_claim` returns the
+  record and its counts; ask for what else you need with `include`
+  (`arguments`, `provenance`, `dependents`, `related`, `findings`, …). It is
+  the same tool the graph's own agents read nodes with.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
 - **A whole document or diff to clear before shipping**: prefer delegating
@@ -104,12 +107,14 @@ on whether X, which the evidence does not yet settle" is more useful than
 "it's disputed".
 
 `get_claim` with `include: ["arguments"]` shows the named arguments and
-the Steward's evaluation of each (§7). Its `verdict` rates the inference,
-how far the conclusion follows if the premises hold (certain, likely,
-slight, none), not whether the conclusion is true; an argument rated
-`certain` can rest on a false premise. `evaluation` names the premises
-the argument lives or dies on, and `decisive: true` means it settles the
-claim as its premises now stand; when one is decisive, say so plainly.
+the Steward's `evaluation` of each (§7). Its `verdict` rates the
+inference, how far the conclusion follows if the premises hold (certain,
+likely, slight, none), not whether the conclusion is true; an argument
+rated `certain` can rest on a false premise. Its `content` names the
+premises the argument lives or dies on, and `decisive: true` means it
+settles the claim as its premises now stand; when one is decisive, say so
+plainly. `stale: true` means the evaluation predates the current
+assessment.
 
 The same habit helps when you reason without the graph: ask what would
 make the claim true or false, and which sub-question the answer depends
@@ -124,6 +129,10 @@ support matters:
 - Look at the claim's provenance: which instances rest on which documents,
   which sources are one voice, and the Steward's account of what the
   support rests on. None of it is a score; it is structure to reason with.
+- Read each instance's `stance`. A source that `poses` the claim as an open
+  question or only `mentions` it (cites it, reports the debate) takes no
+  side: it shows how the claim is used, never who holds it, so do not cite
+  it as support or opposition.
 - Prefer the primary source: the study, the dataset, the direct
   quotation, not the article about it (§9).
 - Read every source against today's date. A source can be out of date

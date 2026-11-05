@@ -119,7 +119,10 @@ export function getReportToolDefinitions(): Tool[] {
         "express what you need to say, or its result omits what you were " +
         "told to reason over (tool_gap); or when doing this work showed you a " +
         "specific, actionable improvement to the graph or its machinery " +
-        "(improvement). Always recorded in one call: a verbatim repeat joins " +
+        "(improvement); an idea from having just done the work is as welcome " +
+        "as a defect. You are the reader who understood what the system meant " +
+        "to do, so say what a stack trace cannot. Always recorded in one " +
+        "call: a verbatim repeat joins " +
         "its report as a sighting, and a new report is filed as an issue for " +
         "the maintainers and comes back with the reports on record that read " +
         "like it, with their status and the maintainers' note, as advice. If " +
@@ -129,7 +132,8 @@ export function getReportToolDefinitions(): Tool[] {
         "blocks, and never changes this run's outcome. Raising an issue is " +
         "not a substitute for acting: report, then proceed with the best " +
         "action still available to you. Do not report when nothing is wrong; " +
-        "a few per run at most.",
+        "when much is wrong, report each real problem (there is no per-run " +
+        "cap; repeats are folded together).",
       input_schema: {
         type: "object" as const,
         properties: {

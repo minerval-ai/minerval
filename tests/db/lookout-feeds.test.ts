@@ -3,9 +3,11 @@
  * first poll records what a feed already carries and queues nothing; new
  * items land once each however often the feed is polled; a wake rule
  * queues one `feed` event, not one per item, and not again while that one
- * waits; the inbox lists and triages items, ingests go onto the mandate's
- * plan within the run's allowance; auto_ingest stops at its daily cap;
- * untriaged items expire; a failing feed backs off and breaks; a page the
+ * waits; the inbox lists and triages items, and an ingest opens a ledger
+ * row valued at its urgency within the lookout's ceiling, never a plan
+ * item, with no count per run (#695); auto_ingest raises every new item at
+ * the ceiling with no daily cap, and the mandate's allocator funds those
+ * rows; untriaged items expire; a failing feed backs off and breaks; a page the
  * lookout read is cached for the ingest.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -42,6 +44,7 @@ import {
   updateFeed,
 } from "../../src/services/feed-service.js";
 import { feedPollTick } from "../../src/workers/lookout-triggers.js";
+import { runMandateAllocator } from "../../src/services/allocation-service.js";
 
 function rss(site: string, items: Array<{ id: string; title?: string; content?: string }>): string {
   return `<?xml version="1.0"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>
@@ -80,6 +83,18 @@ const planUrls = async (grantId: string) => {
   );
   return (g?.plan?.items ?? []).map((i) => i.url);
 };
+
+/** The mandate's valued ingest rows on the ledger, oldest first, with each one's focus. */
+const ledgerIngests = (grantId: string) =>
+  rawQuery<{ url: string; focus: string | null; value: number; status: string; group: string }>(
+    `SELECT a.target_ref AS url, f.focus, mv.value_est AS value, a.status, a.exclusion_group AS group
+       FROM mandate_valuations mv
+       JOIN actions a ON a.id = mv.action_id
+       LEFT JOIN ingest_focuses f ON f.exclusion_group = a.exclusion_group
+      WHERE mv.grant_id = $1 AND a.kind = 'ingest'
+      ORDER BY a.created_at ASC, a.id ASC`,
+    [grantId]
+  );
 
 beforeEach(() => {
   net.pages.clear();
@@ -220,41 +235,50 @@ describe("the inbox", () => {
     return { ...s, feedId: added.feed_id };
   }
 
-  it("lists waiting items, and triage ingests within the allowance, skips, defers, and skips the rest", async () => {
+  it("lists waiting items, and triage raises ingests valued within the ceiling, skips, defers, and skips the rest", async () => {
     const { grantId, lookoutId, site, feedId } = await withItems(5);
     const inbox = await feedInbox({ lookoutId });
     expect(inbox.total).toBe(5);
     const ids = inbox.rows.map((r) => r.item_id);
 
+    // No count per run (#695): every ingest decision is raised, each valued
+    // at its urgency clamped to the lookout's ceiling (6, the default).
     const res = await triageItems({
       lookoutId,
       grantId,
-      ingestAllowance: 1,
+      maxValue: 6,
       decisions: [
-        { item_id: ids[0], decision: "ingest", reason: "A substantive argument on the crux." },
+        { item_id: ids[0], decision: "ingest", reason: "A substantive argument on the crux.", urgency: 9 },
         { item_id: ids[1], decision: "ingest" },
         { item_id: ids[2], decision: "defer" },
         { item_id: ids[3], decision: "skip", reason: "link roundup" },
         { item_id: randomUUID(), decision: "skip" },
       ],
     });
-    expect(res.ingested).toBe(1);
-    expect(res.outcomes.map((o) => o.ok)).toEqual([true, false, true, true, false]);
-    expect(res.outcomes[1]!.note).toMatch(/No ingests left/);
-    const plan = await planUrls(grantId);
-    expect(plan).toEqual([inbox.rows[0]!.url]);
+    expect(res.ingested).toBe(2);
+    expect(res.outcomes.map((o) => o.ok)).toEqual([true, true, true, true, false]);
+    expect(await ledgerIngests(grantId)).toMatchObject([
+      { url: inbox.rows[0]!.url, value: 6, status: "open" },
+      { url: inbox.rows[1]!.url, value: 5, status: "open" },
+    ]);
+    // Nothing goes on the plan, where it would be self-funded outside the allocator.
+    expect(await planUrls(grantId)).toEqual([]);
 
-    // Proposing the same URL again finds it already planned; the item is done.
-    const again = await triageItems({ lookoutId, grantId, ingestAllowance: 5, decisions: [{ item_id: ids[1], decision: "ingest" }] });
-    expect(again.ingested).toBe(1);
+    // An item already ingested is not raised twice.
+    const again = await triageItems({ lookoutId, grantId, maxValue: 6, decisions: [{ item_id: ids[0], decision: "ingest" }] });
+    expect(again).toMatchObject({ ingested: 0, outcomes: [{ ok: false, note: "Already ingested" }] });
+    // A ceiling of 0 delegates no spending: the item stays waiting, with the reason.
+    const none = await triageItems({ lookoutId, grantId, maxValue: 0, decisions: [{ item_id: ids[2], decision: "ingest" }] });
+    expect(none.outcomes[0]).toMatchObject({ ok: false, status: "deferred", note: expect.stringMatching(/ceiling/) });
+
     const dup = await triageItems({
-      lookoutId, grantId, ingestAllowance: 5,
+      lookoutId, grantId, maxValue: 6,
       decisions: [{ item_id: ids[2], decision: "skip" }],
       skipRest: { feedId, reason: "caught up" },
     });
     expect(dup.skipped_in_bulk).toBe(1);
     expect((await feedInbox({ lookoutId })).total).toBe(0);
-    expect(await planUrls(grantId)).toHaveLength(2);
+    expect(await ledgerIngests(grantId)).toHaveLength(2);
 
     const [report] = await feedReport(lookoutId);
     expect(report!.items).toMatchObject({ new: 0, deferred: 0, ingested: 2, skipped: 3 });
@@ -311,7 +335,7 @@ describe("rules", () => {
     net.pages.set(`${site}/feed`, rss(site, []));
     const auto = await addFeed({
       grantId, lookoutId, url: `${site}/feed`, createdBy: "x",
-      rule: { wake: "auto_ingest", dailyIngestCap: 5 }, ingestFocus: focus,
+      rule: { wake: "auto_ingest" }, ingestFocus: focus,
     });
     if (!auto.ok) throw new Error(auto.problem);
     net.pages.set(`${site}/feed`, rss(site, [{ id: "a" }]));
@@ -328,39 +352,51 @@ describe("rules", () => {
     await pollFeed((await getFeed(auto.feed_id))!);
     const rows = (await feedInbox({ lookoutId, order: "oldest" })).rows;
     await triageItems({
-      lookoutId, grantId, ingestAllowance: 5,
+      lookoutId, grantId, maxValue: 6,
       decisions: [
         { item_id: rows[0]!.item_id, decision: "ingest" },
         { item_id: rows[1]!.item_id, decision: "ingest", focus: "" },
       ],
     });
-    const [g] = await rawQuery<{ plan: { items: Array<{ url: string; focus?: string }> } }>(
-      `SELECT plan FROM grants WHERE id = $1`,
-      [grantId]
-    );
-    expect(g!.plan.items.map((i) => i.focus ?? null)).toEqual([focus, focus, null]);
+    // The auto-ingested item and the default triage carry the feed's focus,
+    // recorded against their ledger rows; "" asks for the whole document.
+    expect((await ledgerIngests(grantId)).map((i) => i.focus)).toEqual([focus, focus, null]);
+    expect(await planUrls(grantId)).toEqual([]);
     const [report] = await feedReport(lookoutId);
     expect(report!.ingest_focus).toBe(focus);
   });
 
-  it("auto_ingest puts new items on the plan up to the daily cap, with no run", async () => {
+  it("auto_ingest raises every new item at the lookout's ceiling, with no run and no daily cap, for the allocator to fund", async () => {
     const { grantId, lookoutId, site } = await seedLookout();
+    await rawQuery(`UPDATE lookouts SET max_value = 4 WHERE id = $1`, [lookoutId]);
     net.pages.set(`${site}/feed`, rss(site, []));
     const added = await addFeed({
       grantId, lookoutId, url: `${site}/feed`, createdBy: "x",
-      rule: { wake: "auto_ingest", dailyIngestCap: 2 },
+      rule: { wake: "auto_ingest" },
     });
     if (!added.ok) throw new Error(added.problem);
     net.pages.set(`${site}/feed`, rss(site, [{ id: "a" }, { id: "b" }, { id: "c" }]));
     const r = await pollFeed((await getFeed(added.feed_id))!);
-    expect(r).toMatchObject({ autoIngested: 2, woke: false });
-    expect(await planUrls(grantId)).toHaveLength(2);
+    expect(r).toMatchObject({ autoIngested: 3, woke: false });
+    const rows = await ledgerIngests(grantId);
+    expect(rows.map((i) => i.value)).toEqual([4, 4, 4]);
+    expect(await planUrls(grantId)).toEqual([]);
     expect(await feedEvents(lookoutId)).toHaveLength(0);
-    // The cap holds on the next poll the same day; the third waits.
+    // Nothing new on the next poll, so nothing more is raised.
     const r2 = await pollFeed((await getFeed(added.feed_id))!);
     expect(r2.autoIngested).toBe(0);
     const [report] = await feedReport(lookoutId);
-    expect(report!.items).toMatchObject({ new: 1, ingested: 2, auto_ingested: 2 });
+    expect(report!.items).toMatchObject({ new: 0, ingested: 3, auto_ingested: 3 });
+
+    // The mandate's allocator, not a count, decides what these buy: it
+    // funds the valued rows out of the mandate's room.
+    const alloc = await runMandateAllocator(grantId);
+    expect(alloc.allocated).toBeGreaterThan(0);
+    const placed = await rawQuery<{ exclusion_group: string }>(
+      `SELECT exclusion_group FROM action_allocations WHERE grant_id = $1 AND released_at IS NULL`,
+      [grantId]
+    );
+    expect(placed.map((p) => p.exclusion_group)).toEqual(expect.arrayContaining(rows.map((i) => i.group)));
   });
 
   it("a lookout may retune its own feed either way, but not to or from auto_ingest; the Grantmaker may", async () => {

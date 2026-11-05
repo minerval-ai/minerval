@@ -46,7 +46,9 @@
     "roles": [
       "claim-steward",
       "audit-agent",
-      "researcher"
+      "researcher",
+      "contribution-reviewer",
+      "dispute-arbitrator"
     ]
   },
   {

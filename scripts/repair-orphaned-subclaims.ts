@@ -24,6 +24,7 @@
  */
 import "../src/load-env.js";
 import { closeDb, rawQuery, withTransaction } from "../src/db/client.js";
+import { LACKS_WRITTEN_FORM_SQL } from "../src/services/argument-service.js";
 import {
   attachEdgeToArgument,
   insertRelationshipEdge,
@@ -158,7 +159,7 @@ async function parentsNeedingWrittenForms(parentIds: string[]): Promise<string[]
   const rows = await rawQuery<{ claim_id: string }>(
     `SELECT DISTINCT a.claim_id FROM arguments a
       WHERE a.claim_id = ANY($1::uuid[]) AND a.name IS NOT NULL
-        AND a.content NOT LIKE '%[[claim:%'`,
+        AND a.retired_at IS NULL AND ${LACKS_WRITTEN_FORM_SQL}`,
     [parentIds]
   );
   return rows.map((r) => r.claim_id);

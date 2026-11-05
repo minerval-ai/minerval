@@ -7,12 +7,9 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, sql, desc } from "drizzle-orm";
-import { getDb } from "../../db/client.js";
-import { rawQuery } from "../../db/client.js";
+import { getDb, rawQuery } from "../../db/client.js";
 import {
   claims,
-  assessments,
-  arguments_,
   sources,
   contributions,
   contributionReviews,
@@ -22,54 +19,31 @@ import {
 } from "../../db/schema.js";
 import { trustLevelFor } from "../../services/reputation-service.js";
 import { microUsdToOwls } from "../../services/owl.js";
-import { hasWrittenForm } from "../../services/argument-service.js";
-import { getSourceMapSummary } from "../../services/source-map-service.js";
 import {
   DEFAULT_INSTANCE_PAGE,
   MAX_INSTANCE_PAGE,
-  countClaimInstances,
   getClaimInstancePage,
 } from "../../services/claim-instance-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
-import { listFindings } from "../../services/finding-service.js";
-import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
-import { listRelatedClaims } from "../../services/claim-link-service.js";
-import { getQuantityDetail, getThresholdOf } from "../../services/quantity-service.js";
-import { getQuestionDetail } from "../../services/question-service.js";
-import { listRequests } from "../../services/request-service.js";
-import { EVALUATION_STALE_SQL } from "../../services/argument-service.js";
+import { executeGraphReadTool, getClaimToolDefinition } from "./graph-read-tools.js";
+import { MANDATE_LABEL } from "../../services/contribution-service.js";
+
+const HISTORY_DEFAULT = 10;
+const HISTORY_MAX = 30;
+/** How much of each listed contribution's text and reasoning the history carries. */
+const HISTORY_EXCERPT = 1500;
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
-    {
-      name: "get_claim",
-      description:
-        "Read a claim as the graph records it: its canonical text, type, " +
-        "state, current assessment, subclaims grouped by argument, arguments " +
-        "with their evaluations, related claims, formalization record, " +
-        "preliminary seed, findings already noted, and Steward state. A claim " +
-        "is a proposition, not a passage in any document, so this returns no " +
-        "sources; instance_count says how many instances it carries, and " +
-        "get_claim_instances reads them. decomposition_status \"complete\" " +
-        "only means the claim was handed to its Steward; read steward_state " +
-        "and stewarded_at to tell whether a Steward has actually worked it " +
-        "(stewarded_at null = never run).",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim",
-          },
-        },
-        required: ["claim_id"],
-      },
-    },
+    // The one get_claim every agent and MCP share (#774): the governance
+    // roles read the same view, asking for the sections they need.
+    getClaimToolDefinition(),
     {
       name: "get_claim_instances",
       description:
         "Read the instances the graph currently records for a claim: each " +
-        "source that asserts, denies or poses the proposition, with the " +
+        "source that asserts, denies, poses or mentions the proposition " +
+        "(each with its stance; a mention takes no side), with the " +
         "passage, its attribution (speaker, publication, date, link), any " +
         "reading recorded from opening the source, what it was recorded as " +
         "drawing on, and where the source sits in the claim's provenance " +
@@ -107,12 +81,17 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_contribution_details",
       description:
-        "Get full details about a contribution, including the contributor, " +
-        "the target claim, any existing review, the reviewer's escalation " +
-        "reason, any appeals (with the appellant's reasoning), and prior " +
-        "arbitration results. Pass contribution_id, or a review_id (as " +
-        "get_recent_decisions returns) to load the contribution that " +
-        "review decided.",
+        "Get full details about a contribution: what was submitted (type, " +
+        "content, evidence, proposed wording, merge target), who filed it " +
+        "(a contributor's id and name, or \"a funded mandate\"), the target " +
+        "claim, any existing review, the reviewer's escalation reason, any " +
+        "human-review reason, the prize claim a challenge targets, any " +
+        "appeals (with the appellant's reasoning), and prior arbitration " +
+        "results. Reputation is not here: " +
+        "get_contributor_profile has it, for when bad faith or coordination " +
+        "is in question. Pass contribution_id, or a review_id (as " +
+        "get_recent_decisions returns) to load the contribution that review " +
+        "decided.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -132,8 +111,13 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_contributor_profile",
       description:
-        "Get a contributor's profile including reputation score, acceptance " +
-        "history, and trust level.",
+        "Get a contributor's profile: reputation score, trust level, " +
+        "standing, bad-faith flags, acceptance history, and how many appeals " +
+        "they have filed. It bears on bad faith and coordination (§13, §15), " +
+        "never on the merits of a contribution. Pass contributor_id, or the " +
+        "contribution_id of the contribution in question. A contribution a " +
+        "funded mandate filed has no contributor profile: a mandate has no " +
+        "reputation, and the account behind it is not shown.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -141,15 +125,54 @@ export function getGovernanceToolDefinitions(): Tool[] {
             type: "string",
             description: "The UUID of the contributor",
           },
+          contribution_id: {
+            type: "string",
+            description: "Alternatively, a contribution whose filer to look up",
+          },
         },
-        required: ["contributor_id"],
+      },
+    },
+    {
+      name: "get_review_history",
+      description:
+        "The record a review is judged against, for one contribution: the " +
+        "other contributions on the same target, and the same filer's earlier " +
+        "contributions (a mandate's, for a contribution a mandate filed). " +
+        "Each comes with its text (the first 1,500 characters, marked when " +
+        "cut), the decision in force with its reasoning, and its appeals and " +
+        "arbitrations. This is how you find an argument already answered " +
+        "(§14), contributions that conflict on the same claim, and earlier " +
+        "appeals of similar rejections. Decided contributions only, unless " +
+        "include_pending is true. Newest first.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          contribution_id: {
+            type: "string",
+            description: "The contribution under review",
+          },
+          include_pending: {
+            type: "boolean",
+            description:
+              "Also list contributions still awaiting review or arbitration. Default false.",
+          },
+          limit: {
+            type: "integer",
+            description: `How many of each list to return (default ${HISTORY_DEFAULT}, at most ${HISTORY_MAX}).`,
+          },
+        },
+        required: ["contribution_id"],
       },
     },
     {
       name: "get_claim_dependents",
       description:
-        "Get all claims that depend on (have as a subclaim) a given claim. " +
-        "Useful for understanding the impact of changing a claim's assessment.",
+        "Get the nodes that depend on a given one: those that have it as a " +
+        "subclaim, answer, or subquestion, and, for a quantity, the claims " +
+        "that cut it (say which side of a figure it lies; relation 'cuts'), " +
+        "whose credence must agree with its estimate. Each comes with its " +
+        "status, confidence and credence. Use it to see whom a change of " +
+        "judgment could matter to.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -164,28 +187,43 @@ export function getGovernanceToolDefinitions(): Tool[] {
     {
       name: "get_recent_decisions",
       description:
-        "Get recent contribution review decisions, optionally filtered. " +
-        "Useful for audit agents analyzing patterns. Each row carries the " +
-        "contribution_id, so get_contribution_details can load the text " +
-        "that was reviewed.",
+        "List contribution review decisions in force, newest first, with " +
+        "each one's reasoning, confidence, the sections it cites, and any " +
+        "bad-faith flag. Superseded reviews (replaced by a re-review) are " +
+        "left out. Each row carries the contribution_id, so " +
+        "get_contribution_details can load what was reviewed. Paged: pass " +
+        "offset to continue when has_more is true.",
       input_schema: {
         type: "object" as const,
         properties: {
           limit: {
             type: "integer",
-            description: "Maximum number of results (default 20)",
+            description: `Maximum number of results (default 20, at most ${MAX_DECISION_PAGE})`,
+          },
+          offset: {
+            type: "integer",
+            description: "How many to skip, for the next page (default 0)",
           },
           decision_filter: {
             type: "string",
-            description: "Filter by decision type: accept, reject, escalate",
+            enum: ["accept", "reject", "escalate"],
+            description: "Only decisions of this kind",
           },
           contributor_id: {
             type: "string",
-            description: "Filter by contributor ID",
+            description: "Only decisions on this contributor's contributions",
           },
           claim_id: {
             type: "string",
-            description: "Filter to decisions on contributions targeting this claim",
+            description: "Only decisions on contributions targeting this claim",
+          },
+          since: {
+            type: "string",
+            description: "ISO 8601 time: only decisions made at or after it",
+          },
+          bad_faith_only: {
+            type: "boolean",
+            description: "Only decisions that flagged suspected bad faith",
           },
         },
       },
@@ -194,14 +232,17 @@ export function getGovernanceToolDefinitions(): Tool[] {
 }
 
 // The claim-facing subset of the bundle. The Steward and Curator work on
-// claims, not contributions — their prompts never mention the contribution/
-// contributor/decision tools, so attaching the whole bundle was pure extra
-// context surface (#100). Those agents get just the claim readers; the
-// Reviewer, Arbitrator, and Audit Agent keep the full bundle.
+// claims, not contributions, so the contributor and decision-history tools
+// stay out of their toolsets (#100). They do get get_contribution_details:
+// an accepted contribution or an arbitration ruling is handed to the
+// Steward by id, and the Steward integrates the record itself, not a
+// paraphrase of it (#697). The Reviewer, Arbitrator, and Audit Agent keep
+// the full bundle.
 const CLAIM_CONTEXT_TOOL_NAMES = new Set([
   "get_claim",
   "get_claim_instances",
   "get_claim_dependents",
+  "get_contribution_details",
 ]);
 
 export function getClaimContextToolDefinitions(): Tool[] {
@@ -217,7 +258,7 @@ export async function executeGovernanceTool(
   try {
     switch (toolName) {
       case "get_claim":
-        return JSON.stringify(await getClaim(input.claim_id as string), null, 2);
+        return (await executeGraphReadTool("get_claim", input))!;
 
       case "get_claim_instances":
         return JSON.stringify(
@@ -242,7 +283,21 @@ export async function executeGovernanceTool(
 
       case "get_contributor_profile":
         return JSON.stringify(
-          await getContributorProfile(input.contributor_id as string),
+          await getContributorProfile(
+            input.contributor_id as string | undefined,
+            input.contribution_id as string | undefined
+          ),
+          null,
+          2
+        );
+
+      case "get_review_history":
+        return JSON.stringify(
+          await getReviewHistory(
+            input.contribution_id as string,
+            input.include_pending === true,
+            input.limit as number | undefined
+          ),
           null,
           2
         );
@@ -256,12 +311,15 @@ export async function executeGovernanceTool(
 
       case "get_recent_decisions":
         return JSON.stringify(
-          await getRecentDecisions(
-            (input.limit as number) ?? 20,
-            input.decision_filter as string | undefined,
-            input.contributor_id as string | undefined,
-            input.claim_id as string | undefined
-          ),
+          await getRecentDecisions({
+            limit: input.limit as number | undefined,
+            offset: input.offset as number | undefined,
+            decisionFilter: input.decision_filter as string | undefined,
+            contributorId: input.contributor_id as string | undefined,
+            claimId: input.claim_id as string | undefined,
+            since: input.since as string | undefined,
+            badFaithOnly: input.bad_faith_only === true,
+          }),
           null,
           2
         );
@@ -272,290 +330,6 @@ export async function executeGovernanceTool(
   } catch (err) {
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
-}
-
-/**
- * The canonical record of a claim. A claim has no home source, so no
- * instance is read here: the count says how many it carries, and
- * get_claim_instances reads them in the order a reader sees them.
- */
-async function getClaim(claimId: string) {
-  const db = getDb();
-
-  const [claim] = await db
-    .select()
-    .from(claims)
-    .where(eq(claims.id, claimId))
-    .limit(1);
-
-  if (!claim) return { error: `Claim not found: ${claimId}` };
-
-  // Current assessment
-  const [assessment] = await db
-    .select()
-    .from(assessments)
-    .where(
-      sql`${assessments.claimId} = ${claimId} AND ${assessments.isCurrent} = true`
-    )
-    .limit(1);
-
-  // Subclaims (with the argument each edge belongs to, so the steward can see
-  // which line of reasoning a subclaim serves — and write_argument accordingly).
-  // An edge grouped under several arguments (#437) is listed once per
-  // argument; an ungrouped basis edge once, with a null argument.
-  const subclaims = await rawQuery<{
-    edge_id: string;
-    child_id: string;
-    child_text: string;
-    child_type: string;
-    relation_type: string;
-    confidence: number;
-    child_status: string | null;
-    child_confidence: number | null;
-    argument_id: string | null;
-    argument_name: string | null;
-    child_kind: string;
-    child_estimate: unknown | null;
-    child_standing: string | null;
-  }>(
-    `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
-            c.claim_type AS child_type, cr.relation_type, cr.confidence,
-            a.status AS child_status, a.confidence AS child_confidence,
-            am.argument_id, arg.name AS argument_name,
-            c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
-     FROM claim_relationships cr
-     JOIN claims c ON c.id = cr.child_claim_id
-     LEFT JOIN assessments a ON a.claim_id = cr.child_claim_id AND a.is_current = true
-     LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
-     LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
-     LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
-     LEFT JOIN arguments arg ON arg.id = am.argument_id
-     WHERE cr.parent_claim_id = $1
-     ORDER BY cr.created_at, cr.id, am.created_at`,
-    [claimId]
-  );
-
-  // How many instances the claim carries; detached ones never count.
-  const instanceCount = await countClaimInstances(claimId);
-
-  // Arguments, each with its current evaluation (issue #173) so a re-running
-  // steward sees its prior judgment of the inference and can revise or confirm.
-  const args = await db
-    .select()
-    .from(arguments_)
-    .where(eq(arguments_.claimId, claimId));
-
-  const evaluations = await rawQuery<{
-    argument_id: string;
-    verdict: string;
-    decisive: boolean;
-    content: string;
-    stale: boolean;
-  }>(
-    `SELECT ae.argument_id, ae.verdict, ae.decisive, ae.content,
-            ${EVALUATION_STALE_SQL} AS stale
-       FROM argument_evaluations ae
-       JOIN arguments a ON a.id = ae.argument_id
-       JOIN claims c ON c.id = a.claim_id
-       LEFT JOIN assessments ca ON ca.claim_id = a.claim_id AND ca.is_current = true
-       LEFT JOIN quantity_estimates cq ON cq.claim_id = a.claim_id AND cq.is_current = true
-      WHERE a.claim_id = $1
-        AND ae.is_current = true`,
-    [claimId]
-  );
-  const evaluationByArgument = new Map(
-    evaluations.map((e) => [e.argument_id, e])
-  );
-
-  // The claim's source map (#286): the Steward's account of what the support
-  // rests on, a claim-level summary rather than any one source. Readings and
-  // edges per instance come with get_claim_instances. A failure here
-  // degrades to no map, never a failed read (§20).
-  const sourceMap = await getSourceMapSummary(claim.id).catch(() => null);
-
-  // Steward-seeded prior (#285): the hint the parent claim's Steward left when
-  // it minted this claim. Served only while the claim has no current
-  // assessment — once its own Steward has judged, the seed is history and must
-  // not sit beside the verdict as a second opinion.
-  const preliminarySeed =
-    !assessment && (claim.seedCredence != null || claim.seedNote != null)
-      ? {
-          credence: claim.seedCredence,
-          note: claim.seedNote,
-          seeded_by_claim_id: claim.seedSourceClaimId,
-        }
-      : null;
-
-  // Findings already noted on this claim (#394): one line each, a courtesy
-  // for the Steward's common case. The check that prevents a repeat lives in
-  // note_finding itself, for every role; this list is passive and carries no
-  // instruction. `stale` marks a note whose cited assessment is no longer
-  // current, so the Steward knows the graph has moved since it was written.
-  const findingsNoted = await listFindings({ claimId, limit: 10 }).catch(() => []);
-
-  // The claim's formal statement and the checks on it (#435): the published
-  // version, any draft or reviewed one awaiting publication, every version's
-  // status, and the checker's verdicts. The Steward reads this before
-  // formalizing (is there already a statement, or a draft to review?) and
-  // after an attempt (which statement did it run against, what did the
-  // checker say). Empty history means nothing has ever been recorded.
-  const formalizationRecord = await getClaimFormalizationRecord(claimId);
-  // Lateral links (#436): claims a reader of this one would want beside it,
-  // with the reason. Not dependencies; they never enter the assessment.
-  const relatedClaims = await listRelatedClaims(claimId);
-
-  // Kinds (constitution §2, §7a): a quantity's definition, estimate,
-  // readings and cuts; a question's standing and structure; for a claim
-  // about which side of a figure a quantity lies, that quantity; and the
-  // requests that bear on the node.
-  const kindRecord: Record<string, unknown> = {};
-  if (claim.kind === "quantity") {
-    const q = await getQuantityDetail(claimId);
-    // Figures that ingestion linked here but whose value nobody has recorded
-    // yet: get_claim_instances shows them; record_estimate with instance_id
-    // records each one's figure.
-    const [unrecorded] = await rawQuery<{ n: number }>(
-      `SELECT count(*)::int AS n FROM claim_instances
-        WHERE claim_id = $1 AND stance = 'states' AND stated_estimate IS NULL AND detached_at IS NULL`,
-      [claimId]
-    );
-    kindRecord.quantity = {
-      definition: q.definition,
-      current_estimate: q.estimate,
-      estimated: q.assessed,
-      stated_estimates: q.estimates.length,
-      figures_not_yet_recorded: unrecorded?.n ?? 0,
-      readings: q.readings,
-      cuts: q.cuts,
-    };
-  } else if (claim.kind === "question") {
-    kindRecord.question = await getQuestionDetail(claimId);
-  } else {
-    const threshold = await getThresholdOf(claimId);
-    if (threshold) kindRecord.threshold_of = threshold;
-  }
-  const requests = await listRequests({ claimId, limit: 20 }).catch(() => ({ items: [], total: 0 }));
-  if (requests.items.length > 0) {
-    kindRecord.requests = requests.items.map((r) => ({
-      id: r.id,
-      ask: r.ask,
-      state: r.state,
-      // The Steward of the one node a request bears on keeps it.
-      kept_by_this_node: r.keeper.kind === "steward" && r.bears_on.length === 1 && r.bears_on[0]!.id === claimId,
-      filed_by: r.filed_by.label,
-      work: r.work.map((w) => ({ by: w.by, outcome: w.outcome, summary: w.summary })),
-    }));
-  }
-
-  return {
-    claim: {
-      id: claim.id,
-      kind: claim.kind,
-      text: claim.text,
-      claim_type: claim.claimType,
-      state: claim.state,
-      decomposition_status: claim.decompositionStatus,
-      // Whether a Steward has actually worked this claim (#415).
-      // decomposition_status flips to "complete" at onboarding, when the
-      // claim is handed to its Steward, so on its own it cannot tell "never
-      // structured" from "structured and judged to need no children". The
-      // Steward queue state can: stewarded_at is null and steward_state is
-      // 'pending' or 'deferred' until a Steward run has started, and 'done'
-      // only once one has finished. A high-importance claim with no children,
-      // no assessment and no stewarded_at has simply not been worked yet.
-      steward_state: claim.stewardState,
-      stewarded_at: claim.stewardedAt?.toISOString() ?? null,
-      importance: claim.importance,
-      // Derived from the subclaims loaded below, never from a stored counter
-      // (#417): every edge in claim_relationships counts once, argument-grouped
-      // or not — an edge shared by two arguments is two rows above but one
-      // child (#437) — and a child is assessed when it has a current
-      // assessment.
-      children_total: new Set(subclaims.map((sc) => sc.edge_id)).size,
-      children_assessed: new Set(
-        subclaims.filter((sc) => sc.child_status != null).map((sc) => sc.edge_id)
-      ).size,
-      // Why the canonical form runs in the direction it does (#360): chosen
-      // on the proposition's terms when the claim was minted, so a Steward
-      // improving the wording keeps the polarity every stance is read
-      // against. Null for claims minted before the note existed.
-      canonical_direction_note: claim.canonicalDirectionNote ?? null,
-    },
-    // The parent Steward's preliminary prior, when one exists and the claim is
-    // still unassessed: one input among many, superseded by a real assessment.
-    ...(preliminarySeed ? { preliminary_seed: preliminarySeed } : {}),
-    current_assessment: assessment
-      ? {
-          status: assessment.status,
-          confidence: assessment.confidence,
-          reasoning: assessment.reasoningTrace,
-          assessed_at: assessment.assessedAt.toISOString(),
-        }
-      : null,
-    ...kindRecord,
-    ...formalizationRecord,
-    findings_noted: findingsNoted.map((f) => ({
-      id: f.id,
-      noted_at: f.first_noted_at instanceof Date ? f.first_noted_at.toISOString() : f.first_noted_at,
-      agent: f.agent,
-      importance: Number(f.importance),
-      sighting_count: Number(f.sighting_count),
-      headline: f.headline,
-      cites: (Array.isArray(f.refs) ? f.refs : []).map((r) => `${r.kind} ${r.id}`),
-      ...(f.stale ? { stale: "cites an assessment that is no longer current" } : {}),
-    })),
-    related_claims: relatedClaims.map((r) => ({
-      id: r.id,
-      text: r.text,
-      kind: r.kind,
-      reasoning: r.reasoning,
-      assessment_status: r.assessment_status,
-    })),
-    subclaims: subclaims.map((sc) => ({
-      id: sc.child_id,
-      text: sc.child_text,
-      type: sc.child_type,
-      relation: sc.relation_type,
-      confidence: sc.confidence,
-      assessment_status: sc.child_status,
-      assessment_confidence: sc.child_confidence,
-      argument_id: sc.argument_id,
-      argument_name: sc.argument_name,
-      ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),
-      ...(sc.child_kind === "quantity" ? { estimate: sc.child_estimate } : {}),
-      ...(sc.child_kind === "question" ? { standing: sc.child_standing } : {}),
-    })),
-    // The claim's source map (#286): null until a Steward has written one.
-    // Refresh it with provenance_write_map when the instances have changed.
-    source_map: sourceMap,
-    // How many instances the claim carries. The instances themselves, with
-    // readings and attribution, come from get_claim_instances.
-    instance_count: instanceCount,
-    arguments: args.map((a) => {
-      const evaluation = evaluationByArgument.get(a.id) ?? null;
-      return {
-        id: a.id,
-        name: a.name,
-        stance: a.stance,
-        ...(a.shows ? { shows: a.shows } : {}),
-        content: a.content,
-        // False when content is still just the creation-time label — the steward
-        // owes this argument a write_argument call (issue #129).
-        has_written_form: hasWrittenForm(a.content),
-        // The steward's current judgment of the inference (issue #173); null
-        // when the argument has never been evaluated. `stale` means it was
-        // derived under an assessment that is no longer current.
-        evaluation: evaluation
-          ? {
-              verdict: evaluation.verdict,
-              decisive: evaluation.decisive,
-              content: evaluation.content,
-              stale: evaluation.stale,
-            }
-          : null,
-      };
-    }),
-  };
 }
 
 async function getContributionDetails(
@@ -678,6 +452,14 @@ async function getContributionDetails(
       // Why the reviewer escalated — present even when the reviewer skipped
       // record_review_decision, so an escalation never arrives reasonless.
       escalation_reason: contribution.escalationReason,
+      // Why the Arbitrator sent it to humans, when it did (#713).
+      ...(contribution.humanReviewReason
+        ? { human_review_reason: contribution.humanReviewReason }
+        : {}),
+      // A challenge to a prize claim names it; get_prize_claim reads it (#710).
+      ...(contribution.challengedPrizeClaimId
+        ? { challenged_prize_claim_id: contribution.challengedPrizeClaimId }
+        : {}),
     },
     ...(source
       ? {
@@ -692,16 +474,27 @@ async function getContributionDetails(
           },
         }
       : {}),
-    contributor: contributor
+    // Who filed it, and nothing about their standing (#702): reputation is
+    // for weighing bad faith or coordination, read deliberately with
+    // get_contributor_profile, never set beside the merits. A mandate's
+    // contribution is filed under its funder's account but shown, here as
+    // everywhere, as the arrangement (#705): a mandate has no reputation, and
+    // the account behind it is not the reviewer's business.
+    ...(contribution.grantId
       ? {
-          id: contributor.id,
-          display_name: contributor.displayName,
-          reputation_score: contributor.reputationScore,
-          contributions_accepted: contributor.contributionsAccepted,
-          contributions_rejected: contributor.contributionsRejected,
-          is_verified: contributor.isVerified,
+          filed_by: MANDATE_LABEL,
+          contributor: null,
+          mandate_note:
+            "A funded mandate filed this. It has no reputation and no " +
+            "contributor profile: judge the contribution alone. A bad-faith " +
+            "flag on it is recorded and audited, with no reputation consequence.",
         }
-      : null,
+      : {
+          filed_by: contributor?.displayName ?? null,
+          contributor: contributor
+            ? { id: contributor.id, display_name: contributor.displayName }
+            : null,
+        }),
     target_claim: claim
       ? { id: claim.id, text: claim.text, type: claim.claimType }
       : null,
@@ -746,8 +539,34 @@ async function getContributionDetails(
   };
 }
 
-async function getContributorProfile(contributorId: string) {
+async function getContributorProfile(
+  contributorIdInput: string | undefined,
+  contributionId: string | undefined
+) {
   const db = getDb();
+
+  let contributorId = contributorIdInput;
+  if (!contributorId && contributionId) {
+    const [row] = await db
+      .select({ contributorId: contributions.contributorId, grantId: contributions.grantId })
+      .from(contributions)
+      .where(eq(contributions.id, contributionId))
+      .limit(1);
+    if (!row) return { error: `Contribution not found: ${contributionId}` };
+    // A mandate's contribution sits under its funder's personal account,
+    // which the graph never shows in the mandate's place (#705).
+    if (row.grantId) {
+      return {
+        filed_by: MANDATE_LABEL,
+        profile: null,
+        note:
+          "A funded mandate filed this contribution. A mandate has no " +
+          "reputation or standing to read: judge the contribution alone.",
+      };
+    }
+    contributorId = row.contributorId;
+  }
+  if (!contributorId) return { error: "Pass contributor_id or contribution_id" };
 
   const [contributor] = await db
     .select()
@@ -762,6 +581,11 @@ async function getContributorProfile(contributorId: string) {
     contributor.contributionsAccepted +
     contributor.contributionsRejected +
     contributor.contributionsEscalated;
+
+  const [appealsFiled] = await rawQuery<{ n: number }>(
+    `SELECT count(*)::int AS n FROM appeals WHERE appellant_id = $1`,
+    [contributorId]
+  );
 
   const trustLevel = trustLevelFor(
     contributor.reputationScore,
@@ -785,6 +609,7 @@ async function getContributorProfile(contributorId: string) {
     contributions_rejected: contributor.contributionsRejected,
     contributions_escalated: contributor.contributionsEscalated,
     total_contributions: total,
+    appeals_filed: appealsFiled?.n ?? 0,
     acceptance_rate:
       total > 0
         ? Math.round((contributor.contributionsAccepted / total) * 100)
@@ -797,41 +622,106 @@ async function getContributorProfile(contributorId: string) {
 // behind the agents' historical field names so tool payloads don't change.
 async function getClaimDependents(claimId: string) {
   const rows = await fetchClaimDependents(claimId);
+  // A claim that says which side of a figure a quantity lies is joined to
+  // the quantity by a cut, not an edge, yet its credence must agree with the
+  // quantity's estimate (§21), so it is a dependent the quantity's Steward
+  // tells when the estimate moves (§22; #767).
+  const cuts = await rawQuery<{
+    id: string;
+    text: string;
+    claim_type: string;
+    direction: string;
+    value: number;
+    status: string | null;
+    confidence: number | null;
+    credence: number | null;
+  }>(
+    `SELECT c.id, c.text, c.claim_type, qc.direction, qc.value,
+            a.status, a.confidence, a.claim_credence AS credence
+       FROM quantity_cuts qc
+       JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
+       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+      WHERE qc.quantity_id = $1
+      ORDER BY c.importance DESC, c.id`,
+    [claimId]
+  );
 
-  return {
-    child_claim_id: claimId,
-    dependents: rows.map((r) => ({
+  const dependents = [
+    ...rows.map((r) => ({
       id: r.id,
       text: r.text,
       type: r.claim_type,
+      kind: r.node_kind,
       relation: r.relation_type,
       current_status: r.assessment_status,
+      confidence: r.assessment_confidence,
+      credence: r.assessment_credence,
     })),
-    count: rows.length,
-  };
+    ...cuts.map((c) => ({
+      id: c.id,
+      text: c.text,
+      type: c.claim_type,
+      kind: "claim",
+      relation: "cuts",
+      cut: { direction: c.direction, value: c.value },
+      current_status: c.status,
+      confidence: c.confidence,
+      credence: c.credence,
+    })),
+  ];
+  return { child_claim_id: claimId, dependents, count: dependents.length };
 }
 
-async function getRecentDecisions(
-  limit: number,
-  decisionFilter?: string,
-  contributorId?: string,
-  claimId?: string
-) {
+/** The most rows one get_recent_decisions page returns. */
+export const MAX_DECISION_PAGE = 100;
+
+/**
+ * Review decisions in force, newest first. The pattern sweep asks the Audit
+ * to weigh bad-faith flags and to look at one window of time (#696), so the
+ * rows carry the flag and the read takes a window, a flag filter, and an
+ * offset to page past the first page.
+ */
+export async function getRecentDecisions(opts: {
+  limit?: number;
+  offset?: number;
+  decisionFilter?: string;
+  contributorId?: string;
+  claimId?: string;
+  since?: string;
+  badFaithOnly?: boolean;
+}) {
   const db = getDb();
+  const limit = Math.min(Math.max(Math.floor(Number(opts.limit ?? 20)) || 20, 1), MAX_DECISION_PAGE);
+  const offset = Math.max(Math.floor(Number(opts.offset ?? 0)) || 0, 0);
+
+  let since: Date | null = null;
+  if (opts.since) {
+    since = new Date(opts.since);
+    if (Number.isNaN(since.getTime())) {
+      return { error: `since "${opts.since}" is not an ISO 8601 time` };
+    }
+  }
 
   // Superseded reviews are history, not decisions in force — an audit
   // re-review replaced them (#180).
   let conditions = sql`${contributionReviews.superseded} = false`;
-  if (decisionFilter) {
-    conditions = sql`${conditions} AND ${contributionReviews.decision} = ${decisionFilter}`;
+  if (opts.decisionFilter) {
+    conditions = sql`${conditions} AND ${contributionReviews.decision} = ${opts.decisionFilter}`;
   }
-  if (contributorId) {
-    conditions = sql`${conditions} AND ${contributions.contributorId} = ${contributorId}`;
+  if (opts.contributorId) {
+    conditions = sql`${conditions} AND ${contributions.contributorId} = ${opts.contributorId}`;
   }
-  if (claimId) {
-    conditions = sql`${conditions} AND ${contributions.claimId} = ${claimId}`;
+  if (opts.claimId) {
+    conditions = sql`${conditions} AND ${contributions.claimId} = ${opts.claimId}`;
+  }
+  if (since) {
+    conditions = sql`${conditions} AND ${contributionReviews.reviewedAt} >= ${since}`;
+  }
+  if (opts.badFaithOnly) {
+    conditions = sql`${conditions} AND ${contributionReviews.suspectedBadFaith} = true`;
   }
 
+  // One extra row says whether another page exists.
   const rows = await db
     .select({
       reviewId: contributionReviews.id,
@@ -840,6 +730,8 @@ async function getRecentDecisions(
       reasoning: contributionReviews.reasoning,
       confidence: contributionReviews.confidence,
       policyCitations: contributionReviews.policyCitations,
+      suspectedBadFaith: contributionReviews.suspectedBadFaith,
+      badFaithCategory: contributionReviews.badFaithCategory,
       reviewedAt: contributionReviews.reviewedAt,
       contributionType: contributions.contributionType,
       contributorId: contributions.contributorId,
@@ -852,10 +744,12 @@ async function getRecentDecisions(
     )
     .where(conditions)
     .orderBy(desc(contributionReviews.reviewedAt))
-    .limit(limit);
+    .limit(limit + 1)
+    .offset(offset);
 
+  const page = rows.slice(0, limit);
   return {
-    decisions: rows.map((r) => ({
+    decisions: page.map((r) => ({
       review_id: r.reviewId,
       // The key get_contribution_details takes (#495): without it audit
       // can read a reviewer's reasoning but not what was reviewed.
@@ -864,11 +758,132 @@ async function getRecentDecisions(
       reasoning: r.reasoning,
       confidence: r.confidence,
       policy_citations: r.policyCitations,
+      suspected_bad_faith: r.suspectedBadFaith,
+      bad_faith_category: r.badFaithCategory,
       reviewed_at: r.reviewedAt.toISOString(),
       contribution_type: r.contributionType,
       contributor_id: r.contributorId,
       claim_id: r.claimId,
     })),
-    count: rows.length,
+    count: page.length,
+    offset,
+    has_more: rows.length > limit,
+  };
+}
+
+interface HistoryRow {
+  id: string;
+  contribution_type: string;
+  claim_id: string | null;
+  content: string;
+  evidence_urls: string[] | null;
+  review_status: string;
+  submitted_at: Date | string;
+  same_filer: boolean;
+  decision: string | null;
+  decision_reasoning: string | null;
+  appeals: Array<{ status: string; reasoning: string }> | null;
+  arbitrations: Array<{ outcome: string; decision: string }> | null;
+}
+
+function historyExcerpt(text: string | null | undefined): string | null {
+  if (!text) return text ?? null;
+  return text.length > HISTORY_EXCERPT
+    ? `${text.slice(0, HISTORY_EXCERPT)} [first ${HISTORY_EXCERPT} of ${text.length} characters; get_contribution_details reads it whole]`
+    : text;
+}
+
+/**
+ * The record a review is judged against (#702): the same target's other
+ * contributions and the same filer's earlier ones, each with the decision in
+ * force, appeals and arbitrations. Keyed on the contribution, so a mandate's
+ * history is the mandate's, never its funder's personal one (#705).
+ */
+async function getReviewHistory(
+  contributionId: string,
+  includePending: boolean,
+  limitInput: number | undefined
+) {
+  const [subject] = await rawQuery<{
+    claim_id: string | null;
+    contributor_id: string;
+    grant_id: string | null;
+  }>(
+    `SELECT claim_id, contributor_id, grant_id FROM contributions WHERE id = $1`,
+    [contributionId]
+  );
+  if (!subject) return { error: `Contribution not found: ${contributionId}` };
+  const limit = Math.min(
+    HISTORY_MAX,
+    Math.max(1, Math.floor(Number(limitInput) || HISTORY_DEFAULT))
+  );
+
+  const sameFiler = subject.grant_id
+    ? `c.grant_id = $2`
+    : `(c.contributor_id = $2 AND c.grant_id IS NULL)`;
+  const filerKey = subject.grant_id ?? subject.contributor_id;
+  const decidedOnly = includePending
+    ? ""
+    : `AND c.review_status NOT IN ('pending', 'escalated')`;
+
+  const select = (where: string) => `
+    SELECT c.id, c.contribution_type, c.claim_id, c.content, c.evidence_urls,
+           c.review_status, c.submitted_at,
+           (${sameFiler}) AS same_filer,
+           r.decision, r.reasoning AS decision_reasoning,
+           (SELECT json_agg(json_build_object('status', a.status, 'reasoning', a.appeal_reasoning)
+                            ORDER BY a.submitted_at DESC)
+              FROM appeals a WHERE a.contribution_id = c.id) AS appeals,
+           (SELECT json_agg(json_build_object('outcome', ar.outcome, 'decision', ar.decision)
+                            ORDER BY ar.arbitrated_at DESC)
+              FROM arbitration_results ar WHERE ar.contribution_id = c.id) AS arbitrations
+      FROM contributions c
+      LEFT JOIN LATERAL (
+        SELECT decision, reasoning FROM contribution_reviews
+         WHERE contribution_id = c.id AND superseded = false
+         ORDER BY reviewed_at DESC LIMIT 1
+      ) r ON true
+     WHERE c.id <> $1 ${decidedOnly} AND ${where}
+     ORDER BY c.submitted_at DESC
+     LIMIT ${limit}`;
+
+  const onTarget = subject.claim_id
+    ? await rawQuery<HistoryRow>(select(`c.claim_id = $3`), [
+        contributionId,
+        filerKey,
+        subject.claim_id,
+      ])
+    : [];
+  const fromFiler = await rawQuery<HistoryRow>(select(sameFiler), [
+    contributionId,
+    filerKey,
+  ]);
+
+  const shape = (r: HistoryRow) => ({
+    id: r.id,
+    type: r.contribution_type,
+    target_claim_id: r.claim_id,
+    review_status: r.review_status,
+    submitted_at:
+      r.submitted_at instanceof Date ? r.submitted_at.toISOString() : r.submitted_at,
+    same_filer: r.same_filer,
+    content: historyExcerpt(r.content),
+    evidence_urls: r.evidence_urls ?? [],
+    decision_in_force: r.decision
+      ? { decision: r.decision, reasoning: historyExcerpt(r.decision_reasoning) }
+      : null,
+    appeals: (r.appeals ?? []).map((a) => ({
+      status: a.status,
+      reasoning: historyExcerpt(a.reasoning),
+    })),
+    arbitrations: r.arbitrations ?? [],
+  });
+
+  return {
+    filed_by: subject.grant_id ? MANDATE_LABEL : "this contributor",
+    on_same_target: subject.claim_id
+      ? onTarget.map(shape)
+      : "This contribution proposes new content and has no target yet.",
+    from_same_filer: fromFiler.map(shape),
   };
 }

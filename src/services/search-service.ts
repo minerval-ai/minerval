@@ -272,6 +272,53 @@ async function keywordSearch(
 }
 
 /**
+ * Keyword-only retrieval for the Matcher (#725): active, unmerged nodes whose
+ * wording contains every term (websearch syntax, so a quoted phrase stays a
+ * phrase), ranked by text rank. It reaches what embeddings serve badly (a
+ * problem-list number, a theorem's or a person's name) and every node whose
+ * embedding failed at creation, which the cosine search cannot see.
+ * `similarity_score` carries the text rank, not a cosine.
+ */
+export async function keywordClaimSearch(
+  query: string,
+  options: { limit?: number; excludeId?: string } = {}
+): Promise<SearchResult[]> {
+  const { limit = 20, excludeId } = options;
+  const params: unknown[] = [query, limit];
+  let excludeClause = "";
+  if (excludeId) {
+    excludeClause = "AND c.id != $3";
+    params.push(excludeId);
+  }
+  const rows = await rawQuery<SearchResult & { text_rank: number }>(
+    `
+    SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
+      ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
+      a.status AS assessment_status, a.confidence AS assessment_confidence
+    FROM claims c
+    LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+    WHERE c.state = 'active' AND c.merged_into IS NULL
+      AND c.text_search @@ websearch_to_tsquery('english', $1)
+      ${excludeClause}
+    ORDER BY text_rank DESC
+    LIMIT $2
+    `,
+    params
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    text: r.text,
+    claim_type: r.claim_type,
+    state: r.state,
+    similarity_score: r.text_rank ?? 0,
+    importance: r.importance,
+    assessment_status: r.assessment_status,
+    assessment_confidence: r.assessment_confidence,
+  }));
+}
+
+/**
  * Find semantically similar claims using pgvector cosine similarity.
  */
 export async function findSimilarClaims(

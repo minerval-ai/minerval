@@ -78,6 +78,16 @@ describe("note_finding tool", () => {
     expect(tool!.description).not.toMatch(/cap/i);
   });
 
+  it("tells a mandate's agent to cite recorded work, never to make it, and never to name the mandate (§19)", () => {
+    const admin = getFindingToolDefinitions()[0]!.description!;
+    const mandate = getFindingToolDefinitions({ mandate: true })[0]!.description!;
+    expect(admin).toContain("with its own tool first");
+    expect(mandate).not.toContain("with its own tool first");
+    expect(mandate).toContain("you make no assessment, argument, or merge");
+    expect(mandate).toContain("no mention of the mandate, its funder");
+    expect(mandate).toContain("in the graph's voice");
+  });
+
   it("returns null for a tool it does not own", async () => {
     const tools = createFindingTools();
     expect(await tools.execute("update_claim_assessment", {})).toBeNull();

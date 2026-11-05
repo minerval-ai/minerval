@@ -6,45 +6,90 @@
  * on it. They cost no LLM tokens of their own and touch no money, so every
  * agent gets the same four regardless of what else it is allowed to do.
  *
- * The reads themselves (definitions and payloads) live in
- * services/graph-read-service.ts, which the MCP server serves to outside
- * callers too (#726): the mandate agents once hand-rolled a weaker search
- * than MCP's, and the agents' get_claim later lost the argument evaluations
- * MCP's also lacked, because the two were separate code. This module only
- * adapts them to an agent's tool loop.
+ * The reads themselves are defined once and served to outside callers over
+ * MCP too: get_claim in services/claim-view-service.ts (#774), and
+ * search_claims, get_decomposition and get_dependents in
+ * services/graph-read-service.ts (#726). The mandate agents once hand-rolled
+ * a weaker search than MCP's, and later the agents' search lacked MCP's
+ * filters while MCP's lacked contestation, because the two were separate
+ * code. This module only adapts them to an agent's tool loop.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import {
-  GRAPH_READ_TOOL_NAMES,
-  graphReadDefinitions,
-  runGraphRead,
-} from "../../services/graph-read-service.js";
-
 type Tool = Anthropic.Tool;
+import {
+  CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_INCLUDE_DESCRIPTION,
+  CLAIM_VIEW_INCLUDES,
+  DEFAULT_DEPENDENTS_PAGE,
+  MAX_DEPENDENTS_PAGE,
+  getClaimView,
+} from "../../services/claim-view-service.js";
+import { graphReadDefinitions, runGraphRead } from "../../services/graph-read-service.js";
 
-export { GRAPH_READ_TOOL_NAMES };
+export const GRAPH_READ_TOOL_NAMES = [
+  "search_claims",
+  "get_claim",
+  "get_decomposition",
+  "get_dependents",
+] as const;
+
+/**
+ * The one `get_claim` (#774). Every agent that reads a node carries this
+ * definition, and MCP registers the same description and sections, so a
+ * skill that says `get_claim` means the same payload to every reader.
+ */
+export function getClaimToolDefinition(): Tool {
+  return {
+    name: "get_claim",
+    description: CLAIM_VIEW_DESCRIPTION,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        claim_id: { type: "string" },
+        include: {
+          type: "array",
+          items: { type: "string", enum: [...CLAIM_VIEW_INCLUDES] },
+          description: CLAIM_VIEW_INCLUDE_DESCRIPTION,
+        },
+        dependents_limit: {
+          type: "number",
+          description: `With include "dependents": how many, ${DEFAULT_DEPENDENTS_PAGE} by default, ${MAX_DEPENDENTS_PAGE} at most.`,
+        },
+        dependents_offset: {
+          type: "number",
+          description: `With include "dependents": how many to skip, for the next page.`,
+        },
+      },
+      required: ["claim_id"],
+    },
+  };
+}
+
+function optionalNumber(raw: unknown): number | undefined {
+  const n = Number(raw);
+  return raw == null || !Number.isFinite(n) ? undefined : n;
+}
 
 export function getGraphReadToolDefinitions(): Tool[] {
-  return graphReadDefinitions("agent").map((d) => ({
+  const [search, decomposition, dependents] = graphReadDefinitions("agent").map((d) => ({
     name: d.name,
     description: d.description,
     input_schema: d.input_schema,
   }));
+  return [search!, getClaimToolDefinition(), decomposition!, dependents!];
 }
 
 /**
  * Run one graph read. Returns null when `name` is not one of these tools, so
  * an agent's dispatcher can delegate here first and fall through to its own
- * handlers.
+ * mandate-specific handlers.
  */
 export async function executeGraphReadTool(
   name: string,
   input: Record<string, unknown>
 ): Promise<string | null> {
   try {
-    const result = await runGraphRead(name, input, "agent");
-    if (!result) return null;
-    return JSON.stringify(result.ok ? result.payload : { error: result.message });
+    return await executeGraphReadToolUnchecked(name, input);
   } catch (err) {
     // A model that cites a claim by a shortened or mangled id gets a tool
     // error it can recover from, not a query error that ends its run
@@ -56,4 +101,21 @@ export async function executeGraphReadTool(
     }
     throw err;
   }
+}
+
+async function executeGraphReadToolUnchecked(
+  name: string,
+  input: Record<string, unknown>
+): Promise<string | null> {
+  if (name === "get_claim") {
+    const view = await getClaimView(String(input.claim_id ?? ""), {
+      include: Array.isArray(input.include) ? input.include.map(String) : [],
+      dependentsLimit: optionalNumber(input.dependents_limit),
+      dependentsOffset: optionalNumber(input.dependents_offset),
+    });
+    return JSON.stringify(view ?? { error: "claim not found" });
+  }
+  const result = await runGraphRead(name, input);
+  if (!result) return null;
+  return JSON.stringify(result.ok ? result.payload : { error: "claim not found" });
 }
