@@ -80,7 +80,9 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
 import {
+  carriedNotebook,
   closeResearchRun,
+  latestRequestRun,
   modelForTier,
   openResearchRun,
   readResearcherPaused,
@@ -507,19 +509,38 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   const funder = await funderContext(action);
   const ceiling = actionBudgetMicroUsd(action);
   const tier = scoping ? "standard" : "strong";
+  // The tier and effort the full work runs on, which a scoping run prices
+  // (#732): fixed here, so the quote is for the run it funds.
+  const fullWork = { tier: "strong", model: modelForTier("strong"), effort: "high" } as const;
+  // What the run may record on (#728): a run taking up a request on one
+  // node runs with that node (provenance, instances, its domain skills);
+  // one on several records on any of them, each call naming its node.
+  const nodes = scoping || request.bears_on.length === 0
+    ? []
+    : await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = ANY($1::uuid[]) AND state = 'active'`,
+        [request.bears_on.map((n) => n.id)]
+      ).catch(() => []);
+  const asNode = (n: (typeof nodes)[number]) => ({ id: n.id, text: n.text, domains: n.domains ?? [], kind: n.kind ?? "claim" });
+  const claim = nodes.length === 1 ? asNode(nodes[0]!) : null;
+  const requestNodes = nodes.length > 1 ? nodes.map(asNode) : [];
+  // The next stage begins where the last stopped (#730): the run opens
+  // with the latest earlier run's notebook and report.
+  const prior = await latestRequestRun(requestId).catch(() => null);
   const run = await openResearchRun({
-    claimId: null,
+    claimId: claim?.id ?? null,
     grantId: funder.grantId ?? null,
     requestedBy: scoping ? "request_scope" : "request",
     requesterRunId: null,
     jobId: funder.jobId,
     task: requestBrief(request),
-    model: modelForTier(tier),
-    modelTier: tier,
-    effort: scoping ? null : "high",
+    model: scoping ? modelForTier(tier) : fullWork.model,
+    modelTier: scoping ? tier : fullWork.tier,
+    effort: scoping ? null : fullWork.effort,
     includeConstitution: true,
     ceilingMicroUsd: ceiling,
     requestId,
+    notebook: prior ? carriedNotebook(prior) : null,
   });
   await recordWork({
     requestId,
@@ -535,13 +556,13 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   let failure: unknown = null;
   try {
     const metered = await runWithUsageContext(
-      { userId: funder.userId, jobId: funder.jobId },
+      { userId: funder.userId, jobId: funder.jobId, ...(claim ? { claimId: claim.id } : {}) },
       () =>
         withPassBudget({ microUsd: ceiling, source: "the allocations funding this request" }, () =>
           runResearcher({
             run: {
               id: run.id,
-              claim_id: null,
+              claim_id: run.claim_id,
               grant_id: run.grant_id,
               requested_by: run.requested_by,
               task: run.task,
@@ -553,7 +574,10 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
               notebook: run.notebook,
               job_id: run.job_id,
             },
-            claim: null,
+            claim,
+            requestNodes,
+            priorRun: prior ? { id: prior.id, status: prior.status, requestedBy: prior.requested_by } : null,
+            fullWork: scoping ? fullWork : null,
           })
         )
     );
@@ -601,6 +625,8 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
 
   if (scoping) {
     const quote = usd(report?.budget_quote_usd);
+    // The plan the quote prices (#732), recorded with it for funders.
+    const plan = typeof report?.plan === "string" ? report.plan.trim() : "";
     const terminal = outcomeRaw && outcomeRaw !== "scoped" && (REQUEST_OUTCOMES as readonly string[]).includes(outcomeRaw)
       ? (outcomeRaw as RequestOutcome)
       : null;
@@ -625,7 +651,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
         byLabel: "Researcher",
         researchRunId: run.id,
         outcome: null,
-        summary: `Scoped at about $${quote.toFixed(2)}. ${answer}`.slice(0, 4000),
+        summary: (`Scoped at about $${quote.toFixed(2)}. ${answer}` + (plan ? `\n\nPlan: ${plan}` : "")).slice(0, 8000),
         fundedByJobId: funder.jobId,
       }).catch(() => null);
       // The quote is the request's budget: the full work opens at that price.

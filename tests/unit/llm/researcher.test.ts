@@ -461,6 +461,88 @@ describe("the issue channel (#743)", () => {
   });
 });
 
+describe("a run that takes up a request (#728, #730, #732)", () => {
+  const OTHER = "bbbbbbbb-0000-4000-8000-000000000002";
+  const requestInput = (over: { claim?: boolean; nodes?: boolean; scope?: boolean; kind?: string } = {}) => {
+    const i = input({ claim: over.claim ?? false, ...(over.kind ? { kind: over.kind } : {}) }) as ReturnType<typeof input> & {
+      requestNodes?: unknown;
+      priorRun?: unknown;
+      fullWork?: unknown;
+    };
+    i.run.requested_by = over.scope ? "request_scope" : "request";
+    if (over.nodes) {
+      i.requestNodes = [
+        { id: CLAIM, text: "The first node.", domains: ["mathematics"], kind: "claim" },
+        { id: OTHER, text: "The second node.", domains: [], kind: "question" },
+      ];
+    }
+    return i;
+  };
+  const names = () => (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+  const task = () => (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+
+  it("records provenance and instances on the one node a request bears on, and says so", async () => {
+    await runResearcher(requestInput({ claim: true }));
+    expect(names()).toEqual(expect.arrayContaining([
+      "provenance_get_map", "provenance_read_source", "provenance_record_reading", "provenance_record_edge",
+      "record_claim_instance", "file_request",
+    ]));
+    expect(names()).not.toContain("provenance_write_map");
+    expect(task()).toContain("It bears on one node");
+    expect(task()).toContain("you record no verdict");
+    expect(task()).not.toContain("writes nothing to the graph");
+  });
+
+  it("limits the node provenance tools to the nodes a request on several bears on", async () => {
+    mocks.script.calls = [
+      { name: "provenance_record_reading", input: { instance_id: "i1", support: "supports" } },
+      { name: "provenance_record_reading", input: { claim_id: "cccccccc-0000-4000-8000-000000000009", instance_id: "i1" } },
+    ];
+    await runResearcher(requestInput({ nodes: true }));
+    const tools = mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string; input_schema: { properties: Record<string, { enum?: string[] }>; required?: string[] } }>;
+    const reading = tools.find((t) => t.name === "provenance_record_reading")!;
+    expect(reading.input_schema.properties.claim_id!.enum).toEqual([CLAIM, OTHER]);
+    expect(reading.input_schema.required).toContain("claim_id");
+    // Sources need no node.
+    const read = tools.find((t) => t.name === "provenance_read_source")!;
+    expect(read.input_schema.properties.claim_id).toBeUndefined();
+    // No instance tool: an instance is recorded on one node a run serves.
+    expect(names()).not.toContain("record_claim_instance");
+    for (const out of mocks.script.outputs) {
+      expect(JSON.parse(out).message).toMatch(/one of the nodes this request bears on/);
+    }
+    expect(task()).toContain("It bears on several nodes");
+    expect(task()).toContain(OTHER);
+  });
+
+  it("reads sources whole on a request that bears on no node, and records nothing on one", async () => {
+    await runResearcher(requestInput());
+    expect(names().filter((n) => n.startsWith("provenance_"))).toEqual(["provenance_read_source"]);
+    expect(task()).toContain("bears on no node the graph holds");
+  });
+
+  it("records nothing on a scoping run, names the tier the full work runs on, and asks for the plan", async () => {
+    const i = requestInput({ claim: true, scope: true });
+    i.fullWork = { tier: "strong", model: "claude-opus-5-5", effort: "high" };
+    await runResearcher(i);
+    expect(names().filter((n) => n.startsWith("provenance_"))).toEqual([]);
+    expect(names()).not.toContain("record_claim_instance");
+    expect(task()).toContain("The full work will run on the strong tier (claude-opus-5-5, high effort)");
+    const report = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string; input_schema: { properties: Record<string, unknown> } }>)
+      .find((t) => t.name === "report")!;
+    expect(report.input_schema.properties.plan).toBeDefined();
+  });
+
+  it("opens with the previous run's notebook and says where it came from", async () => {
+    const i = requestInput();
+    i.run.notebook = { "from run abcdef12: thread": "where it stood" };
+    i.priorRun = { id: "abcdef12-0000-4000-8000-000000000001", status: "budget", requestedBy: "request" };
+    await runResearcher(i);
+    expect(task()).toContain("the previous run on this request left (research run abcdef12-0000-4000-8000-000000000001, which took it up and ended budget)");
+    expect(task()).toContain("from run abcdef12: thread");
+  });
+});
+
 describe("the prompt", () => {
   it("says which of its writing readers see (#739)", async () => {
     await runResearcher(input());
@@ -643,7 +725,7 @@ describe("what the researcher may write", () => {
     expect(await offered(input({ kind: "quantity" }))).toBe(false);
     // A question takes record_question_instance instead.
     expect(await offered(input({ kind: "question" }))).toBe(false);
-    for (const launcher of ["grantmaker", "request", "request_scope"]) {
+    for (const launcher of ["grantmaker", "request_scope"]) {
       const i = input();
       i.run.requested_by = launcher;
       expect(await offered(i)).toBe(false);
@@ -732,7 +814,7 @@ describe("a question's instances", () => {
       await runResearcher(input({ kind }));
       expect(toolNames()).not.toContain("record_question_instance");
     }
-    for (const launcher of ["grantmaker", "request", "request_scope"]) {
+    for (const launcher of ["grantmaker", "request_scope"]) {
       const i = question();
       i.run.requested_by = launcher;
       await runResearcher(i);

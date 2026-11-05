@@ -180,8 +180,9 @@ are, as strongly as the work supports and no more strongly, and leave the
 judgment of whether that meets the request to its keeper.
 
 A request may be large: a programme of work carried out in stages. Do the
-stage you were funded for, keep your notebook so that the next stage can
-begin where you stopped, and say in your report what the next stage would
+stage you were funded for, and keep your notebook so that the next stage can
+begin where you stopped: the next run on the request opens with your
+notebook and your report. Say in your report what the next stage would
 need, with what it would cost in remaining_budget_usd, so its keeper can
 ask for it and funders can see the price. Where the work shows that
 something further is needed, file it as a request of its own with
@@ -194,10 +195,12 @@ for the work itself. A scoping run does not do the work. It finds out what
 the work would involve and what it would cost, so that funders can decide
 whether it is worth that. Look far enough to know: what sources exist and
 whether they are reachable, which tools or data the work would need and
-what they charge, how many steps it takes and on which model. Then report
-budget_quote_usd, an honest estimate of the full work's cost with room for
-what you could not foresee, and in answer the plan the quote prices. Load
-the costing skill for how to build one.
+what they charge, and how many steps it takes. The full work runs on the
+tier the task message names, not one you choose, so price every step on
+that tier's line of the cost sheet. Then report budget_quote_usd, an honest
+estimate of the full work's cost with room for what you could not foresee,
+and in plan the plan the quote prices. Load the costing skill for how to
+build one.
 
 Some scoping runs end the matter. If the request is answered by what you
 found while looking, report met or negative. If it cannot or should not be
@@ -267,7 +270,13 @@ export interface ResearcherTaskInput {
   requestedBy: string;
   /** For a mandate's research: where the review budget its Grantmaker delegated stands. */
   contributionBudget?: string | null;
-  claim: { id: string; text: string } | null;
+  claim: { id: string; text: string; kind?: string } | null;
+  /** For a request run on several nodes: the nodes its provenance tools may record on (#728). */
+  requestNodes?: { id: string; text: string; kind: string }[];
+  /** For a run on a request: the earlier run its notebook opens with (#730). */
+  priorRun?: { id: string; status: string; requestedBy: string } | null;
+  /** For a scoping run: what the full work will run on (#732). */
+  fullWork?: { tier: string; model: string; effort: string | null } | null;
   /** The document this run examines, when launched as an examination (#507). */
   examination?: { sourceTitle: string; sourceUrl: string | null; facets: string[]; scope: string } | null;
   budgetUsd: number;
@@ -304,10 +313,14 @@ const LAUNCHER_NAMES: Record<string, string> = {
 /** The user message: who launched the run, the brief, the claim, the budget, and the toolset. */
 export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
   const launcher = LAUNCHER_NAMES[input.requestedBy] ?? "an administrator of the graph";
+  const has = (n: string) => input.toolNames.includes(n);
   const claimLine = input.requestedBy === "request"
-    ? "This run takes up a request, and the section When You Take Up a Request applies. It writes nothing to the graph: what you find goes in your report, which is recorded as work on the request for its keeper to judge. The brief above is the request as filed; get_request reads it with the work already done on it, and list_requests the other requests on the same nodes."
+    ? requestRunLine(input, has)
     : input.requestedBy === "request_scope"
-    ? "This run scopes a request, and the section When You Scope a Request applies. It writes nothing to the graph and does not do the work: your report's plan and budget_quote_usd are recorded on the request, and the quote becomes its budget. The brief above is the request as filed; get_request reads it with the work already done on it."
+    ? "This run scopes a request, and the section When You Scope a Request applies. It records nothing on the graph and does not do the work: your report's plan and budget_quote_usd are recorded on the request, and the quote becomes its budget. The brief above is the request as filed; get_request reads it with the work already done on it." +
+      (input.fullWork
+        ? ` The full work will run on the ${input.fullWork.tier} tier (${input.fullWork.model}${input.fullWork.effort ? `, ${input.fullWork.effort} effort` : ""}), whatever the work, so price it on that tier's line of cost_sheet.`
+        : "")
     : input.requestedBy === "grantmaker"
     ? "This investigation serves a mandate. Research a mandate funds writes nothing to the graph, so the provenance and examination tools are not in your toolset: what you find goes back in your report, and reaches the graph the way anyone's findings do." +
       (input.contributionBudget
@@ -332,9 +345,11 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
     : "There is no code-execution sandbox this run. Where a computation would have settled something, set it out in the report so the administrator can have it run.";
   const budgetLine = budgetGuide(input);
   const notebookNote =
-    Object.keys(input.notebook).length > 0
-      ? `\n\nYour notebook already holds these sections from earlier in this run: ${Object.keys(input.notebook).join(", ")}. Read them before you begin.`
-      : "";
+    Object.keys(input.notebook).length === 0
+      ? ""
+      : input.priorRun
+        ? `\n\nYour notebook opens with what the previous run on this request left (research run ${input.priorRun.id}, which ${input.priorRun.requestedBy === "request_scope" ? "scoped it" : "took it up"} and ended ${input.priorRun.status.replace(/_/g, " ")}): ${Object.keys(input.notebook).join(", ")}. Read them with notebook_read before you begin, and build on them rather than redo them.`
+        : `\n\nYour notebook already holds these sections from earlier in this run: ${Object.keys(input.notebook).join(", ")}. Read them before you begin.`;
   return `You have been launched by ${launcher}, with this brief:
 
 --- BRIEF ---
@@ -346,6 +361,38 @@ ${claimLine}${examinationLine}
 ${budgetLine}
 
 Tools in this run: ${input.toolNames.join(", ")}. ${sandboxLine}${notebookNote}`;
+}
+
+/**
+ * What a run taking up a request may record (#728): provenance and
+ * instances on the one node it bears on, provenance on any of several,
+ * and sources it reads whole in every case; never a verdict.
+ */
+function requestRunLine(input: ResearcherTaskInput, has: (n: string) => boolean): string {
+  const opening =
+    "This run takes up a request, and the section When You Take Up a Request applies. What you find goes in your report, which is recorded as work on the request for its keeper to judge and is read by the Steward of each node it bears on. The brief above is the request as filed; get_request reads it with the work already done on it, and list_requests the other requests on the same nodes.";
+  const recordsProvenance = has("provenance_record_reading");
+  const instance = has("record_claim_instance")
+    ? " and the instances you find (record_claim_instance)"
+    : has("record_question_instance")
+      ? " and the sources that ask or answer it (record_question_instance)"
+      : "";
+  if (input.claim && recordsProvenance) {
+    return (
+      `${opening} It bears on one node, the ${input.claim.kind ?? "claim"} "${input.claim.text}" (id ${input.claim.id}; read its record with get_claim and get_decomposition). ` +
+      `You may record what you read on it with the provenance tools${instance}, by the Provenance skill's rules; you record no verdict.`
+    );
+  }
+  if ((input.requestNodes?.length ?? 0) > 0 && recordsProvenance) {
+    return (
+      `${opening} It bears on several nodes: ${input.requestNodes!.map((n) => `the ${n.kind} "${n.text}" (${n.id})`).join("; ")}. ` +
+      "You may record what you read on any of them with the provenance tools, each call naming its node in claim_id, by the Provenance skill's rules; you record no verdict."
+    );
+  }
+  return (
+    `${opening} It bears on no node the graph holds, so the provenance tools that record on a node are not in your toolset` +
+    (has("provenance_read_source") ? "; provenance_read_source is, for reading a source whole." : ".")
+  );
 }
 
 function usd(n: number): string {

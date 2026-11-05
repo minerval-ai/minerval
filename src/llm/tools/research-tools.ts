@@ -15,14 +15,17 @@
  * brief can be written with the instrument's affordances in mind. What
  * lives here is the mechanism around that judgment: the launcher's own
  * money (a Steward pays from its pass's budget, a Grantmaker from its
- * mandate's uncommitted budget, and each is shown what it has), the
- * per-launcher-run count cap, the daily cap on research no funder pays
- * for, the pause flag, the run row, and the synchronous run itself. The
+ * mandate's uncommitted budget, and each is shown what it has), the daily
+ * cap on research no funder pays for (stated in the description on such a
+ * pass, with what is left of it in each result), the pause flag, the run
+ * row, and the synchronous run itself. There is no count of runs: money
+ * bounds them (CLAUDE.md, "Prefer money to counts"). The
  * launcher's tool call blocks until the researcher reports; the report comes back as the tool result and is
  * also kept on the run row for `get_research_run` and for the record.
  *
- * Same factory shape as the report tools: per-run state (the count) lives
- * in a closure, and `execute` returns null for any name it does not own.
+ * Same factory shape as the report tools: per-run state (how many runs
+ * were launched, for the record and tests; nothing limits it) lives in a
+ * closure, and `execute` returns null for any name it does not own.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -46,11 +49,13 @@ import {
   modelForTier,
   openResearchRun,
   readResearcherPaused,
+  researcherSpentTodayMicroUsd,
   type ResearchModelTier,
   type ResearchRunRow,
 } from "../../services/research-run-service.js";
 import { runResearcher, type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
 import { allocateMandateToRequest } from "../../services/allocation-service.js";
+import { owlsToMicroUsd } from "../../services/owl.js";
 import {
   ExaminationError,
   linkResearchRun,
@@ -73,7 +78,7 @@ export interface ResearchTools {
   definitions: Tool[];
   /** Returns null for any tool name this bundle does not own. */
   execute: (name: string, input: Record<string, unknown>) => Promise<string | null>;
-  /** Runs launched by this launcher run so far. */
+  /** Runs launched by this launcher run so far: a record, not a limit. */
   readonly launchedCount: number;
 }
 
@@ -441,11 +446,23 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const ctxAtStart = getUsageContext();
   const passLeft = passBudgetLeftMicroUsd(ctxAtStart);
   const paysFromPass = options.requestedBy !== "grantmaker";
+  // On a pass no funder pays for, research also shares the operator's
+  // daily allowance for such work (#736): stated up front with its reason,
+  // and what is left of it today comes back with every launch.
+  const unfunded = !ctxAtStart.jobId && !ctxAtStart.userId;
+  const unfundedCap =
+    unfunded
+      ? "This pass is not paid for by a funder, so research it launches also shares the platform's daily " +
+        `allowance for research no funder pays for (${usdText(owlsToMicroUsd(config.researcherDailyCapOwls))} a day, ` +
+        "UTC), the operator's bound on spend no one has chosen to fund. A launch whose budget_usd would take " +
+        "today's spend past it is refused; each result says what is left of it today. "
+      : "";
   const stewardFunding =
     paysFromPass && passLeft !== null
       ? `Research is paid from this pass's own budget (${ctxAtStart.passBudget!.source}), which holds ` +
         `${usdText(passLeft)} now, less what the pass spends as it goes; a run's budget_usd may be at most ` +
-        "what the pass has left when you launch it. "
+        "what the pass has left when you launch it. " +
+        unfundedCap
       : undefined;
   const definitions = config.researcherEnabled
     ? [
@@ -483,9 +500,24 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   };
 
   /** What the launcher has left once a run is done, for its result. */
-  const budgetLeft = async (): Promise<{ budget_left?: string }> => {
+  const budgetLeft = async (): Promise<{ budget_left?: string; unfunded_daily_allowance_left?: string }> => {
     const have = await available();
-    return have ? { budget_left: `${usdText(have.microUsd)} left in ${have.source}` } : {};
+    return {
+      ...(have ? { budget_left: `${usdText(have.microUsd)} left in ${have.source}` } : {}),
+      ...(await unfundedAllowanceLeft()),
+    };
+  };
+
+  /** On an unfunded pass, what is left today of the daily allowance for unfunded research. */
+  const unfundedAllowanceLeft = async (): Promise<{ unfunded_daily_allowance_left?: string }> => {
+    const ctx = getUsageContext();
+    if (ctx.jobId || ctx.userId) return {};
+    const cap = owlsToMicroUsd(config.researcherDailyCapOwls);
+    const spent = await researcherSpentTodayMicroUsd().catch(() => null);
+    if (spent === null) return {};
+    return {
+      unfunded_daily_allowance_left: `${usdText(Math.max(0, cap - spent))} of ${usdText(cap)} left today (UTC)`,
+    };
   };
 
   /** Refuse a launch the launcher's own money does not cover, saying what it has. */
@@ -510,8 +542,11 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       return null;
     } catch (err) {
       if (err instanceof LlmBudgetExceededError) {
+        const left = (await unfundedAllowanceLeft()).unfunded_daily_allowance_left;
         return refuse(
-          `This pass is not paid for by a funder, and the daily cap on such research would be exceeded by this run (${err.message}). Do the work inline or leave it for a later pass.`
+          `This pass is not paid for by a funder, and this run's budget would take today's research no funder pays for past the platform's daily allowance` +
+            (left ? ` (${left})` : "") +
+            ". Ask for what is left, do the work inline, or leave it for a later pass."
         );
       }
       throw err;
