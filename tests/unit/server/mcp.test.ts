@@ -500,6 +500,7 @@ describe("MCP tools", () => {
       "get_dependents",
       "get_page_analysis",
       "get_text_analysis",
+      "list_graph_changes",
       "list_tags",
       "match_claim",
       "raise_issue",

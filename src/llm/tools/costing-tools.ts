@@ -44,6 +44,7 @@ const LEDGER_KINDS: Record<string, string> = {
   audit: "one Audit Agent run",
   request: "a request taken up: the scope variant quotes it, the full variant costs its budget",
   lookout_run: "one run of a standing lookout",
+  correspondent_run: "one run of a Correspondent: reading what changed in its scope and writing one update",
   mandate_review: "one review pass by a mandate's Grantmaker",
   grant_planning: "a Grantmaker's planning pass on a new mandate",
   prize_review: "a review of a prize claim",
@@ -100,7 +101,7 @@ async function ledgerLines(): Promise<Record<string, unknown>[]> {
     ["ingest", "standard"], ["formalize", "standard"],
     ["attempt_proof", "standard"], ["attempt_proof", "max"],
     ["curate", "standard"], ["audit", "standard"], ["request", "scope"],
-    ["lookout_run", "standard"], ["mandate_review", "standard"], ["grant_planning", "standard"],
+    ["lookout_run", "standard"], ["correspondent_run", "standard"], ["mandate_review", "standard"], ["grant_planning", "standard"],
   ];
   for (const r of rows) {
     if (!wanted.some(([k, v]) => k === r.kind && v === r.variant)) wanted.push([r.kind, r.variant]);

@@ -496,6 +496,7 @@ composition table:
 | audit-agent | every section except `Failure modes` |
 | grantmaker | `For every administrator` + `For the Grantmaker` |
 | lookout | `For every administrator` only (it raises candidates on a mandate's behalf and writes no verdict; it carries the mandate's skills as the review pass does) |
+| correspondent | `For every administrator` only (it reports the graph's judgment to an audience and writes no verdict; it carries the mandate's skills, as a lookout does) |
 | contribution-reviewer, dispute-arbitrator | `For every administrator` + `For the Contribution Reviewer and the Dispute Arbitrator` |
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |

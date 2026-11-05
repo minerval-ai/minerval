@@ -25,6 +25,9 @@
     "lookout": [
       "For every administrator"
     ],
+    "correspondent": [
+      "For every administrator"
+    ],
     "contribution-reviewer": [
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator"
@@ -86,6 +89,12 @@
         },
         {
           "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "correspondent",
           "sections": [
             "For every administrator"
           ]
@@ -189,6 +198,12 @@
         },
         {
           "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "correspondent",
           "sections": [
             "For every administrator"
           ]
@@ -567,6 +582,12 @@
         },
         {
           "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "correspondent",
           "sections": [
             "For every administrator"
           ]
@@ -1052,6 +1073,12 @@
         },
         {
           "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "correspondent",
           "sections": [
             "For every administrator"
           ]

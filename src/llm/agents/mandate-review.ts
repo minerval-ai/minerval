@@ -93,6 +93,8 @@ import {
   closureBlockedMessage,
 } from "../../services/bounty-service.js";
 import { getLookoutManagementToolDefinitions } from "../tools/lookout-management-tools.js";
+import { getCorrespondentManagementToolDefinitions } from "../tools/correspondent-management-tools.js";
+import { listCorrespondents } from "../../services/correspondent-service.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import {
   listMandateLookoutFlags,
@@ -360,6 +362,8 @@ async function runMandateReviewImpl(input: {
     // watches this mandate funds. Same implementation as the management
     // chat, through executeManagementTool below.
     ...getLookoutManagementToolDefinitions(),
+    // The Correspondent tools (#563), through executeManagementTool too.
+    ...getCorrespondentManagementToolDefinitions(),
     {
       name: "note_to_funder",
       description:
@@ -430,6 +434,23 @@ async function runMandateReviewImpl(input: {
     since: lastReviewAt ? new Date(lastReviewAt) : null,
     limit: 40,
   }).catch(() => []);
+  // The mandate's Correspondents (#563): what each has published and left
+  // uncovered, so the Grantmaker can tell whether it serves its readers.
+  const correspondents = await listCorrespondents(grant.id).catch(() => []);
+  const correspondentText =
+    correspondents.length === 0
+      ? `(none. spawn_correspondent posts a reader for an audience: it publishes updates as a feed on ` +
+        `what changed in its scope that its readers should know.)`
+      : correspondents
+          .map(
+            (c) =>
+              `- "${c.title}" for ${c.audience.slice(0, 120)} [${c.status}; ` +
+              `${c.heartbeat_hours > 0 ? `every ${c.heartbeat_hours}h` : "event-only"}` +
+              `${(c.triggers ?? []).length ? `; triggers ${c.triggers.join(", ")}` : ""}] ` +
+              `${c.runs} runs, ${c.updates} updates` +
+              `${c.last_note ? `. Last: ${c.last_note.slice(0, 200)}` : ""}`
+          )
+          .join("\n");
   const lookoutText =
     lookouts.length === 0
       ? `(none. spawn_lookout posts a cheap standing watch over part of the ` +
@@ -549,6 +570,7 @@ async function runMandateReviewImpl(input: {
     `a burst is judged together, and otherwise once a day. Each pass is ` +
     `paid from your escrow within your daily rate.\n\n` +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
+    `Your correspondents (readers you fund for an audience; correspondent_report for detail):\n\n${correspondentText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
     (grant.workspace?.trim()
       ? grant.workspace

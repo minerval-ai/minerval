@@ -299,6 +299,96 @@ on non-DOI sources, dependency-changed events routed through the
 ledger), and a Steward's own request for a lookout on its claim once
 Stewards hold a budget (#300).
 
+## Correspondents: reading the graph for an audience
+
+No one can read every claim and argument in a large graph. A
+**Correspondent** (#563) is an agent that reads the graph for one audience
+and sends it **updates** about what deserves its attention: the Lookout's
+counterpart. A lookout watches the world and brings material into the
+graph; a correspondent reads the graph and reports to people. Feeds,
+digests and briefings are all correspondents with different briefs.
+
+A **Graph Correspondent** is one a mandate funds. Its Grantmaker posts it
+(`spawn_correspondent`, in the owner's chat or on a review pass) with a
+brief in its own words (what it covers, who the readers are, what matters
+to them, how to read the graph for them, what to leave alone, how to
+present it), an **audience**, and a **scope**: the claims (with everything
+beneath them) and tags the brief covers. The scope answers "which
+correspondents cover this claim?" (`GET /correspondents?claim_id=`) and is
+the wake filter for changes; what deserves the readers' attention is still
+the run's judgment (llm/agents/correspondent.ts,
+services/correspondent-service.ts). It runs under the constitution, like
+every role the graph runs, writes no assessment and moves no money.
+
+**What it reads is public.** A correspondent's window is the **change
+stream** (`list_graph_changes` over MCP, `GET /changes`;
+services/graph-change-service.ts): one entry per material change to a
+verdict in scope (a first assessment, a status moving on the ladder, a
+credence moving by at least `MONITOR_MATERIAL_CREDENCE_DELTA`), each with
+its size and a cursor, oldest first. From there it opens nodes with the
+graph reads every agent has. These are exactly what an outside client
+gets: a Graph Correspondent has no read an outside one lacks, so a team's
+own agent can do the same job outside Minerval without registering here,
+on its own models, under whatever instructions its owner chooses.
+
+**Triggers, as a lookout's.** Being due opens one `correspondent_run` row
+(group `correspondent:<id>`, priced at `CAP_CORRESPONDENT_RUN_OWLS`),
+funded by `fundGrantSelfActions` from the mandate's headroom and its day's
+room like a lookout run, with no count of runs. It is due when:
+
+- its **heartbeat** passes (168 hours, a weekly digest, by default; 0 for
+  event-only), or
+- it was **poked** (`poke_correspondent`, the Grantmaker's tool, or
+  `POST /correspondents/:id/poke` by the mandate's manager, since the run
+  is the mandate's money), or
+- a **material change in scope** is waiting (`graph_change`) and its
+  `min_wake_hours` have passed since its last run. The change scan
+  (workers/correspondent-triggers.ts) queues one wake per correspondent
+  while none waits, never one per change; the run reads the stream from its
+  cursor, so a busy scope never becomes a burst of runs. `min_wake_hours`
+  (24 by default, set by the Grantmaker) is not a budget control: it spaces
+  updates for the readers' attention, which no budget prices. A heartbeat
+  and a poke are not held by it.
+
+The run is shown its budget, the mandate's uncommitted escrow and the
+day's remaining room, and why a run may come late.
+
+**Updates are structured items with a prose rendering.** `publish_update`
+takes items (a node, the reason it deserves the readers' attention, the
+change ids behind it), which agents consume, and a title and Markdown body,
+which people read; at most one update a run. Items are checked against the
+run's window and the graph. Updates are served at
+`/correspondents/:id/updates` (MCP `list_correspondent_updates`) and as an
+Atom feed at `/correspondents/:id/feed` (also on the site at the same
+path), and each says which mandate funded it.
+
+**Every update says what it did not cover.** The window is every material
+change in scope since the last *published* update, not since the last run:
+a run that publishes nothing moves the read cursor (so the scan does not
+wake it again for the same changes) but those changes stay in the next
+update's account, marked "seen" in its briefing. On publishing, the
+mechanism lists every change in the window that no item cites, by change id
+or by its node; the correspondent cannot leave one out silently. It adds
+the other half in `unexamined`: what in scope it has not looked at. A
+window is capped at 500 changes; past that the update says more followed,
+and the next one starts there.
+
+**The usual rules apply.** A funded correspondent's brief, record and
+updates are public, as mandates are (the mandate page lists them). It
+selects and frames, so the Grantmaker declines briefs that would steer
+readers toward a conclusion, as it declines such mandates. Funding buys
+coverage, not what an update says. The Grantmaker reads each one's record
+on its review briefing and in `correspondent_report`, and tightens the brief
+or retires one whose updates leave most of its scope uncovered.
+
+Known next: more change kinds in the stream (#562: defeaters, argument
+evaluations, holds, requests, findings); MCP subscriptions so clients need
+not poll (#567); a reader's own request for an update, paid by a chip-in
+rather than the mandate; obligations and staleness as reads (#564, #566);
+role templates for briefs; and one table for a mandate's standing agents
+(lookouts and correspondents share the trigger rule and funding path but
+not yet a table).
+
 ## The unit: the owl
 
 Cost is measured in dollars, not owls. One owl of SPEND covers exactly one

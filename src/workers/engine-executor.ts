@@ -1,6 +1,6 @@
 /**
  * The engine executor — the drain over the action ledger's non-steward
- * kinds: grant_planning, ingest, mandate_review, lookout_run,
+ * kinds: grant_planning, ingest, mandate_review, lookout_run, correspondent_run,
  * consistency_sweep, formalize.
  *
  * Same posture as the steward executor: a dumb loop over covered rows.
@@ -17,6 +17,8 @@
  *    the mandate's valuations, growing its plan, moving money. Metered
  *    and consumed the same way.
  *  - lookout_run: run one of a mandate's lookouts (llm/agents/lookout.ts)
+ *  - correspondent_run: run one of a mandate's Correspondents (#563,
+ *    llm/agents/correspondent.ts)
  *    — a cheap standing watch reading its brief, the queued inputs, the
  *    graph and the web, and raising candidates. Metered and consumed the
  *    same way; the lookout's next due time is stamped after the run.
@@ -58,6 +60,8 @@ import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
+import { runCorrespondent } from "../llm/agents/correspondent.js";
+import { recordCorrespondentRun } from "../services/correspondent-service.js";
 import { cachedItemBody } from "../services/feed-service.js";
 import { focusForGroup } from "../services/ingest-focus-service.js";
 import { partitionFromRef } from "../services/consistency-service.js";
@@ -161,6 +165,7 @@ export async function processNextEngineAction(
       "grant_planning",
       "mandate_review",
       "lookout_run",
+      "correspondent_run",
       "consistency_sweep",
       "curate",
       "audit",
@@ -173,6 +178,7 @@ export async function processNextEngineAction(
   if (action.kind === "ingest") return runIngestAction(action);
   if (action.kind === "formalize") return runFormalizeAction(action, opts);
   if (action.kind === "lookout_run") return runLookoutAction(action, opts);
+  if (action.kind === "correspondent_run") return runCorrespondentAction(action, opts);
   if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
   if (action.kind === "curate") return runCurateAction(action);
   if (action.kind === "audit") return runAuditAction(action);
@@ -1012,6 +1018,82 @@ async function runLookoutAction(
       actionId: action.id,
       kind: "lookout_run",
       grantId: lookout.grant_id,
+      ok: false,
+      error: msg,
+    };
+  }
+}
+
+/**
+ * correspondent_run (#563): one run of the Correspondent named in
+ * target_ref, under its mandate's funder and budget job, metered and
+ * consumed against the covering allocation, as a lookout run is. The run's
+ * end is stamped whatever happened: a successful run moves the change
+ * cursor to the end of the window it read; a failed one leaves the cursor
+ * and backs off.
+ */
+async function runCorrespondentAction(
+  action: RunnableAction,
+  opts: { model?: string }
+): Promise<EngineProcessResult> {
+  const correspondentId = action.target_ref ?? "";
+  const [row] = await rawQuery<{
+    id: string;
+    status: string;
+    grant_id: string;
+    grant_status: string;
+    funder_user_id: string;
+  }>(
+    `SELECT c.id, c.status, g.id AS grant_id, g.status AS grant_status, g.funder_user_id
+       FROM correspondents c JOIN grants g ON g.id = c.grant_id
+      WHERE c.id::text = $1`,
+    [correspondentId]
+  );
+  if (!row || row.status !== "active" || row.grant_status !== "active") {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder: { jobId?: string; userId?: string; grantId?: string } =
+    await largestActionFunder(action.id).catch(() => ({}));
+  try {
+    let note: string | null = null;
+    let cursorTo: string | null = null;
+    const { billedMicroUsd } = await runWithUsageContext(
+      { userId: row.funder_user_id, jobId: funder.jobId ?? null },
+      () =>
+        withPassBudget(actionBudget(action, "the mandate's allocation for this correspondent run"), async () => {
+          const run = await runCorrespondent({ correspondentId: row.id, model: opts.model });
+          note = run.note;
+          cursorTo = run.cursorTo;
+        })
+    );
+    await recordCorrespondentRun({ correspondentId: row.id, note, cursorTo }).catch(() => {});
+    await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId ?? null }).catch((err) =>
+      console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
+    );
+    return { status: "processed", actionId: action.id, kind: "correspondent_run", grantId: row.grant_id, ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "transient", actionId: action.id, kind: "correspondent_run", grantId: row.grant_id, error: msg };
+    }
+    await recordCorrespondentRun({
+      correspondentId: row.id,
+      note: `(run failed: ${msg.slice(0, 300)})`,
+      cursorTo: null,
+      failed: true,
+    }).catch(() => {});
+    await cancelGroup(action.exclusion_group);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "correspondent_run",
+      grantId: row.grant_id,
       ok: false,
       error: msg,
     };

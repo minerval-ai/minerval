@@ -41,6 +41,18 @@ skill bundles it in full, and the section numbers below point into it.
   the same tool the graph's own agents read nodes with.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
+- **What changed since you last looked**: `list_graph_changes`, narrowed with
+  `under` (claims and everything beneath them) and `tags`. One entry per
+  material change to a verdict, each with its size, oldest first; keep its
+  `next_cursor` to pick up where you left off. Free. It is the read the
+  graph's own Correspondents use, so you can build one for your user from it:
+  read the changes in their scope, open what matters with `get_claim`, and
+  report it with the same habits below, saying what you did not cover.
+- **Updates someone already writes**: `list_correspondents` (with `claim_id`,
+  the ones covering that claim) and `list_correspondent_updates`. A
+  Correspondent's update is the graph's judgment selected for an audience by
+  a mandate's agent; report its items as the graph's, and read its
+  `not_covered` before treating its silence as news. Free.
 - **A whole document or diff to clear before shipping**: prefer delegating
   to the `fact-checker` subagent, or point the user at `/minerval:check` and
   `/minerval:factcheck-diff`.

@@ -53,6 +53,7 @@ import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arb
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
 import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
 import { getLookoutSystemPrompt } from "../src/llm/prompts/lookout.js";
+import { getCorrespondentSystemPrompt } from "../src/llm/prompts/correspondent.js";
 import { getConsistencyCheckerSystemPrompt } from "../src/llm/prompts/consistency-checker.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import { getResearcherSystemPrompt } from "../src/llm/prompts/researcher.js";
@@ -168,6 +169,10 @@ const AGENTS: AgentMeta[] = [
     tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     model: modelLabel(OPENROUTER_MODELS.flash), fn: getLookoutSystemPrompt },
+  { key: "correspondent", name: "Correspondent", stage: 9, group: "governance",
+    tagline: "The Lookout's counterpart: it reads the graph for one audience and tells them what deserves their attention. Each run reads the material changes in its scope since its last update and publishes at most one update, as a feed and as structured items agents can read, with a section the mechanism writes listing every change it did not mention. It reports the graph's judgment and writes none of its own, and it has no read an outside client lacks.",
+    invokedWhen: "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
+    model: modelLabel(MODELS.sonnet), fn: getCorrespondentSystemPrompt },
   { key: "consistency-checker", name: "Consistency Checker", stage: 10, group: "governance",
     tagline: "The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.",
     invokedWhen: "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",

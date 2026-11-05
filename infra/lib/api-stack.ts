@@ -226,6 +226,10 @@ export class ApiStack extends cdk.Stack {
         // on the cheap tier. Pinned to the config default so the model
         // guard covers it; a lookout can carry its own model override.
         LOOKOUT_MODEL: "openai/gpt-6-luna",
+        // The Correspondent (#563): reads the graph for an audience and
+        // writes updates people read, on the standard tier. Pinned to the
+        // config default so the model guard covers it.
+        CORRESPONDENT_MODEL: "claude-sonnet-5-5",
         // The Consistency Checker (#330): reads a partition's assessments
         // against each other and raises flags the owning Steward decides.
         // A sweep is an exclusive set (#756): the standard variant on the

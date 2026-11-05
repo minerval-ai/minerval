@@ -71,6 +71,10 @@ Designs and stewards funded mandates: surveys the territory, writes its mandate'
 
 A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.
 
+### Correspondent (`roles/correspondent.md`)
+
+The Lookout's counterpart: it reads the graph for one audience and tells them what deserves their attention. Each run reads the material changes in its scope since its last update and publishes at most one update, as a feed and as structured items agents can read, with a section the mechanism writes listing every change it did not mention. It reports the graph's judgment and writes none of its own, and it has no read an outside client lacks.
+
 ### Consistency Checker (`roles/consistency-checker.md`)
 
 The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.

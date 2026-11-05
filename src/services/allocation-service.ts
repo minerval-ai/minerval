@@ -875,6 +875,11 @@ export async function fundGrantSelfActions(): Promise<number> {
               SELECT 1 FROM lookouts l
                WHERE l.id::text = a.target_ref AND l.grant_id = g.id
                  AND l.status = 'active'))
+         -- So is a Correspondent's run (#563), by the same rule.
+         OR (a.kind = 'correspondent_run' AND EXISTS (
+              SELECT 1 FROM correspondents c
+               WHERE c.id::text = a.target_ref AND c.grant_id = g.id
+                 AND c.status = 'active'))
          -- A consistency sweep (#330) is the platform's own work: the
          -- General mandate funds it, as the formula mandate whose scope
          -- is the whole graph.
@@ -893,7 +898,7 @@ export async function fundGrantSelfActions(): Promise<number> {
                  AND item->>'url' = a.target_ref))
        JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE a.status = 'open'
-        AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'ingest', 'consistency_sweep')
+        AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'correspondent_run', 'ingest', 'consistency_sweep')
         AND g.status IN ('planning', 'active')
         AND j.status = 'running'
         -- Review passes and lookout runs have no count of their own: each
@@ -905,6 +910,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- switches are deployment off-switches only.
         AND (a.kind <> 'mandate_review' OR $2::boolean)
         AND (a.kind <> 'lookout_run' OR $3::boolean)
+        AND (a.kind <> 'correspondent_run' OR $5::boolean)
         -- Consistency sweeps have no count either (#749): the General
         -- mandate funds them from its day like any of its work, the
         -- re-sweep interval keeps a partition to one a day, and the switch
@@ -927,6 +933,7 @@ export async function fundGrantSelfActions(): Promise<number> {
       loadConfig().consistencySweepsEnabled === true
         ? (await consistencyStrongExpectedGain()).gain
         : 0,
+      loadConfig().correspondentRunsEnabled !== false,
     ]
   );
   let placed = 0;

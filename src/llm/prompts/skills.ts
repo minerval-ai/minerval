@@ -95,6 +95,10 @@ export const ROLE_VIEW = {
   // skills; it raises candidates and writes no verdict, so it receives
   // only the section addressed to everyone.
   lookout: ["For every administrator"],
+  // The Correspondent (#563) reads the graph for an audience and reports
+  // the graph's judgment to it; it writes no verdict, so it too receives
+  // only the section addressed to everyone.
+  correspondent: ["For every administrator"],
   "contribution-reviewer": [
     "For every administrator",
     "For the Contribution Reviewer and the Dispute Arbitrator",

@@ -89,7 +89,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_dependents`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
+| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_dependents`, `list_graph_changes`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap. `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — capped at 10 an hour, 3 for new/low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), stated in the tool description; priced proposals (`propose_claim`, `submit_source`) are bounded by the caller's balance instead and don't count, and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
@@ -171,6 +171,18 @@ read is free, an agent which signals allocation turns on.
   slug) narrows the search to one topic, `kind` to one kind, `claim_type`
   to one type, and `with_prizes: true` to claims with an open bounty;
   `assessed` judges each kind by its own verdict.
+- **`list_graph_changes`** `{after?, since?, under?, tags?,
+  min_credence_delta?, material_only?, limit?}` — the change stream (#562,
+  first slice): one entry per material change to a node's verdict, oldest
+  first (a first assessment, a status moving on the ladder, a credence
+  moving by at least the monitors' material delta), each with its size
+  (`status_steps`, `credence_delta`), the node's id, text and page link, and
+  a cursor; `next_cursor` resumes after the page. `under` narrows it to
+  claims and everything beneath them, `tags` to topics. Defined once in
+  `src/services/graph-change-service.ts` and served here, at `GET /changes`,
+  and to the graph's own Correspondents (#563), so a Correspondent built
+  outside Minerval reads exactly what ours do: read the changes in a scope
+  from a kept cursor, open what matters with `get_claim`, and report.
 - **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
   claims carry, with how many claims carry each; with `query`, ranked by
   meaning. A tag says what a claim is about, never whether it holds.
@@ -339,6 +351,11 @@ each tool's description is its route's summary plus the route it runs.
   `list_grants`, `get_grant`, `approve_grant_plan`, `top_up_grant`,
   `cancel_grant`, `list_mandates`, `get_mandate`, `get_mandate_allocation`,
   `fund_mandate`, `get_mandate_lookout`.
+- **Correspondents (#563):** `list_correspondents` (with `claim_id`, the
+  ones covering a claim), `get_correspondent`, `list_correspondent_updates`,
+  `get_correspondent_update`, `poke_correspondent` (the mandate's manager).
+  The Atom feed (`GET /correspondents/:id/feed`) is the same updates as
+  `list_correspondent_updates`, and is not a tool.
 - **Sources:** `submit_source` (reviewed before extraction), `get_source`,
   `get_source_context`, `get_source_examinations`, `get_source_document`,
   `get_job`.

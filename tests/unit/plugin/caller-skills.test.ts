@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "fs";
+import { graphChangeDefinition } from "../../../src/services/graph-change-service.js";
 import { tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -82,6 +83,8 @@ describe("caller skills", () => {
     const tools = new Set([
       ...native,
       ...SHARED_GRAPH_READ_NAMES,
+      // The change stream, registered from its shared definition (#562, #563).
+      graphChangeDefinition("caller").name,
       ...Object.values(ROUTE_TOOLS).map((t) => t.name),
     ]);
     // A backticked identifier that reads as a tool call (verb_noun), as

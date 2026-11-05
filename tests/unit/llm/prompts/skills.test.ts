@@ -218,6 +218,9 @@ describe("ROLE_VIEW", () => {
     // The Lookout judges relevance on a mandate's behalf, never truth: the
     // section addressed to everyone, and nothing role-specific.
     expect(ROLE_VIEW.lookout).toEqual(["For every administrator"]);
+    // The Correspondent (#563) reports the graph's judgment to an audience
+    // and writes none of its own: the same.
+    expect(ROLE_VIEW.correspondent).toEqual(["For every administrator"]);
     expect(ROLE_VIEW["contribution-reviewer"]).toEqual([
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator",
@@ -245,6 +248,7 @@ describe("ROLE_VIEW", () => {
       "audit-agent",
       "grantmaker",
       "lookout",
+      "correspondent",
       "contribution-reviewer",
       "dispute-arbitrator",
       "curator",

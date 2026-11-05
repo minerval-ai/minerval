@@ -86,6 +86,10 @@ import {
   executeLookoutManagementTool,
   getLookoutManagementToolDefinitions,
 } from "../tools/lookout-management-tools.js";
+import {
+  executeCorrespondentManagementTool,
+  getCorrespondentManagementToolDefinitions,
+} from "../tools/correspondent-management-tools.js";
 
 export interface GrantMandate {
   /** Agent-written public title: on the mandate's page and, with the work it pays for, on claim pages. */
@@ -468,7 +472,9 @@ async function runGrantmakerTurnImpl(input: {
   ];
   // The lookout tools (docs/allocation.md, "Lookouts"): standing watches
   // the mandate funds, shared with the review pass.
-  const lookoutTools = getLookoutManagementToolDefinitions();
+  // And the Correspondent tools (#563): readers the mandate funds for an
+  // audience, shared with the review pass the same way.
+  const lookoutTools = [...getLookoutManagementToolDefinitions(), ...getCorrespondentManagementToolDefinitions()];
 
   let mandate: GrantMandate | undefined;
   let declined: { reason: string } | undefined;
@@ -1211,6 +1217,12 @@ export async function executeManagementTool(
     createdBy: opts.actor ?? (opts.confirmedBy ? "grantmaker:chat" : "grantmaker:review"),
   });
   if (lookout !== null) return lookout;
+  // The Correspondent tools (#563): spawn_correspondent, list_correspondents,
+  // correspondent_report, update_correspondent, poke_correspondent.
+  const correspondent = await executeCorrespondentManagementTool(grantId, name, toolInput, {
+    createdBy: opts.actor ?? (opts.confirmedBy ? "grantmaker:chat" : "grantmaker:review"),
+  });
+  if (correspondent !== null) return correspondent;
   if (name === "post_bounty") {
     return executePostBounty(grantId, toolInput, opts);
   }

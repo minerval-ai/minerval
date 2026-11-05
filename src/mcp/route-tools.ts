@@ -100,6 +100,16 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "POST /mandates/:id/contribute": { name: "fund_mandate", note: ESCROWS_OWLS },
   "GET /mandates/:id/lookouts/:lookoutId": { name: "get_mandate_lookout" },
 
+  // ---- correspondents (#563) ----
+  "GET /correspondents": { name: "list_correspondents" },
+  "GET /correspondents/:id": { name: "get_correspondent" },
+  "GET /correspondents/:id/updates": { name: "list_correspondent_updates" },
+  "GET /correspondents/:id/updates/:update_id": { name: "get_correspondent_update" },
+  "POST /correspondents/:id/poke": {
+    name: "poke_correspondent",
+    note: "The mandate's manager only; the run it asks for is paid from the mandate's escrow, not your balance.",
+  },
+
   // ---- sources ----
   "POST /sources": {
     name: "submit_source",
@@ -169,6 +179,8 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   "GET /claims/:claim_id/formalization": ["get_claim"],
   "GET /claims/:id/bounty": ["get_bounty_terms"],
   "GET /tags": ["list_tags"],
+  // The change stream (#562), defined once with the Correspondents' read.
+  "GET /changes": ["list_graph_changes"],
   "POST /contributions": ["submit_contribution"],
   "GET /contributions/:id": ["get_contribution_status"],
   // The URL hash is the only thing in the way: the native tool takes the
@@ -238,6 +250,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "Serves document bodies (PDF tax forms and the like); an MCP tool " +
     "result is text. Attachment metadata comes with get_prize_claim.",
   "GET /prizes.atom": "The Atom feed rendering of list_prizes.",
+  "GET /correspondents/:id/feed": "The Atom feed rendering of list_correspondent_updates.",
 
   "POST /extension/analyze":
     "The browser extension's page protocol (content hashing, polling, " +

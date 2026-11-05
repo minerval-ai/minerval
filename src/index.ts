@@ -16,6 +16,7 @@ import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
 import { startLookoutTriggers } from "./workers/lookout-triggers.js";
+import { startCorrespondentTriggers } from "./workers/correspondent-triggers.js";
 import { startGithubIssueSync } from "./workers/github-issue-sync.js";
 import { startReportEmbeddingBackfill } from "./workers/report-embedding-backfill.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
@@ -149,6 +150,7 @@ async function main() {
   // retraction poll that queues inputs for the mandates' standing watches.
   // High-water-marked in platform_flags, so every task may run it.
   pollers.push(startLookoutTriggers({ logger }));
+  pollers.push(startCorrespondentTriggers({ logger }));
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands
