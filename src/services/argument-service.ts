@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations } from "../db/schema.js";
 
@@ -90,6 +90,16 @@ export async function getArgumentsForClaim(claimId: string) {
     .select()
     .from(arguments_)
     .where(and(eq(arguments_.claimId, claimId), isNull(arguments_.retiredAt)));
+}
+
+/** The arguments a claim's Steward retired (#741): history, oldest retirement first. */
+export async function getRetiredArgumentsForClaim(claimId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(arguments_)
+    .where(and(eq(arguments_.claimId, claimId), isNotNull(arguments_.retiredAt)))
+    .orderBy(arguments_.retiredAt);
 }
 
 /**

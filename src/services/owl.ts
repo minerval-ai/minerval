@@ -27,6 +27,19 @@
  */
 import { loadConfig } from "../config.js";
 
+/**
+ * The most one funding call (fund_grant, fund_mandate) escrows. Not a limit
+ * on what a funder may commit: the balance bounds that, and a top-up adds
+ * more. It is a guard against a mistyped amount, at a size (tens of
+ * thousands of dollars) no single slip should commit without a second call.
+ * Stated in each route's schema, so callers see it with its reason (#729).
+ */
+export const FUNDING_CALL_MAX_OWLS = 10_000;
+export const FUNDING_CALL_MAX_NOTE =
+  `At most ${FUNDING_CALL_MAX_OWLS.toLocaleString("en-US")} owls per call, a guard against a ` +
+  "mistyped amount. To commit more, call again (top_up_grant adds to a " +
+  "funded grant).";
+
 /** Operations with a per-run owl cap, charged cap-then-settle at the quota gate. */
 export type PricedOp =
   | "claim_proposal"
@@ -81,7 +94,8 @@ export function capListOwls(): Record<PricedOp, number> {
     text_analysis: c.capTextAnalysisOwls,
     // One run of a mandate's lookout: cheap model, brief + graph + web.
     lookout_run: c.capLookoutRunOwls,
-    // One consistency sweep: cheap model, one partition's assessments.
+    // One consistency sweep on the cheap model: the ceiling of a row priced
+    // by its partition's size (action-service consistencySweepPrice).
     consistency_sweep: c.capConsistencySweepOwls,
   };
 }

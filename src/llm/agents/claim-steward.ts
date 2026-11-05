@@ -113,14 +113,15 @@ what that involves. How you go about this pass is your judgment.
 
 ${passNote}
 
-Read the ${noun} with get_claim. Form your own view of the question before you
+Read the ${noun} with get_claim (include arguments, subclaims, related and
+findings for the full working record). Form your own view of the question before you
 read its instances. When you need them, get_claim_instances returns the
 instances recorded so far; which of them belong on the ${noun}, and in what
 order a reader sees them, is yours to decide.
 
 Before the run ends, the following must be recorded: ${record}, the ${noun}'s importance and contestation, and your
 decision (log_stewardship_decision). If the assessment changed materially,
-notify the dependents it could matter to (notify_dependent_stewards).`;
+notify the dependents it could matter to (notify_steward).`;
 }
 
 /**
@@ -343,8 +344,8 @@ than starting again.`;
 
 The elicit_* tools (scholarly search over papers and trials) are in your
 toolset, at $${config.elicitUsdPerCall.toFixed(2)} a call against this run's
-budget. For most claims web_search is enough; reach for Elicit when the
-verdict turns on the scientific literature and the claim warrants the cost.`
+budget. Reach for Elicit when the verdict turns on the scientific
+literature, in proportion to the claim's importance.`
       : "";
 
   const pangramNote =
@@ -387,7 +388,7 @@ stuck loop, not a target. Make sure you have recorded an assessment
 (${assessmentTool}) and logged your decision (log_stewardship_decision) before
 either runs out, so your work is never lost mid-task. If you are warned that
 little budget or few iterations remain, stop exploring and record your
-conclusion immediately.
+conclusion.
 
 ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsNote}`;
 

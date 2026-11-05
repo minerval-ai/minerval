@@ -32,6 +32,8 @@ Input: `$ARGUMENTS`
    - `propose_argument` — a named argument for or against
    - `propose_merge` (needs `merge_target_claim_id`), `propose_split`,
      `propose_edit` (usually with `proposed_canonical_form`)
+   - `answer_request` — material offered to meet one of the node's open
+     requests (`get_claim` lists them); name the request in `request_id`
 4. Draft the contribution: a clear, self-contained `content` body that engages
    the existing assessment/arguments, plus `evidence_urls` for any sources.
    Strong contributions cite evidence; bare assertions rarely survive review.
@@ -47,7 +49,9 @@ Input: `$ARGUMENTS`
 Tell the user the contribution is queued for review and that
 `get_contribution_status` (with the contribution id) returns the decision —
 accept, reject, or escalate — with the reviewer's reasoning and policy
-citations once ruled. Offer to check it later in the session.
+citations once ruled. Offer to check it later in the session. If the id is
+lost, `list_contributions` with `mine: true` lists the user's contributions,
+newest first.
 
 If submission is refused, relay the reason plainly: rate limits for new or
 low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), suspended or must-pay
