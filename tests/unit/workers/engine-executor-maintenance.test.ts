@@ -28,6 +28,7 @@ const { state } = vi.hoisted(() => ({
     generalMandate: null as null | Record<string, unknown>,
     governance: [] as string[],
     contexts: [] as Array<Record<string, unknown>>,
+    budgets: [] as Array<{ microUsd: number; source: string }>,
     curatorCalls: [] as Array<Record<string, unknown>>,
     auditCalls: [] as Array<Record<string, unknown>>,
     completed: [] as Array<{ id: string; metered: number; meteredJobId: unknown }>,
@@ -35,7 +36,16 @@ const { state } = vi.hoisted(() => ({
     reopened: [] as string[],
     auditClosed: [] as unknown[][],
     cancelled: [] as unknown[][],
+    request: null as null | Record<string, unknown>,
   },
+}));
+
+vi.mock("../../../src/services/request-service.js", () => ({
+  getRequest: vi.fn(async () => state.request),
+  notifyRequestKeeper: vi.fn(async () => true),
+  recordWork: vi.fn(async () => ({ id: "w" })),
+  requestBrief: () => "brief",
+  setRequestBudget: vi.fn(async () => {}),
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -132,7 +142,8 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
     await fn();
     return { billedMicroUsd: 120_000 };
   },
-  withPassBudget: async (_budget: unknown, fn: () => Promise<unknown>) => {
+  withPassBudget: async (budget: { microUsd: number; source: string }, fn: () => Promise<unknown>) => {
+    state.budgets.push(budget);
     await fn();
     return { billedMicroUsd: 120_000 };
   },
@@ -141,6 +152,8 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     owlCostMicroUsd: 1_000_000,
+    curateRunBudgetOwls: 5,
+    auditRunBudgetOwls: 5,
     backgroundFallbackLaneEnabled: state.fallbackLane,
     curatorMaxRuns: 0,
   }),
@@ -203,6 +216,8 @@ beforeEach(() => {
   state.reopened = [];
   state.auditClosed = [];
   state.cancelled = [];
+  state.request = null;
+  state.budgets = [];
   resetFallbackCuratorRuns();
 });
 
@@ -219,6 +234,15 @@ describe("the curate action", () => {
     expect(state.completed).toEqual([{ id: "act-c", metered: 120_000, meteredJobId: "job-1" }]);
     expect(state.consumed).toEqual([{ ids: ["r1", "r2"], actionId: "act-c" }]);
     expect(state.reopened).toEqual([]);
+  });
+
+  it("works to the 5-owl run budget when its allocations cover less, and says whose it is", async () => {
+    state.covered = curateAction();
+    await processNextEngineAction();
+    expect(state.budgets[0]).toEqual({
+      microUsd: 5_000_000,
+      source: "this curation's run budget, which its funding mandate covers",
+    });
   });
 
   it("reopens the row when a concern arrived while the run held it", async () => {
@@ -246,6 +270,62 @@ describe("the curate action", () => {
   });
 });
 
+describe("the curate action on a request the Curator keeps (#722)", () => {
+  const REQUEST = "d3333333-3333-4333-8333-333333333333";
+  const requestAction = () => ({
+    ...curateAction(),
+    id: "act-cr",
+    exclusion_group: `curate:request:${REQUEST}`,
+    claim_id: null,
+    target_ref: REQUEST,
+  });
+  const request = (over: Record<string, unknown> = {}) => ({
+    id: REQUEST,
+    ask: "Find every estimate of the regional figure",
+    why: "Three claims rest on it",
+    satisfied_by: "A table of the estimates with their sources",
+    bears_on: [{ id: ANCHOR, text: "The figure is 40 percent", kind: "claim" }],
+    bears_on_sources: [],
+    bears_on_text: "the regional estimates",
+    keeper: { kind: "curator", label: "the Curator" },
+    state: "in_progress",
+    work: [
+      { by: "Researcher", outcome: "partly_met", summary: "Found four of six regions.", research_run_id: "run-9", funded_by: "x" },
+    ],
+    ...over,
+  });
+
+  it("runs the Curator on a request-anchored brief that names the run holding the full report", async () => {
+    state.covered = requestAction();
+    state.request = request();
+    const r = await processNextEngineAction();
+    expect(r).toMatchObject({ status: "processed", ok: true, kind: "curate", grantId: "g-1" });
+    expect(state.curatorCalls).toHaveLength(1);
+    expect(state.curatorCalls[0]).toMatchObject({ trigger: "request_returned", claimId: null, requestId: REQUEST });
+    const brief = String(state.curatorCalls[0]!.context);
+    expect(brief).toContain("Find every estimate of the regional figure");
+    expect(brief).toContain("Found four of six regions.");
+    expect(brief).toContain("get_research_run run-9");
+    expect(brief).toContain("decide whether the request has been met");
+    // The agents that judge a request never see who paid for its work.
+    expect(brief).not.toContain("funded_by");
+    expect(state.completed).toEqual([{ id: "act-cr", metered: 120_000, meteredJobId: "job-1" }]);
+    expect(state.consumed).toEqual([]);
+  });
+
+  it("cancels the row when the request closed or passed to a Steward while it waited", async () => {
+    for (const over of [{ state: "met" }, { keeper: { kind: "steward", label: "the claim's Steward" } }]) {
+      state.covered = requestAction();
+      state.request = request(over);
+      state.cancelled = [];
+      const r = await processNextEngineAction();
+      expect(r.status).toBe("empty");
+      expect(state.cancelled).toEqual([[`curate:request:${REQUEST}`]]);
+    }
+    expect(state.curatorCalls).toHaveLength(0);
+  });
+});
+
 describe("the audit action", () => {
   it("runs the Audit Agent for the run row under its funder and closes the row", async () => {
     state.covered = auditAction();
@@ -258,6 +338,7 @@ describe("the audit action", () => {
     expect(state.contexts[0]).toEqual({ userId: "u-funder", jobId: "gov-job" });
     expect(state.completed).toEqual([{ id: "act-a", metered: 120_000, meteredJobId: "gov-job" }]);
     expect(state.auditClosed).toEqual([[RUN_ID]]);
+    expect(state.budgets[0]!.microUsd).toBe(5_000_000);
   });
 
   it("runs a prize audit under the bounty's reserve job and the platform account", async () => {

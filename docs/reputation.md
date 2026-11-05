@@ -145,13 +145,14 @@ that reputation does elsewhere:
   docs/accounts.md) and never touches reputation or kudos. A claim voided
   after acceptance has that credit reversed, as an audit supersession
   reverses any other decision's consequences.
-- **Prize-specific bad faith.** Beside `spam`, `vandalism`, `sybil`, and
-  `misinformation`, the Reviewer and the Arbitrator may flag, on a prize
-  claim or on a challenge to one: submitting another's proof as one's own,
-  sock-puppet submissions filed to defeat priority, and challenges whose
-  only ground is dislike of the result. The consequences are the ordinary
-  ones (−15 and must-pay standing), and must-pay standing blocks further
-  prize claims until an appeal succeeds.
+- **Prize-specific bad faith.** On a prize claim or a challenge to one,
+  the Reviewer and the Arbitrator flag abuse under the ordinary categories:
+  submitting another's proof as one's own is `misinformation`, and
+  sock-puppet submissions filed to defeat priority are `sybil`. A challenge
+  whose only ground is dislike of the result names no ground and is
+  rejected on the merits without the flag (§13). The consequences of a
+  flag are the ordinary ones (−15 and must-pay standing), and must-pay
+  standing blocks further prize claims until an appeal succeeds.
 - **`prize_ineligible`.** A flag on the contributor row, set by the
   operator, marks accounts that may never file a prize claim whatever their
   standing: the platform account, funders of the Mathematics mandate, and

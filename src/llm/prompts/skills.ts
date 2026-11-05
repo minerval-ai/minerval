@@ -92,8 +92,8 @@ export const ROLE_VIEW = {
   "audit-agent": [...ALL_ADMIN_SECTIONS, "Standards for judging"],
   grantmaker: ["For every administrator", "For the Grantmaker"],
   // The Lookout watches on a mandate's behalf and carries that mandate's
-  // skills; it judges relevance, not truth, so it receives only the
-  // section addressed to everyone.
+  // skills; it raises candidates and writes no verdict, so it receives
+  // only the section addressed to everyone.
   lookout: ["For every administrator"],
   "contribution-reviewer": [
     "For every administrator",
@@ -111,6 +111,12 @@ export const ROLE_VIEW = {
   // provenance map) and says what it leaves to the Steward. Not the
   // Steward's section, whose tools it does not have (#765).
   researcher: ["For every administrator", "For the researcher"],
+  // The Consistency Checker reads other administrators' assessments against
+  // each other, as the Audit Agent reads them against the standards, so it
+  // receives the standards a good assessment in the domain meets: a
+  // mathematics standard ("a checked proof against any status other than
+  // verified ... is a coherence failure") is exactly its reading (#742).
+  "consistency-checker": ["For every administrator", "Standards for judging"],
 } as const satisfies Record<string, readonly SkillSection[]>;
 
 export type SkillRole = keyof typeof ROLE_VIEW;

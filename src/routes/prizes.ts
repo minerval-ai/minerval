@@ -36,6 +36,7 @@ import {
   prizeRulesContentHash,
 } from "../services/bounty-service.js";
 import {
+  CHALLENGE_GROUNDS,
   challengePrizeClaim,
   filePrizeClaim,
   getPrizeClaimById,
@@ -71,6 +72,17 @@ import { retryCheckError } from "../workers/prize-check-pipeline.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Path params as JSON schema, so the generated MCP tools take them as inputs
+// (src/mcp/route-tools.ts). Plain strings, not `format: "uuid"`: the handlers
+// answer a malformed id with the same 404 as a missing one.
+function idParam(description: string) {
+  return {
+    type: "object",
+    required: ["id"],
+    properties: { id: { type: "string", description } },
+  } as const;
+}
 
 function errorBody(code: string, message: string) {
   return { error: { code, message } };
@@ -151,7 +163,19 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
       .send(PRIZE_RULES_TEXT);
   });
 
-  app.get<{ Params: { version: string } }>("/prizes/rules/:version", { schema: { tags: ["prizes"], summary: "One version of the official rules" } }, async (request, reply) => {
+  app.get<{ Params: { version: string } }>("/prizes/rules/:version", {
+    schema: {
+      tags: ["prizes"],
+      summary: "One version of the official rules",
+      params: {
+        type: "object",
+        required: ["version"],
+        properties: {
+          version: { type: "string", description: "A rules version, as get_prize_rules reports it in x-rules-version or list_prizes in rules_version" },
+        },
+      },
+    },
+  }, async (request, reply) => {
     if (request.params.version !== PRIZE_RULES_VERSION) {
       return reply.code(404).send(errorBody("NOT_FOUND", `rules version ${request.params.version} is not retained here`));
     }
@@ -200,14 +224,14 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ bounty: summary, terms: bountyTerms(bounty, summary) });
   });
 
-  app.get<{ Params: { id: string } }>("/claims/:id/prize-claims", { schema: { tags: ["prizes"], summary: "Every prize claim on the claim, rejected and superseded ones included" } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/claims/:id/prize-claims", { schema: { tags: ["prizes"], summary: "Every prize claim on the claim, rejected and superseded ones included", params: idParam("The claim's id") } }, async (request, reply) => {
     if (!UUID_RE.test(request.params.id)) return reply.code(404).send(errorBody("NOT_FOUND", "claim not found"));
     const rows = await listPrizeClaimsForClaim(request.params.id);
     return reply.send({ prize_claims: rows.map(prizeClaimSummary) });
   });
 
   app.get<{ Params: { id: string } }>("/claims/:id/prize-claims/eligibility", {
-    schema: { tags: ["prizes"], summary: "Whether the signed-in account may file a prize claim here" },
+    schema: { tags: ["prizes"], summary: "Whether the signed-in account may file a prize claim here", params: idParam("The claim's id") },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
       const contributor = await getContributorById(request.auth!.userId!);
@@ -217,7 +241,7 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { id: string } }>("/prize-claims/:id", {
-    schema: { tags: ["prizes"], summary: "One prize claim's public projection; the owner and service callers see more" },
+    schema: { tags: ["prizes"], summary: "One prize claim's public projection; the owner and service callers see more", params: idParam("The prize claim's id") },
     preHandler: [optionalAuth],
     handler: async (request, reply) => {
       if (!UUID_RE.test(request.params.id)) return reply.code(404).send(errorBody("NOT_FOUND", "prize claim not found"));
@@ -394,7 +418,33 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Params: { id: string }; Body: { ground?: string; content?: string; evidence_urls?: string[] } }>("/prize-claims/:id/challenge", {
-    schema: { tags: ["prizes"], summary: "Challenge an accepted prize claim on an enumerated ground, with evidence" },
+    schema: {
+      tags: ["prizes"],
+      summary: "Challenge an accepted prize claim on an enumerated ground, with evidence",
+      description:
+        "Open only while the prize claim is in its challenge window. The challenge is an ordinary " +
+        "challenge contribution, reviewed by the Contribution Reviewer; get_contribution_status " +
+        "follows it.",
+      params: idParam("The prize claim's id"),
+      body: {
+        type: "object",
+        required: ["ground", "content"],
+        properties: {
+          ground: {
+            type: "string",
+            enum: [...CHALLENGE_GROUNDS],
+            description: "The ground the challenge is brought on",
+          },
+          content: {
+            type: "string",
+            description:
+              "Followable evidence for the ground: say what is wrong and where to see it. " +
+              "At least 50 characters; a challenge with less is refused.",
+          },
+          evidence_urls: { type: "array", items: { type: "string" }, description: "Links to the evidence" },
+        },
+      },
+    },
     preHandler: [app.authenticate],
     handler: async (request, reply) => {
       const contributor = await gateContributor(request, reply);

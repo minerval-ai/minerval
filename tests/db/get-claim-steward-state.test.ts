@@ -25,8 +25,8 @@ describe("get_claim steward state (#415)", () => {
 
     const out = await context(id);
     expect(out.claim.decomposition_status).toBe("complete");
-    expect(out.claim.children_total).toBe(0);
-    expect(out.current_assessment).toBeNull();
+    expect(out.subclaim_count).toBe(0);
+    expect(out.assessment).toBeNull();
     expect(out.claim.steward_state).toBe("pending");
     expect(out.claim.stewarded_at).toBeNull();
   });

@@ -149,13 +149,22 @@ const configSchema = z.object({
   // brief, the graph, and the open web, and raising candidates. Set near
   // the average cost of a run that finds nothing, which is most of them.
   capLookoutRunOwls: z.coerce.number().default(0.05),
-  // One consistency sweep (kind 'consistency_sweep', #330): a cheap-tier
-  // agent reading one partition's assessments against each other. The
-  // allocation reserves the whole cap against the General mandate's day
-  // until the run settles, so a cap far above the metered cost (about 0.02
-  // owl on the flash tier over a 30-claim partition) crowds out the passes
-  // the sweep asks for. The lookout's cap.
-  capConsistencySweepOwls: z.coerce.number().default(0.05),
+  // The ceiling of one consistency sweep (kind 'consistency_sweep', #330,
+  // #756), a ceiling only: a partition's row is priced by its size, at the
+  // variant's expected cost per assessed node (observed once its sweeps have
+  // run, else its model's price times the tokens a node is expected to take;
+  // action-service consistencySweepPrice), so a big tag or the residual
+  // bucket gets the budget to be read rather than a small tag's. The
+  // allocation reserves the row's price against the General mandate's day
+  // only until the run settles. At the default estimate (0.005 owl a node
+  // for the flash reader) this covers 400 nodes; above that the sweep is
+  // told the ceiling binds and to note where it stopped.
+  capConsistencySweepOwls: z.coerce.number().default(2),
+  // The strong variant's ceiling (#756): the same partition read by
+  // consistencyStrongModel, a standard-tier reader that catches more of the
+  // subtle tensions the sweep exists for. About 256 nodes at its
+  // price-based estimate (Sonnet 5.5's list rates, about 0.039 owl a node).
+  capConsistencySweepStrongOwls: z.coerce.number().default(10),
   // The budget a paid assessment's Steward pass works to (an order, or a
   // proposal's first pass), shown to the Steward and enforced on its paid
   // tools. Deliberately above the buyer's cap: the buyer pays at most
@@ -164,6 +173,18 @@ const configSchema = z.object({
   // and concluded on what it already knew; the budget is what the work
   // needs, the cap what the buyer is asked to pay.
   paidAssessmentBudgetOwls: z.coerce.number().positive().default(5),
+  // The budget a Curator run (a 'curate' ledger action) and an Audit run
+  // (an 'audit' action) work to, shown to the agent and enforced on its
+  // paid tools: the larger of this and what its funders' allocations
+  // cover. As with paidAssessmentBudgetOwls, the budget is what the work
+  // needs and the price is something else: funders are asked to cover the
+  // action's expected cost (the live p80, or est_curate_cost_owls /
+  // est_audit_cost_owls), and a run that needs more draws the rest from
+  // the funding mandate's escrow as metered cost. A run held to its
+  // expected cost would stop short of reading the claims a merge or an
+  // audit turns on, the failure #671 saw at 1 owl.
+  curateRunBudgetOwls: z.coerce.number().positive().default(5),
+  auditRunBudgetOwls: z.coerce.number().positive().default(5),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
@@ -313,6 +334,14 @@ const configSchema = z.object({
   // frequency is known. Read by the provider seam once it takes a TTL.
   promptCacheTtl: z.enum(["5m", "1h"]).default("5m"),
   matchingTopK: z.coerce.number().default(20),
+  // What one Matcher decision may spend, in USD (#727). The money, not a
+  // turn count, bounds how long the Matcher searches: on the flash tier a
+  // turn costs well under a cent, so this allows many more searches than
+  // the old 12-turn cap, which was the limit runs actually hit (#419, #467).
+  // It exists because a caller (a Steward mid-run, an ingest job, a reader's
+  // page) is blocked on the decision. Never more than the caller's own pass
+  // has left; the retry after a run that ends undecided gets a quarter more.
+  matcherBudgetUsd: z.coerce.number().min(0.005).default(0.1),
   // There is deliberately no per-source claim cap here any more.
   // EXTRACTION_MAX_CLAIMS (8 in production) truncated every source to the same
   // number, which is the wrong shape: how many reusable propositions a document
@@ -659,7 +688,22 @@ const configSchema = z.object({
   // has run and its real cost is known, used until there are reviews to
   // average.
   contributionReviewEstimateUsd: z.coerce.number().min(0).default(0.25),
+  // What one contribution review, and one arbitration, may spend (#712).
+  // Money is the run's limit, stated to the agent with its spend after
+  // every turn; the turn cap is only RUN_TURN_GUARD. Set well above a
+  // typical run (reviews average about the estimate above) so a careful
+  // review that opens sources and reads the record is not cut short; the
+  // Arbitrator runs a stronger model at the higher stakes of a second
+  // instance.
+  contributionReviewBudgetUsd: z.coerce.number().min(0).default(1),
+  arbitrationBudgetUsd: z.coerce.number().min(0).default(3),
   researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
+  // A request run from the ledger (#734) has no launcher waiting on it, so
+  // the 20-minute cap above has no reason there: its budget, the quote its
+  // funders paid, bounds the work. This is only a backstop against a run
+  // that has stopped making progress without spending, and the run is told
+  // it with that reason.
+  researcherRequestMaxWallMinutes: z.coerce.number().min(1).default(240),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
   // turn re-reads the history, so no turn is free and the ceiling ends
@@ -714,8 +758,10 @@ const configSchema = z.object({
   prizeHumanSignoffImportance: z.coerce.number().min(0).max(1).default(0.6),
   // The challenge window between acceptance and payment (§8.5): the small
   // window below the tier, the large one at or above it, never under 14
-  // days — which the bounds enforce, because "never below 14" is a rule
-  // the constitution's §16 rests on, not a tuning knob.
+  // days — which the bounds enforce, because "never below 14" is the
+  // promise to challengers that a paid prize, which cannot be recalled,
+  // waits long enough for anyone to raise what the acceptance missed; it is
+  // not a tuning knob.
   prizeChallengeWindowDaysSmall: z.coerce.number().min(14).default(14),
   prizeChallengeWindowDaysLarge: z.coerce.number().min(14).default(30),
   prizeWindowTierOwls: z.coerce.number().min(0).default(1000),
@@ -863,7 +909,7 @@ const configSchema = z.object({
   taggerModel: modelId(OPENROUTER_MODELS.flash),
   // The Lookout: a standing watch a mandate funds (docs/allocation.md,
   // "Lookouts"). Its judgment is "did something happen that warrants work
-  // in my scope?" — relevance, not truth — and it runs often, so it belongs
+  // in my scope?" (it raises candidates, never verdicts) and it runs often, so it belongs
   // on the cheap tier (OPENROUTER_MODELS.flash), the Matcher's and the
   // tagger's model, with web search like every model (tools/web-search-tool.ts).
   // A Grantmaker pins a stronger model on a lookout (lookouts.model) where
@@ -872,15 +918,27 @@ const configSchema = z.object({
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
   // The Consistency Checker (#330; docs/allocation.md, "Consistency
   // sweeps"): reads one partition's assessments against each other and
-  // flags where they do not cohere. It raises candidates, never conclusions
-  // (the flagged claim's Steward verifies and decides), so it runs on the
-  // cheap tier. Pinned identically in infra/lib/api-stack.ts.
+  // flags where they do not fit together. What it writes is a flag the
+  // owning Steward weighs and decides, so the standard variant of a sweep
+  // runs on the cheap tier. Pinned identically in infra/lib/api-stack.ts.
   consistencyModel: modelId(OPENROUTER_MODELS.flash),
-  // Consistency sweeps the General mandate funds per UTC day, across all
-  // partitions (each a 'consistency_sweep' ledger action, capped at
-  // capConsistencySweepOwls). 0, the default, is the off-switch: no sweep
-  // rows are opened or funded.
-  consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(0),
+  // The strong variant's reader (#756): a sweep is an exclusive set of a
+  // standard (consistencyModel) and a strong variant, and the funder buys
+  // the strong one when its expected gain per owl beats the standard's
+  // (allocation policy consistency_strong_gain_multiplier). Pinned
+  // identically in infra/lib/api-stack.ts.
+  consistencyStrongModel: modelId(MODELS.sonnet),
+  // Whether the General mandate funds consistency sweeps at all (each a
+  // 'consistency_sweep' ledger action priced by the partition's size, with
+  // capConsistencySweepOwls or its strong variant's cap as the ceiling). A deployment off-switch only, as
+  // lookoutRunsEnabled is: how many sweeps run is the General mandate's
+  // escrow and day room, with the re-sweep interval (CONSISTENCY_BOUNDS.
+  // resweepHours) keeping a partition to one sweep a day (#749). Off by
+  // default, as before: "true" turns sweeps on.
+  consistencySweepsEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .prefault("false"),
   // A tag is a sweep partition only when it carries at least this many live
   // claims; every claim no such tag covers falls in the residual bucket.
   consistencyMinTagClaims: z.coerce.number().int().min(1).default(10),
@@ -1022,7 +1080,10 @@ export function loadConfig(): Config {
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
+    capConsistencySweepStrongOwls: process.env.CAP_CONSISTENCY_SWEEP_STRONG_OWLS,
     paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
+    curateRunBudgetOwls: process.env.CURATE_RUN_BUDGET_OWLS,
+    auditRunBudgetOwls: process.env.AUDIT_RUN_BUDGET_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
@@ -1049,6 +1110,7 @@ export function loadConfig(): Config {
     pipelineEpoch: process.env.PIPELINE_EPOCH,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
+    matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:
@@ -1108,7 +1170,10 @@ export function loadConfig(): Config {
     researcherEnabled: process.env.RESEARCHER_ENABLED,
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
+    contributionReviewBudgetUsd: process.env.CONTRIBUTION_REVIEW_BUDGET_USD,
+    arbitrationBudgetUsd: process.env.ARBITRATION_BUDGET_USD,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
+    researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
     maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,
@@ -1154,7 +1219,8 @@ export function loadConfig(): Config {
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
-    consistencyMaxSweepsPerDay: process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY,
+    consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,
+    consistencyStrongModel: process.env.CONSISTENCY_STRONG_MODEL,
     consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
