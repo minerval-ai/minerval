@@ -103,6 +103,16 @@ splits the two sides (§1, §6). Name that crux for your user. "This turns
 on whether X, which the evidence does not yet settle" is more useful than
 "it's disputed".
 
+`get_claim` with `include: ["arguments"]` shows the named arguments and
+the Steward's `evaluation` of each (§7). Its `verdict` rates the
+inference, how far the conclusion follows if the premises hold (certain,
+likely, slight, none), not whether the conclusion is true; an argument
+rated `certain` can rest on a false premise. Its `content` names the
+premises the argument lives or dies on, and `decisive: true` means it
+settles the claim as its premises now stand; when one is decisive, say so
+plainly. `stale: true` means the evaluation predates the current
+assessment.
+
 The same habit helps when you reason without the graph: ask what would
 make the claim true or false, and which sub-question the answer depends
 on, before reaching for sources (§9).

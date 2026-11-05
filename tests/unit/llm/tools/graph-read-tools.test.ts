@@ -130,7 +130,7 @@ describe("graph-read-tools", () => {
 
       await executeGraphReadTool("search_claims", { query: "wages" });
 
-      expect(mockHybrid).toHaveBeenCalledWith("wages", { limit: 15 });
+      expect(mockHybrid).toHaveBeenCalledWith("wages", expect.objectContaining({ limit: 10 }));
     });
 
     it("decorates hits with the allocation signals hybridSearch omits", async () => {
@@ -151,8 +151,9 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("search_claims", { query: "wages" }))!
       );
 
-      expect(out.claims[0]).toMatchObject({
+      expect(out.results[0]).toMatchObject({
         id: "c1",
+        canonical_form: "A claim",
         importance: 0.8,
         contestation: 0.6,
         steward_state: "pending",
@@ -164,7 +165,7 @@ describe("graph-read-tools", () => {
     // `assessments`; the hit says which kind it is and reads recency there.
     it("carries each hit's kind and reads recency from the kind's own table", async () => {
       mockHybrid.mockResolvedValue({
-        results: [{ id: "q1", text: "How large is X?", importance: 0.5 }],
+        results: [{ id: "q1", kind: "quantity", text: "How large is X?", importance: 0.5 }],
         total: 1,
       } as never);
       mockRawQuery.mockResolvedValue([
@@ -175,10 +176,35 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("search_claims", { query: "x" }))!
       );
 
-      expect(out.claims[0]).toMatchObject({ id: "q1", kind: "quantity", days_since_assessed: 3 });
+      expect(out.results[0]).toMatchObject({ id: "q1", kind: "quantity", days_since_assessed: 3 });
       const sql = String(mockRawQuery.mock.calls[0]![0]);
       expect(sql).toContain("quantity_estimates");
       expect(sql).toContain("question_assessments");
+    });
+
+    // #726: the agents' search takes the same filters MCP's does.
+    it("passes kind, assessed, prize, type and importance filters through to hybridSearch", async () => {
+      mockHybrid.mockResolvedValue({ results: [], total: 0 } as never);
+
+      await executeGraphReadTool("search_claims", {
+        query: "primes",
+        kind: "question",
+        assessed: "unassessed",
+        with_prizes: true,
+        claim_type: "mathematical",
+        min_importance: 0.4,
+        limit: 500,
+      });
+
+      expect(mockHybrid).toHaveBeenCalledWith("primes", {
+        limit: 50,
+        assessed: "unassessed",
+        minImportance: 0.4,
+        withPrizes: true,
+        claimType: "mathematical",
+        tagId: undefined,
+        kind: "question",
+      });
     });
 
     it("skips the signals query when nothing matched", async () => {

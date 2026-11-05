@@ -44,26 +44,17 @@ import {
 } from "../server/plugins/quota.js";
 import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext, untraced } from "../llm/usage-context.js";
-import { hybridSearch } from "../services/search-service.js";
-import {
-  attachClaimTags,
-  listTags,
-  resolveTagBySlug,
-  searchTags,
-} from "../services/tag-service.js";
+import { listTags, searchTags } from "../services/tag-service.js";
+import { graphReadDefinitions, runGraphRead } from "../services/graph-read-service.js";
 import {
   getClaimById,
   listClaims,
 } from "../services/claim-service.js";
 import { getCurrentAssessment } from "../services/assessment-service.js";
-import {
-  getClaimTree,
-  getTransitiveDependents,
-} from "../services/tree-service.js";
+import { getClaimTree } from "../services/tree-service.js";
 import {
   getBountyTerms,
 } from "../services/formalization-service.js";
-import { claimTypeEnum } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
@@ -367,88 +358,27 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
 
   // ---- free read tools ----
 
-  server.registerTool(
-    "search_claims",
-    {
-      title: "Search claims",
-      description:
-        "Search Minerval's claim graph. A claim is a single reusable " +
-        "proposition about the world, assessable with evidence and reasons; " +
-        "each is stored once, under a neutral canonical " +
-        "wording shared by the claim and its denial. The graph also holds " +
-        "quantities (values it estimates) and questions (which it answers); " +
-        "search reaches all three, each result says its `kind`, and `kind` " +
-        "narrows to one. Combined semantic and " +
-        "keyword search, ranked by similarity; each result carries its " +
-        "current assessment status (for a question its `standing`, for a " +
-        "quantity its `estimate` and `unit`), the amount of any live prize offered " +
-        "for a machine-checked proof or disproof of its formal statement " +
-        "(prize_micro_usd), whether such a check exists (checked), its " +
-        "topic tags, and a link to its minerval.ai page. Narrow to one " +
-        "topic with `tag` (a slug from list_tags). Free.",
-      inputSchema: {
-        query: z.string().min(1).max(500).describe("Free-text search query"),
-        limit: z.number().int().min(1).max(50).default(10),
-        assessed: z
-          .enum(["all", "assessed", "unassessed"])
-          .default("all")
-          .describe("Filter on whether a claim carries a current assessment"),
-        min_importance: z.number().min(0).max(1).default(0),
-        with_prizes: z
-          .boolean()
-          .default(false)
-          .describe("Only claims with a live prize on their formal statement"),
-        claim_type: claimTypeEnum
-          .optional()
-          .describe("Only claims of this type; `mathematical` for propositions of mathematics"),
-        tag: z
-          .string()
-          .max(100)
-          .optional()
-          .describe("Only claims carrying this topic tag (slug); an unknown tag matches nothing"),
-        kind: nodeKindEnum
-          .optional()
-          .describe("Only nodes of this kind: claims, quantities, or questions"),
+  // search_claims, get_decomposition and get_dependents, defined once with
+  // the agents' (graph-read-service.ts, #726): the same inputs and payloads
+  // on both sides, with a caller-facing description suffix. get_claim is
+  // claim-view-service.ts's, below.
+  for (const def of graphReadDefinitions("caller")) {
+    server.registerTool(
+      def.name,
+      {
+        title: def.title,
+        description: def.description,
+        inputSchema: z.fromJSONSchema(
+          def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
+        ) as z.ZodObject,
       },
-    },
-    async ({ query, limit, assessed, min_importance, with_prizes, claim_type, tag, kind }) => {
-      let tagId: string | undefined;
-      if (tag?.trim()) {
-        const resolved = await resolveTagBySlug(tag);
-        if (!resolved) return jsonResult({ results: [], note: `no tag "${tag}"` });
-        tagId = resolved.id;
+      async (args: Record<string, unknown>) => {
+        const result = await runGraphRead(def.name, args);
+        if (!result) return errorResult("NOT_FOUND", `No read named ${def.name}`);
+        return result.ok ? jsonResult(result.payload) : errorResult(result.code, result.message);
       }
-      const { results } = await hybridSearch(query, {
-        limit,
-        assessed,
-        minImportance: min_importance,
-        withPrizes: with_prizes,
-        claimType: claim_type,
-        tagId,
-        kind,
-      });
-      const tagged = await attachClaimTags(results);
-      return jsonResult({
-        results: tagged.map((r) => ({
-          id: r.id,
-          kind: r.kind,
-          canonical_form: r.text,
-          claim_type: r.claim_type,
-          state: r.state,
-          similarity_score: r.similarity_score,
-          importance: r.importance,
-          assessment_status: r.assessment_status,
-          assessment_confidence: r.assessment_confidence,
-          prize_micro_usd: r.prize_micro_usd ?? null,
-          checked: r.checked ?? null,
-          ...(r.kind === "question" ? { standing: r.standing ?? null } : {}),
-          ...(r.kind === "quantity" ? { estimate: r.estimate ?? null, unit: r.unit ?? null } : {}),
-          tags: r.tags.map((t) => ({ slug: t.slug, name: t.name })),
-          page_url: claimPageUrl(r.id),
-        })),
-      });
-    }
-  );
+    );
+  }
 
   server.registerTool(
     "list_tags",
@@ -524,70 +454,6 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       });
       if (!view) return errorResult("NOT_FOUND", "Claim not found");
       return jsonResult(view);
-    }
-  );
-
-  server.registerTool(
-    "get_decomposition",
-    {
-      title: "Get decomposition",
-      description:
-        "Fetch the tree of subclaims a claim rests on. Each edge is typed " +
-        "(requires, supports, contradicts, and so on) and grouped into a " +
-        "named argument where one exists; each node carries its own " +
-        "assessment status, so a disputed subclaim under a well-supported " +
-        "parent marks exactly where the disagreement lives. Descends only: " +
-        "for what rests ON this claim, use get_dependents. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        max_depth: z.number().int().min(1).max(8).default(3),
-      },
-    },
-    async ({ claim_id, max_depth }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const tree = await getClaimTree(claim_id, max_depth);
-      return jsonResult({
-        claim_id,
-        page_url: claimPageUrl(claim_id),
-        tree,
-      });
-    }
-  );
-
-  server.registerTool(
-    "get_dependents",
-    {
-      title: "Get dependents",
-      description:
-        "Walk UP from a claim: everything that rests on it, directly or " +
-        "through a chain, ranked by importance and tagged with how many " +
-        "edges away it sits. This is what shows whether a claim is " +
-        "LOAD-BEARING, which is not readable off the claim itself — a modest " +
-        "lemma carrying six high-importance dependents matters more than an " +
-        "isolated claim that scores higher alone. The mirror of " +
-        "get_decomposition, and the question 'what would move if this " +
-        "verdict changed'. Free.",
-      inputSchema: {
-        claim_id: z.guid(),
-        max_depth: z
-          .number()
-          .int()
-          .min(1)
-          .max(8)
-          .default(3)
-          .describe("Edges to walk upward; 1 is direct dependents only."),
-      },
-    },
-    async ({ claim_id, max_depth }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const walk = await getTransitiveDependents(claim_id, max_depth);
-      return jsonResult({
-        claim_id,
-        page_url: claimPageUrl(claim_id),
-        ...walk,
-      });
     }
   );
 

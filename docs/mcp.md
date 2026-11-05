@@ -149,21 +149,29 @@ and the tool description says what a call spends.
 
 ## Tools
 
-- **`search_claims`** `{query, limit?, assessed?, min_importance?, tag?, kind?}` — hybrid
-  vector + keyword search over canonical claims, quantities and questions
-  (all three live in `claims`). Each result carries its `kind`, its
+`search_claims`, `get_decomposition` and `get_dependents` are defined once,
+in `src/services/graph-read-service.ts`, and served both here and to the
+graph's own agents (`src/llm/tools/graph-read-tools.ts`), as `get_claim` is
+from `src/services/claim-view-service.ts`, so the two cannot drift (#726).
+The definitions differ only in a description suffix: a caller is told the
+read is free, an agent which signals allocation turns on.
+
+- **`search_claims`** `{query, limit?, kind?, tag?, assessed?,
+  min_importance?, claim_type?, with_prizes?}` — hybrid vector + keyword
+  search over canonical claims, quantities and questions (all three live in
+  `claims`). Each result carries its `kind`, importance, `contestation`,
   current assessment status/confidence (a question's `standing`, a
-  quantity's `estimate` and `unit`), its topic `tags`, and a
-  `minerval.ai` page link; `tag` (a slug) narrows the search to one topic
-  and `kind` to one kind. `assessed` judges each kind by its own verdict.
+  quantity's `estimate` and `unit`), `days_since_assessed`, its topic
+  `tags`, and a `minerval.ai` page link. It also carries `prize_micro_usd`
+  (the live bounty on the claim, or null) and `checked` (`proof`,
+  `disproof`, or null: whether a machine-checked argument stands on the
+  claim, the same derivation as the badge on the claim page). `tag` (a
+  slug) narrows the search to one topic, `kind` to one kind, `claim_type`
+  to one type, and `with_prizes: true` to claims with an open bounty;
+  `assessed` judges each kind by its own verdict.
 - **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
   claims carry, with how many claims carry each; with `query`, ranked by
   meaning. A tag says what a claim is about, never whether it holds.
-  Each result also carries `prize_micro_usd` (the live bounty on the claim,
-  or null) and `checked` (`proof`, `disproof`, or null: whether a
-  machine-checked argument stands on the claim, the same derivation as the
-  badge on the claim page), and the input accepts `with_prizes: true` to
-  restrict results to claims with an open bounty.
 - **`get_claim`** `{claim_id, include?: ["arguments"|"subclaims"|"provenance"|"dependents"|"related"|"findings"|"proofs"], dependents_limit?, dependents_offset?}`
   — one node as the graph records it. This is the same tool, with the same
   description and payload, that the graph's own agents call
@@ -213,6 +221,9 @@ and the tool description says what a call spends.
   as `GET /claims/:id` serves them.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
+- **`get_dependents`** `{claim_id, max_depth?}` — the walk up: everything
+  that rests on the claim, ranked by importance, with each one's distance.
+  Being load-bearing is not being important (constitution §19).
 - **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion
   through the Matcher agent → the canonical claim it states (or negates — see
   `stance`) plus its assessment, `matched: false` for new/unknown, or

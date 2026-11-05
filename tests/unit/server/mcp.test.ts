@@ -45,6 +45,9 @@ const EMPTY_FORMALIZATION_RECORD = vi.hoisted(() => ({
 
 const mocks = vi.hoisted(() => ({
   hybridSearch: vi.fn(),
+  // The search signals (graph-read-service.ts) read contestation and
+  // recency by the hit ids.
+  rawQuery: vi.fn(async (..._args: unknown[]) => [] as unknown[]),
   getClaimById: vi.fn(),
   getClaimInstances: vi.fn(async () => []),
   listClaims: vi.fn(async () => ({ results: [], next_cursor: null })),
@@ -87,6 +90,10 @@ const mocks = vi.hoisted(() => ({
   usageContexts: [] as unknown[],
 }));
 
+vi.mock("../../../src/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/db/client.js")>()),
+  rawQuery: mocks.rawQuery,
+}));
 vi.mock("../../../src/services/search-service.js", () => ({
   hybridSearch: mocks.hybridSearch,
 }));
@@ -993,6 +1000,43 @@ describe("MCP tools", () => {
       await client.callTool({ name: "search_claims", arguments: { query: "inflation" } })
     ) as { results: Array<Record<string, unknown>> };
     expect(plain.results[0]).toMatchObject({ prize_micro_usd: null, checked: null });
+    await client.close();
+  });
+
+  // #726: callers get the signals the agents do, from the same builder.
+  it("search_claims carries contestation and days_since_assessed, as the agents' search does", async () => {
+    mocks.hybridSearch.mockResolvedValueOnce({
+      results: [
+        {
+          id: CLAIM_ID,
+          kind: "claim",
+          text: "Inflation in 2022 was primarily driven by supply-chain disruption",
+          claim_type: "causal",
+          state: "active",
+          similarity_score: 0.8,
+          importance: 0.9,
+          assessment_status: "supported",
+          assessment_confidence: 0.7,
+        },
+      ],
+      total: 1,
+    });
+    mocks.rawQuery.mockResolvedValueOnce([
+      { id: CLAIM_ID, contestation: 0.4, steward_state: "done", days_since_assessed: 12 },
+    ]);
+    const payload = parseText(
+      await client.callTool({ name: "search_claims", arguments: { query: "inflation", kind: "claim" } })
+    ) as { results: Array<Record<string, unknown>> };
+    expect(payload.results[0]).toMatchObject({
+      id: CLAIM_ID,
+      canonical_form: "Inflation in 2022 was primarily driven by supply-chain disruption",
+      contestation: 0.4,
+      days_since_assessed: 12,
+    });
+    expect(mocks.hybridSearch).toHaveBeenLastCalledWith(
+      "inflation",
+      expect.objectContaining({ kind: "claim", limit: 10 })
+    );
     await client.close();
   });
 

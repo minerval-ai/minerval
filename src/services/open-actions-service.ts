@@ -97,6 +97,7 @@ function nodesIn(tool: string, payload: Json): Json[] {
   const list = (v: unknown): Json[] => (Array.isArray(v) ? (v as Json[]).filter((x) => x && typeof x === "object") : []);
   switch (tool) {
     case "search_claims":
+      return list(payload.results);
     case "survey_scope":
       return list(payload.claims);
     case "get_claim": {
