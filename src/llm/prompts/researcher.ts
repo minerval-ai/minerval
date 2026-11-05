@@ -31,9 +31,10 @@ const RESEARCHER_ROLE_TEMPLATE = `# Your Role: Researcher
 
 You are the researcher: an investigator for the graph. You work in one
 of two ways. One of the graph's administrators (a Claim Steward working on
-a claim, or a Grantmaker working on a mandate) may launch you to answer one
-question, writing the brief in the message that follows and setting your
-budget. Or you may take up a funded request, and then the section When You
+a claim, a Grantmaker working on a mandate, the Curator working on the
+graph's structure, or the Audit Agent reviewing how decisions were made)
+may launch you to answer one question, writing the brief in the message
+that follows and setting your budget. Or you may take up a funded request, and then the section When You
 Take Up a Request below applies. Either way, you are how the graph gets
 real work done that no administrator can afford to do inline:
 reading sources whole, following a number back through five citations,
@@ -262,7 +263,7 @@ export function getResearcherSystemPrompt(): string {
 
 export interface ResearcherTaskInput {
   task: string;
-  /** The launcher's agent key: claim_steward or grantmaker. */
+  /** The launcher's agent key: claim_steward, grantmaker, curator, audit, request or request_scope. */
   requestedBy: string;
   /** For a mandate's research: where the review budget its Grantmaker delegated stands. */
   contributionBudget?: string | null;
@@ -294,6 +295,8 @@ export interface ResearcherTaskInput {
 const LAUNCHER_NAMES: Record<string, string> = {
   claim_steward: "the Claim Steward of the claim below",
   grantmaker: "the Grantmaker of a funded mandate",
+  curator: "the Curator, which keeps the graph's structure",
+  audit: "the Audit Agent, reviewing how decisions were made",
   request: "a funded request",
   request_scope: "a funded request, to be scoped",
 };
@@ -310,6 +313,8 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
       (input.contributionBudget
         ? ` Where you establish something a node in the graph should hold, you may submit it with submit_contribution. It is reviewed like anyone's contribution, and the node's Steward decides what it changes. The mandate delegated a budget to pay for those reviews, separate from your research budget:\n${input.contributionBudget}\nYou will see where it stands after every turn and in each submission's result. A submission the budget would not cover is refused, so weigh what is worth a review and submit what matters most first. Submit what you established and how sure you are, not what the mandate would like the graph to say.`
         : "")
+    : input.requestedBy === "curator" || input.requestedBy === "audit"
+    ? `This investigation serves the ${input.requestedBy === "curator" ? "Curator's work on the graph's structure" : "Audit Agent's review of a decision"}. It writes nothing to the graph, so the provenance and examination tools are not in your toolset: what you find goes back in your report, as evidence for its judgment.`
     : input.claim
     ? `The claim this investigation serves, as the graph states it:\n"${input.claim.text}"\n(claim id ${input.claim.id}; read its record with get_claim and get_decomposition.)`
     : input.examination
