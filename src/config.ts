@@ -277,8 +277,12 @@ const configSchema = z.object({
   grantConversationRateLimitPerHour: z.coerce.number().default(30),
 
   // Browser extension (#72)
-  // Cap on claims extracted per analyzed page — extension pages are ephemeral
-  // reading surfaces, not corpus ingestion, so keep fan-out tight by default.
+  // Cap on claims extracted per analyzed page. A count rather than money
+  // because a reader is waiting on the page: each claim costs a Matcher loop
+  // before the annotations can render, so the cap bounds latency, which a
+  // budget does not. Extension pages are ephemeral reading surfaces, not
+  // corpus ingestion, and the cap is stated to the Extractor with its
+  // running remainder.
   extensionMaxClaims: z.coerce.number().default(25),
   // The extension's confidence floor, above ingestion's (extractionMinConfidence):
   // a reader is waiting on the page, and each claim that passes costs a
