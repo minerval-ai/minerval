@@ -258,6 +258,9 @@ async function processUrlExtraction(
         extractedText: claim.verbatim_text,
         proposedCanonical: claim.proposed_canonical_form,
         kind: proposedKind,
+        // The passage around the span (#721): the stance this instance
+        // records is judged from context (§4).
+        context: claim.context,
         // The Matcher receives the domains its caller knows: here, the
         // Extractor's prior for this claim.
         domains: sanitizeDomains(claim.domains),
@@ -362,7 +365,7 @@ async function processUrlExtraction(
       // Create instance linking claim to source. stance records whether this
       // source asserts the canonical claim or its negation, judged against
       // the canonical direction rather than assumed: a new claim's first
-      // instance can be "denies" (#360). A claim merged with its counterpart
+      // instance can be "denies" (#360). A claim merged with its negation
       // thus still shows which side each source takes. The
       // extractor's proposed canonical form rides along: on a new claim the
       // Matcher may have reworded it (claims.text is the Matcher's), on a

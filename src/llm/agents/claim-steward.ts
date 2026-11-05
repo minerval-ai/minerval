@@ -77,6 +77,9 @@ const CLAIM_ONLY_TOOLS = new Set([
   "add_argument",
   "write_argument",
   "evaluate_argument",
+  "ungroup_subclaim",
+  "revise_argument",
+  "retire_argument",
 ]);
 
 /**
@@ -164,7 +167,8 @@ what that involves. How you go about this pass is your judgment.
 
 ${passNote}
 
-Read the ${noun} with get_claim. Form your own view of the question before you
+Read the ${noun} with get_claim (include arguments, subclaims, related and
+findings for the full working record). Form your own view of the question before you
 read its instances. When you need them, get_claim_instances returns the
 instances recorded so far; which of them belong on the ${noun}, and in what
 order a reader sees them, is yours to decide.`;

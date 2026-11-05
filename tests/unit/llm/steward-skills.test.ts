@@ -174,7 +174,7 @@ describe("Steward toolset without a domain tag", () => {
     expect(opts.system).toHaveLength(1);
     expect(opts.system[0]).not.toContain("# Method skill:");
     expect(opts.system[0]).toContain("## Skills");
-    expect(opts.system[0]).toContain("- provenance (version 1, a method skill");
+    expect(opts.system[0]).toContain("- provenance (version 3, a method skill");
     expect(opts.initialMessages[0]!.content).not.toContain("Skills that cover this run's subject");
     // The run opens with nothing loaded.
     expect(mocks.loopSkills).toEqual([[]]);
@@ -188,7 +188,7 @@ describe("Steward toolset without a domain tag", () => {
       view: await opts.executeTool("load_skill", { name: "provenance" }),
       recorded: [...(getUsageContext().skills ?? [])],
     }));
-    expect(view.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 3)")).toBe(true);
     expect(view).toContain("## For the Claim Steward");
     expect(recorded).toEqual(["provenance"]);
     const unknown = JSON.parse(await opts.executeTool("load_skill", { name: "alchemy" }));

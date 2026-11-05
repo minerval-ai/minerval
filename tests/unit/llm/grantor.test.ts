@@ -98,6 +98,12 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
     return { floor_owls: floor, per_item_owls: { steward_pass: 2, ingest: 0.5 } };
   },
 }));
+vi.mock("../../../src/llm/tools/kind-tools.js", () => ({
+  getRequestToolDefinitions: () => [{ name: "list_requests" }],
+  executeKindTool: async () => "{}",
+  // The researcher reaches this module through the research tools.
+  getResearcherQuestionInstanceToolDefinition: () => ({ name: "record_question_instance", input_schema: { type: "object", properties: {} } }),
+}));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: {
     tools: Array<{ name: string }>;
@@ -193,6 +199,7 @@ describe("runGrantor", () => {
       "note_finding",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
       "survey_scope", "read_page", "update_workspace",
+      "list_requests",
       "submit_plan",
       "cost_sheet",
     ]);
@@ -204,16 +211,20 @@ describe("runGrantor", () => {
     state.script = [
       plan([
         { action: "ingest", url: "https://journal.test/a", rationale: "primary", extra: "dropped" },
+        { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "  grid reliability  " },
         { action: "assess", claim_id: CLAIM, rationale: "crux" },
         { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8 },
       ]),
     ];
     const res = await runGrantor({ grantId: GRANT });
-    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 3, floor_owls: 2.5 });
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 4, floor_owls: 3 });
     expect(res).toEqual({
       strategy: "Seed the scope with the primary sources.",
       items: [
         { action: "ingest", url: "https://journal.test/a", rationale: "primary" },
+        // The focus survives (#684): it was dropped here, and a scoped
+        // ingest became a whole-document one.
+        { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "grid reliability" },
         { action: "assess", claim_id: CLAIM, rationale: "crux" },
         { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8 },
       ],
