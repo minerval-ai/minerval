@@ -89,7 +89,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
+| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_dependents`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap. `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — capped at 10 an hour, 3 for new/low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), stated in the tool description; priced proposals (`propose_claim`, `submit_source`) are bounded by the caller's balance instead and don't count, and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
@@ -138,11 +138,13 @@ else the route sent (an entitlement, owl packs, a cap).
   residency, documents, one-time codes);
 - the route bypasses governance that MCP's equivalent applies
   (`PATCH /claims/:id` writes an argument without review;
-  `submit_contribution` with `argument` is the reviewed path);
+  `submit_contribution` with `propose_argument` is the reviewed path);
 - it is protocol plumbing (OAuth, discovery, Stripe's webhook, health) or a
   rendering of something MCP already has (the Atom feed), or another
   client's own protocol (the browser extension's page analysis and chat,
-  whose MCP equivalents are `assess_text` and `extract_claims`).
+  whose MCP equivalents are `assess_text` and `extract_claims`, and its
+  private prefix lookup; the shared analysis itself is `get_page_analysis`,
+  which takes the URL and hashes it on the server).
 
 "It spends owls" is not a reason: owls are the limiter on both surfaces,
 and the tool description says what a call spends.
@@ -225,8 +227,9 @@ read is free, an agent which signals allocation turns on.
   that rests on the claim, ranked by importance, with each one's distance.
   Being load-bearing is not being important (constitution §19).
 - **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion
-  through the Matcher agent → the canonical claim it states (or negates — see
-  `stance`) plus its assessment, `matched: false` for new/unknown, or
+  through the Matcher agent → the canonical claim it states, negates, or
+  asks about (`stance`: `affirms`, `denies`, `poses`) plus its assessment,
+  `matched: false` for a claim the graph does not hold, or
   `matched: null` when the Matcher ran out of search budget without a
   verdict (not a finding that the claim is new; retry). `kind` (`claim`,
   the default, `quantity`, or `question`) says what the assertion is: a
@@ -239,15 +242,20 @@ read is free, an agent which signals allocation turns on.
   forms, each with its `kind`.
 - **`assess_text`** `{text, max_claims?}` — the judgment surface: extract the
   passage's claims, match each into the graph, and return per-claim verdicts
-  (`well_supported`/`disputed`/… from the graph's assessments, `unassessed`
-  if matched but not yet assessed, `unknown` if the graph has no such claim,
-  `undecided` if the Matcher reached no verdict for that claim).
+  (`verified`, `supported`, `inconclusive`, `doubtful`, `contradicted`, or
+  `unknown` from the graph's assessments, `unknown` being an assessed
+  finding of insufficient evidence; `unassessed` if matched but not yet
+  assessed; `not_in_graph` if the graph has no such claim, a value of its
+  own since #752; `undecided` if the Matcher reached no verdict for that
+  claim). At most 50,000 characters and 20 judged claims a call, so one
+  call stays within the `text_analysis` charge.
   A figure's verdict is `estimated` when its quantity has an estimate
   (beside it as `estimate`); a question's verdict is its standing
   (`answered`, `leaning`, `open`, `ill_posed`, `unknown`).
   Verdicts come from pre-computed assessments, not model recollection. When
   `stance` is `"denies"`, the passage asserts the claim's negation, so the
-  assessment applies inverted.
+  assessment applies inverted; `"poses"` means it asks the question and
+  asserts neither side.
 - **`get_text_analysis`** `{job_id}` — `extract_claims` and `assess_text` run
   in the background, because an extraction plus a Matcher loop per claim
   takes minutes, longer than an MCP tool call should be held open. Each
@@ -286,10 +294,15 @@ read is free, an agent which signals allocation turns on.
   the allowed axioms and a summary of the static policy a submission must
   pass, the state of any challenge window, the rules version in force with
   its link, open-since and expiry dates, the count of submissions so far,
-  and the platform's own attempt disclosure. Returns `bounty: null` when
-  the claim carries no live bounty. An outside solver needs nothing else
+  and the platform's own attempt disclosure. A claim with no live bounty
+  is a `NO_BOUNTY` tool error, with the claim's `page_url`. An outside solver needs nothing else
   to know what would count as a solution; the statement file itself is at
   `GET /claims/:id/formalization.lean`.
+- **`get_page_analysis`** `{url}` — the shared analysis of a public page
+  (`GET /extension/shared/:url_hash`): the claims a reader of the browser
+  extension found on it, matched into the graph, with each claim's status
+  read now. The URL is normalized and hashed on the server, as the
+  extension does; a page nobody shared is `NOT_SHARED`. Free.
 - **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
   joins?}` — report a problem with this server or its tools
   (`system_failure`, `tool_gap`) or a concrete improvement idea
@@ -301,7 +314,10 @@ read is free, an agent which signals allocation turns on.
   and your body is added to it as a sighting instead. Free and
   attributed, and so limited to `REPORT_RATE_LIMIT_PER_HOUR` (default 5)
   reports an hour, stated in the description with its reason: each one
-  takes maintainer attention nothing prices. Returns the report id.
+  takes maintainer attention nothing prices. Returns the report id. Its
+  field descriptions are the agents' own (`REPORT_FIELD_GUIDANCE` in
+  `src/llm/tools/report-tools.ts`), so an outside report is titled the way
+  the agents' are and collapses with theirs.
 
 ### Route tools
 

@@ -2,7 +2,7 @@
 
 Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.
 
-Invoked when: Random 5% sampling, high-reputation decisions, complaints, or anomalies.
+Invoked when: Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.
 
 This prompt follows the full constitution in every run.
 

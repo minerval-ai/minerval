@@ -28,8 +28,9 @@ Base ref (optional): `$ARGUMENTS`
    `failed`. Claims are scarce relative to text; most
    lines will yield none, and that is the expected result, not a failure.
 4. Interpret verdicts as in `/minerval:check`: verdicts come from the graph's
-   assessments, `stance: denies` inverts the reading, `unknown`/`unassessed`
-   means the graph is silent. Flag inconclusive or doubtful claims asserted as
+   assessments, `stance: denies` inverts the reading, `not_in_graph` and
+   `unassessed` mean the graph is silent, and an assessed `unknown` means
+   the evidence is insufficient. Flag inconclusive or doubtful claims asserted as
    settled.
 
 ## Report

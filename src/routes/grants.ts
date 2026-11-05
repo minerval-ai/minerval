@@ -9,7 +9,7 @@
  *   GET  /grants             — the acting user's grants.
  *   GET  /grants/:id         — dashboard payload: spend, plan, progress, the
  *     assessments the grant funded.
- *   POST /grants/:id/approve — approve a grantor agent's proposed plan.
+ *   POST /grants/:id/approve — approve the plan the mandate's Grantmaker proposed.
  *   POST /grants/:id/topup   — add budget (delegates to the budget job).
  *   POST /grants/:id/cancel  — stop the mandate, refund unspent budget.
  */
@@ -125,7 +125,7 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string } }>("/:id/approve", {
     schema: {
       tags: ["grants"],
-      summary: "Approve the grantor agent's proposed allocation plan",
+      summary: "Approve the plan the mandate's Grantmaker proposed (the grant starts executing)",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },

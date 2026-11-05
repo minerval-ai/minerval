@@ -33,7 +33,7 @@ Sections: For every administrator.
 
 ### Extractor (`roles/extractor.md`)
 
-Pulls atomic claims out of a source document, in canonical form.
+Surfaces the claims, quantities and questions a source asserts or relies on, stated as the graph would state them.
 
 ### Matcher (`roles/matcher.md`)
 
@@ -81,4 +81,4 @@ The platform's own prover, an instrument rather than an administrator: it receiv
 
 ### Researcher (`roles/researcher.md`)
 
-An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node, and returns a report the launcher weighs.
+An instrument for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. An administrator launches it with a brief, or it takes up a funded request on its own account. It carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node (and, on a funded request, may file a request of its own), and returns a report: to its launcher, who weighs it, or on the request it answers.

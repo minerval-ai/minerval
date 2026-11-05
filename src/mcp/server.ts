@@ -83,6 +83,9 @@ import {
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
+import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
+import { getSharedAnalysis } from "../services/shared-analysis-service.js";
+import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
 import {
   CLAIM_VIEW_DESCRIPTION,
   CLAIM_VIEW_INCLUDE_DESCRIPTION,
@@ -485,6 +488,37 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     }
   );
 
+  server.registerTool(
+    "get_page_analysis",
+    {
+      title: "Get a web page's shared analysis",
+      description:
+        "The analysis of a public web page that a reader of the Minerval " +
+        "browser extension chose to share: the claims the page makes, each " +
+        "matched into the graph with its stance and the claim's status read " +
+        "now. Pass the page's URL; it is normalized and hashed on the " +
+        "server. Only pages someone shared, and the server confirmed are " +
+        "public, have one: otherwise NOT_SHARED, and assess_text on the " +
+        "page's text is the way to check it. Free.",
+      inputSchema: {
+        url: z.string().url().max(4000).describe("The page's address"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ url }) => {
+      const normalized = normalizePageUrl(url);
+      if (!normalized) return errorResult("NOT_A_PAGE", "Only an http or https page has a shared analysis");
+      const analysis = await getSharedAnalysis(pageUrlHash(normalized));
+      if (!analysis) {
+        return errorResult(
+          "NOT_SHARED",
+          "No shared analysis for this page; assess_text on its text checks it"
+        );
+      }
+      return jsonResult(analysis);
+    }
+  );
+
   // ---- agentic (metered) tools ----
 
   server.registerTool(
@@ -495,8 +529,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Ask Minerval's Matcher whether an assertion is already a claim in " +
         "the graph, under any wording or as its negation (a claim and its " +
         "denial are one node). On a match, returns the canonical claim, " +
-        "whether the assertion affirms or denies it, and its current " +
-        "assessment; otherwise, a proposed canonical form. A node is a " +
+        "its `stance` (affirms: the assertion states the claim; denies: it " +
+        "states the negation, so read the assessment inverted; poses: it asks " +
+        "the question and takes no side, so it makes no claim to check), and " +
+        "its current assessment; otherwise, a proposed canonical form. A node is a " +
         "claim, a quantity, or a question (`kind`): pass `kind: \"quantity\"` " +
         "for a figure, matched to the quantity it is a value of, or " +
         "`\"question\"` for a question. A matched quantity carries its " +
@@ -585,10 +621,13 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "come from assessments reached by direct examination of evidence, " +
         "with the reasoning included, never from a model's recollection. " +
         "Statuses run verified, supported, inconclusive, doubtful, " +
-        "contradicted, unknown. 'unknown' with matched: false means the graph " +
-        "holds no such claim; on a matched claim it is the assessed status " +
-        "(not enough information to assess). 'unassessed' means the claim " +
-        "exists but has no assessment yet. A figure is matched to the " +
+        "contradicted, unknown; 'unknown' is an assessed finding (the " +
+        "evidence is insufficient to assess). 'not_in_graph' means the graph " +
+        "holds no such claim, 'unassessed' that it exists but has no " +
+        "assessment yet, and 'undecided' that the Matcher reached no verdict. " +
+        "Each judgment's `stance` says whether the passage affirms, denies " +
+        "(read the assessment inverted) or poses (asks, asserting nothing) " +
+        "the claim. A figure is matched to the " +
         "quantity it is a value of ('estimated', with the graph's " +
         "`estimate`) and a question to the question it asks (its standing: " +
         "answered, leaning, open, ill_posed, or unknown). Runs a model: " +
@@ -640,7 +679,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               proposed_canonical_form: c.proposed_canonical_form,
               claim_type: c.claim_type,
               kind,
-              // "unknown": the graph has no canonical claim for this assertion.
+              // "not_in_graph": the graph has no canonical claim for this
+              // assertion. Its own value, not "unknown", which is an assessed
+              // status (insufficient evidence) and meant both until #752.
               // "undecided": the Matcher reached no verdict (#419).
               // "unassessed": it exists but has no current judgment yet.
               // A matched quantity is "estimated" (its `estimate` beside it),
@@ -649,7 +690,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
                 match.matched === null
                   ? "undecided"
                   : !match.matched
-                    ? "unknown"
+                    ? "not_in_graph"
                     : match.claim.kind === "quantity"
                       ? match.estimate
                         ? "estimated"
@@ -698,15 +739,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     {
       title: "Submit a contribution",
       description:
-        "Contribute to an existing claim: a challenge, supporting evidence, " +
-        "a new source appearance, a proposed merge, split, or edit, or an " +
-        "argument for or against it; on a quantity, a source's figure " +
-        "(add_estimate); on a question, a candidate answer (propose_answer); " +
-        "on any node, a request for work (propose_request) or material " +
-        "offered to meet one of its requests (answer_request, naming it in " +
-        "request_id). A request may " +
-        "bear on several nodes, on sources, or on something the graph does " +
-        "not hold yet: omit claim_id and say in content what it bears on. " +
+        "Contribute to an existing node; contribution_type says what kind of " +
+        "contribution it is. A request (propose_request) may bear on several " +
+        "nodes, on sources, or on something the graph does not hold yet: omit " +
+        "claim_id and say in content what it bears on. " +
         "A contribution gets a hearing, not " +
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
@@ -722,8 +758,22 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .guid()
           .optional()
           .describe("The node the contribution is about. Required for every type but propose_request."),
-        contribution_type: contributionTypeEnum,
-        content: z.string().min(1).max(10_000),
+        contribution_type: contributionTypeEnum.describe(
+          "challenge: dispute the claim or its assessment. support: evidence " +
+            "or reasoning for it. add_instance: a source where it appears. " +
+            "propose_argument: a named argument for or against it. " +
+            "propose_merge (with merge_target_claim_id), propose_split, " +
+            "propose_edit (usually with proposed_canonical_form). On a " +
+            "quantity, add_estimate: a source's figure for it. On a question, " +
+            "propose_answer: a candidate answer. On any node, propose_request: " +
+            "work that would improve what the graph knows; answer_request: " +
+            "material offered to meet one of its requests (with request_id)."
+        ),
+        content: z
+          .string()
+          .min(1)
+          .max(10_000)
+          .describe("The contribution itself, engaging what the node already records; cite ids, not pasted text"),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
         merge_target_claim_id: z.guid().optional(),
         proposed_canonical_form: z.string().max(2000).optional(),
@@ -785,7 +835,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           "DEPOSIT_REQUIRED",
           "A suspected bad-faith contribution moved this account to " +
             "pay-to-contribute standing. Deposits are not yet available; " +
-            "the flag can be appealed via POST /appeals."
+            "the flag can be appealed with submit_appeal (REST: POST /appeals)."
         );
       }
 
@@ -837,10 +887,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "one takes maintainer attention nothing prices; past it you get " +
         "REPORT_RATE_LIMITED. Joining an existing report counts as one.",
       inputSchema: {
-        kind: reportKindEnum,
-        severity: reportSeverityEnum,
-        title: z.string().min(1).max(REPORT_TITLE_MAX_CHARS),
-        body: z.string().min(1).max(REPORT_BODY_MAX_CHARS),
+        // The agents' raise_issue explains each field (report-tools.ts);
+        // callers get the same guidance, since repeats collapse by title.
+        kind: reportKindEnum.describe(REPORT_FIELD_GUIDANCE.kind),
+        severity: reportSeverityEnum.describe(REPORT_FIELD_GUIDANCE.severity),
+        title: z.string().min(1).max(REPORT_TITLE_MAX_CHARS).describe(REPORT_FIELD_GUIDANCE.title),
+        body: z.string().min(1).max(REPORT_BODY_MAX_CHARS).describe(REPORT_FIELD_GUIDANCE.body),
         surface: z.string().max(200).optional(),
         context_refs: z
           .record(z.string(), z.union([z.string().max(500), z.number(), z.boolean()]))
@@ -1110,18 +1162,21 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             type: "text",
             text:
               "Fact-check the following document against the Minerval claim graph.\n\n" +
-              "Use the `assess_text` tool on the document, chunking it if it is " +
-              "long. For each judged claim, report the verdict the graph " +
-              "returned, not your own recollection. A verdict of `unknown` " +
-              "with `matched: false` means the graph holds no canonical claim " +
-              "for that assertion; on a matched claim, `unknown` is the " +
-              "assessed status (not enough information to assess); " +
+              "Use the `assess_text` tool on the document. For each judged " +
+              "claim, report the verdict the graph " +
+              "returned, not your own recollection. `not_in_graph` means the " +
+              "graph holds no canonical claim for that assertion; `unknown` " +
+              "is an assessed status (the evidence is insufficient to " +
+              "assess), a finding to report as such; " +
               "`undecided` means the Matcher reached no verdict (say so, do " +
               "not read it as unknown); " +
               "`unassessed` means the claim exists but has no assessment yet. " +
               "Watch the `stance` field: `denies` means the document asserts " +
               "the negation of the canonical claim, so invert the assessment " +
-              "when judging the document's sentence. Cite each claim's " +
+              "when judging the document's sentence, and `poses` means the " +
+              "document asks the question without asserting either side. " +
+              "assess_text takes at most 50,000 characters a call, so " +
+              "split a longer document on section boundaries. Cite each claim's " +
               "`page_url`.\n\n" +
               "Document:\n\n" +
               document,

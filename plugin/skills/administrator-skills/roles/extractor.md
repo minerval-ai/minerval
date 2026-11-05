@@ -1,6 +1,6 @@
 # Extractor: role prompt
 
-Pulls atomic claims out of a source document, in canonical form.
+Surfaces the claims, quantities and questions a source asserts or relies on, stated as the graph would state them.
 
 Invoked when: A URL or document is submitted for ingestion.
 

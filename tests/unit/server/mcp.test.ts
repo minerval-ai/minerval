@@ -87,6 +87,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentStanding: vi.fn(async () => null as unknown),
   listRequests: vi.fn(async () => ({ items: [] as unknown[], total: 0 })),
   getRequest: vi.fn(async () => null as unknown),
+  getSharedAnalysis: vi.fn(async () => null as unknown),
   usageContexts: [] as unknown[],
 }));
 
@@ -176,6 +177,9 @@ vi.mock("../../../src/services/question-service.js", () => ({
 vi.mock("../../../src/services/request-service.js", () => ({
   listRequests: mocks.listRequests,
   getRequest: mocks.getRequest,
+}));
+vi.mock("../../../src/services/shared-analysis-service.js", () => ({
+  getSharedAnalysis: mocks.getSharedAnalysis,
 }));
 vi.mock("../../../src/services/api-key-service.js", () => ({
   resolveApiKey: mocks.resolveApiKey,
@@ -494,6 +498,7 @@ describe("MCP tools", () => {
       "get_contribution_status",
       "get_decomposition",
       "get_dependents",
+      "get_page_analysis",
       "get_text_analysis",
       "list_tags",
       "match_claim",
@@ -784,7 +789,8 @@ describe("MCP tools", () => {
     const progress = [...analyses.values()].at(-1)!.progress as Array<{ judgments: unknown[] }>;
     expect(progress.map((p) => p.judgments.length)).toEqual([0, 1, 2]);
     expect(payload.judgments[0]).toMatchObject({ verdict: "well_supported" });
-    expect(payload.judgments[1]).toMatchObject({ verdict: "unknown" });
+    // Not "unknown", which is an assessed status (#752).
+    expect(payload.judgments[1]).toMatchObject({ verdict: "not_in_graph", matched: false });
     expect(mocks.extractClaims).toHaveBeenCalledWith(
       expect.objectContaining({ maxClaims: 5 })
     );
@@ -1206,6 +1212,41 @@ describe("MCP tools", () => {
     expect(suspended.isError).toBe(true);
     expect(parseText(suspended).error.code).toBe("CONTRIBUTOR_SUSPENDED");
     expect(mocks.raiseIssue).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  // #752: GET /extension/shared/:url_hash was excluded because a caller
+  // cannot compute the hash; the tool takes the URL and hashes it here.
+  it("get_page_analysis hashes the page's normalized URL on the server", async () => {
+    const { normalizePageUrl, pageUrlHash } = await import(
+      "../../../src/services/page-url.js"
+    );
+    mocks.getSharedAnalysis.mockResolvedValueOnce({ shared: true, annotations: [] });
+    const result = await client.callTool({
+      name: "get_page_analysis",
+      arguments: { url: "http://www.example.org/post/?utm_source=x#top" },
+    });
+    expect(parseText(result)).toEqual({ shared: true, annotations: [] });
+    expect(mocks.getSharedAnalysis).toHaveBeenCalledWith(
+      pageUrlHash(normalizePageUrl("https://example.org/post")!)
+    );
+
+    const missing = await client.callTool({
+      name: "get_page_analysis",
+      arguments: { url: "https://example.org/other" },
+    });
+    expect(missing.isError).toBe(true);
+    expect((parseText(missing).error as { code: string }).code).toBe("NOT_SHARED");
+    await client.close();
+  });
+
+  it("describes raise_issue's fields as the agents' raise_issue does, and states its rate", async () => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === "raise_issue")!;
+    const props = tool.inputSchema.properties as Record<string, { description?: string }>;
+    expect(props.title?.description).toContain("so repeats collapse");
+    expect(props.severity?.description).toContain("blocking:");
+    expect(tool.description).toMatch(/limited to \d+ reports an hour/);
     await client.close();
   });
 

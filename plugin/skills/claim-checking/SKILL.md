@@ -67,7 +67,10 @@ skill bundles it in full, and the section numbers below point into it.
   that reading, not the probability the claim is true; that is `credence`,
   given only where one number is an honest summary.
 - `stance: denies` means the checked text asserts the claim's negation, so
-  invert the reading for the text as written.
+  invert the reading for the text as written. `stance: poses` means the
+  text asks the question rather than asserting either side, so it makes no
+  claim to check; report the graph's verdict as context, not as a judgment
+  of the text.
 
 ## Calibration: don't round
 
@@ -142,8 +145,9 @@ support matters:
 
 ## Silence and gaps are contributions
 
-- `unknown` with `matched: false` (no such claim) and `unassessed` (no
-  assessment yet) mean the graph is silent. That is not evidence for or
+- `not_in_graph` (from `assess_text`; `matched: false` from
+  `match_claim`: no such claim) and `unassessed` (no assessment yet) mean
+  the graph is silent. That is not evidence for or
   against, and not a license to answer from recollection. Say the graph
   has no assessment; if you then give your own view, label it as yours.
 - `matched: null` / `undecided` means the Matcher ran out of budget
