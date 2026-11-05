@@ -142,3 +142,44 @@ describe("lift_suspension", () => {
     expect(out.success).toBe(false);
   });
 });
+
+// A bad-faith finding gets a decision audit whichever instance records it
+// (#696); before this, only the Reviewer's flag requested one.
+describe("record_arbitration_decision bad-faith audit", () => {
+  const CONTRIBUTION_ID = "c2c2c2c2-2222-2222-2222-222222222222";
+
+  it("requests a decision audit on an uphold with a bad-faith finding", async () => {
+    const { requestAudit } = await import("../../../../src/services/queue-service.js");
+    vi.mocked(requestAudit).mockClear();
+    const out = JSON.parse(
+      await executeArbitratorTool("record_arbitration_decision", {
+        contribution_id: CONTRIBUTION_ID,
+        outcome: "uphold_original",
+        decision: "Upheld.",
+        reasoning: "The same text was posted on forty claims.",
+        suspected_bad_faith: true,
+        bad_faith_category: "spam",
+      })
+    );
+    expect(out.success).toBe(true);
+    expect(requestAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auditType: "decision_audit",
+        triggeredBy: "bad_faith_flag",
+        dedupeKey: `bad-faith-arb:${CONTRIBUTION_ID}`,
+      })
+    );
+  });
+
+  it("requests none on an uphold without a finding", async () => {
+    const { requestAudit } = await import("../../../../src/services/queue-service.js");
+    vi.mocked(requestAudit).mockClear();
+    await executeArbitratorTool("record_arbitration_decision", {
+      contribution_id: CONTRIBUTION_ID,
+      outcome: "uphold_original",
+      decision: "Upheld.",
+      reasoning: "Wrong on the merits.",
+    });
+    expect(requestAudit).not.toHaveBeenCalled();
+  });
+});

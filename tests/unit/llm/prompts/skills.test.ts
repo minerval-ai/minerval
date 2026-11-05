@@ -88,18 +88,16 @@ describe("the Mathematics skill", () => {
   it("loads with the frontmatter Appendix A specifies", () => {
     const m = getSkill("mathematics");
     expect(m.displayName).toBe("Mathematics");
-    expect(m.version).toBe(1);
+    expect(m.version).toBe(6);
     expect(m.sinceEpoch).toBe("2026-09-domain-skills");
     expect(m.domains).toEqual(["mathematics"]);
     expect(m.description).toMatch(/^How the constitution applies to propositions of mathematics/);
     expect(m.description).toMatch(/Does not apply to claims that merely use a number or a model\.$/);
   });
 
-  it("carries every administrator section in document order (the researcher's is the Provenance skill's)", () => {
+  it("carries every section in document order, the researcher's included (#765)", () => {
     const m = getSkill("mathematics");
-    expect(m.sections.map((s) => s.heading)).toEqual(
-      SKILL_SECTIONS.filter((h) => h !== "For the researcher")
-    );
+    expect(m.sections.map((s) => s.heading)).toEqual([...SKILL_SECTIONS]);
     for (const s of m.sections) expect(s.body.length).toBeGreaterThan(50);
   });
 
@@ -123,7 +121,8 @@ describe("the Mathematics skill", () => {
     expect(m.tools[2]!.roles).toEqual(["claim-steward"]);
     expect(m.tools[3]!.roles).toEqual(["claim-steward"]);
     expect(m.tools[4]!.roles).toEqual(["claim-steward", "audit-agent"]);
-    expect(m.tools[6]!.roles).toEqual(["claim-steward", "audit-agent"]);
+    // The Arbitrator reads the prize claim a challenge targets (#710).
+    expect(m.tools[6]!.roles).toEqual(["claim-steward", "audit-agent", "dispute-arbitrator"]);
   });
 
   it("owns the only known domain (the method skill claims none)", () => {
@@ -167,7 +166,15 @@ describe("the Provenance skill", () => {
       "examination_note_finding",
     ]);
     expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
-    expect(p.tools[1]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
+    // Reading a source is also how the Reviewer and the Arbitrator check
+    // what a contribution cites (#694).
+    expect(p.tools[1]!.roles).toEqual([
+      "claim-steward",
+      "audit-agent",
+      "researcher",
+      "contribution-reviewer",
+      "dispute-arbitrator",
+    ]);
     for (const t of p.tools.slice(2, 5)) expect(t.roles).toEqual(["claim-steward", "researcher"]);
     expect(p.tools[5]!.roles).toEqual(["claim-steward"]);
     expect(p.tools[6]!.roles).toEqual(["claim-steward"]);
@@ -179,7 +186,7 @@ describe("the Provenance skill", () => {
 
   it("is headed as a method skill with its own sentence of standing", () => {
     const view = getSkillView(p, "claim-steward");
-    expect(view.startsWith("# Method skill: Provenance (version 1)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 5)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
     expect(view).not.toContain("## Failure modes");
   });
 });
@@ -197,7 +204,15 @@ describe("ROLE_VIEW", () => {
   ];
 
   it("is exactly the composition table of section 3.3", () => {
-    expect(ROLE_VIEW["claim-steward"]).toEqual(every);
+    // The Steward's own section and the structural calls it makes itself,
+    // not the Grantmaker's, Reviewer's or Audit Agent's procedures (#765).
+    expect(ROLE_VIEW["claim-steward"]).toEqual([
+      "For every administrator",
+      "For the Claim Steward",
+      "For the Curator",
+      "For the Matcher",
+      "For the Extractor",
+    ]);
     expect(ROLE_VIEW["audit-agent"]).toEqual([...every, "Standards for judging"]);
     expect(ROLE_VIEW.grantmaker).toEqual(["For every administrator", "For the Grantmaker"]);
     // The Lookout judges relevance on a mandate's behalf, never truth: the
@@ -215,12 +230,15 @@ describe("ROLE_VIEW", () => {
     ]);
     expect(ROLE_VIEW.matcher).toEqual(["For the Matcher"]);
     expect(ROLE_VIEW.extractor).toEqual(["For the Extractor"]);
-    // The researcher often does a Steward's work on its behalf, so it reads
-    // the Steward's sections as well as its own.
-    expect(ROLE_VIEW.researcher).toEqual([
+    // The researcher's own section carries the procedure it follows on a
+    // Steward's behalf; the Steward's section, whose tools it lacks, is not
+    // its to read (#765).
+    expect(ROLE_VIEW.researcher).toEqual(["For every administrator", "For the researcher"]);
+    // The Consistency Checker reads assessments against each other: the
+    // section for everyone and the standards a good assessment meets.
+    expect(ROLE_VIEW["consistency-checker"]).toEqual([
       "For every administrator",
-      "For the Claim Steward",
-      "For the researcher",
+      "Standards for judging",
     ]);
     expect(SKILL_ROLES).toEqual([
       "claim-steward",
@@ -233,13 +251,14 @@ describe("ROLE_VIEW", () => {
       "matcher",
       "extractor",
       "researcher",
+      "consistency-checker",
     ]);
   });
 
-  it("never hands Failure modes to any role, and Standards for judging only to Audit", () => {
+  it("never hands Failure modes to any role, and Standards for judging only to the roles that judge assessments", () => {
     for (const role of SKILL_ROLES) {
       expect(ROLE_VIEW[role]).not.toContain("Failure modes");
-      if (role !== "audit-agent") {
+      if (role !== "audit-agent" && role !== "consistency-checker") {
         expect(ROLE_VIEW[role]).not.toContain("Standards for judging");
       }
     }
@@ -251,13 +270,29 @@ describe("views", () => {
 
   it("wraps the role's sections with the citable heading and the standing sentence", () => {
     const view = getSkillView(m, "claim-steward");
-    expect(view.startsWith("# Domain skill: Mathematics (version 1)\n\n" + SKILL_STANDING)).toBe(
+    expect(view.startsWith("# Domain skill: Mathematics (version 6)\n\n" + SKILL_STANDING)).toBe(
       true
     );
     for (const h of ROLE_VIEW["claim-steward"]) expect(view).toContain(`## ${h}\n`);
     expect(view).not.toContain("## For the solver");
     expect(view).not.toContain("## Standards for judging");
     expect(view).not.toContain("## Failure modes");
+    expect(view).not.toContain("## For the Grantmaker");
+    expect(view).not.toContain("## For the Audit Agent");
+  });
+
+  it("gives the researcher its own section and not the Steward's (#765)", () => {
+    const view = getSkillView(m, "researcher");
+    expect(view).toContain("## For the researcher\n");
+    expect(view).not.toContain("## For the Claim Steward");
+    expect(view).toContain("no research\nrun can");
+    const prov = getSkillView(getSkill("provenance"), "researcher");
+    expect(prov).not.toContain("## For the Claim Steward");
+    // The procedure it follows is in its own section.
+    expect(prov).toContain("Begin with `provenance_get_map`");
+    expect(prov).toContain("`provenance_record_edge`");
+    const search = getSkillView(getSkill("search"), "researcher");
+    expect(search.split("\n").filter((l) => l.startsWith("## "))).toEqual(["## For every administrator"]);
   });
 
   it("gives the Matcher only its own section, verbatim", () => {
@@ -305,15 +340,16 @@ describe("views", () => {
   it("lists the skills a role can load, with descriptions and the sections loading gives", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog.split("\n")).toHaveLength(4);
-    expect(catalog).toContain("- costing (version 1, a method skill; as first written). ");
-    expect(catalog).toContain(
-      "- mathematics (version 1, a domain skill, for claims tagged mathematics; as first written). "
-    );
+    expect(catalog).toContain("- costing (version 2, a method skill; this version changed: ");
+    expect(catalog).toContain("- mathematics (version 6, a domain skill, for claims tagged mathematics; this version changed: ");
     expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
-    expect(catalog).toContain("- provenance (version 1, a method skill; as first written). ");
+    expect(catalog).toContain(
+      "- provenance (version 5, a method skill; this version changed: The researcher's section carries the mapping " +
+        "procedure it follows, so the researcher no longer reads the Steward's section.). "
+    );
     expect(catalog).toContain(getSkill("provenance").description.replace(/\s+/g, " ").trim());
     expect(getSkillCatalog("claim-steward")).toContain(
-      "Loading it gives you: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor."
+      "Loading it gives you: For every administrator, For the Claim Steward, For the Curator, For the Extractor."
     );
     const section = skillsSection("claim-steward");
     expect(section.startsWith("## Skills\n")).toBe(true);

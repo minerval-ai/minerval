@@ -27,6 +27,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
@@ -63,6 +64,11 @@ async function runAuditImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
+  // The researcher, for checking what a decision rests on further than a
+  // run should read inline (Part VIII, Instruments), paid from this run's
+  // budget; it reads and reports and writes nothing to the graph. Offered
+  // only when the run has a budget and the researcher is enabled.
+  const researchTools = createResearchTools({ requestedBy: "audit" });
 
   const tools = [
     ...getGovernanceToolDefinitions(),
@@ -70,6 +76,7 @@ async function runAuditImpl(input: {
     ...skillLoader.definitions,
     ...skillTools,
     ...reportTools.definitions, ...findingTools.definitions,
+    ...researchTools.definitions,
   ];
   const system = getAuditAgentSystemPromptBlocks();
   const skillsNote = skillLoader.pointerNote;
@@ -107,6 +114,8 @@ ${turnBudgetLine(AUDIT_MAX_TURNS)}`;
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      const research = await researchTools.execute(name, toolInput);
+      if (research !== null) return research;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);

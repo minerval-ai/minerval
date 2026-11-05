@@ -94,7 +94,8 @@ export function capListOwls(): Record<PricedOp, number> {
     text_analysis: c.capTextAnalysisOwls,
     // One run of a mandate's lookout: cheap model, brief + graph + web.
     lookout_run: c.capLookoutRunOwls,
-    // One consistency sweep: cheap model, one partition's assessments.
+    // One consistency sweep on the cheap model: the ceiling of a row priced
+    // by its partition's size (action-service consistencySweepPrice).
     consistency_sweep: c.capConsistencySweepOwls,
   };
 }

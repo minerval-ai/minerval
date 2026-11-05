@@ -45,16 +45,16 @@ import {
 import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext, untraced } from "../llm/usage-context.js";
 import { listTags, searchTags } from "../services/tag-service.js";
-import { getClaimById, listClaims } from "../services/claim-service.js";
+import { graphReadDefinitions, runGraphRead } from "../services/graph-read-service.js";
 import {
-  claimPageUrl,
-  formatAssessment,
-  graphReadDefinitions,
-  runGraphRead,
-} from "../services/graph-read-service.js";
+  getClaimById,
+  listClaims,
+} from "../services/claim-service.js";
 import { getCurrentAssessment } from "../services/assessment-service.js";
 import { getClaimTree } from "../services/tree-service.js";
-import { getBountyTerms } from "../services/formalization-service.js";
+import {
+  getBountyTerms,
+} from "../services/formalization-service.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
@@ -70,6 +70,8 @@ import { getOrCreateContributor } from "../services/contributor-service.js";
 import { checkContributionRateLimit } from "../services/reputation-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import {
+  CLAIM_ID_REQUIRED_MESSAGE,
+  contributionMayOmitClaim,
   contributionTypeEnum,
   reportKindEnum,
   reportSeverityEnum,
@@ -81,6 +83,14 @@ import {
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
+import {
+  CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_INCLUDE_DESCRIPTION,
+  CLAIM_VIEW_INCLUDES,
+  DEFAULT_DEPENDENTS_PAGE,
+  MAX_DEPENDENTS_PAGE,
+  getClaimView,
+} from "../services/claim-view-service.js";
 import {
   getTextAnalysis,
   startTextAnalysis,
@@ -100,6 +110,10 @@ export interface McpRequestContext {
 
 // ---- helpers ----------------------------------------------------------------
 
+function claimPageUrl(claimId: string): string {
+  return `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${claimId}`;
+}
+
 function jsonResult(payload: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
 }
@@ -110,6 +124,34 @@ function errorResult(code: string, message: string, extra?: object): CallToolRes
     content: [
       { type: "text", text: JSON.stringify({ error: { code, message, ...extra } }) },
     ],
+  };
+}
+
+function formatAssessment(
+  a: {
+    status: string;
+    confidence: number;
+    claimCredence: number | null;
+    summary: string | null;
+    reasoningTrace: string;
+    assessedAt: Date;
+    model?: string | null;
+  } | null
+) {
+  if (!a) return null;
+  return {
+    status: a.status,
+    // Verdict confidence — how sure the Steward is of the status, not P(true).
+    confidence: a.confidence,
+    // Credence that the claim is true; null where one number would be false
+    // precision (constitution §10).
+    claim_credence: a.claimCredence ?? null,
+    // Reader-facing body first; fall back to the trace for pre-split rows.
+    summary: a.summary ?? a.reasoningTrace,
+    reasoning_trace: a.reasoningTrace,
+    assessed_at: a.assessedAt.toISOString(),
+    // The assessor behind the verdict (#294); null for legacy rows.
+    model: a.model ?? null,
   };
 }
 
@@ -223,11 +265,18 @@ async function matchAssertion(
   assertion: string,
   context?: string,
   domains?: readonly string[],
-  kind?: NodeKind
+  kind?: NodeKind,
+  /**
+   * The Extractor's proposed canonical form, when the assertion came out of
+   * an extraction (#721): the Matcher's best search query. A bare assertion
+   * is its own proposal.
+   */
+  proposedCanonical?: string
 ) {
   const decision = await matchClaim({
-    extractedText: context ? `${assertion}\n\nContext: ${context}` : assertion,
-    proposedCanonical: assertion,
+    extractedText: assertion,
+    proposedCanonical: proposedCanonical?.trim() || assertion,
+    context: context ?? null,
     // The kind of node proposed (§2, §7a): a figure is matched to the
     // quantity it is a value of, a question to the question it asks.
     kind,
@@ -309,9 +358,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
 
   // ---- free read tools ----
 
-  // The graph reads, defined once with the agents' (graph-read-service.ts,
-  // #726): the same inputs, payloads, and argument evaluations on both
-  // sides, with a caller-facing description suffix.
+  // search_claims, get_decomposition and get_dependents, defined once with
+  // the agents' (graph-read-service.ts, #726): the same inputs and payloads
+  // on both sides, with a caller-facing description suffix. get_claim is
+  // claim-view-service.ts's, below.
   for (const def of graphReadDefinitions("caller")) {
     server.registerTool(
       def.name,
@@ -321,10 +371,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         inputSchema: z.fromJSONSchema(
           def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
         ) as z.ZodObject,
-        annotations: { readOnlyHint: true },
       },
       async (args: Record<string, unknown>) => {
-        const result = await runGraphRead(def.name, args, "caller");
+        const result = await runGraphRead(def.name, args);
         if (!result) return errorResult("NOT_FOUND", `No read named ${def.name}`);
         return result.ok ? jsonResult(result.payload) : errorResult(result.code, result.message);
       }
@@ -372,6 +421,39 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           claim_count: t.claim_count,
         })),
       });
+    }
+  );
+
+  server.registerTool(
+    "get_claim",
+    {
+      title: "Get claim",
+      // One description and one view for MCP and the graph's own agents
+      // (#774): src/services/claim-view-service.ts.
+      description: CLAIM_VIEW_DESCRIPTION,
+      inputSchema: {
+        claim_id: z.guid(),
+        include: z
+          .array(z.enum(CLAIM_VIEW_INCLUDES))
+          .default([])
+          .describe(CLAIM_VIEW_INCLUDE_DESCRIPTION),
+        dependents_limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_DEPENDENTS_PAGE)
+          .default(DEFAULT_DEPENDENTS_PAGE),
+        dependents_offset: z.number().int().min(0).default(0),
+      },
+    },
+    async ({ claim_id, include, dependents_limit, dependents_offset }) => {
+      const view = await getClaimView(claim_id, {
+        include,
+        dependentsLimit: dependents_limit,
+        dependentsOffset: dependents_offset,
+      });
+      if (!view) return errorResult("NOT_FOUND", "Claim not found");
+      return jsonResult(view);
     }
   );
 
@@ -550,7 +632,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               c.verbatim_text,
               c.context ?? undefined,
               sanitizeDomains(c.domains),
-              kind
+              kind,
+              c.proposed_canonical_form
             );
             judgments.push({
               verbatim_text: c.verbatim_text,
@@ -621,7 +704,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "(add_estimate); on a question, a candidate answer (propose_answer); " +
         "on any node, a request for work (propose_request) or material " +
         "offered to meet one of its requests (answer_request, naming it in " +
-        "request_id). A contribution gets a hearing, not " +
+        "request_id). A request may " +
+        "bear on several nodes, on sources, or on something the graph does " +
+        "not hold yet: omit claim_id and say in content what it bears on. " +
+        "A contribution gets a hearing, not " +
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +
@@ -632,7 +718,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "review nobody pays for; past it you get CONTRIBUTION_RATE_LIMITED. " +
         "Priced proposals (propose_claim, submit_source) do not count toward it.",
       inputSchema: {
-        claim_id: z.guid(),
+        claim_id: z
+          .guid()
+          .optional()
+          .describe("The node the contribution is about. Required for every type but propose_request."),
         contribution_type: contributionTypeEnum,
         content: z.string().min(1).max(10_000),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
@@ -659,8 +748,15 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         );
       }
 
-      const claim = await getClaimById(input.claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      // A propose_request may name no node (#724); every other type is
+      // about one.
+      if (!input.claim_id && !contributionMayOmitClaim(input.contribution_type)) {
+        return errorResult("VALIDATION_ERROR", CLAIM_ID_REQUIRED_MESSAGE);
+      }
+      if (input.claim_id) {
+        const claim = await getClaimById(input.claim_id);
+        if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      }
 
       const answered = await withAnsweredRequest({
         contributionType: input.contribution_type,
@@ -706,7 +802,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       }
 
       const contribution = await createContribution({
-        claimId: input.claim_id,
+        claimId: input.claim_id ?? null,
         contributorId: contributor.id,
         contributionType: input.contribution_type,
         content: answered.content,

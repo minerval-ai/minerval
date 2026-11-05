@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
- * Who may amend an allocation policy, and on what grounds.
+ * Who may amend an allocation policy, and which keys (#687).
  *
- * The gate used to be an identity check — "is this THE platform General
- * mandate?" — which made the formula a platform privilege rather than a
- * kind of mandate. It is now a capability check on the mandate's policy:
- * the knobs are read wherever the formula valuer computes valuations, so
- * they are live for any formula mandate and inert for a mandate that values
- * by its own judgment. The refusal survives because it is still a refusal
- * where the write would do nothing, not because General is special.
+ * The gate is a capability check on the mandate's policy, never on its
+ * identity: each mandate may set exactly the keys its own machinery reads
+ * (policyKnobs). A formula mandate, General or Governance, reads its
+ * formula; a judgment mandate reads its maintenance ceiling and its attempt
+ * priors and bounds, so a formula knob is refused there rather than
+ * reported as a lever that does nothing.
  *
  * One implementation serves both callers (the owner-driven Grantmaker chat
  * and the autonomous review pass), so this is the gate on both paths.
@@ -18,30 +17,39 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const { state } = vi.hoisted(() => ({
   state: {
     policy: "general" as string | null,
-    updateCalls: [] as Array<{ grantId: string; updates: unknown }>,
+    updateCalls: [] as Array<{ grantId: string; updates: unknown; allowed: readonly string[] }>,
   },
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
+  rawQuery: vi.fn(async (q: string) => {
     if (q.includes("SELECT policy FROM grants")) {
       return state.policy === null ? [] : [{ policy: state.policy }];
     }
-    void params;
     return [];
   }),
 }));
 
-vi.mock("../../../src/services/allocation-policy-service.js", () => ({
-  updateAllocationPolicy: vi.fn(
-    async (grantId: string, updates: Record<string, unknown>) => {
-      state.updateCalls.push({ grantId, updates });
-      return { ok: true, changed: updates, policy: { contestation_floor: 0.4 } };
-    }
-  ),
-}));
+vi.mock("../../../src/services/allocation-policy-service.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../../src/services/allocation-policy-service.js")>();
+  return {
+    ...real,
+    updateAllocationPolicy: vi.fn(
+      async (grantId: string, updates: Record<string, unknown>, allowed: readonly string[]) => {
+        state.updateCalls.push({ grantId, updates, allowed });
+        const bad = Object.keys(updates).find((k) => !allowed.includes(k));
+        if (bad) return { ok: false, problem: `"${bad}" is read only by a formula this mandate does not run` };
+        return { ok: true, changed: Object.keys(updates), policy: { contestation_floor: 0.4, maintenance_share: 0.3 } };
+      }
+    ),
+  };
+});
 
-import { executeManagementTool } from "../../../src/llm/agents/grantmaker.js";
+import {
+  executeManagementTool,
+  getAllocationPolicyToolDefinition,
+} from "../../../src/llm/agents/grantmaker.js";
+import { isFormulaPolicy, policyKnobs } from "../../../src/services/allocation-policy-service.js";
 
 beforeEach(() => {
   state.policy = "general";
@@ -56,34 +64,44 @@ describe("update_allocation_policy gate", () => {
     });
     const parsed = JSON.parse(out!);
     expect(parsed.success).toBe(true);
-    expect(parsed.changed).toEqual({ contestation_floor: 0.4 });
-    expect(state.updateCalls).toEqual([
-      { grantId: "g-formula", updates: { contestation_floor: 0.4 } },
-    ]);
+    expect(parsed.changed).toEqual(["contestation_floor"]);
+    expect(parsed.policy_in_force.contestation_floor).toBe(0.4);
+    expect(state.updateCalls[0]!.grantId).toBe("g-formula");
   });
 
-  it("is not restricted to the platform's own mandate: any formula mandate qualifies", async () => {
-    // The old identity check refused this one purely for not being General.
-    await executeManagementTool("g-someone-elses", "update_allocation_policy", {
-      updates: { staleness_base_days: 45 },
-      note: "This territory moves faster than the default cadence assumes.",
-    });
-    expect(state.updateCalls.map((c) => c.grantId)).toEqual(["g-someone-elses"]);
-  });
-
-  it("refuses a judgment mandate, and says which lever is really theirs", async () => {
-    state.policy = "cover";
+  it("gives the Governance mandate its audit weights (it used to be refused everything)", async () => {
+    state.policy = "governance";
     const parsed = JSON.parse(
-      (await executeManagementTool("g-topical", "update_allocation_policy", {
+      (await executeManagementTool("g-gov", "update_allocation_policy", {
+        updates: { audit_value_overturn: 0.9 },
+        note: "Overturns have been the most informative audits.",
+      }))!
+    );
+    expect(parsed.success).toBe(true);
+    expect(state.updateCalls[0]!.allowed).toContain("audit_value_overturn");
+    expect(state.updateCalls[0]!.allowed).not.toContain("contestation_floor");
+  });
+
+  it("lets a judgment mandate set its maintenance share, and nothing its allocator never reads", async () => {
+    state.policy = "agent";
+    const ok = JSON.parse(
+      (await executeManagementTool("g-upkeep", "update_allocation_policy", {
+        updates: { maintenance_share: 0.6 },
+        note: "This mandate's mission is keeping its region clean.",
+      }))!
+    );
+    expect(ok.success).toBe(true);
+    expect(ok.policy_in_force).toEqual({ maintenance_share: 0.3 });
+    expect(state.updateCalls[0]!.allowed).toEqual(policyKnobs("agent"));
+
+    const refused = JSON.parse(
+      (await executeManagementTool("g-upkeep", "update_allocation_policy", {
         updates: { contestation_floor: 0.9 },
         note: "Trying the formula.",
       }))!
     );
-    expect(parsed.success).toBe(false);
-    expect(parsed.problem).toContain("set_valuations");
-    // The point of the refusal: no write happened, so nothing was claimed
-    // to have taken effect.
-    expect(state.updateCalls).toEqual([]);
+    expect(refused.success).toBe(false);
+    expect(refused.problem).toContain("set_valuations");
   });
 
   it("refuses a mandate that no longer exists rather than writing", async () => {
@@ -98,7 +116,7 @@ describe("update_allocation_policy gate", () => {
     expect(state.updateCalls).toEqual([]);
   });
 
-  it("requires a note: the public record of why the formula changed", async () => {
+  it("requires a note: the public record of why the policy changed", async () => {
     const parsed = JSON.parse(
       (await executeManagementTool("g-formula", "update_allocation_policy", {
         updates: { contestation_floor: 0.4 },
@@ -110,9 +128,33 @@ describe("update_allocation_policy gate", () => {
     expect(state.updateCalls).toEqual([]);
   });
 
+  it("refuses set_valuations on a formula mandate, whose refresh would overwrite them", async () => {
+    state.policy = "governance";
+    const parsed = JSON.parse((await executeManagementTool("g-gov", "set_valuations", { entries: [] }))!);
+    expect(parsed.success).toBe(false);
+    expect(parsed.problem).toContain("update_allocation_policy");
+  });
+
   it("returns null for a tool it does not own", async () => {
-    expect(
-      await executeManagementTool("g-formula", "set_valuations", {})
-    ).toBeNull();
+    expect(await executeManagementTool("g-formula", "extend_plan", {})).toBeNull();
+  });
+});
+
+describe("the policy levers, by policy", () => {
+  it("one predicate names the formula mandates", () => {
+    expect(isFormulaPolicy("general")).toBe(true);
+    expect(isFormulaPolicy("governance")).toBe(true);
+    expect(isFormulaPolicy("agent")).toBe(false);
+    expect(isFormulaPolicy(null)).toBe(false);
+  });
+
+  it("describes each mandate's own keys with their bounds and the value in force", () => {
+    const judgment = getAllocationPolicyToolDefinition("agent", { maintenance_share: 0.1 });
+    expect(judgment.description).toContain("maintenance_share (0 to 1, now 0.1)");
+    expect(judgment.description).not.toContain("contestation_floor");
+    const gov = getAllocationPolicyToolDefinition("governance", null);
+    expect(gov.description).toContain("audit_value_prize (0 to 10)");
+    const general = getAllocationPolicyToolDefinition("general", null);
+    expect(general.description).toContain("contestation_floor (0 to 1)");
   });
 });

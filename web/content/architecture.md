@@ -116,7 +116,11 @@ soon a claim is stewarded and how much effort its Steward spends.
 Two further signals complete the picture (issue #172): `contestation` on the
 claim, how live the dispute is stated unfused from the consequence half, and
 `marginal_yield` on each assessment, the Steward's exit judgment of how much
-another, stronger pass would improve it. Both are live inputs to the
+another, stronger pass would improve it. A quantity's estimate and a
+question's assessment carry the same field (a question also records its
+confidence), and the allocation SQL reads yield and recency from whichever
+table the node's kind keeps its judgment in (`node-judgment-sql.ts`, #755).
+Both are live inputs to the
 expected-value estimate the allocation engine funds work by
 (docs/allocation.md): value = importance × contested-factor × expected
 quality gain, with cost on the other side of the ratio.
@@ -219,8 +223,21 @@ with every subclaim referenced inline as `[[claim:<uuid>]]` (or
 "Because [[claim:a]] and [[claim:b]], and given [[claim:c]], the claim
 follows." The links make the prose and the grouping mutually checkable: every
 subclaim edge in the argument should appear in the written form, and every
-reference must be an edge in the argument (the Steward's `write_argument` tool
-enforces the latter and warns on the former). Renderers resolve the ids to the
+reference must be an edge in the argument or the claim's ungrouped basis (the
+Steward's `write_argument` tool enforces the latter and warns on the former).
+Settled premises that are not claims of their own may live in the prose
+(constitution §7), so an argument with no attached subclaims needs no links;
+an argument "has a written form" once its content is no longer the
+creation-time label (#747).
+
+**Correcting the structure.** The Steward can undo what it built, on its own
+node only, and each change is written to the audit log with its reason (#741):
+`remove_subclaim_edge`, `set_edge_relation` (retypes an edge in place, keeping
+its argument groupings), `ungroup_subclaim`, `revise_argument` (rename, or flip
+a stance, which retires the current evaluation), and `retire_argument`. A
+retired argument keeps its row, evaluations and reason (`retired_at`,
+`retired_reason`) but leaves every listing; its subclaims return to the basis
+or their other arguments. Renderers resolve the ids to the
 claims' canonical text at display time, following `merged_into`, so links never
 dangle after a merge. The connective language that the claim bar expels from
 claim texts ("therefore", "because", "given that") lives here and only here.
@@ -291,11 +308,11 @@ claims that is *not* a dependency (a rival explanation, two halves of one
 position, two formulations kept apart because identity was unclear) is a
 **claim link** in its own table, symmetric and non-evaluative, rendered as a
 see-also on both claim pages and invisible to the tree. The relation types
-are:
+are (their meanings are set in constitution §6):
 
 | Relation | Meaning |
 |----------|---------|
-| `requires` | The child is a load-bearing premise: the parent is false without it. |
+| `requires` | The parent is false if the child is, whatever else supports it. A premise of one argument among independent lines of support is `supports` (or `contradicts`), not `requires` (constitution §6). |
 | `supports` | The child provides evidence for the parent without being logically required. |
 | `contradicts` | The child weighs against the parent. |
 | `specifies` | The child narrows or makes precise part of the parent. |
@@ -383,8 +400,13 @@ becomes the budget and opens the full work. Anyone may fund the row:
 mandates by valuing it, a Grantmaker directly with `fund_request`, readers
 with `POST /requests/:id/contribute`. Once it is covered the engine
 executor runs the Researcher on the request as filed, its ceiling the
-row's funding: the run writes nothing to the graph, its outcome is
-recorded as work on the request, and the keeper is asked to judge it.
+row's funding: the run records provenance (and, on one node, instances)
+on what the request bears on but no verdict, its outcome is
+recorded as work on the request with the run's id, and the keeper is asked
+to judge it while the Steward of every node it bears on is asked to weigh
+it for that node (a Steward keeper and those Stewards by a
+`request_returned` pass, the Curator by a `curate:request:<id>` row). Each
+of them reads the full report with `get_research_run`.
 Neither the brief nor what the keeper reads names a funder; the public
 request says the work was funded. A closed request returns its funders'
 unspent money. Contributors propose requests, answers and
@@ -459,10 +481,18 @@ precedence), the surrounding `context`, a brief
 `summary_context` describing the circumstances ("said during a Senate hearing
 on banking regulation, in response to questioning about derivatives
 oversight"), a `stance` recording whether the quote affirms or denies the
-canonical claim, and a `confidence` that the quote really expresses it.
-Instances are how a single canonical claim accumulates provenance from many
-documents, and the stance field is what lets a claim and its negation share one
-node without losing track of who said which.
+canonical claim, poses it as an open question, or only mentions it (cites it,
+reports that others hold it, or raises it in passing), and a `confidence` that
+the quote carries that stance. Instances are how a single canonical claim
+accumulates provenance from many documents, and the stance field is what lets a
+claim and its negation share one node without losing track of who said which.
+Posing and mentioning instances take no side: every count of who affirms or
+denies leaves them out (the citation record counts them apart as
+`posing_instances` and `mentioning_instances`, and the monitors count only
+`affirms` and `denies`), and the claim page lists mentions apart from the
+voices that take a position. The Matcher assigns `affirms`, `denies` or
+`poses` at ingestion; a mention is the Steward's reading of a source, recorded
+with `record_claim_instance`.
 
 #### Source provenance: what the support rests on
 
@@ -534,11 +564,13 @@ beside each instance, and the edges behind a disclosure, in words), on
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
 `get_claim_instances`.
 
-A claim is a canonical proposition with no home source, so the admin
-`get_claim` read returns the canonical record and an `instance_count`, never
-the instances; `get_claim_instances` pages through them. The Steward decides
+A claim is a canonical proposition with no home source, so `get_claim`
+returns the canonical record and an `instance_count`, and the instances only
+when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
+pages through them. The Steward decides
 which instances the claim carries and in what order: `detach_claim_instance`
-removes one whose source does not assert, deny or pose the proposition
+removes one whose source states a different proposition or that misreads its
+source, while one that only mentions the claim stays with stance `mentions`
 (`claim_instances.detached_at`, with the reason in the audit trail; the row
 stays for the provenance record, and `reattach_claim_instance` restores it),
 and `set_instance_order` ranks the instances a reader should see first
@@ -648,6 +680,12 @@ which re-judges with the same materiality test. Most changes are absorbed
 within a level or two, because a superior claim is rarely the right locus for a
 dispute about one of its subclaims.
 
+The same tool, `notify_steward`, reaches any node's Steward. A Steward that
+thinks a node its claim depends on is assessed wrongly sends that node's
+Steward its reasons (trigger `dependent_note`); one that writes to a node not
+joined to its own by an edge does so under `steward_note`. In every case the
+receiving Steward decides, since only the owner writes.
+
 ---
 
 ## The Agent Pipeline
@@ -753,8 +791,9 @@ These act through tools over the life of a claim and the graph:
   decisions, a pattern analysis across recent ones, a contributor review, or an
   anomaly investigation) and a free-text context saying what prompted it.
   Runs are fed from two directions: event triggers at the places suspicion is
-  generated (every arbitration overturn and every bad-faith flag requests a
-  decision audit, at most once per contribution), and a scheduler that
+  generated (every arbitration overturn, and every bad-faith flag a reviewer
+  or an arbitrator records, requests a decision audit, at most once per
+  contribution and instance), and a scheduler that
   requests a periodic sweep over recent decisions plus a re-examination of
   any suspension that has stood unexamined too long — both idempotent through
   a DB dedupe key, so concurrent processes never double-run an audit. Each
@@ -770,7 +809,18 @@ These act through tools over the life of a claim and the graph:
   so the fresh review's effects don't stack on the old ones. Audit
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
-  suspension whose basis an appeal dissolves.
+  suspension whose basis an appeal dissolves; lifting one takes a reason,
+  which resolves the finding behind it or is recorded as one.
+  Audit reads decisions beyond contribution reviews (#693): a claim's
+  assessment history and event log (the services behind the
+  `get_assessment_history` and `get_claim_events` routes) and the
+  arbitration record. It sends a decision back to whoever made it:
+  a contribution to re-review (never a prize claim, whose review the
+  prize-check worker owns), an assessment to its Steward
+  (`recommend_reassessment`, trigger `audit_send_back` carrying the finding),
+  a structural question to the Curator (`recommend_recuration`, a curation
+  request), each requiring a finding. Curator merges and Matcher decisions
+  have no read of their own yet (#703).
   The allocation engine's decisions are judging too, so the Audit carries a
   read-only cross-cut of the action ledger and the mandate plan surface
   (`inspect_ledger`, services/ledger-inspection-service.ts): every row in
@@ -788,10 +838,11 @@ These act through tools over the life of a claim and the graph:
   where to look, what warrants work), woken by a heartbeat or a trigger (the
   daily Crossref retraction poll, a poke), that reads the graph, the
   retraction record, and the open web and raises *candidates*: a claim to
-  reassess, valued on the mandate's behalf up to a ceiling the Grantmaker
-  delegated; a source to ingest, appended to the mandate's plan; a note for
-  the next review pass. It judges relevance, never truth: it writes no
-  assessment, sets no importance, and moves no money, and every flag is
+  reassess or a source to ingest, each valued on the mandate's behalf up
+  to a ceiling the Grantmaker delegated and ranked by its allocator; a
+  note for the next review pass. A Steward or the Grantmaker decides on what it
+  raises: it writes no assessment, sets no importance, and moves no
+  money, and every flag is
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
   (docs/allocation.md, "Lookouts").
@@ -799,13 +850,19 @@ These act through tools over the life of a claim and the graph:
   of the graph at a time (a topic tag, or the claims no sizeable tag
   covers), for what no single Steward sees: reasoning that conflicts with a
   neighbor's, evidence one claim records that another never weighed,
-  verdicts that are not a defensible function of what they rest on (§21).
-  Each find is a flag on the claim that looks wrong: its Steward is queued
-  with the tension as context, and the checker's estimate that a pass would
-  change something enters the formula's expected-gain term, so the pass is
-  priced and funded like any other. Its sweeps are ledger actions the
-  General mandate funds, capped per day; it writes no verdict and no
-  valuation (docs/allocation.md, "Consistency sweeps").
+  verdicts that are not a defensible function of what they rest on, and
+  what is established in one place (often another field) bearing on
+  assessments elsewhere that never weighed it (§21). It may reason about
+  anything that bears on whether assessments fit together, including which
+  reading of the evidence is right; what it writes is a flag on the node
+  that looks wrong, anywhere in the graph: its Steward is queued with the
+  tension as context and decides, and the checker's estimate that a pass
+  would change something enters the formula's expected-gain term, so the
+  pass is priced and funded like any other. Structural defects it finds go
+  to the Curator as curation requests. Its sweeps are ledger actions the
+  General mandate funds (a standard and a strong variant, the funder buying
+  one by marginal return); it writes no verdict and no valuation
+  (docs/allocation.md, "Consistency sweeps").
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
@@ -875,7 +932,10 @@ typed refs into the graph (claim, assessment, argument, contribution, check,
 attempt, formalization) that are checked to exist on write, carries an
 importance of its own from 1 to 10, and is published as written on the
 public findings page (`/findings`), where the platform's later writing draws
-from it. There is no cap and no triage queue. Beside it, `search_findings`
+from it. The Grantmaker, a mandate's agent, makes no assessment, argument,
+or merge itself, so its description says to cite only what is already
+recorded and never to mention the mandate or its funder (constitution §19,
+Part VIII). There is no cap and no triage queue. Beside it, `search_findings`
 searches the published findings by meaning, optionally on one node, so an
 agent can see whether what it found is already noted; when it is, the agent
 passes `joins` to `note_finding` and its account is added as a sighting,
@@ -1030,8 +1090,13 @@ the statement.
 ### The researcher
 
 `researcher` (`src/llm/agents/researcher.ts`, #298) is the general
-instrument, of which the solver is the special case. An administrator (the
-Claim Steward on its claim, a Grantmaker on a funded mandate) launches it
+instrument, of which the solver is the special case (special too in how it
+starts: no administrator launches it; an attempt is funded through a
+mandate's plan and its result goes to the claim's Steward, which files a
+request when it needs one no plan funds; docs/mathematics.md 7.2, #768). An administrator (the
+Claim Steward on its claim, a Grantmaker on a funded mandate, the Curator
+on the graph's structure, the Audit Agent on a decision under review)
+launches it
 with `delegate_research`: a brief written for a capable assistant that
 knows nothing of the claim and cannot ask a question back, a model tier, a
 dollar ceiling, an effort level, and whether the constitution is prepended
@@ -1047,16 +1112,24 @@ load-bearing ones cheaply.
 the vendor (`RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`,
 `RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort` and
 the task budget, for work where the best model class pays, such as a
-replication. Standard runs the ordinary loop on a Claude model. Both carry
-the code-execution sandbox (Python, no network), an Anthropic server tool.
-Cheap runs the ordinary loop on the cheap tier without the sandbox, and is
-the right choice for reading and mapping a large literature economically.
+replication. Standard runs the ordinary loop on a Claude model. Cheap runs
+the ordinary loop on the cheap tier, and is the right choice for reading and
+mapping a large literature economically. A tier carries the code-execution
+sandbox (Python, no network), an Anthropic server tool, when its configured
+model is Anthropic-served; by default that is strong and standard, and the
+`delegate_research` description names the tiers that have it in the
+deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
-(`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
+(`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
+`get_source`, `get_source_examinations`, and on a request or scoping run
+`get_request` and `list_requests`, without who funded the work), the issue
+tools every agent carries (`raise_issue` and its companions), the
 Elicit search tools and the Pangram tools (`pangram_check_ai`,
 `pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
-task, the Provenance skill's tools except `provenance_write_map`; on a
+task, the Provenance skill's tools except `provenance_write_map` and
+`provenance_record_root`, and `record_claim_instance` on a claim or
+`record_question_instance` on a question; on a
 mathematical claim with a checker configured it also has `lean_search` and
 `lean_elaborate`. The task message names the toolset, so the researcher
 knows what it can and cannot do, and the tool description names the tiers'
@@ -1064,11 +1137,19 @@ affordances, so the launcher can brief it accordingly.
 
 **What it may write.** Its notebook, the provenance tables through the
 skill's tools (a reading only for a source it opened, an edge only with the
-located passage), and the stored copy of a source it fetched. It has no
-tool that writes a claim, an assessment, an argument, an edge between
-claims, or an instance, and the executor refuses any tool name that was not
-offered and any provenance call that names a claim other than the run's, so
-a name read off a page or invented by the model runs nothing. A unit test
+located passage), the run's claim's instances through the Steward's
+`record_claim_instance` on a claim or `record_question_instance` on a
+question (on the same runs that get the provenance recording tools, never
+on a quantity, with the node's id filled from the run, an `instance_id` or
+`answer_id` outside the question refused, and the row's `created_by` set to
+`researcher`),
+the stored copy of a source it fetched, and the issue reports any agent may
+raise for the maintainers. It has no tool that writes a claim,
+an assessment, an argument, or an edge between claims, nor any that
+corrects, detaches or reattaches an instance: the Steward owns the instance
+set. The executor refuses any tool name that was not offered and any
+provenance or instance call that names a claim other than the run's, so a
+name read off a page or invented by the model runs nothing. A unit test
 holds the line. Its report is the instrument's narrative and is data: the
 launcher reads it against the sources it names and records what it
 concludes in its own reasoning (§9, §11). Provenance rows it recorded are
@@ -1078,13 +1159,28 @@ writes only its notebook: a Grantmaker serves its mandate as well as the
 graph, and funding is kept apart from what the graph says (§19), so
 `delegate_research` from a mandate takes no `claim_id` and no
 `examine_source_id`, and the researcher withholds the provenance and
-examination tools from any run whose launcher is not a Claim Steward
-(`launcherWritesGraph`, `src/services/research-run-service.ts`).
+examination tools from any run whose launcher is not a Claim Steward or a
+request (`launcherWritesGraph`, `src/services/research-run-service.ts`).
+Research the Curator or the Audit Agent launches reads and reports in the
+same way: the Curator owns structure, not sources, and the Audit Agent
+judges the record rather than adding to it. Both pay from their run's own
+action budget, as the Steward does from its pass's, and read back the runs
+their role launched with `get_research_run`. A run that takes up a request
+records as Part VIII has the Researcher record, since its brief is the
+request as filed and whoever funded it adds nothing: on a request bearing
+on one node it runs with that node (its provenance, its instances, its
+domain skills); on one bearing on several, its node provenance tools take a
+`claim_id` limited to those nodes; and it has `provenance_read_source`
+whatever the request bears on. A scoping run does not do the work and
+records nothing. Each run on a request opens with the latest earlier run's
+notebook and report, so a programme carried out in stages begins each
+stage where the last stopped.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both
 loops, a wrap-up notice at 85 percent of it, a wall cap
-(`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); on
+(`RESEARCHER_MAX_WALL_MINUTES` on a delegated run, a longer backstop on a
+request run) and a turn cap (`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
 then stopped. What a run may be given is the launcher's own money, and
@@ -1100,9 +1196,12 @@ spend, the research it already launched included; a pass with no budget is
 not offered `delegate_research`. A Grantmaker pays from its mandate's
 uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
 which covers a run's `budget_usd` and any `contribution_budget_usd`; there
-is no deployment cap on either, and no count of runs per pass; a run's
+is no deployment cap on either, and no count of runs per pass; a delegated run's
 wall-clock time is capped (`RESEARCHER_MAX_WALL_MINUTES`) because its
-launcher waits on it, and the launcher is told so. A durable daily
+launcher waits on it, and the launcher is told so. A request run from the
+ledger has no launcher waiting; its budget bounds it, and a long backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240) only ends a run that has
+stopped making progress, which the run is told with that reason. A durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
 it for research no funder pays for (a pass with neither a user nor a job
 on its usage context), as the LLM budget tracker's limits apply only to
@@ -1240,7 +1339,7 @@ non-Anthropic model. The tagger's is narrower still ("which of these
 existing tags, at what grain?"), makes no epistemic call, and runs over
 every claim, so it shares that tier: the cheapest capable model, in
 production as in dev. The Lookout's question ("did something happen that
-warrants work in my scope?") is relevance, not truth, and it runs often,
+warrants work in my scope?") raises candidates rather than verdicts, and it runs often,
 so it shares the tier too, and a Grantmaker can pin a stronger model on
 one lookout whose brief warrants it. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,
@@ -1312,7 +1411,20 @@ shape that the loop executes through OpenRouter's web plugin
 completion on the cheap tier whose citation annotations are the hits). A
 request that still carries a server tool to a non-Anthropic model fails
 immediately with a message naming the capability, rather than silently
-dropping it. OpenAI's own hosted tools are not wired up
+dropping it.
+
+The code-execution sandbox is offered the same way, by provider: the
+researcher and the Claim, Quantity and Question Stewards carry
+`code_execution` when their model is Anthropic-served, and no other
+provider has a server sandbox, so on another model the tool is absent and
+nothing tells the agent it exists. The Steward's task message states the
+price. `toolUseLoop` meters each turn that used the sandbox by its
+wall-clock seconds at the published container rate
+(`CODE_EXECUTION_USD_PER_HOUR` in `instrument-harness.ts`) into the
+enclosing meter, so the pass budget binds it like any paid tool; the
+long-run loop meters it in the solver's and researcher's own hooks.
+
+OpenAI's own hosted tools are not wired up
 yet, but they are ordinary entries in the Responses `tools` array, so the slot
 for them is the one `toResponsesTools` already builds. OpenAI gets automatic
 prefix caching with a stable `prompt_cache_key` per agent instead of explicit

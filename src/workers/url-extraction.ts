@@ -17,12 +17,13 @@ export function instanceStanceFor(proposed: NodeKind, node: NodeKind, matcherSta
   if (node === "question") return "answers";
   return matcherStance ?? "affirms";
 }
-import { extractClaims } from "../llm/agents/extractor.js";
-import { matchClaim } from "../llm/agents/matcher.js";
+import { extractClaims, type DocumentProblem, type ExtractedClaim } from "../llm/agents/extractor.js";
+import { matchClaim, type MatchDecision } from "../llm/agents/matcher.js";
+import { requestCuration } from "../services/curation-service.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
-import { enqueueClaimPipeline } from "../services/queue-service.js";
+import { enqueueClaimPipeline, requestAudit } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
@@ -31,7 +32,7 @@ import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import { fetchPublicUrl } from "../services/url-guard.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
-import { normalizeFocus, recordExtraction } from "../services/ingest-focus-service.js";
+import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
 
 /**
  * Handle a URL extraction message:
@@ -221,57 +222,49 @@ async function processUrlExtraction(
     // A scoped ingest reads the whole document for one subject and proposes
     // only the claims bearing on it (ingest-focus-service.ts).
     const focus = normalizeFocus(message.focus);
+    const { extractionMinConfidence } = loadConfig();
+    let documentProblem: DocumentProblem | null = null;
     const extracted = await extractClaims({
       content,
       sourceType: source.sourceType,
       additionalContext: source.title,
       ...(focus ? { focus } : {}),
+      // The floor below is stated to the Extractor, per call (#748).
+      minConfidence: extractionMinConfidence,
+      onDocumentProblem: (p) => {
+        documentProblem = p;
+      },
     });
 
     let claimsCreated = 0;
     let claimsMatched = 0;
     let claimsDroppedLowConfidence = 0;
-    let claimsUndecided = 0;
+    let claimsDecidedOnRetry = 0;
+    let curationRequests = 0;
     let instancesAlreadyRecorded = 0;
 
-    for (const claim of extracted) {
-      // Validity floor (#157 phase 3): the Extractor scores each proposition
-      // with a confidence that it IS a well-formed claim; previously this was
-      // stored and ignored, so a non-claim could enter the graph verbatim.
-      // A low backstop, not a quality judgment (Judgment over Mechanism) —
-      // well-formedness is judged upstream by intake review and downstream
-      // by the Steward.
-      const { extractionMinConfidence } = loadConfig();
-      if (
-        extractionMinConfidence > 0 &&
-        typeof claim.confidence === "number" &&
-        claim.confidence < extractionMinConfidence
-      ) {
-        claimsDroppedLowConfidence++;
-        continue;
-      }
+    const matchFor = (claim: ExtractedClaim, proposedKind: NodeKind) =>
       // The agentic Matcher is the single decider of claim identity: it does
       // its own (multi-framing, ungated) search, so we no longer pre-fetch
       // candidates here (#25).
-      const proposedKind = NODE_KIND_SET.has(claim.kind ?? "") ? (claim.kind as NodeKind) : "claim";
-      const matchResult = await matchClaim({
+      matchClaim({
         extractedText: claim.verbatim_text,
         proposedCanonical: claim.proposed_canonical_form,
         kind: proposedKind,
+        // The passage around the span (#721): the stance this instance
+        // records is judged from context (§4).
+        context: claim.context,
         // The Matcher receives the domains its caller knows: here, the
         // Extractor's prior for this claim.
         domains: sanitizeDomains(claim.domains),
       });
 
-      // The Matcher reached no verdict (#419). Skipping is the safe default:
-      // a missed instance is picked up on the next crawl of the source, while
-      // a claim minted from a non-decision is a duplicate the Curator has to
-      // find and merge. Counted in the job result so it is visible.
-      if (matchResult.outcome === "undecided") {
-        claimsUndecided++;
-        continue;
-      }
-
+    /** Link or mint the node a decided proposal names, and record this source's instance of it. */
+    const recordProposal = async (
+      claim: ExtractedClaim,
+      proposedKind: NodeKind,
+      matchResult: MatchDecision
+    ): Promise<void> => {
       let claimId: string;
       // The node's kind decides the instance's stance (§4, §7a): a figure is
       // a statement of its quantity's value, and a question is asked.
@@ -293,7 +286,8 @@ async function processUrlExtraction(
         try {
           embedding = await generateEmbedding(canonicalText);
         } catch {
-          // Continue without embedding
+          // Continue without embedding: the Matcher's keyword search still
+          // reaches the node (#725).
         }
 
         // The extractor's importance is a provisional prior (salience in the
@@ -340,29 +334,24 @@ async function processUrlExtraction(
           jobId: message.jobId,
         });
 
-        // No Curator sweep here any more. This path used to fire one
-        // (`neighborhood_sweep`) for every newly created claim, to catch
-        // duplicates the Matcher missed and propose cross-claim edges (#55).
-        // The first live epoch measured it: 122 sweeps on the frontier model,
-        // 570k tokens, ~13 owls, and ZERO writes to the graph — no merge, no
-        // edge, no notification. Which is the predictable result, because the
-        // sweep only fires on claims the Matcher has *just* searched the graph
-        // for and declared novel. Two agents with overlapping remits, running
-        // back to back, the second costing more than the extraction that
-        // created the claim.
+        // No Curator sweep for every new claim. This path used to fire one
+        // (`neighborhood_sweep`) for every newly created claim (#55); the
+        // first live epoch measured 122 sweeps on the frontier model, ~13
+        // owls, and zero writes, because the sweep only fired on claims the
+        // Matcher had just searched for and declared novel.
         //
-        // Curation survives where the trigger carries judgment: the Steward's
-        // escalate_to_curator, fired by an agent that has actually seen
-        // structure it believes is wrong. If proactive sweeping is wanted
-        // again it belongs on the ledger as its own action kind, valued by a
-        // mandate and gated by that valuation, rather than unconditionally on
-        // every new row.
+        // What reaches the Curator from here is the Matcher's own judgment
+        // on a specific pair (#738): a node it minted on balance, naming the
+        // near-miss a Curator should check. The request waits on the ledger
+        // like a Steward's escalation; the mandates decide whether it is
+        // worth a run.
+        curationRequests += await requestNearMissCuration(claimId, matchResult);
       }
 
       // Create instance linking claim to source. stance records whether this
       // source asserts the canonical claim or its negation, judged against
       // the canonical direction rather than assumed: a new claim's first
-      // instance can be "denies" (#360). A claim merged with its counterpart
+      // instance can be "denies" (#360). A claim merged with its negation
       // thus still shows which side each source takes. The
       // extractor's proposed canonical form rides along: on a new claim the
       // Matcher may have reworded it (claims.text is the Matcher's), on a
@@ -379,17 +368,81 @@ async function processUrlExtraction(
       );
       if (already) {
         instancesAlreadyRecorded++;
-        continue;
+        return;
       }
+      const stance = instanceStanceFor(proposedKind, nodeKind, matchResult.instance_stance);
       await db.insert(claimInstances).values({
         claimId,
         sourceId: source.id,
         verbatimText: claim.verbatim_text,
         proposedCanonicalForm: claim.proposed_canonical_form,
         context: claim.context,
-        stance: instanceStanceFor(proposedKind, nodeKind, matchResult.instance_stance),
+        stance,
         confidence: claim.confidence,
+        // What the source states, read while the document was in hand (§4,
+        // #744): a figure on an instance of a quantity, a probability on an
+        // instance of a claim.
+        ...statedFigures(claim, nodeKind, stance),
       });
+    };
+
+    // Proposals the Matcher reached no verdict on (#419). A claim minted from
+    // a non-decision would be a duplicate the Curator has to find, so none
+    // is minted; but nor is the proposal dropped (#738). Each gets a second,
+    // fresh Matcher run once the rest of the document is done (most are a
+    // run that spent its budget mid-search), and any still undecided are
+    // kept on the source's extraction record, where they are shown and
+    // where they stop the reading from counting as covering the document,
+    // so the next ingest of it reads and matches them again.
+    const deferred: Array<{ claim: ExtractedClaim; kind: NodeKind }> = [];
+    const undecided: UndecidedProposal[] = [];
+
+    for (const claim of extracted) {
+      // Validity floor (#157 phase 3): the Extractor scores each proposition
+      // with a confidence that it IS a well-formed claim. A low backstop,
+      // not a quality judgment (Judgment over Mechanism), and stated to the
+      // Extractor in its task message (#748).
+      if (
+        extractionMinConfidence > 0 &&
+        typeof claim.confidence === "number" &&
+        claim.confidence < extractionMinConfidence
+      ) {
+        claimsDroppedLowConfidence++;
+        continue;
+      }
+      const proposedKind = NODE_KIND_SET.has(claim.kind ?? "") ? (claim.kind as NodeKind) : "claim";
+      const matchResult = await matchFor(claim, proposedKind);
+      if (matchResult.outcome === "undecided") {
+        deferred.push({ claim, kind: proposedKind });
+        continue;
+      }
+      await recordProposal(claim, proposedKind, matchResult);
+    }
+
+    for (const { claim, kind } of deferred) {
+      const matchResult = await matchFor(claim, kind);
+      if (matchResult.outcome === "undecided") {
+        undecided.push({
+          verbatim_text: claim.verbatim_text,
+          proposed_canonical_form: claim.proposed_canonical_form,
+          kind,
+          context: claim.context,
+        });
+        continue;
+      }
+      claimsDecidedOnRetry++;
+      await recordProposal(claim, kind, matchResult);
+    }
+
+    // A document the Extractor could not read (#740) is recorded as such.
+    // Unreadable or the wrong page: the cached text is dropped, so the next
+    // ingest fetches the document afresh rather than re-reading the same
+    // paywall. Injected instructions: the text is kept as the evidence, and
+    // Audit is asked to look (the constitution assigns injected instructions
+    // to Audit's watch).
+    const problem = documentProblem as DocumentProblem | null;
+    if (problem) {
+      await handleDocumentProblem(source.id, message.url, problem);
     }
 
     // Divide the document by its own structure and anchor the instances
@@ -406,6 +459,8 @@ async function processUrlExtraction(
       claimsExtracted: extracted.length,
       claimsCreated,
       claimsMatched,
+      undecided,
+      documentProblem: problem,
     }).catch((err) =>
       console.error(
         "[url-extraction] extraction record failed:",
@@ -422,10 +477,16 @@ async function processUrlExtraction(
         // Never truncate silently: dropped extractions are visible in the
         // job result so a low floor misconfiguration is diagnosable.
         claims_dropped_low_confidence: claimsDroppedLowConfidence,
-        // Extractions the Matcher could not decide on and were skipped (#419).
-        claims_undecided: claimsUndecided,
+        // Proposals the Matcher decided only on its second run, and those it
+        // never decided, which are kept on the source's extraction record
+        // (#738).
+        claims_decided_on_retry: claimsDecidedOnRetry,
+        claims_undecided: undecided.length,
+        // Curation requests from the Matcher's curator_review (#738).
+        curation_requests: curationRequests,
         // Matched to a claim this source already carries an instance of.
         instances_already_recorded: instancesAlreadyRecorded,
+        ...(problem ? { document_problem: problem } : {}),
         ...(focus ? { focus } : {}),
       },
     });
@@ -435,6 +496,94 @@ async function processUrlExtraction(
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
+  }
+}
+
+/**
+ * Curation requests for a node the Matcher minted on balance (#738): one per
+ * near-miss it weighed, carrying its `curator_review` and relationship
+ * notes, and only when it wrote a curator_review. Never fails the
+ * extraction. Returns how many were recorded.
+ */
+export async function requestNearMissCuration(
+  newClaimId: string,
+  decision: Pick<MatchDecision, "curator_review" | "relationship_notes" | "alternative_matches">
+): Promise<number> {
+  const review = cleanNote(decision.curator_review);
+  if (!review || decision.alternative_matches.length === 0) return 0;
+  const notes = cleanNote(decision.relationship_notes);
+  const concern = notes ? `${review}\n\nThe Matcher's notes on the near-misses: ${notes}` : review;
+  let recorded = 0;
+  for (const other of decision.alternative_matches) {
+    try {
+      const result = await requestCuration({
+        anchorClaimId: newClaimId,
+        otherClaimId: other,
+        source: "matcher",
+        concern,
+      });
+      if (result.ok && !result.repeat) recorded++;
+    } catch (err) {
+      console.error(
+        "[url-extraction] curation request failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+  return recorded;
+}
+
+/**
+ * The figures a source states, for its instance (§4, #744): a stated value
+ * on an instance of a quantity, a stated probability on an instance of a
+ * claim. The Extractor gives the probability for the proposition as it
+ * proposed it, in the direction the discourse poses it; when the Matcher
+ * records this source as denying the node's form, the probability the
+ * source gives the node's form is its complement.
+ */
+export function statedFigures(
+  claim: Pick<ExtractedClaim, "stated_value" | "stated_probability">,
+  nodeKind: NodeKind,
+  stance: string
+): { statedEstimate?: unknown; statedProbability?: number } {
+  const out: { statedEstimate?: unknown; statedProbability?: number } = {};
+  if (nodeKind === "quantity" && claim.stated_value) out.statedEstimate = claim.stated_value;
+  const p = claim.stated_probability;
+  if (nodeKind === "claim" && typeof p === "number" && p >= 0 && p <= 1) {
+    out.statedProbability = stance === "denies" ? 1 - p : p;
+  }
+  return out;
+}
+
+/**
+ * What follows from the Extractor's report that the document is not what it
+ * should be (#740). Never fails the extraction.
+ */
+async function handleDocumentProblem(
+  sourceId: string,
+  url: string,
+  problem: DocumentProblem
+): Promise<void> {
+  try {
+    if (problem.kind === "injected_instructions") {
+      await requestAudit({
+        auditType: "anomaly_investigation",
+        triggeredBy: "injected_source",
+        dedupeKey: `injected-source:${sourceId}`,
+        context:
+          `The Extractor reported text addressed to the graph's agents rather than to ` +
+          `the readers of source ${sourceId} (${url}). Its note: ${problem.note}\n\n` +
+          `Check what the text tried to do, whether any agent acted on it, and ` +
+          `whether claims or instances from this source need attention.`,
+      });
+    } else {
+      await rawQuery(`UPDATE sources SET raw_content = NULL WHERE id = $1`, [sourceId]);
+    }
+  } catch (err) {
+    console.error(
+      "[url-extraction] document problem handling failed:",
+      err instanceof Error ? err.message : err
+    );
   }
 }
 

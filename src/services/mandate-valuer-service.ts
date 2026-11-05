@@ -33,6 +33,7 @@
  * to be covered on the cost side, never how valuable an action is, and
  * nothing here touches claims.importance or a verdict.
  */
+import { nodeAssessedAtSql, nodeMarginalYieldSql } from "./node-judgment-sql.js";
 import { rawQuery } from "../db/client.js";
 import {
   getGeneralMandate,
@@ -45,7 +46,8 @@ import {
  * boost, strong variants multiplied by the policy's gain knob.
  *
  * Expected quality gain is the best of three estimates: the Steward's own
- * marginal yield from its last pass (1.0 when unassessed), staleness, and
+ * marginal yield from its last pass (1.0 when unassessed or unstated), read
+ * from the table the node's kind keeps its judgment in (#755), staleness, and
  * an open consistency flag's expected_gain (#330): the Consistency
  * Checker's estimate, made after reading the claim against its neighbors,
  * that a fresh pass would change something. A flag counts while the assess
@@ -61,16 +63,9 @@ const GENERAL_VALUE_SQL = `
     c.importance
     * ($1::real + (1.0 - $1::real) * COALESCE(c.contestation, 0))
     * GREATEST(
-        COALESCE(
-          (SELECT x.marginal_yield FROM assessments x
-            WHERE x.claim_id = c.id AND x.is_current = true
-            ORDER BY x.assessed_at DESC LIMIT 1),
-          1.0),
+        COALESCE(${nodeMarginalYieldSql("c")}, 1.0),
         LEAST(1.0,
-          COALESCE(EXTRACT(EPOCH FROM (now() -
-            (SELECT x.assessed_at FROM assessments x
-              WHERE x.claim_id = c.id AND x.is_current = true
-              ORDER BY x.assessed_at DESC LIMIT 1))) / 86400.0
+          COALESCE(EXTRACT(EPOCH FROM (now() - ${nodeAssessedAtSql("c")})) / 86400.0
             / NULLIF($2::real, 0), 0)),
         COALESCE(
           (SELECT MAX(f.expected_gain) FROM consistency_flags f
@@ -294,7 +289,44 @@ export async function refreshCurateValuations(
       actionId,
     ]
   );
-  return rows.length;
+  // A request the Curator keeps (#722) has no anchor claim: its row is
+  // worth what the request bears on, as the request's own work is
+  // (REQUEST_VALUE_SQL's importance term), since judging returned work is
+  // what lets that work count. A scoped mandate values the rows whose
+  // request bears on a node in its scope.
+  const requestRows = await rawQuery<{ action_id: string }>(
+    `WITH RECURSIVE subtree AS (
+       SELECT id FROM claims WHERE id = $3
+       UNION
+       SELECT cr.child_claim_id
+         FROM claim_relationships cr JOIN subtree s ON cr.parent_claim_id = s.id
+     )
+     INSERT INTO mandate_valuations (grant_id, action_id, value_est, updated_at)
+     SELECT $2, a.id,
+            LEAST(10.0, COALESCE((SELECT MAX(c.importance)
+                                    FROM request_targets t JOIN claims c ON c.id = t.claim_id
+                                   WHERE t.request_id = r.id AND c.state = 'active'),
+                                 $1::real)),
+            now()
+       FROM actions a
+       JOIN requests r ON r.id::text = a.target_ref
+      WHERE a.status = 'open' AND a.kind = 'curate' AND a.claim_id IS NULL
+        AND r.keeper_kind = 'curator'
+        AND r.state NOT IN ('met', 'declined', 'withdrawn', 'moot')
+        AND ($5::uuid IS NULL OR a.id = $5)
+        AND (($3::uuid IS NULL AND $4::text IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM request_targets t JOIN claims c ON c.id = t.claim_id
+                WHERE t.request_id = r.id AND c.state = 'active'
+                  AND (($3::uuid IS NOT NULL AND c.id IN (SELECT id FROM subtree))
+                       OR ($4::text IS NOT NULL
+                           AND c.text_search @@ websearch_to_tsquery('english', $4)))))
+     ON CONFLICT (grant_id, action_id) DO UPDATE
+        SET value_est = EXCLUDED.value_est, updated_at = now()
+     RETURNING action_id`,
+    [policy.request_untargeted_importance, grantId, scope.scopeClaimId, scope.scopeQuery, actionId]
+  );
+  return rows.length + requestRows.length;
 }
 
 /** An audit's trigger class, as the audit_runs row records its cause. */
