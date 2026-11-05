@@ -117,6 +117,11 @@ export interface EvidenceRecord {
     /** Sources that state the proposition as an open question (#445). */
     posing_instances: number;
     /**
+     * Sources that refer to the claim without asserting, denying or posing
+     * it: they cite it or report the debate. Provenance, never a vote.
+     */
+    mentioning_instances: number;
+    /**
      * Arguments whose inference is rated certain or likely but which rest on
      * a premise currently assessed as inconclusive, doubtful, contradicted or
      * unknown (#540): a good step from a shaky premise, the case a reader is
@@ -215,6 +220,28 @@ export function citationUrl(claimId: string): string {
  * (#290) and the nanopublication export (#292) — both render this, neither
  * assesses anything. Returns null for an unknown claim.
  */
+/**
+ * How many of a claim's instances take each side. Only "affirms" and
+ * "denies" are sides. Sources that state the proposition as an open question
+ * (#445) refer to the claim without voting on it, and sources that only
+ * mention it show how it is used, not who holds it: each is counted in its
+ * own category and in neither camp.
+ */
+export function tallyInstanceStances(instances: ReadonlyArray<{ stance: string }>): {
+  affirming_instances: number;
+  denying_instances: number;
+  posing_instances: number;
+  mentioning_instances: number;
+} {
+  const n = (stance: string) => instances.filter((i) => i.stance === stance).length;
+  return {
+    affirming_instances: n("affirms"),
+    denying_instances: n("denies"),
+    posing_instances: n("poses"),
+    mentioning_instances: n("mentions"),
+  };
+}
+
 export async function assembleEvidenceRecord(
   claimId: string
 ): Promise<EvidenceRecord | null> {
@@ -364,11 +391,7 @@ export async function assembleEvidenceRecord(
     })),
     disagreement: {
       contestation: claim.contestation ?? null,
-      affirming_instances: instanceRows.filter((i) => i.stance === "affirms").length,
-      denying_instances: instanceRows.filter((i) => i.stance === "denies").length,
-      // Sources that state the proposition as an open question (#445): they
-      // cite the claim without voting on it, so they sit in neither camp.
-      posing_instances: instanceRows.filter((i) => i.stance === "poses").length,
+      ...tallyInstanceStances(instanceRows),
       arguments_on_unsettled_premises: argumentsOnUnsettledPremises,
     },
   };

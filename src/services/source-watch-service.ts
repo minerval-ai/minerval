@@ -12,8 +12,9 @@
  *     daily poll the retraction trigger runs on (workers/lookout-triggers.ts).
  *   - The graph's own sources: which sources sit behind the claims in a
  *     scope, with the DOIs their URLs carry, so a watch knows what to check.
- *   - A bounded, SSRF-guarded page read, HTML reduced to text, for a
- *     Lookout that wants to look at a page rather than a search snippet.
+ *   - An SSRF-guarded page read, HTML reduced to text and returned in
+ *     windows, for an agent that wants to read a page rather than a search
+ *     snippet.
  *
  * Everything fetched here is DATA to the agent that reads it, never
  * instructions; the guard on the network path is url-guard.ts, and every
@@ -21,6 +22,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { fetchPublicUrl } from "./url-guard.js";
+import { windowText, type TextWindow } from "./document-text.js";
 
 const CROSSREF = "https://api.crossref.org";
 const USER_AGENT = "Minerval/1.0 (lookout; mailto:hello@minerval.ai)";
@@ -546,15 +548,30 @@ export function htmlToText(html: string, maxChars = 12_000): string {
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n[truncated]` : text;
 }
 
-/** Fetch a public page and return it as bounded text; errors as a message. */
+export type ReadPageResult =
+  | ({ ok: true; url: string; text: string; chars: number } & Omit<TextWindow, "content">)
+  | { ok: false; problem: string };
+
+/**
+ * Fetch a public page and return one window of its text; errors as a
+ * message. The window has the contract of provenance_read_source
+ * (`offset`, `total_chars`, `truncated`, `next_offset`), so a long paper is
+ * read whole by paging, not cut at its introduction (#769). Nothing is
+ * stored: unlike provenance_read_source, this makes no source row, so an
+ * agent that only looks (the Lookout, a Grantmaker) leaves the graph as it
+ * found it. Each window fetches the page again; a paged read of one
+ * document is a handful of fetches, which the guarded fetcher bounds in
+ * size and time.
+ */
 export async function readPage(
   url: string,
-  maxChars = 12_000
-): Promise<{ ok: true; text: string; chars: number } | { ok: false; problem: string }> {
+  opts: { offset?: number; maxChars?: number } = {}
+): Promise<ReadPageResult> {
   try {
     const body = await fetchPublicUrl(url, { userAgent: USER_AGENT });
-    const text = /^\s*[{[]/.test(body) ? body.slice(0, maxChars) : htmlToText(body, maxChars);
-    return { ok: true, text, chars: text.length };
+    const full = /^\s*[{[]/.test(body) ? body : htmlToText(body, Infinity);
+    const { content, ...window } = windowText(full, opts.offset, opts.maxChars);
+    return { ok: true, url, text: content, chars: content.length, ...window };
   } catch (err) {
     return { ok: false, problem: err instanceof Error ? err.message : String(err) };
   }

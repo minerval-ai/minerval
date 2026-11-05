@@ -143,15 +143,18 @@ export function getResearchToolDefinitions(
         "investigation and returns a report you weigh. It answers only to you, writes " +
         (graphWrites
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
-            "on the claim in scope, "
+            "and instances (sources asserting, denying or posing a claim, or asking or answering a " +
+            "question) on the node in scope, "
           : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
             "not record provenance or examine documents, and with contribution_budget_usd it submits " +
             "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
-        "checking whether a dataset shows what a paper says, or a proof attempt outside " +
-        "the formal pipeline. Write the brief the way you would for a capable assistant " +
+        "checking whether a dataset shows what a paper says, or exploring a route to a proof " +
+        "(the researcher has no Lean checker, so it brings back a sketch or a lead to weigh, " +
+        "never a checked proof; a checked attempt is the solver's, funded through a mandate's " +
+        "plan). Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
         "Every tier has web search, read_page, the graph's read tools, scholarly search " +
@@ -387,7 +390,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
    */
   const runOnRow = async (
     row: Awaited<ReturnType<typeof openResearchRun>>,
-    claim: { id: string; text: string; domains: string[] } | null,
+    claim: { id: string; text: string; domains: string[]; kind: string } | null,
     examination: ExaminationRow | null
   ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
     const ctx = getUsageContext();
@@ -489,14 +492,14 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
 
     const claimId = claimScoped ? options.claimId! : str(input.claim_id) || null;
     if (claimId && !UUID_RE.test(claimId)) return refuse(`claim_id "${claimId}" is not a claim id.`);
-    let claim: { id: string; text: string; domains: string[] } | null = null;
+    let claim: { id: string; text: string; domains: string[]; kind: string } | null = null;
     if (claimId) {
-      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null }>(
-        `SELECT id, text, domains FROM claims WHERE id = $1`,
+      const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = $1`,
         [claimId]
       );
       if (!row) return refuse(`No claim ${claimId} exists.`);
-      claim = { id: row.id, text: row.text, domains: row.domains ?? [] };
+      claim = { id: row.id, text: row.text, domains: row.domains ?? [], kind: row.kind ?? "claim" };
     }
 
     // An examination of a document (#507): opened before the run so the
