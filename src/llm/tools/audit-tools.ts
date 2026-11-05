@@ -1073,13 +1073,12 @@ export async function executeAuditTool(
         if (!reason) {
           return JSON.stringify({ success: false, message: "reason is required." });
         }
-        // The curation request's source vocabulary has no audit entry yet,
-        // so the request goes in as an operator's and names the finding in
-        // its first words, which is what the Curator reads.
+        // The concern names the finding in its first words, which is what
+        // the Curator reads.
         const requested = await requestCuration({
           anchorClaimId: claimId,
           otherClaimId,
-          source: "operator",
+          source: "audit",
           concern:
             `Audit finding ${finding.id} (${finding.severity}, ${finding.category}): ` +
             `${reason}\nFinding: ${finding.description}\nEvidence: ${finding.evidence}`,

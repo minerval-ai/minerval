@@ -22,7 +22,9 @@ export async function appealRoutes(app: FastifyInstance): Promise<void> {
         properties: {
           contribution_id: { type: "string", format: "uuid" },
           contributor_display_name: { type: "string" },
-          appeal_reasoning: { type: "string" },
+          // The same bound createAppealBody enforces, shown in the schema
+          // so a caller sees it before it is refused (#729).
+          appeal_reasoning: { type: "string", minLength: 1, maxLength: 10000 },
         },
       },
       response: {

@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ matcherModel: "openai/gpt-6-luna", matchingTopK: 20 }),
+  loadConfig: () => ({ matcherModel: "openai/gpt-6-luna", matchingTopK: 20, matcherBudgetUsd: 0.1 }),
 }));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: Record<string, any>) => {
@@ -28,13 +28,15 @@ vi.mock("../../../src/llm/prompts/matcher.js", () => ({
 vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
   createSkillLoadTools: () => ({ definitions: [], execute: async () => null, pointed: [], pointerNote: "" }),
 }));
-vi.mock("../../../src/services/embedding-service.js", () => ({ generateEmbedding: vi.fn() }));
+vi.mock("../../../src/services/embedding-service.js", () => ({ generateEmbedding: vi.fn(async () => [0.1]) }));
 vi.mock("../../../src/services/search-service.js", () => ({
   findSimilarClaims: vi.fn(async () => RETRIEVED),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
   runBudget: () => null,
   budgetRefusal: () => null,
+  getUsageContext: () => ({}),
+  withPassBudget: async (_: unknown, fn: () => Promise<unknown>) => ({ value: await fn(), billedMicroUsd: 0 }),
   withAgent: (_: string, fn: () => unknown) => fn(),
   withSkills: (_: string[], fn: () => unknown) => fn(),
 }));
@@ -117,6 +119,8 @@ describe("Matcher decision validation", () => {
     await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
     const { executeTool, onFinalTool } = mocks.loopOptions!;
     await executeTool("search_similar_claims", { query: "x" });
+    // "mentions" is a claim-instance stance, but the Steward's reading of a
+    // source, never one ingestion assigns (MATCHED_INSTANCE_STANCES).
     const bad = { ...whole, instance_stance: "mentions" };
     expect(onFinalTool("submit_match_decision", bad)).toBeNull();
     const reply = JSON.parse(await executeTool("submit_match_decision", bad));

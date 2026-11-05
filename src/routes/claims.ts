@@ -149,6 +149,10 @@ export const claimSchema = {
     // judged. Shown beside the verdict, never folded into it (#524).
     contestation: { type: "number", nullable: true },
     steward_state: { type: "string" },
+    // When a Steward run last started on it; null = never worked (#415).
+    stewarded_at: { type: "string", format: "date-time", nullable: true },
+    // Why the canonical form runs in the direction it does (#360).
+    canonical_direction_note: { type: "string", nullable: true },
     created_by: { type: "string" },
     created_at: { type: "string", format: "date-time" },
     updated_at: { type: "string", format: "date-time" },
@@ -1776,7 +1780,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-function formatClaim(claim: { id: string; kind?: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
+function formatClaim(claim: { id: string; kind?: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; stewardedAt?: Date | null; canonicalDirectionNote?: string | null; createdBy: string; createdAt: Date; updatedAt: Date }) {
   return {
     id: claim.id,
     kind: claim.kind ?? "claim",
@@ -1791,6 +1795,10 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
     // The Steward work-queue lifecycle (pending → running → done | error). Lets the
     // UI distinguish a not-yet-stewarded stub from a claim found genuinely atomic.
     steward_state: claim.stewardState,
+    // get_claim serves these too (#774): a claim that has never been worked
+    // reads stewarded_at null, whatever decomposition_status says.
+    stewarded_at: claim.stewardedAt?.toISOString() ?? null,
+    canonical_direction_note: claim.canonicalDirectionNote ?? null,
     created_by: claim.createdBy,
     created_at: claim.createdAt.toISOString(),
     updated_at: claim.updatedAt.toISOString(),

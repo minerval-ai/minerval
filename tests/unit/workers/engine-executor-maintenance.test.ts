@@ -28,6 +28,7 @@ const { state } = vi.hoisted(() => ({
     generalMandate: null as null | Record<string, unknown>,
     governance: [] as string[],
     contexts: [] as Array<Record<string, unknown>>,
+    budgets: [] as Array<{ microUsd: number; source: string }>,
     curatorCalls: [] as Array<Record<string, unknown>>,
     auditCalls: [] as Array<Record<string, unknown>>,
     completed: [] as Array<{ id: string; metered: number; meteredJobId: unknown }>,
@@ -132,7 +133,8 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
     await fn();
     return { billedMicroUsd: 120_000 };
   },
-  withPassBudget: async (_budget: unknown, fn: () => Promise<unknown>) => {
+  withPassBudget: async (budget: { microUsd: number; source: string }, fn: () => Promise<unknown>) => {
+    state.budgets.push(budget);
     await fn();
     return { billedMicroUsd: 120_000 };
   },
@@ -141,6 +143,8 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     owlCostMicroUsd: 1_000_000,
+    curateRunBudgetOwls: 5,
+    auditRunBudgetOwls: 5,
     backgroundFallbackLaneEnabled: state.fallbackLane,
     curatorMaxRuns: 0,
   }),
@@ -203,6 +207,7 @@ beforeEach(() => {
   state.reopened = [];
   state.auditClosed = [];
   state.cancelled = [];
+  state.budgets = [];
   resetFallbackCuratorRuns();
 });
 
@@ -219,6 +224,15 @@ describe("the curate action", () => {
     expect(state.completed).toEqual([{ id: "act-c", metered: 120_000, meteredJobId: "job-1" }]);
     expect(state.consumed).toEqual([{ ids: ["r1", "r2"], actionId: "act-c" }]);
     expect(state.reopened).toEqual([]);
+  });
+
+  it("works to the 5-owl run budget when its allocations cover less, and says whose it is", async () => {
+    state.covered = curateAction();
+    await processNextEngineAction();
+    expect(state.budgets[0]).toEqual({
+      microUsd: 5_000_000,
+      source: "this curation's run budget, which its funding mandate covers",
+    });
   });
 
   it("reopens the row when a concern arrived while the run held it", async () => {
@@ -258,6 +272,7 @@ describe("the audit action", () => {
     expect(state.contexts[0]).toEqual({ userId: "u-funder", jobId: "gov-job" });
     expect(state.completed).toEqual([{ id: "act-a", metered: 120_000, meteredJobId: "gov-job" }]);
     expect(state.auditClosed).toEqual([[RUN_ID]]);
+    expect(state.budgets[0]!.microUsd).toBe(5_000_000);
   });
 
   it("runs a prize audit under the bounty's reserve job and the platform account", async () => {

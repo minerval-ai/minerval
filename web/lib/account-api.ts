@@ -825,7 +825,6 @@ export interface MandateLookoutView {
   triggers: string[];
   model: string | null;
   max_value: number;
-  max_ingests_per_run: number;
   runs: number;
   flags: number;
   last_run_at: string | null;

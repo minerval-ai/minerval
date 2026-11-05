@@ -406,7 +406,7 @@ describe("recommend_recuration", () => {
     );
     expect(out.success).toBe(true);
     const req = mocks.requestCuration.mock.calls[0]![0] as Record<string, unknown>;
-    expect(req).toMatchObject({ anchorClaimId: CLAIM_ID, otherClaimId: CONTRIBUTION_ID });
+    expect(req).toMatchObject({ anchorClaimId: CLAIM_ID, otherClaimId: CONTRIBUTION_ID, source: "audit" });
     expect(String(req.concern)).toContain(`Audit finding ${FINDING_ID}`);
     expect(String(req.concern)).toContain("merged but say different things");
   });
