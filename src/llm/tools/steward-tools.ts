@@ -61,6 +61,7 @@ import { setArgumentShows } from "../../services/quantity-service.js";
 import { addAnswer, addSubquestion } from "../../services/question-service.js";
 import {
   ANSWER_BASES,
+  KIND_INSTANCE_STANCES,
   KIND_RELATION_TYPES,
   NODE_KINDS,
   quantityDefinitionSchema,
@@ -492,7 +493,9 @@ export function getStewardToolDefinitions(): Tool[] {
               "claim (affirms), its negation (denies), states the " +
               "proposition as an open question without taking a side " +
               "(poses), or only refers to it without asserting, denying or " +
-              "posing it (mentions). Omit to leave as is.",
+              "posing it (mentions). Omit to leave as is; always omit it on a " +
+              "question's or quantity's instance, whose role (asks, answers, " +
+              "states) it would overwrite.",
           },
           confidence: {
             type: "number",
@@ -1843,6 +1846,25 @@ export async function executeStewardTool(
             message:
               `Instance not found: ${instanceId} is not a recorded instance ` +
               `of claim ${claimId}.`,
+          });
+        }
+        // A question's instances ask or answer it and a quantity's state a
+        // figure (§7a, §10); the proposition stances would overwrite that
+        // role and drop the instance from its page (#711). Its other
+        // fields correct as on any instance.
+        if (
+          patch.stance !== undefined &&
+          (KIND_INSTANCE_STANCES as readonly string[]).includes(existing.stance)
+        ) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Instance ${instanceId} is recorded as "${existing.stance}", a role ` +
+              `the proposition stances do not describe. Leave stance out to ` +
+              `correct its other fields; if its role is wrong, detach it with ` +
+              `detach_claim_instance and record it again with ` +
+              (existing.stance === "states" ? "record_estimate" : "record_question_instance") +
+              `.`,
           });
         }
 

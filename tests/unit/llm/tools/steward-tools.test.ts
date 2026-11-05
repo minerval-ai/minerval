@@ -517,6 +517,36 @@ describe("steward update_claim_instance", () => {
     expect(audit?.reasoning).toMatch(/quotes Scholze denying/);
   });
 
+  it("refuses to overwrite a question instance's role with a proposition stance (#711)", async () => {
+    vi.mocked(rawQuery).mockResolvedValueOnce([
+      { id: INSTANCE, stance: "asks", confidence: 0.9, speaker: null, source_url: "https://example.org/q" },
+    ]);
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "poses",
+      reasoning: "It asks the question.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/record_question_instance/);
+    expect(updatedValues).toHaveLength(0);
+  });
+
+  it("still corrects a question instance's other fields", async () => {
+    vi.mocked(rawQuery).mockResolvedValueOnce([
+      { id: INSTANCE, stance: "asks", confidence: 0.9, speaker: null, source_url: "https://example.org/q" },
+    ]);
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      speaker: "Terence Tao",
+      reasoning: "The question is put by Tao, not the outlet.",
+    });
+    expect(JSON.parse(out).success).toBe(true);
+    expect(updatedValues[0]).toEqual({ speaker: "Terence Tao" });
+  });
+
   it("lowers a mention's confidence toward 0 without touching its stance", async () => {
     instanceExists();
     const out = await executeStewardTool("update_claim_instance", {
