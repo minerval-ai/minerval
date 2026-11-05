@@ -52,7 +52,7 @@ vi.mock("../../../src/services/feed-service.js", () => ({
 }));
 
 vi.mock("../../../src/services/lookout-service.js", () => ({
-  LOOKOUT_BOUNDS: { heartbeatHours: { max: 720 }, noteChars: 2_000 },
+  LOOKOUT_BOUNDS: { heartbeatHours: { max: 720 }, maxIngestsPerRun: { max: 20 }, noteChars: 2_000 },
   LOOKOUT_TRIGGER_KINDS: ["retraction", "manual"],
   createLookout: vi.fn(async (input: Record<string, unknown>) => {
     state.created.push(input);

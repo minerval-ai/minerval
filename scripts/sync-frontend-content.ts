@@ -165,7 +165,7 @@ const AGENTS: AgentMeta[] = [
     invokedWhen: "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     model: "Claude Opus 5.5", fn: getGrantmakerSystemPrompt },
   { key: "lookout", name: "Lookout", stage: 9, group: "governance",
-    tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     model: modelLabel(OPENROUTER_MODELS.flash), fn: getLookoutSystemPrompt },
   { key: "consistency-checker", name: "Consistency Checker", stage: 10, group: "governance",

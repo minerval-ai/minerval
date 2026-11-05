@@ -7,11 +7,14 @@
  * tool"), so each agent wires it with one spread and one early return.
  *
  * Nothing here moves money. A lookout's runs are self-funded from the
- * mandate's escrow through the ledger (fundGrantSelfActions, bounded per
- * day), and what a lookout raises is a candidate the mandate's allocator
- * funds or not. What the Grantmaker delegates with spawn_lookout is
- * judgment — the brief — under bounds it sets: the ceiling on a flag's
- * value, the ingests per run, the cadence.
+ * mandate's escrow through the ledger (fundGrantSelfActions), out of the
+ * mandate's day like the rest of its work, with no count of runs (#689).
+ * What a lookout raises is a candidate the mandate's allocator funds or
+ * not. What the Grantmaker delegates with spawn_lookout is judgment (the
+ * brief) under bounds it sets: the ceiling on a flag's value, the ingests
+ * per run, the cadence. The ingest count stands in for money because a
+ * lookout's ingests go onto the plan and are paid from escrow without the
+ * allocator ranking them (#695).
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -58,7 +61,7 @@ const FEED_RULE_PROPERTIES = {
   min_wake_hours: { type: "number", description: `Never wake more often than this (default ${B.minWakeHours.dflt}).` },
   poll_hours: { type: "number", description: `How often the feed is checked (${B.pollHours.min}–${B.pollHours.max}, default ${B.pollHours.dflt}).` },
   retain_days: { type: "number", description: `Untriaged items expire after this many days (default ${B.retainDays.dflt}).` },
-  daily_ingest_cap: { type: "number", description: `auto_ingest: ingests per day (${B.dailyIngestCap.min}–${B.dailyIngestCap.max}, default ${B.dailyIngestCap.dflt}).` },
+  daily_ingest_cap: { type: "number", description: `auto_ingest: ingests per day (${B.dailyIngestCap.min}–${B.dailyIngestCap.max}, default ${B.dailyIngestCap.dflt}). A count, because auto-ingested items are paid from your escrow without your allocator ranking them.` },
   ingest_focus: {
     type: "string",
     description:
@@ -101,8 +104,8 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "the mission needs to notice things between your review passes: a " +
         "retraction watch over the sources behind your assessed claims, a " +
         "new-results watch on a live crux, a feed to keep an eye on. Each " +
-        "run costs a small fraction of an assessment; the ledger bounds " +
-        "runs per day.",
+        "run costs a small fraction of an assessment and is paid from your " +
+        "escrow out of the mandate's day.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -138,7 +141,11 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           },
           max_ingests_per_run: {
             type: "number",
-            description: "Ingest items one run may append to your plan (default 3).",
+            description:
+              `Ingest items one run may append to your plan (default 3, at most ` +
+              `${LOOKOUT_BOUNDS.maxIngestsPerRun.max}). A count rather than money, ` +
+              `because a lookout's ingests are paid from your escrow without your ` +
+              `allocator ranking them; the lookout is told the number and why.`,
           },
           model: {
             type: "string",
@@ -266,7 +273,6 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           max_value: { type: "number" },
           max_ingests_per_run: { type: "number" },
           model: { type: "string" },
-          note: { type: "string", description: "One line: why." },
         },
         required: ["lookout_id"],
       },
@@ -276,7 +282,7 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
       description:
         "Queue an input for a lookout so its next run reads it: something " +
         "you learned that it should check, a source to look at, a question. " +
-        "The run is funded like any other (bounded per day); the note is " +
+        "The run is paid from your escrow like any other; the note is " +
         "data to the lookout, not an instruction that bypasses its brief.",
       input_schema: {
         type: "object" as const,

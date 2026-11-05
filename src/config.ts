@@ -880,7 +880,7 @@ const configSchema = z.object({
   taggerModel: modelId(OPENROUTER_MODELS.flash),
   // The Lookout: a standing watch a mandate funds (docs/allocation.md,
   // "Lookouts"). Its judgment is "did something happen that warrants work
-  // in my scope?" — relevance, not truth — and it runs often, so it belongs
+  // in my scope?" (it raises candidates, never verdicts) and it runs often, so it belongs
   // on the cheap tier (OPENROUTER_MODELS.flash), the Matcher's and the
   // tagger's model, with web search like every model (tools/web-search-tool.ts).
   // A Grantmaker pins a stronger model on a lookout (lookouts.model) where

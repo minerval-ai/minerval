@@ -806,8 +806,9 @@ These act through tools over the life of a claim and the graph:
   retraction record, and the open web and raises *candidates*: a claim to
   reassess, valued on the mandate's behalf up to a ceiling the Grantmaker
   delegated; a source to ingest, appended to the mandate's plan; a note for
-  the next review pass. It judges relevance, never truth: it writes no
-  assessment, sets no importance, and moves no money, and every flag is
+  the next review pass. A Steward or the Grantmaker decides on what it
+  raises: it writes no assessment, sets no importance, and moves no
+  money, and every flag is
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
   (docs/allocation.md, "Lookouts").
@@ -1282,7 +1283,7 @@ non-Anthropic model. The tagger's is narrower still ("which of these
 existing tags, at what grain?"), makes no epistemic call, and runs over
 every claim, so it shares that tier: the cheapest capable model, in
 production as in dev. The Lookout's question ("did something happen that
-warrants work in my scope?") is relevance, not truth, and it runs often,
+warrants work in my scope?") raises candidates rather than verdicts, and it runs often,
 so it shares the tier too, and a Grantmaker can pin a stronger model on
 one lookout whose brief warrants it. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,
