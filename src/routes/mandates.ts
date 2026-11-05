@@ -242,7 +242,6 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
             triggers: lookout.triggers ?? [],
             model: lookout.model,
             max_value: lookout.max_value,
-            max_ingests_per_run: lookout.max_ingests_per_run,
             workspace: lookout.workspace,
             last_note: lookout.last_note,
             last_run_at: lookout.last_run_at ? new Date(lookout.last_run_at).toISOString() : null,

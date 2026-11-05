@@ -197,11 +197,15 @@ things and nothing else:
   (`max_value`). Whether it runs is the mandate allocator's call, by
   value per owl against everything else the mandate values. A claim
   already flagged and still waiting is a repeat, not a new flag.
-- `propose_ingest`: a URL the lookout actually saw goes on the mandate's
-  plan as an ingest item, optionally scoped to a focus (below, "An ingest
-  can be scoped"), priced and escrow-bounded like any plan item,
-  at most `max_ingests_per_run` per run; refused for a source already
-  read in full or for the same focus, or already planned.
+- `propose_ingest`: a URL the lookout actually saw becomes a candidate
+  ingest row on the ledger, optionally scoped to a focus (below, "An
+  ingest can be scoped"), with the mandate's valuation written at the
+  lookout's urgency **clamped to `max_value`**, as for a reassessment.
+  The allocator ranks it by value per owl against everything else the
+  mandate values; it is not a plan item, so it is not self-funded from
+  escrow outside the allocator, and there is no count of ingests per run
+  (#695). Refused for a source already read in full or for the same
+  focus, already planned, or already ingested.
 - `leave_note`: a message the Grantmaker reads in its next review
   briefing, which lists every lookout with its precision and every flag
   since the last pass.
@@ -243,8 +247,9 @@ worth a funded run:
 - `each`: any new item;
 - `heartbeat`: never; items wait for the lookout's heartbeat;
 - `paused`: never; the feed keeps polling and its items keep;
-- `auto_ingest`: no run at all — each new item goes onto the plan as an
-  ingest, priced against the escrow, at most `daily_ingest_cap` a day.
+- `auto_ingest`: no run at all — each new item becomes a candidate
+  ingest valued at the lookout's `max_value`, which the allocator funds or
+  not out of the day's room like anything else the mandate values.
 
 `batch` and `each` never wake more often than `min_wake_hours`. A met rule
 queues one `feed` event on the lookout, never one per item, and not again
@@ -267,7 +272,7 @@ which is cached on the item so an ingest of the same URL extracts from
 what was read. Nothing narrows the reading; each result reports how much
 the run has read, and the run's metered cost and the mandate's escrow
 bound what it spends. `triage_items` records many decisions at once:
-ingest (through `propose_ingest`'s path and its per-run limit), skip, or
+ingest (through `propose_ingest`'s path, valued at an urgency), skip, or
 defer, and skips the rest of a feed in one call. Untriaged items expire
 after the feed's `retain_days`, and expired items are counted, never
 hidden.
@@ -337,8 +342,8 @@ its price and declines a call the remainder cannot cover, saying what the
 call would cost and what is left.
 
 That replaces counts. There is no number of searches, Elicit calls, Lean
-checks, new subclaims, reports, flags, plan items, review passes or
-lookout runs per run or per day: an agent spends its budget across its
+checks, new subclaims, reports, flags, plan items, review passes,
+lookout runs or lookout ingests per run or per day: an agent spends its budget across its
 tools as the work warrants, and a run that needs more says so for a
 better-funded pass. What stays is short, and each item is told to the
 agent with its reason: a turn guard far above any real run (it halts a

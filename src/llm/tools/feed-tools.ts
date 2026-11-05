@@ -110,11 +110,11 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
     {
       name: "triage_items",
       description:
-        "Record your decision on inbox items, many per call. ingest: put the " +
-        "item's URL on the mandate's plan (priced against the escrow; counts " +
-        "toward your per-run ingest limit, shared with propose_ingest; " +
-        "refused for a URL already read in full or for the same focus, or " +
-        "already on the plan). skip: not worth ingesting. defer: come back " +
+        "Record your decision on inbox items, many per call. ingest: raise " +
+        "the item's URL as a candidate ingest, valued at the decision's " +
+        "urgency within your ceiling, as propose_ingest does (refused for a " +
+        "URL already read in full or for the same focus, or already on the " +
+        "plan). skip: not worth ingesting. defer: come back " +
         "to it on a later run. A reason is optional, and for an ingest it " +
         "becomes the plan item's rationale. An ingest carries the feed's " +
         "default focus, if it has one, unless you give your own: a focus " +
@@ -134,6 +134,10 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
                 decision: { type: "string", enum: [...TRIAGE_DECISIONS] },
                 reason: { type: "string" },
                 focus: { type: "string", description: "ingest only: the subject to read it for; \"\" for the whole document." },
+                urgency: {
+                  type: "number",
+                  description: "ingest only: 0-10, as for propose_ingest (default 5); clamped to your ceiling.",
+                },
               },
               required: ["item_id", "decision"],
             },
@@ -183,13 +187,13 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
 }
 
 /**
- * The executor for one run. `ingestsLeft` reads the run's remaining ingest
- * allowance (shared with propose_ingest), `onIngested` spends it.
+ * The executor for one run. `maxValue` is the lookout's ceiling, which
+ * every ingest it raises is clamped to; `onIngested` counts what it raised.
  */
 export function createLookoutFeedTools(ctx: {
   lookoutId: string;
   grantId: string;
-  ingestsLeft: () => number;
+  maxValue: number;
   onIngested: (n: number) => void;
 }): {
   definitions: Tool[];
@@ -248,10 +252,10 @@ export function createLookoutFeedTools(ctx: {
                   reason: typeof skip.reason === "string" ? skip.reason : null,
                 }
               : null,
-          ingestAllowance: ctx.ingestsLeft(),
+          maxValue: ctx.maxValue,
         });
         if (res.ingested > 0) ctx.onIngested(res.ingested);
-        return JSON.stringify({ ...res, ingests_left_this_run: ctx.ingestsLeft() });
+        return JSON.stringify(res);
       }
       if (name === "set_feed_rule") {
         const res = await updateFeed({

@@ -804,9 +804,9 @@ These act through tools over the life of a claim and the graph:
   where to look, what warrants work), woken by a heartbeat or a trigger (the
   daily Crossref retraction poll, a poke), that reads the graph, the
   retraction record, and the open web and raises *candidates*: a claim to
-  reassess, valued on the mandate's behalf up to a ceiling the Grantmaker
-  delegated; a source to ingest, appended to the mandate's plan; a note for
-  the next review pass. A Steward or the Grantmaker decides on what it
+  reassess or a source to ingest, each valued on the mandate's behalf up
+  to a ceiling the Grantmaker delegated and ranked by its allocator; a
+  note for the next review pass. A Steward or the Grantmaker decides on what it
   raises: it writes no assessment, sets no importance, and moves no
   money, and every flag is
   recorded with what became of it, so its precision is on the record and

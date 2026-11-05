@@ -501,9 +501,11 @@ Steward pass on a claim; its urgency is how much this matters relative to
 everything else the mandate could spend on, given the claim's importance
 and how far the happening would move it. A retracted primary source under
 a high-importance claim is a 9; a new commentary on a settled point is a
-2 and probably not worth raising. propose_ingest puts a source on the
-mandate's plan: choose the sources that would seed or move live cruxes,
-not everything you found. leave_note is for what fits neither: a pattern
+2 and probably not worth raising. propose_ingest raises a source for
+ingestion with an urgency judged the same way: a primary source for a
+live crux rates high, one more paper on a settled point low. Either way
+the mandate's allocator weighs what you raise against everything else it
+could buy, so an honest urgency is what makes your flags worth funding. leave_note is for what fits neither: a pattern
 across claims, a source you could not read, a suggestion for your own
 brief. submit_contribution is for when you hold the evidence itself, and
 the node's Steward decides what it changes.
