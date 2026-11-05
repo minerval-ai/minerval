@@ -275,6 +275,14 @@ export interface SourceRelationship {
   confidence: number;
 }
 
+/**
+ * How a source stands to the claim (src/schemas/common.ts INSTANCE_STANCES):
+ * it asserts it, asserts its negation, states it as an open question, or only
+ * refers to it (cites it, reports the debate). Posing and mentioning take no
+ * side; a mention is shown apart from the voices that take a position.
+ */
+export type InstanceStance = "affirms" | "denies" | "poses" | "mentions";
+
 export interface Instance {
   id: string;
   source_id: string;
@@ -287,9 +295,9 @@ export interface Instance {
   source_title: string;
   source_url: string | null;
   source_type?: SourceType;
-  // Whether the source affirms or denies the canonical claim; absent when
-  // the API predates the field.
-  stance?: "affirms" | "denies";
+  // Which side the source takes on the canonical claim; absent when the API
+  // predates the field.
+  stance?: InstanceStance;
   speaker?: string | null;
   publication?: string | null;
   source_date?: string | null;
@@ -1330,7 +1338,7 @@ export interface StoryNode {
   instance_ids: string[];
   /** When the source said it, partial ISO-8601; absent from an API that predates it. */
   date?: string | null;
-  /** Which side its instances take (affirms, denies, poses); empty for an underlying source. */
+  /** Which side its instances take (affirms, denies, poses, mentions); empty for an underlying source. */
   stances?: string[];
   /** Drawn on by the claim's sources without stating the claim itself. */
   underlying: boolean;
