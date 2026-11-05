@@ -34,6 +34,15 @@ const ASSESSMENT_ROW = {
   assessedAt: new Date("2026-01-03T00:00:00Z"),
 };
 
+const EMPTY_FORMALIZATION_RECORD = vi.hoisted(() => ({
+  formalization: null,
+  formalization_pending: null,
+  formalization_history: [],
+  verification: null,
+  lean_checks: [],
+  lean_checks_total: 0,
+}));
+
 const mocks = vi.hoisted(() => ({
   hybridSearch: vi.fn(),
   getClaimById: vi.fn(),
@@ -49,8 +58,7 @@ const mocks = vi.hoisted(() => ({
     truncated: false,
   })),
   getArgumentsForClaim: vi.fn(async () => []),
-  getFormalizationSummary: vi.fn(async () => null as unknown),
-  getVerificationSummary: vi.fn(async () => null as unknown),
+  getClaimFormalizationRecord: vi.fn(async () => ({ ...EMPTY_FORMALIZATION_RECORD }) as Record<string, unknown>),
   leanChecksByArgument: vi.fn(async () => new Map()),
   listLeanChecksForClaim: vi.fn(async () => [] as unknown[]),
   getBountyTerms: vi.fn(async () => null as unknown),
@@ -97,10 +105,30 @@ vi.mock("../../../src/services/tree-service.js", () => ({
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
+  getEvaluationStateForClaim: vi.fn(async () => []),
+  hasWrittenForm: (content: string | null) => !!content,
+}));
+// The rest of the view get_claim reads (#774): counts, the source map, related
+// links and findings, each from its own service.
+vi.mock("../../../src/services/claim-instance-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/claim-instance-service.js")>()),
+  countClaimInstances: vi.fn(async () => 1),
+}));
+vi.mock("../../../src/services/source-map-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/source-map-service.js")>()),
+  getSourceMapSummary: vi.fn(async () => null),
+  getClaimSourceMap: vi.fn(async () => null),
+}));
+vi.mock("../../../src/services/claim-link-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/claim-link-service.js")>()),
+  listRelatedClaims: vi.fn(async () => []),
+}));
+vi.mock("../../../src/services/finding-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/finding-service.js")>()),
+  listFindings: vi.fn(async () => []),
 }));
 vi.mock("../../../src/services/formalization-service.js", () => ({
-  getFormalizationSummary: mocks.getFormalizationSummary,
-  getVerificationSummary: mocks.getVerificationSummary,
+  getClaimFormalizationRecord: mocks.getClaimFormalizationRecord,
   leanChecksByArgument: mocks.leanChecksByArgument,
   listLeanChecksForClaim: mocks.listLeanChecksForClaim,
   getBountyTerms: mocks.getBountyTerms,
@@ -495,22 +523,37 @@ describe("MCP tools", () => {
         source_id: "s-1",
         verbatim_text: "quoted text",
         context: null,
+        stance: "affirms",
         confidence: 0.9,
         source_title: "A paper",
         source_url: "https://example.org/paper",
       },
+      {
+        id: "i-2",
+        source_id: "s-2",
+        verbatim_text: "the claim, as debated",
+        context: null,
+        stance: "mentions",
+        confidence: 1,
+        source_title: "An explainer",
+        source_url: "https://example.org/explainer",
+      },
     ] as never);
     const result = await client.callTool({
       name: "get_claim",
-      arguments: { claim_id: CLAIM_ID },
+      arguments: { claim_id: CLAIM_ID, include: ["provenance"] },
     });
     const payload = parseText(result);
-    expect(payload.claim).toMatchObject({ id: CLAIM_ID });
+    expect(payload.claim).toMatchObject({ id: CLAIM_ID, steward_state: "done" });
+    expect(payload.instance_count).toBe(1);
     expect(payload.assessment).toMatchObject({
       status: "well_supported",
       confidence: 0.82,
     });
-    expect(payload.instances).toHaveLength(1);
+    // Each instance carries its stance, so a caller can tell a source that
+    // only mentions the claim from the ones that take a side.
+    expect(payload.instances).toHaveLength(2);
+    expect(payload.instances.map((i: { stance: string }) => i.stance)).toEqual(["affirms", "mentions"]);
 
     const missing = await client.callTool({
       name: "get_claim",
@@ -878,8 +921,11 @@ describe("MCP tools", () => {
       formalization_id: formalization.id,
       pin_id: "mathlib-v4.33.0",
     };
-    mocks.getFormalizationSummary.mockResolvedValueOnce(formalization);
-    mocks.getVerificationSummary.mockResolvedValueOnce(verification);
+    mocks.getClaimFormalizationRecord.mockResolvedValueOnce({
+      ...EMPTY_FORMALIZATION_RECORD,
+      formalization,
+      verification,
+    });
     mocks.listLeanChecksForClaim.mockResolvedValueOnce([
       { id: "lc-1", kind: "proof", verdict: "accepted", mode: "steward", formalization_id: formalization.id },
     ]);
@@ -1235,7 +1281,9 @@ describe("MCP tools on quantities and questions (§7a)", () => {
     expect(payload.quantity).toMatchObject({ estimate: { kind: "point", value: 8 } });
     expect(payload.question).toBeNull();
     expect(payload.threshold_of).toBeNull();
-    expect(payload.requests).toEqual([{ id: "req-1", ask: "A second source for the 2022 figure" }]);
+    expect(payload.requests).toEqual([
+      { id: "req-1", ask: "A second source for the 2022 figure", kept_by_this_node: false },
+    ]);
     expect(mocks.getQuestionDetail).not.toHaveBeenCalled();
     await client.close();
   });

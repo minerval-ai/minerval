@@ -98,6 +98,12 @@ export const ROLE_VIEW = {
   // describe that work as well as its own, which says what it leaves to the
   // Steward.
   researcher: ["For every administrator", "For the Claim Steward", "For the researcher"],
+  // The Consistency Checker reads other administrators' assessments against
+  // each other, as the Audit Agent reads them against the standards, so it
+  // receives the standards a good assessment in the domain meets: a
+  // mathematics standard ("a checked proof against any status other than
+  // verified ... is a coherence failure") is exactly its reading (#742).
+  "consistency-checker": ["For every administrator", "Standards for judging"],
 } as const satisfies Record<string, readonly SkillSection[]>;
 
 export type SkillRole = keyof typeof ROLE_VIEW;
@@ -700,10 +706,10 @@ ${getSkillCatalog(role)}`;
 
 /**
  * The Extractor's skills section. The Extractor is the one role whose
- * skills are spliced in rather than loaded: it makes a single structured
- * call with no tools and so no turn in which to load anything, and its
- * sections (how to tag a claim's domains, how to record a passage) bear on
- * every extraction.
+ * skills are spliced in rather than loaded: it has no load_skill tool (its
+ * only tools record claims and end the extraction), and its sections (how
+ * to tag a claim's domains, how to record a passage) bear on every
+ * extraction.
  */
 function extractorSkillsSection(): string {
   const skills = listSkills();

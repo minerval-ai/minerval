@@ -63,6 +63,8 @@ export const TRIGGER_PHRASES: Record<string, string> = {
   pipeline_assessment: "initial assessment",
   steward_reassessment: "steward review",
   subclaim_change: "a subclaim changed",
+  dependent_note: "a note from a dependent's steward",
+  steward_note: "a note from another steward",
   contribution_accepted: "an accepted contribution",
   user_order: "a reader's order",
   steward_escalation: "an escalated review",
