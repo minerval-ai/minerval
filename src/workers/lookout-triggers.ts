@@ -22,24 +22,30 @@
  *
  * The poll itself is a scan, not a judgment: it does not decide which
  * lookout cares about which retraction (that is the lookout's, in the
- * brief's words), and it opens no ledger row directly. Bounded producers
- * throughout: one Crossref page per poll per type, a cap on pending
- * events per lookout, and a persisted high-water mark (platform_flags)
- * so a restart never re-queues the same notices.
+ * brief's words), and it opens no ledger row directly. It reads the whole
+ * window, oldest first, page by page (#686); a cap on pending events per
+ * lookout and a persisted high-water mark (platform_flags) keep it from
+ * re-queueing the same notices after a restart.
  *
  * Period-keyed and idempotent, so every task may run it: the high-water
- * mark is advanced only after a successful poll, and a lookout that
- * already holds an event for a notice is not handed it twice.
+ * mark is advanced to now only when the whole window was read, and
+ * otherwise only as far as the notices actually read, so a failed page or
+ * a very busy window is picked up by the next poll rather than skipped. A
+ * lookout that already holds an event for a notice is not handed it twice.
  *
  * The second is the feed poll (#305, feedPollTick): every due feed of an
  * active lookout is fetched and its new items recorded in the lookout's
  * inbox; a feed whose wake rule is met queues one `feed` event, and an
- * auto_ingest feed puts its new items on the plan (services/feed-service.ts).
+ * auto_ingest feed raises its new items as valued candidate ingests
+ * (services/feed-service.ts).
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { recentRetractions } from "../services/source-watch-service.js";
-import { claimsRestingOnSources, sourcesForDois } from "../services/source-watch-service.js";
+import {
+  claimsRestingOnSources,
+  retractionNoticesSince,
+  sourcesForDois,
+} from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
@@ -49,10 +55,20 @@ const FLAG_KEY = "lookout_retraction_poll";
 const INITIAL_LOOKBACK_DAYS = 30;
 /** Never re-scan more than this, whatever the mark says (a long outage). */
 const MAX_LOOKBACK_DAYS = 90;
+/**
+ * Crossref pages (of 1,000 notices) one poll reads before stopping. A poll
+ * has to end; one that stops here advances its mark only as far as it read
+ * and the next poll carries on from there, so nothing is skipped.
+ */
+const MAX_PAGES_PER_POLL = 20;
+/** DOIs per join against the graph's sources, to keep each query small. */
+const DOI_CHUNK = 500;
 
 export interface RetractionPollResult {
   skipped: boolean;
   notices: number;
+  /** False when the poll stopped before the end of its window (see the header). */
+  complete: boolean;
   matchedSources: number;
   /** Source events this poll recorded for the first time. */
   sourceEvents: number;
@@ -73,12 +89,19 @@ async function readMark(): Promise<{ since: Date; polledAt: Date | null }> {
   };
 }
 
-async function writeMark(since: Date): Promise<void> {
+/**
+ * `polledAt` null leaves the cadence where it was, so a poll that stopped
+ * before the end of its window carries on at the next tick.
+ */
+async function writeMark(since: Date, polledAt: Date | null): Promise<void> {
   await rawQuery(
     `INSERT INTO platform_flags (key, value, updated_at)
      VALUES ($1, $2::jsonb, now())
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-    [FLAG_KEY, JSON.stringify({ since: since.toISOString(), polled_at: new Date().toISOString() })]
+    [
+      FLAG_KEY,
+      JSON.stringify({ since: since.toISOString(), polled_at: polledAt?.toISOString() ?? null }),
+    ]
   );
 }
 
@@ -91,7 +114,7 @@ export async function retractionPollTick(
 ): Promise<RetractionPollResult> {
   const config = loadConfig();
   const result: RetractionPollResult = {
-    skipped: true, notices: 0, matchedSources: 0, sourceEvents: 0, eventsQueued: 0,
+    skipped: true, notices: 0, complete: true, matchedSources: 0, sourceEvents: 0, eventsQueued: 0,
   };
   if (config.lookoutRetractionPollHours <= 0 && !opts.force) return result;
 
@@ -104,15 +127,20 @@ export async function retractionPollTick(
 
   // Overlap the window by a day: Crossref's update dates are day-grained.
   const from = new Date(since.getTime() - 86_400_000);
-  const notices = await recentRetractions({
+  const window = await retractionNoticesSince({
     since: from,
     types: ["retraction", "correction", "expression_of_concern"],
-    rows: 200,
+    maxPages: MAX_PAGES_PER_POLL,
   });
+  const notices = window.notices;
   result.notices = notices.length;
+  result.complete = window.complete;
 
   const dois = [...new Set(notices.flatMap((n) => n.retracted_dois))];
-  const matches = dois.length > 0 ? await sourcesForDois(dois) : [];
+  const matches: Awaited<ReturnType<typeof sourcesForDois>> = [];
+  for (let i = 0; i < dois.length; i += DOI_CHUNK) {
+    matches.push(...(await sourcesForDois(dois.slice(i, i + DOI_CHUNK))));
+  }
   result.matchedSources = matches.length;
   // Beyond the claims that assert a matched source, the claims whose
   // recorded provenance runs through it (#507): a copy or another version
@@ -183,7 +211,12 @@ export async function retractionPollTick(
     result.eventsQueued += queued;
   }
 
-  await writeMark(new Date(now));
+  // Read to the end: the next window starts now, after the usual cadence.
+  // Stopped early: it starts from the newest notice read, and the cadence
+  // is left as it was so the next tick carries on. Read nothing: the mark
+  // stays and the next tick tries again.
+  if (window.complete) await writeMark(new Date(now), new Date(now));
+  else if (window.readThrough) await writeMark(window.readThrough, polledAt);
   return result;
 }
 
@@ -194,7 +227,7 @@ export async function retractionPollTick(
  * failures and backs off (feed-service pollFeed); one bad feed never stops
  * the rest. Polling is code: no ledger row, no model call. What it can
  * cause is a `feed` event on a lookout whose wake rule is met, or, for an
- * auto_ingest feed, ingest items on the mandate's plan.
+ * auto_ingest feed, candidate ingests valued at the lookout's ceiling.
  */
 export async function feedPollTick(
   opts: { now?: Date; maxFeeds?: number } = {}
@@ -207,7 +240,7 @@ export async function feedPollTick(
   const due = await rawQuery<FeedRow>(
     `SELECT f.id, f.lookout_id, f.url, f.site_url, f.title, f.status, f.wake, f.batch_size,
             f.max_wait_hours, f.min_wake_hours, f.poll_hours, f.retain_days,
-            f.daily_ingest_cap, f.ingest_focus, f.seeded_at, f.last_polled_at, f.next_poll_at,
+            f.ingest_focus, f.seeded_at, f.last_polled_at, f.next_poll_at,
             f.last_woke_at, f.consecutive_failures, f.last_error, f.created_by, f.created_at
        FROM lookout_feeds f
        JOIN lookouts l ON l.id = f.lookout_id
@@ -272,7 +305,8 @@ export function startLookoutTriggers(options: {
           if (!r.skipped) {
             options.logger.info(
               `Lookout retraction poll: ${r.notices} notices, ${r.matchedSources} matched ` +
-                `sources, ${r.sourceEvents} source events recorded, ${r.eventsQueued} events queued`
+                `sources, ${r.sourceEvents} source events recorded, ${r.eventsQueued} events queued` +
+                (r.complete ? "" : " (window not finished; the next tick carries on)")
             );
           }
         } catch (err) {

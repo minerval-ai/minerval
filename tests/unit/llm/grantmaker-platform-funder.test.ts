@@ -47,6 +47,7 @@ vi.mock("../../../src/services/bounty-service.js", () => ({
 }));
 
 import { runGrantmakerTurn, PLATFORM_FUNDER_SECTION } from "../../../src/llm/agents/grantmaker.js";
+import { CHAT_SECTION, GRANTING_CONVERSATION_SECTION } from "../../../src/llm/prompts/grantmaker.js";
 
 const transcript = [{ role: "user" as const, content: "Fund work on AI lab safety." }];
 
@@ -78,11 +79,29 @@ describe("bounty confirmation in the management chat", () => {
     await runGrantmakerTurn({ transcript, grantId: "g-1" });
     expect(JSON.parse(state.confirmResult)).toMatchObject({ success: true });
     expect(state.opens[0]).toMatchObject({ bountyId: "b-1", confirmedBy: "founder:management_chat" });
+    // Declared, so the funder can actually be asked (#698).
+    expect(state.toolNames).toContain("confirm_bounty");
   });
 
   it("is refused on a platform mandate: that confirmation is the operator key's", async () => {
     await runGrantmakerTurn({ transcript, grantId: "g-1", funder: "platform" });
     expect(JSON.parse(state.confirmResult)).toMatchObject({ success: false });
     expect(state.opens).toHaveLength(0);
+    expect(state.toolNames).not.toContain("confirm_bounty");
+  });
+});
+
+describe("the chat's own rules (#692)", () => {
+  it("tells the granting conversation about propose/decline and its turn cap", async () => {
+    await runGrantmakerTurn({ transcript });
+    expect(state.system[0]).toContain(CHAT_SECTION);
+    expect(state.system[0]).toContain(GRANTING_CONVERSATION_SECTION);
+    expect(state.system[0]).toContain("up to 16 tool-use turns");
+  });
+
+  it("drops propose/decline once the mandate is live, and keeps the chat rules", async () => {
+    await runGrantmakerTurn({ transcript, grantId: "g-1" });
+    expect(state.system[0]).toContain(CHAT_SECTION);
+    expect(state.system[0]).not.toContain(GRANTING_CONVERSATION_SECTION);
   });
 });

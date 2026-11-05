@@ -35,7 +35,7 @@ The vocabulary already exists and grows only when it must. Before proposing any 
 - Name it as a Title Case noun phrase of at most ${TAG_NAME_MAX_CHARS} characters, in the singular unless the field's name is plural ("Economics"), without articles, and without words like "claims about", "debate", "issues".
 - Give it a one- or two-sentence description (at most ${TAG_DESCRIPTION_MAX_CHARS} characters) delimiting what falls under it, and where it matters what does not, written so a future tagger can decide from the description alone.
 
-Never mint two tags for the same topic at different grains in one pass, and never mint a tag you are attaching to this one claim only if a broader existing tag fits.
+Never mint two tags for the same topic at different grains in one pass, and never mint a tag only this claim would carry when a broader existing tag fits. A new name that means nearly the same as an existing tag is filed under that tag.
 
 ## Confidence
 

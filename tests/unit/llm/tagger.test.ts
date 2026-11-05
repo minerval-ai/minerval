@@ -102,21 +102,26 @@ describe("tagClaim", () => {
     });
   });
 
-  it("returns the submitted tags, clamped and capped, with slug-or-name kept apart", async () => {
+  it("returns the submitted tags, clamped, with slug-or-name kept apart", async () => {
+    let refused = "";
     script = async (opts) => {
-      await opts.executeTool("submit_tags", {
-        tags: [
-          { slug: "vaccine-safety", confidence: 0.95 },
-          { name: "Myocarditis", description: "Inflammation of the heart muscle.", confidence: 1.7 },
-          { slug: "", name: "", confidence: 0.5 },
-          { name: "Immunology", confidence: 0.6 },
-          { name: "Cardiology", confidence: 0.6 },
-          { name: "One too many", confidence: 0.6 },
-        ],
-        reasoning: "A specific safety question under the vaccine-safety field.",
-      });
+      const tags = [
+        { slug: "vaccine-safety", confidence: 0.95 },
+        { name: "Myocarditis", description: "Inflammation of the heart muscle.", confidence: 1.7 },
+        { slug: "", name: "", confidence: 0.5 },
+        { name: "Immunology", confidence: 0.6 },
+        { name: "Cardiology", confidence: 0.6 },
+      ];
+      const reasoning = "A specific safety question under the vaccine-safety field.";
+      // Over the limit: refused with the reason, not cut to fit (#750).
+      const over = { tags: [...tags, { name: "One too many", confidence: 0.6 }], reasoning };
+      expect(opts.onFinalTool("submit_tags", over)).toBeNull();
+      refused = await opts.executeTool("submit_tags", over);
+      await opts.executeTool("submit_tags", { tags, reasoning });
     };
     const d = await tagClaim(CLAIM);
+    expect(JSON.parse(refused)).toMatchObject({ success: false });
+    expect(JSON.parse(refused).message).toMatch(/5 tags given; at most 4/);
     expect(d.submitted).toBe(true);
     expect(d.tags).toHaveLength(4);
     expect(d.tags[0]).toEqual({ slug: "vaccine-safety", confidence: 0.95 });
@@ -126,6 +131,26 @@ describe("tagClaim", () => {
       confidence: 1,
     });
     expect(d.reasoning).toMatch(/vaccine-safety field/);
+  });
+
+  it("refuses an over-long name or description and a tag giving both slug and name (#750)", async () => {
+    const replies: string[] = [];
+    script = async (opts) => {
+      for (const tag of [
+        { name: "A".repeat(61), confidence: 0.5 },
+        { name: "Cardiology", description: "x".repeat(401), confidence: 0.5 },
+        { slug: "vaccine-safety", name: "Vaccine safety", confidence: 0.5 },
+      ]) {
+        replies.push(await opts.executeTool("submit_tags", { tags: [tag], reasoning: "r" }));
+      }
+    };
+    const d = await tagClaim(CLAIM);
+    expect(replies.map((r) => JSON.parse(r).message)).toEqual([
+      expect.stringMatching(/is 61 characters; at most 60/),
+      expect.stringMatching(/description is 401 characters; at most 400/),
+      expect.stringMatching(/both slug and name/),
+    ]);
+    expect(d.submitted).toBe(false);
   });
 
   it("reports an unsubmitted run rather than inventing tags", async () => {

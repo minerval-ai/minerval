@@ -22,7 +22,8 @@ export function getMatcherToolDefinition(): Tool {
       "Check whether a proposition already exists in the graph before creating " +
       "it as a new claim. The Matcher searches the graph itself (multiple " +
       "framings, including the negation) and decides identity: a claim and its " +
-      "denial/counterpart are the SAME node. Always call this before adding a " +
+      "negation are the SAME node, while a contrary (both could be false) is a " +
+      "rival claim, named in relationship_notes. Always call this before adding a " +
       "subclaim; if it returns a match, link that existing claim instead of " +
       "minting a duplicate.",
     input_schema: {
@@ -97,16 +98,16 @@ export async function executeMatcherTool(
       ...(decision.outcome === "undecided"
         ? {
             note:
-              "The Matcher reached no identity verdict (search budget " +
-              "exhausted). Do not create a new claim from this result: " +
-              "retry match_claim once, and if it is still undecided take " +
-              "the recoverable path (an edge to a candidate, a suggestion, " +
-              "or nothing).",
+              "The Matcher reached no identity verdict (its budget ran " +
+              "out). Do not create a new claim from this result: retry " +
+              "match_claim, rewording the query if that helps, and if it " +
+              "stays undecided take the recoverable path (an edge to a " +
+              "candidate, a suggestion, or nothing).",
           }
         : {}),
       is_match: decision.is_match,
       matched_claim_id: decision.matched_claim_id,
-      // For a counterpart/negation match the stance is "denies": the matched
+      // For a match to the negation the stance is "denies": the matched
       // node is the same claim stated in the opposite direction.
       instance_stance: decision.instance_stance,
       new_canonical_form: decision.new_canonical_form,
@@ -117,7 +118,7 @@ export async function executeMatcherTool(
       reasoning: decision.reasoning,
       // The near-misses the Matcher weighed and its notes on how they relate —
       // exactly the signal the caller needs to decide link-vs-escalate, so
-      // don't strip them (#100). Inspect candidates with get_claim_details.
+      // don't strip them (#100). Inspect candidates with get_claim.
       alternative_matches: decision.alternative_matches ?? [],
       relationship_notes: decision.relationship_notes ?? null,
     });

@@ -29,7 +29,9 @@ import {
   budgetRefusal,
   getUsageContext,
   runBudget,
+  runWithUsageContext,
   withCostMeter,
+  withDefaultPassBudget,
   withPassBudget,
 } from "../../../src/llm/usage-context.js";
 import { turnBudgetLine } from "../../../src/llm/prompts/turn-budget.js";
@@ -156,5 +158,47 @@ describe("toolUseLoop with a budget", () => {
       })
     );
     expect(trailingText(2)).toEqual(["Turn 1 of 6 used; 5 remain."]);
+  });
+});
+
+// A review or an arbitration works to a budget it is shown, unless its
+// caller set one (#712); what it spent still reaches the caller's meter.
+describe("withDefaultPassBudget", () => {
+  it("sets the budget when none is set, and adds the spend to the enclosing meter", async () => {
+    const outer = { billedMicroUsd: 100 };
+    const seen = await runWithUsageContext({ meter: outer }, () =>
+      withDefaultPassBudget({ microUsd: 1_000_000, source: "the ceiling for one contribution review" }, async () => {
+        getUsageContext().meter!.billedMicroUsd += 250;
+        return runBudget();
+      })
+    );
+    expect(seen).toMatchObject({
+      ceilingMicroUsd: 1_000_000,
+      source: "the ceiling for one contribution review",
+      spentMicroUsd: 250,
+    });
+    expect(outer.billedMicroUsd).toBe(350);
+  });
+
+  it("adds the spend even when the run fails", async () => {
+    const outer = { billedMicroUsd: 0 };
+    await expect(
+      runWithUsageContext({ meter: outer }, () =>
+        withDefaultPassBudget({ microUsd: 1_000_000, source: "x" }, async () => {
+          getUsageContext().meter!.billedMicroUsd += 40;
+          throw new Error("boom");
+        })
+      )
+    ).rejects.toThrow("boom");
+    expect(outer.billedMicroUsd).toBe(40);
+  });
+
+  it("leaves a caller's budget in place", async () => {
+    const seen = await withPassBudget({ microUsd: 5_000_000, source: "the bounty's reserve" }, () =>
+      withDefaultPassBudget({ microUsd: 1_000_000, source: "the ceiling for one contribution review" }, async () =>
+        runBudget()
+      )
+    );
+    expect(seen.value).toMatchObject({ ceilingMicroUsd: 5_000_000, source: "the bounty's reserve" });
   });
 });

@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 2)
+# Domain skill: Mathematics (version 6)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -11,4 +11,4 @@ generalization and its special case are different claims. Whether two
 formulations the discourse treats as distinct are one claim or two is the
 same-considerations test, judged by how the discourse treats them, not by
 whether a proof connects them. A problem-list number is a strong identity
-signal; search it before concluding a claim is new.
+signal; search it as `keywords` before concluding a claim is new.

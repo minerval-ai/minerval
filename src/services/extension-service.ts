@@ -37,7 +37,7 @@ import { loadConfig } from "../config.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
-import type { InstanceStance } from "../schemas/common.js";
+import type { MatchedInstanceStance } from "../schemas/common.js";
 import {
   assessPageClaims,
   type ClaimForAssessment,
@@ -68,7 +68,7 @@ export interface PageAnnotation {
   why: string;
   confidence: number;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
-  stance: InstanceStance;
+  stance: MatchedInstanceStance;
   /**
    * The neutral statement of the claim as the pipeline would canonicalize it
    * (the Matcher's proposed form, else the Extractor's). Present for claims
@@ -202,7 +202,7 @@ export function buildAnnotations(input: {
     verbatim_text: string;
     context: string | null;
     source_location: string | null;
-    stance: InstanceStance;
+    stance: MatchedInstanceStance;
     /** The Matcher ran out of budget without a verdict (#419). */
     undecided?: boolean;
     /** How the pipeline would word the claim if it were new. */
@@ -503,10 +503,12 @@ async function analyzePageUncached(
       ? `Page title: ${input.title} (URL: ${input.url})`
       : `URL: ${input.url}`,
     maxClaims: config.extensionMaxClaims,
+    // The floor is stated to the Extractor (#748).
+    minConfidence: config.extensionMinConfidence,
   });
 
   // Low-confidence extractions aren't worth a Matcher run from a live page.
-  const candidates = extracted.filter((c) => c.confidence >= 0.5);
+  const candidates = extracted.filter((c) => c.confidence >= config.extensionMinConfidence);
 
   // Matching dominates analyze wall-clock: one multi-turn Matcher loop per
   // claim on the cheap tier (OPENROUTER_MODELS.flash). 8 roughly halved
@@ -516,6 +518,10 @@ async function analyzePageUncached(
     const decision = await matchClaim({
       extractedText: c.verbatim_text,
       proposedCanonical: c.proposed_canonical_form,
+      // The inputs ingestion gives it (#721): the kind proposed, so a figure
+      // is matched to its quantity, and the passage, for the stance.
+      kind: c.kind ?? "claim",
+      context: c.context,
       // The Extractor's domain prior selects the Matcher's skills (#469).
       domains: sanitizeDomains(c.domains),
     });

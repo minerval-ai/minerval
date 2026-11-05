@@ -69,7 +69,20 @@ export interface ExtractionRecord {
   claims_extracted: number;
   claims_created: number;
   claims_matched: number;
+  /** Proposals the Matcher could not decide on, kept rather than dropped (#738). */
+  claims_undecided: number;
+  undecided: UndecidedProposal[];
+  /** What the Extractor reported about the document itself, if anything (#740). */
+  document_problem: { kind: string; note: string | null } | null;
   created_at: string;
+}
+
+/** A proposal kept on the extraction record because no verdict was reached. */
+export interface UndecidedProposal {
+  verbatim_text: string;
+  proposed_canonical_form: string;
+  kind: string;
+  context: string | null;
 }
 
 export async function recordExtraction(input: {
@@ -80,11 +93,15 @@ export async function recordExtraction(input: {
   claimsExtracted: number;
   claimsCreated: number;
   claimsMatched: number;
+  undecided?: UndecidedProposal[];
+  documentProblem?: { kind: string; note: string } | null;
 }): Promise<void> {
+  const undecided = input.undecided ?? [];
   await rawQuery(
     `INSERT INTO source_extractions
-       (source_id, focus, grant_id, job_id, claims_extracted, claims_created, claims_matched)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (source_id, focus, grant_id, job_id, claims_extracted, claims_created, claims_matched,
+        claims_undecided, undecided, document_problem, document_problem_note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       input.sourceId,
       normalizeFocus(input.focus),
@@ -93,6 +110,10 @@ export async function recordExtraction(input: {
       input.claimsExtracted,
       input.claimsCreated,
       input.claimsMatched,
+      undecided.length,
+      undecided.length > 0 ? JSON.stringify(undecided) : null,
+      input.documentProblem?.kind ?? null,
+      input.documentProblem?.note ?? null,
     ]
   );
 }
@@ -101,10 +122,14 @@ export async function recordExtraction(input: {
 export async function sourceExtractions(sourceId: string): Promise<ExtractionRecord[]> {
   const rows = await rawQuery<{
     focus: string | null; grant_id: string | null; grant_name: string | null;
-    claims_extracted: number; claims_created: number; claims_matched: number; created_at: Date;
+    claims_extracted: number; claims_created: number; claims_matched: number;
+    claims_undecided: number | null; undecided: UndecidedProposal[] | null;
+    document_problem: string | null; document_problem_note: string | null; created_at: Date;
   }>(
     `SELECT e.focus, e.grant_id, COALESCE(g.mandate->>'title', g.name) AS grant_name,
-            e.claims_extracted, e.claims_created, e.claims_matched, e.created_at
+            e.claims_extracted, e.claims_created, e.claims_matched,
+            e.claims_undecided, e.undecided, e.document_problem, e.document_problem_note,
+            e.created_at
        FROM source_extractions e LEFT JOIN grants g ON g.id = e.grant_id
       WHERE e.source_id = $1
       ORDER BY e.created_at ASC`,
@@ -117,6 +142,11 @@ export async function sourceExtractions(sourceId: string): Promise<ExtractionRec
     claims_extracted: Number(r.claims_extracted),
     claims_created: Number(r.claims_created),
     claims_matched: Number(r.claims_matched),
+    claims_undecided: Number(r.claims_undecided ?? 0),
+    undecided: Array.isArray(r.undecided) ? r.undecided : [],
+    document_problem: r.document_problem
+      ? { kind: r.document_problem, note: r.document_problem_note }
+      : null,
     created_at: new Date(r.created_at).toISOString(),
   }));
 }
@@ -132,7 +162,8 @@ export type IngestCoverage =
  * extraction records at all, any existing source row (the rule before
  * scoped ingest: a source in the graph was not ingested twice). A scoped
  * ingest of a source with no records is not covered when nothing was ever
- * extracted from it.
+ * extracted from it. Only a complete reading covers: one that left no
+ * proposal undecided and reported no problem with the document.
  */
 export async function ingestCoverage(url: string, focus: string | null): Promise<IngestCoverage> {
   const [source] = await rawQuery<{ id: string; title: string }>(
@@ -140,13 +171,18 @@ export async function ingestCoverage(url: string, focus: string | null): Promise
     [url]
   );
   if (!source) return { covered: false };
-  const records = await rawQuery<{ focus: string | null }>(
-    `SELECT focus FROM source_extractions WHERE source_id = $1`,
+  // A reading that left proposals undecided or could not read the document
+  // is on record but does not cover it (#738, #740): the next ingest reads
+  // it again, and the Matcher links what is already there.
+  const records = await rawQuery<{ focus: string | null; complete: boolean }>(
+    `SELECT focus, (claims_undecided = 0 AND document_problem IS NULL) AS complete
+       FROM source_extractions WHERE source_id = $1`,
     [source.id]
   );
+  const complete = records.filter((r) => r.complete);
   const f = normalizeFocus(focus);
-  if (records.some((r) => r.focus === null)) return { covered: true, sourceId: source.id, title: source.title, by: "whole" };
-  if (f && records.some((r) => r.focus === f)) {
+  if (complete.some((r) => r.focus === null)) return { covered: true, sourceId: source.id, title: source.title, by: "whole" };
+  if (f && complete.some((r) => r.focus === f)) {
     return { covered: true, sourceId: source.id, title: source.title, by: "same_focus" };
   }
   if (records.length > 0) return { covered: false };

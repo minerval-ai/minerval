@@ -51,13 +51,32 @@ describe("parseClaimLinks", () => {
 });
 
 describe("hasWrittenForm", () => {
-  it("is false for the creation-time label placeholder", () => {
-    expect(hasWrittenForm("The poverty-reduction argument")).toBe(false);
+  const label = "The poverty-reduction argument";
+
+  it("is false while the content is still the creation-time label", () => {
+    expect(hasWrittenForm({ content: label, description: label })).toBe(false);
+    expect(hasWrittenForm({ content: ` ${label}\n`, description: label })).toBe(false);
   });
 
   it("is true once the content references a subclaim inline", () => {
     expect(
-      hasWrittenForm(`Because [[claim:${A}]], the claim follows.`)
+      hasWrittenForm({ content: `Because [[claim:${A}]], the claim follows.`, description: label })
     ).toBe(true);
+  });
+
+  // #747: settled premises may live in the prose (§6, §7), so a form with no
+  // links is still a form once it is no longer the label.
+  it("is true for prose that differs from the label, with no links", () => {
+    expect(
+      hasWrittenForm({
+        content: "Every finite group of prime order is cyclic, so the claim follows by Lagrange's theorem.",
+        description: label,
+      })
+    ).toBe(true);
+  });
+
+  it("treats an argument with no label as its own written form", () => {
+    expect(hasWrittenForm({ content: "Posted through the API.", description: null })).toBe(true);
+    expect(hasWrittenForm({ content: "  ", description: null })).toBe(false);
   });
 });

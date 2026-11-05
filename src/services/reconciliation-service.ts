@@ -45,7 +45,8 @@ interface EdgeRow {
 
 // SQL fragment: flip affirm/deny (instances) or for/against (arguments) when the
 // merge is between a claim and its negation/counterpart ($3 = opposed boolean).
-// A "poses" instance (#445) takes no side, so the ELSE keeps it as is.
+// A "poses" (#445) or "mentions" instance takes no side, so the ELSE keeps it
+// as is.
 const FLIP_INSTANCE_STANCE = `CASE WHEN $3::boolean
   THEN (CASE stance WHEN 'affirms' THEN 'denies' WHEN 'denies' THEN 'affirms' ELSE stance END)
   ELSE stance END`;
@@ -59,7 +60,9 @@ const FLIP_ARGUMENT_STANCE = `CASE WHEN $3::boolean
  * or for a value, folds into the claim X or the quantity. Each pair maps
  * the moved instances' stances into the survivor's vocabulary; every other
  * pair of different kinds is refused, so the Curator changes a node's kind
- * first (changeNodeKind) and merges like with like.
+ * first (changeNodeKind) and merges like with like. A "mentions" instance
+ * takes no side and states no value, so it keeps its stance on a claim or a
+ * quantity survivor.
  */
 const CROSS_KIND_MERGES: Record<string, Record<string, string>> = {
   "claim>quantity": { affirms: "states", denies: "poses", poses: "poses" },
@@ -67,10 +70,15 @@ const CROSS_KIND_MERGES: Record<string, Record<string, string>> = {
   "question>quantity": { asks: "poses", answers: "poses" },
 };
 
-/** The instance stances a node of each kind carries, for a kind change. */
+/**
+ * The instance stances a node of each kind carries, for a kind change. A
+ * question's instances ask or answer it (§7a), so a source that mentions the
+ * node becomes one that raises the question, as a posing one does; a claim
+ * or a quantity keeps a mention as it is.
+ */
 const KIND_STANCE_MAP: Record<string, Record<string, string>> = {
   quantity: { affirms: "states", denies: "poses", poses: "poses", asks: "poses", answers: "poses" },
-  question: { affirms: "asks", denies: "asks", poses: "asks", states: "asks" },
+  question: { affirms: "asks", denies: "asks", poses: "asks", states: "asks", mentions: "asks" },
   claim: { states: "affirms", asks: "poses", answers: "poses" },
 };
 

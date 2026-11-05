@@ -1,38 +1,36 @@
 /**
  * Action tools for the Contribution Reviewer agent.
  *
- * These let the reviewer record decisions, provide feedback, escalate disputes,
- * and notify the claim steward -- all through tool calls.
+ * These let the reviewer record decisions (escalation included) and hand an
+ * accepted contribution to the claim's Steward, all through tool calls.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq } from "drizzle-orm";
-import { getDb, rawQuery } from "../../db/client.js";
+import { getDb } from "../../db/client.js";
 import {
-  fileRequest,
-  getRequest,
-  notifyRequestKeeper,
-  recordWork,
-} from "../../services/request-service.js";
+  acceptanceSchemaProperties,
+  applyAcceptanceEffects,
+} from "../../services/contribution-acceptance.js";
 import {
   contributions,
   contributionReviews,
 } from "../../db/schema.js";
 import {
   enqueueArbitration,
-  enqueueSteward,
   requestAudit,
 } from "../../services/queue-service.js";
+import {
+  executeNotifyClaimSteward,
+  getNotifyClaimStewardToolDefinition,
+  NOTIFY_CLAIM_STEWARD,
+} from "./notify-claim-steward.js";
 import {
   applyReviewOutcome,
   BAD_FAITH_CATEGORIES,
 } from "../../services/reputation-service.js";
-import {
-  isIntakeContributionType,
-  materializeAcceptedIntake,
-  type IntakeMaterializationResult,
-} from "../../services/intake-service.js";
-import { getContributionById, MANDATE_LABEL } from "../../services/contribution-service.js";
+import type { IntakeMaterializationResult } from "../../services/intake-service.js";
+import { getContributionById } from "../../services/contribution-service.js";
 import {
   admitPrizeClaim,
   prizeClaimReviewBlock,
@@ -46,7 +44,9 @@ export function getReviewerToolDefinitions(): Tool[] {
       description:
         "Record your review decision for a contribution. This writes the " +
         "decision to the database and updates the contribution's review " +
-        "status. Accepting an intake contribution (propose_claim, " +
+        "status. Escalating also places the case in the Dispute " +
+        "Arbitrator's queue, with escalation_reason on the contribution. " +
+        "Accepting an intake contribution (propose_claim, " +
         "propose_question, propose_source) also materializes it here: the Matcher decides " +
         "identity, then the claim is created or the source queued for " +
         "extraction, and the outcome is reported in the tool result.",
@@ -64,7 +64,17 @@ export function getReviewerToolDefinitions(): Tool[] {
           },
           reasoning: {
             type: "string",
-            description: "Detailed reasoning for your decision",
+            description:
+              "Your reasoning: the contributor's hearing and the record an " +
+              "auditor checks. On a rejection, say what a resubmission would " +
+              "need, and exactly what to clarify where clarification would fix it.",
+          },
+          escalation_reason: {
+            type: "string",
+            description:
+              "Required with 'escalate': the open question the Arbitrator is " +
+              "asked to settle, in a sentence or two. Your reasoning above " +
+              "carries the rest.",
           },
           confidence: {
             type: "number",
@@ -80,13 +90,9 @@ export function getReviewerToolDefinitions(): Tool[] {
           suspected_bad_faith: {
             type: "boolean",
             description:
-              "Set true ONLY with a 'reject' decision when the contribution " +
-              "shows deliberate abuse (spam, vandalism, sybil coordination, " +
-              "deliberate misinformation), NOT for sincere contributions " +
-              "rejected on the merits. This flag has real consequences " +
-              "(reputation penalty, pay-to-contribute standing) and is " +
-              "appealable; when uncertain, reject without the flag or " +
-              "escalate. Setting it requires bad_faith_category.",
+              "Only with 'reject': a finding of deliberate abuse under §13, " +
+              "as your role prompt sets out; never for a sincere contribution " +
+              "rejected on the merits. Requires bad_faith_category.",
           },
           bad_faith_category: {
             type: "string",
@@ -94,31 +100,7 @@ export function getReviewerToolDefinitions(): Tool[] {
             description:
               "Required when suspected_bad_faith is true: which kind of abuse.",
           },
-          request: {
-            type: "object",
-            description:
-              "Required to accept a propose_request: the request as it will be filed, in your " +
-              "words from the contributor's (Part VIII). ask, why (what the judgments it bears " +
-              "on would become under its outcomes), satisfied_by; who_could and addressed_to " +
-              "where known. A request that asks for a particular result is restated to ask for " +
-              "what would decide the matter either way. budget_usd: what doing it should cost, " +
-              "when the contributor stated one you judge plausible for the work (the costing skill " +
-              "says how to check one); omit it otherwise, and a scoping pass will quote it.",
-            properties: {
-              ask: { type: "string" },
-              why: { type: "string" },
-              satisfied_by: { type: "string" },
-              who_could: { type: "string" },
-              addressed_to: { type: "string" },
-              budget_usd: { type: "number" },
-            },
-            required: ["ask", "why", "satisfied_by"],
-          },
-          request_id: {
-            type: "string",
-            description:
-              "Required to accept an answer_request: the request the material is offered for.",
-          },
+          ...acceptanceSchemaProperties(),
         },
         required: [
           "contribution_id",
@@ -154,58 +136,7 @@ export function getReviewerToolDefinitions(): Tool[] {
         required: ["contribution_id"],
       },
     },
-    {
-      name: "escalate_to_arbitrator",
-      description:
-        "Place a contribution in the dispute arbitrator's queue. Use when " +
-        "uncertain, when stakes are high, or when the situation requires " +
-        "deeper adjudication. This call is what enqueues arbitration, and " +
-        "the reason given here is persisted on the contribution for the " +
-        "arbitrator to read; also record the review itself with " +
-        "record_review_decision (decision 'escalate'), which carries your " +
-        "fuller reasoning of record.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          contribution_id: {
-            type: "string",
-            description: "The UUID of the contribution to escalate",
-          },
-          reason: {
-            type: "string",
-            description: "Why this needs arbitration",
-          },
-        },
-        required: ["contribution_id", "reason"],
-      },
-    },
-    {
-      name: "notify_claim_steward",
-      description:
-        "Notify the claim steward that a claim may need attention due to " +
-        "a contribution being accepted or other change. Not for accepted " +
-        "intake contributions: those enqueue their own follow-on work " +
-        "during record_review_decision.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim to notify about",
-          },
-          change_type: {
-            type: "string",
-            enum: ["contribution_accepted", "new_challenge", "new_support"],
-            description: "Type of change",
-          },
-          details: {
-            type: "string",
-            description: "Details about what changed and why steward attention is needed",
-          },
-        },
-        required: ["claim_id", "change_type", "details"],
-      },
-    },
+    getNotifyClaimStewardToolDefinition("contribution_reviewer"),
   ];
 }
 
@@ -247,6 +178,19 @@ export async function executeReviewerTool(
         const badFaithCategory = suspectedBadFaith
           ? (input.bad_faith_category as string)
           : null;
+        // An escalation is one call (#717): the decision, the reason the
+        // Arbitrator reads first (#178), and the enqueue. Checked before
+        // anything is written.
+        const escalationReason =
+          typeof input.escalation_reason === "string" ? input.escalation_reason.trim() : "";
+        if (decision === "escalate" && !escalationReason) {
+          return JSON.stringify({
+            success: false,
+            error:
+              "Escalating needs escalation_reason: the open question for the " +
+              "Arbitrator. Nothing was recorded.",
+          });
+        }
 
         const db = getDb();
 
@@ -310,78 +254,20 @@ export async function executeReviewerTool(
           });
         }
 
-        // Intake contributions (#157): an accept is what admits the content
-        // into the graph, so materialize FIRST — the Matcher decides identity
-        // (dedup/canonicalization), then the claim goes live or the source is
-        // extracted. Deliberately mechanical: the reviewer judged the
-        // suggestion; code applies it. Runs before the review is recorded so
-        // a failure surfaces to the reviewer instead of stranding an
-        // "accepted" contribution that never materialized (the call is
-        // idempotent, so a retry after partial failure is safe).
+        // What accepting does beyond the record (#724): a proposed request
+        // is filed, material offered for one is recorded as work on it, and
+        // an intake proposal is materialized through the Matcher (#157). The
+        // same service runs on an Arbitrator's overturn. It runs before the
+        // review is recorded so a refusal or failure surfaces to the reviewer
+        // instead of stranding an "accepted" contribution that never took
+        // effect (materialization is idempotent, so a retry is safe).
         let materialization: IntakeMaterializationResult | null = null;
-        // A request a contributor proposes is filed in the request's own
-        // form, and material offered to meet one is recorded as work on it
-        // for its keeper (Part VIII). Checked before anything is written.
         let requestNote = "";
-        if (decision === "accept" && reviewed?.contributionType === "propose_request") {
-          const r = (input.request ?? null) as Record<string, unknown> | null;
-          const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-          if (!r || !text(r.ask) || !text(r.why) || !text(r.satisfied_by)) {
-            return JSON.stringify({
-              success: false,
-              error:
-                "Accepting a propose_request needs request: {ask, why, satisfied_by}, the request as " +
-                "it will be filed. Nothing was recorded.",
-            });
-          }
-          const filed = await fileRequest({
-            ask: text(r.ask),
-            why: text(r.why),
-            satisfiedBy: text(r.satisfied_by),
-            budgetUsd: typeof r.budget_usd === "number" && r.budget_usd > 0 ? r.budget_usd : null,
-            whoCould: text(r.who_could) || null,
-            addressedTo: text(r.addressed_to) || null,
-            claimIds: reviewed.claimId ? [reviewed.claimId] : [],
-            bearsOnText: reviewed.claimId ? null : reviewed.content.slice(0, 1000),
-            // A mandate's research proposes under the mandate (Part VIII).
-            filer: reviewed.grantId
-              ? { kind: "mandate", grantId: reviewed.grantId }
-              : { kind: "contributor", contributorId: reviewed.contributorId },
-          });
-          requestNote = ` Request ${filed.id} filed.`;
-        }
-        if (decision === "accept" && reviewed?.contributionType === "answer_request") {
-          const requestId = typeof input.request_id === "string" ? input.request_id.trim() : "";
-          const request = requestId ? await getRequest(requestId) : null;
-          if (!request) {
-            return JSON.stringify({
-              success: false,
-              error: "Accepting an answer_request needs request_id, the request the material is offered for. Nothing was recorded.",
-            });
-          }
-          const [contributor] = await rawQuery<{ display_name: string }>(
-            `SELECT display_name FROM contributors WHERE id = $1`,
-            [reviewed.contributorId]
-          );
-          await recordWork({
-            requestId,
-            byLabel: reviewed.grantId ? MANDATE_LABEL : (contributor?.display_name ?? "a contributor"),
-            contributorId: reviewed.grantId ? null : reviewed.contributorId,
-            fundedByJobId: reviewed.fundedByJobId ?? null,
-            outcome: null,
-            summary: reviewed.content.slice(0, 4000),
-          });
-          await notifyRequestKeeper(requestId, `a contributor offered material for it (contribution ${contributionId}).`);
-          requestNote = ` Recorded as work on request ${requestId}; its keeper is notified.`;
-        }
         if (decision === "accept") {
-          const contribution = await getContributionById(contributionId);
-          if (
-            contribution &&
-            isIntakeContributionType(contribution.contributionType)
-          ) {
-            materialization = await materializeAcceptedIntake(contributionId);
-          }
+          const effects = await applyAcceptanceEffects(contributionId, input);
+          if (!effects.ok) return JSON.stringify({ success: false, error: effects.error });
+          materialization = effects.materialization;
+          requestNote = effects.note;
         }
 
         // Write review record
@@ -406,10 +292,14 @@ export async function executeReviewerTool(
           .update(contributions)
           .set({
             reviewStatus: decision === "accept" ? "accepted" : decision === "reject" ? "rejected" : "escalated",
+            ...(decision === "escalate" ? { escalationReason } : {}),
             reviewClaimedAt: null,
             reviewAttempts: 0,
           })
           .where(eq(contributions.id, contributionId));
+        if (decision === "escalate") {
+          await enqueueArbitration({ contributionId, trigger: "escalated_review" });
+        }
 
         if (reviewed?.contributionType === "claim_prize" && decision === "reject") {
           await rejectPrizeClaimAtReview(contributionId, "contribution_reviewer", reasoning.slice(0, 500));
@@ -483,52 +373,8 @@ export async function executeReviewerTool(
         return JSON.stringify({ success: true, prize_claim: block }, null, 2);
       }
 
-      case "escalate_to_arbitrator": {
-        const contributionId = input.contribution_id as string;
-        const reason = input.reason as string;
-
-        await enqueueArbitration({
-          contributionId,
-          trigger: "escalated_review",
-        });
-
-        // Update contribution status and persist the escalation reason (#178)
-        // so the Arbitrator sees why the case was escalated even when no
-        // review row was recorded.
-        const db = getDb();
-        await db
-          .update(contributions)
-          .set({
-            reviewStatus: "escalated",
-            escalationReason: reason,
-            // Fresh recovery budget for the arbitration phase (#218).
-            reviewClaimedAt: null,
-            reviewAttempts: 0,
-          })
-          .where(eq(contributions.id, contributionId));
-
-        return JSON.stringify({
-          success: true,
-          message: `Contribution ${contributionId} escalated to arbitrator. Reason: ${reason}`,
-        });
-      }
-
-      case "notify_claim_steward": {
-        const claimId = input.claim_id as string;
-        const changeType = input.change_type as string;
-        const details = input.details as string;
-
-        await enqueueSteward({
-          claimId,
-          trigger: "contribution_accepted",
-          context: `${changeType}: ${details}`,
-        });
-
-        return JSON.stringify({
-          success: true,
-          message: `Claim steward notified about claim ${claimId}`,
-        });
-      }
+      case NOTIFY_CLAIM_STEWARD:
+        return executeNotifyClaimSteward(input, "contribution_reviewer");
 
       default:
         return `Error: Unknown reviewer tool: ${toolName}`;

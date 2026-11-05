@@ -28,6 +28,7 @@ vi.mock("../../../src/config.js", () => ({
     publicWebBaseUrl: "https://minerval.ai",
     extensionModel: "test-model",
     extensionMaxClaims: 10,
+    extensionMinConfidence: 0.5,
   }),
 }));
 

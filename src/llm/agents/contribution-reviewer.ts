@@ -23,17 +23,29 @@ import {
   executeReviewerTool,
 } from "../tools/reviewer-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { withAgent, withDefaultPassBudget, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
-import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { executeReadPage, getReadPageToolDefinition } from "../tools/read-page-tool.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
-// wrapper keeps attribution correct for any call site.
+// wrapper keeps attribution correct for any call site. A review works to a
+// budget it is shown (#712), unless its caller set one (the prize worker
+// runs reviews under the bounty's reserve).
 export function runContributionReview(
   input: Parameters<typeof runContributionReviewImpl>[0]
 ): ReturnType<typeof runContributionReviewImpl> {
-  return withAgent("contribution_reviewer", () => runContributionReviewImpl(input));
+  return withAgent("contribution_reviewer", () =>
+    withDefaultPassBudget(
+      {
+        microUsd: loadConfig().contributionReviewBudgetUsd * 1_000_000,
+        source: "the ceiling for one contribution review",
+      },
+      () => runContributionReviewImpl(input)
+    )
+  );
 }
 
 async function runContributionReviewImpl(input: {
@@ -54,9 +66,16 @@ async function runContributionReviewImpl(input: {
     domains: await domainsForContribution(input.contributionId),
   });
 
+  // The criteria ask the Reviewer to follow evidence to its source (#694):
+  // provenance_read_source arrives with the skill tools below, and the open
+  // web for a citation the graph does not hold.
+  const webSearch = createWebSearch(model);
+
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getReviewerToolDefinitions(),
+    getReadPageToolDefinition(),
+    webSearch.tool,
     ...skillLoader.definitions,
     // The tools the skills declare for this role (a price list, say), in
     // the toolset whether or not the run loads the skill.
@@ -66,19 +85,12 @@ async function runContributionReviewImpl(input: {
 
   const system = getContributionReviewerSystemPromptBlocks();
 
-  const REVIEW_MAX_TURNS = 8;
-  const userMessage = `A new contribution has been submitted for review.
-
-Contribution ID: ${input.contributionId}
-
-Please review this contribution:
-1. Use get_contribution_details to load the contribution and understand what is being proposed.
-2. If it targets an existing claim, use get_claim to understand that claim, and get_claim_instances when the contribution concerns what its sources say (a disputed instance, a stance, a quote). Intake contributions (propose_claim, propose_question, propose_source) have no target claim; the proposal itself is what you are judging.
-3. Use get_contributor_profile to understand the contributor's history and trust level.
-4. Evaluate the contribution against the acceptance criteria for its type.
-5. Record your decision using record_review_decision (accept, reject, or escalate).
-6. If you accept a contribution on an existing claim, use notify_claim_steward so the steward can integrate the change. Accepted intake contributions are materialized automatically by record_review_decision (matching/canonicalization, then claim creation or extraction); do not call notify_claim_steward for those; the result is reported back to you in the tool result.
-7. If you escalate, use escalate_to_arbitrator with your reasoning.
+  // Money bounds the run (#712); the turn cap only halts a loop that has
+  // stopped spending (CLAUDE.md, "Prefer money to counts").
+  const REVIEW_MAX_TURNS = RUN_TURN_GUARD;
+  // The ids and the budget only: how a review runs is the role prompt's,
+  // and a second copy here drifted from it (#708).
+  const userMessage = `Review contribution ${input.contributionId}.
 
 ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
 
@@ -103,6 +115,9 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
         "record_review_decision now (accept, reject, or escalate) with your reasoning.",
     },
     executeTool: async (name, toolInput) => {
+      if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      const page = await executeReadPage(name, toolInput);
+      if (page !== null) return page;
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
       if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "contribution-reviewer" });

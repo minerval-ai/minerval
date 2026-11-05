@@ -21,7 +21,12 @@ import {
   type RequestState,
 } from "../schemas/kinds.js";
 import { generateEmbedding } from "./embedding-service.js";
-import { closeRequestActions, COVERAGE_SQL, ensureRequestActions } from "./action-service.js";
+import {
+  closeRequestActions,
+  COVERAGE_SQL,
+  ensureRequestActions,
+  ensureRequestCurateAction,
+} from "./action-service.js";
 import { getFundingLabelForJob } from "./grant-service.js";
 import { enqueueSteward } from "./queue-service.js";
 
@@ -380,22 +385,67 @@ export async function setRequestTargets(input: {
 }
 
 /**
- * Tell a request's keeper that work on it has come back. A Steward keeper
- * gets a pass on its node; the Curator reads the requests it keeps when it
- * next runs, so there is nothing to send it.
+ * Tell the agents a request answers to that work on it has come back (Part
+ * VIII: what the work finds goes to the request's keeper, who decides
+ * whether it has been met, and to the Steward of each node it bears on,
+ * who weighs it for that node). Every bears-on node's Steward gets a pass,
+ * the keeper's told to judge the request and the others to weigh the work
+ * for their node. A request the Curator keeps opens its curate:request row
+ * (#722), the one route by which a request on several nodes or none can
+ * wake it. `researchRunId` names the run whose full report and notebook
+ * get_research_run serves to each of them; the note is the work as
+ * recorded, never cut shorter (#718). True when anyone was told.
  */
-export async function notifyRequestKeeper(requestId: string, note: string): Promise<boolean> {
+export async function notifyRequestKeeper(
+  requestId: string,
+  note: string,
+  opts: { researchRunId?: string | null } = {}
+): Promise<boolean> {
   const [req] = await rawQuery<{ keeper_kind: string; keeper_claim_id: string | null; ask: string }>(
     `SELECT keeper_kind, keeper_claim_id, ask FROM requests WHERE id = $1`,
     [requestId]
   );
-  if (!req || req.keeper_kind !== "steward" || !req.keeper_claim_id) return false;
-  await enqueueSteward({
-    claimId: req.keeper_claim_id,
-    trigger: "request_returned",
-    context: `Request ${requestId} ("${req.ask.slice(0, 160)}"): ${note}`,
-  });
-  return true;
+  if (!req) return false;
+  const targets = await rawQuery<{ claim_id: string }>(
+    `SELECT DISTINCT t.claim_id FROM request_targets t JOIN claims c ON c.id = t.claim_id
+      WHERE t.request_id = $1 AND c.state = 'active'`,
+    [requestId]
+  );
+  const named = `Request ${requestId} ("${req.ask.slice(0, 160)}")`;
+  const where = opts.researchRunId
+    ? ` The full report (findings with their evidence, sources, caveats, what would change it) and the run's notebook: get_research_run ${opts.researchRunId}.`
+    : "";
+  const keeper = req.keeper_kind === "steward" ? req.keeper_claim_id : null;
+  let told = false;
+  if (keeper) {
+    await enqueueSteward({
+      claimId: keeper,
+      trigger: "request_returned",
+      context: `${named}, which you keep: ${note}${where} Decide whether it has been met.`,
+    });
+    told = true;
+  }
+  for (const { claim_id } of targets) {
+    if (claim_id === keeper) continue;
+    await enqueueSteward({
+      claimId: claim_id,
+      trigger: "request_returned",
+      context:
+        `${named} bears on this node and is kept by ` +
+        `${req.keeper_kind === "curator" ? "the Curator" : "another node's Steward"}: ${note}${where} ` +
+        "Weigh what it found for this node; whether the request is met is its keeper's call.",
+    });
+    told = true;
+  }
+  if (req.keeper_kind === "curator") {
+    const actionId = await ensureRequestCurateAction(requestId);
+    if (actionId) {
+      const { fundCurationNow } = await import("./maintenance-funding.js");
+      await fundCurationNow(actionId);
+      told = true;
+    }
+  }
+  return told;
 }
 
 // ---------------------------------------------------------------------------
@@ -431,7 +481,19 @@ export interface RequestView {
     cost_usd: number;
     backing_usd: number;
   } | null;
-  work: { by: string; outcome: RequestOutcome | null; summary: string; at: Date; funded_by: string | null }[];
+  /**
+   * The work done on it. research_run_id names the Researcher's run, whose
+   * full report and notebook get_research_run serves to the keeper and the
+   * Stewards of what it bears on (#718); the public API leaves it out.
+   */
+  work: {
+    by: string;
+    outcome: RequestOutcome | null;
+    summary: string;
+    at: Date;
+    funded_by: string | null;
+    research_run_id: string | null;
+  }[];
 }
 
 interface RequestRowJoined {
@@ -511,8 +573,9 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       summary: string;
       created_at: Date;
       funded_by_job_id: string | null;
+      research_run_id: string | null;
     }>(
-      `SELECT request_id, by_label, outcome, summary, created_at, funded_by_job_id
+      `SELECT request_id, by_label, outcome, summary, created_at, funded_by_job_id, research_run_id
          FROM request_work WHERE request_id = ANY($1::uuid[]) ORDER BY created_at, id`,
       [ids]
     ),
@@ -576,6 +639,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       summary: w.summary,
       at: w.created_at,
       funded_by: w.funded_by_job_id ? (fundingLabels.get(w.funded_by_job_id) ?? null) : null,
+      research_run_id: w.research_run_id ?? null,
     })),
   }));
 }

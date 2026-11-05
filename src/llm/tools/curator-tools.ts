@@ -30,6 +30,10 @@ import {
 import { isClaimLinkKind } from "../../services/claim-link-service.js";
 import { enqueueSteward } from "../../services/queue-service.js";
 import {
+  executeNotifySteward,
+  getNotifyStewardToolDefinition,
+} from "./notify-steward.js";
+import {
   RELATION_TYPES,
   RELATION_GUIDANCE,
   CLAIM_LINK_KINDS,
@@ -322,22 +326,7 @@ export function getCuratorToolDefinitions(): Tool[] {
         required: ["parent_id", "child_id", "relation", "reasoning"],
       },
     },
-    {
-      name: "notify_steward",
-      description:
-        "Hand a claim to its Steward after surgery, with instructions (e.g. 'I " +
-        "merged X into you, reconcile the flipped arguments and re-assess', or 'you " +
-        "were split from Y, re-derive your decomposition'). Always do this after a " +
-        "merge or split.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: { type: "string", description: "The claim whose Steward to notify" },
-          instructions: { type: "string", description: "What the Steward should do" },
-        },
-        required: ["claim_id", "instructions"],
-      },
-    },
+    getNotifyStewardToolDefinition("curator"),
   ];
 }
 
@@ -592,18 +581,8 @@ export async function executeCuratorTool(
         });
       }
 
-      case "notify_steward": {
-        const claimId = String(input.claim_id);
-        await enqueueSteward({
-          claimId,
-          trigger: "curator_change",
-          context: String(input.instructions ?? ""),
-        });
-        return JSON.stringify({
-          success: true,
-          message: `Notified the Steward of ${claimId}.`,
-        });
-      }
+      case "notify_steward":
+        return executeNotifySteward({ role: "curator" }, input);
 
       default:
         return `Error: Unknown curator tool: ${toolName}`;

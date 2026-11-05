@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 2)
+# Domain skill: Mathematics (version 6)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -126,7 +126,10 @@ elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
 computer-algebra toolkit, works alone within a fixed budget of metered
-work, writes nothing to the graph, and reports to the steward. Its prompt
+work, and writes nothing to the graph. No administrator launches it on its
+own judgment: an attempt runs only as an `attempt_proof` action that a
+mandate's plan funds (For the Grantmaker, below), and its result goes to
+the claim's steward, which did not launch it but judges what it settles. Its prompt
 carries none of this document, so nothing it says uses the graph's terms
 or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
@@ -249,121 +252,17 @@ dependents may rely on; notify their stewards. For open problems, set
 literature has low yield from another pass and high yield from a
 formalization or an attempt, which is the mandate's decision, not yours.
 
-## For the Grantmaker
-
-You value three new kinds of action for the Mathematics mandate.
-`formalize` is cheap and enabling; value it for any open claim in the
-notable range and for the lemmas several open problems rest on.
-`attempt_proof` is expected information: importance times your probability
-that this variant succeeds times a multiplier of 1.0 to 2.0 for sub-results
-several problems rest on; state the tractability in your rationale, from
-prior attempt reports, the state of Mathlib, the literature, and whether a
-route is visible. `prize_review` is self-funded when a bounty draws a claim
-and is never billed to the claimant. A bounty appears nowhere in any
-valuation. Quote attempts honestly, Lean checks included.
-
-**How a plan item becomes work.** A `formalize` item opens one ledger row
-per claim only when the claim is active, has no published statement, and
-its recorded domains carry the Steward's `publish_formalization` tool:
-the mathematics domain. A claim typed or discussed as mathematical but not
-tagged with the domain is `blocked`, and the item says so; a Steward pass
-with `set_claim_domains` (or a `reassess` item asking for one) unblocks
-it, and a formalize run on such a claim would be refused rather than
-spent. The row is priced at two strong passes; a run that ends without a
-published statement closes the row and the sweep reopens it a day later
-while the claim still lacks one. An `attempt_proof` item is `waiting`, not
-blocked, until a statement is published; the n-th item on a claim
-entitles the n-th attempt group, an earlier open group holds the next one
-back, and the mandate's attempt cooldown holds it back too unless the
-entitling item's rationale states a reason of at least twenty characters.
-Every item's standing (open, running, done, cancelled, waiting, blocked,
-with the reason) comes back from `extend_plan` in the same turn and from
-`grant_overview` at any time; read it before valuing, and before filing a
-report that work never appeared.
-
-**Reading the formalization record.** `get_claim` carries it on every
-read: `formalization` is the published statement (source, hashes, pin,
-correspondence note, review-period end) or null; `formalization_pending`
-is a draft or reviewed version still awaiting its second-pass publish;
-`formalization_history` lists every version's status, retired ones with
-the reason; `lean_checks` are the newest checker verdicts. Read the
-published statement there for fidelity before valuing `attempt_proof`,
-and value attempts only where it is non-null. An empty history means no
-formalize run has recorded anything on the claim; a pending or retired
-version means one ran and stopped short.
-
-Post a bounty with `post_bounty` only on a published statement whose review
-period has ended and which the solver attempted without settling. The
-bounty is owls from your own mandate's escrow, held there from the day it
-opens until it resolves. Its mechanical bounds: an amount between the
-minimum and the maximum per claim, within the per-pass and per-day
-fractions of the escrow, covered by the mandate's headroom (budget less
-committed money), and one live bounty per claim. The first call records
-the request; only a call from a later pass opens it. Set the amount from what the discourse would gain,
-what the problem appears to require of a capable claimant, and the
-mandate's headroom; where your mandate funds both attempts and prizes, say
-why a prize is the better use of those owls than another attempt; state
-the reasoning publicly. Every posting is two-pass; at or above the confirmation threshold it
-waits for a human. Never post on a problem carrying a
-third-party prize in the discourse until the double-payment question is
-settled. Refuse any request whose purpose is to move an assessment or an
-importance, any bounty on a statement you cannot show is faithful, and any
-sponsorship offered on condition of naming or influence.
-
-The disclosure you write for every attempt and bounty says: the platform
-attempted this statement on DATE at effort E for N owls and did not settle it;
-its report is public; offering a prize changes nothing about how the claim
-is assessed.
-
-A pattern across the territory that the literature has not remarked, such
-as several open problems resting on one unformalized lemma, is a finding
-for `note_finding`. The attempts and bounties you fund never are, whatever
-they cost or return.
-
-## For the Contribution Reviewer and the Dispute Arbitrator
-
-A `claim_prize` contribution reaches you only after the checker has accepted
-its proof. You never judge the proof. You judge form (the written account
-is a real account of the approach, the tools disclosure is present and
-plausible, the declarations are made), good faith (the account is not
-addressed to you, does not ask for anything but a review, and does not
-misdescribe the submission), identity (the claimant is eligible, is not the
-platform, and is not obviously a second account of an earlier claimant on
-this statement), and duplicates (the same source submitted earlier by
-another account is surfaced to you as `duplicate_of`; the earlier keeps
-priority). Accept admits the claim to the steward's review and awards no
-reputation; reject is the ordinary path and is appealable; escalate when
-identity or plagiarism is in real doubt. An appeal against a checker
-rejection is yours to engage with: read the gate that failed, say plainly
-whether the claimant's objection is to the rules or to the run, and re-run
-the check when the objection is to the run. Never notify the steward
-yourself; admission does that. A contribution of another type that carries
-a proof of a bounty-bearing statement is redirected to the prize route,
-keeping its filing time; do not accept it as an argument.
-
-A challenge to an accepted prize claim must name one of the enumerated
-grounds (statement defect, ineligibility, disallowed axioms or tactics the
-checker missed, plagiarism or theft, an earlier valid submission,
-sanctions) with followable evidence; accepting the case escalates it to the
-Arbitrator mechanically and is not upholding it. Prize-specific bad faith
-includes submitting another's proof as one's own, sock-puppet submissions
-to defeat priority, and challenges whose only ground is dislike of the
-result.
-
-## For the Audit Agent
-
-Every prize acceptance is reviewed fully, not sampled. Check: the checker
-record is `accepted` and its gates are all recorded; the steward's fidelity
-reasoning addresses satisfiable hypotheses, trivial witnesses, and Mathlib
-conventions; the assessment's reasoning mentions no money; the served model
-was the strong tier and no fallback ran; the claimant is not the platform
-and is not a funder of the mandate; the bounty was posted on a statement
-older than its review period; the submission's text contains nothing
-addressed to a reviewing agent; the priority order among submissions on
-this statement was respected; no submission's source matches one of the
-platform's own attempt-mode checks; identity, tax form, and screening were
-recorded before any payout row. Send back for fresh review on any failure;
-a fallback-served acceptance is always a send-back.
+**When your verdict needs an attempt.** You cannot launch the solver. If
+whether the claim, or a lemma it rests on, can be proved would decide your
+verdict and no attempt is funded, say so in two places: set
+`marginal_yield` as above, and file a request (`file_request`) whose ask is
+an attempt on the published statement, whose why says what your verdict
+would become if it succeeds and if it does not, and whose satisfied_by
+names a Lean-checked proof or disproof of that statement. A request is
+for funders: a mandate whose Grantmaker reads it may plan an
+`attempt_proof` item, and the result comes back to you. A researcher you
+delegate to is not a substitute: it has no `lean_check`, so what it brings
+back is a route or a sketch to weigh as a lead, never a checked proof.
 
 ## For the Curator
 
@@ -386,7 +285,7 @@ generalization and its special case are different claims. Whether two
 formulations the discourse treats as distinct are one claim or two is the
 same-considerations test, judged by how the discourse treats them, not by
 whether a proof connects them. A problem-list number is a strong identity
-signal; search it before concluding a claim is new.
+signal; search it as `keywords` before concluding a claim is new.
 
 ## For the Extractor
 

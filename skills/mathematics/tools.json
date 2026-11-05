@@ -234,7 +234,8 @@
     },
     "roles": [
       "claim-steward",
-      "audit-agent"
+      "audit-agent",
+      "dispute-arbitrator"
     ]
   },
   {
