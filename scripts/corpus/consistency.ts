@@ -28,7 +28,7 @@
  *     reconcile → refresh valuations → drain until nothing runs:
  *       - formula: the budget buys what the formula ranks highest.
  *       - checker: the same, plus consistency sweeps as ledger actions
- *         (CONSISTENCY_MAX_SWEEPS_PER_DAY=`--sweeps`), paid out of the same
+ *         (CONSISTENCY_SWEEPS_ENABLED; how many run is the budget), paid out of the same
  *         budget; flags compete for passes through the formula's
  *         expected-gain term like anything else.
  *  3. READ. After the drain each arm takes a dry-run sweep of the whole
@@ -617,7 +617,7 @@ async function run(cluster: string): Promise<void> {
       BACKGROUND_FALLBACK_LANE_ENABLED: "false",
       // The eval mandate's own review pass is not what either arm measures.
       MANDATE_REVIEW_ENABLED: "false",
-      CONSISTENCY_MAX_SWEEPS_PER_DAY: name === "checker" ? (argFlag("sweeps") ?? "2") : "0",
+      CONSISTENCY_SWEEPS_ENABLED: name === "checker" ? "true" : "false",
     });
     await saveSnapshot(CORPUS_DATABASE_URL, `cc_${stamp}_${name}`);
   }
@@ -639,7 +639,7 @@ async function main(): Promise<void> {
   } else if (cmd === "summary" && outDir) {
     console.log(summarize(outDir, (argFlag("arms") ?? "formula,checker").split(",") as ArmName[]));
   } else {
-    console.error("Usage: corpus:consistency -- run <cluster> --base=<snapshot> [--plants=4] [--passes=12] [--sweeps=2] [--arms=formula,checker]");
+    console.error("Usage: corpus:consistency -- run <cluster> --base=<snapshot> [--plants=4] [--passes=12] [--arms=formula,checker]");
     process.exit(1);
   }
 }

@@ -208,6 +208,29 @@ export function validatePlanItems(items: readonly PlanItem[]): string | null {
   return null;
 }
 
+/**
+ * The stored form of validated plan items: every field PlanItem defines
+ * and nothing else (#684). One function on every path that writes a plan
+ * (submit_plan, extend_plan, adjust_plan), so a field the schema offers is
+ * never dropped on one of them: an ingest's focus was, on two, and a scoped
+ * ingest silently became a whole-document one. A blank focus is no focus.
+ */
+export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
+  return items.map((it) => {
+    const focus = it.action === "ingest" && typeof it.focus === "string" ? it.focus.trim() : "";
+    return {
+      action: it.action,
+      rationale: String(it.rationale ?? ""),
+      ...(it.claim_id ? { claim_id: it.claim_id } : {}),
+      ...(it.url ? { url: it.url } : {}),
+      ...(focus ? { focus } : {}),
+      ...(it.variant ? { variant: it.variant } : {}),
+      ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
+      ...(it.lifetime_cap_owls !== undefined ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) } : {}),
+    };
+  });
+}
+
 export type CreateGrantResult =
   | { ok: true; grant: Grant }
   | {

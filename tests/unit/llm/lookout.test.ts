@@ -5,12 +5,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * the delegated bounds, the queued inputs, and the record of earlier
  * flags; the toolset is the watcher's (graph reads, scope sources, the
  * retraction record, page reads, the three ways to raise a candidate) with
- * web search on every model; propose_ingest stops at the
- * per-run limit; the queued inputs are consumed after the run; the note is
- * the model's closing text. A lookout that follows feeds also gets its
- * inbox tools, a feeds section in its briefing, and more turns, and its
- * inbox ingests share the per-run limit. The tool loop and the services
- * are mocked.
+ * web search on every model; propose_ingest carries the lookout's urgency
+ * and ceiling, with no count per run (#695); the queued inputs are
+ * consumed after the run; the note is the model's closing text. A lookout
+ * that follows feeds also gets its inbox tools and a feeds section in its
+ * briefing, and its triage carries the same ceiling. The tool loop and the
+ * services are mocked.
  */
 
 const LOOKOUT = "22222222-2222-4222-8222-222222222222";
@@ -37,6 +37,11 @@ const { state } = vi.hoisted(() => ({
     feeds: [] as Array<Record<string, unknown>>,
     triage: [] as Array<Record<string, unknown>>,
     maxIterations: 0,
+    maxTokens: 0,
+    pendingCount: 0,
+    mandateToolOpts: null as null | Record<string, unknown>,
+    retractionPage: { total: 0, offset: 0, next_offset: null, rows: [] } as unknown,
+    scopeSourcesInput: null as null | Record<string, unknown>,
   },
 }));
 
@@ -78,12 +83,20 @@ vi.mock("../../../src/llm/tools/graph-read-tools.js", () => ({
   ],
   executeGraphReadTool: async (name: string) => (name === "get_claim" ? '{"claim":"x"}' : null),
 }));
-vi.mock("../../../src/llm/agents/grantor.js", () => ({
-  surveyScope: vi.fn(async () => [{ id: "c1" }]),
+vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
+  createMandateTools: vi.fn((opts: Record<string, unknown>) => {
+    state.mandateToolOpts = opts;
+    return {
+      definitions: [{ name: "survey_scope" }, { name: "read_page" }],
+      execute: async (name: string) =>
+        name === "survey_scope" ? '{"count":1,"next_offset":null,"claims":[{"id":"c1"}]}' : null,
+    };
+  }),
 }));
 vi.mock("../../../src/services/lookout-service.js", () => ({
   LOOKOUT_BOUNDS: { workspaceChars: 50_000, noteChars: 2_000 },
   pendingLookoutEvents: vi.fn(async () => state.events),
+  countPendingLookoutEvents: vi.fn(async () => state.pendingCount),
   listLookoutFlags: vi.fn(async () => state.flags),
   consumeLookoutEvents: vi.fn(async (_id: string, ids: string[]) => {
     state.consumed.push(ids);
@@ -116,14 +129,17 @@ vi.mock("../../../src/services/feed-service.js", () => ({
   updateFeed: vi.fn(async () => ({ ok: true, feed_id: "f-1" })),
   triageItems: vi.fn(async (input: Record<string, unknown>) => {
     state.triage.push(input);
-    const allowance = Number(input.ingestAllowance);
-    return { outcomes: [], ingested: Math.min(2, allowance), skipped_in_bulk: 0 };
+    return { outcomes: [], ingested: 2, skipped_in_bulk: 0 };
   }),
 }));
 vi.mock("../../../src/services/source-watch-service.js", () => ({
   checkDoi: vi.fn(async (doi: string) => ({ doi, found: true, updates: [] })),
-  recentRetractions: vi.fn(async () => []),
-  scopeSources: vi.fn(async () => []),
+  recentRetractionsPage: vi.fn(async () => state.retractionPage),
+  scopeSources: vi.fn(async (input: Record<string, unknown>) => {
+    state.scopeSourcesInput = input;
+    return [];
+  }),
+  claimsRestingOnSources: vi.fn(async () => [{ source_id: "s-1", claim_id: "c-7", via: "draws_on" }]),
   readPage: vi.fn(async () => ({ ok: true, text: "page", chars: 4 })),
 }));
 vi.mock("../../../src/llm/client.js", () => ({
@@ -132,10 +148,12 @@ vi.mock("../../../src/llm/client.js", () => ({
     system: unknown;
     model?: string;
     maxIterations: number;
+    maxTokens: number;
     initialMessages: Array<{ content: string }>;
     executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
   }) => {
     state.maxIterations = opts.maxIterations;
+    state.maxTokens = opts.maxTokens;
     state.loop = {
       tools: opts.tools,
       system: opts.system,
@@ -161,11 +179,14 @@ const lookout = (over: Record<string, unknown> = {}) => ({
   triggers: ["retraction"],
   model: null,
   max_value: 6,
-  max_ingests_per_run: 1,
   workspace: null,
   grant_skills: [],
   grant_status: "active",
   mandate_title: "Nutrition literature",
+  mandate_objective: null,
+  scope_claim_id: null,
+  scope_query: "nutrition",
+  flags: 0,
   ...over,
 });
 
@@ -183,6 +204,11 @@ beforeEach(() => {
   state.feeds = [];
   state.triage = [];
   state.maxIterations = 0;
+  state.maxTokens = 0;
+  state.pendingCount = 0;
+  state.mandateToolOpts = null;
+  state.retractionPage = { total: 0, offset: 0, next_offset: null, rows: [] };
+  state.scopeSourcesInput = null;
 });
 
 describe("runLookout", () => {
@@ -197,7 +223,9 @@ describe("runLookout", () => {
     const b = state.loop!.briefing;
     expect(b).toContain("Watch the retraction record behind the nutrition sources.");
     expect(b).toContain("clamped to 6/10");
-    expect(b).toContain("at most 1 ingest this run");
+    // One ceiling for everything it raises, no count of ingests (#695).
+    expect(b).toContain("The urgency of a flag or an ingest you raise is clamped to 6/10");
+    expect(b).not.toMatch(/ingests? this run/);
     expect(b).toContain("[retraction] 2026-09-10T08:00");
     expect(b).toContain("still waiting for its pass (repeated 2x)");
     expect(b).toContain("this is your first run");
@@ -214,12 +242,17 @@ describe("runLookout", () => {
       "raise_issue",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
       "submit_contribution",
-      "survey_scope", "scope_sources", "check_doi", "recent_retractions", "read_page",
+      "survey_scope", "read_page", "scope_sources", "check_doi", "recent_retractions",
       "read_listing",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
     expect(state.loop!.briefing).toContain("Each tool result shows what you have spent");
+    // The shared mandate tools, without the mandate's workspace (#691).
+    expect(state.mandateToolOpts).toEqual({ surveyLimit: 25, scopeClaimId: null, scopeQuery: "nutrition" });
+    expect(JSON.parse(await state.loop!.executeTool("survey_scope", {}))).toMatchObject({ count: 1 });
+    // Room to rewrite a whole workspace in one call (#689).
+    expect(state.maxTokens).toBe(16384);
 
     // No pin: the cheap-tier default, with the client-side tool of the same name.
     state.lookout = lookout({ model: null });
@@ -229,37 +262,43 @@ describe("runLookout", () => {
     expect(state.loop!.model).toBe("openai/gpt-6-luna");
   });
 
-  it("routes the candidate tools to the service with the delegated bounds, and stops ingests at the per-run limit", async () => {
+  it("routes the candidate tools to the service with the delegated ceiling, and counts no ingests", async () => {
     state.script = [
       { name: "flag_reassessment", input: { claim_id: "c-1", rationale: "retracted primary source", urgency: 9 } },
-      { name: "propose_ingest", input: { url: "https://example.org/a", rationale: "primary source missing" } },
+      { name: "propose_ingest", input: { url: "https://example.org/a", rationale: "primary source missing", urgency: 8 } },
       { name: "propose_ingest", input: { url: "https://example.org/b", rationale: "another" } },
-      { name: "leave_note", input: { text: "Two more sources look relevant but the limit is reached." } },
+      { name: "leave_note", input: { text: "Two more sources look relevant; noting them for the review." } },
       { name: "update_workspace", input: { content: "checked: 10.1/x" } },
       { name: "get_claim", input: { claim_id: "c-1" } },
       { name: "nope", input: {} },
     ];
     const res = await runLookout({ lookoutId: LOOKOUT });
     expect(state.reassess[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, maxValue: 6, claimId: "c-1", urgency: 9 });
-    expect(state.ingests).toHaveLength(1);
-    expect(state.notes[0]).toMatchObject({ text: expect.stringContaining("limit is reached") });
+    // Both ingests reach the service, each with the ceiling and its urgency
+    // (a missing urgency reads as 5).
+    expect(state.ingests).toEqual([
+      expect.objectContaining({ url: "https://example.org/a", maxValue: 6, urgency: 8 }),
+      expect.objectContaining({ url: "https://example.org/b", maxValue: 6, urgency: 5 }),
+    ]);
+    expect(state.notes[0]).toMatchObject({ text: expect.stringContaining("noting them") });
     expect(state.workspace).toBe("checked: 10.1/x");
-    expect(res).toMatchObject({ flagsRaised: 3, ingestsProposed: 1, notesLeft: 1 });
-    // The second ingest was refused by the run limit, in the tool result.
-    const second = await state.loop!.executeTool("propose_ingest", { url: "https://example.org/c", rationale: "x" });
-    expect(JSON.parse(second)).toMatchObject({ ok: false, code: "RUN_LIMIT" });
+    expect(res).toMatchObject({ flagsRaised: 4, ingestsProposed: 2, notesLeft: 1 });
+    const ingestTool = state.loop!.tools.find((t) => t.name === "propose_ingest") as unknown as {
+      input_schema: { required: string[] };
+    };
+    expect(ingestTool.input_schema.required).toContain("urgency");
     expect(JSON.parse(await state.loop!.executeTool("nope", {}))).toEqual({ error: "unknown tool nope" });
   });
 
-  it("gives a lookout that follows feeds its inbox, a feeds briefing, and a shared ingest limit", async () => {
-    state.lookout = lookout({ max_ingests_per_run: 3 });
+  it("gives a lookout that follows feeds its inbox and a feeds briefing, and triages within its ceiling", async () => {
+    state.lookout = lookout({ max_value: 4 });
     state.feeds = [
       { feed_id: "f-1", title: "Some Substack", url: "https://x.substack.com/feed", status: "active", wake: "batch", waiting: 7, deferred: 2, oldest_waiting: "2026-09-09T10:00:00.000Z", last_polled_at: null, last_error: null },
     ];
     state.script = [
       { name: "triage_items", input: { decisions: [{ item_id: "i-1", decision: "ingest" }, { item_id: "i-2", decision: "ingest" }] } },
       { name: "propose_ingest", input: { url: "https://example.org/a", rationale: "the paper the post reports" } },
-      { name: "propose_ingest", input: { url: "https://example.org/b", rationale: "one too many" } },
+      { name: "propose_ingest", input: { url: "https://example.org/b", rationale: "and another" } },
     ];
     const res = await runLookout({ lookoutId: LOOKOUT });
     const names = state.loop!.tools.map((t) => t.name);
@@ -267,12 +306,83 @@ describe("runLookout", () => {
     expect(state.maxIterations).toBe(200);
     expect(state.loop!.briefing).toContain('f-1 "Some Substack"');
     expect(state.loop!.briefing).toContain("7 waiting, 2 deferred");
-    expect(state.triage[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, ingestAllowance: 3 });
-    // Two inbox ingests and one proposal fill the limit of three; the fourth is refused.
-    expect(state.ingests).toHaveLength(1);
-    expect(res).toMatchObject({ ingestsProposed: 3 });
+    expect(state.triage[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, maxValue: 4 });
+    expect(state.triage[0]).not.toHaveProperty("ingestAllowance");
+    expect(state.ingests).toHaveLength(2);
+    expect(res).toMatchObject({ ingestsProposed: 4 });
     const read = JSON.parse(await state.loop!.executeTool("read_item", { item_id: "i-3", view: "full" }));
     expect(read.read_this_run).toEqual({ chars: 4000, approx_tokens: 1000 });
+  });
+
+  it("shows a retraction event in full, resting claims included, however many claims it names (#685)", async () => {
+    const claimIds = Array.from({ length: 50 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+    state.events = [
+      {
+        id: "ev-1",
+        kind: "retraction",
+        payload: {
+          doi: "10.1/paper", notice_doi: "10.1/notice", notice_type: "retraction", notice_title: "Retraction: X",
+          source_id: "s-1", source_url: "https://doi.org/10.1/paper", source_title: "Paper X",
+          claim_ids: claimIds,
+          resting_claims: [{ claim_id: "c-rest", via: "draws_on", through_source_id: "s-2", through_source_title: "Review Y", relation_type: "cites" }],
+          note: "Check whether any of them should be looked at again.",
+        },
+        created_at: new Date("2026-09-10T08:00:00Z"),
+      },
+    ];
+    await runLookout({ lookoutId: LOOKOUT });
+    const b = state.loop!.briefing;
+    expect(b).toContain("claims asserting it (50)");
+    expect(b).toContain(claimIds[49]);
+    expect(b).toContain('c-rest via draws_on (cites) through source s-2 "Review Y"');
+    // Everything fit, so no read_event tool.
+    expect(state.loop!.tools.map((t) => t.name)).not.toContain("read_event");
+  });
+
+  it("lists inputs past the briefing's size one line each, reads them with read_event, and says how many wait", async () => {
+    const big = "x".repeat(30_000);
+    state.events = ["ev-1", "ev-2", "ev-3"].map((id) => ({
+      id, kind: "manual", payload: { note: big, from: "grantmaker" }, created_at: new Date("2026-09-10T08:00:00Z"),
+    }));
+    state.events = [...state.events, ...Array.from({ length: 47 }, (_, i) => ({
+      id: `ev-x${i}`, kind: "manual", payload: { note: "small" }, created_at: new Date("2026-09-10T09:00:00Z"),
+    }))];
+    state.pendingCount = 62;
+    await runLookout({ lookoutId: LOOKOUT });
+    const b = state.loop!.briefing;
+    expect(b).toContain("(event ev-1) from grantmaker");
+    expect(b).toContain("- [manual] 2026-09-10T08:00 (event ev-2): manual");
+    expect(b).toContain("12 more inputs wait beyond these 50");
+    expect(state.loop!.tools.map((t) => t.name)).toContain("read_event");
+    expect(await state.loop!.executeTool("read_event", { event_id: "ev-2" })).toContain(big);
+    expect(JSON.parse(await state.loop!.executeTool("read_event", { event_id: "nope" }))).toMatchObject({ ok: false });
+  });
+
+  it("looks sources up by id with their resting claims, pages recent_retractions, and says when Crossref failed", async () => {
+    const res = JSON.parse(await (async () => {
+      await runLookout({ lookoutId: LOOKOUT });
+      return state.loop!.executeTool("scope_sources", { source_ids: ["s-1"] });
+    })());
+    expect(state.scopeSourcesInput).toMatchObject({ sourceIds: ["s-1"] });
+    expect(res.resting_claims).toEqual([{ source_id: "s-1", claim_id: "c-7", via: "draws_on" }]);
+
+    state.retractionPage = { total: 120, offset: 50, next_offset: 100, rows: [] };
+    expect(JSON.parse(await state.loop!.executeTool("recent_retractions", { offset: 50 }))).toMatchObject({
+      days: 30, total: 120, next_offset: 100,
+    });
+    state.retractionPage = null;
+    expect(JSON.parse(await state.loop!.executeTool("recent_retractions", {}))).toMatchObject({ ok: false });
+  });
+
+  it("says how many flags the recent list leaves out, and gives the mandate's objective", async () => {
+    state.lookout = lookout({ flags: 45, mandate_objective: "Map what is known about dietary fat." });
+    state.flags = Array.from({ length: 20 }, () => ({
+      kind: "note", claim_id: null, url: "https://x.org", repeats: 0, created_at: new Date("2026-09-01T00:00:00Z"),
+    }));
+    await runLookout({ lookoutId: LOOKOUT });
+    const b = state.loop!.briefing;
+    expect(b).toContain("The 20 most recent of the 45 you have raised");
+    expect(b).toContain("Map what is known about dietary fat.");
   });
 
   it("refuses to run a lookout that is paused or whose mandate is not active", async () => {

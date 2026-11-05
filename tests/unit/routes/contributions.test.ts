@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   })),
   getContributionById: vi.fn(),
   getReviewForContribution: vi.fn(async () => null),
+  listContributions: vi.fn(async () => [] as unknown[]),
+  getRequest: vi.fn(),
 }));
 
 vi.mock("../../../src/services/claim-service.js", () => ({
@@ -34,11 +36,17 @@ vi.mock("../../../src/services/claim-service.js", () => ({
 vi.mock("../../../src/services/contributor-service.js", () => ({
   getOrCreateContributor: mocks.getOrCreateContributor,
 }));
-vi.mock("../../../src/services/contribution-service.js", () => ({
+// The formatter and the answer_request check are the real ones; only the
+// reads and writes are stubbed.
+vi.mock("../../../src/services/contribution-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/contribution-service.js")>()),
   createContribution: mocks.createContribution,
   getContributionById: mocks.getContributionById,
-  listContributions: vi.fn(async () => []),
+  listContributions: mocks.listContributions,
   getReviewForContribution: mocks.getReviewForContribution,
+}));
+vi.mock("../../../src/services/request-service.js", () => ({
+  getRequest: mocks.getRequest,
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueContribution: mocks.enqueueContribution,
@@ -64,11 +72,13 @@ function contributor(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function buildApp(externalId: string | null = "github:1") {
+async function buildApp(externalId: string | null = "github:1", userId: string | null = "c-1") {
   const app = Fastify();
   app.decorateRequest("contributorExternalId", null);
+  app.decorateRequest("auth", null);
   app.decorate("authenticate", async (request: any) => {
     request.contributorExternalId = externalId;
+    request.auth = userId ? { userId } : null;
   });
   await app.register(contributionRoutes, { prefix: "/contributions" });
   return app;
@@ -288,5 +298,103 @@ describe("GET /contributions/:id serialization", () => {
     const res = await app.inject({ method: "GET", url: `/contributions/${row.id}` });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("answer_request names its request (#723)", () => {
+  const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
+  const ANSWER = { ...BODY, contribution_type: "answer_request", content: "The replication data is at the link." };
+  const openRequest = (bearsOn: string[] = ["claim-1"], state = "open") => ({
+    id: REQUEST_ID,
+    bears_on: bearsOn.map((id) => ({ id, text: "x", kind: "claim" })),
+    state,
+  });
+
+  beforeEach(() => {
+    mocks.getClaimById.mockResolvedValue({ id: CLAIM_ID } as never);
+    mocks.getRequest.mockReset();
+  });
+
+  it("refuses an answer_request with no request_id, before anything is recorded", async () => {
+    const res = await (await buildApp()).inject({ method: "POST", url: "/contributions", payload: ANSWER });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("REQUEST_ID_REQUIRED");
+    expect(mocks.createContribution).not.toHaveBeenCalled();
+  });
+
+  it("carries the request id to the reviewer at the head of the content", async () => {
+    mocks.getRequest.mockResolvedValue(openRequest([CLAIM_ID]) as never);
+    const res = await (await buildApp()).inject({
+      method: "POST",
+      url: "/contributions",
+      payload: { ...ANSWER, request_id: REQUEST_ID },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(mocks.createContribution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: `Answers request ${REQUEST_ID}.\n\nThe replication data is at the link.`,
+      })
+    );
+  });
+
+  it("refuses a request that does not bear on the node, or is closed", async () => {
+    mocks.getRequest.mockResolvedValueOnce(openRequest(["other-node"]) as never);
+    let res = await (await buildApp()).inject({
+      method: "POST",
+      url: "/contributions",
+      payload: { ...ANSWER, request_id: REQUEST_ID },
+    });
+    expect(res.json().error.code).toBe("REQUEST_NOT_ON_NODE");
+
+    mocks.getRequest.mockResolvedValueOnce(openRequest([CLAIM_ID], "met") as never);
+    res = await (await buildApp()).inject({
+      method: "POST",
+      url: "/contributions",
+      payload: { ...ANSWER, request_id: REQUEST_ID },
+    });
+    expect(res.json().error.code).toBe("REQUEST_CLOSED");
+    expect(mocks.createContribution).not.toHaveBeenCalled();
+  });
+
+  it("refuses request_id on any other type", async () => {
+    const res = await (await buildApp()).inject({
+      method: "POST",
+      url: "/contributions",
+      payload: { ...BODY, request_id: REQUEST_ID },
+    });
+    expect(res.json().error.code).toBe("REQUEST_ID_NOT_EXPECTED");
+  });
+});
+
+describe("GET /contributions?mine=true (#723)", () => {
+  beforeEach(() => mocks.listContributions.mockClear());
+
+  it("lists the caller's own contributions when credentials are presented", async () => {
+    const res = await (await buildApp()).inject({
+      method: "GET",
+      url: "/contributions?mine=true",
+      headers: { "x-api-key": "k" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.listContributions).toHaveBeenCalledWith(
+      expect.objectContaining({ contributorId: "c-1" })
+    );
+  });
+
+  it("needs credentials", async () => {
+    const res = await (await buildApp()).inject({ method: "GET", url: "/contributions?mine=true" });
+    expect(res.statusCode).toBe(401);
+    expect(mocks.listContributions).not.toHaveBeenCalled();
+  });
+
+  it("stays open, and unfiltered by contributor, without mine", async () => {
+    const res = await (await buildApp()).inject({ method: "GET", url: "/contributions" });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.listContributions.mock.calls[0]![0]).not.toHaveProperty("contributorId");
+  });
+
+  it("refuses a status that is not one", async () => {
+    const res = await (await buildApp()).inject({ method: "GET", url: "/contributions?status=done" });
+    expect(res.statusCode).toBe(400);
   });
 });

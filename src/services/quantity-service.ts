@@ -54,6 +54,8 @@ export async function recordEstimate(input: {
   estimate: QuantityEstimate;
   summary?: string | null;
   work: string;
+  /** The Steward's exit judgment, 0..1 (#755); null when not stated. */
+  marginalYield?: number | null;
   model?: string | null;
   fundedByJobId?: string | null;
   trigger?: string | null;
@@ -71,8 +73,9 @@ export async function recordEstimate(input: {
     );
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO quantity_estimates
-         (claim_id, estimate, summary, work, model, funded_by_job_id, trigger, trigger_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+         (claim_id, estimate, summary, work, model, funded_by_job_id, trigger, trigger_context,
+          marginal_yield)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         input.claimId,
         JSON.stringify(estimate),
@@ -82,6 +85,7 @@ export async function recordEstimate(input: {
         input.fundedByJobId ?? null,
         input.trigger ?? null,
         input.triggerContext ?? null,
+        input.marginalYield ?? null,
       ]
     );
     return { id: row!.id };
@@ -243,6 +247,12 @@ export interface QuantityDetailView {
   estimates: EstimateInstanceView[];
   readings: QuantityReadingView[];
   cuts: QuantityCutView[];
+  /**
+   * Figures ingestion linked to the quantity whose value nobody has recorded
+   * yet (stance 'states', no stated_estimate): the instances show them, and
+   * the Steward's record_estimate with instance_id records each one.
+   */
+  figures_not_yet_recorded: number;
 }
 
 export async function getQuantityDefinition(claimId: string): Promise<QuantityDefinitionView | null> {
@@ -267,7 +277,7 @@ export async function getCurrentEstimate(
 }
 
 export async function getQuantityDetail(claimId: string): Promise<QuantityDetailView> {
-  const [definition, current, estimates, readings, cuts] = await Promise.all([
+  const [definition, current, estimates, readings, cuts, unrecorded] = await Promise.all([
     getQuantityDefinition(claimId),
     getCurrentEstimate(claimId),
     rawQuery<EstimateInstanceView>(
@@ -302,6 +312,11 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
         ORDER BY qc.value, c.id`,
       [claimId]
     ),
+    rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM claim_instances
+        WHERE claim_id = $1 AND stance = 'states' AND stated_estimate IS NULL AND detached_at IS NULL`,
+      [claimId]
+    ),
   ]);
   return {
     definition,
@@ -313,6 +328,7 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
       claim: bc_id ? { id: bc_id, text: bc_text!, status: bc_status } : null,
     })),
     cuts,
+    figures_not_yet_recorded: Number(unrecorded[0]?.n ?? 0),
   };
 }
 

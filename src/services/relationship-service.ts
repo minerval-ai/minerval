@@ -105,9 +105,11 @@ export async function attachEdgeToArgument(
   const run = asRunner(tx);
   const [check] = await run.query<{
     argument_claim_id: string | null;
+    argument_retired: boolean | null;
     edge_parent_id: string | null;
   }>(
-    `SELECT a.claim_id AS argument_claim_id, cr.parent_claim_id AS edge_parent_id
+    `SELECT a.claim_id AS argument_claim_id, a.retired_at IS NOT NULL AS argument_retired,
+            cr.parent_claim_id AS edge_parent_id
        FROM (SELECT $1::uuid AS argument_id, $2::uuid AS relationship_id) ids
        LEFT JOIN arguments a ON a.id = ids.argument_id
        LEFT JOIN claim_relationships cr ON cr.id = ids.relationship_id`,
@@ -115,6 +117,12 @@ export async function attachEdgeToArgument(
   );
   if (!check?.argument_claim_id) {
     throw new Error(`Argument not found: ${argumentId}`);
+  }
+  if (check.argument_retired) {
+    throw new Error(
+      `Argument ${argumentId} was retired; group the subclaim under a live ` +
+        `argument, or add a new one`
+    );
   }
   if (!check.edge_parent_id) {
     throw new Error(`Relationship edge not found: ${relationshipId}`);
@@ -139,9 +147,10 @@ export async function attachEdgeToArgument(
 /** Remove an edge from an argument (the edge itself stays). */
 export async function detachEdgeFromArgument(
   argumentId: string,
-  relationshipId: string
+  relationshipId: string,
+  tx?: Runner
 ): Promise<{ detached: boolean }> {
-  const rows = await rawQuery<{ argument_id: string }>(
+  const rows = await asRunner(tx).query<{ argument_id: string }>(
     `DELETE FROM argument_subclaims
       WHERE argument_id = $1 AND relationship_id = $2
       RETURNING argument_id`,
@@ -182,4 +191,88 @@ export async function getClaimBasisSubclaims(
       ORDER BY cr.created_at, cr.id`,
     [claimId]
   );
+}
+
+/** An edge as a removal or retype reports it, with the arguments it was grouped under. */
+export interface EdgeRecord extends EdgeIdentity {
+  reasoning: string;
+  argument_ids: string[];
+}
+
+/** The edges from `parentId` to `childId` (of one relation, when given), with their argument memberships. */
+export async function getEdgesBetween(
+  parentId: string,
+  childId: string,
+  relationType?: string,
+  tx?: Runner
+): Promise<EdgeRecord[]> {
+  const run = asRunner(tx);
+  return run.query<EdgeRecord>(
+    `SELECT cr.id, cr.parent_claim_id, cr.child_claim_id, cr.relation_type, cr.reasoning,
+            COALESCE(array_agg(am.argument_id ORDER BY am.created_at)
+                       FILTER (WHERE am.argument_id IS NOT NULL), '{}') AS argument_ids
+       FROM claim_relationships cr
+       LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
+      WHERE cr.parent_claim_id = $1 AND cr.child_claim_id = $2
+        ${relationType ? "AND cr.relation_type = $3" : ""}
+      GROUP BY cr.id
+      ORDER BY cr.created_at, cr.id`,
+    relationType ? [parentId, childId, relationType.toLowerCase()] : [parentId, childId]
+  );
+}
+
+/**
+ * Delete edges by id. Their argument memberships cascade with them, so read
+ * them first (getEdgesBetween) when the caller must say what was lost.
+ */
+export async function deleteEdges(edgeIds: string[], tx?: Runner): Promise<number> {
+  if (edgeIds.length === 0) return 0;
+  const rows = await asRunner(tx).query<{ id: string }>(
+    `DELETE FROM claim_relationships WHERE id = ANY($1::uuid[]) RETURNING id`,
+    [edgeIds]
+  );
+  return rows.length;
+}
+
+/**
+ * Change an edge's relation in place (#741). The (parent, child, relation)
+ * key is unique, so when an edge of the new relation already exists the old
+ * edge is folded into it instead: its argument memberships move across and
+ * it is deleted. Either way one edge of the new relation remains, grouped
+ * under every argument either edge was in.
+ */
+export async function retypeEdge(
+  edgeId: string,
+  relationType: string,
+  reasoning: string,
+  tx?: Runner
+): Promise<{ id: string; merged: boolean }> {
+  const run = asRunner(tx);
+  const relation = relationType.toLowerCase();
+  const [edge] = await run.query<{ parent_claim_id: string; child_claim_id: string }>(
+    `SELECT parent_claim_id, child_claim_id FROM claim_relationships WHERE id = $1 FOR UPDATE`,
+    [edgeId]
+  );
+  if (!edge) throw new Error(`Relationship edge not found: ${edgeId}`);
+  const [existing] = await run.query<{ id: string }>(
+    `SELECT id FROM claim_relationships
+      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
+    [edge.parent_claim_id, edge.child_claim_id, relation]
+  );
+  if (!existing) {
+    await run.query(
+      `UPDATE claim_relationships SET relation_type = $2, reasoning = $3 WHERE id = $1`,
+      [edgeId, relation, reasoning]
+    );
+    return { id: edgeId, merged: false };
+  }
+  if (existing.id === edgeId) return { id: edgeId, merged: false };
+  await run.query(
+    `INSERT INTO argument_subclaims (argument_id, relationship_id)
+     SELECT argument_id, $2 FROM argument_subclaims WHERE relationship_id = $1
+     ON CONFLICT DO NOTHING`,
+    [edgeId, existing.id]
+  );
+  await run.query(`DELETE FROM claim_relationships WHERE id = $1`, [edgeId]);
+  return { id: existing.id, merged: true };
 }

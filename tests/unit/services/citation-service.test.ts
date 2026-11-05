@@ -11,6 +11,7 @@ import {
   formatBibtex,
   formatCslJson,
   formatTextCitation,
+  tallyInstanceStances,
   type CitationInput,
 } from "../../../src/services/citation-service.js";
 
@@ -108,5 +109,30 @@ describe("formatCslJson", () => {
     expect(csl).not.toHaveProperty("issued");
     expect(csl).not.toHaveProperty("version");
     expect(csl.accessed).toEqual({ "date-parts": [[2026, 8, 3]] });
+  });
+});
+
+describe("tallyInstanceStances", () => {
+  it("counts mentions in their own category and never as affirming or denying", () => {
+    const tally = tallyInstanceStances([
+      { stance: "affirms" },
+      { stance: "denies" },
+      { stance: "poses" },
+      { stance: "mentions" },
+      { stance: "mentions" },
+    ]);
+    expect(tally).toEqual({
+      affirming_instances: 1,
+      denying_instances: 1,
+      posing_instances: 1,
+      mentioning_instances: 2,
+    });
+  });
+
+  it("leaves both camps empty when every source only mentions the claim", () => {
+    const tally = tallyInstanceStances([{ stance: "mentions" }, { stance: "mentions" }]);
+    expect(tally.affirming_instances).toBe(0);
+    expect(tally.denying_instances).toBe(0);
+    expect(tally.mentioning_instances).toBe(2);
   });
 });

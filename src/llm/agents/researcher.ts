@@ -15,8 +15,9 @@
  * turn, one wrap-up notice, an operator pause flag polled every turn, wall
  * and turn caps, and a terminal `report` tool. What the researcher may
  * write: its notebook, the provenance tables through the Provenance skill's
- * tools, and the stored copy of a source it fetched. Nothing else; a unit
- * test holds that line. A run a Grantmaker launched writes only its
+ * tools, the claim's instances through record_claim_instance, and the stored
+ * copy of a source it fetched, besides the issue reports any agent may raise
+ * for the maintainers. Nothing else; a unit test holds that line. A run a Grantmaker launched writes only its
  * notebook: the provenance and examination tools are withheld from it
  * whatever it was given (research-run-service.ts says why).
  *
@@ -75,7 +76,14 @@ import {
   isElicitTool,
 } from "../tools/elicit-tools.js";
 import { createPangramTools } from "../tools/pangram-tools.js";
-import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
+import { createReportTools } from "../tools/report-tools.js";
+import { createResearcherReadTools } from "../tools/researcher-read-tools.js";
+import {
+  executeKindTool,
+  getRequestToolDefinitions,
+  getResearcherQuestionInstanceToolDefinition,
+} from "../tools/kind-tools.js";
+import { executeStewardTool, getResearcherInstanceToolDefinition } from "../tools/steward-tools.js";
 import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
 import {
   contributionBudgetLine,
@@ -116,6 +124,17 @@ export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
 
 /** The one request tool a run that takes up a request carries. */
 const FILE_REQUEST_TOOL: Tool = getRequestToolDefinitions("researcher").find((t) => t.name === "file_request")!;
+
+/**
+ * The Steward's record_claim_instance, for a run that records on its claim:
+ * without the provenance recording tools a new source the researcher finds
+ * asserting the claim could only go in its report, since every one of them
+ * needs an instance to record on. claim_id is filled from the run.
+ */
+const RECORD_INSTANCE_TOOL: Tool = getResearcherInstanceToolDefinition();
+
+/** The same, on a question: record_question_instance, question_id filled from the run. */
+const RECORD_QUESTION_INSTANCE_TOOL: Tool = getResearcherQuestionInstanceToolDefinition();
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -180,8 +199,8 @@ export const RESEARCH_REPORT_TOOL: Tool = {
       answer: {
         type: "string",
         description:
-          "The direct answer in two to six sentences, conclusion first, with the reading of " +
-          "the brief you took if it was ambiguous.",
+          "The direct answer, conclusion first and as long as it needs to be, with the reading " +
+          "of the brief you took if it was ambiguous.",
       },
       findings: {
         type: "array",
@@ -221,7 +240,7 @@ export const RESEARCH_REPORT_TOOL: Tool = {
       },
       provenance_recorded: {
         type: "string",
-        description: "What you recorded with the provenance tools, or 'none'.",
+        description: "What you recorded on the graph (instances, readings, edges, source relations), or 'none'.",
       },
       caveats: { type: "string", description: "What you could not do or check, and why." },
       what_would_change: { type: "string", description: "What evidence would overturn your answer." },
@@ -335,10 +354,20 @@ export interface ResearcherInput {
      */
     contribution_budget_micro_usd?: number;
   };
-  claim: { id: string; text: string; domains: string[] } | null;
+  /**
+   * The node the run serves. kind is the node's kind; absent is read as
+   * "claim". A claim's instances are recorded with record_claim_instance and
+   * a question's with record_question_instance; a quantity's figures are not
+   * recorded by this run (record_estimate stays the Steward's).
+   */
+  claim: { id: string; text: string; domains: string[]; kind?: string } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
-  /** Wall-clock cap for the run; defaults to RESEARCHER_MAX_WALL_MINUTES. */
+  /**
+   * Wall-clock cap for the run. Defaults to RESEARCHER_MAX_WALL_MINUTES on a
+   * delegated run, whose launcher waits on it, and to the longer
+   * RESEARCHER_REQUEST_MAX_WALL_MINUTES backstop on a request run (#734).
+   */
   maxWallMs?: number;
   /** Turn cap for the ordinary loop; defaults to RESEARCHER_MAX_TURNS. */
   maxTurns?: number;
@@ -380,7 +409,14 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const sandbox = resolveProvider(model) === "anthropic";
   const longRun = sandbox && modelSupportsLongRun(model);
   const ceiling = Math.max(1, run.ceiling_micro_usd);
-  const maxWallMs = input.maxWallMs ?? config.researcherMaxWallMinutes * 60_000;
+  // A delegated run's launcher blocks on the report, so it gets the short
+  // cap; a request run from the ledger has nobody waiting, and its budget
+  // bounds it, so it gets only a long backstop (#734). The task message
+  // states whichever applies, with its reason.
+  const runsRequest = run.requested_by === "request" || run.requested_by === "request_scope";
+  const maxWallMs =
+    input.maxWallMs ??
+    (runsRequest ? config.researcherRequestMaxWallMinutes : config.researcherMaxWallMinutes) * 60_000;
   const maxTurns = input.maxTurns ?? RUN_TURN_GUARD;
 
   // Skills load on demand; the claim's recorded domains point to the domain
@@ -408,6 +444,18 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const pangramTools = createPangramTools({ config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
+  // What the graph holds about documents, on every run, and about requests,
+  // on a run that works one (#746); and the channel to the maintainers that
+  // every agent carries, for a tool that failed or misled it (#743).
+  const readTools = createResearcherReadTools({ requests: runsRequest });
+  const reportTools = createReportTools({ model });
+  // An instance is recorded on the run's node on exactly the runs that get
+  // the provenance recording tools: a launcher that writes the graph, and a
+  // run scoped to a node. A claim proper takes record_claim_instance, a
+  // question record_question_instance; a quantity neither.
+  const nodeKind = input.claim ? (input.claim.kind ?? "claim") : null;
+  const recordsInstances = graphWrites && nodeKind === "claim";
+  const recordsQuestionInstances = graphWrites && nodeKind === "question";
   const takesUpRequest = run.requested_by === "request";
   const scopesRequest = run.requested_by === "request_scope";
   const submitsContributions =
@@ -427,11 +475,15 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const webSearch = createWebSearch(model);
   const tools: ToolUnion[] = [
     ...graphReadTools,
+    ...readTools.definitions,
     getReadPageToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
     ...skillLoader.definitions,
     ...skillTools,
+    ...(recordsInstances ? [RECORD_INSTANCE_TOOL] : []),
+    ...(recordsQuestionInstances ? [RECORD_QUESTION_INSTANCE_TOOL] : []),
+    ...reportTools.definitions,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
     // A run that takes up a request reports its outcome, and may file the
@@ -545,6 +597,39 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (name === FILE_REQUEST_TOOL.name) {
       return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
     }
+    if (name === RECORD_INSTANCE_TOOL.name && input.claim) {
+      // The run's claim and no other: the schema has no claim_id, and one
+      // the model supplies anyway that names a different claim is refused.
+      const named = typeof toolInput.claim_id === "string" ? toolInput.claim_id.trim() : "";
+      if (named && named !== input.claim.id) {
+        return JSON.stringify({
+          success: false,
+          message: `This investigation serves claim ${input.claim.id}; record_claim_instance records on it alone.`,
+        });
+      }
+      return executeStewardTool(
+        name,
+        { ...toolInput, claim_id: input.claim.id },
+        { trigger: "research", context: run.task, model, recordedBy: RESEARCHER_AGENT }
+      );
+    }
+    if (name === RECORD_QUESTION_INSTANCE_TOOL.name && input.claim) {
+      // The run's question and no other, as for a claim's instances; the
+      // executor checks that an instance_id is this question's and that an
+      // answer_id is in its answer set.
+      const named = typeof toolInput.question_id === "string" ? toolInput.question_id.trim() : "";
+      if (named && named !== input.claim.id) {
+        return JSON.stringify({
+          success: false,
+          message: `This investigation serves question ${input.claim.id}; record_question_instance records on it alone.`,
+        });
+      }
+      return (await executeKindTool(
+        name,
+        { ...toolInput, question_id: input.claim.id },
+        { role: "researcher", claimId: input.claim.id, model, trigger: "research", context: run.task }
+      ))!;
+    }
     if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
       const submitted = await submitMandateContribution({ researchRunId: run.id, input: toolInput });
       if (submitted.budget) contributionBudgetNote = submitted.budget;
@@ -554,6 +639,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       const out = await executeGraphReadTool(name, toolInput);
       if (out !== null) return out;
     }
+    const read = await readTools.execute(name, toolInput);
+    if (read !== null) return read;
+    const issue = await reportTools.execute(name, toolInput);
+    if (issue !== null) return issue;
     if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
     const pangram = await pangramTools.execute(name, toolInput);
     if (pangram !== null) return pangram;
@@ -656,9 +745,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // ceiling or the operator's pause it allows one last turn, in which
     // every tool call is refused with the instruction to report, and then
     // ends the run. The spend line, and the wrap-up notice once past the
-    // reminder fraction, ride on every turn's note. Container time is not metered per turn on this
-    // path; the sandbox's free allowance covers a run of this size, and the
-    // token meter binds.
+    // reminder fraction, ride on every turn's note. toolUseLoop meters the
+    // container time of each turn that used the sandbox into the same meter.
     let turns = 0;
     let lastTurn = false;
     const startedAt = now();

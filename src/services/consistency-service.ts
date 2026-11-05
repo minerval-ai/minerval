@@ -46,6 +46,11 @@ import type { QuantityEstimate } from "../schemas/kinds.js";
  * precision read, not a rule: the checker's rationale is the substance.
  */
 export const CONSISTENCY_FLAG_KINDS = [
+  // Something established elsewhere in the graph (a decisive argument, a
+  // well-supported finding, a framework shown unsound, a measurement),
+  // often in another field, bears directly on an assessment that does not
+  // weigh it: the flag is how it reaches the fields it affects (§21).
+  "unweighed_consideration",
   // Two assessments rest on reasoning that cannot both hold: one treats as
   // established what the other argues is doubtful, or they read the same
   // evidence in incompatible ways.
@@ -71,10 +76,22 @@ export const CONSISTENCY_FLAG_KINDS = [
 ] as const;
 export type ConsistencyFlagKind = (typeof CONSISTENCY_FLAG_KINDS)[number];
 
+/**
+ * The checker is told each of these in its tool descriptions, and a note or
+ * rationale over its limit is refused with a request for a shorter one,
+ * never cut (CLAUDE.md, "Constraints on agents").
+ */
 export const CONSISTENCY_BOUNDS = {
+  /** A flag's rationale: what the Steward reads in its trigger context. */
   rationaleChars: 2_000,
-  /** The sweep note is the checker's memory of a partition. */
+  /**
+   * The sweep note is the checker's memory of a partition, and it opens the
+   * next sweep's briefing; past this it would crowd the briefing.
+   */
   noteChars: 4_000,
+  /** list_partition_claims: a node's text and summary as listed (get_claim reads them whole). */
+  listingTextChars: 300,
+  listingSummaryChars: 500,
   /** Claims one flag or comparison may name. */
   maxClaims: 8,
   /**
@@ -114,6 +131,26 @@ function normalizeClaimIds(primary: string, raw: unknown): string[] {
   return out.slice(0, CONSISTENCY_BOUNDS.maxClaims);
 }
 
+/**
+ * A node's current record of its own kind (constitution §2, §7a): a
+ * claim's verdict (assessments), a quantity's estimate (quantity_estimates),
+ * a question's standing (question_assessments). `assessments` holds verdicts
+ * on propositions only, so a sweep that read it alone would never see a
+ * quantity or a question, and the §21 figure and answer checks would have
+ * no node to flag (#735). Joined on a claims row aliased `c`; the record's
+ * id is what a flag snapshots (assessment_id_at_flag carries no foreign
+ * key, so it holds any of the three).
+ */
+const CURRENT_RECORD_JOINS = `
+  LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true AND c.kind = 'claim'
+  LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true AND c.kind = 'quantity'
+  LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true AND c.kind = 'question'`;
+const RECORD_ID = `COALESCE(a.id, qe.id, qa.id)`;
+/** A question's standing reads as its status; a quantity has none (its estimate is the record). */
+const RECORD_STATUS = `COALESCE(a.status, qa.standing)`;
+const RECORD_AT = `COALESCE(a.assessed_at, qe.assessed_at, qa.assessed_at)`;
+const FAVORED = `(CASE WHEN qa.id IS NOT NULL THEN qa.favored_claim_ids::text[] END)`;
+
 // ---------------------------------------------------------------------------
 // Partitions and sweeps
 // ---------------------------------------------------------------------------
@@ -129,10 +166,16 @@ export interface PartitionStatus {
   label: string;
   /** Live claims in the partition. */
   claims: number;
+  /**
+   * Of those, the assessed nodes a sweep reads (a claim with a verdict, a
+   * quantity with an estimate, a question with a standing): what a sweep
+   * of the partition is priced by (#756).
+   */
+  assessed: number;
   /** Sum of those claims' importance: where a sweep's budget lands first. */
   importance_mass: number;
   last_swept_at: Date | null;
-  /** Assessments written on the partition's claims since its last sweep. */
+  /** Verdicts, estimates and standings written in the partition since its last sweep. */
   changed_since: number;
 }
 
@@ -149,6 +192,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     tag_id: string | null;
     label: string;
     claims: number;
+    assessed: number;
     importance_mass: number;
     last_swept_at: Date | null;
     changed_since: number;
@@ -187,17 +231,25 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
                 ON ls.tag_id IS NOT DISTINCT FROM m.tag_id
                AND ls.partition = CASE WHEN m.tag_id IS NULL THEN 'residual' ELSE 'tag' END
      ),
+     records AS (
+       SELECT claim_id, assessed_at FROM assessments
+       UNION ALL SELECT claim_id, assessed_at FROM quantity_estimates
+       UNION ALL SELECT claim_id, assessed_at FROM question_assessments
+     ),
      changed AS (
-       SELECT k.tag_id, COUNT(a.id)::int AS n
+       SELECT k.tag_id, COUNT(*)::int AS n
          FROM keyed k
-         JOIN assessments a ON a.claim_id = k.claim_id
-                           AND (k.at IS NULL OR a.assessed_at > k.at)
+         JOIN records r ON r.claim_id = k.claim_id
+                       AND (k.at IS NULL OR r.assessed_at > k.at)
         GROUP BY k.tag_id
      )
      SELECT CASE WHEN k.tag_id IS NULL THEN 'residual' ELSE 'tag' END AS partition,
             k.tag_id,
             COALESCE(t.slug, 'residual') AS label,
             COUNT(*)::int AS claims,
+            COUNT(*) FILTER (WHERE EXISTS (
+              SELECT 1 FROM claims c ${CURRENT_RECORD_JOINS}
+               WHERE c.id = k.claim_id AND ${RECORD_ID} IS NOT NULL))::int AS assessed,
             COALESCE(SUM(k.importance), 0)::real AS importance_mass,
             k.at AS last_swept_at,
             COALESCE(MAX(ch.n), 0)::int AS changed_since
@@ -210,6 +262,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
   return rows.map((r) => ({
     ...r,
     claims: Number(r.claims),
+    assessed: Number(r.assessed),
     importance_mass: Number(r.importance_mass),
     changed_since: Number(r.changed_since),
   }));
@@ -224,7 +277,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
  * running (younger than the reclaim window) or failed within the re-sweep
  * interval.
  */
-export async function duePartitions(minTagClaims: number): Promise<SweepPartition[]> {
+export async function duePartitions(minTagClaims: number): Promise<DuePartition[]> {
   const [partitions, running] = await Promise.all([
     listPartitions(minTagClaims),
     // Busy: a sweep still running, or one that failed within the re-sweep
@@ -254,8 +307,11 @@ export async function duePartitions(minTagClaims: number): Promise<SweepPartitio
       if (a.changed_since !== b.changed_since) return b.changed_since - a.changed_since;
       return b.importance_mass - a.importance_mass;
     });
-  return due.map(toSweepPartition);
+  return due.map((p) => ({ ...toSweepPartition(p), assessed: p.assessed }));
 }
+
+/** A partition due a sweep, with the size its sweep is priced by (#756). */
+export type DuePartition = SweepPartition & { assessed: number };
 
 function toSweepPartition(p: PartitionStatus): SweepPartition {
   return p.partition === "tag"
@@ -324,10 +380,13 @@ export async function scopeForPartition(
   return {};
 }
 
-export async function startSweep(p: SweepPartition): Promise<string> {
+export async function startSweep(
+  p: SweepPartition,
+  variant: "standard" | "strong" | null = null
+): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO consistency_sweeps (tag_id, partition) VALUES ($1, $2) RETURNING id`,
-    [p.tagId, p.partition]
+    `INSERT INTO consistency_sweeps (tag_id, partition, variant) VALUES ($1, $2, $3) RETURNING id`,
+    [p.tagId, p.partition, variant]
   );
   return row!.id;
 }
@@ -340,11 +399,14 @@ export async function finishSweep(input: {
   flagsRaised: number;
   note?: string | null;
   error?: string | null;
+  /** What the run was metered at, when it ran under a pass meter (#756). */
+  costMicroUsd?: number | null;
 }): Promise<void> {
   await rawQuery(
     `UPDATE consistency_sweeps
         SET status = $2, run_id = COALESCE($3, run_id), claims_in_scope = $4,
-            flags_raised = $5, note = $6, error = $7, finished_at = now()
+            flags_raised = $5, note = $6, error = $7, finished_at = now(),
+            cost_micro_usd = COALESCE($8, cost_micro_usd)
       WHERE id = $1`,
     [
       input.sweepId,
@@ -354,6 +416,7 @@ export async function finishSweep(input: {
       input.flagsRaised,
       input.note ? input.note.slice(0, CONSISTENCY_BOUNDS.noteChars) : null,
       input.error ? input.error.slice(0, 2_000) : null,
+      input.costMicroUsd == null ? null : Math.round(input.costMicroUsd),
     ]
   );
 }
@@ -377,11 +440,18 @@ export async function reclaimAbandonedSweeps(): Promise<number> {
 
 export interface PartitionClaim {
   claim_id: string;
+  /** claim, quantity or question. */
+  kind: string;
   text: string;
   importance: number;
-  status: string;
+  /** A claim's verdict, or a question's standing; null on a quantity. */
+  status: string | null;
   credence: number | null;
-  confidence: number;
+  confidence: number | null;
+  /** A quantity's current estimate (quantityEstimateSchema); null otherwise. */
+  estimate: unknown;
+  /** A question's favored answers; null otherwise. */
+  favored_answer_ids: string[] | null;
   assessed_at: string;
   /** Re-assessed since this partition's last sweep (or never swept). */
   changed: boolean;
@@ -407,9 +477,10 @@ export interface PartitionClaim {
 }
 
 /**
- * The partition's assessed claims as a sweep reads them: those re-assessed
- * since `since` first (where new incoherence comes from), then by
- * importance. A claim whose Steward is already queued is listed, and
+ * The partition's assessed nodes as a sweep reads them: claims with a
+ * verdict, quantities with an estimate, questions with a standing. Those
+ * re-assessed since `since` first (where new incoherence comes from), then
+ * by importance. A node whose Steward is already queued is listed, and
  * marked: it is still the context its neighbors are read against.
  */
 export async function partitionClaims(
@@ -425,9 +496,11 @@ export async function partitionClaims(
        UNION
        SELECT unnest($2::uuid[])
      )
-     SELECT c.id AS claim_id, c.text, c.importance, a.status, a.claim_credence AS credence,
-            a.confidence, a.assessed_at, a.summary,
-            ($3::timestamptz IS NULL OR a.assessed_at > $3) AS changed,
+     SELECT c.id AS claim_id, c.kind, c.text, c.importance, ${RECORD_STATUS} AS status,
+            a.claim_credence AS credence, a.confidence, qe.estimate,
+            ${FAVORED} AS favored_answer_ids,
+            ${RECORD_AT} AS assessed_at, COALESCE(a.summary, qe.summary, qa.summary) AS summary,
+            ($3::timestamptz IS NULL OR ${RECORD_AT} > $3) AS changed,
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.parent_claim_id = c.id) AS subclaims,
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.child_claim_id = c.id) AS dependents,
             (SELECT COUNT(*)::int FROM claim_relationships r
@@ -436,12 +509,12 @@ export async function partitionClaims(
               WHERE r.parent_claim_id = c.id AND r.relation_type = 'requires') AS required,
             EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
                      WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')
-                       AND f.assessment_id_at_flag = a.id) AS flag_open,
+                       AND f.assessment_id_at_flag = ${RECORD_ID}) AS flag_open,
             (c.steward_state IN ('pending', 'running')) AS steward_pending,
             COUNT(*) OVER ()::int AS total
-       FROM claims c
-       JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       FROM claims c ${CURRENT_RECORD_JOINS}
       WHERE c.state = 'active' AND c.merged_into IS NULL
+        AND ${RECORD_ID} IS NOT NULL
         AND (($1::uuid IS NULL AND $2::uuid[] IS NULL) OR c.id IN (SELECT claim_id FROM scoped))
       ORDER BY changed DESC, c.importance DESC, c.id
       LIMIT $4 OFFSET $5`,
@@ -472,16 +545,28 @@ export async function lastSweepOf(
 
 export interface ComparedClaim {
   claim_id: string;
+  kind: string;
   text: string;
   importance: number;
+  /** A claim's verdict, or a question's standing; null on a quantity. */
   status: string | null;
   credence: number | null;
   confidence: number | null;
+  /** A quantity's current estimate; null otherwise. */
+  estimate: unknown;
+  /** A question's favored answers; null otherwise. */
+  favored_answer_ids: string[] | null;
   assessed_at: string | null;
   model: string | null;
   summary: string | null;
-  /** The head of the reasoning trace: where the verdict is argued. */
+  /**
+   * The head of the reasoning trace (a quantity's work): where the verdict
+   * is argued, at most TRACE_EXCERPT_CHARS.
+   */
   trace_excerpt: string | null;
+  /** The whole trace's length, so a cut excerpt says how much was not shown. */
+  trace_chars: number;
+  trace_truncated: boolean;
 }
 
 export interface ComparedRelation {
@@ -494,8 +579,9 @@ export interface ComparedRelation {
 }
 
 // Long enough to see whether a trace engages a given consideration, which
-// is the read an overlooked-evidence judgment turns on.
-const TRACE_EXCERPT_CHARS = 5_000;
+// is the read an overlooked-evidence judgment turns on; get_claim reads the
+// rest. Stated in compare_assessments' description.
+export const TRACE_EXCERPT_CHARS = 5_000;
 
 /**
  * Up to CONSISTENCY_BOUNDS.maxClaims claims side by side with their current
@@ -514,20 +600,25 @@ export async function compareAssessments(
   if (ids.length === 0) return { claims: [], relations: [], unknown: [] };
   const rows = await rawQuery<{
     id: string;
+    kind: string;
     text: string;
     importance: number;
     status: string | null;
     claim_credence: number | null;
     confidence: number | null;
+    estimate: unknown;
+    favored_answer_ids: string[] | null;
     assessed_at: Date | null;
     model: string | null;
     summary: string | null;
     reasoning_trace: string | null;
   }>(
-    `SELECT c.id, c.text, c.importance, a.status, a.claim_credence, a.confidence,
-            a.assessed_at, a.model, a.summary, a.reasoning_trace
-       FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+    `SELECT c.id, c.kind, c.text, c.importance, ${RECORD_STATUS} AS status, a.claim_credence,
+            a.confidence, qe.estimate, ${FAVORED} AS favored_answer_ids,
+            ${RECORD_AT} AS assessed_at, COALESCE(a.model, qe.model, qa.model) AS model,
+            COALESCE(a.summary, qe.summary, qa.summary) AS summary,
+            COALESCE(a.reasoning_trace, qe.work, qa.reasoning_trace) AS reasoning_trace
+       FROM claims c ${CURRENT_RECORD_JOINS}
       WHERE c.id = ANY($1::uuid[])`,
     [ids]
   );
@@ -540,17 +631,23 @@ export async function compareAssessments(
       unknown.push(id);
       continue;
     }
+    const traceChars = r.reasoning_trace?.length ?? 0;
     claims.push({
       claim_id: r.id,
+      kind: r.kind,
       text: r.text,
       importance: Number(r.importance),
       status: r.status,
       credence: r.claim_credence,
       confidence: r.confidence,
+      estimate: r.estimate ?? null,
+      favored_answer_ids: r.favored_answer_ids ?? null,
       assessed_at: r.assessed_at ? new Date(r.assessed_at).toISOString() : null,
       model: r.model,
       summary: r.summary,
       trace_excerpt: r.reasoning_trace ? r.reasoning_trace.slice(0, TRACE_EXCERPT_CHARS) : null,
+      trace_chars: traceChars,
+      trace_truncated: traceChars > TRACE_EXCERPT_CHARS,
     });
   }
   const known = claims.map((c) => c.claim_id);
@@ -603,12 +700,36 @@ export type ConsistencyFlagResult =
   | { ok: true; flag_id: string; duplicate: true; note: string }
   | { ok: false; code: string; problem: string };
 
-function describeAssessment(a: { status: string | null; claim_credence: number | null } | undefined): string {
-  if (!a || !a.status) return "unassessed";
+/** What a flag's context says about a node's current judgment, by kind. */
+interface NodeJudgment {
+  kind?: string | null;
+  status: string | null;
+  claim_credence: number | null;
+  /** The node's own summary: what it establishes, for the Steward reading the flag. */
+  summary?: string | null;
+  /** The node has a current record of its kind (a quantity's estimate shows no status). */
+  has_record?: boolean;
+}
+
+function describeAssessment(a: NodeJudgment | undefined): string {
+  if (!a) return "unassessed";
+  if (a.kind === "quantity") return a.has_record ? "a quantity, estimated" : "a quantity, not yet estimated";
+  if (a.kind === "question") return a.status ? `a question, ${a.status}` : "a question, not yet judged";
+  if (!a.status) return "unassessed";
   return a.claim_credence !== null && a.claim_credence !== undefined
     ? `${a.status}, credence ${Number(a.claim_credence).toFixed(2)}`
     : a.status;
 }
+
+/** "this claim's assessment", "this quantity's estimate", "this question's standing". */
+function judgmentNoun(kind: string | null | undefined): string {
+  if (kind === "quantity") return "this quantity's estimate";
+  if (kind === "question") return "this question's standing";
+  return "this claim's assessment";
+}
+
+/** How much of each cited node's summary a flag's context carries. */
+const FLAG_CONTEXT_SUMMARY_CHARS = 600;
 
 /**
  * The Steward's trigger context for a flag: the tension in the checker's
@@ -618,22 +739,40 @@ function describeAssessment(a: { status: string | null; claim_credence: number |
 export function consistencyFlagContext(input: {
   kind: string;
   rationale: string;
-  primary: { id: string; status: string | null; claim_credence: number | null };
-  others: Array<{ id: string; text: string; status: string | null; claim_credence: number | null }>;
+  primary: { id: string } & NodeJudgment;
+  others: Array<{ id: string; text: string } & NodeJudgment>;
 }): string {
+  // Each cited node with what it holds and the start of its own summary,
+  // so a consideration from elsewhere (another field, a node outside this
+  // one's decomposition) arrives with enough to act on; get_claim reads it
+  // whole.
   const neighbors = input.others
-    .map((o) => `- ${o.id} "${o.text.slice(0, 160)}" (${describeAssessment(o)})`)
+    .map((o) => {
+      const summary = o.summary?.trim()
+        ? `\n  Its summary: ${o.summary.trim().slice(0, FLAG_CONTEXT_SUMMARY_CHARS)}` +
+          `${o.summary.trim().length > FLAG_CONTEXT_SUMMARY_CHARS ? "... (get_claim reads the rest)" : ""}`
+        : "";
+      return `- ${o.id} "${o.text.slice(0, 160)}" (${describeAssessment(o)})${summary}`;
+    })
     .join("\n");
+  const fromElsewhere =
+    input.kind === "unweighed_consideration"
+      ? `The checker reads these as establishing something your assessment does ` +
+        `not weigh. They may sit outside this node's decomposition or field; ` +
+        `whether they bear here is decided at this node, on the evidence and ` +
+        `argument here.\n`
+      : "";
   return (
-    `A consistency sweep finds that this claim's assessment (${describeAssessment(input.primary)}) ` +
+    `A consistency sweep finds that ${judgmentNoun(input.primary.kind)} (${describeAssessment(input.primary)}) ` +
     `does not cohere with what the graph records about these claims (${input.kind}):\n${neighbors}\n` +
+    fromElsewhere +
     `The checker's reading: ${input.rationale}\n` +
     `Reconcile it. The defect may be in this verdict (revise it), in a ` +
     `neighbor's (say so in your reasoning), or in the edge itself (fix it if ` +
     `it is in your decomposition, else escalate to the Curator). Or the ` +
     `tension may be apparent and your reasoning should say why both verdicts ` +
-    `stand. The checker judges coherence, never truth: verify before anything ` +
-    `changes.`
+    `stand. The checker's reading is a flag, not a verdict: weigh it, verify ` +
+    `what it turns on, and decide.`
   );
 }
 
@@ -672,22 +811,37 @@ type CheckedFlag = {
   ok: true;
   rationale: string;
   claimIds: string[];
-  primary: { id: string; text: string; status: string | null; claim_credence: number | null; assessment_id: string };
-  others: Array<{ id: string; text: string; status: string | null; claim_credence: number | null }>;
+  /** assessment_id: the id of the primary's current verdict, estimate or standing. */
+  primary: { id: string; text: string; kind: string; status: string | null; claim_credence: number | null; assessment_id: string };
+  others: Array<{ id: string; text: string } & NodeJudgment>;
 };
 
 /**
  * Validate a flag the way flag_inconsistency would, without writing: the
- * kind, a real rationale, an active and assessed primary, and at least one
- * other known claim. The dry-run read uses it so that what it counts is
- * what a live sweep could actually have raised.
+ * kind, a real rationale within its stated length, an active primary with a
+ * current judgment of its kind (a claim's verdict, a quantity's estimate, a
+ * question's standing), and at least one other known node. The dry-run read
+ * uses it so that what it counts is what a live sweep could actually have
+ * raised.
  */
 export async function checkFlagInput(
   input: FlagInput
 ): Promise<CheckedFlag | { ok: false; code: string; problem: string }> {
-  const rationale = String(input.rationale ?? "").trim().slice(0, CONSISTENCY_BOUNDS.rationaleChars);
+  const rationale = String(input.rationale ?? "").trim();
   if (rationale.length < 20) {
     return { ok: false, code: "RATIONALE", problem: "Say what does not cohere and why, in a few sentences" };
+  }
+  // Refused, not cut: the end of a rationale is often where the claim ids
+  // the Steward needs are named.
+  if (rationale.length > CONSISTENCY_BOUNDS.rationaleChars) {
+    return {
+      ok: false,
+      code: "RATIONALE_LENGTH",
+      problem:
+        `The rationale is ${rationale.length} characters; it may be at most ` +
+        `${CONSISTENCY_BOUNDS.rationaleChars}. Nothing was flagged: say where the ` +
+        `assessments conflict and cite the claim ids more briefly, and call again.`,
+    };
   }
   if (!(CONSISTENCY_FLAG_KINDS as readonly string[]).includes(input.kind)) {
     return { ok: false, code: "KIND", problem: `kind must be one of ${CONSISTENCY_FLAG_KINDS.join(", ")}` };
@@ -699,20 +853,35 @@ export async function checkFlagInput(
   if (claimIds.length < 2) {
     return { ok: false, code: "CLAIMS", problem: "Name at least one other claim in the tension (claim_ids)" };
   }
-  const rows = await rawQuery<{ id: string; text: string; state: string; status: string | null; claim_credence: number | null; assessment_id: string | null }>(
-    `SELECT c.id, c.text, c.state, a.status, a.claim_credence, a.id AS assessment_id
-       FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+  const rows = await rawQuery<{
+    id: string;
+    text: string;
+    kind: string;
+    state: string;
+    status: string | null;
+    claim_credence: number | null;
+    assessment_id: string | null;
+    summary: string | null;
+  }>(
+    `SELECT c.id, c.text, c.kind, c.state, ${RECORD_STATUS} AS status, a.claim_credence,
+            ${RECORD_ID} AS assessment_id, COALESCE(a.summary, qe.summary, qa.summary) AS summary
+       FROM claims c ${CURRENT_RECORD_JOINS}
       WHERE c.id = ANY($1::uuid[])`,
     [claimIds]
   );
   const byId = new Map(rows.map((r) => [r.id, r]));
   const primary = byId.get(input.primaryClaimId);
   if (!primary || primary.state !== "active") {
-    return { ok: false, code: "CLAIM", problem: "No active claim with that primary_claim_id" };
+    return { ok: false, code: "CLAIM", problem: "No active node with that primary_claim_id" };
   }
   if (!primary.assessment_id) {
-    return { ok: false, code: "UNASSESSED", problem: "The primary claim has no assessment yet; there is nothing to reconcile" };
+    const what =
+      primary.kind === "quantity" ? "estimate" : primary.kind === "question" ? "standing" : "assessment";
+    return {
+      ok: false,
+      code: "UNASSESSED",
+      problem: `The primary ${primary.kind} has no ${what} yet; there is nothing to reconcile`,
+    };
   }
   const missing = claimIds.filter((id) => !byId.has(id));
   if (missing.length > 0) {
@@ -725,7 +894,15 @@ export async function checkFlagInput(
     primary: { ...primary, assessment_id: primary.assessment_id },
     others: claimIds.slice(1).map((id) => {
       const r = byId.get(id)!;
-      return { id, text: r.text, status: r.status, claim_credence: r.claim_credence };
+      return {
+        id,
+        text: r.text,
+        kind: r.kind,
+        status: r.status,
+        claim_credence: r.claim_credence,
+        has_record: r.assessment_id !== null,
+        summary: r.summary,
+      };
     }),
   };
 }
@@ -740,7 +917,13 @@ export async function flagInconsistency(
   const context = consistencyFlagContext({
     kind: input.kind,
     rationale,
-    primary: { id: primary.id, status: primary.status, claim_credence: primary.claim_credence },
+    primary: {
+      id: primary.id,
+      kind: primary.kind,
+      status: primary.status,
+      claim_credence: primary.claim_credence,
+      has_record: true,
+    },
     others,
   });
 
@@ -845,28 +1028,38 @@ export interface ConsistencyFlagRow {
   credence_at_flag: number | null;
   status_now: string | null;
   credence_now: number | null;
-  /** A new assessment landed on the primary after the flag. */
+  /** A new verdict, estimate or standing landed on the primary after the flag. */
   ran: boolean;
-  /** ...and it changed status, or credence by more than 0.1. */
+  /**
+   * ...and it changed status (a question's standing), credence by more than
+   * 0.1, or a quantity's estimate. A pass that ran without moving may still
+   * have repaired the reasoning (weighed what was overlooked and kept the
+   * verdict), which §21 also wants; this record cannot tell, so `ran` is
+   * the read of whether a flag was acted on, and `moved` only of how often
+   * acting changed the outcome.
+   */
   moved: boolean;
   repeats: number;
   created_at: Date;
 }
 
+// The primary's current record is whichever of its kind's tables holds one
+// (#735): a verdict, an estimate, or a standing.
 const FLAG_SELECT = `
   SELECT f.id, f.sweep_id, f.kind, f.primary_claim_id, c.text AS claim_text, f.claim_ids,
-         f.action_id, a.status AS action_status, f.rationale, f.expected_gain,
+         f.action_id, x.status AS action_status, f.rationale, f.expected_gain,
          f.status_at_flag, f.credence_at_flag,
-         cur.status AS status_now, cur.claim_credence AS credence_now,
-         (cur.id IS NOT NULL AND cur.id IS DISTINCT FROM f.assessment_id_at_flag) AS ran,
-         (cur.id IS NOT NULL AND cur.id IS DISTINCT FROM f.assessment_id_at_flag
-          AND (cur.status IS DISTINCT FROM f.status_at_flag
-               OR ABS(COALESCE(cur.claim_credence, 0) - COALESCE(f.credence_at_flag, 0)) > 0.1)) AS moved,
+         ${RECORD_STATUS} AS status_now, a.claim_credence AS credence_now,
+         (${RECORD_ID} IS NOT NULL AND ${RECORD_ID} IS DISTINCT FROM f.assessment_id_at_flag) AS ran,
+         (${RECORD_ID} IS NOT NULL AND ${RECORD_ID} IS DISTINCT FROM f.assessment_id_at_flag
+          AND (${RECORD_STATUS} IS DISTINCT FROM f.status_at_flag
+               OR ABS(COALESCE(a.claim_credence, 0) - COALESCE(f.credence_at_flag, 0)) > 0.1
+               OR (qe.id IS NOT NULL AND qe.estimate IS DISTINCT FROM qold.estimate))) AS moved,
          f.repeats, f.created_at
     FROM consistency_flags f
     LEFT JOIN claims c ON c.id = f.primary_claim_id
-    LEFT JOIN actions a ON a.id = f.action_id
-    LEFT JOIN assessments cur ON cur.claim_id = f.primary_claim_id AND cur.is_current = true`;
+    LEFT JOIN actions x ON x.id = f.action_id ${CURRENT_RECORD_JOINS}
+    LEFT JOIN quantity_estimates qold ON qold.id = f.assessment_id_at_flag`;
 
 export async function listConsistencyFlags(
   opts: { limit?: number; since?: Date | null; sweepId?: string | null } = {}
@@ -880,6 +1073,103 @@ export async function listConsistencyFlags(
   );
 }
 
+export interface OpenFlag {
+  flag_id: string;
+  primary_claim_id: string;
+  kind: string;
+  /** The start of the rationale; the whole is in the Steward's queued context. */
+  rationale: string;
+  repeats: number;
+  created_at: string;
+}
+
+/** How much of each open flag's rationale the sweep briefing carries. */
+export const OPEN_FLAG_RATIONALE_CHARS = 200;
+
+/**
+ * The flags in a partition still waiting for their pass (the primary's
+ * judgment is still the one flagged and its action is open or running):
+ * what the next sweep is briefed with, so it neither repeats a tension
+ * already raised nor loses track of one.
+ */
+export async function openFlagsInScope(scope: PartitionScope): Promise<OpenFlag[]> {
+  const rows = await rawQuery<{
+    flag_id: string;
+    primary_claim_id: string;
+    kind: string;
+    rationale: string;
+    repeats: number;
+    created_at: Date;
+  }>(
+    `WITH scoped AS (
+       SELECT subject_id AS claim_id FROM taggings
+        WHERE $1::uuid IS NOT NULL AND tag_id = $1::uuid AND subject_kind = 'claim'
+       UNION
+       SELECT unnest($2::uuid[])
+     )
+     SELECT f.id AS flag_id, f.primary_claim_id, f.kind, f.rationale, f.repeats, f.created_at
+       FROM consistency_flags f
+       JOIN actions x ON x.id = f.action_id AND x.status IN ('open', 'running')
+       JOIN claims c ON c.id = f.primary_claim_id AND c.state = 'active' ${CURRENT_RECORD_JOINS}
+      WHERE f.assessment_id_at_flag = ${RECORD_ID}
+        AND (($1::uuid IS NULL AND $2::uuid[] IS NULL) OR c.id IN (SELECT claim_id FROM scoped))
+      ORDER BY f.created_at DESC
+      LIMIT 50`,
+    [scope.tagId ?? null, scope.claimIds ?? null]
+  );
+  return rows.map((r) => ({
+    ...r,
+    rationale: r.rationale.slice(0, OPEN_FLAG_RATIONALE_CHARS),
+    repeats: Number(r.repeats),
+    created_at: new Date(r.created_at).toISOString(),
+  }));
+}
+
+/** What each variant's funded sweeps found, over a window (#756). */
+export interface SweepYield {
+  variant: "standard" | "strong";
+  /** Completed sweeps of this variant in which the checker ran. */
+  sweeps: number;
+  /** The assessed nodes those sweeps had in scope. */
+  nodes: number;
+  /** Their flags whose pass ran and moved the verdict, credence or estimate: flags a Steward upheld. */
+  upheld: number;
+}
+
+/**
+ * The yield of each variant's sweeps over the last `windowDays`: how many
+ * of its flags a Steward's pass upheld (moved the judgment, as the
+ * precision record reads it), per node read. The evidence the strong
+ * variant's expected gain is taken from once both variants have enough
+ * sweeps (allocation-service consistencyStrongExpectedGain).
+ */
+export async function sweepYieldByVariant(windowDays: number): Promise<SweepYield[]> {
+  const rows = await rawQuery<{ variant: "standard" | "strong"; sweeps: number; nodes: number; upheld: number }>(
+    `WITH s AS (
+       SELECT id, variant, claims_in_scope FROM consistency_sweeps
+        WHERE status = 'done' AND variant IN ('standard', 'strong')
+          AND claims_in_scope >= 2
+          AND started_at > now() - make_interval(days => $1)
+     )
+     SELECT s.variant,
+            COUNT(*)::int AS sweeps,
+            COALESCE(SUM(s.claims_in_scope), 0)::int AS nodes,
+            COALESCE(SUM((SELECT COUNT(*) FROM (${FLAG_SELECT}) fl
+                           WHERE fl.sweep_id = s.id AND fl.moved)), 0)::int AS upheld
+       FROM s GROUP BY s.variant`,
+    [windowDays]
+  );
+  return (["standard", "strong"] as const).map((variant) => {
+    const r = rows.find((x) => x.variant === variant);
+    return {
+      variant,
+      sweeps: Number(r?.sweeps ?? 0),
+      nodes: Number(r?.nodes ?? 0),
+      upheld: Number(r?.upheld ?? 0),
+    };
+  });
+}
+
 export interface ConsistencyPrecision {
   flagged: number;
   ran: number;
@@ -888,11 +1178,12 @@ export interface ConsistencyPrecision {
 }
 
 /**
- * The checker's track record: of the passes its flags asked for, how many
- * ran and how many changed the primary's verdict or credence. A pass that
- * ran and changed nothing is not necessarily a wasted one (the Steward may
- * have recorded why both verdicts stand), but a checker whose flags never
- * move anything is spending attention on noise.
+ * The checker's track record, for operators (GET /consistency), not for the
+ * checker: of the passes its flags asked for, how many ran and how many
+ * changed the primary's verdict, credence, estimate or standing. A pass that
+ * ran and changed nothing is not a wasted one when the Steward repaired its
+ * reasoning or recorded why both verdicts stand, which this count cannot
+ * see; read `moved` beside `ran`, never as precision on its own (#745).
  */
 export async function consistencyPrecision(opts: { since?: Date | null } = {}): Promise<ConsistencyPrecision> {
   const [row] = await rawQuery<{ flagged: number; ran: number; moved: number; repeats: number }>(
