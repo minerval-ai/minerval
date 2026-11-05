@@ -82,7 +82,7 @@ export interface StoryNode {
    * Partial ISO-8601 at whatever precision is known; null when neither is.
    */
   date: string | null;
-  /** Which side its instances take on the claim (affirms, denies, poses); empty for an underlying source. */
+  /** Which side its instances take on the claim (affirms, denies, poses, mentions); empty for an underlying source. */
   stances: string[];
   /** Drawn on by the claim's sources without stating the claim itself. */
   underlying: boolean;

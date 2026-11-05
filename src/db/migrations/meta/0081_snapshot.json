@@ -1,5 +1,5 @@
 {
-  "id": "577cb59c-b94f-46fe-945a-00d0db3308b8",
+  "id": "5d8ed5e7-b322-4f2c-bd9b-5f665ba24475",
   "prevId": "727c6110-c2dc-46ca-a5cb-236b8ffce29c",
   "version": "7",
   "dialect": "postgresql",
@@ -6246,12 +6246,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "human_review_reason": {
-          "name": "human_review_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "merge_target_claim_id": {
           "name": "merge_target_claim_id",
           "type": "uuid",
@@ -6828,7 +6822,7 @@
       "checkConstraints": {
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
-          "value": "source IN ('steward_escalation', 'reconcile_candidate', 'operator')"
+          "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
         }
       },
       "isRLSEnabled": false

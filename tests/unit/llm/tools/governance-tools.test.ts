@@ -27,7 +27,13 @@ vi.mock("../../../../src/db/client.js", async () => {
       leftJoin: () => c,
       where: () => c,
       orderBy: () => c,
-      limit: (n: number) => Promise.resolve(rows.slice(0, n)),
+      limit: (n: number) => {
+        const page = Promise.resolve(rows.slice(0, n)) as Promise<unknown> & {
+          offset: (o: number) => Promise<unknown>;
+        };
+        page.offset = (o: number) => Promise.resolve(rows.slice(o, o + n));
+        return page;
+      },
       then: (
         resolve: (rows: unknown) => unknown,
         reject: (err: unknown) => unknown
@@ -211,6 +217,43 @@ describe("decision → contribution link", () => {
       review_id: REVIEW_ID,
       contribution_id: CONTRIBUTION_ID,
     });
+  });
+
+  it("get_recent_decisions carries the bad-faith flag and says when another page exists", async () => {
+    const row = (i: number) => ({
+      reviewId: `r${i}`,
+      contributionId: CONTRIBUTION_ID,
+      decision: "reject",
+      reasoning: "Spam.",
+      confidence: 0.9,
+      policyCitations: ["§13"],
+      suspectedBadFaith: true,
+      badFaithCategory: "spam",
+      reviewedAt: new Date("2026-07-02T00:00:00Z"),
+      contributionType: "challenge",
+      contributorId: CONTRIBUTOR_ID,
+      claimId: null,
+    });
+    mocks.rows.contribution_reviews = [row(1), row(2), row(3)];
+
+    const out = JSON.parse(
+      await executeGovernanceTool("get_recent_decisions", {
+        limit: 2,
+        since: "2026-07-01T00:00:00Z",
+        bad_faith_only: true,
+      })
+    );
+    expect(out.decisions).toHaveLength(2);
+    expect(out.decisions[0]).toMatchObject({ suspected_bad_faith: true, bad_faith_category: "spam" });
+    expect(out.has_more).toBe(true);
+    expect(out.offset).toBe(0);
+  });
+
+  it("get_recent_decisions refuses an unparseable since", async () => {
+    const out = JSON.parse(
+      await executeGovernanceTool("get_recent_decisions", { since: "last tuesday" })
+    );
+    expect(out.error).toMatch(/not an ISO 8601 time/);
   });
 
   it("get_contribution_details accepts a review_id", async () => {

@@ -69,6 +69,24 @@ export interface AllocationPolicy {
   est_curate_cost_owls: number;
   /** Cost prior for one `audit` run, in owls, likewise. */
   est_audit_cost_owls: number;
+  /** How much more a strong consistency sweep is expected to find than a
+   *  standard one of the same partition (#756): value(strong) =
+   *  value(standard) × this. A sweep carries no value of its own to set
+   *  against the day's bar, so the marginal-return rule compares the upgrade
+   *  with the sweep itself: the strong variant is bought when this × the
+   *  standard's price covers the strong one's (allocation-service
+   *  consistencySweepVariant). Setting it on a mandate is an override: once
+   *  each variant has enough sweeps, the General mandate otherwise reads it
+   *  from evidence, the ratio of the two variants' upheld flags per node
+   *  read (consistencyStrongExpectedGain), and this default stands only
+   *  until then. The corpus consistency eval (scripts/corpus/consistency.ts)
+   *  run on both tiers gives the recall ratio a Grantmaker would set it to. */
+  consistency_strong_expected_gain: number;
+  /** Expected cost of reading one assessed node in a consistency sweep, in
+   *  owls, for a reader whose model the rate table cannot price (an
+   *  OpenRouter model, whose provider reports each call's cost): the prior
+   *  until that variant's sweeps give an observed cost per node (#756). */
+  est_consistency_node_cost_owls: number;
   /** Formula weight of a reconcile-candidate request (a similarity scan's
    *  pair, times its score) relative to a Steward's escalation (1.0): a
    *  scan saw two texts; an agent read the claim. */
@@ -131,6 +149,8 @@ export const POLICY_BOUNDS: Record<
   maintenance_share: { min: 0, max: 1 },
   est_curate_cost_owls: { min: 0.01, max: 20 },
   est_audit_cost_owls: { min: 0.01, max: 20 },
+  consistency_strong_expected_gain: { min: 1, max: 50 },
+  est_consistency_node_cost_owls: { min: 0.0001, max: 1 },
   curate_candidate_weight: { min: 0, max: 1 },
   curate_matcher_quiet_days: { min: 0, max: 365 },
   reconcile_candidates_max_per_sweep: { min: 0, max: 200 },
@@ -147,6 +167,77 @@ export const POLICY_BOUNDS: Record<
   request_wait_days: { min: 1, max: 365 },
   est_request_scope_cost_owls: { min: 0.01, max: 20 },
 };
+
+/**
+ * Whether a mandate's valuations come from the formula rather than from
+ * its Grantmaker's own set_valuations calls: the platform's General lane
+ * (refreshFormulaValuations) and its Governance mandates
+ * (refreshAuditValuations). One predicate, so the review pass's tool
+ * choice and the update_allocation_policy guard can never disagree (#687).
+ */
+export function isFormulaPolicy(policy: string | null | undefined): boolean {
+  return policy === "general" || policy === "governance";
+}
+
+/**
+ * The knobs every mandate's own machinery reads, whatever its policy: its
+ * allocator's maintenance ceiling (allocation-service.runMandateAllocator)
+ * and the attempt priors and bounds its plan's attempt_proof items are
+ * priced and capped with (action-service, attempt-service). A judgment
+ * mandate may set these and only these: the rest of the policy is read by
+ * a formula that never runs for it.
+ */
+const MANDATE_KNOBS: readonly (keyof AllocationPolicy)[] = [
+  "maintenance_share",
+  "est_attempt_standard_cost_owls",
+  "est_attempt_max_cost_owls",
+  "attempt_claim_lifetime_cap_owls",
+  "attempt_cooldown_days",
+];
+
+/** What the Governance formula reads besides: its audit class weights. */
+const GOVERNANCE_KNOBS: readonly (keyof AllocationPolicy)[] = [
+  ...MANDATE_KNOBS,
+  "audit_value_prize",
+  "audit_value_bad_faith",
+  "audit_value_overturn",
+  "audit_value_anomaly",
+  "audit_value_suspension",
+  "audit_value_sweep",
+];
+
+/**
+ * The policy keys a mandate's own machinery actually reads, by its policy:
+ * every key for the General lane (its formula, the platform-wide priors it
+ * carries, and its audit weights for Governance's audits), the audit
+ * weights plus the mandate knobs for Governance, and the mandate knobs for
+ * a judgment mandate. update_allocation_policy accepts exactly these, so a
+ * write that would change nothing is refused rather than reported as done.
+ */
+export function policyKnobs(policy: string | null | undefined): (keyof AllocationPolicy)[] {
+  if (policy === "general") return Object.keys(POLICY_BOUNDS) as (keyof AllocationPolicy)[];
+  if (policy === "governance") return [...GOVERNANCE_KNOBS];
+  return [...MANDATE_KNOBS];
+}
+
+/**
+ * The knobs a mandate may set, each with its bounds and, when given, the
+ * value in force: the text a Grantmaker's update_allocation_policy shows,
+ * generated from POLICY_BOUNDS so a new key or a new bound is never
+ * missing from what the agent is told.
+ */
+export function describePolicyKnobs(
+  policy: string | null | undefined,
+  current?: Partial<AllocationPolicy> | null
+): string {
+  return policyKnobs(policy)
+    .map((k) => {
+      const b = POLICY_BOUNDS[k];
+      const now = current?.[k];
+      return `${k} (${b.min} to ${b.max}${now !== undefined ? `, now ${now}` : ""})`;
+    })
+    .join("; ");
+}
 
 export interface GeneralMandate {
   grantId: string;
@@ -261,6 +352,19 @@ function defaultsFromConfig(): AllocationPolicy {
     maintenance_share: 0.1,
     est_curate_cost_owls: 0.25,
     est_audit_cost_owls: 0.5,
+    // Until both variants have enough sweeps for the evidence (#756). At
+    // the default price-based estimates a strong sweep costs about 8 times
+    // a standard one below the caps and 5 times where both caps bind (400
+    // nodes and up), so 5 buys the strong read for the largest partitions
+    // and the standard for the rest: both variants run, which is what lets
+    // their upheld flags be compared. 3, the earlier guess, meant never.
+    consistency_strong_expected_gain: 5,
+    // The standard reader is an OpenRouter model (no rate-table entry).
+    // Its same-family direct listing (gpt-5.6-luna, $0.20/$1.20 a million
+    // tokens) at the sweep's per-node token assumption comes to about
+    // 0.004 owl a node; the first live sweeps metered about 0.0007. Set a
+    // little above the listing so the first sweeps can read everything.
+    est_consistency_node_cost_owls: 0.005,
     curate_candidate_weight: 0.5,
     curate_matcher_quiet_days: 7,
     reconcile_candidates_max_per_sweep: 0,
@@ -345,7 +449,9 @@ export type PolicyUpdateResult =
  */
 export async function updateAllocationPolicy(
   grantId: string,
-  updates: Record<string, unknown>
+  updates: Record<string, unknown>,
+  /** The keys this mandate's machinery reads (policyKnobs); default all. */
+  allowedKeys: readonly string[] = Object.keys(POLICY_BOUNDS)
 ): Promise<PolicyUpdateResult> {
   const keys = Object.keys(updates);
   if (keys.length === 0) return { ok: false, problem: "no keys to update" };
@@ -354,7 +460,15 @@ export async function updateAllocationPolicy(
     if (!(key in POLICY_BOUNDS)) {
       return {
         ok: false,
-        problem: `unknown policy key "${key}"; known keys: ${Object.keys(POLICY_BOUNDS).join(", ")}`,
+        problem: `unknown policy key "${key}"; keys this mandate reads: ${allowedKeys.join(", ")}`,
+      };
+    }
+    if (!allowedKeys.includes(key)) {
+      return {
+        ok: false,
+        problem:
+          `"${key}" is read only by a formula this mandate does not run, so setting it would ` +
+          `change nothing; keys this mandate reads: ${allowedKeys.join(", ")}`,
       };
     }
     const v = clampToBounds(key as keyof AllocationPolicy, updates[key]);

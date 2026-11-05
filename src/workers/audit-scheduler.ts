@@ -82,11 +82,16 @@ export async function auditSchedulerTick(
     [new Date(now - intervalMs)]
   );
   if ((decided?.count ?? 0) > 0) {
+    // The window is named as a time the agent can pass to since (#696).
+    const windowStart = new Date(now - intervalMs).toISOString();
     const runId = await requestAudit({
       auditType: "pattern_analysis",
       context:
         `Scheduled sweep over the last ${config.auditSweepIntervalHours} ` +
-        `hours of review decisions. Sample them (get_recent_decisions), ` +
+        `hours of decisions, since ${windowStart}. Sample the review ` +
+        `decisions (get_recent_decisions with since; bad_faith_only and ` +
+        `decision_filter "escalate" pick out the cases to weigh most), and ` +
+        `the arbitrations of the same window (get_recent_arbitrations), ` +
         `weighing escalations, low-confidence calls, and bad-faith flags ` +
         `most heavily, and look for what no single decision reveals: like ` +
         `cases decided unalike, drift, coordinated contribution patterns.`,
