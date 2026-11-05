@@ -13,7 +13,7 @@
  */
 import { readFileSync } from "node:fs";
 import type { MatchDecision } from "../../src/llm/agents/matcher.js";
-import { isInstanceStance, type InstanceStance } from "../../src/schemas/common.js";
+import { isMatchedInstanceStance, type MatchedInstanceStance } from "../../src/schemas/common.js";
 
 export const GOLDEN_CATEGORIES = [
   "paraphrase",
@@ -31,7 +31,7 @@ export interface GoldenPair {
   existing: string[];
   candidate: { extractedText: string; proposedCanonical: string };
   expect:
-    | { isMatch: true; matchedIndex: number; stance: InstanceStance }
+    | { isMatch: true; matchedIndex: number; stance: MatchedInstanceStance }
     | { isMatch: false };
   note: string;
 }
@@ -74,7 +74,7 @@ export function validateGoldenFixture(fixture: GoldenFixture): string[] {
       ) {
         problems.push(`${where}: matchedIndex out of range`);
       }
-      if (!isInstanceStance(pair.expect.stance)) {
+      if (!isMatchedInstanceStance(pair.expect.stance)) {
         problems.push(`${where}: match pairs need stance affirms|denies|poses`);
       }
     } else if (pair.expect?.isMatch !== false) {

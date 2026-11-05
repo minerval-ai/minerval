@@ -13,6 +13,7 @@ const { state } = vi.hoisted(() => ({
     surveys: [] as Array<Record<string, unknown>>,
     updates: [] as Array<{ sql: string; params: unknown[] }>,
     pages: [] as string[],
+    pageOpts: [] as Array<Record<string, unknown>>,
   },
 }));
 
@@ -29,8 +30,9 @@ vi.mock("../../../../src/services/scope-survey-service.js", () => ({
   }),
 }));
 vi.mock("../../../../src/services/source-watch-service.js", () => ({
-  readPage: vi.fn(async (url: string) => {
+  readPage: vi.fn(async (url: string, opts: { offset?: number; maxChars?: number } = {}) => {
     state.pages.push(url);
+    state.pageOpts.push(opts);
     return { ok: true, text: "page", chars: 4 };
   }),
 }));
@@ -54,6 +56,7 @@ beforeEach(() => {
   state.surveys = [];
   state.updates = [];
   state.pages = [];
+  state.pageOpts = [];
 });
 
 describe("createMandateTools", () => {
@@ -104,6 +107,14 @@ describe("createMandateTools", () => {
       chars: 4,
     });
     expect(state.pages).toEqual(["https://x.test/a"]);
+    // The next window: offset and max_chars reach the reader; junk does not.
+    await tools.execute("read_page", { url: "https://x.test/a", offset: 12_000, max_chars: 5_000 });
+    await tools.execute("read_page", { url: "https://x.test/a", offset: "later" });
+    expect(state.pageOpts).toEqual([
+      { offset: undefined, maxChars: undefined },
+      { offset: 12_000, maxChars: 5_000 },
+      { offset: undefined, maxChars: undefined },
+    ]);
 
     const res = JSON.parse(
       (await tools.execute("update_workspace", { content: "x".repeat(150_000) }))!

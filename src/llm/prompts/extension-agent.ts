@@ -108,8 +108,8 @@ graph: its assessments, its mapped disagreements, its reasoning.
 
 Consult the graph before answering an epistemic question: search for the
 relevant claims and read their assessments, subclaims, and parents. Reading
-a claim directly (get_claim_details) returns its current assessment,
-including the reasoning behind the verdict. Your own knowledge frames
+a claim directly (get_claim; include subclaims for what it rests on) returns
+its current assessment, including the reasoning behind the verdict. Your own knowledge frames
 questions and fills narrative gaps; it does not settle verdicts. Where the
 graph records reasoning, relay it, compressed, rather than the bare verdict:
 what an assessment rests on tells the reader more than its label.

@@ -232,7 +232,7 @@ export const DECISION_TOOLS: ReadonlySet<string> = new Set([
   "add_parent_claim",
   "record_claim_instance",
   "set_claim_importance",
-  "notify_dependent_stewards",
+  "notify_steward",
   "escalate_to_curator",
   // Curator (src/llm/tools/curator-tools.ts).
   "merge_claims",

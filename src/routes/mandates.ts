@@ -15,6 +15,7 @@
  * credentials ARE presented (the web BFF acting for a session), they are
  * honoured so the payload can include manager-only fields.
  */
+import { FUNDING_CALL_MAX_OWLS, FUNDING_CALL_MAX_NOTE } from "../services/owl.js";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   listPublicMandates,
@@ -165,7 +166,13 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           type: "object",
           required: ["owls"],
           properties: {
-            owls: { type: "number", exclusiveMinimum: 0, maximum: 10000 },
+            // One call's ceiling against a mistyped amount; see owl.ts (#729).
+            owls: {
+              type: "number",
+              exclusiveMinimum: 0,
+              maximum: FUNDING_CALL_MAX_OWLS,
+              description: FUNDING_CALL_MAX_NOTE,
+            },
           },
         },
       },
