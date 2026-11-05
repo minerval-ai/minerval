@@ -1,5 +1,5 @@
 import { PAGE_HASH_PREFIX_CHARS } from "./page-url";
-import { getSettings } from "./settings";
+import { getSettings, isCustomApiBaseUrl } from "./settings";
 import type {
   BackgroundRequest,
   ChatResponse,
@@ -46,7 +46,7 @@ async function send(
   // the hosted API, the carve-out only applies to someone who asked for it.
   if (!settings.apiKey && !settings.apiBaseUrl.includes("localhost")) {
     throw new ApiError(
-      "No API key configured. Create one in your Minerval dashboard and paste it in the extension settings.",
+      "No API key configured. Create one at minerval.ai/account and paste it in the extension settings.",
       401
     );
   }
@@ -69,7 +69,9 @@ async function send(
     // not be reached, since a misconfigured base URL is the usual cause and the
     // raw message gives the user nothing to act on.
     throw new ApiError(
-      `Could not reach the Minerval API at ${settings.apiBaseUrl}. Check the API base URL in the extension settings.`,
+      isCustomApiBaseUrl(settings)
+        ? `Could not reach the Minerval API at ${settings.apiBaseUrl}. Check the API base URL under Settings → Developer.`
+        : "Could not reach Minerval. Check your connection and try again.",
       0
     );
   }
