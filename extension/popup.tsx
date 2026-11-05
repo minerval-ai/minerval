@@ -3,12 +3,14 @@ import "./popup.css";
 import { Mark } from "~lib/mark";
 import {
   getSettings,
+  isCustomApiBaseUrl,
   saveSettings,
   setSitePolicy,
   resolveSitePolicy,
 } from "~lib/settings";
 import {
   CHAT_PORT,
+  DEFAULT_API_BASE_URL,
   type ChatCitation,
   type ChatStreamMessage,
   type ChatTurn,
@@ -697,14 +699,6 @@ function SettingsPane({
       )}
 
       <label>
-        API base URL
-        <input
-          value={settings.apiBaseUrl}
-          onChange={(e) => void update({ apiBaseUrl: e.target.value })}
-          placeholder="https://api.claimgraph.io"
-        />
-      </label>
-      <label>
         API key
         <input
           type="password"
@@ -717,6 +711,24 @@ function SettingsPane({
         Create a key in your Minerval dashboard. Analysis and chat are
         LLM-backed and metered against your account's monthly allowance.
       </p>
+
+      {/* The hosted API is built in; only developers running their own server
+          need this, so it stays folded away (open when an override is set). */}
+      <details className="developer" open={isCustomApiBaseUrl(settings)}>
+        <summary>Developer</summary>
+        <label>
+          API base URL
+          <input
+            value={settings.apiBaseUrl}
+            onChange={(e) => void update({ apiBaseUrl: e.target.value })}
+            placeholder={DEFAULT_API_BASE_URL}
+          />
+        </label>
+        <p className="muted">
+          For pointing the extension at your own server. Clear it to go back
+          to the hosted API.
+        </p>
+      </details>
     </div>
   );
 }

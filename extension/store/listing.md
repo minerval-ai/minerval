@@ -133,6 +133,6 @@ are effectively pinned to the account that creates them.
 
 The screenshots are real captures: the production build loaded into
 Chromium via Playwright, pointed at a local demo article and a mock API
-serving graph verdicts (the extension's default API base URL is localhost,
-so no key is involved). Re-shoot after UI changes so the listing never
+serving graph verdicts (the API base URL set to localhost under Settings →
+Developer, so no key is involved). Re-shoot after UI changes so the listing never
 drifts from the product.
