@@ -5,8 +5,9 @@
  * The lookout reads at whatever depth it judges the job needs — a lead, an
  * outline, one section, or the whole document in pages. Nothing here
  * narrows that; what bounds a run's spending is the mechanism around it
- * (the per-run cost cap, the daily run cap, the mandate's escrow). What a
- * read costs is reported back on every call so the lookout can weigh it.
+ * (the run's budget, shown after every turn, and the mandate's escrow and
+ * day). What a read costs is reported back on every call so the lookout
+ * can weigh it.
  *
  * Null-delegate convention: `execute` returns null for any other tool
  * name, so an agent wires these with one spread and one early return.

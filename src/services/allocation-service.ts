@@ -46,9 +46,12 @@ import {
 } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import {
+  POLICY_BOUNDS,
+  getEffectiveAllocationPolicy,
   getGeneralMandate,
   getMandateAllocationPolicy,
 } from "./allocation-policy-service.js";
+import { sweepYieldByVariant } from "./consistency-service.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
 
@@ -735,6 +738,74 @@ export async function runGeneralAllocator(): Promise<MandateAllocationResult | n
  * Bounded by escrow headroom too (committed money includes these
  * allocations and any regrants out).
  */
+/**
+ * Which variant of a consistency sweep the General mandate buys (#756),
+ * given the two prices of one partition's rows. A sweep has no value
+ * estimate of its own to set against the day's bar, so the marginal-return
+ * rule compares the upgrade with the sweep itself: the strong variant is
+ * expected to find `expectedGain` times what the standard finds, and is
+ * bought when that is at least as much per owl (expectedGain × standard
+ * price ≥ strong price). Otherwise more partitions read on the cheap tier
+ * return more than fewer read on the strong one. Both prices scale with
+ * the partition's size, so the choice is made per partition: where a cap
+ * binds, the ratio between them is not the ratio of their per-node costs.
+ * fundGrantSelfActions makes the same comparison in SQL; this is its
+ * statement.
+ */
+export function consistencySweepVariant(
+  expectedGain: number,
+  standardMicroUsd: number,
+  strongMicroUsd: number
+): "standard" | "strong" {
+  return expectedGain * standardMicroUsd >= strongMicroUsd ? "strong" : "standard";
+}
+
+/** How far back the variants' yields are read, and how many sweeps of each the evidence needs. */
+export const CONSISTENCY_EVIDENCE = { windowDays: 60, minSweepsPerVariant: 10 } as const;
+
+export interface StrongExpectedGain {
+  gain: number;
+  /** override: the General mandate's own policy sets it; evidence: the variants' upheld flags; default: the policy default. */
+  source: "override" | "evidence" | "default";
+}
+
+/**
+ * How much more a strong sweep is expected to find than a standard one
+ * (#756), in order:
+ *
+ *   1. override: the General mandate's allocation policy sets
+ *      `consistency_strong_expected_gain` itself (its Grantmaker's
+ *      judgment, for instance from the corpus consistency eval's recall on
+ *      each tier, scripts/corpus/consistency.ts);
+ *   2. evidence: once each variant has CONSISTENCY_EVIDENCE.minSweepsPerVariant
+ *      completed sweeps in the window, the ratio of their upheld flags (a
+ *      flag whose pass moved the judgment) per node read, each count
+ *      smoothed by one so a variant with none yet is not read as zero,
+ *      held to the policy's bounds;
+ *   3. default: the shipped policy default.
+ */
+export async function consistencyStrongExpectedGain(): Promise<StrongExpectedGain> {
+  const mandate = await getGeneralMandate();
+  const own = mandate?.allocationPolicy?.consistency_strong_expected_gain;
+  const bounds = POLICY_BOUNDS.consistency_strong_expected_gain;
+  if (typeof own === "number" && Number.isFinite(own)) {
+    return { gain: Math.min(bounds.max, Math.max(bounds.min, own)), source: "override" };
+  }
+  const yields = await sweepYieldByVariant(CONSISTENCY_EVIDENCE.windowDays).catch(() => []);
+  const standard = yields.find((y) => y.variant === "standard");
+  const strong = yields.find((y) => y.variant === "strong");
+  if (
+    standard && strong &&
+    standard.sweeps >= CONSISTENCY_EVIDENCE.minSweepsPerVariant &&
+    strong.sweeps >= CONSISTENCY_EVIDENCE.minSweepsPerVariant &&
+    standard.nodes > 0 && strong.nodes > 0
+  ) {
+    const ratio = ((strong.upheld + 1) / strong.nodes) / ((standard.upheld + 1) / standard.nodes);
+    return { gain: Math.min(bounds.max, Math.max(bounds.min, ratio)), source: "evidence" };
+  }
+  return { gain: (await getEffectiveAllocationPolicy()).consistency_strong_expected_gain, source: "default" };
+}
+
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
     exclusion_group: string;
@@ -742,22 +813,21 @@ export async function fundGrantSelfActions(): Promise<number> {
     claim_id: string | null;
     grant_id: string;
     kind: string;
-    sweeps_today: number;
     needed: number;
     headroom: number;
     /** Null when the mandate has no daily rate: unpaced, escrow-bounded only. */
     day_room: number | null;
   }>(
     `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
-            (SELECT COUNT(*)::int FROM action_allocations al
-              WHERE al.exclusion_group LIKE 'consistency:%'
-                AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-              AS sweeps_today,
+            -- What this row still needs: its cost less what already backs
+            -- it (an allocation placed on its group as a whole, or on this
+            -- row). A sibling variant's allocation is not this row's (#756).
             GREATEST(0, a.cost_est_micro_usd -
               COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
                           FROM action_allocations al
                          WHERE al.exclusion_group = a.exclusion_group
-                           AND al.released_at IS NULL), 0))::bigint AS needed,
+                           AND al.released_at IS NULL
+                           AND (al.action_id IS NULL OR al.action_id = a.id)), 0))::bigint AS needed,
             -- Same accounting as grantCommittedMicroUsd: consumed pro-rata
             -- shares + outstanding allocations + NON-LEDGER metered spend
             -- (llm_usage minus what allocation SHARES already account for, so
@@ -835,18 +905,28 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- switches are deployment off-switches only.
         AND (a.kind <> 'mandate_review' OR $2::boolean)
         AND (a.kind <> 'lookout_run' OR $3::boolean)
-        -- Consistency sweeps are capped per day across ALL partitions:
-        -- the cap bounds the platform's sweep spend, not each tag's.
-        AND (a.kind <> 'consistency_sweep'
-             OR (SELECT COUNT(*) FROM action_allocations al
-                  WHERE al.exclusion_group LIKE 'consistency:%'
-                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-                < $1::int)
+        -- Consistency sweeps have no count either (#749): the General
+        -- mandate funds them from its day like any of its work, the
+        -- re-sweep interval keeps a partition to one a day, and the switch
+        -- is a deployment off-switch. Of a partition's two variants it
+        -- buys the one the marginal-return rule picks from that
+        -- partition's two prices (consistencySweepVariant, with the
+        -- strong read's expected gain as $4, #756), and never both.
+        AND (a.kind <> 'consistency_sweep' OR ($1::boolean AND a.variant = (
+              SELECT CASE WHEN $4::real * std.cost_est_micro_usd >= strong.cost_est_micro_usd
+                          THEN 'strong' ELSE 'standard' END
+                FROM actions std
+                JOIN actions strong ON strong.exclusion_group = std.exclusion_group
+                                   AND strong.variant = 'strong'
+               WHERE std.exclusion_group = a.exclusion_group AND std.variant = 'standard')))
       LIMIT 100`,
     [
-      loadConfig().consistencyMaxSweepsPerDay ?? 0,
+      loadConfig().consistencySweepsEnabled === true,
       loadConfig().mandateReviewEnabled !== false,
       loadConfig().lookoutRunsEnabled !== false,
+      loadConfig().consistencySweepsEnabled === true
+        ? (await consistencyStrongExpectedGain()).gain
+        : 0,
     ]
   );
   let placed = 0;
@@ -854,15 +934,9 @@ export async function fundGrantSelfActions(): Promise<number> {
   // self-actions on the same grant has to draw them down itself — otherwise
   // each row sees the full room and together they overcommit.
   const spentThisPass = new Map<string, number>();
-  // The sweep cap is global, and the snapshot counts only earlier passes.
-  let sweepsThisPass = 0;
-  const sweepCap = loadConfig().consistencyMaxSweepsPerDay ?? 0;
   for (const row of rows) {
     const needed = Number(row.needed);
     if (needed <= 0) continue;
-    if (row.kind === "consistency_sweep" && Number(row.sweeps_today) + sweepsThisPass >= sweepCap) {
-      continue;
-    }
     const drawn = spentThisPass.get(row.grant_id) ?? 0;
     if (needed > Number(row.headroom) - drawn) continue;
     const dayRoom =
@@ -880,7 +954,6 @@ export async function fundGrantSelfActions(): Promise<number> {
     );
     if (inserted.length === 0) continue;
     placed++;
-    if (row.kind === "consistency_sweep") sweepsThisPass++;
     spentThisPass.set(row.grant_id, drawn + needed);
   }
   return placed;

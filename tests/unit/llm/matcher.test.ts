@@ -30,11 +30,22 @@ vi.mock("../../../src/services/search-service.js", () => ({
   findSimilarClaims: vi.fn(async () => [
     { id: "43d6b1fa-0289-4f4c-b3bf-39567ab24629", text: "IUT structures.", similarity_score: 0.9 },
   ]),
+  keywordClaimSearch: vi.fn(async () => []),
+}));
+vi.mock("../../../src/llm/tools/graph-read-tools.js", () => ({
+  getGraphReadToolDefinitions: () =>
+    ["search_claims", "get_claim", "get_decomposition", "get_dependents"].map((name) => ({
+      name,
+      description: "",
+      input_schema: { type: "object" },
+    })),
+  executeGraphReadTool: vi.fn(async (name: string) => JSON.stringify({ read: name })),
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     matcherModel: "openai/gpt-6-luna",
     matchingTopK: 20,
+    matcherBudgetUsd: 0.1,
     agentReportsPerRun: 3,
   }),
 }));
@@ -46,7 +57,9 @@ vi.mock("../../../src/llm/tools/report-tools.js", () => ({
 }));
 
 import { matchClaim, priorSearchesNote } from "../../../src/llm/agents/matcher.js";
-import { findSimilarClaims } from "../../../src/services/search-service.js";
+import { findSimilarClaims, keywordClaimSearch } from "../../../src/services/search-service.js";
+import { generateEmbedding } from "../../../src/services/embedding-service.js";
+import { getUsageContext, withCostMeter } from "../../../src/llm/usage-context.js";
 
 const INPUT = {
   extractedText: "Arithmetic holomorphic structures in the IUT papers can be distinct.",
@@ -70,14 +83,14 @@ beforeEach(() => {
 });
 
 describe("matchClaim", () => {
-  it("warns the Matcher before its search budget runs out", async () => {
+  it("warns the Matcher before its turn guard runs out", async () => {
     script = async (opts) => {
       await opts.executeTool("search_similar_claims", { query: "IUT" });
       await opts.executeTool("submit_match_decision", SUBMISSION);
     };
     await matchClaim(INPUT);
     const opts = loopCalls[0]!;
-    expect(opts.maxIterations).toBe(12);
+    expect(opts.maxIterations).toBe(30);
     expect(opts.iterationBudgetNotice.warnWithin).toBe(2);
     expect(opts.iterationBudgetNotice.message(1)).toMatch(/submit_match_decision/);
   });
@@ -115,7 +128,11 @@ describe("matchClaim", () => {
     const retry = loopCalls[1]!;
     expect(retry.maxIterations).toBe(3);
     const content = retry.initialMessages[0].content as Array<{ text: string }>;
-    expect(content[1]!.text).toMatch(/ran out of search budget/);
+    expect(content[1]!.text).toMatch(/ended without calling submit_match_decision/);
+    // The retry's own prompt states its own turns and money (#727).
+    expect(content[0]!.text).toMatch(/up to 3 tool-use turns/);
+    expect(content[0]!.text).not.toMatch(/up to 30 tool-use turns/);
+    expect(content[0]!.text).toMatch(/budget of \$0\.03/);
     expect(d.outcome).toBe("match");
   });
 
@@ -147,15 +164,89 @@ describe("matchClaim", () => {
     expect(note).toMatch(/at most one more search_similar_claims query/);
   });
 
-  it("tells the Matcher its turn budget up front and that searches batch (#467)", async () => {
+  it("tells the Matcher its budget and turn guard up front and that searches batch (#467, #727)", async () => {
     script = async (opts) => {
       await opts.executeTool("search_similar_claims", { query: "IUT" });
       await opts.executeTool("submit_match_decision", SUBMISSION);
     };
     await matchClaim(INPUT);
     const first = loopCalls[0]!;
-    expect(first.initialMessages[0].content).toMatch(/You have 12 tool-use turns/);
-    expect(first.initialMessages[0].content).toMatch(/several `search_similar_claims` calls at\nonce/);
+    expect(first.initialMessages[0].content).toMatch(/budget of \$0\.10/);
+    expect(first.initialMessages[0].content).toMatch(/up to 30 tool-use turns/);
+    expect(first.initialMessages[0].content).toMatch(/several tool calls at once/);
+  });
+
+  it("ends a run whose budget is spent, after one turn to submit (#727)", async () => {
+    let turnsAllowed = 0;
+    script = async (opts) => {
+      // The meter crosses the ceiling; the next turn is the grace turn, the
+      // one after it is refused.
+      getUsageContext().passBudget!.meter.billedMicroUsd = 500_000;
+      await opts.beforeTurn(0);
+      turnsAllowed++;
+      await opts.beforeTurn(1);
+      turnsAllowed++;
+    };
+    const d = await matchClaim(INPUT);
+    // One grace turn in each of the two loops, then the run ends undecided.
+    expect(turnsAllowed).toBe(2);
+    expect(d.outcome).toBe("undecided");
+  });
+
+  it("adds what the decision billed to the caller's meter (#727)", async () => {
+    script = async (opts) => {
+      getUsageContext().passBudget!.meter.billedMicroUsd += 1234;
+      await opts.executeTool("search_similar_claims", { query: "IUT" });
+      await opts.executeTool("submit_match_decision", SUBMISSION);
+    };
+    const { billedMicroUsd } = await withCostMeter(() => matchClaim(INPUT));
+    expect(billedMicroUsd).toBe(1234);
+  });
+
+  it("passes the surrounding passage to the Matcher (#721)", async () => {
+    script = async (opts) => {
+      await opts.executeTool("search_similar_claims", { query: "IUT" });
+      await opts.executeTool("submit_match_decision", SUBMISSION);
+    };
+    await matchClaim({ ...INPUT, context: "Critics reject this reading of the papers." });
+    expect(loopCalls[0]!.initialMessages[0].content).toMatch(
+      /Surrounding passage[^\n]*Critics reject this reading/
+    );
+  });
+
+  it("adds keyword hits to a search, and falls back to keywords when embedding fails (#725)", async () => {
+    const KW = "8a1d2c3e-0000-4000-8000-000000000001";
+    vi.mocked(keywordClaimSearch).mockResolvedValue([
+      { id: KW, kind: "claim", text: "Erdős Problem 1234 holds.", similarity_score: 0.2 },
+    ] as any);
+    let first = "";
+    let second = "";
+    script = async (opts) => {
+      first = await opts.executeTool("search_similar_claims", { query: "IUT", keywords: "Problem 1234" });
+      vi.mocked(generateEmbedding).mockRejectedValueOnce(new Error("embeddings down"));
+      second = await opts.executeTool("search_similar_claims", { query: "Problem 1234" });
+    };
+    await matchClaim(INPUT);
+    vi.mocked(keywordClaimSearch).mockResolvedValue([]);
+    const a = JSON.parse(first);
+    expect(a.results.map((r: { id: string }) => r.id)).toEqual(["43d6b1fa-0289-4f4c-b3bf-39567ab24629", KW]);
+    expect(a.results[1].found_by).toBe("keywords");
+    const b = JSON.parse(second);
+    expect(b.note).toMatch(/keyword search/);
+    expect(b.results.map((r: { id: string }) => r.id)).toEqual([KW]);
+  });
+
+  it("gives the Matcher get_claim and get_decomposition, and no other graph read (#725)", async () => {
+    let read = "";
+    script = async (opts) => {
+      read = await opts.executeTool("get_decomposition", { claim_id: "x" });
+    };
+    await matchClaim(INPUT);
+    const names = loopCalls[0]!.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["get_claim", "get_decomposition"]));
+    expect(names).not.toContain("search_claims");
+    expect(names).not.toContain("get_dependents");
+    expect(read).toBe(JSON.stringify({ read: "get_decomposition" }));
   });
 
   it("keeps the retry note plain when the first run never searched", () => {
