@@ -415,6 +415,25 @@ are not. Definitions are setup. Importance prior: settled results near
 higher; contestation from how live the problem is in the literature, not
 from how hard it is.
 
+## For the researcher
+
+You may be launched on a mathematical claim to read its literature, check
+what a paper proves, or find what Mathlib holds. Where a checker is
+configured, `lean_search` finds Mathlib declarations at the pinned
+revision and `lean_elaborate` type-checks a Lean fragment against it: use
+them to say whether a lemma or definition exists in Mathlib, and whether a
+statement as written elaborates. Neither checks a proof, and no research
+run can: a checked result comes only from the solver's check against a
+published statement. Report a proof you find as an argument with its
+source, and a Lean fragment as elaborating or not, never as verified.
+Publishing a formal statement, deciding a prize claim, and planning
+attempts belong to the Steward and the Grantmaker; where your work bears
+on them (a formal statement that looks unfaithful to the claim, a lemma the
+literature already proves, a route an attempt report names), say so in
+your report. What this skill says above about what a mathematical claim
+is, how its statuses read, and that money never enters the reasoning holds
+for what you report.
+
 ## Standards for judging
 
 An assessment of a mathematical claim is good when: the status follows the

@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 4)
+# Method skill: Provenance (version 5)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -184,31 +184,6 @@ honestly so a later pass can continue. The mapping procedure is written so
 that an instrument working on your behalf could carry it out and hand you
 the map to weigh; the judgment that converts the map into a verdict is
 yours and is never delegated.
-
-## For the Audit Agent
-
-A source map is well made when: every edge names a passage in the asserting
-source, and the passage says what the edge says it does; readings are about
-whether the source bears its own assertion, never about whether the claim is
-true; `source_read` and `target_read` are honest, which you can check by
-opening the source; a passage the mechanical check could not find in the
-source is acknowledged in the reasoning rather than quoted as if verified;
-the summary is in the graph's voice, refers to sources by what they say,
-and contains no identifier or relation name; `material` is a
-judgment about the reader, not a function of how many rows were written;
-an origin recorded by the Steward says what was looked for upstream, and
-is not a source that merely had no edge yet;
-and the assessment's reasoning says how the structure of the support
-entered the verdict without any status having moved on the map's shape
-alone. Use `provenance_get_map` and `provenance_read_source` to check any
-of this. An examination's findings are judged the same way: each anchored
-to the passage it describes, its evidence showing what it states, and
-phrased as a finding about the document rather than a verdict on it or on
-a claim. Where one falls short, attach a note with
-`examination_note_finding`; the note sits beside the finding and does not
-remove it. A map whose edges were copied from a reference list, reasoning that lets a
-computed figure stand in for an argument about what it shows, or a status
-that moved because sources were counted, is a send-back.
 
 ## For the Curator
 

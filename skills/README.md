@@ -130,10 +130,16 @@ view is wrapped with a heading the agent can cite, `# Domain skill: <Name>
 (version N)` or `# Method skill: <Name> (version N)`, and one sentence of
 standing. The solver receives no skill: it is an instrument, and its prompt
 is written without one. The researcher, the instrument an administrator
-briefs and launches, often does a Steward's work on its behalf (a
-provenance map, a literature search), so its load returns `For every
-administrator` and `For the Claim Steward` as well as `For the researcher`,
-which says what it leaves to the Steward. The Consistency Checker, which reads
+briefs and launches, receives `For every administrator` and `For the
+researcher`; where it does a Steward's work on the
+Steward's behalf (a provenance map), its own section carries the procedure
+it follows and says what it leaves to the Steward, so it does not read the
+Steward's section, whose tools it does not have. The Claim Steward receives
+its own section and the Curator's, Matcher's and Extractor's (identity
+calls and recording instances are its work too), and not the procedures of
+roles it never acts as. `Standards for judging` and `Failure modes` feed the
+corpus judge and its rubric; of the agents, only the Audit Agent and the
+Consistency Checker read the standards. The Consistency Checker, which reads
 assessments against each other as the Audit Agent reads them against the
 standards, receives `For every administrator` and `Standards for judging`.
 
