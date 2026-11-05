@@ -1,4 +1,4 @@
-# Domain skill: Mathematics (version 1)
+# Domain skill: Mathematics (version 3)
 
 This skill says how the constitution and your role apply in this domain. It never outranks either.
 
@@ -51,7 +51,9 @@ on which named results it lives or dies. Two proofs by different methods
 stand side by side and corroborate without merging; two proofs that share a
 lemma share the subclaim. A counterexample or a proof of the negation is an
 argument with stance `against` on the same node. Relations, in
-mathematics: `requires` for a named result the argument depends on;
+mathematics: `requires` for a named result every proof of the claim
+depends on (a result only one of several proofs uses is `supports`, and the
+proof's argument records that it rests on it, constitution §6);
 `supports` for a proven weaker statement, a verified special case, or a
 large computation; `contradicts` for a counterexample or an inconsistent
 theorem; `assumes` for a foundational choice the discourse disputes for
@@ -124,7 +126,10 @@ elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
 computer-algebra toolkit, works alone within a fixed budget of metered
-work, writes nothing to the graph, and reports to the steward. Its prompt
+work, and writes nothing to the graph. No administrator launches it on its
+own judgment: an attempt runs only as an `attempt_proof` action that a
+mandate's plan funds (For the Grantmaker, below), and its result goes to
+the claim's steward, which did not launch it but judges what it settles. Its prompt
 carries none of this document, so nothing it says uses the graph's terms
 or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
@@ -246,3 +251,15 @@ dependents may rely on; notify their stewards. For open problems, set
 `marginal_yield` honestly: an open conjecture with a settled
 literature has low yield from another pass and high yield from a
 formalization or an attempt, which is the mandate's decision, not yours.
+
+**When your verdict needs an attempt.** You cannot launch the solver. If
+whether the claim, or a lemma it rests on, can be proved would decide your
+verdict and no attempt is funded, say so in two places: set
+`marginal_yield` as above, and file a request (`file_request`) whose ask is
+an attempt on the published statement, whose why says what your verdict
+would become if it succeeds and if it does not, and whose satisfied_by
+names a Lean-checked proof or disproof of that statement. A request is
+for funders: a mandate whose Grantmaker reads it may plan an
+`attempt_proof` item, and the result comes back to you. A researcher you
+delegate to is not a substitute: it has no `lean_check`, so what it brings
+back is a route or a sketch to weigh as a lead, never a checked proof.

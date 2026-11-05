@@ -5,10 +5,15 @@ import { getMatcherSystemPromptBlocks, getMatchingPrompt } from "../prompts/matc
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { findSimilarClaims } from "../../services/search-service.js";
+import { SIMILAR_CLAIMS_FLOOR } from "../tools/graph-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { INSTANCE_STANCES, isInstanceStance, type InstanceStance } from "../../schemas/common.js";
+import {
+  MATCHED_INSTANCE_STANCES,
+  isMatchedInstanceStance,
+  type MatchedInstanceStance,
+} from "../../schemas/common.js";
 import { NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
 import { rawQuery } from "../../db/client.js";
 
@@ -31,9 +36,10 @@ export interface MatchDecision {
    * open question without taking a side ("poses", #445). Lets a claim and its
    * denial share one canonical node while preserving which side each source
    * takes, and lets a conjecture statement be recorded without a polarity it
-   * does not have.
+   * does not have. Never "mentions": that is a Steward's reading of a source
+   * that refers to the claim without stating it (MATCHED_INSTANCE_STANCES).
    */
-  instance_stance: InstanceStance;
+  instance_stance: MatchedInstanceStance;
   /**
    * For a new claim: one sentence on why the canonical form is stated in the
    * direction it is (#360). The direction is chosen on the proposition's own
@@ -60,7 +66,7 @@ const MATCH_DECISION_SCHEMA = {
     is_match: { type: "boolean", description: "Whether the claim matches an existing claim (including its negation/counterpart)" },
     matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True, copied exactly from a search_similar_claims result" },
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
-    instance_stance: { type: "string", enum: [...INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
+    instance_stance: { type: "string", enum: [...MATCHED_INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
     kind: { type: ["string", "null"], enum: [...NODE_KINDS, null], description: "For a new node: its kind (claim, quantity, or question), when it differs from the kind proposed; null to keep the proposed kind. A question that asks whether X is so is the claim X; one that asks how much, how many, how often, or when is a quantity." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
@@ -135,7 +141,7 @@ async function matchClaimImpl(input: {
     name: "search_similar_claims",
     description:
       "Search existing claims by semantic similarity. Returns the top matches " +
-      "ranked by similarity, above only a low floor that trims noise; results " +
+      `ranked by similarity, scoring at least ${SIMILAR_CLAIMS_FLOOR}, a low floor that only trims noise; results ` +
       "are retrieval for your judgment, not a decision. A true counterpart can " +
       "score low or miss the floor under one framing, so call this multiple " +
       "times with different framings of the claim (its wording, paraphrases, " +
@@ -205,7 +211,7 @@ async function matchClaimImpl(input: {
         `any search_similar_claims call in this run; copy the id exactly from a search result`
       );
     }
-    if (!isInstanceStance(raw.instance_stance)) {
+    if (!isMatchedInstanceStance(raw.instance_stance)) {
       return 'instance_stance must be "affirms", "denies", or "poses"';
     }
     if (raw.kind != null && !(NODE_KINDS as readonly unknown[]).includes(raw.kind)) {
@@ -321,7 +327,8 @@ async function matchClaimImpl(input: {
             limit: config.matchingTopK,
             // Retrieval, not decision: keep a low floor so counterparts and
             // alternate framings that embed far apart still surface (#25).
-            minSimilarity: 0.4,
+            // One floor with the Curator's and Steward's search (#773).
+            minSimilarity: SIMILAR_CLAIMS_FLOOR,
             excludeId: input.excludeClaimId,
           });
         } catch (err) {

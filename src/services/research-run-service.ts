@@ -272,12 +272,28 @@ export async function readResearcherPaused(): Promise<boolean> {
 }
 
 /**
+ * Who opens research runs, as `research_runs.requested_by`: the four
+ * administrators that may launch the researcher with delegate_research, and
+ * the ledger's request runs.
+ */
+export const RESEARCH_LAUNCHERS = [
+  "claim_steward",
+  "grantmaker",
+  "curator",
+  "audit",
+  "request",
+  "request_scope",
+] as const;
+
+/**
  * Launchers whose research runs may record on the graph (provenance rows,
  * examinations). A Grantmaker serves its mandate as well as the graph, and
  * funding is kept apart from what the graph says (constitution §19), so the
  * runs it launches read and report and write nothing but their notebook.
+ * The Curator owns structure, not sources, and the Audit Agent judges the
+ * record rather than adding to it, so their research reads and reports too.
  */
-const GRAPH_WRITING_LAUNCHERS = new Set(["claim_steward"]);
+const GRAPH_WRITING_LAUNCHERS = new Set<string>(["claim_steward"]);
 
 export function launcherWritesGraph(requestedBy: string): boolean {
   return GRAPH_WRITING_LAUNCHERS.has(requestedBy);

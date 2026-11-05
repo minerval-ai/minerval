@@ -22,7 +22,8 @@ import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { getClaimInstances } from "../../src/services/claim-service.js";
 import { getProvenanceStory } from "../../src/services/provenance-story-service.js";
 import { getClaimSourceMap, recordInstanceReading } from "../../src/services/source-map-service.js";
-import { countClaimInstances } from "../../src/services/claim-instance-service.js";
+import { countClaimInstances, listOrderedClaimInstances } from "../../src/services/claim-instance-service.js";
+import { assembleEvidenceRecord } from "../../src/services/citation-service.js";
 
 async function source(title: string, sourceType: string, publishedDate: string | null = null) {
   const url = `https://dbtest.example/${randomUUID()}`;
@@ -109,16 +110,22 @@ describe("a claim's instances and the Steward's control of them", () => {
     });
   });
 
-  it("get_claim returns the canonical record with a count and no instances", async () => {
-    const out = await gov("get_claim", { claim_id: claim });
+  it("get_claim returns the canonical record with a count, and instances only on request", async () => {
+    const out = await gov("get_claim", {
+      claim_id: claim,
+      include: ["arguments", "subclaims", "related", "findings"],
+    });
     expect(out.claim.id).toBe(claim);
     expect(out.instance_count).toBe(4);
     expect(out).not.toHaveProperty("instances");
     expect(JSON.stringify(out)).not.toMatch(/affirm|denies|verbatim_text/);
     expect(out).toHaveProperty("subclaims");
     expect(out).toHaveProperty("arguments");
-    expect(out).toHaveProperty("related_claims");
-    expect(out).toHaveProperty("findings_noted");
+    expect(out).toHaveProperty("related");
+    expect(out).toHaveProperty("findings");
+
+    const withProvenance = await gov("get_claim", { claim_id: claim, include: ["provenance"] });
+    expect(withProvenance.instances).toHaveLength(4);
   });
 
   it("get_claim_with_context is gone", async () => {
@@ -347,5 +354,42 @@ describe("record_claim_instance deduplicates per (claim, source, speaker) (#481)
     expect(named).toMatchObject({ deduplicated: true, instance_id: first.instance_id });
     expect(named.message).toMatch(/names no speaker/);
     expect(await countClaimInstances(other)).toBe(1);
+  });
+});
+
+describe("a mention: a source that refers to the claim without taking a side", () => {
+  it("is recorded by the Steward, served with its stance, and counted apart from both camps", async () => {
+    const claim = await seedClaim("a claim much cited in the debate");
+    const study = await source("The study", "paper");
+    const explainer = await source("An explainer on the debate", "news");
+    await instance(claim, study.id, "2020", "affirms");
+
+    const out = await steward("record_claim_instance", {
+      claim_id: claim,
+      url: explainer.url,
+      verbatim_text: "The finding has been cited on both sides of the debate.",
+      stance: "mentions",
+    });
+    expect(out).toMatchObject({ success: true });
+
+    // The instance belongs to the claim: it counts as one of its instances.
+    expect(await countClaimInstances(claim)).toBe(2);
+    // Every read that serves the instances carries the stance, so a reader
+    // can tell the mention from the voices.
+    const page = await listOrderedClaimInstances(claim);
+    expect(page.find((i) => i.id === out.instance_id)?.stance).toBe("mentions");
+    const pub = await getClaimInstances(claim);
+    expect(pub.find((i) => i.id === out.instance_id)?.stance).toBe("mentions");
+    const gp = await gov("get_claim_instances", { claim_id: claim });
+    expect(gp.instances.find((i: { id: string }) => i.id === out.instance_id)?.stance).toBe("mentions");
+
+    // The citation record's tally: the mention is no vote.
+    const record = await assembleEvidenceRecord(claim);
+    expect(record!.disagreement).toMatchObject({
+      affirming_instances: 1,
+      denying_instances: 0,
+      posing_instances: 0,
+      mentioning_instances: 1,
+    });
   });
 });

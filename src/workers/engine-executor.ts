@@ -895,7 +895,8 @@ async function runLookoutAction(
  * consistency_sweep (#330): one Consistency Checker sweep over the
  * partition named in target_ref, under the General mandate's funder,
  * metered and consumed against the covering allocation. The checker runs
- * on its own model (CONSISTENCY_MODEL), not the Steward override the drain
+ * on its own model (CONSISTENCY_MODEL, or CONSISTENCY_STRONG_MODEL for the
+ * strong variant, #756), not the Steward override the drain
  * may carry. A partition that no longer exists cancels the row; a failed
  * sweep cancels it too, and the reconcile sweep reopens it while the
  * partition is still due.
@@ -922,8 +923,16 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
       () =>
-        withPassBudget(actionBudget(action, "the General mandate's allocation for this sweep"), () =>
-          runConsistencySweep({ partition })
+        withPassBudget(
+          actionBudget(action, "the General mandate's allocation for this sweep, priced by the partition's size"),
+          () =>
+            // The strong variant reads with the stronger model (#756), and
+            // the sweep is told how its budget was priced.
+            runConsistencySweep({
+              partition,
+              variant: action.variant === "strong" ? "strong" : "standard",
+              model: action.variant === "strong" ? loadConfig().consistencyStrongModel : undefined,
+            })
         )
     );
     await completeAction(action.id, billedMicroUsd, {
