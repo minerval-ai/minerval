@@ -104,8 +104,8 @@ Anchor claim ID: ${input.claimId}
 Context: ${input.context}
 
 Proceed:
-1. Use get_claim and search_similar_claims (and match_claim) to examine the
-   anchor claim and its neighborhood; get_claim_instances shows how its
+1. Use get_claim (include related and subclaims) and search_similar_claims
+   (and match_claim) to examine the anchor claim and its neighborhood; get_claim_instances shows how its
    sources state it when wording or identity turns on that.
 2. Look for: duplicates / counterparts to merge; a conflated claim to split;
    related-but-disconnected claims that should be linked; a node of the wrong

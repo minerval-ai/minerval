@@ -4,6 +4,7 @@ vi.mock("../../../src/db/client.js", () => ({ rawQuery: vi.fn(), withTransaction
 
 import { orderClaimInstances } from "../../../src/services/claim-instance-service.js";
 import type { StoryNode } from "../../../src/services/provenance-story-service.js";
+import { getClaimToolDefinition } from "../../../src/llm/tools/graph-read-tools.js";
 import {
   getClaimContextToolDefinitions,
   getGovernanceToolDefinitions,
@@ -113,7 +114,16 @@ describe("the claim reads in the governance bundle", () => {
     expect(Object.keys(props)).toEqual(["claim_id", "limit", "offset", "include_detached"]);
   });
 
-  it("get_claim promises no instances", () => {
-    expect(byName.get("get_claim")!.description).toMatch(/returns no\s+sources/);
+  // #774: the governance roles carry the one get_claim every agent and MCP
+  // share, so a skill that names it means one payload to every reader.
+  it("get_claim is the shared reader, with instances only on request", () => {
+    expect(byName.get("get_claim")).toEqual(getClaimToolDefinition());
+    const props = (byName.get("get_claim")!.input_schema as {
+      properties: { include: { items: { enum: string[] } } };
+    }).properties;
+    expect(props.include.items.enum).toEqual(
+      expect.arrayContaining(["arguments", "subclaims", "provenance", "related", "findings"])
+    );
+    expect(byName.get("get_claim")!.description).toMatch(/instance_count/);
   });
 });
