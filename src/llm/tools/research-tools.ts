@@ -165,8 +165,10 @@ export function getResearchToolDefinitions(
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
-        "checking whether a dataset shows what a paper says, or a proof attempt outside " +
-        "the formal pipeline. Write the brief the way you would for a capable assistant " +
+        "checking whether a dataset shows what a paper says, or exploring a route to a proof " +
+        "(the researcher has no Lean checker, so it brings back a sketch or a lead to weigh, " +
+        "never a checked proof; a checked attempt is the solver's, funded through a mandate's " +
+        "plan). Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
         "Every tier has web search, read_page, the graph's read tools, scholarly search " +

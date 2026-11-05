@@ -165,13 +165,13 @@ const AGENTS: AgentMeta[] = [
     invokedWhen: "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     model: "Claude Opus 5.5", fn: getGrantmakerSystemPrompt },
   { key: "lookout", name: "Lookout", stage: 9, group: "governance",
-    tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     model: modelLabel(OPENROUTER_MODELS.flash), fn: getLookoutSystemPrompt },
   { key: "consistency-checker", name: "Consistency Checker", stage: 10, group: "governance",
-    tagline: "The sweep that reads assessments against one another. Each Steward reads its own claim; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises each find with the Steward whose claim looks wrong, as a reassessment the ledger prices and funds like any other; it writes no verdict and owns no claim.",
-    invokedWhen: "The General mandate funds a sweep (a consistency_sweep ledger action, capped per day) over the region of the graph most re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
-    model: modelLabel(OPENROUTER_MODELS.flash), fn: getConsistencyCheckerSystemPrompt },
+    tagline: "The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.",
+    invokedWhen: "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
+    model: `${modelLabel(OPENROUTER_MODELS.flash)} (standard sweep), ${modelLabel(MODELS.sonnet)} (strong sweep)`, fn: getConsistencyCheckerSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no
   // constitution, and writes nothing to the graph; its prompt is the
