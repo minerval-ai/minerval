@@ -356,10 +356,16 @@ A challenge to an accepted prize claim must name one of the enumerated
 grounds (statement defect, ineligibility, disallowed axioms or tactics the
 checker missed, plagiarism or theft, an earlier valid submission,
 sanctions) with followable evidence; accepting the case escalates it to the
-Arbitrator mechanically and is not upholding it. Prize-specific bad faith
-includes submitting another's proof as one's own, sock-puppet submissions
-to defeat priority, and challenges whose only ground is dislike of the
-result.
+Arbitrator mechanically and is not upholding it. The Arbitrator reads the
+prize claim with `get_prize_claim` and rules with `challenge_upheld`: true
+with `overturn`, which voids the prize claim on the ground; false with
+`uphold_original`, which closes the challenge and lets the window run on.
+A challenge that names no enumerated ground, dislike of the result
+included, is rejected on the merits without the bad-faith flag (§13).
+Prize-specific bad faith is flagged under the ordinary categories:
+submitting another's proof as one's own is `misinformation`, and
+sock-puppet submissions filed to defeat priority, or a run of groundless
+challenges from related accounts, are `sybil`.
 
 ## For the Audit Agent
 

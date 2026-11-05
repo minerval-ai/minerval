@@ -1,8 +1,8 @@
 /**
  * Action tools for the Contribution Reviewer agent.
  *
- * These let the reviewer record decisions, provide feedback, escalate disputes,
- * and notify the claim steward -- all through tool calls.
+ * These let the reviewer record decisions (escalation included) and hand an
+ * accepted contribution to the claim's Steward, all through tool calls.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -50,7 +50,9 @@ export function getReviewerToolDefinitions(): Tool[] {
       description:
         "Record your review decision for a contribution. This writes the " +
         "decision to the database and updates the contribution's review " +
-        "status. Accepting an intake contribution (propose_claim, " +
+        "status. Escalating also places the case in the Dispute " +
+        "Arbitrator's queue, with escalation_reason on the contribution. " +
+        "Accepting an intake contribution (propose_claim, " +
         "propose_question, propose_source) also materializes it here: the Matcher decides " +
         "identity, then the claim is created or the source queued for " +
         "extraction, and the outcome is reported in the tool result.",
@@ -68,7 +70,17 @@ export function getReviewerToolDefinitions(): Tool[] {
           },
           reasoning: {
             type: "string",
-            description: "Detailed reasoning for your decision",
+            description:
+              "Your reasoning: the contributor's hearing and the record an " +
+              "auditor checks. On a rejection, say what a resubmission would " +
+              "need, and exactly what to clarify where clarification would fix it.",
+          },
+          escalation_reason: {
+            type: "string",
+            description:
+              "Required with 'escalate': the open question the Arbitrator is " +
+              "asked to settle, in a sentence or two. Your reasoning above " +
+              "carries the rest.",
           },
           confidence: {
             type: "number",
@@ -154,31 +166,6 @@ export function getReviewerToolDefinitions(): Tool[] {
         required: ["contribution_id"],
       },
     },
-    {
-      name: "escalate_to_arbitrator",
-      description:
-        "Place a contribution in the dispute arbitrator's queue. Use when " +
-        "uncertain, when stakes are high, or when the situation requires " +
-        "deeper adjudication. This call is what enqueues arbitration, and " +
-        "the reason given here is persisted on the contribution for the " +
-        "arbitrator to read; also record the review itself with " +
-        "record_review_decision (decision 'escalate'), which carries your " +
-        "fuller reasoning of record.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          contribution_id: {
-            type: "string",
-            description: "The UUID of the contribution to escalate",
-          },
-          reason: {
-            type: "string",
-            description: "Why this needs arbitration",
-          },
-        },
-        required: ["contribution_id", "reason"],
-      },
-    },
     getNotifyClaimStewardToolDefinition("contribution_reviewer"),
   ];
 }
@@ -221,6 +208,19 @@ export async function executeReviewerTool(
         const badFaithCategory = suspectedBadFaith
           ? (input.bad_faith_category as string)
           : null;
+        // An escalation is one call (#717): the decision, the reason the
+        // Arbitrator reads first (#178), and the enqueue. Checked before
+        // anything is written.
+        const escalationReason =
+          typeof input.escalation_reason === "string" ? input.escalation_reason.trim() : "";
+        if (decision === "escalate" && !escalationReason) {
+          return JSON.stringify({
+            success: false,
+            error:
+              "Escalating needs escalation_reason: the open question for the " +
+              "Arbitrator. Nothing was recorded.",
+          });
+        }
 
         const db = getDb();
 
@@ -380,10 +380,14 @@ export async function executeReviewerTool(
           .update(contributions)
           .set({
             reviewStatus: decision === "accept" ? "accepted" : decision === "reject" ? "rejected" : "escalated",
+            ...(decision === "escalate" ? { escalationReason } : {}),
             reviewClaimedAt: null,
             reviewAttempts: 0,
           })
           .where(eq(contributions.id, contributionId));
+        if (decision === "escalate") {
+          await enqueueArbitration({ contributionId, trigger: "escalated_review" });
+        }
 
         if (reviewed?.contributionType === "claim_prize" && decision === "reject") {
           await rejectPrizeClaimAtReview(contributionId, "contribution_reviewer", reasoning.slice(0, 500));
@@ -455,36 +459,6 @@ export async function executeReviewerTool(
           });
         }
         return JSON.stringify({ success: true, prize_claim: block }, null, 2);
-      }
-
-      case "escalate_to_arbitrator": {
-        const contributionId = input.contribution_id as string;
-        const reason = input.reason as string;
-
-        await enqueueArbitration({
-          contributionId,
-          trigger: "escalated_review",
-        });
-
-        // Update contribution status and persist the escalation reason (#178)
-        // so the Arbitrator sees why the case was escalated even when no
-        // review row was recorded.
-        const db = getDb();
-        await db
-          .update(contributions)
-          .set({
-            reviewStatus: "escalated",
-            escalationReason: reason,
-            // Fresh recovery budget for the arbitration phase (#218).
-            reviewClaimedAt: null,
-            reviewAttempts: 0,
-          })
-          .where(eq(contributions.id, contributionId));
-
-        return JSON.stringify({
-          success: true,
-          message: `Contribution ${contributionId} escalated to arbitrator. Reason: ${reason}`,
-        });
       }
 
       case NOTIFY_CLAIM_STEWARD:

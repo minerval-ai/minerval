@@ -688,6 +688,15 @@ const configSchema = z.object({
   // has run and its real cost is known, used until there are reviews to
   // average.
   contributionReviewEstimateUsd: z.coerce.number().min(0).default(0.25),
+  // What one contribution review, and one arbitration, may spend (#712).
+  // Money is the run's limit, stated to the agent with its spend after
+  // every turn; the turn cap is only RUN_TURN_GUARD. Set well above a
+  // typical run (reviews average about the estimate above) so a careful
+  // review that opens sources and reads the record is not cut short; the
+  // Arbitrator runs a stronger model at the higher stakes of a second
+  // instance.
+  contributionReviewBudgetUsd: z.coerce.number().min(0).default(1),
+  arbitrationBudgetUsd: z.coerce.number().min(0).default(3),
   researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
   // A request run from the ledger (#734) has no launcher waiting on it, so
   // the 20-minute cap above has no reason there: its budget, the quote its
@@ -1161,6 +1170,8 @@ export function loadConfig(): Config {
     researcherEnabled: process.env.RESEARCHER_ENABLED,
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
+    contributionReviewBudgetUsd: process.env.CONTRIBUTION_REVIEW_BUDGET_USD,
+    arbitrationBudgetUsd: process.env.ARBITRATION_BUDGET_USD,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
     researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
