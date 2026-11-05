@@ -516,6 +516,10 @@ async function analyzePageUncached(
     const decision = await matchClaim({
       extractedText: c.verbatim_text,
       proposedCanonical: c.proposed_canonical_form,
+      // The inputs ingestion gives it (#721): the kind proposed, so a figure
+      // is matched to its quantity, and the passage, for the stance.
+      kind: c.kind ?? "claim",
+      context: c.context,
       // The Extractor's domain prior selects the Matcher's skills (#469).
       domains: sanitizeDomains(c.domains),
     });

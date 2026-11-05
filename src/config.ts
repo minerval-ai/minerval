@@ -334,6 +334,14 @@ const configSchema = z.object({
   // frequency is known. Read by the provider seam once it takes a TTL.
   promptCacheTtl: z.enum(["5m", "1h"]).default("5m"),
   matchingTopK: z.coerce.number().default(20),
+  // What one Matcher decision may spend, in USD (#727). The money, not a
+  // turn count, bounds how long the Matcher searches: on the flash tier a
+  // turn costs well under a cent, so this allows many more searches than
+  // the old 12-turn cap, which was the limit runs actually hit (#419, #467).
+  // It exists because a caller (a Steward mid-run, an ingest job, a reader's
+  // page) is blocked on the decision. Never more than the caller's own pass
+  // has left; the retry after a run that ends undecided gets a quarter more.
+  matcherBudgetUsd: z.coerce.number().min(0.005).default(0.1),
   // There is deliberately no per-source claim cap here any more.
   // EXTRACTION_MAX_CLAIMS (8 in production) truncated every source to the same
   // number, which is the wrong shape: how many reusable propositions a document
@@ -1093,6 +1101,7 @@ export function loadConfig(): Config {
     pipelineEpoch: process.env.PIPELINE_EPOCH,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
+    matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:

@@ -272,11 +272,18 @@ async function matchAssertion(
   assertion: string,
   context?: string,
   domains?: readonly string[],
-  kind?: NodeKind
+  kind?: NodeKind,
+  /**
+   * The Extractor's proposed canonical form, when the assertion came out of
+   * an extraction (#721): the Matcher's best search query. A bare assertion
+   * is its own proposal.
+   */
+  proposedCanonical?: string
 ) {
   const decision = await matchClaim({
-    extractedText: context ? `${assertion}\n\nContext: ${context}` : assertion,
-    proposedCanonical: assertion,
+    extractedText: assertion,
+    proposedCanonical: proposedCanonical?.trim() || assertion,
+    context: context ?? null,
     // The kind of node proposed (§2, §7a): a figure is matched to the
     // quantity it is a value of, a question to the question it asks.
     kind,
@@ -757,7 +764,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               c.verbatim_text,
               c.context ?? undefined,
               sanitizeDomains(c.domains),
-              kind
+              kind,
+              c.proposed_canonical_form
             );
             judgments.push({
               verbatim_text: c.verbatim_text,

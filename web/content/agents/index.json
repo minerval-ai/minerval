@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 10796,
-    "fullChars": 95917,
+    "roleChars": 7532,
+    "fullChars": 92653,
     "skills": [
       {
         "name": "mathematics",
