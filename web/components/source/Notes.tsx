@@ -38,6 +38,7 @@ export function ReadingNote({ inst }: { inst: DocumentInstance }) {
           </>
         )}
         {inst.stance === "denies" && <span className="tag" title="This passage denies the claim as stated.">denies</span>}
+        {inst.stance === "mentions" && <span className="tag" title="This passage refers to the claim without taking a side.">mentions</span>}
       </span>
       {r ? (
         <>

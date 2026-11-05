@@ -459,10 +459,18 @@ precedence), the surrounding `context`, a brief
 `summary_context` describing the circumstances ("said during a Senate hearing
 on banking regulation, in response to questioning about derivatives
 oversight"), a `stance` recording whether the quote affirms or denies the
-canonical claim, and a `confidence` that the quote really expresses it.
-Instances are how a single canonical claim accumulates provenance from many
-documents, and the stance field is what lets a claim and its negation share one
-node without losing track of who said which.
+canonical claim, poses it as an open question, or only mentions it (cites it,
+reports that others hold it, or raises it in passing), and a `confidence` that
+the quote carries that stance. Instances are how a single canonical claim
+accumulates provenance from many documents, and the stance field is what lets a
+claim and its negation share one node without losing track of who said which.
+Posing and mentioning instances take no side: every count of who affirms or
+denies leaves them out (the citation record counts them apart as
+`posing_instances` and `mentioning_instances`, and the monitors count only
+`affirms` and `denies`), and the claim page lists mentions apart from the
+voices that take a position. The Matcher assigns `affirms`, `denies` or
+`poses` at ingestion; a mention is the Steward's reading of a source, recorded
+with `record_claim_instance`.
 
 #### Source provenance: what the support rests on
 
@@ -534,11 +542,13 @@ beside each instance, and the edges behind a disclosure, in words), on
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
 `get_claim_instances`.
 
-A claim is a canonical proposition with no home source, so the admin
-`get_claim` read returns the canonical record and an `instance_count`, never
-the instances; `get_claim_instances` pages through them. The Steward decides
+A claim is a canonical proposition with no home source, so `get_claim`
+returns the canonical record and an `instance_count`, and the instances only
+when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
+pages through them. The Steward decides
 which instances the claim carries and in what order: `detach_claim_instance`
-removes one whose source does not assert, deny or pose the proposition
+removes one whose source states a different proposition or that misreads its
+source, while one that only mentions the claim stays with stance `mentions`
 (`claim_instances.detached_at`, with the reason in the audit trail; the row
 stays for the provenance record, and `reattach_claim_instance` restores it),
 and `set_instance_order` ranks the instances a reader should see first
@@ -647,6 +657,12 @@ assessment, it notifies the Stewards of directly dependent claims, each of
 which re-judges with the same materiality test. Most changes are absorbed
 within a level or two, because a superior claim is rarely the right locus for a
 dispute about one of its subclaims.
+
+The same tool, `notify_steward`, reaches any node's Steward. A Steward that
+thinks a node its claim depends on is assessed wrongly sends that node's
+Steward its reasons (trigger `dependent_note`); one that writes to a node not
+joined to its own by an edge does so under `steward_note`. In every case the
+receiving Steward decides, since only the owner writes.
 
 ---
 
@@ -799,13 +815,19 @@ These act through tools over the life of a claim and the graph:
   of the graph at a time (a topic tag, or the claims no sizeable tag
   covers), for what no single Steward sees: reasoning that conflicts with a
   neighbor's, evidence one claim records that another never weighed,
-  verdicts that are not a defensible function of what they rest on (§21).
-  Each find is a flag on the claim that looks wrong: its Steward is queued
-  with the tension as context, and the checker's estimate that a pass would
-  change something enters the formula's expected-gain term, so the pass is
-  priced and funded like any other. Its sweeps are ledger actions the
-  General mandate funds, capped per day; it writes no verdict and no
-  valuation (docs/allocation.md, "Consistency sweeps").
+  verdicts that are not a defensible function of what they rest on, and
+  what is established in one place (often another field) bearing on
+  assessments elsewhere that never weighed it (§21). It may reason about
+  anything that bears on whether assessments fit together, including which
+  reading of the evidence is right; what it writes is a flag on the node
+  that looks wrong, anywhere in the graph: its Steward is queued with the
+  tension as context and decides, and the checker's estimate that a pass
+  would change something enters the formula's expected-gain term, so the
+  pass is priced and funded like any other. Structural defects it finds go
+  to the Curator as curation requests. Its sweeps are ledger actions the
+  General mandate funds (a standard and a strong variant, the funder buying
+  one by marginal return); it writes no verdict and no valuation
+  (docs/allocation.md, "Consistency sweeps").
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
@@ -1030,7 +1052,10 @@ the statement.
 ### The researcher
 
 `researcher` (`src/llm/agents/researcher.ts`, #298) is the general
-instrument, of which the solver is the special case. An administrator (the
+instrument, of which the solver is the special case (special too in how it
+starts: no administrator launches it; an attempt is funded through a
+mandate's plan and its result goes to the claim's Steward, which files a
+request when it needs one no plan funds; docs/mathematics.md 7.2, #768). An administrator (the
 Claim Steward on its claim, a Grantmaker on a funded mandate) launches it
 with `delegate_research`: a brief written for a capable assistant that
 knows nothing of the claim and cannot ask a question back, a model tier, a

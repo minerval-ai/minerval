@@ -218,7 +218,9 @@ export async function getClaimById(claimId: string) {
  * `get_claim` tool (#73) and the agents' graph read share this shape. Only
  * the instances the claim carries (detached ones are not its), in the order
  * a reader sees them: the Steward's ranks, then the provenance story's
- * order, then the date of the statement.
+ * order, then the date of the statement. Each carries its stance, so a
+ * reader can tell the sources that take a side from those that pose the
+ * claim or only mention it.
  */
 export async function getClaimInstances(claimId: string) {
   const rows = await listOrderedClaimInstances(claimId);
@@ -227,6 +229,7 @@ export async function getClaimInstances(claimId: string) {
     source_id: r.source_id,
     verbatim_text: r.verbatim_text,
     context: r.context,
+    stance: r.stance,
     confidence: r.confidence,
     source_title: r.source_title,
     source_url: r.source_url,
