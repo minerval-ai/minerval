@@ -46,7 +46,7 @@ async function send(
   // the hosted API, the carve-out only applies to someone who asked for it.
   if (!settings.apiKey && !settings.apiBaseUrl.includes("localhost")) {
     throw new ApiError(
-      "No API key configured. Create one in your Minerval dashboard and paste it in the extension settings.",
+      "No API key configured. Create one at minerval.ai/account and paste it in the extension settings.",
       401
     );
   }

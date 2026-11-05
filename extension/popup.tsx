@@ -708,7 +708,11 @@ function SettingsPane({
         />
       </label>
       <p className="muted">
-        Create a key in your Minerval dashboard. Analysis and chat are
+        Create a key in your{" "}
+        <a href={`${WEB_BASE}/account`} target="_blank" rel="noopener noreferrer">
+          Minerval dashboard
+        </a>
+        . Analysis and chat are
         LLM-backed and metered against your account's monthly allowance.
       </p>
 
