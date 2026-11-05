@@ -54,7 +54,12 @@ export const DEFAULT_DEPENDENTS_PAGE = 25;
 export const MAX_DEPENDENTS_PAGE = 100;
 /** Findings are a courtesy list for the node's Steward, not an archive. */
 const FINDINGS_LIMIT = 10;
-/** Requests bearing on one node, newest first, as GET /claims/:id serves them. */
+/**
+ * Requests bearing on one node, newest first, as GET /claims/:id serves them.
+ * A tool result is context the reader carries for the rest of its session,
+ * so the view shows one page; `requests_total` says when there are more
+ * (list_requests with claim_id pages through all, where the reader has it).
+ */
 const REQUESTS_LIMIT = 20;
 
 /** The tool description every surface shares (agents and MCP alike). */
@@ -74,7 +79,8 @@ export const CLAIM_VIEW_DESCRIPTION =
   "parent Steward's prior, only while the node is unassessed; the " +
   "formalization record (`formalization`, `formalization_pending`, " +
   "`formalization_history`, `verification`, `lean_checks`), null or empty " +
-  "when there is none; `requests` bearing on the node; `subclaim_count`, " +
+  "when there is none; `requests` bearing on the node (the newest " +
+  `${REQUESTS_LIMIT}, with \`requests_total\` beside them); \`subclaim_count\`, ` +
   "`instance_count`, and `source_map` (the account of what the support " +
   "rests on). Contestation (how actively the claim is disputed, 0..1) is " +
   "not a status. Add sections with `include`: `arguments` (each with its " +
@@ -237,6 +243,7 @@ export async function getClaimView(
         r.bears_on?.length === 1 &&
         r.bears_on[0]!.id === claimId,
     })),
+    requests_total: requests.total,
     subclaim_count: subclaimCount,
     // The instances themselves come with include: ["provenance"].
     instance_count: instanceCount,

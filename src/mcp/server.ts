@@ -70,8 +70,10 @@ import { inferDomainPrior } from "../llm/agents/domain-prior.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
+  formatContribution,
   getContributionById,
   getReviewForContribution,
+  withAnsweredRequest,
 } from "../services/contribution-service.js";
 import { getOrCreateContributor } from "../services/contributor-service.js";
 import { checkContributionRateLimit } from "../services/reputation-service.js";
@@ -662,7 +664,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "form is its definition with its unit), and provisional importance. " +
         "Claims worth minting are scarce " +
         "relative to text, so most sentences yield none. Runs a model: metered to your " +
-        "account and quota-gated." +
+        "account and quota-gated. At most 100,000 characters and 50 claims per " +
+        "call, so one call stays within the text_analysis charge; split longer text." +
         RUNS_IN_BACKGROUND +
         " While it runs, the result holds the claims recorded so far.",
       inputSchema: {
@@ -714,7 +717,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "quantity it is a value of ('estimated', with the graph's " +
         "`estimate`) and a question to the question it asks (its standing: " +
         "answered, leaning, open, ill_posed, or unknown). Runs a model: " +
-        "metered to your account and quota-gated." +
+        "metered to your account and quota-gated. At most 50,000 characters " +
+        "and 20 judged claims per call, because each claim is a Matcher run " +
+        "and one call must stay within the text_analysis charge; split a " +
+        "longer document into passages." +
         RUNS_IN_BACKGROUND +
         " While it runs, the result holds the judgments made so far.",
       inputSchema: {
@@ -821,7 +827,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "argument for or against it; on a quantity, a source's figure " +
         "(add_estimate); on a question, a candidate answer (propose_answer); " +
         "on any node, a request for work (propose_request) or material " +
-        "offered to meet one of its requests (answer_request). A contribution gets a hearing, not " +
+        "offered to meet one of its requests (answer_request, naming it in " +
+        "request_id). A contribution gets a hearing, not " +
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +
@@ -838,6 +845,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         evidence_urls: z.array(z.string().url()).max(20).default([]),
         merge_target_claim_id: z.guid().optional(),
         proposed_canonical_form: z.string().max(2000).optional(),
+        request_id: z
+          .guid()
+          .optional()
+          .describe(
+            "Required with answer_request, and only with it: the request the " +
+              "material is offered for. It must bear on claim_id and be open " +
+              "(get_claim lists the node's requests)."
+          ),
       },
     },
     async (input) => {
@@ -853,6 +868,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
 
       const claim = await getClaimById(input.claim_id);
       if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+
+      const answered = await withAnsweredRequest({
+        contributionType: input.contribution_type,
+        claimId: input.claim_id,
+        requestId: input.request_id,
+        content: input.content,
+      });
+      if (!answered.ok) return errorResult(answered.code, answered.message);
 
       const contributor = await getOrCreateContributor({
         externalId,
@@ -893,22 +916,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         claimId: input.claim_id,
         contributorId: contributor.id,
         contributionType: input.contribution_type,
-        content: input.content,
+        content: answered.content,
         evidenceUrls: input.evidence_urls,
         mergeTargetClaimId: input.merge_target_claim_id,
         proposedCanonicalForm: input.proposed_canonical_form,
       });
       await enqueueContribution({ contributionId: contribution.id });
 
-      return jsonResult({
-        contribution: {
-          id: contribution.id,
-          claim_id: contribution.claimId,
-          contribution_type: contribution.contributionType,
-          review_status: contribution.reviewStatus,
-          submitted_at: contribution.submittedAt.toISOString(),
-        },
-      });
+      return jsonResult({ contribution: formatContribution(contribution) });
     }
   );
 
@@ -928,7 +943,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "actionable improvement to the graph or its machinery (improvement). " +
         "Reports go to the people who maintain the graph; they never affect a " +
         "claim, a contribution, or its review. Cite ids, never paste content. " +
-        "Free, attributed to your account, and rate-limited.",
+        "Free and attributed to your account, and so limited to " +
+        `${loadConfig().reportRateLimitPerHour} reports an hour, because each ` +
+        "one takes maintainer attention nothing prices; past it you get " +
+        "REPORT_RATE_LIMITED. Joining an existing report counts as one.",
       inputSchema: {
         kind: reportKindEnum,
         severity: reportSeverityEnum,
@@ -1022,7 +1040,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       description:
         "Check the outcome of a submitted contribution: pending until " +
         "reviewed, then the decision (accept, reject, or escalate) with the " +
-        "reviewer's reasoning and policy citations. Free.",
+        "reviewer's reasoning and policy citations. An accepted proposal " +
+        "carries became_claim_id and page_url, the node it became. Lost the " +
+        "id? list_contributions with mine: true lists yours. Free.",
       inputSchema: { contribution_id: z.guid() },
     },
     async ({ contribution_id }) => {
@@ -1032,13 +1052,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       }
       const review = await getReviewForContribution(contribution_id);
       return jsonResult({
-        contribution: {
-          id: contribution.id,
-          claim_id: contribution.claimId,
-          contribution_type: contribution.contributionType,
-          review_status: contribution.reviewStatus,
-          submitted_at: contribution.submittedAt.toISOString(),
-        },
+        // The same shape GET /contributions/:id serves (#723).
+        contribution: formatContribution(contribution),
         review: review
           ? {
               decision: review.decision,

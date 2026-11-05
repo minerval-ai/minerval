@@ -248,12 +248,24 @@ and the tool description says what a call spends.
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id, contribution_type, content,
-  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?}` — file a
-  challenge / support / merge / split / edit / instance / argument. Requires
-  a key bound to a contributor identity; enters the standard Contribution
-  Reviewer pipeline and is subject to suspension and reputation policy (#71).
-- **`get_contribution_status`** `{contribution_id}` — review decision,
-  reasoning, and policy citations once the reviewer has ruled.
+  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
+  request_id?}` — file any of `contribution_type`'s values: challenge,
+  support, add_instance, propose_argument, propose_merge, propose_split,
+  propose_edit, add_estimate (a source's figure for a quantity),
+  propose_answer (a candidate answer to a question), propose_request, and
+  answer_request. An `answer_request` names the request it is offered for
+  in `request_id` (the request must bear on `claim_id` and be open); the id
+  is carried to the reviewer at the head of the content, since accepting
+  one needs it (#723). Requires a key bound to a contributor identity;
+  enters the standard Contribution Reviewer pipeline and is subject to
+  suspension and reputation policy (#71). `POST /contributions` takes the
+  same `request_id`.
+- **`get_contribution_status`** `{contribution_id}` — the contribution in
+  the shape `GET /contributions/:id` serves (an accepted proposal carries
+  `became_claim_id` and `page_url`, the node it became), and the review
+  decision, reasoning, and policy citations once the reviewer has ruled. A
+  caller that has lost an id finds its own contributions with
+  `list_contributions` and `mine: true`.
 - **`get_bounty_terms`** `{claim_id}` returns the machine-readable terms of
   the live bounty on a claim, the same `terms` object `GET /claims/:id/bounty`
   serves: the amount and status, the formal statement's id, version, pin,
@@ -273,8 +285,10 @@ and the tool description says what a call spends.
   of the same title collapse into one report with an occurrence count, and
   a new report comes back with `related`, the reports on record that read
   like it; if one of them is yours, raise again with `joins` set to its id
-  and your body is added to it as a sighting instead. Free, attributed,
-  rate-limited; returns the report id.
+  and your body is added to it as a sighting instead. Free and
+  attributed, and so limited to `REPORT_RATE_LIMIT_PER_HOUR` (default 5)
+  reports an hour, stated in the description with its reason: each one
+  takes maintainer attention nothing prices. Returns the report id.
 
 ### Route tools
 
