@@ -102,8 +102,8 @@ function nodesIn(tool: string, payload: Json): Json[] {
     case "get_claim": {
       const nodes: Json[] = [];
       if (payload.claim && typeof payload.claim === "object") nodes.push(payload.claim as Json);
-      const deps = payload.dependents as Json | undefined;
-      if (deps && typeof deps === "object") nodes.push(...list(deps.dependents));
+      // `dependents` is one page of nodes, with `dependents_total` beside it.
+      nodes.push(...list(payload.dependents));
       return nodes;
     }
     case "get_decomposition": {

@@ -7,11 +7,13 @@
  * tool"), so each agent wires it with one spread and one early return.
  *
  * Nothing here moves money. A lookout's runs are self-funded from the
- * mandate's escrow through the ledger (fundGrantSelfActions, bounded per
- * day), and what a lookout raises is a candidate the mandate's allocator
- * funds or not. What the Grantmaker delegates with spawn_lookout is
- * judgment — the brief — under bounds it sets: the ceiling on a flag's
- * value, the ingests per run, the cadence.
+ * mandate's escrow through the ledger (fundGrantSelfActions), out of the
+ * mandate's day like the rest of its work, with no count of runs (#689).
+ * What a lookout raises is a candidate the mandate's allocator funds or
+ * not. What the Grantmaker delegates with spawn_lookout is judgment (the
+ * brief) under bounds it sets: the ceiling on the value anything the
+ * lookout raises may carry (a reassessment or an ingest, #695), and the
+ * cadence.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -58,7 +60,6 @@ const FEED_RULE_PROPERTIES = {
   min_wake_hours: { type: "number", description: `Never wake more often than this (default ${B.minWakeHours.dflt}).` },
   poll_hours: { type: "number", description: `How often the feed is checked (${B.pollHours.min}–${B.pollHours.max}, default ${B.pollHours.dflt}).` },
   retain_days: { type: "number", description: `Untriaged items expire after this many days (default ${B.retainDays.dflt}).` },
-  daily_ingest_cap: { type: "number", description: `auto_ingest: ingests per day (${B.dailyIngestCap.min}–${B.dailyIngestCap.max}, default ${B.dailyIngestCap.dflt}).` },
   ingest_focus: {
     type: "string",
     description:
@@ -77,7 +78,6 @@ function feedRuleFrom(input: Record<string, unknown>): FeedRuleInput {
     minWakeHours: input.min_wake_hours,
     pollHours: input.poll_hours,
     retainDays: input.retain_days,
-    dailyIngestCap: input.daily_ingest_cap,
   };
 }
 
@@ -89,9 +89,9 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "Post a LOOKOUT: a cheap standing watch over part of your mission, " +
         "run from your escrow on a heartbeat and on triggers, that reads " +
         "the graph, the retraction record, and the open web and raises " +
-        "candidates: a claim for reassessment (valued on your behalf up to " +
-        "the ceiling you set), a source to ingest (appended to your plan, " +
-        "up to a per-run limit), a note for your next review pass, or a " +
+        "candidates: a claim for reassessment or a source to ingest (each " +
+        "valued on your behalf up to the ceiling you set, then ranked by " +
+        "your allocator), a note for your next review pass, or a " +
         "contribution through the Contribution Reviewer, its review paid " +
         "from your escrow. It never writes an assessment or moves money. Write the brief as you " +
         "would for a careful person paid to keep watch over one thing: the " +
@@ -101,8 +101,8 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "the mission needs to notice things between your review passes: a " +
         "retraction watch over the sources behind your assessed claims, a " +
         "new-results watch on a live crux, a feed to keep an eye on. Each " +
-        "run costs a small fraction of an assessment; the ledger bounds " +
-        "runs per day.",
+        "run costs a small fraction of an assessment and is paid from your " +
+        "escrow out of the mandate's day.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -131,14 +131,12 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           max_value: {
             type: "number",
             description:
-              "The ceiling (0–10) on the valuation a flag may write on your " +
-              "behalf. This is how much of your spending judgment you " +
-              "delegate; default 6. Your allocator still ranks the flag " +
-              "against everything else you value.",
-          },
-          max_ingests_per_run: {
-            type: "number",
-            description: "Ingest items one run may append to your plan (default 3).",
+              "The ceiling (0–10) on the valuation anything it raises (a " +
+              "reassessment, an ingest, an auto_ingest feed item) may write " +
+              "on your behalf. This is how much of your spending judgment you " +
+              "delegate; default 6. Your allocator still ranks each against " +
+              "everything else you value, out of the day's room; 0 lets it " +
+              "raise only notes.",
           },
           model: {
             type: "string",
@@ -169,8 +167,9 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "a funded run: batch (default: batch_size new items, or the oldest " +
         "has waited max_wait_hours), each (any new item), heartbeat (items " +
         "wait for the lookout's heartbeat), paused (keeps polling, never " +
-        "wakes), or auto_ingest (no run at all: each new item goes onto " +
-        "your plan as an ingest, up to daily_ingest_cap a day, for a " +
+        "wakes), or auto_ingest (no run at all: each new item becomes a " +
+        "candidate ingest valued at the lookout's max_value, which your " +
+        "allocator funds or not like anything else you value, for a " +
         "source you already trust wholesale). min_wake_hours spaces wakes " +
         "out. The first poll records what the feed already carries without " +
         "queueing it; for the back-catalogue, read it with read_listing and " +
@@ -192,7 +191,7 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
     {
       name: "update_feed",
       description:
-        "Change a feed's wake rule, cadence, retention, or auto-ingest cap, " +
+        "Change a feed's wake rule, cadence, retention, or default focus, " +
         "or remove it (status=removed) or bring it back (status=active). " +
         "Only the fields you give change.",
       input_schema: {
@@ -264,9 +263,7 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           heartbeat_hours: { type: "number" },
           triggers: { type: "array", items: { type: "string", enum: [...LOOKOUT_TRIGGER_KINDS] } },
           max_value: { type: "number" },
-          max_ingests_per_run: { type: "number" },
           model: { type: "string" },
-          note: { type: "string", description: "One line: why." },
         },
         required: ["lookout_id"],
       },
@@ -276,7 +273,7 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
       description:
         "Queue an input for a lookout so its next run reads it: something " +
         "you learned that it should check, a source to look at, a question. " +
-        "The run is funded like any other (bounded per day); the note is " +
+        "The run is paid from your escrow like any other; the note is " +
         "data to the lookout, not an instruction that bypasses its brief.",
       input_schema: {
         type: "object" as const,
@@ -317,10 +314,6 @@ export async function executeLookoutManagementTool(
       triggers,
       model: typeof toolInput.model === "string" ? toolInput.model : null,
       maxValue: toolInput.max_value === undefined ? undefined : Number(toolInput.max_value),
-      maxIngestsPerRun:
-        toolInput.max_ingests_per_run === undefined
-          ? undefined
-          : Number(toolInput.max_ingests_per_run),
       createdBy: opts.createdBy,
     });
     if (!res.ok) return JSON.stringify({ success: false, code: res.code, problem: res.message });
@@ -377,9 +370,6 @@ export async function executeLookoutManagementTool(
         : {}),
       ...(toolInput.triggers !== undefined ? { triggers: toolInput.triggers } : {}),
       ...(toolInput.max_value !== undefined ? { maxValue: Number(toolInput.max_value) } : {}),
-      ...(toolInput.max_ingests_per_run !== undefined
-        ? { maxIngestsPerRun: Number(toolInput.max_ingests_per_run) }
-        : {}),
       ...(toolInput.model !== undefined ? { model: String(toolInput.model) } : {}),
     });
     return JSON.stringify(

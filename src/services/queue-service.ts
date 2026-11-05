@@ -59,6 +59,13 @@ export interface StewardMessage {
     // Re-triggers: re-assess (and adjust structure only if a genuinely missing
     // dependency is found).
     | "subclaim_change"
+    // The Steward of a node that depends on this one (has it beneath it)
+    // thinks this node's assessment may be mistaken, and says why
+    // (notify_steward). The receiver decides.
+    | "dependent_note"
+    // The Steward of a node not joined to this one by an edge has written
+    // to it with its reasons (notify_steward). The receiver decides.
+    | "steward_note"
     | "contribution_accepted"
     // A Dispute Arbitrator ruled on a dispute touching this claim. Distinct
     // from contribution_accepted because the ruling may be an overturn — the
@@ -81,6 +88,10 @@ export interface StewardMessage {
     // names the neighbors, their verdicts, and the checker's reading; the
     // ledger row it valued decides whether the pass runs.
     | "consistency_flag"
+    // The Audit sends this claim's assessment back for a fresh pass
+    // (recommend_reassessment, #693). The context carries the audit finding
+    // in its own words and what to look at again; the Steward decides.
+    | "audit_send_back"
     // Work on a request bearing on this claim has come back (Part VIII,
     // Requests): the context names the request, the outcome, the research
     // run holding the full report, and whether this Steward keeps it. The
