@@ -337,13 +337,20 @@ export function getQuestionToolDefinitions(): Tool[] {
       name: "add_subquestion",
       description:
         "Attach a subquestion whose answer this question needs. Pass subquestion_id for an " +
-        "existing question, or new_text after match_claim found none.",
+        "existing question, or new_text after match_claim found none; a new subquestion is " +
+        "always a question. A claim or quantity the question rests on is attached with " +
+        "add_decomposition_edge, or add_relationship_edge for one that exists.",
       input_schema: {
         type: "object" as const,
         properties: {
           question_id: { type: "string" },
           subquestion_id: { type: "string" },
-          ...NEW_NODE_PROPERTIES,
+          new_text: {
+            type: "string",
+            description:
+              "Instead of an existing id: the wording of a new subquestion, only after match_claim found none.",
+          },
+          importance: NEW_NODE_PROPERTIES.importance,
           reasoning: { type: "string" },
         },
         required: ["question_id", "reasoning"],
@@ -436,6 +443,33 @@ export function getQuestionToolDefinitions(): Tool[] {
       },
     },
   ];
+}
+
+/**
+ * record_question_instance as a researcher a Steward launched on a question
+ * sees it: question_id dropped, since the run records on its own question
+ * alone and the harness fills it in, and the description addressed to an
+ * instrument rather than to the question's Steward.
+ */
+export function getResearcherQuestionInstanceToolDefinition(): Tool {
+  const tool = getQuestionToolDefinitions().find((t) => t.name === "record_question_instance")!;
+  const schema = tool.input_schema as { type: "object"; properties: Record<string, unknown>; required: string[] };
+  const { question_id: _questionId, ...properties } = schema.properties;
+  return {
+    name: tool.name,
+    description:
+      "Record where a source you read asks the question this investigation serves, or answers it, " +
+      "as the source puts it. For an answering source, answer_id names the node in the question's " +
+      "answer set that its answer matches (read them with get_claim); omit it when none does. Pass " +
+      "instance_id to reclassify an instance of this question; otherwise url and the passage. The " +
+      "instance is recorded as yours, and the Steward owns the question's instance set: it may " +
+      "correct or detach what you record. List what you recorded in your report.",
+    input_schema: {
+      type: "object" as const,
+      properties,
+      required: schema.required.filter((r) => r !== "question_id"),
+    },
+  };
 }
 
 export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[] {
@@ -994,7 +1028,37 @@ async function executeKindToolImpl(
       const questionId = str(input.question_id);
       if ((await nodeKind(questionId)) !== "question") return refuse(`Node ${questionId} is not an active question.`);
       const role = str(input.role) as "asks" | "answers";
+      if (role !== "asks" && role !== "answers") return refuse('role must be "asks" or "answers".');
+      const answerId = optStr(input.answer_id) ?? null;
       let instanceId = optStr(input.instance_id);
+      // Checked before anything is written: setQuestionInstance enforces the
+      // answer set too, but only after a new instance row is inserted, which
+      // a refusal there would leave behind; and it reclassifies whatever
+      // instance it is given, on whichever question that instance is.
+      if (instanceId) {
+        const [inst] = await rawQuery<{ claim_id: string }>(
+          `SELECT claim_id FROM claim_instances WHERE id = $1`,
+          [instanceId]
+        );
+        if (!inst) return refuse(`Instance ${instanceId} not found.`);
+        if (inst.claim_id !== questionId) {
+          return refuse(`Instance ${instanceId} is not an instance of question ${questionId}.`);
+        }
+      }
+      if (answerId) {
+        if (role === "asks") return refuse("A source that asks the question matches no answer: omit answer_id.");
+        const [inSet] = await rawQuery<{ child_claim_id: string }>(
+          `SELECT child_claim_id FROM claim_relationships
+            WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'answers'`,
+          [questionId, answerId]
+        );
+        if (!inSet) {
+          return refuse(
+            `Node ${answerId} is not in the answer set of question ${questionId}. Name the answer node the ` +
+              `source's answer matches; if none does, record the instance without answer_id.`
+          );
+        }
+      }
       if (!instanceId) {
         const source = await sourceFor(input);
         if ("error" in source) return refuse(source.error);
@@ -1009,7 +1073,7 @@ async function executeKindToolImpl(
           createdBy,
         });
       }
-      await setQuestionInstance({ instanceId, role, answerClaimId: optStr(input.answer_id) ?? null });
+      await setQuestionInstance({ instanceId, role, answerClaimId: answerId });
       return ok(`Recorded the source as one that ${role === "asks" ? "asks" : "answers"} the question.`, {
         instance_id: instanceId,
       });
@@ -1041,11 +1105,14 @@ async function executeKindToolImpl(
         filer: { kind: "admin", agent: ctx.role, runId: usage.runId ?? null },
       });
       const others = [...new Map(open.map((r) => [r.id, r])).values()];
+      // Closing is the keeper's (close_request); the researcher has no such
+      // tool, so it is asked to name the duplicate for the keeper (#746).
+      const duplicateNote =
+        ctx.role === "researcher"
+          ? ` Other open requests already bear on these nodes; if one asks for the same thing, name it in your report, and this request's keeper decides whether to close one of them.`
+          : ` Other open requests already bear on these nodes; if one asks for the same thing, close this one as moot and name it.`;
       return ok(
-        `Request ${id} filed.` +
-          (others.length
-            ? ` Other open requests already bear on these nodes; if one asks for the same thing, close this one as moot and name it.`
-            : ""),
+        `Request ${id} filed.` + (others.length ? duplicateNote : ""),
         { request_id: id, ...(others.length ? { open_requests: others.map((r) => ({ id: r.id, ask: r.ask })) } : {}) }
       );
     }

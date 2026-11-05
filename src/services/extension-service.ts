@@ -37,7 +37,7 @@ import { loadConfig } from "../config.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
-import type { InstanceStance } from "../schemas/common.js";
+import type { MatchedInstanceStance } from "../schemas/common.js";
 import {
   assessPageClaims,
   type ClaimForAssessment,
@@ -68,7 +68,7 @@ export interface PageAnnotation {
   why: string;
   confidence: number;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
-  stance: InstanceStance;
+  stance: MatchedInstanceStance;
   /**
    * The neutral statement of the claim as the pipeline would canonicalize it
    * (the Matcher's proposed form, else the Extractor's). Present for claims
@@ -202,7 +202,7 @@ export function buildAnnotations(input: {
     verbatim_text: string;
     context: string | null;
     source_location: string | null;
-    stance: InstanceStance;
+    stance: MatchedInstanceStance;
     /** The Matcher ran out of budget without a verdict (#419). */
     undecided?: boolean;
     /** How the pipeline would word the claim if it were new. */

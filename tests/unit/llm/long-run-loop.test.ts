@@ -38,6 +38,7 @@ import {
   toolUseLoop,
   type ToolCompletionResult,
 } from "../../../src/llm/client.js";
+import { runDateLine } from "../../../src/llm/run-date.js";
 
 const usage = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheCreationTokens: 20 };
 
@@ -161,7 +162,8 @@ describe("longRunToolLoop", () => {
     const req = mocks.completeWithToolsStreaming.mock.calls[0]![0];
     expect(req).toMatchObject({
       model: "claude-opus-5-5",
-      system: ["role", "skill"],
+      // The date goes after the last block, leaving the cached role block as it was (#771).
+      system: ["role", `skill\n\n${runDateLine()}`],
       effort: "xhigh",
       taskBudgetTokens: 64_000,
       betas: ["compact-2026-01-12"],
