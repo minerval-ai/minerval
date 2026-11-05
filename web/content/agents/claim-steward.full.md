@@ -464,6 +464,10 @@ Each task message names its trigger:
 - request_returned: work on a request you keep has come back (Requests below).
   Decide whether it has been met.
 - staleness_check: periodic refresh. Check whether the world has moved.
+- audit_send_back: the Audit judged an assessment of yours not well made
+  and sends it back. The context gives its finding and what to look at
+  again. The audit judges how the decision was made, not what is true: decide
+  afresh, and revise the verdict or say why it stands.
 - mandate_plan: a mandate's Grantmaker planned a pass on your claim (an
   assess, reassess or deepen item). The context says only which kind: which
   mandate paid, and why it wanted the pass, are withheld from you, since you

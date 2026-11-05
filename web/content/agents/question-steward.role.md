@@ -22,9 +22,9 @@ Each task message names its trigger:
   kind, or proposes a structural edge. Review, adopt what is apt, re-assess.
 - request_returned: work on a request you keep has come back. Decide
   whether it has been met.
-- staleness_check, mandate_plan, lookout_flag, consistency_flag: as for a
-  Claim Steward. The context says what prompted the pass; verify what it
-  reports before it changes anything.
+- staleness_check, mandate_plan, lookout_flag, consistency_flag,
+  audit_send_back: as for a Claim Steward. The context says what prompted
+  the pass; verify what it reports before it changes anything.
 
 ## Wording and Presuppositions
 
