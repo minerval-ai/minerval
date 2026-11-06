@@ -233,7 +233,8 @@ creation-time label (#747).
 **Correcting the structure.** The Steward can undo what it built, on its own
 node only, and each change is written to the audit log with its reason (#741):
 `remove_subclaim_edge`, `set_edge_relation` (retypes an edge in place, keeping
-its argument groupings), `ungroup_subclaim`, `revise_argument` (rename, or flip
+its argument groupings; given the edge's current relation, it rewrites the
+edge's reasoning note, #833), `ungroup_subclaim`, `revise_argument` (rename, or flip
 a stance, which retires the current evaluation), and `retire_argument`. A
 retired argument keeps its row, evaluations and reason (`retired_at`,
 `retired_reason`) but leaves every listing; its subclaims return to the basis

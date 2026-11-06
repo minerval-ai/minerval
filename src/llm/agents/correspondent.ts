@@ -41,6 +41,9 @@ import {
   pendingCorrespondentEvents,
   publishCorrespondentUpdate,
   updateCorrespondentWorkspace,
+  listCorrespondentUpdates,
+  listPlanItems,
+  updateCorrespondentPlan,
   validateUpdateItems,
   CORRESPONDENT_BOUNDS,
   type CorrespondentEventRow,
@@ -49,6 +52,10 @@ import {
 
 /** The window's changes shown in full in the briefing; the rest one line each. */
 const WINDOW_SHOWN_IN_FULL = 120;
+/** Its own recent updates listed in the briefing; list_my_updates reads the rest. */
+const RECENT_UPDATES_SHOWN = 5;
+/** Recently closed plan items shown, so it remembers what it finished or gave up. */
+const RECENT_CLOSED_PLAN_SHOWN = 5;
 
 const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 
@@ -133,11 +140,11 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
           [c.scope_claim_ids]
         )
       : [];
-  const [last] = await rawQuery<{ title: string; created_at: Date }>(
-    `SELECT title, created_at FROM correspondent_updates WHERE correspondent_id = $1
-      ORDER BY created_at DESC LIMIT 1`,
-    [c.id]
-  );
+  // What it has already done: its recent updates, and its plan.
+  const { updates: recent, total: updatesTotal } = await listCorrespondentUpdates(c.id, { limit: RECENT_UPDATES_SHOWN });
+  const last = recent[0];
+  const openPlan = await listPlanItems(c.id, { status: "open", limit: 200 });
+  const closedPlan = await listPlanItems(c.id, { status: "closed", limit: RECENT_CLOSED_PLAN_SHOWN });
 
   let published: { updateId: string } | null = null;
   const changesDef = graphChangeDefinition("agent");
@@ -149,15 +156,14 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     {
       name: "publish_update",
       description:
-        "Publish this run's update to your readers (at most one a run). `items` is the " +
-        "structured record agents consume: one per node you report, with the reason it " +
-        "deserves your readers' attention and the change ids from your window behind it " +
-        "(none when you report a node for another reason). `title` and `body` (Markdown) " +
-        "are the prose rendering people read; they cover the same items and add nothing " +
-        "the items do not support. `unexamined` is your account of what in your scope you " +
-        "have not looked at or could not judge. Every change in your window that no item " +
-        "cites, by change id or by its node, is listed on the update as not covered: you " +
-        "cannot leave one out silently. The update is public and says which mandate funded it.",
+        "Publish this run's output to your feed (at most one a run), in whatever form your " +
+        "brief asks for. `title` and `body` (Markdown) are what people read. `items` are the " +
+        "nodes it draws on, for agents and for the record: each with why it is there and the " +
+        "change ids from your window behind it, if any; leave it empty when the form has no " +
+        "use for it. `unexamined` is what in your scope you have not looked at or could not " +
+        "judge. Every change in your window that no item cites, by change id or by its node, " +
+        "is listed on the output as not covered. The output is public and says which mandate " +
+        "funded it.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -170,7 +176,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
               type: "object",
               properties: {
                 claim_id: { type: "string" },
-                reason: { type: "string", description: "Why it deserves these readers' attention: what moved, from what to what, what rests on it" },
+                reason: { type: "string", description: "Why this node is in the output" },
                 change_ids: { type: "array", items: { type: "string" } },
               },
               required: ["claim_id", "reason"],
@@ -182,11 +188,56 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       },
     },
     {
+      name: "update_plan",
+      description:
+        "Keep your plan: what you mean to do across runs (follow a question until it settles, " +
+        "write a summary once a subtree is assessed, ask your Grantmaker for a wider scope). " +
+        "`add` new items; `update` items by id to mark them done or dropped, amend their text, " +
+        "or note what became of them. Every open item is shown in your briefing on every run, " +
+        "so each costs a little on every run until you close it; closed items stay on the record. " +
+        `An item is a sentence or two, at most ${CORRESPONDENT_BOUNDS.planItemChars} characters.`,
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          add: { type: "array", items: { type: "string" } },
+          update: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                status: { type: "string", enum: ["open", "done", "dropped"] },
+                note: { type: "string" },
+                text: { type: "string" },
+              },
+              required: ["id"],
+            },
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "list_my_updates",
+      description:
+        "Your own published updates, newest first, in full: items, prose, and what each did " +
+        "not cover. Your briefing lists the most recent; read further back here.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          limit: { type: "number", description: "Default 5, max 20." },
+          offset: { type: "number" },
+        },
+        required: [],
+      },
+    },
+    {
       name: "update_workspace",
       description:
         "Rewrite your workspace: your memory between runs, read back in full at the start " +
-        "of every run. Keep what you have reported and when, what you are following, what " +
-        "your readers asked for, what to look at first next time. Replaces the whole " +
+        "of every run. Keep your notes here (what you have done and when, what you are " +
+        "following, what your readers asked for) and any standing instructions you want " +
+        "your future runs to follow. Replaces the whole " +
         `document, up to ${CORRESPONDENT_BOUNDS.workspaceChars.toLocaleString("en-US")} characters.`,
       input_schema: {
         type: "object" as const,
@@ -230,8 +281,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const briefing =
     `## Correspondent run\n\n` +
     `You are "${c.title}", a Correspondent posted by the mandate "${c.mandate_title ?? ""}". ` +
-    `Nobody is watching this run; act with the judgment of a careful person paid to keep ` +
-    `these readers informed.\n\n` +
+    `Nobody is watching this run; act with the judgment of a careful person paid to do ` +
+    `this work well for these readers.\n\n` +
     `### Your readers\n\n${c.audience}\n\n` +
     `### Your brief\n\n${c.brief}\n\n` +
     `### Your scope\n\n${scopeText}\n\n` +
@@ -261,12 +312,35 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       : `This is your first update. Your window starts when you were posted; for where things stand, read ` +
         `your scope's nodes and their history.\n\n`) +
     `${windowText}\n\n` +
+    `### What you have done\n\n` +
+    (recent.length === 0
+      ? `(no updates published yet)\n\n`
+      : `${updatesTotal} update${updatesTotal === 1 ? "" : "s"} published; the most recent:\n` +
+        recent
+          .map(
+            (u) =>
+              `- ${new Date(u.created_at).toISOString().slice(0, 10)} "${u.title}": ${u.items.length} item` +
+              `${u.items.length === 1 ? "" : "s"}, ${u.not_covered?.changes_total ?? 0} change` +
+              `${(u.not_covered?.changes_total ?? 0) === 1 ? "" : "s"} not covered`
+          )
+          .join("\n") +
+        (updatesTotal > recent.length ? `\n(list_my_updates reads them in full and further back)` : "") +
+        `\n\n`) +
+    `### Your plan\n\n` +
+    (openPlan.length === 0
+      ? `(no open items)`
+      : openPlan.map((p) => `- [open] ${p.id}: ${p.text}${p.note ? ` (${p.note})` : ""}`).join("\n")) +
+    (closedPlan.length > 0
+      ? `\n\nRecently closed:\n` +
+        closedPlan.map((p) => `- [${p.status}] ${p.text}${p.note ? ` (${p.note})` : ""}`).join("\n")
+      : "") +
+    `\n\n` +
     `### Your workspace\n\n` +
     (c.workspace?.trim() ? c.workspace : `(empty — this is your first run)`) +
     `\n\n---\n\n` +
-    `Read what your readers need; publish one update if anything deserves their attention ` +
-    `(or nothing, if nothing does); update your workspace; finish with a short note for the ` +
-    `mandate's page saying what you read and whether you published.`;
+    `Do what your brief asks; publish one output if the work calls for it (or nothing, if ` +
+    `not); update your workspace and plan; finish with a short note for the mandate's page ` +
+    `saying what you did and whether you published.`;
 
   const result = await withSkills([], () =>
     toolUseLoop({
@@ -344,6 +418,31 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
             update_id: published.updateId,
             items: checked.items.length,
             not_covered: { changes_total: notCovered.changes_total, more_after_window: notCovered.more_after_window },
+          });
+        }
+        if (name === "update_plan") {
+          const res = await updateCorrespondentPlan({
+            correspondentId: c.id,
+            add: toolInput.add,
+            update: toolInput.update,
+          });
+          return JSON.stringify(res);
+        }
+        if (name === "list_my_updates") {
+          const page = await listCorrespondentUpdates(c.id, {
+            limit: Math.min(20, Math.max(1, Number(toolInput.limit ?? 5) || 5)),
+            offset: Math.max(0, Number(toolInput.offset ?? 0) || 0),
+          });
+          return JSON.stringify({
+            total: page.total,
+            updates: page.updates.map((u) => ({
+              id: u.id,
+              at: new Date(u.created_at).toISOString(),
+              title: u.title,
+              body: u.body,
+              items: u.items,
+              not_covered: u.not_covered,
+            })),
           });
         }
         if (name === "update_workspace") {

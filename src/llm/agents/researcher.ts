@@ -88,12 +88,13 @@ import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
 import {
   contributionBudgetLine,
   MANDATE_CONTRIBUTION_TYPES,
+  RESEARCH_CONTRIBUTION_TYPES,
   mandateContributionBudget,
   reviewCostEstimateMicroUsd,
   submitMandateContribution,
 } from "../../services/contribution-service.js";
 
-export { MANDATE_CONTRIBUTION_TYPES };
+export { MANDATE_CONTRIBUTION_TYPES, RESEARCH_CONTRIBUTION_TYPES };
 
 /** For research a mandate funds: submit a finding the graph should hold, as a contribution under the mandate. */
 export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
@@ -103,12 +104,24 @@ export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
     "mandate (shown as \"a funded mandate\"). It is reviewed like anyone's, at the mandate's expense, " +
     "and the node's Steward decides what it changes; nothing you submit goes onto the page directly. " +
     "Submit only what you established, with its evidence, and only what bears on the node you name; " +
-    "everything else belongs in your report.",
+    "everything else belongs in your report. Structure has its own types: two nodes that are one " +
+    "(propose_merge, naming the other in merge_target_claim_id), one node that is two (propose_split), " +
+    "a better canonical wording (propose_edit, with proposed_text). Filed so, an accepted merge or " +
+    "split case is carried to the Curator, which adjudicates them; filed as a challenge, it is not.",
   input_schema: {
     type: "object",
     properties: {
       claim_id: { type: "string", description: "The node the contribution bears on." },
-      contribution_type: { type: "string", enum: [...MANDATE_CONTRIBUTION_TYPES] },
+      contribution_type: { type: "string", enum: [...RESEARCH_CONTRIBUTION_TYPES] },
+      merge_target_claim_id: {
+        type: "string",
+        description: "propose_merge only: the other node, which claim_id's node duplicates.",
+      },
+      proposed_text: {
+        type: "string",
+        maxLength: 2000,
+        description: "propose_edit only: the canonical wording you propose, neutral, presupposing no more than it must.",
+      },
       content: {
         type: "string",
         description:

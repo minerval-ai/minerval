@@ -4,8 +4,7 @@ description: >-
   How to search for evidence on a claim or question so that what the
   search did not find can be weighed: searching across framings and kinds
   of source, recording how the search was done, and reading absence in
-  proportion to the search. A method skill; the verdict stays the
-  Steward's.
+  proportion to the search.
 metadata:
   minerval:
     version: 2

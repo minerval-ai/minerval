@@ -28,6 +28,7 @@ import {
   detachEdgeFromArgument,
   getEdgesBetween,
   retypeEdge,
+  setEdgeReasoning,
   type EdgeRecord,
 } from "../../services/relationship-service.js";
 import { notYourNode } from "./steward-ownership.js";
@@ -77,7 +78,9 @@ export function getStewardStructureToolDefinitions(): Tool[] {
         "Change the relation of an edge in your node's decomposition, keeping the edge's argument " +
         "groupings. Calling add_relationship_edge with another relation would add a second edge " +
         "rather than correct the first. If an edge of the new relation already exists, the two " +
-        "become one. Logged with your reasoning.",
+        "become one. Your reasoning becomes the edge's reasoning note, so pass the edge's current " +
+        "relation to correct a note that misdescribes the subclaim while the relation stays right. " +
+        "Logged with your reasoning.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -90,7 +93,12 @@ export function getStewardStructureToolDefinitions(): Tool[] {
               "The edge's current relation. Needed only when the child is joined to your node by " +
               "more than one edge.",
           },
-          reasoning: { type: "string", description: "Why the new relation is the right one" },
+          reasoning: {
+            type: "string",
+            description:
+              "Why the relation is the right one: how the subclaim bears on your node. It replaces " +
+              "the edge's reasoning note.",
+          },
         },
         required: ["parent_id", "child_id", "relation", "reasoning"],
       },
@@ -286,7 +294,27 @@ export async function executeStewardStructureTool(
         );
       }
       if (edge.relation_type === relation) {
-        return JSON.stringify({ success: true, message: `The edge is already ${relation}; nothing changed.` });
+        // Same relation: the call corrects the edge's reasoning note (#833).
+        if ((edge.reasoning ?? "").trim() === reasoning) {
+          return JSON.stringify({
+            success: true,
+            message: `The edge is already ${relation} with that reasoning; nothing changed.`,
+          });
+        }
+        await setEdgeReasoning(edge.id, reasoning);
+        await logStructureChange(
+          parentId,
+          "set_edge_relation",
+          `Rewrote the reasoning of the ${relation} edge to ${childId} (old edge reasoning: ` +
+            `"${edge.reasoning}"): ${reasoning}`
+        );
+        return JSON.stringify({
+          success: true,
+          message:
+            `The edge from ${parentId} to ${childId} stays ${relation}; its reasoning now reads your ` +
+            `new note, with its argument groupings kept.`,
+          relationship_id: edge.id,
+        });
       }
       const result = await withTransaction((tx) => retypeEdge(edge.id, relation, reasoning, tx));
       await logStructureChange(

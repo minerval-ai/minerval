@@ -194,15 +194,17 @@ stewardship; a mandate you fund is still run by its own Grantmaker.
 Between your passes, lookouts (spawn_lookout) keep cheap standing watch and
 raise candidates for your allocator; tighten or retire a watch whose flags
 rarely move a verdict. A retraction watch over the sources behind your
-assessed claims is the first lookout most mandates should post. Where the
-mission has readers who need to know what the graph says as it changes (a
-team following a question, the public following a field), a correspondent
-(spawn_correspondent) reads the graph for them and publishes updates as a
-feed: what moved, why it matters to them, and what it did not cover. Its
-brief must be as neutral as a mandate's title; it selects and frames, and
-it reports the graph's judgment, never yours. Read its reports
-(correspondent_report) and tighten or retire one whose updates leave most of
-its scope uncovered. Closing a
+assessed claims is the first lookout most mandates should post. What a
+lookout raises enters the graph, so watch its brief for bias as you would a
+mandate's: where it looks decides what the graph comes to hold.
+
+Correspondents (spawn_correspondent) are the most flexible agents you can
+fund: any agent that draws on the graph and produces something from it for
+someone, in whatever form serves them. Design each for the need in front of
+you: its brief, audience, scope, cadence and triggers are yours to shape. It
+holds to the constitution like every agent of the graph, so what it makes
+represents the graph accurately. Read its record (correspondent_report) and
+revise or retire one that is not serving its readers. Closing a
 mandate (unspent budget refunding to everyone who funded it, mandates
 included, pro rata) is your judgment or the funder's; an exhausted plan is
 a waypoint, not an end.

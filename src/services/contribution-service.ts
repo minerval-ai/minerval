@@ -96,11 +96,13 @@ export async function submitMandateContribution(input: {
   const claimId = text(input.input.claim_id);
   const type = text(input.input.contribution_type);
   const content = text(input.input.content);
-  const allowed: readonly string[] = MANDATE_CONTRIBUTION_TYPES;
+  const allowed: readonly string[] = RESEARCH_CONTRIBUTION_TYPES;
   if (!allowed.includes(type)) return { success: false, message: `contribution_type must be one of ${allowed.join(", ")}.` };
   if (content.length < 40) return { success: false, message: "content must say what you found and what it rests on." };
   const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
   if (!node) return { success: false, message: `No active node ${claimId}.` };
+  const structural = await checkStructuralProposal(type, claimId, input.input);
+  if (!structural.ok) return { success: false, message: structural.message };
   const urls = Array.isArray(input.input.evidence_urls)
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
     : [];
@@ -129,9 +131,21 @@ export async function submitMandateContribution(input: {
     }
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
-         (claim_id, contributor_id, contribution_type, content, evidence_urls, grant_id, funded_by_job_id, research_run_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [claimId, grant.funder_user_id, type, content.slice(0, 10_000), urls, run.grant_id, run.job_id, input.researchRunId]
+         (claim_id, contributor_id, contribution_type, content, evidence_urls, grant_id, funded_by_job_id, research_run_id,
+          merge_target_claim_id, proposed_canonical_form)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      [
+        claimId,
+        grant.funder_user_id,
+        type,
+        content.slice(0, 10_000),
+        urls,
+        run.grant_id,
+        run.job_id,
+        input.researchRunId,
+        structural.mergeTarget,
+        structural.proposedText,
+      ]
     );
     const after = { ...budget, committedMicroUsd: budget.committedMicroUsd + estimate, submitted: budget.submitted + 1 };
     return { success: true as const, id: row!.id, budget: contributionBudgetLine(after, estimate) };
@@ -168,6 +182,43 @@ export const MANDATE_CONTRIBUTION_TYPES = [
  * from its own escrow.
  */
 export const CURATION_CONTRIBUTION_TYPES = ["propose_merge", "propose_split", "propose_edit"] as const;
+
+/**
+ * What research a mandate funds may submit: contributions on existing
+ * nodes, and the structural proposals among them (#832). A consistency
+ * audit is where duplicates turn up; filed as a challenge instead, a merge
+ * case goes to the node's Steward rather than to the Curator, who
+ * adjudicates merges and splits (§5). New claims and questions stay with
+ * the Grantmaker, which sees the whole mandate.
+ */
+export const RESEARCH_CONTRIBUTION_TYPES = [...MANDATE_CONTRIBUTION_TYPES, ...CURATION_CONTRIBUTION_TYPES] as const;
+
+/**
+ * The fields a structural proposal needs beyond its node: for a merge, the
+ * other active node it duplicates; for an edit, the wording proposed.
+ */
+async function checkStructuralProposal(
+  type: string,
+  claimId: string,
+  input: Record<string, unknown>
+): Promise<{ ok: true; mergeTarget: string | null; proposedText: string | null } | { ok: false; message: string }> {
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  if (type === "propose_merge") {
+    const mergeTarget = text(input.merge_target_claim_id);
+    const [other] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [mergeTarget]);
+    if (!other || mergeTarget === claimId) {
+      return { ok: false, message: "propose_merge needs merge_target_claim_id: the other active node, which this one duplicates." };
+    }
+    return { ok: true, mergeTarget, proposedText: null };
+  }
+  if (type === "propose_edit") {
+    const proposed = text(input.proposed_text);
+    if (!proposed) return { ok: false, message: "propose_edit needs proposed_text: the canonical wording you propose." };
+    if (proposed.length > 2000) return { ok: false, message: "proposed_text is too long: a claim or question, not an essay." };
+    return { ok: true, mergeTarget: null, proposedText: proposed };
+  }
+  return { ok: true, mergeTarget: null, proposedText: null };
+}
 
 /** What a mandate's Grantmaker (and its lookouts) may submit: the same, structural proposals, and new claims and questions. */
 export const GRANTMAKER_CONTRIBUTION_TYPES = [
@@ -215,17 +266,8 @@ export async function submitGrantContribution(input: {
     const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
     if (!node) return { success: false, message: `No active node ${claimId || "(none given)"}; ${type} is about an existing node.` };
   }
-  const mergeTarget = text(input.input.merge_target_claim_id);
-  if (type === "propose_merge") {
-    const [other] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [mergeTarget]);
-    if (!other || mergeTarget === claimId) {
-      return { success: false, message: "propose_merge needs merge_target_claim_id: the other active node, which this one duplicates." };
-    }
-  }
-  if (type === "propose_edit") {
-    if (!proposed) return { success: false, message: "propose_edit needs proposed_text: the canonical wording you propose." };
-    if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim or question, not an essay." };
-  }
+  const structural = await checkStructuralProposal(type, claimId, input.input);
+  if (!structural.ok) return { success: false, message: structural.message };
   const urls = Array.isArray(input.input.evidence_urls)
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
     : [];
@@ -271,11 +313,11 @@ export async function submitGrantContribution(input: {
         grant.funder_user_id,
         type,
         content.slice(0, 10_000),
-        intake || type === "propose_edit" ? proposed : null,
+        intake ? proposed : structural.proposedText,
         urls,
         input.grantId,
         grant.budget_job_id,
-        type === "propose_merge" ? mergeTarget : null,
+        structural.mergeTarget,
       ]
     );
     return { success: true as const, id: row!.id, left: left - estimate };
