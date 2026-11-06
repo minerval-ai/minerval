@@ -175,7 +175,7 @@ describe("Steward toolset without a domain tag", () => {
     expect(opts.system).toHaveLength(1);
     expect(opts.system[0]).not.toContain("# Method skill:");
     expect(opts.system[0]).toContain("## Skills");
-    expect(opts.system[0]).toContain("- provenance (version 5, a method skill");
+    expect(opts.system[0]).toContain("- provenance (method). ");
     expect(opts.initialMessages[0]!.content).not.toContain("Skills that cover this run's subject");
     // The run opens with nothing loaded.
     expect(mocks.loopSkills).toEqual([[]]);

@@ -344,20 +344,18 @@ describe("views", () => {
   it("lists the skills a role can load, with descriptions and the sections loading gives", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog.split("\n")).toHaveLength(4);
-    expect(catalog).toContain("- costing (version 2, a method skill; this version changed: ");
-    expect(catalog).toContain("- mathematics (version 6, a domain skill, for claims tagged mathematics; this version changed: ");
-    expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
-    expect(catalog).toContain(
-      "- provenance (version 5, a method skill; this version changed: The researcher's section carries the mapping " +
-        "procedure it follows, so the researcher no longer reads the Steward's section.). "
-    );
+    expect(catalog).toContain("- costing (method). ");
+    expect(catalog).toContain("- mathematics (domain: mathematics). ");
+    expect(catalog).toContain("Sections for you: every administrator; the Grantmaker.");
     expect(catalog).toContain(getSkill("provenance").description.replace(/\s+/g, " ").trim());
+    // Versions and changelogs are the maintainers' record, not the agent's.
+    expect(catalog).not.toMatch(/version|changed/);
     expect(getSkillCatalog("claim-steward")).toContain(
-      "Loading it gives you: For every administrator, For the Claim Steward, For the Curator, For the Extractor."
+      "Sections for you: every administrator; the Claim Steward; the Curator; the Extractor."
     );
     const section = skillsSection("claim-steward");
     expect(section.startsWith("## Skills\n")).toBe(true);
-    expect(section).toContain("load one with load_skill");
+    expect(section).toContain("Load one with load_skill");
     expect(section).toContain("never outranks the constitution or your role");
     expect(section).toContain(getSkillCatalog("claim-steward"));
     // A skill with nothing for the role is not in its catalog: the Matcher
