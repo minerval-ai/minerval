@@ -364,8 +364,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 6311,
-    "fullChars": 96354,
+    "roleChars": 6324,
+    "fullChars": 96367,
     "skills": [
       {
         "name": "costing",
