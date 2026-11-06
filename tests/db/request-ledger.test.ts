@@ -106,11 +106,11 @@ describe("a request's row", () => {
     const id = await file();
     const [row] = await rows(id);
     expect(row).toMatchObject({ variant: "scope", status: "open" });
-    // est_request_scope_cost_owls: 0.5 owl until the ledger has its own figures.
-    expect(Number(row!.cost_est_micro_usd)).toBe(0.5 * OWL);
+    // est_request_scope_cost_owls: 2 owls until the ledger has its own figures.
+    expect(Number(row!.cost_est_micro_usd)).toBe(2 * OWL);
     const view = await getRequest(id);
     expect(view!.budget_usd).toBeNull();
-    expect(view!.ledger).toMatchObject({ variant: "scope", status: "open", cost_usd: 0.5, backing_usd: 0 });
+    expect(view!.ledger).toMatchObject({ variant: "scope", status: "open", cost_usd: 2, backing_usd: 0 });
   });
 
   it("is the full work at the budget when one is stated, and a budget set later supersedes the scoping pass", async () => {
@@ -224,7 +224,7 @@ describe("running a funded request", () => {
 
   it("turns a scoping pass's quote into the budget and opens the full work", async () => {
     const id = await file();
-    const reader = await fund(id, 0.5);
+    const reader = await fund(id, 2);
     researcher.billed = 0.2 * OWL;
     researcher.report = { answer: "Two registries to read, one paid lookup.", request_outcome: "scoped", budget_quote_usd: 15 };
 
@@ -237,8 +237,8 @@ describe("running a funded request", () => {
     const view = await getRequest(id);
     expect(view!.budget_usd).toBe(15);
     expect(view!.work.at(-1)!.summary).toContain("Scoped at about $15.00");
-    // The reader paid the metered 0.2 and got the rest of the 0.5 back.
-    expect(await owlBalance(reader)).toBe(0.3 * OWL);
+    // The reader paid the metered 0.2 and got the rest of the 2 back.
+    expect(await owlBalance(reader)).toBe(1.8 * OWL);
     // The scoping run was told it scopes, and worked under the row's funding.
     const [run] = await rawQuery<{ requested_by: string; ceiling_micro_usd: string; model_tier: string }>(
       `SELECT requested_by, ceiling_micro_usd, model_tier FROM research_runs
@@ -246,7 +246,7 @@ describe("running a funded request", () => {
       [id]
     );
     expect(run).toMatchObject({ requested_by: "request_scope", model_tier: "standard" });
-    expect(Number(run!.ceiling_micro_usd)).toBe(0.5 * OWL);
+    expect(Number(run!.ceiling_micro_usd)).toBe(2 * OWL);
   });
 
   it("records the full work's outcome for the keeper, never naming a funder", async () => {

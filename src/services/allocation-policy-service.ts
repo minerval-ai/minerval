@@ -383,7 +383,7 @@ function defaultsFromConfig(): AllocationPolicy {
     request_reviewed_weight: 0.8,
     request_untargeted_importance: 0.3,
     request_wait_days: 14,
-    est_request_scope_cost_owls: 0.5,
+    est_request_scope_cost_owls: 2,
   };
 }
 
