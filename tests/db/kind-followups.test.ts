@@ -145,7 +145,7 @@ describe("contributions from a mandate's research", () => {
 
     const refused = await submitMandateContribution({
       researchRunId: run.id,
-      input: { claim_id: claim, contribution_type: "propose_merge", content: "x".repeat(50) },
+      input: { claim_id: claim, contribution_type: "propose_claim", content: "x".repeat(50) },
     });
     expect(refused.success).toBe(false);
 
@@ -177,6 +177,51 @@ describe("contributions from a mandate's research", () => {
     const before = await rawQuery<{ contributions_accepted: number }>(`SELECT contributions_accepted FROM contributors WHERE id = $1`, [funder]);
     expect(await applyReviewOutcome({ contributionId: out.contribution_id!, reviewId: null, decision: "accept" })).toBeNull();
     expect(await rawQuery(`SELECT contributions_accepted FROM contributors WHERE id = $1`, [funder])).toEqual(before);
+  });
+
+  it("include structural proposals, carrying the merge target and the proposed wording (#832)", async () => {
+    const funder = await seedUser("funder");
+    const { grantId, jobId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 0 });
+    const run = await mandateRun({ grantId, jobId, budgetMicroUsd: 5_000_000 });
+    const claim = await seedClaim("node");
+    const twin = await seedClaim("twin");
+    const CASE = "Both nodes state the registry's 2019 death count for the same fourteen countries, from the same table.";
+
+    const noTarget = await submitMandateContribution({
+      researchRunId: run.id,
+      input: { claim_id: claim, contribution_type: "propose_merge", content: CASE },
+    });
+    expect(noTarget).toMatchObject({ success: false, message: expect.stringContaining("merge_target_claim_id") });
+    const self = await submitMandateContribution({
+      researchRunId: run.id,
+      input: { claim_id: claim, contribution_type: "propose_merge", merge_target_claim_id: claim, content: CASE },
+    });
+    expect(self.success).toBe(false);
+
+    const merge = await submitMandateContribution({
+      researchRunId: run.id,
+      input: { claim_id: claim, contribution_type: "propose_merge", merge_target_claim_id: twin, content: CASE },
+    });
+    expect(merge.success).toBe(true);
+    const edit = await submitMandateContribution({
+      researchRunId: run.id,
+      input: { claim_id: claim, contribution_type: "propose_edit", proposed_text: "  2.6 million deaths were registered.  ", content: CASE },
+    });
+    expect(edit.success).toBe(true);
+    const split = await submitMandateContribution({
+      researchRunId: run.id,
+      input: { claim_id: claim, contribution_type: "propose_split", content: CASE },
+    });
+    expect(split.success).toBe(true);
+
+    const rows = await rawQuery<{ id: string; contribution_type: string; merge_target_claim_id: string | null; proposed_canonical_form: string | null }>(
+      `SELECT id, contribution_type, merge_target_claim_id, proposed_canonical_form FROM contributions WHERE research_run_id = $1`,
+      [run.id]
+    );
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId[merge.contribution_id!]).toMatchObject({ merge_target_claim_id: twin, proposed_canonical_form: null });
+    expect(byId[edit.contribution_id!]).toMatchObject({ merge_target_claim_id: null, proposed_canonical_form: "2.6 million deaths were registered." });
+    expect(byId[split.contribution_id!]).toMatchObject({ merge_target_claim_id: null, proposed_canonical_form: null });
   });
 
   it("come only from research a mandate funds", async () => {

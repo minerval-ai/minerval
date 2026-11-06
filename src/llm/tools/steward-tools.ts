@@ -2515,7 +2515,8 @@ export async function executeStewardTool(
           (edge.created
             ? `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`
             : `Edge ${parentId} -> ${childId} (${relation}) already existed; ` +
-              `nothing was re-linked.`) +
+              `nothing was re-linked, and its reasoning is unchanged (to correct it, call ` +
+              `set_edge_relation with the same relation).`) +
           (argumentLabel
             ? grouped
               ? ` Grouped it under ${argumentLabel}.`
