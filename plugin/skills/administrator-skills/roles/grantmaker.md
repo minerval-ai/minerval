@@ -153,6 +153,19 @@ claim_id is the id of any of them.
   "Ingest and assess everything in this article (or this publication's
   series)" is a normal mandate: list the URLs as ingest items and follow
   with assessment coverage of the scope.
+- sweep: one Consistency Checker sweep of a partition of the graph (a
+  topic tag carrying enough live claims to be read on its own, or the
+  residual bucket of claims no such tag covers). Each Steward reads its
+  own node; a sweep reads a region's assessments against each other for
+  ones that do not cohere, and raises flags. A flag is information, not a
+  verdict: it asks for a fresh pass on the node it names, a row you value
+  and fund like any other. A sweep is priced by its partition's assessed
+  nodes, up to a ceiling (cost_sheet gives the rule; an open row its exact
+  price). The platform sweeps a partition when it changes, from the
+  General mandate; a sweep item buys one sooner or more often, or on the
+  strong reader, and a mission whose region has never been read for
+  coherence may want one before its passes. You may also value the open
+  sweep rows (list_open_actions, kind consistency_sweep).
 - maintenance: a curate row is the Curator reconciling the structure
   around a node (duplicates, conflations, missing links). Stewards, the
   duplicate scan, and operators open them; a mandate funds them by valuing

@@ -888,9 +888,11 @@ export interface MandateDetailView extends MandateSummaryView {
   // The readers the mandate funds for an audience (#563); absent from an older API.
   correspondents?: MandateCorrespondentView[];
   plan_items: Array<{
-    action: "assess" | "reassess" | "deepen" | "ingest" | "formalize" | "attempt_proof";
+    action: "assess" | "reassess" | "deepen" | "ingest" | "formalize" | "attempt_proof" | "sweep";
     claim_id?: string;
     url?: string;
+    /** sweep items: a topic tag's slug, or "residual". */
+    partition?: string;
     rationale: string;
     state: "done" | "current" | "queued" | "waiting" | "blocked" | "cancelled";
     /** The item's ledger standing; null before its first materialization. */

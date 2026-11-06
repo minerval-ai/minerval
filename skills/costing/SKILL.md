@@ -7,9 +7,10 @@ description: >-
   worth doing is a separate judgment.
 metadata:
   minerval:
-    version: 2
+    version: 3
     since_epoch: 2026-09-domain-skills
     changelog:
+      3: Consistency sweeps are on cost_sheet and fundable as plan items (#831), so the Grantmaker prices one by its partition's size.
       2: The Dispute Arbitrator gets cost_sheet, so a request it files on overturning a propose_request is priced the way the Reviewer prices one.
     kind: method
 ---
@@ -82,6 +83,11 @@ work:
 - **formalize and attempt_proof**: their own lines. An attempt at the max
   variant costs several times the standard one.
 - **curation**: one Curator run for each curate row you fund.
+- **consistency sweeps**: one sweep per partition you buy, priced by the
+  partition's size: cost_sheet's per-node figure times its assessed
+  nodes, from a floor to a ceiling. The open row for a partition carries
+  its exact price. The passes its flags ask for are more passes, priced
+  as reassess.
 - **requests**: a request's budget is the price of the work. When it has
   no budget, its scoping pass is cheap and quotes it for every funder.
   You weigh what meeting the request would change in your territory

@@ -30,7 +30,13 @@ import {
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
-import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
+import {
+  duePartitions,
+  listPartitions,
+  partitionRef,
+  reclaimAbandonedSweeps,
+  type PartitionStatus,
+} from "./consistency-service.js";
 import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
 
 export type ActionKind =
@@ -81,7 +87,9 @@ export type ActionKind =
   // the residual bucket) for assessments that do not cohere, raising
   // flags. Group `consistency:<tag_id|residual>`, target_ref the same.
   // The platform's own work: self-funded from the General mandate's escrow
-  // like a review pass, bounded per day across all partitions.
+  // like a review pass, out of its day. A mandate buys one too, by a
+  // `sweep` item in its plan (funded from its own escrow and day, like an
+  // ingest item, #831) or by valuing an open row.
   | "consistency_sweep"
   // Reconcile the graph around one anchor claim (#363): the Curator's
   // merges, splits, and cross-claim edges. Group `curate:<claim_id>`, one
@@ -771,14 +779,23 @@ async function reconcileConsistencySweeps(): Promise<void> {
   const due = await duePartitions(config.consistencyMinTagClaims);
   const refs = due.map((p) => CONSISTENCY_GROUP(partitionRef(p)));
   // A partition no longer due loses its open rows, so open rows never
-  // pile up across days.
+  // pile up across days, unless a live mandate's plan names it (a sweep
+  // item still waiting for its sweep, #831): those rows are the mandate's
+  // to fund, and the plan materializer reopens them anyway.
   await rawQuery(
     `UPDATE actions a SET status = 'cancelled', updated_at = now()
       WHERE a.kind = 'consistency_sweep' AND a.status = 'open'
         AND NOT (a.exclusion_group = ANY($1::text[]))
         AND NOT EXISTS (SELECT 1 FROM action_allocations al
                          WHERE al.exclusion_group = a.exclusion_group
-                           AND al.released_at IS NULL)`,
+                           AND al.released_at IS NULL)
+        AND NOT EXISTS (
+              SELECT 1 FROM grants g,
+                     jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) item
+               WHERE g.status = 'active'
+                 AND item->>'action' = 'sweep'
+                 AND item->'ledger'->>'exclusion_group' = a.exclusion_group
+                 AND item->'ledger'->>'status' IN ('open', 'running'))`,
     [refs]
   );
   const perNode = {
@@ -988,6 +1005,13 @@ export interface PlanItemLedger {
   exclusion_group?: string;
   /** ISO timestamp of the sweep or call that last wrote this. */
   checked_at: string;
+  /**
+   * sweep items only: when the item first opened its partition's rows. A
+   * sweep of the partition that finishes after this is the one the item
+   * asked for (the rows are shared and reopened, so the row's own status
+   * cannot say).
+   */
+  since?: string;
 }
 
 /** The plan item shape the materializer reads (a loose PlanItem). */
@@ -999,6 +1023,8 @@ export interface MaterializablePlanItem {
   rationale?: string;
   /** ingest only: read the document for this subject (ingest-focus-service.ts). */
   focus?: string;
+  /** sweep only: a topic tag's slug, or "residual". */
+  partition?: string;
   ledger?: PlanItemLedger;
   [key: string]: unknown;
 }
@@ -1049,13 +1075,18 @@ export interface PlanItemOutcome {
 interface MaterializeContext {
   ingestCostMicroUsd: number;
   formalizeCostMicroUsd: () => Promise<number>;
+  /** The graph's sweep partitions, read once per sweep when a plan names one. */
+  partitions: () => Promise<PartitionStatus[]>;
 }
 
 function newMaterializeContext(): MaterializeContext {
   // The strong-tier estimate the formalize rows carry (two strong passes),
   // computed once per sweep and only when some plan asks for one.
   let strongPassMicroUsd: number | null = null;
+  let partitions: Promise<PartitionStatus[]> | null = null;
   return {
+    partitions: () =>
+      (partitions ??= listPartitions(loadConfig().consistencyMinTagClaims)),
     ingestCostMicroUsd: capMicroUsd("source_ingest"),
     formalizeCostMicroUsd: async () => {
       if (strongPassMicroUsd === null) {
@@ -1354,6 +1385,8 @@ async function materializePlanItem(
     return row ? fromRow(row) : blocked("no ingest row could be opened for this url");
   }
 
+  if (kind === "sweep") return materializeSweepItem(item, o);
+
   if (!item.claim_id) return blocked(`a ${kind} item needs a claim_id`);
   const claim = await claimStanding(item.claim_id);
   if (!claim) return blocked(`claim ${item.claim_id} does not exist`);
@@ -1490,6 +1523,109 @@ async function materializePlanItem(
   }
 
   return blocked(`unknown plan item kind "${kind}"`);
+}
+
+/**
+ * A `sweep` plan item (#831): a mandate buying one Consistency Checker
+ * sweep of a partition. It opens (or keeps) the partition's two rows, the
+ * same exclusive pair the platform's own lane opens for a due partition
+ * and priced the same way (consistencySweepPrice), and its funding is the
+ * mandate's own escrow and day (fundGrantSelfActions), like an ingest
+ * item. Unlike the platform's lane it does not wait for the partition to
+ * be due: a funder may buy a re-sweep of a region that changed a little,
+ * or a strong read of one the cheap reader already covered. One item buys
+ * one sweep: the first sweep of the partition to finish after the item
+ * opened its rows, whoever paid for it, consumes it.
+ */
+async function materializeSweepItem(
+  item: MaterializablePlanItem,
+  o: { ctx: MaterializeContext; active: boolean; notActive: PlanItemLedger }
+): Promise<PlanItemLedger> {
+  const config = loadConfig();
+  const name = String(item.partition ?? "").trim().toLowerCase();
+  if (!name) return blocked('a sweep item needs a partition: a topic tag\'s slug or "residual"');
+  // Already consumed: a done item stays done.
+  if (item.ledger?.status === "done") return item.ledger;
+  if (!config.consistencySweepsEnabled) {
+    return blocked(
+      "this deployment runs no consistency sweeps (CONSISTENCY_SWEEPS_ENABLED is off), " +
+        "so no sweep row can open; the item becomes work if they are switched on"
+    );
+  }
+  const partitions = await o.ctx.partitions();
+  let partition: PartitionStatus | undefined;
+  if (name === "residual") {
+    partition = partitions.find((p) => p.partition === "residual");
+    if (!partition) return blocked("the residual bucket holds no live claims; nothing to sweep");
+  } else {
+    const { resolveTagBySlug } = await import("./tag-service.js");
+    const tag = await resolveTagBySlug(name);
+    if (!tag) return blocked(`no topic tag "${name}"; name a tag by its slug, as graph reads return it`);
+    partition = partitions.find((p) => p.partition === "tag" && p.tag_id === tag.id);
+    if (!partition) {
+      return blocked(
+        `the tag "${tag.slug}" carries fewer than ${config.consistencyMinTagClaims} live claims, ` +
+          `so it is not a partition of its own: its claims are swept with the residual bucket ` +
+          `(partition "residual")`
+      );
+    }
+  }
+  const ref = partition.partition === "tag" ? partition.tag_id! : "residual";
+  const group = CONSISTENCY_GROUP(ref);
+  const since = item.ledger?.since;
+  if (since) {
+    const [finished] = await rawQuery<{ id: string }>(
+      `SELECT id FROM consistency_sweeps
+        WHERE status = 'done' AND partition = $1
+          AND tag_id IS NOT DISTINCT FROM $2::uuid
+          AND finished_at > $3::timestamptz
+        LIMIT 1`,
+      [partition.partition, partition.tag_id, since]
+    );
+    if (finished) {
+      const row = await groupLedger({ group });
+      const reason = "a sweep of the partition finished after this item opened its rows";
+      return row
+        ? { ...fromRow({ ...row, status: "done" }, reason), since }
+        : { status: "done", reason, exclusion_group: group, since, checked_at: nowIso() };
+    }
+  }
+  if (!o.active) return o.notActive;
+  if (partition.assessed === 0) {
+    return waiting(
+      `the partition "${partition.label}" holds no assessed nodes yet; a sweep reads ` +
+        "assessments against each other, so its rows open once some exist"
+    );
+  }
+  const perNode = {
+    standard: await estimateConsistencyNodeCostMicroUsd("standard", CONSISTENCY_SWEEP_MIN_NODES),
+    strong: await estimateConsistencyNodeCostMicroUsd("strong", CONSISTENCY_SWEEP_MIN_NODES),
+  };
+  for (const variant of ["standard", "strong"] as const) {
+    // A row already running keeps its price; any other is (re)opened at
+    // the partition's current size, as the platform lane does.
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+       VALUES ('consistency_sweep', $1, $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')
+            OR (actions.status = 'open'
+                AND actions.cost_est_micro_usd <> EXCLUDED.cost_est_micro_usd)`,
+      [
+        group,
+        variant,
+        ref,
+        `Consistency sweep${variant === "strong" ? " (strong)" : ""}: ${partition.label}`,
+        consistencySweepPrice(variant, partition.assessed, perNode[variant]).microUsd,
+      ]
+    );
+  }
+  const row = await groupLedger({ group });
+  if (!row) return blocked("no sweep row could be opened for this partition");
+  return { ...fromRow(row), since: since ?? nowIso() };
 }
 
 /**

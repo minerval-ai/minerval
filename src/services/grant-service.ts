@@ -50,6 +50,14 @@ export interface PlanItem {
    *                 `lifetime_cap_owls` lets the Grantmaker raise this one
    *                 claim's lifetime attempt spend above the policy key,
    *                 bounded at twice it (§7.3).
+   * sweep         — one Consistency Checker sweep of a partition of the
+   *                 graph (#330, #831): `partition` is a topic tag's slug,
+   *                 or "residual" for the claims no sweepable tag covers;
+   *                 `variant` standard or strong, or absent for the
+   *                 marginal-return rule the General mandate's own sweeps
+   *                 follow. Funded from the mandate's escrow and day like
+   *                 an ingest item; consumed by the first sweep of the
+   *                 partition that finishes after the item opened its row.
    */
   action:
     | "assess"
@@ -57,9 +65,12 @@ export interface PlanItem {
     | "deepen"
     | "ingest"
     | "formalize"
-    | "attempt_proof";
+    | "attempt_proof"
+    | "sweep";
   claim_id?: string;
   url?: string;
+  /** sweep only: a topic tag's slug, or "residual". */
+  partition?: string;
   rationale: string;
   /**
    * ingest only: read the document for this subject, in the mandate's
@@ -67,7 +78,8 @@ export interface PlanItem {
    * ingest-focus-service.ts). Absent = the whole document.
    */
   focus?: string;
-  variant?: "standard" | "max";
+  /** attempt_proof: standard or max; sweep: standard or strong. */
+  variant?: "standard" | "max" | "strong";
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
   /**
@@ -106,7 +118,18 @@ export const PLAN_KIND_RULES =
   "when the mandate wants one subject from documents that range wider; the " +
   "same URL can be ingested again later for another focus, or whole. " +
   "formalize and attempt_proof: mathematical claims; the mathematics " +
-  "skill says when each becomes work.";
+  "skill says when each becomes work. " +
+  "sweep: a partition, the slug of a topic tag carrying enough live " +
+  "claims to be swept on its own, or \"residual\" for the claims no such " +
+  "tag covers; the item opens (or keeps) the partition's two sweep rows " +
+  "(standard and strong readers, priced by the partition's assessed " +
+  "nodes) and funds one from your escrow and daily rate: the variant you " +
+  "name, or without one the same marginal-return rule the platform's own " +
+  "sweeps follow. The item is done when a sweep of the partition finishes " +
+  "after it opened, whoever funded it; add another item for a re-sweep. A " +
+  "sweep raises flags, and the passes the flags ask for are separate " +
+  "rows, valued and funded like any other. Blocked when the deployment " +
+  "runs no sweeps, or when the tag is too small to be its own partition.";
 
 /**
  * The JSON schema of one plan item, as the Grantmaker's tools show it
@@ -127,12 +150,19 @@ export const PLAN_ITEM_SCHEMA = {
         "ingest",
         "formalize",
         "attempt_proof",
+        "sweep",
       ],
     },
     claim_id: {
       type: "string",
       description:
-        "Required for every kind but ingest: the node's id, as a tool result gave it.",
+        "Required for every kind but ingest and sweep: the node's id, as a tool result gave it.",
+    },
+    partition: {
+      type: "string",
+      description:
+        "Required for sweep: the topic tag's slug, as graph reads return " +
+        "it, or \"residual\".",
     },
     url: {
       type: "string",
@@ -148,8 +178,11 @@ export const PLAN_ITEM_SCHEMA = {
     rationale: { type: "string" },
     variant: {
       type: "string",
-      enum: ["standard", "max"],
-      description: "attempt_proof only: the solver's effort variant.",
+      enum: ["standard", "max", "strong"],
+      description:
+        "attempt_proof: the solver's effort variant, standard or max. " +
+        "sweep, optional: the reader, standard or strong; omit for the " +
+        "marginal-return rule.",
     },
     is_calibration: {
       type: "boolean",
@@ -176,7 +209,11 @@ const PLAN_ACTIONS = new Set<PlanItem["action"]>([
   "ingest",
   "formalize",
   "attempt_proof",
+  "sweep",
 ]);
+
+/** A sweep item's partition: a tag slug's shape, or the residual bucket. */
+const PARTITION_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
  * The mechanical check every plan goes through before it is recorded: a
@@ -201,8 +238,21 @@ export function validatePlanItems(items: readonly PlanItem[]): string | null {
       if (item.focus !== undefined && item.focus !== null && typeof item.focus !== "string") {
         return "an ingest item's focus must be text";
       }
+    } else if (item.action === "sweep") {
+      const partition = typeof item.partition === "string" ? item.partition.trim().toLowerCase() : "";
+      if (!partition || !PARTITION_RE.test(partition)) {
+        return (
+          `sweep item needs a partition: a topic tag's slug or "residual" ` +
+          `(got: ${item.partition ?? "none"})`
+        );
+      }
+      if (item.variant !== undefined && item.variant !== null && item.variant !== "standard" && item.variant !== "strong") {
+        return `a sweep item's variant is standard or strong (got: ${String(item.variant)})`;
+      }
     } else if (!item.claim_id || !UUID_RE.test(item.claim_id)) {
       return `${item.action} item needs a claim_id from your survey results`;
+    } else if (item.action === "attempt_proof" && item.variant === "strong") {
+      return "an attempt_proof item's variant is standard or max";
     }
   }
   return null;
@@ -218,12 +268,15 @@ export function validatePlanItems(items: readonly PlanItem[]): string | null {
 export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
   return items.map((it) => {
     const focus = it.action === "ingest" && typeof it.focus === "string" ? it.focus.trim() : "";
+    const partition =
+      it.action === "sweep" && typeof it.partition === "string" ? it.partition.trim().toLowerCase() : "";
     return {
       action: it.action,
       rationale: String(it.rationale ?? ""),
       ...(it.claim_id ? { claim_id: it.claim_id } : {}),
       ...(it.url ? { url: it.url } : {}),
       ...(focus ? { focus } : {}),
+      ...(partition ? { partition } : {}),
       ...(it.variant ? { variant: it.variant } : {}),
       ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
       ...(it.lifetime_cap_owls !== undefined ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) } : {}),

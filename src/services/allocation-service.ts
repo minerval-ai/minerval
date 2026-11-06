@@ -806,6 +806,21 @@ export async function consistencyStrongExpectedGain(): Promise<StrongExpectedGai
   return { gain: (await getEffectiveAllocationPolicy()).consistency_strong_expected_gain, source: "default" };
 }
 
+/**
+ * The variant of sweep row `a`'s partition the marginal-return rule buys
+ * (consistencySweepVariant in SQL): strong when the strong read's expected
+ * gain ($4) times the standard price covers the strong one. One text, read
+ * by the General mandate's lane and by a mandate's sweep item that names
+ * no variant.
+ */
+const SWEEP_RULE_VARIANT_SQL = `(
+              SELECT CASE WHEN $4::real * std.cost_est_micro_usd >= strong.cost_est_micro_usd
+                          THEN 'strong' ELSE 'standard' END
+                FROM actions std
+                JOIN actions strong ON strong.exclusion_group = std.exclusion_group
+                                   AND strong.variant = 'strong'
+               WHERE std.exclusion_group = a.exclusion_group AND std.variant = 'standard')`;
+
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
     exclusion_group: string;
@@ -882,11 +897,28 @@ export async function fundGrantSelfActions(): Promise<number> {
                  AND c.status = 'active'))
          -- A consistency sweep (#330) is the platform's own work: the
          -- General mandate funds it, as the formula mandate whose scope
-         -- is the whole graph.
-         OR (a.kind = 'consistency_sweep' AND g.id = (
+         -- is the whole graph. Of a partition's two variants it buys the
+         -- one the marginal-return rule picks from that partition's two
+         -- prices (consistencySweepVariant, with the strong read's
+         -- expected gain as $4, #756), and never both.
+         OR (a.kind = 'consistency_sweep' AND a.variant = ${SWEEP_RULE_VARIANT_SQL}
+             AND g.id = (
               SELECT gg.id FROM grants gg
                WHERE gg.is_platform = true AND gg.policy = 'general' AND gg.status = 'active'
                ORDER BY gg.created_at ASC LIMIT 1))
+         -- A mandate's own sweep item (#831): the row the item opened,
+         -- while the item waits for its sweep, at the variant it named or,
+         -- naming none, the same rule. Out of the mandate's escrow and day
+         -- like an ingest item.
+         OR (a.kind = 'consistency_sweep' AND g.status = 'active' AND EXISTS (
+              SELECT 1
+                FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) item
+               WHERE item->>'action' = 'sweep'
+                 AND item->'ledger'->>'exclusion_group' = a.exclusion_group
+                 AND item->'ledger'->>'status' = 'open'
+                 AND (item->>'variant' = a.variant
+                      OR (COALESCE(item->>'variant', '') NOT IN ('standard', 'strong')
+                          AND a.variant = ${SWEEP_RULE_VARIANT_SQL}))))
          -- Any open ingest row a plan item names, wherever the cursor
          -- stands: the direct steward lane can move the cursor past an
          -- ingest item before its row ran (#427), and an open row is by
@@ -913,18 +945,11 @@ export async function fundGrantSelfActions(): Promise<number> {
         AND (a.kind <> 'correspondent_run' OR $5::boolean)
         -- Consistency sweeps have no count either (#749): the General
         -- mandate funds them from its day like any of its work, the
-        -- re-sweep interval keeps a partition to one a day, and the switch
-        -- is a deployment off-switch. Of a partition's two variants it
-        -- buys the one the marginal-return rule picks from that
-        -- partition's two prices (consistencySweepVariant, with the
-        -- strong read's expected gain as $4, #756), and never both.
-        AND (a.kind <> 'consistency_sweep' OR ($1::boolean AND a.variant = (
-              SELECT CASE WHEN $4::real * std.cost_est_micro_usd >= strong.cost_est_micro_usd
-                          THEN 'strong' ELSE 'standard' END
-                FROM actions std
-                JOIN actions strong ON strong.exclusion_group = std.exclusion_group
-                                   AND strong.variant = 'strong'
-               WHERE std.exclusion_group = a.exclusion_group AND std.variant = 'standard')))
+        -- re-sweep interval keeps a partition to one a day on its lane, a
+        -- mandate's sweep items are its own day's, and the switch is a
+        -- deployment off-switch. Which variant each funder buys is in the
+        -- join above.
+        AND (a.kind <> 'consistency_sweep' OR $1::boolean)
       LIMIT 100`,
     [
       loadConfig().consistencySweepsEnabled === true,
@@ -941,9 +966,14 @@ export async function fundGrantSelfActions(): Promise<number> {
   // self-actions on the same grant has to draw them down itself — otherwise
   // each row sees the full room and together they overcommit.
   const spentThisPass = new Map<string, number>();
+  // So does a group two funders reach in one pass: a partition the General
+  // mandate's lane and a mandate's sweep item both name (#831). Each row's
+  // need is a snapshot too, so without this both would cover it in full.
+  const coveredThisPass = new Set<string>();
   for (const row of rows) {
     const needed = Number(row.needed);
     if (needed <= 0) continue;
+    if (coveredThisPass.has(row.exclusion_group)) continue;
     const drawn = spentThisPass.get(row.grant_id) ?? 0;
     if (needed > Number(row.headroom) - drawn) continue;
     const dayRoom =
@@ -962,6 +992,7 @@ export async function fundGrantSelfActions(): Promise<number> {
     if (inserted.length === 0) continue;
     placed++;
     spentThisPass.set(row.grant_id, drawn + needed);
+    coveredThisPass.add(row.exclusion_group);
   }
   return placed;
 }

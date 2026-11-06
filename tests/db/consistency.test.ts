@@ -25,6 +25,7 @@ import {
   sweepYieldByVariant,
 } from "../../src/services/consistency-service.js";
 import {
+  materializePlanItems,
   reconcileActions,
   ASSESS_GROUP,
   priceConsistencySweep,
@@ -456,5 +457,78 @@ describe("precision (#330)", () => {
     expect(after.flagged - before.flagged).toBe(1);
     expect(after.ran - before.ran).toBe(1);
     expect(after.moved - before.moved).toBe(1);
+  });
+});
+
+describe("a mandate's sweep plan items (#831)", () => {
+  it("opens a partition's rows due or not, funds the named variant from the mandate's escrow, and reads done once a sweep finishes", async () => {
+    // No platform lane in play: the mandate is the only funder.
+    await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true`);
+    await rawQuery(`DELETE FROM action_allocations WHERE exclusion_group LIKE 'consistency:%'`);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE kind = 'consistency_sweep'`);
+    resetAllocationPolicyCache();
+
+    const tagId = await seedTag("mandate-region");
+    const [{ slug }] = await rawQuery<{ slug: string }>(`SELECT slug FROM tags WHERE id = $1`, [tagId]);
+    const smallId = await seedTag("mandate-small");
+    const [{ slug: smallSlug }] = await rawQuery<{ slug: string }>(`SELECT slug FROM tags WHERE id = $1`, [smallId]);
+    const claims = [await seedClaim("m1"), await seedClaim("m2"), await seedClaim("m3")];
+    for (const id of claims) await assess(id, { status: "supported", when: new Date(Date.now() - 3_600_000) });
+    await tag(tagId, claims);
+    // Swept a moment ago with nothing changed since: not due on the platform lane.
+    const prior = await startSweep({ partition: "tag", tagId, label: slug });
+    await finishSweep({ sweepId: prior, status: "done", claimsInScope: 3, flagsRaised: 0 });
+    expect((await duePartitions(3)).some((p) => p.tagId === tagId)).toBe(false);
+
+    const funder = await seedUser("sweep-funder");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50_000_000 });
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({
+        strategy: "read the region for coherence",
+        items: [
+          { action: "sweep", partition: slug, variant: "strong", rationale: "a strong read of the region" },
+          { action: "sweep", partition: smallSlug, rationale: "too small to be its own partition" },
+          { action: "sweep", partition: "no-such-tag-anywhere", rationale: "a tag that does not exist" },
+        ],
+      }),
+    ]);
+
+    const outcomes = await materializePlanItems(grantId);
+    expect(outcomes[0]!.ledger.status).toBe("open");
+    expect(outcomes[0]!.ledger.exclusion_group).toBe(`consistency:${tagId}`);
+    expect(outcomes[0]!.ledger.since).toBeTruthy();
+    expect(outcomes[1]!.ledger.status).toBe("blocked");
+    expect(outcomes[1]!.ledger.reason).toMatch(/residual/);
+    expect(outcomes[2]!.ledger.status).toBe("blocked");
+    expect(outcomes[2]!.ledger.reason).toMatch(/no topic tag/);
+
+    // The platform lane's reconcile leaves the rows a live item names, though
+    // the partition is not due.
+    await reconcileActions();
+    const rows = await rawQuery<{ variant: string; status: string }>(
+      `SELECT variant, status FROM actions WHERE exclusion_group = $1 ORDER BY variant`,
+      [`consistency:${tagId}`]
+    );
+    expect(rows).toEqual([
+      { variant: "standard", status: "open" },
+      { variant: "strong", status: "open" },
+    ]);
+
+    // Funded from the mandate's own escrow, at the variant it named, once.
+    await fundGrantSelfActions();
+    await fundGrantSelfActions();
+    const funded = await rawQuery<{ variant: string; grant_id: string }>(
+      `SELECT a.variant, al.grant_id FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE al.exclusion_group = $1 AND al.released_at IS NULL`,
+      [`consistency:${tagId}`]
+    );
+    expect(funded).toEqual([{ variant: "strong", grant_id: grantId }]);
+
+    // A sweep of the partition finishing after the item opened consumes it.
+    const run = await startSweep({ partition: "tag", tagId, label: slug }, "strong");
+    await finishSweep({ sweepId: run, status: "done", claimsInScope: 3, flagsRaised: 0 });
+    const after = await materializePlanItems(grantId, [0]);
+    expect(after[0]!.ledger.status).toBe("done");
   });
 });
