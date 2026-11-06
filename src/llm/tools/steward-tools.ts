@@ -853,7 +853,9 @@ export function getStewardToolDefinitions(): Tool[] {
       description:
         "Attach an EXISTING claim as a subclaim, by id. Use this when match_claim " +
         "found that the dependency you want already exists (as itself, a rewording, " +
-        "or its negation): link it instead of minting a duplicate. Edges to your " +
+        "or its negation): link it instead of minting a duplicate. A related node " +
+        "that is not the dependency you need is not a subclaim; record it with " +
+        "add_related_claim. Edges to your " +
         "claim's decomposition are yours to own. A subclaim may belong to several " +
         "of the claim's arguments (§7): calling this again for an edge that already " +
         "exists, with another argument_id, groups that edge under the second " +
