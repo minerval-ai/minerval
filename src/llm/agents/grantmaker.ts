@@ -900,8 +900,9 @@ export function getValuationToolDefinitions(): Tool[] {
         "row's cost, what its funders have put on it, the gap left to fund, " +
         "and your valuation if you hold one, with the node it is on (kind, " +
         "text, tags, importance, contestation, days since assessed), its " +
-        "alternatives (at most one of a set runs), and for a curate or " +
-        "request row what it is about. Filter by territory (query by " +
+        "alternatives (at most one of a set runs), and for a curate, " +
+        "request, or consistency_sweep row what it is about (a sweep's " +
+        "partition and when it was last swept). Filter by territory (query by " +
         "meaning, tag, within a node's subtree, node kind, assessment " +
         "state) and by money (unfunded only, a cost ceiling, valued by you " +
         "or not); page with offset. The graph reads you make also carry " +
@@ -927,6 +928,7 @@ export function getValuationToolDefinitions(): Tool[] {
               "curate",
               "audit",
               "request",
+              "consistency_sweep",
             ],
           },
           node_kind: { type: "string", enum: ["claim", "quantity", "question"] },

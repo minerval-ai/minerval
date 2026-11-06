@@ -193,7 +193,7 @@ export interface OpenActionRow {
   days_since_assessed: number | null;
   /** The other ways of doing the same thing (at most one of them runs). */
   alternatives: Array<{ action_id: string; variant: string; cost_owls: number }>;
-  /** What a curate or request row is about. */
+  /** What a curate, request, or consistency_sweep row is about. */
   about: string | null;
 }
 
@@ -268,7 +268,9 @@ export async function listOpenActions(
           AND ($3::uuid IS NULL OR a.claim_id IN (SELECT id FROM beneath))
           AND ($7::uuid IS NULL OR EXISTS (
                 SELECT 1 FROM taggings t
-                 WHERE t.subject_kind = 'claim' AND t.subject_id = a.claim_id AND t.tag_id = $7))
+                 WHERE t.subject_kind = 'claim' AND t.subject_id = a.claim_id AND t.tag_id = $7)
+               -- A sweep of the tag's own partition (#831).
+               OR (a.kind = 'consistency_sweep' AND a.target_ref = $7::text))
           AND ($8::text IS NULL
                OR a.claim_id = ANY($1::uuid[])
                OR a.label ILIKE '%' || $8 || '%')
@@ -292,6 +294,17 @@ export async function listOpenActions(
                                      WHERE r.claim_id IS NULL AND rq.id::text = r.target_ref))
               WHEN 'request' THEN (SELECT LEFT(rq.ask, 300) FROM requests rq
                                     WHERE rq.id::text = r.target_ref)
+              -- A sweep (#831): which partition, and when it was last read.
+              WHEN 'consistency_sweep' THEN
+                'partition ' || COALESCE((SELECT 'tag ' || tg.slug FROM tags tg
+                                           WHERE tg.id::text = r.target_ref),
+                                         'residual (claims no sweepable tag covers)')
+                || COALESCE('; last swept ' || to_char(
+                     (SELECT MAX(cs.finished_at) FROM consistency_sweeps cs
+                       WHERE cs.status = 'done'
+                         AND ((r.target_ref = 'residual' AND cs.partition = 'residual')
+                              OR cs.tag_id::text = r.target_ref)),
+                     'YYYY-MM-DD'), '; never swept')
               ELSE NULL END AS about
        FROM rows r
       WHERE ($9::text = 'any'

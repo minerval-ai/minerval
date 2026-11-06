@@ -498,6 +498,25 @@ General mandate funds one of the two from its escrow and its daily rate
 like a review pass, with no count of sweeps (`CONSISTENCY_SWEEPS_ENABLED`
 is a deployment switch, off by default).
 
+**Mandates buy sweeps too** (#831). Coverage of a region is something a
+funder may want for its own sake, sooner than the platform's lane would
+get to it, more often, or on the strong reader. A `sweep` plan item names
+a partition (a tag's slug, or `residual`) and optionally a variant; the
+plan materializer opens (or keeps) that partition's two rows, due or not,
+priced the same way, and `fundGrantSelfActions` funds the named variant
+(or, naming none, the one the marginal-return rule below picks) from the
+mandate's escrow and day, as it funds an ingest item. One item buys one
+sweep: it reads done once a sweep of the partition finishes after the
+item first opened its rows, whoever funded that sweep, and a re-sweep is
+another item. The reconcile sweep leaves open the rows a live sweep item
+names even when the partition is not due. A judgment mandate may also
+value an open sweep row (`list_open_actions`, kind `consistency_sweep`,
+shows each with its partition and when it was last swept), and
+`cost_sheet` prices sweeps by the rule below: per assessed node, a floor
+and a ceiling. Flags a mandate's sweep raises are the same flags: the
+passes they ask for are priced and funded like any other, by whoever
+values them.
+
 **A sweep is priced by its partition's size** (#756). Each row costs its
 variant's expected cost per assessed node in the partition (claims with a
 verdict, quantities with an estimate, questions with a standing), counting

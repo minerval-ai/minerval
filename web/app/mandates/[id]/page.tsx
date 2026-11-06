@@ -39,6 +39,7 @@ const ACTION_LABEL: Record<string, string> = {
   reassess: "reassess",
   deepen: "deepen",
   ingest: "ingest",
+  sweep: "consistency sweep",
 };
 
 const STATE_LABEL: Record<string, string> = {
@@ -601,6 +602,10 @@ export default async function MandatePage({
                 <span className="tag">{ACTION_LABEL[item.action] ?? item.action}</span>{" "}
                 {item.action === "ingest" ? (
                   <span className="mandate-target">{item.url}</span>
+                ) : item.action === "sweep" ? (
+                  <span className="mandate-target">
+                    {item.partition === "residual" ? "the residual bucket" : `tag ${item.partition}`}
+                  </span>
                 ) : (
                   <Link className="mandate-target" href={`/claims/${item.claim_id}`}>
                     view claim

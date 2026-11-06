@@ -96,6 +96,10 @@ saves a wasted conversation.
 - Funding open requests (work the graph has said would improve what it
   knows), whatever they find.
 - Formalizing a mathematical claim and funding proof attempts on it.
+- Checking a region's coherence: Consistency Checker sweeps of a topic
+  (or of the claims no topic covers) that read its assessments against
+  each other and flag the ones that do not fit, priced by the region's
+  size. A flag asks for a fresh pass; it is not a verdict.
 - **Bringing a strong view.** A funder who believes something is welcome
   to fund attention to the case for it: its sources ingested, its
   arguments assessed on the merits. That is honest funding with a view,

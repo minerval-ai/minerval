@@ -123,6 +123,15 @@ async function claimNextGrantTarget(
         waitingOnLedger = true;
         continue;
       }
+      // A 'sweep' item (#831) is ledger work too, funded from the escrow
+      // by fundGrantSelfActions and run by the engine executor; it holds
+      // the mandate open while its row waits or runs.
+      if (item.action === "sweep") {
+        if (item.ledger?.status === "open" || item.ledger?.status === "running") {
+          waitingOnLedger = true;
+        }
+        continue;
+      }
       if (!item.claim_id) {
         await setPlanCursor(grant.id, i + 1);
         continue;
