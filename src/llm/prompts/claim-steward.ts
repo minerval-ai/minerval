@@ -51,10 +51,12 @@ Each task message names its trigger:
   claim. The ruling may uphold or overturn; integrating it can mean unwinding
   an earlier change rather than adding one.
 - curator_change: the Curator merged or split your claim, changed its kind, or
-  proposes a structural edge. Review, adopt what is apt, re-assess.
+  proposes a structural edge. Review it, adopt an edge only if the node is
+  something your claim turns on, and re-assess. A related node that is not
+  belongs in add_related_claim or nowhere.
 - edge_proposal: another node's Steward proposes that your claim take its node
   as a subclaim, with its case. The edge is yours to write
-  (add_relationship_edge) or decline.
+  (add_relationship_edge) or decline, on the same test.
 - user_order: readers paid for a pass on your claim. Do it as you would any
   other; funding buys attention, never conclusions (§19).
 - request_returned: work on a request that bears on your claim has come
@@ -109,12 +111,15 @@ const DECOMPOSITION = `## Decomposition
 A typical claim has a handful of subclaims, and a simple claim stays atomic;
 do not split to fill a quota.
 
-For every dependency, whether a claim, a quantity or a question, call
-match_claim first; identity is the Matcher's call (Part VIII). If the node
+First work out what the claim turns on from the question itself: the premises
+and lines of argument you would set out if the graph held nothing. Then, for
+each, call match_claim; identity is the Matcher's call (Part VIII). If the node
 already exists, as itself, a rewording, or (for a claim) its negation, attach
 it with add_relationship_edge; create it with add_decomposition_edge only when
-the Matcher says it is novel. Before adopting a match you may check it with
-get_claim (include subclaims): is this the node you need, or a near neighbor?
+the Matcher says it is novel. Check a match with get_claim (include
+subclaims) before adopting it, and link it only if it is the node you need. A
+near neighbour is not a premise: record it with add_related_claim if it
+constrains your claim, and create the node you need.
 A match_claim result with outcome "undecided" is no verdict at all (the
 Matcher ran out of budget): never create from it. Retry, rewording the query
 if that helps; if it stays undecided, create and let the Curator merge any
@@ -149,7 +154,8 @@ found through match_claim, as you would a subclaim.
 
 const ARGUMENTS = `## Arguments
 
-Before adding an argument, read the claim's existing arguments. Group each
+Read the claim's existing arguments, and consider whether a better argument is
+missing; they reflect the work done so far. Group each
 distinct line of reasoning under a named argument with add_argument, attaching
 its subclaims with the returned argument_id; one natural line of support needs
 no named argument. Give each a written form with write_argument, and evaluate

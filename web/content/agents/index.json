@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 9246,
-    "fullChars": 98331,
+    "fullChars": 99289,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 7726,
-    "fullChars": 96811,
+    "roleChars": 7772,
+    "fullChars": 97815,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 17065,
-    "fullChars": 106150,
+    "fullChars": 107108,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 24552,
-    "fullChars": 113637,
+    "roleChars": 24961,
+    "fullChars": 115004,
     "skills": [
       {
         "name": "costing",
@@ -140,7 +140,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 16898,
-    "fullChars": 105983,
+    "fullChars": 106941,
     "skills": []
   },
   {
@@ -152,8 +152,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11383,
-    "fullChars": 100468,
+    "roleChars": 11548,
+    "fullChars": 101591,
     "skills": [
       {
         "name": "costing",
@@ -194,7 +194,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 11682,
-    "fullChars": 100767,
+    "fullChars": 101725,
     "skills": [
       {
         "name": "costing",
@@ -234,7 +234,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 12819,
-    "fullChars": 101904,
+    "fullChars": 102862,
     "skills": [
       {
         "name": "costing",
@@ -287,7 +287,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 18115,
-    "fullChars": 107200,
+    "fullChars": 108158,
     "skills": [
       {
         "name": "costing",
@@ -327,7 +327,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 10826,
-    "fullChars": 99911,
+    "fullChars": 100869,
     "skills": [
       {
         "name": "costing",
@@ -365,7 +365,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 6552,
-    "fullChars": 95637,
+    "fullChars": 96595,
     "skills": [
       {
         "name": "costing",
@@ -403,7 +403,7 @@
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
     "roleChars": 14829,
-    "fullChars": 103914,
+    "fullChars": 104872,
     "skills": [
       {
         "name": "costing",
@@ -456,7 +456,7 @@
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
     "roleChars": 15118,
-    "fullChars": 104203,
+    "fullChars": 105161,
     "skills": [
       {
         "name": "costing",

@@ -24,8 +24,8 @@ export function getMatcherToolDefinition(): Tool {
       "framings, including the negation) and decides identity: a claim and its " +
       "negation are the SAME node, while a contrary (both could be false) is a " +
       "rival claim, named in relationship_notes. Always call this before adding a " +
-      "subclaim; if it returns a match, link that existing claim instead of " +
-      "minting a duplicate.",
+      "subclaim; if it returns a match, link that existing claim if it is the " +
+      "proposition you need, rather than minting a duplicate.",
     input_schema: {
       type: "object" as const,
       properties: {
