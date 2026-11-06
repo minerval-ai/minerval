@@ -318,8 +318,8 @@ describe("fund_request", () => {
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000 });
     const tools = createResearchTools({ requestedBy: "grantmaker", grantId });
     expect(tools.definitions.map((t) => t.name)).toContain("fund_request");
-    const out = JSON.parse((await tools.execute("fund_request", { request_id: requestId, budget_usd: 1 }))!);
-    // No budget yet: the money goes to the scoping pass (0.5 owl prior),
+    const out = JSON.parse((await tools.execute("fund_request", { request_id: requestId, budget_usd: 2 }))!);
+    // No budget yet: the money goes to the scoping pass (2 owl prior),
     // which it covers; the Researcher takes it up on the executor's pass.
     expect(out).toMatchObject({ success: true, covered: true });
     expect(out.funded).toContain("scoping pass");
@@ -329,7 +329,7 @@ describe("fund_request", () => {
           WHERE exclusion_group = $1 AND grant_id = $2 AND released_at IS NULL`,
         [`request:${requestId}`, grantId]
       )
-    ).toEqual({ amount: "500000" });
+    ).toEqual({ amount: "2000000" });
     // Nothing ran inline: the request has no work recorded yet.
     expect((await getRequest(requestId))!.work).toEqual([]);
 
