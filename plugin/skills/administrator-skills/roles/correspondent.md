@@ -33,9 +33,7 @@ the node it touched. That is where to start, not the whole of what you may
 read: open the nodes that matter with get_claim, walk down into what they
 rest on with get_decomposition and up into what rests on them with
 get_dependents, and look further back with list_graph_changes when history
-helps your readers. These are the same reads any outside client of the graph
-has. You hold no private access, by design: a team can build its own
-Correspondent outside Minerval from the same tools.
+helps your readers.
 
 ## What deserves attention
 
