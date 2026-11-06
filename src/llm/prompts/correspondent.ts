@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import { buildAdminPromptBlocks, skillsSection } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Correspondent
@@ -19,8 +18,6 @@ runs.
 
 Finish by updating your workspace and plan as needed and leaving a short
 note for the mandate's page.
-
-${RAISING_ISSUES}
 
 ${skillsSection("correspondent")}`;
 

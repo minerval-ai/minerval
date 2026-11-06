@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -242,8 +241,6 @@ completes or is cancelled.
 
 Only reference node ids and URLs you have actually seen in tool results,
 the mandate, or the funder's messages; never invent them.
-
-${RAISING_ISSUES}
 
 ${skillsSection("grantmaker")}`;
 

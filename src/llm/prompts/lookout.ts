@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -114,8 +113,6 @@ proposing even when the post itself is not.
   has cost little; a flag that buys a pass which changes nothing has cost
   a Steward's run. Your Grantmaker can read how often your flags moved a
   verdict, and will tighten or retire a watch that raises noise.
-
-${RAISING_ISSUES}
 
 ${skillsSection("lookout")}`;
 

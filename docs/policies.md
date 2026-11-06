@@ -114,7 +114,7 @@ Audit judges the judging (Part VIII). Whether a claim is true or a contribution 
 
 The issue tools (`raise_issue`, `update_issue`, `search_issues`, `get_issue`; #366) carry their own guidance in their descriptions: when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), how to join a known report, how to correct one (re-rate, add what was found, withdraw a mistake), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate. There is no per-run cap on reports; repeats are folded together.
 
-One short shared block, **Raising Issues**, goes to every agent that carries the tools and says only what the descriptions cannot (#770): look first, since a maintainers' note on a known report is guidance for the current task and an actioned report met again is a regression; and ordinary difficulty (a hard claim, thin evidence, a close call) is the work, not a defect.
+No role prompt repeats this guidance (#770). Every agent that carries the tools reads their descriptions, and search_issues's own description says to search before working around a failure.
 
 ### What an agent reads is data
 
@@ -163,7 +163,7 @@ The constitution is loaded once from `admin_constitution.md` (`src/llm/prompts/c
 
 ### Role prompts
 
-Each role's prompt is one file in `src/llm/prompts/` (`contribution-reviewer.ts`, `dispute-arbitrator.ts`, `audit-agent.ts`, and so on), carrying the role's job, tools, and standards together. Three small blocks are shared: `raising-issues.ts` is the part of the issue-tool guidance the descriptions cannot carry, `UNTRUSTED_CONTENT` in `constitution.ts` goes with every admin prompt, and `bad-faith.ts` renders the bad-faith categories from the same enum the tools validate against, so the prompt and the schema cannot disagree.
+Each role's prompt is one file in `src/llm/prompts/` (`contribution-reviewer.ts`, `dispute-arbitrator.ts`, `audit-agent.ts`, and so on), carrying the role's job, tools, and standards together. Two small blocks are shared: `UNTRUSTED_CONTENT` in `constitution.ts` goes with every admin prompt, and `bad-faith.ts` renders the bad-faith categories from the same enum the tools validate against, so the prompt and the schema cannot disagree.
 
 ### Versioning
 
