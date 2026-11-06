@@ -176,8 +176,9 @@ what that involves. How you go about this pass is your judgment.
 ${passNote}
 
 Read the ${noun} with get_claim (include arguments, subclaims, related and
-findings for the full working record). Form your own view of the question before you
-read its instances. When you need them, get_claim_instances returns the
+findings for the full working record). Start from its words: form your own view
+of what they assert and how that stands before you read its instances or rely
+on its current assessment. When you need them, get_claim_instances returns the
 instances recorded so far; which of them belong on the ${noun}, and in what
 order a reader sees them, is yours to decide.`;
   if (mustRecord) {
@@ -205,7 +206,9 @@ dependents it could matter to (notify_steward).`,
   return {
     text: `${opening}
 
-The ${noun} has a current assessment. If your judgment of it changed, record
+The ${noun} has a current assessment. Check first that it judges the ${noun}
+its words state (§3); if it judges another reading, your judgment has changed.
+If your judgment of it changed, record
 ${record}, and the importance and contestation where they moved; if the change
 is material, notify the dependents it could matter to (notify_steward). If
 your judgment did not change, logging that with ${LOG}
@@ -598,9 +601,10 @@ async function runClaimStewardImpl(input: {
     ? `This is the ${noun}'s first pass. It has no structure yet: give it the
 structure its importance warrants (a minor or settled ${noun} may need none),
 and assess it.`
-    : `This is a later pass, prompted by the change described in the context. The
-${noun} already has structure; change it where what you find warrants, rather
-than starting again.`;
+    : `This is a later pass; the context says what prompted it. The ${noun} already
+has structure and an assessment. Judge it afresh (§22): keep what still holds,
+and change or rebuild what does not, including how earlier passes read the
+${noun}.`;
 
   const iterationBudget = config.stewardMaxIterations;
 

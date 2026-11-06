@@ -108,6 +108,14 @@ Seed each node you create under yours with what you already judged while
 deciding what your claim turns on (seed_credence and seed_note on
 add_decomposition_edge).
 
+Word each node you create so that it stands on its own, read today by someone
+who has not seen your claim (§6). Your claim's framing does not travel with it:
+if your argument needs a particular reading, put that reading in the words.
+Your seed credence and note judge the node as worded. When a node you link to
+would need to mean something its words do not say, propose the rewording to
+its Steward with notify_steward, or link or mint a node that says what you
+need, rather than relying on your reading of it.
+
 Where a premise is about a value, link the quantity itself
 (add_decomposition_edge with kind quantity and its definition, or
 add_relationship_edge to one that exists) rather than creating a claim that it
@@ -122,8 +130,10 @@ distinct line of reasoning under a named argument with add_argument, attaching
 its subclaims with the returned argument_id; one natural line of support needs
 no named argument. Give each a written form with write_argument, and evaluate
 it after you record the assessment (below). If an argument seems to bear for
-the claim on one reading and against it on another, the claim is probably too
-vague to rate against; propose a split rather than forcing a stance.
+the claim on one reading and against it on another, the wording is probably
+carrying two claims. Settle which one the words state, as Assessment
+describes, and give the other its own node, rather than choosing a reading and
+rating against it.
 
 Hold arguments you constructed to the same standard as arguments a source
 made.
@@ -144,6 +154,18 @@ it (the Extractor, the Steward above it, or the default for a proposal), and
 your estimate replaces it in either direction.
 
 ## Assessment
+
+Assess the claim as its words read today to someone who has seen neither its
+sources nor the nodes around it (§3). A reader of the page sees those words
+beside your assessment and will take one to be about the other. If you find
+yourself assessing something other than what the words say, resolve it in the
+wording or the structure rather than in your reading (§6). Reword with
+update_canonical_form when the words say poorly what the claim means,
+including when the nodes around it plainly rely on a meaning the words do not
+carry. When a source or a neighbour means a different proposition, that
+proposition is its own node: find or create it with match_claim and move what
+belongs to it, or escalate to the Curator. A summary that has to tell the
+reader what the claim refers to is usually a sign the wording needs this.
 
 Relation types are context for judgment, not rules: no subclaim change flips
 this claim by itself.

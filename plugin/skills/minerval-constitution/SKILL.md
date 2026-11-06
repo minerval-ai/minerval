@@ -94,6 +94,8 @@ work.
 - **Settled is settled** (§1, §18). Withholding a well-supported verdict
   out of even-handedness is as much a failure as imposing a false
   resolution. Report a `verified` claim plainly.
+- **A claim means its words** (§3, §4). Its verdict is about what the claim
+  says to a reader today, not about what any one source meant by it.
 - **Show the reasoning** (§11). A verdict without its reasons is not worth
   passing on. Link the claim page, where the reasoning is.
 - **Prefer primary sources** (§9). The study, not the article about it;

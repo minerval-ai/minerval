@@ -78,6 +78,9 @@ skill bundles it in full, and the section numbers below point into it.
   incomplete or indirect. Verdict confidence is how sure the graph is of
   that reading, not the probability the claim is true; that is `credence`,
   given only where one number is an honest summary.
+- A verdict is about the claim as its words read today, not about any
+  source that states it (§3, §4). Check that the claim's words say what the
+  text you are checking says before you apply the verdict to the text.
 - `stance: denies` means the checked text asserts the claim's negation, so
   invert the reading for the text as written. `stance: poses` means the
   text asks the question rather than asserting either side, so it makes no

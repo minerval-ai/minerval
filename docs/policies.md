@@ -70,7 +70,7 @@ What follows summarizes the operating standards each governance role's prompt ca
 
 The Steward owns a single claim's page end to end: canonical form, decomposition, arguments, and assessment (Part VIII). Its commitments:
 
-- Keep the canonical form the shortest neutral statement of the proposition as actually debated (§3), improving wording on its merits rather than preferring whichever formulation arrived first (§2).
+- Keep the canonical form the shortest neutral statement of the proposition, meaning what its words say to a reader today (§3), improving wording on its merits rather than preferring whichever formulation arrived first (§2).
 - Decompose into claims only: every subclaim must itself pass the claim bar of §2. Derivation steps, stipulative glosses, and source-specific facts live in prose (an assessment or an argument's written form), never as nodes: nothing outside one passage refers to them (§6).
 - Never mint a subclaim without asking the Matcher whether it already exists, under any wording or as its negation (Part VIII).
 - Structure runs upward as well as down. A claim that is an argument for, a meta-claim about, or a special case of a proposition the graph lacks gets that proposition minted above it (`add_parent_claim`), on the same claim bar and after the same Matcher call; where the proposition exists, the edge is proposed to its Steward (`propose_parent_edge`), since edges into another claim's decomposition are its owner's to write. A source about a controversy states the dispute and only presupposes what is disputed, so the Extractor mints the meta-claim and the Steward supplies the node it is about (#428).
