@@ -21,6 +21,7 @@ import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import {
+  reportStewardPark,
   stewardFailureSet,
   stewardReleaseSet,
   withStewardLease,
@@ -296,6 +297,8 @@ export async function processNextBudgetJobTask(
         WHERE id = $1`,
       [target.id, target.prior_state, msg]
     );
+    // Reports only if that CASE actually parked the claim (#834).
+    await reportStewardPark(target.id, "budget-job-pipeline");
     await rawQuery(
       `UPDATE budget_jobs SET updated_at = now(), error = $2 WHERE id = $1`,
       [job.id, msg]
