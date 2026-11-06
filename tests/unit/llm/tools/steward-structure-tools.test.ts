@@ -42,6 +42,7 @@ vi.mock("../../../../src/services/relationship-service.js", async (importOrigina
   getEdgesBetween: vi.fn(),
   deleteEdges: vi.fn(async () => 1),
   retypeEdge: vi.fn(async () => ({ id: EDGE, merged: false })),
+  setEdgeReasoning: vi.fn(async () => undefined),
   detachEdgeFromArgument: vi.fn(async () => ({ detached: true })),
 }));
 
@@ -57,6 +58,7 @@ import {
   detachEdgeFromArgument,
   getEdgesBetween,
   retypeEdge,
+  setEdgeReasoning,
 } from "../../../../src/services/relationship-service.js";
 
 const edge = (relation: string, argumentIds: string[] = []) => ({
@@ -154,6 +156,36 @@ describe("steward structure tools", () => {
     expect(out.success).toBe(true);
     expect(retypeEdge).toHaveBeenCalledWith(EDGE, "supports", "the parent survives without it", expect.anything());
     expect(audit[0]).toMatchObject({ action: "set_edge_relation" });
+  });
+
+  it("rewrite an edge's reasoning when the relation is unchanged (#833)", async () => {
+    vi.mocked(getEdgesBetween).mockResolvedValue([edge("supports", [ARG])]);
+    const out = await run("set_edge_relation", {
+      parent_id: OWN,
+      child_id: CHILD,
+      relation: "supports",
+      reasoning: "it is the access question, not capability",
+    });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/stays supports/);
+    expect(setEdgeReasoning).toHaveBeenCalledWith(EDGE, "it is the access question, not capability");
+    expect(retypeEdge).not.toHaveBeenCalled();
+    expect(audit[0]).toMatchObject({ claimId: OWN, action: "set_edge_relation" });
+    expect(String(audit[0]!.reasoning)).toContain('old edge reasoning: "it bears on it"');
+  });
+
+  it("change nothing when the relation and reasoning are both unchanged", async () => {
+    vi.mocked(getEdgesBetween).mockResolvedValue([edge("supports")]);
+    const out = await run("set_edge_relation", {
+      parent_id: OWN,
+      child_id: CHILD,
+      relation: "supports",
+      reasoning: "it bears on it",
+    });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/nothing changed/);
+    expect(setEdgeReasoning).not.toHaveBeenCalled();
+    expect(audit).toHaveLength(0);
   });
 
   it("refuse an unknown relation", async () => {

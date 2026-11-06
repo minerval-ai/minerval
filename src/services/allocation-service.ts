@@ -950,6 +950,16 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- deployment off-switch. Which variant each funder buys is in the
         -- join above.
         AND (a.kind <> 'consistency_sweep' OR $1::boolean)
+        -- Only rows that still need money. A covered row waits for the
+        -- executor, and without this it took one of the 100 places below
+        -- on every pass, so enough covered rows starved a new one (#838).
+        AND a.cost_est_micro_usd >
+            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
+                        FROM action_allocations al
+                       WHERE al.exclusion_group = a.exclusion_group
+                         AND al.released_at IS NULL
+                         AND (al.action_id IS NULL OR al.action_id = a.id)), 0)
+      ORDER BY a.created_at ASC
       LIMIT 100`,
     [
       loadConfig().consistencySweepsEnabled === true,

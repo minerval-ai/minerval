@@ -16,6 +16,7 @@ import {
   getCorrespondent,
   listCorrespondentUpdates,
   listCorrespondents,
+  listPlanItems,
   queueCorrespondentEvent,
   updateCorrespondent,
   CORRESPONDENT_BOUNDS,
@@ -36,8 +37,9 @@ const SHARED_PROPERTIES = {
   audience: {
     type: "string",
     description:
-      "Who the updates are for, in words: \"evaluators reviewing the X safety case\", " +
-      "\"the public following Y\". It is shown to the correspondent and on its feed.",
+      "Who its output is for, in words: \"evaluators reviewing the X safety case\", " +
+      "\"the public following Y\", \"the mandate's own Grantmaker\". It is shown to the " +
+      "correspondent and on its feed.",
   },
   scope_claim_ids: {
     type: "array",
@@ -56,7 +58,7 @@ const SHARED_PROPERTIES = {
   heartbeat_hours: {
     type: "number",
     description:
-      `How often it writes on its own: 168 for a weekly digest (the default), 24 ` +
+      `How often it runs on its own: 168 for weekly (the default), 24 ` +
       `for a daily one, 0 for only on triggers; at most ${B.heartbeatHours.max}.`,
   },
   triggers: {
@@ -84,20 +86,19 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
     {
       name: "spawn_correspondent",
       description:
-        "Post a CORRESPONDENT: an agent that reads the graph for an audience and " +
-        "sends it updates about what deserves its attention, published as an Atom " +
-        "feed and as structured items agents can read. It is the Lookout's " +
-        "counterpart: a lookout brings material into the graph; a correspondent " +
-        "reports the graph to people. Each run reads the material changes in its " +
-        "scope since its last update and writes at most one update, with a 'not " +
-        "covered' section listing every change it did not mention. It runs under the " +
-        "constitution, writes no assessment, and moves no money; its runs are paid " +
-        "from your escrow out of the mandate's day. Write the brief as you would for " +
-        "a careful person paid to keep these readers informed: what it covers, what " +
-        "matters to them, how to read the graph for them, what to leave alone, how to " +
-        "present it. A correspondent selects and frames, so its brief must be neutral: " +
-        "what the readers need to know, never which way it should cut. Its brief and " +
-        "its updates are public, and each update names this mandate as its funder.",
+        "Post a CORRESPONDENT: an agent that draws on the graph and produces something " +
+        "from it for someone, in whatever form serves them. It is the Lookout's " +
+        "counterpart: a lookout brings " +
+        "material into the graph; a correspondent makes something of what is there. " +
+        "Each run is told what woke it and the material changes in its scope since its " +
+        "last output, reads whatever else the work needs, and publishes at most one " +
+        "output (title, Markdown body, and structured items where they fit) to its " +
+        "feed, with the changes it did not mention listed. It runs under the " +
+        "constitution, writes no assessment and moves no money, and keeps its own plan " +
+        "and workspace across runs. Its runs are paid from your escrow " +
+        "out of the mandate's day. The brief is yours to design for the need: what it " +
+        "makes, for whom, from what, when, and how. Its brief and outputs are public, " +
+        "and each output names this mandate as its funder.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -119,7 +120,8 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
       name: "correspondent_report",
       description:
         "One correspondent's recent updates, with how many changes each left " +
-        "uncovered, and its workspace: read it before you tighten its brief or retire it.",
+        "uncovered, its plan, and its workspace. Read it before you tighten " +
+        "its brief or retire it.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -228,8 +230,10 @@ export async function executeCorrespondentManagementTool(
     const { updates, total } = await listCorrespondentUpdates(id, {
       limit: Math.min(50, Math.max(1, Number(toolInput.limit ?? 10) || 10)),
     });
+    const plan = await listPlanItems(id, { limit: 50 });
     return JSON.stringify({
       correspondent: { id: current.id, title: current.title, status: current.status, workspace: current.workspace, last_note: current.last_note },
+      plan: plan.map((p) => ({ id: p.id, status: p.status, text: p.text, note: p.note })),
       updates_total: total,
       rows: updates.map((u) => ({
         id: u.id,

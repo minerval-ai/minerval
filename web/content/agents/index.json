@@ -286,8 +286,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 16619,
-    "fullChars": 106662,
+    "roleChars": 16733,
+    "fullChars": 106776,
     "skills": [
       {
         "name": "costing",
@@ -360,12 +360,12 @@
     "name": "Correspondent",
     "stage": 9,
     "group": "governance",
-    "tagline": "The Lookout's counterpart: it reads the graph for one audience and tells them what deserves their attention. Each run reads the material changes in its scope since its last update and publishes at most one update, as a feed and as structured items agents can read, with a section the mechanism writes listing every change it did not mention. It reports the graph's judgment and writes none of its own, and it has no read an outside client lacks.",
+    "tagline": "The Lookout's counterpart and the most flexible agent a mandate can fund: any agent that draws on the graph and produces something from it for someone, in whatever form serves them. Each run is told what woke it and what changed in its scope, publishes at most one output to its feed with the changes it did not mention listed, and keeps its own plan and workspace across runs. It writes no assessment and represents the graph accurately.",
     "invokedWhen": "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 7915,
-    "fullChars": 97958,
+    "roleChars": 3504,
+    "fullChars": 93547,
     "skills": [
       {
         "name": "costing",

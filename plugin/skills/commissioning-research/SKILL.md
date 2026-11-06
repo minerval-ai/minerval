@@ -197,13 +197,12 @@ conversation.
    conversation to adjust the unexecuted part of the plan; it holds the
    same refusal duties then as at design time.
 
-**Updates for an audience.** If your user wants to be kept informed as the
-graph changes (a team following a question, readers following a field), ask
-the Grantmaker in the conversation for a Correspondent: an agent the
-mandate funds that reads the graph in that scope and publishes updates as a
-feed, each saying what it did not cover. Its brief is public and neutral,
-like the mandate's title: it can be asked what to cover and for whom, never
-which way to cut. Your user may not need one: you can follow
+**Something made from the graph.** If your user wants something produced
+from the graph on a schedule or as it changes,
+ask the Grantmaker in the conversation for a Correspondent: an agent the
+mandate funds to make it and publish it to a feed. Its form is open; its
+brief and outputs are public, and it represents the graph accurately like
+every agent of the graph. Your user may not need one: you can follow
 `list_graph_changes` yourself for free.
 
 **An existing mandate.** Mandates are public (`list_mandates`,
