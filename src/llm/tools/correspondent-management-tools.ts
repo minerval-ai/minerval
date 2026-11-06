@@ -39,8 +39,9 @@ const SHARED_PROPERTIES = {
   audience: {
     type: "string",
     description:
-      "Who the updates are for, in words: \"evaluators reviewing the X safety case\", " +
-      "\"the public following Y\". It is shown to the correspondent and on its feed.",
+      "Who its output is for, in words: \"evaluators reviewing the X safety case\", " +
+      "\"the public following Y\", \"the mandate's own Grantmaker\". It is shown to the " +
+      "correspondent and on its feed.",
   },
   scope_claim_ids: {
     type: "array",
@@ -87,20 +88,20 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
     {
       name: "spawn_correspondent",
       description:
-        "Post a CORRESPONDENT: an agent that reads the graph for an audience and " +
-        "sends it updates about what deserves its attention, published as an Atom " +
-        "feed and as structured items agents can read. It is the Lookout's " +
-        "counterpart: a lookout brings material into the graph; a correspondent " +
-        "reports the graph to people. Each run reads the material changes in its " +
-        "scope since its last update and writes at most one update, with a 'not " +
-        "covered' section listing every change it did not mention. It runs under the " +
-        "constitution, writes no assessment, and moves no money; its runs are paid " +
-        "from your escrow out of the mandate's day. Write the brief as you would for " +
-        "a careful person paid to keep these readers informed: what it covers, what " +
-        "matters to them, how to read the graph for them, what to leave alone, how to " +
-        "present it. A correspondent selects and frames, so its brief must be neutral: " +
-        "what the readers need to know, never which way it should cut. Its brief and " +
-        "its updates are public, and each update names this mandate as its funder.",
+        "Post a CORRESPONDENT: an agent that draws on the graph and produces something " +
+        "from it for someone, in whatever form serves them: a digest, an alert, a " +
+        "briefing for a decision, a running summary of a question, a reading list, a " +
+        "dataset, a checklist. It is the Lookout's counterpart: a lookout brings " +
+        "material into the graph; a correspondent makes something of what is there. " +
+        "Each run is told what woke it and the material changes in its scope since its " +
+        "last output, reads whatever else the work needs, and publishes at most one " +
+        "output (title, Markdown body, and structured items where they fit) to its " +
+        "feed, with the changes it did not mention listed. It runs under the " +
+        "constitution, writes no assessment and moves no money, and keeps a plan and a " +
+        "practice of its own that improve with use. Its runs are paid from your escrow " +
+        "out of the mandate's day. The brief is yours to design for the need: what it " +
+        "makes, for whom, from what, when, and how. Its brief and outputs are public, " +
+        "and each output names this mandate as its funder.",
       input_schema: {
         type: "object" as const,
         properties: {

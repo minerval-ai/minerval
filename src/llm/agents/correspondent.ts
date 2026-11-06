@@ -159,15 +159,14 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     {
       name: "publish_update",
       description:
-        "Publish this run's update to your readers (at most one a run). `items` is the " +
-        "structured record agents consume: one per node you report, with the reason it " +
-        "deserves your readers' attention and the change ids from your window behind it " +
-        "(none when you report a node for another reason). `title` and `body` (Markdown) " +
-        "are the prose rendering people read; they cover the same items and add nothing " +
-        "the items do not support. `unexamined` is your account of what in your scope you " +
-        "have not looked at or could not judge. Every change in your window that no item " +
-        "cites, by change id or by its node, is listed on the update as not covered: you " +
-        "cannot leave one out silently. The update is public and says which mandate funded it.",
+        "Publish this run's output to your feed (at most one a run), in whatever form your " +
+        "brief asks for. `title` and `body` (Markdown) are what people read. `items` are the " +
+        "nodes it draws on, for agents and for the record: each with why it is there and the " +
+        "change ids from your window behind it, if any; leave it empty when the form has no " +
+        "use for it. `unexamined` is what in your scope you have not looked at or could not " +
+        "judge. Every change in your window that no item cites, by change id or by its node, " +
+        "is listed on the output as not covered. The output is public and says which mandate " +
+        "funded it.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -180,7 +179,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
               type: "object",
               properties: {
                 claim_id: { type: "string" },
-                reason: { type: "string", description: "Why it deserves these readers' attention: what moved, from what to what, what rests on it" },
+                reason: { type: "string", description: "Why this node is in the output" },
                 change_ids: { type: "array", items: { type: "string" } },
               },
               required: ["claim_id", "reason"],
@@ -304,8 +303,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const briefing =
     `## Correspondent run\n\n` +
     `You are "${c.title}", a Correspondent posted by the mandate "${c.mandate_title ?? ""}". ` +
-    `Nobody is watching this run; act with the judgment of a careful person paid to keep ` +
-    `these readers informed.\n\n` +
+    `Nobody is watching this run; act with the judgment of a careful person paid to do ` +
+    `this work well for these readers.\n\n` +
     `### Your readers\n\n${c.audience}\n\n` +
     `### Your brief\n\n${c.brief}\n\n` +
     `### Your scope\n\n${scopeText}\n\n` +
@@ -361,9 +360,9 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     `### Your workspace\n\n` +
     (c.workspace?.trim() ? c.workspace : `(empty — this is your first run)`) +
     `\n\n---\n\n` +
-    `Read what your readers need; publish one update if anything deserves their attention ` +
-    `(or nothing, if nothing does); update your workspace; finish with a short note for the ` +
-    `mandate's page saying what you read and whether you published.`;
+    `Do what your brief asks; publish one output if the work calls for it (or nothing, if ` +
+    `not); update your workspace and plan; finish with a short note for the mandate's page ` +
+    `saying what you did and whether you published.`;
 
   const result = await withSkills([], () =>
     toolUseLoop({

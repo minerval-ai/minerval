@@ -789,7 +789,7 @@ export function validateUpdateItems(
     const claimId = String(o.claim_id ?? "");
     if (!knownClaimIds.has(claimId)) return { problem: `items[${i}].claim_id "${claimId}" is not an active claim` };
     const reason = String(o.reason ?? "").trim();
-    if (reason.length < 10) return { problem: `items[${i}].reason: say why it deserves the audience's attention` };
+    if (reason.length < 10) return { problem: `items[${i}].reason: say why this node is in the output` };
     const changeIds = Array.isArray(o.change_ids) ? [...new Set(o.change_ids.map(String))] : [];
     const notInWindow = changeIds.find((id) => !windowChangeIds.has(id));
     if (notInWindow) return { problem: `items[${i}].change_ids: "${notInWindow}" is not a change in this run's window` };

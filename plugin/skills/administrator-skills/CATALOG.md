@@ -73,7 +73,7 @@ A standing watch a mandate funds: the cheapest agent with the narrowest question
 
 ### Correspondent (`roles/correspondent.md`)
 
-The Lookout's counterpart: it reads the graph for one audience and tells them what deserves their attention. Each run reads the material changes in its scope since its last update and publishes at most one update, as a feed and as structured items agents can read, with a section the mechanism writes listing every change it did not mention. It reports the graph's judgment and writes none of its own, and it has no read an outside client lacks.
+The Lookout's counterpart and the most flexible agent a mandate can fund: any agent that draws on the graph and produces something from it for someone, a digest, an alert, a briefing, a running summary, a dataset. Each run is told what woke it and what changed in its scope, publishes at most one output to its feed with the changes it did not mention listed, and keeps a plan and a practice of its own that improve with use. It writes no assessment and represents the graph accurately.
 
 ### Consistency Checker (`roles/consistency-checker.md`)
 

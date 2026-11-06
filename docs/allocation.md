@@ -299,14 +299,18 @@ on non-DOI sources, dependency-changed events routed through the
 ledger), and a Steward's own request for a lookout on its claim once
 Stewards hold a budget (#300).
 
-## Correspondents: reading the graph for an audience
+## Correspondents: making things from the graph
 
 No one can read every claim and argument in a large graph. A
-**Correspondent** (#563) is an agent that reads the graph for one audience
-and sends it **updates** about what deserves its attention: the Lookout's
-counterpart. A lookout watches the world and brings material into the
-graph; a correspondent reads the graph and reports to people. Feeds,
-digests and briefings are all correspondents with different briefs.
+**Correspondent** (#563) is any agent that draws on the graph and produces
+something from it for someone: the Lookout's counterpart. A lookout watches
+the world and brings material into the graph; a correspondent makes
+something of what is there. A weekly digest, an alert, a briefing for one
+decision, a running summary of where a question stands, a reading list, a
+dataset, a checklist: each is a correspondent with a different brief, and
+its output need not look like a report. They are the most flexible agents
+a mandate can fund, and the Grantmaker designs each for the need in front
+of it.
 
 A **Graph Correspondent** is one a mandate funds. Its Grantmaker posts it
 (`spawn_correspondent`, in the owner's chat or on a review pass) with a
@@ -387,13 +391,18 @@ so it is bounded by what those items cost to read, not by a count. Its
 **record** is its published updates: the briefing lists the latest, and
 `list_my_updates` reads further back. Its workspace stays its scratch notes.
 
-**The usual rules apply.** A funded correspondent's brief, record and
-updates are public, as mandates are (the mandate page lists them). It
-selects and frames, so the Grantmaker declines briefs that would steer
-readers toward a conclusion, as it declines such mandates. Funding buys
-coverage, not what an update says. The Grantmaker reads each one's record
-on its review briefing and in `correspondent_report`, and tightens the brief
-or retires one whose updates leave most of its scope uncovered.
+**Integrity, not a template.** A correspondent holds to the constitution
+like every agent of the graph: what it makes represents what the graph
+holds accurately (its verdicts, its uncertainty, its disagreements) and
+keeps any view of its own labeled as its own. Within that, the Grantmaker
+has wide discretion over what a correspondent is for and what it makes. The
+caution it owes lookouts is greater: what a lookout raises enters the graph,
+so a biased watch skews what the graph comes to hold, while a correspondent
+only reads it. A funded correspondent's brief, record and outputs are public,
+as mandates are (the mandate page lists them), and each output names the
+mandate that paid for it. The Grantmaker reads each one's record on its
+review briefing and in `correspondent_report`, and revises or retires one
+that is not serving its readers.
 
 Known next: more change kinds in the stream (#562: defeaters, argument
 evaluations, holds, requests, findings); MCP subscriptions so clients need
