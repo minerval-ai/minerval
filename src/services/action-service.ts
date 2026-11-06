@@ -1149,11 +1149,15 @@ interface ClaimStanding {
   published: boolean;
   /** When the claim's current assessment was made; null while unassessed. */
   assessed_at: Date | null;
+  /** The last genuine failure recorded by a Steward lane, if any. */
+  steward_error: string | null;
+  steward_attempts: number;
 }
 
 async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
   const [row] = await rawQuery<ClaimStanding>(
-    `SELECT c.id, c.state, c.steward_state,
+    `SELECT c.id, c.state, c.steward_state, c.steward_error,
+            COALESCE(c.steward_attempts, 0) AS steward_attempts,
             EXISTS (SELECT 1 FROM claim_formalizations f
                      WHERE f.claim_id = c.id AND f.status = 'published') AS published,
             -- Each kind keeps its current assessment in its own table: a
@@ -1417,11 +1421,25 @@ async function materializePlanItem(
           );
         }
         if (prior.status === "cancelled") {
-          return fromRow(
-            prior,
-            `the row was retired: the claim left the Steward queue (steward_state ` +
-              `${claim.steward_state}) without this row running; add another item for another pass`
-          );
+          // A park is the one retirement another item cannot fix: the claim
+          // is out of every lane's candidate set, so re-adding only buys one
+          // more pass that fails the same way. Say so, with the error, and
+          // leave the item reading cancelled until the park clears (#834;
+          // the park itself is reported to maintainers by
+          // reportStewardPark). Any other retirement — assessed elsewhere,
+          // a pass that ran on the express lane — is spent work: the item
+          // falls through below and opens a fresh row, which is what the
+          // funder paid for.
+          if (claim.steward_state === "error") {
+            return fromRow(
+              prior,
+              `the row was retired unrun: the Steward parked this claim as ` +
+                `'error' after ${claim.steward_attempts} failed passes, which ` +
+                `takes it out of the queue. Another item will not help until ` +
+                `the failure is fixed; it is reported to maintainers. Last ` +
+                `error: ${(claim.steward_error ?? "(none recorded)").slice(0, 300)}`
+            );
+          }
         }
       }
     }
