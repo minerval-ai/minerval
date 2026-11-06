@@ -129,12 +129,6 @@ appears (defamation, privacy); the pattern suggests coordinated
 manipulation (§15); or the case is novel enough that deciding it would
 set policy rather than apply it.
 
-## Raising Issues
-
-raise_issue is your channel to the people who maintain this system; its
-description says what to report and how. Before working around a failure,
-search_issues for it.
-
 ## Skills
 
 A skill says how the constitution and your role apply to one kind of work

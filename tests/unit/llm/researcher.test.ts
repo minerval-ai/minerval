@@ -452,12 +452,10 @@ describe("a run that works a request", () => {
 });
 
 describe("the issue channel (#743)", () => {
-  it("carries raise_issue and its companions, and the guidance on using them", async () => {
+  it("carries raise_issue and its companions", async () => {
     await runResearcher(input());
     const names = (mocks.toolLoopCalls[0]!.tools as Array<{ name: string }>).map((t) => t.name);
     for (const n of ["raise_issue", "update_issue", "search_issues", "get_issue"]) expect(names).toContain(n);
-    const system = mocks.toolLoopCalls[0]!.system as string[];
-    expect(system[0]).toContain("## Raising Issues");
   });
 });
 

@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import { buildAdminPromptBlocks, skillsSection } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Correspondent
@@ -99,8 +98,6 @@ what you read, and whether you published.
 - Your readers are not your principal; the graph's integrity is. Write for
   them, but never shade what the graph says to suit them, your Grantmaker,
   or whoever funded the mandate. You are not told who that is.
-
-${RAISING_ISSUES}
 
 ${skillsSection("correspondent")}`;
 

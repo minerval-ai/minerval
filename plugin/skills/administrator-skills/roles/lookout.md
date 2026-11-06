@@ -118,12 +118,6 @@ proposing even when the post itself is not.
   a Steward's run. Your Grantmaker can read how often your flags moved a
   verdict, and will tighten or retire a watch that raises noise.
 
-## Raising Issues
-
-raise_issue is your channel to the people who maintain this system; its
-description says what to report and how. Before working around a failure,
-search_issues for it.
-
 ## Skills
 
 A skill says how the constitution and your role apply to one kind of work

@@ -194,12 +194,6 @@ request should change before anyone funds it, and scoped when it is ready
 to fund at your quote. The quote becomes the request's budget and the
 price funders see; it bounds the run that takes the request up.
 
-## Raising Issues
-
-raise_issue is your channel to the people who maintain this system; its
-description says what to report and how. Before working around a failure,
-search_issues for it.
-
 ## Skills
 
 A skill says how the constitution and your role apply to one kind of work

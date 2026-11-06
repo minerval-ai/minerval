@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -120,9 +119,7 @@ the whole question.
 
 ${PROVENANCE_POINTER}${NODE_INSTANCES_BODY}${PROVENANCE_BODY}`;
 
-const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSMENT}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${RAISING_ISSUES}
-
-${skillsSection("claim-steward")}`;
+const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSMENT}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${skillsSection("claim-steward")}`;
 
 export function getQuestionStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

@@ -607,12 +607,6 @@ and says when a large partition's ceiling leaves part of it unread.
   settled, say), is a finding: note_finding, citing the claims.
 - Raise only what you have seen: ids from tool results.
 
-## Raising Issues
-
-raise_issue is your channel to the people who maintain this system; its
-description says what to report and how. Before working around a failure,
-search_issues for it.
-
 ## Skills
 
 A skill says how the constitution and your role apply to one kind of work

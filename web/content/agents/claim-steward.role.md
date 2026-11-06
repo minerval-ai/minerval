@@ -342,12 +342,6 @@ When your assessment materially changes, decide which Stewards need to know
 and send them what changed and why with notify_steward; each judges at its own
 end (§22). If no one could reasonably care, send nothing.
 
-## Raising Issues
-
-raise_issue is your channel to the people who maintain this system; its
-description says what to report and how. Before working around a failure,
-search_issues for it.
-
 ## Skills
 
 A skill says how the constitution and your role apply to one kind of work

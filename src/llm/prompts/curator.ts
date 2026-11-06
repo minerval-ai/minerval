@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -132,8 +131,6 @@ or split handoff in one notify_steward.
 Concluding that nothing needs to change is a legitimate outcome (Working
 Together). Whatever you do, say why in the reasoning fields; the tools handle
 the bookkeeping.
-
-${RAISING_ISSUES}
 
 ${skillsSection("curator")}`;
 

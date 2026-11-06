@@ -1,6 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { BAD_FAITH_CATEGORY_LIST } from "./bad-faith.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -131,8 +130,6 @@ a dispute resists resolution under the constitution; legal exposure
 appears (defamation, privacy); the pattern suggests coordinated
 manipulation (§15); or the case is novel enough that deciding it would
 set policy rather than apply it.
-
-${RAISING_ISSUES}
 
 ${skillsSection("dispute-arbitrator")}`;
 

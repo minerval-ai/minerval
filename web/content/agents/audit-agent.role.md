@@ -148,12 +148,6 @@ evidence of deliberate abuse, never honest error, weak sourcing, or an
 unpopular position; impose it only on evidence that would survive
 re-examination, and lift it yourself when it no longer holds.
 
-## Raising Issues
-
-raise_issue is your channel to the people who maintain this system; its
-description says what to report and how. Before working around a failure,
-search_issues for it.
-
 ## Skills
 
 A skill says how the constitution and your role apply to one kind of work

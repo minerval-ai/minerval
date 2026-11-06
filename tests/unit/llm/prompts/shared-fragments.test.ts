@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { buildAdminPrompt, UNTRUSTED_CONTENT } from "../../../../src/llm/prompts/constitution.js";
-import { RAISING_ISSUES } from "../../../../src/llm/prompts/raising-issues.js";
 import { getClaimStewardSystemPrompt } from "../../../../src/llm/prompts/claim-steward.js";
 import { getResearcherSystemPrompt } from "../../../../src/llm/prompts/researcher.js";
 import { getCuratorSystemPrompt } from "../../../../src/llm/prompts/curator.js";
@@ -8,8 +7,8 @@ import { getMatcherSystemPrompt } from "../../../../src/llm/prompts/matcher.js";
 import { getReportToolDefinitions } from "../../../../src/llm/tools/report-tools.js";
 
 /**
- * The blocks every admin prompt shares (prompts/constitution.ts,
- * prompts/raising-issues.ts): said once, in one place, and true.
+ * The block every admin prompt shares (prompts/constitution.ts): said
+ * once, in one place, and true.
  */
 describe("UNTRUSTED_CONTENT (#772)", () => {
   it("goes with every admin prompt, with or without the constitution", () => {
@@ -34,17 +33,9 @@ describe("UNTRUSTED_CONTENT (#772)", () => {
   });
 });
 
-describe("RAISING_ISSUES (#770)", () => {
-  it("states no per-run ceiling, here or in raise_issue, because none exists", () => {
+describe("raise_issue (#770)", () => {
+  it("states no per-run ceiling, because none exists", () => {
     const raise = getReportToolDefinitions().find((t) => t.name === "raise_issue")!;
-    for (const text of [RAISING_ISSUES, raise.description!]) {
-      expect(text).not.toMatch(/ceiling|at most|few (reports )?per run/i);
-    }
-  });
-
-  it("keeps to what the tool descriptions cannot say", () => {
-    expect(RAISING_ISSUES).toMatch(/search_issues/);
-    expect(RAISING_ISSUES).not.toMatch(/no memory across runs/);
-    expect(RAISING_ISSUES.split(/\s+/).length).toBeLessThan(200);
+    expect(raise.description!).not.toMatch(/ceiling|at most|few (reports )?per run/i);
   });
 });
