@@ -32,8 +32,9 @@ are effectively pinned to the account that creates them.
   — Click for the full picture: how the claim decomposes into subclaims,
     the evidence and arguments on each side, and a link to the claim's
     public page, where you can challenge it or add evidence.
-  — Ask questions in the popup chat and get answers grounded in the graph,
-    with numbered citations to the claims they rest on — not vibes.
+  — Ask questions in the chat and get answers grounded in the graph,
+    with numbered citations to the claims they rest on — not vibes. Open
+    it in the side panel to keep it beside the article while you read.
   — See at a glance what the analysis found: how many claims are on the
     page, how many the graph already holds, and which are new. Claims the
     graph doesn't hold yet are faintly underlined and listed in the popup;
@@ -91,7 +92,10 @@ are effectively pinned to the account that creates them.
   > grounded in the graph.
 - **Permission justifications**:
   - `storage` — Stores the user's settings: API key, markup level, and
-    per-site analysis preferences.
+    per-site analysis preferences; and each tab's chat, in session
+    (in-memory) storage, so it survives the popup closing.
+  - `sidePanel` — Shows the extension's page view and chat in the browser's
+    side panel, so they stay open beside the article while the user reads.
   - **Host permissions** (`http://*/*`, `https://*/*`) — The content script
     draws claim annotations as an overlay on whatever article the user is
     reading, so it must be able to run on any site. It sends nothing until

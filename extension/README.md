@@ -60,6 +60,15 @@ the page finds the old one.
 memory for the session: they are never written to disk and are gone when
 you close the tab or quit the browser.
 
+To keep the chat beside the article while you read, press **⇥** in the
+popup's header to open it in the browser's side panel. The popup closes
+whenever you click back into the page, but the side panel stays open. It
+shows whichever tab you're on and switches with you: each tab still has its
+own conversation, and switching back finds it. The panel opens on the right
+by default; to move it left, use Chrome's Settings → Appearance → Side
+panel. The side panel needs Chrome 114 or later, or Edge or Brave. Where
+the browser has no side panel, the button doesn't appear.
+
 ## Adding claims to the graph
 
 Early on, most claims on most pages aren't in the graph, so the extension
