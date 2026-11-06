@@ -9,11 +9,17 @@ import {
   resolveSitePolicy,
 } from "~lib/settings";
 import {
-  CHAT_PORT,
+  chatPage,
+  clearTabChat,
+  emptyChat,
+  readTabChat,
+  watchTabChat,
+  type TabChat,
+} from "~lib/chat-store";
+import {
   DEFAULT_API_BASE_URL,
   type ChatCitation,
-  type ChatStreamMessage,
-  type ChatTurn,
+  type ChatPageContext,
   type Entitlement,
   type PageAnnotation,
   type PageState,
@@ -48,10 +54,6 @@ async function getPageState(): Promise<PageState | null> {
   } catch {
     return null; // no content script on this page (chrome://, store, etc.)
   }
-}
-
-interface Message extends ChatTurn {
-  citations?: ChatCitation[];
 }
 
 /** Render a reply, linkifying [claim:<uuid>] markers via the citation list. */
@@ -439,79 +441,100 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
   );
 }
 
+/**
+ * The active tab's chat, read from session storage (lib/chat-store.ts) and
+ * kept live as the background worker writes the answer. The popup holds no
+ * conversation of its own, so closing and reopening it loses nothing.
+ */
+function useTabChat() {
+  const [tab, setTab] = useState<{ id: number; page: string } | null>(null);
+  const [chat, setChat] = useState<TabChat | null>(null);
+
+  useEffect(() => {
+    let unwatch = () => {};
+    let gone = false;
+    void (async () => {
+      const t = await activeTab();
+      if (gone || t?.id === undefined) return;
+      // A tab whose URL the extension can't see (chrome://, file://) keeps
+      // its chat under an empty page: per tab, without a reset on navigation.
+      const page = chatPage(t.url ?? "");
+      setTab({ id: t.id, page });
+      unwatch = watchTabChat(t.id, (stored) =>
+        setChat(stored && stored.page === page ? stored : emptyChat(page))
+      );
+      const stored = await readTabChat(t.id, page);
+      if (!gone) setChat(stored);
+    })();
+    return () => {
+      gone = true;
+      unwatch();
+    };
+  }, []);
+
+  return { tab, chat };
+}
+
+function chatContext(page: PageState | null): ChatPageContext {
+  return {
+    url: page?.url ?? null,
+    title: page?.title ?? null,
+    claims: (page?.annotations ?? []).slice(0, 50).map((a) => ({
+      verbatim_text: a.verbatim_text.slice(0, 2000),
+      verdict: a.verdict,
+      claim_id: a.claim?.id ?? null,
+      canonical_form: a.claim?.canonical_form?.slice(0, 2000) ?? null,
+      status: a.claim?.status ?? null,
+    })),
+  };
+}
+
 function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
   const { page } = hook;
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { tab, chat } = useTabChat();
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The answer as it is written; null when no answer is streaming.
-  const [streaming, setStreaming] = useState<string | null>(null);
+  // A question the worker turned down (the stored chat holds answer errors).
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const messages = chat?.messages ?? [];
+  const pending = chat?.pending ?? null;
+  const busy = pending !== null;
+  const error = sendError ?? chat?.error ?? null;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, busy, streaming]);
+  }, [messages.length, pending?.text]);
 
   const send = async () => {
     const question = input.trim();
-    if (!question || busy) return;
+    if (!question || busy || !tab) return;
     setInput("");
-    setError(null);
-    const history: Message[] = [...messages, { role: "user", content: question }];
-    setMessages(history);
-    setBusy(true);
-    setStreaming("");
-    // The answer streams over a port (background.ts): its text shows as it
-    // is written, then the finished reply with its citations replaces it.
-    const port = chrome.runtime.connect({ name: CHAT_PORT });
-    let streamTurn = -1;
-    const finish = () => {
-      setStreaming(null);
-      setBusy(false);
-      port.disconnect();
-    };
-    port.onMessage.addListener((message: ChatStreamMessage) => {
-      if (message.type === "text") {
-        // A new model turn (after the agent looks something up) starts over.
-        setStreaming((prev) =>
-          message.turn !== streamTurn ? message.delta : (prev ?? "") + message.delta
-        );
-        streamTurn = message.turn;
-      } else if (message.type === "done") {
-        setMessages([
-          ...history,
-          {
-            role: "assistant",
-            content: message.data.reply,
-            citations: message.data.citations,
-          },
-        ]);
-        finish();
-      } else {
-        setError(message.error);
-        finish();
+    setSendError(null);
+    // The worker stores the question and writes the answer into the tab's
+    // chat as it forms (background.ts), so it lands even if this popup closes.
+    try {
+      const result = (await chrome.runtime.sendMessage({
+        type: "chat-ask",
+        tabId: tab.id,
+        page: tab.page,
+        question,
+        context: chatContext(page),
+      })) as Result<null>;
+      if (!result.ok) {
+        setSendError(result.error);
+        setInput(question);
       }
-    });
-    port.onDisconnect.addListener(() => {
-      setStreaming(null);
-      setBusy(false);
-    });
-    port.postMessage({
-      type: "chat",
-      messages: history.map(({ role, content }) => ({ role, content })),
-      page: {
-        url: page?.url ?? null,
-        title: page?.title ?? null,
-        claims: (page?.annotations ?? []).slice(0, 50).map((a) => ({
-          verbatim_text: a.verbatim_text.slice(0, 2000),
-          verdict: a.verdict,
-          claim_id: a.claim?.id ?? null,
-          canonical_form: a.claim?.canonical_form?.slice(0, 2000) ?? null,
-          status: a.claim?.status ?? null,
-        })),
-      },
-    });
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : String(e));
+      setInput(question);
+    }
+  };
+
+  const clear = () => {
+    if (!tab || busy) return;
+    setSendError(null);
+    void clearTabChat(tab.id);
   };
 
   return (
@@ -549,10 +572,10 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
             )}
           </div>
         ))}
-        {busy &&
-          (streaming ? (
+        {pending &&
+          (pending.text ? (
             <div className="msg assistant">
-              <ReplyText text={streaming} citations={[]} />
+              <ReplyText text={pending.text} citations={[]} />
             </div>
           ) : (
             <div className="msg assistant muted">Consulting the graph…</div>
@@ -574,9 +597,19 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
           placeholder="Ask about this page…"
           disabled={busy}
         />
-        <button type="submit" disabled={busy || !input.trim()}>
+        <button type="submit" disabled={busy || !tab || !input.trim()}>
           Send
         </button>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={clear}
+            disabled={busy}
+            title="Start a new conversation about this page"
+          >
+            Clear
+          </button>
+        )}
       </form>
     </div>
   );

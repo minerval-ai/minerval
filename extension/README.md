@@ -47,6 +47,19 @@ The popup's **Page** tab says where the page stands: not analyzed (and
 nothing sent), analyzing, or what was found, e.g. "14 claims found · 3 in the
 graph · 11 new". It lists both groups.
 
+## Chat
+
+The **Chat** tab answers questions about the page you're on, grounded in
+the graph, with claim citations. Each tab keeps its own conversation for the
+page it is about: close the popup (clicking back into the page closes it)
+and reopen it, and the conversation is still there, including an answer
+that finished while the popup was closed. Moving the tab to another page
+starts a new conversation; until you ask something there, going Back to
+the page finds the old one.
+**Clear** starts over. Conversations are kept only in the browser's
+memory for the session: they are never written to disk and are gone when
+you close the tab or quit the browser.
+
 ## Adding claims to the graph
 
 Early on, most claims on most pages aren't in the graph, so the extension

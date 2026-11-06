@@ -7,11 +7,10 @@ import {
   lookupSharedAnalysis,
   proposeClaim,
 } from "~lib/api";
+import { askInTab, clearTabChat, settleInterruptedChats } from "~lib/chat-store";
 import {
-  CHAT_PORT,
   type AnalyzeProgress,
   type BackgroundRequest,
-  type ChatStreamMessage,
   type PageAnalysis,
   type Result,
 } from "~lib/types";
@@ -73,36 +72,37 @@ function setBadge(tabId: number | undefined, count: number): void {
   });
 }
 
+// Chrome stops an idle service worker after about 30 seconds, and a
+// streaming fetch alone doesn't count as activity. An answer can go quiet
+// that long while the agent looks things up, with no popup holding a port
+// open, so while any answer runs, call an extension API often enough to
+// reset the idle timer. It stops when the last answer finishes.
+const KEEPALIVE_MS = 20_000;
+let running = 0;
+let keepAlive: ReturnType<typeof setInterval> | null = null;
+
+function keepAliveUntil(work: Promise<void>): void {
+  running += 1;
+  keepAlive ??= setInterval(() => void chrome.runtime.getPlatformInfo(), KEEPALIVE_MS);
+  void work.finally(() => {
+    running -= 1;
+    if (running === 0 && keepAlive) {
+      clearInterval(keepAlive);
+      keepAlive = null;
+    }
+  });
+}
+
 /**
  * The service worker's entry (entrypoints/background.ts). Listeners are
  * registered here rather than at module load so the build can import this
  * module without side effects.
  */
 export function startBackground(): void {
-  // A chat streams over a port: the panel connects, sends the request, and
-  // gets the answer's text as it forms, then the finished reply. The open
-  // port also keeps the service worker alive while the answer runs.
-  chrome.runtime.onConnect.addListener((port) => {
-    if (port.name !== CHAT_PORT) return;
-    let open = true;
-    port.onDisconnect.addListener(() => {
-      open = false;
-    });
-    const post = (message: ChatStreamMessage) => {
-      if (open) port.postMessage(message);
-    };
-    port.onMessage.addListener((message: BackgroundRequest) => {
-      if (message.type !== "chat") return;
-      void (async () => {
-        try {
-          const reply = await chat(message, (delta, turn) => post({ type: "text", delta, turn }));
-          post({ type: "done", data: reply });
-        } catch (err) {
-          post({ type: "error", error: err instanceof Error ? err.message : String(err) });
-        }
-      })();
-    });
-  });
+  // Chats live in session storage, one per tab (lib/chat-store.ts). A fresh
+  // worker is writing no answers, so any left marked in flight were cut off.
+  void settleInterruptedChats();
+  chrome.tabs.onRemoved.addListener((tabId) => void clearTabChat(tabId));
 
   chrome.runtime.onMessage.addListener(
     (message: BackgroundRequest, sender, sendResponse) => {
@@ -120,9 +120,12 @@ export function startBackground(): void {
                 data: await handleCheckAnalysis(message.contentHash),
               });
               break;
-            case "chat":
-              respond({ ok: true, data: await chat(message) });
+            case "chat-ask": {
+              const { answer } = await askInTab(message, chat);
+              keepAliveUntil(answer);
+              respond({ ok: true, data: null });
               break;
+            }
             case "claim-detail":
               respond({ ok: true, data: await getClaimDetail(message.claimId) });
               break;
