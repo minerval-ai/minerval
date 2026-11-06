@@ -71,6 +71,11 @@ export const LEVEL_VERDICTS: Record<MarkupLevel, Verdict[]> = {
 export type SitePolicy = "default" | "auto" | "manual" | "disabled";
 
 export interface Settings {
+  /**
+   * Where the API lives. Users never set this: it is the hosted API unless a
+   * developer overrides it under Settings → Developer. Only an override is
+   * stored (lib/settings.ts), so a change to the default reaches every install.
+   */
   apiBaseUrl: string;
   apiKey: string;
   markupLevel: MarkupLevel;
@@ -98,12 +103,20 @@ export interface Settings {
   shareAnalyses: boolean;
 }
 
+/** The hosted API. */
+export const DEFAULT_API_BASE_URL = "https://api.claimgraph.io";
+
+/**
+ * The old default, before the hosted API existed. Installs that saved any
+ * setting back then stored it along with everything else, so it reads as if
+ * the user had chosen it; lib/settings.ts drops it from pre-v2 storage.
+ */
+export const LEGACY_DEFAULT_API_BASE_URL = "http://localhost:3000";
+
 export const DEFAULT_SETTINGS: Settings = {
-  // The hosted API, matching the popup's placeholder. This defaulted to
-  // localhost, so a fresh install pointed at a port with nothing on it and
-  // every call died as a bare "Failed to fetch". Developers override it in
-  // the popup; users should not have to.
-  apiBaseUrl: "https://api.claimgraph.io",
+  // This defaulted to localhost, so a fresh install pointed at a port with
+  // nothing on it and every call died as a bare "Failed to fetch".
+  apiBaseUrl: DEFAULT_API_BASE_URL,
   apiKey: "",
   markupLevel: "conservative",
   autoAnalyze: false,

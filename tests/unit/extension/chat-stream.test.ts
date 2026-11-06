@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../../extension/lib/settings", () => ({
   getSettings: async () => ({ apiBaseUrl: "https://api.example", apiKey: "k" }),
+  isCustomApiBaseUrl: () => true,
 }));
 
 import { chat } from "../../../extension/lib/api";

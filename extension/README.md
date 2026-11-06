@@ -21,7 +21,7 @@ Analysis and chat run against your Minerval account:
    under [Account · API keys](https://minerval.ai/account). Keys look like
    `epk_…`.
 2. Click the extension icon and open its **Settings** tab.
-3. Set the API base URL to `https://api.claimgraph.io` and paste your key.
+3. Paste your key.
 
 Now open an article and click **Analyze page** in the popup. Big pages can
 take a few minutes the first time; results are cached by page content, so
@@ -162,7 +162,7 @@ Built with [WXT](https://wxt.dev/) (Vite, MV3). The manifest lives in
 content script, popup) that call into `background.ts`,
 `contents/overlay.ts`, and `popup.tsx`. The toolbar icons in `public/icon/`
 are fixed PNGs resized from `assets/icon.png`; regenerate them by hand if
-the master icon changes. Point the
-extension at a local API by setting the API base URL in settings
-(`http://localhost:3000`, the default — no API key needed against a keyless
-dev server).
+the master icon changes. The extension talks to the hosted API by default;
+point it at a local one under **Settings → Developer → API base URL**
+(e.g. `http://localhost:3000` — no API key needed against a keyless dev
+server). Clearing the field goes back to the hosted API.

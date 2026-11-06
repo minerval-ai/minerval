@@ -260,3 +260,13 @@ button:disabled {
   align-items: center;
   gap: 6px;
 }
+
+.developer summary {
+  cursor: pointer;
+  color: #777;
+  font-size: 12px;
+}
+
+.developer[open] summary {
+  margin-bottom: 8px;
+}
