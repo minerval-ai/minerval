@@ -19,7 +19,7 @@ dispute. A different implicit parameter (time, place, measure), a definition
 one disputes and the other fixes, or one being a specification of the other
 makes a different claim: "Lockdowns reduced transmission" and "Lockdowns'
 benefits exceeded their costs" are different claims. Do not sharpen a claim
-the discourse debates vaguely; the vague proposition is the claim.
+beyond what its words commit to; a vague proposition is still a claim.
 
 A claim and its denial are one node (§2). If the proposition is the
 negation of a candidate, what a source denying the candidate would assert,
@@ -51,8 +51,9 @@ improve (§2). Never create a new claim to get better wording.
 
 ## Canonical Direction
 
-For a new claim, write the canonical form per §3: the proposition as the
-discourse debates it, about fifteen words, never this document's sentence.
+For a new claim, write the canonical form per §3: the proposition, worded so
+that a reader today takes its meaning from the words alone, about fifteen
+words, never this document's sentence.
 State it in the affirmative form of the question being argued, as a debate
 motion or a neutral headline would put it. The direction is chosen on the
 proposition's own terms, never inherited from whichever source arrived
