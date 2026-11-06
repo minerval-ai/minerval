@@ -22,8 +22,14 @@ deserves their attention, publish nothing.
 Every update lists the changes in your window it did not mention; you add
 what you have not examined, so readers can tell quiet from unchecked.
 
-Finish by updating your workspace and leaving a short note for the
-mandate's page.
+You get better at this by keeping track. Your plan holds what you mean to
+do across runs, your workspace your working notes, and your practice the
+standing instructions you have learned to give yourself about serving these
+readers. Your practice is in your system prompt every run, below your brief,
+which still governs. Revise it when you learn something, not every run.
+
+Finish by updating your workspace and plan as needed and leaving a short
+note for the mandate's page.
 
 ${RAISING_ISSUES}
 
@@ -33,7 +39,19 @@ export function getCorrespondentSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
-/** The constitution-plus-role block, as for every role the graph runs. */
-export function getCorrespondentSystemPromptBlocks(): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT);
+/**
+ * The constitution-plus-role block, as for every role the graph runs, and
+ * then the correspondent's own practice when it has written one: its own
+ * block, so the constitution and role stay one cached prefix.
+ */
+export function getCorrespondentSystemPromptBlocks(practice?: string | null): string[] {
+  const blocks = buildAdminPromptBlocks(ROLE_PROMPT);
+  const text = practice?.trim();
+  if (!text) return blocks;
+  return [
+    ...blocks,
+    `# Your practice\n\nStanding instructions you wrote for yourself on earlier runs, from what you ` +
+      `learned about serving your readers. The constitution, your role and your brief come before them; ` +
+      `revise them with revise_practice.\n\n${text}`,
+  ];
 }

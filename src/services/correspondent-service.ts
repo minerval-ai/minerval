@@ -68,6 +68,14 @@ export const CORRESPONDENT_BOUNDS = {
   windowChanges: 500,
   /** Unmentioned changes listed by id on an update; past this only the count. */
   notCoveredListed: 200,
+  /**
+   * Its practice sits in its system prompt on every run, so it is kept to
+   * what a run can afford to read every time.
+   */
+  practiceChars: 8_000,
+  practiceReasonChars: 1_000,
+  /** One plan item: a sentence or two, not a document. */
+  planItemChars: 500,
 } as const;
 
 export interface CorrespondentRow {
@@ -85,6 +93,8 @@ export interface CorrespondentRow {
   model: string | null;
   changes_cursor: string | null;
   workspace: string | null;
+  practice: string | null;
+  practice_revised_at: Date | null;
   last_note: string | null;
   last_run_at: Date | null;
   next_due_at: Date;
@@ -98,7 +108,7 @@ export interface CorrespondentRow {
 const SELECT = `
   SELECT id, grant_id, title, brief, audience, scope_claim_ids, scope_tag_ids,
          status, heartbeat_hours, triggers, min_wake_hours, model, changes_cursor,
-         workspace, last_note, last_run_at, next_due_at, runs, updates,
+         workspace, practice, practice_revised_at, last_note, last_run_at, next_due_at, runs, updates,
          created_by, created_at, updated_at
     FROM correspondents`;
 
@@ -600,6 +610,143 @@ export async function recordCorrespondentRun(input: {
   );
 }
 
+/**
+ * Replace a correspondent's practice: the standing instructions it keeps
+ * for itself. The revision and its reason are recorded whoever made it; ""
+ * clears it. It takes effect on the next run, whose system prompt carries it.
+ */
+export async function reviseCorrespondentPractice(input: {
+  correspondentId: string;
+  text: string;
+  reason: string;
+  revisedBy: string;
+}): Promise<{ ok: true; chars: number } | { ok: false; problem: string }> {
+  const B = CORRESPONDENT_BOUNDS;
+  const text = String(input.text ?? "").trim();
+  if (text.length > B.practiceChars) {
+    return {
+      ok: false,
+      problem:
+        `Your practice is ${text.length.toLocaleString("en-US")} characters; it is read on every run, so it ` +
+        `is kept under ${B.practiceChars.toLocaleString("en-US")}. Keep what changes how you work; move the rest to your workspace.`,
+    };
+  }
+  const reason = String(input.reason ?? "").trim();
+  if (reason.length < 10) return { ok: false, problem: "Say what you learned that warrants the revision." };
+  await rawQuery(
+    `INSERT INTO correspondent_practice_versions (correspondent_id, text, reason, revised_by)
+     VALUES ($1, $2, $3, $4)`,
+    [input.correspondentId, text, reason.slice(0, B.practiceReasonChars), input.revisedBy]
+  );
+  await rawQuery(
+    `UPDATE correspondents SET practice = $2, practice_revised_at = now(), updated_at = now() WHERE id = $1`,
+    [input.correspondentId, text || null]
+  );
+  return { ok: true, chars: text.length };
+}
+
+export interface PracticeVersionRow {
+  id: string;
+  text: string;
+  reason: string;
+  revised_by: string;
+  created_at: Date;
+}
+
+export async function listPracticeVersions(correspondentId: string, limit = 20): Promise<PracticeVersionRow[]> {
+  return rawQuery<PracticeVersionRow>(
+    `SELECT id, text, reason, revised_by, created_at FROM correspondent_practice_versions
+      WHERE correspondent_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [correspondentId, Math.min(100, Math.max(1, limit))]
+  );
+}
+
+export const PLAN_STATUSES = ["open", "done", "dropped"] as const;
+
+export interface PlanItemRow {
+  id: string;
+  text: string;
+  status: (typeof PLAN_STATUSES)[number];
+  note: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export async function listPlanItems(
+  correspondentId: string,
+  opts: { status?: "open" | "closed" | "all"; limit?: number } = {}
+): Promise<PlanItemRow[]> {
+  const status = opts.status ?? "all";
+  return rawQuery<PlanItemRow>(
+    `SELECT id, text, status, note, created_at, updated_at FROM correspondent_plan_items
+      WHERE correspondent_id = $1
+        AND ($2 = 'all' OR ($2 = 'open' AND status = 'open') OR ($2 = 'closed' AND status <> 'open'))
+      ORDER BY (status = 'open') DESC, updated_at DESC
+      LIMIT $3`,
+    [correspondentId, status, Math.min(200, Math.max(1, opts.limit ?? 50))]
+  );
+}
+
+/**
+ * Add plan items and close or amend existing ones, in one call. Items
+ * belong to this correspondent only; a closed item stays on the record.
+ */
+export async function updateCorrespondentPlan(input: {
+  correspondentId: string;
+  add?: unknown;
+  update?: unknown;
+}): Promise<{ ok: true; added: string[]; updated: string[] } | { ok: false; problem: string }> {
+  const B = CORRESPONDENT_BOUNDS;
+  const adds = Array.isArray(input.add) ? input.add.map((t) => String(t ?? "").trim()).filter(Boolean) : [];
+  const updates = Array.isArray(input.update) ? (input.update as Array<Record<string, unknown>>) : [];
+  const long = adds.find((t) => t.length > B.planItemChars);
+  if (long) return { ok: false, problem: `A plan item is a sentence or two (at most ${B.planItemChars} characters); put detail in your workspace.` };
+  for (const [i, u] of updates.entries()) {
+    if (!isUuid(u?.id)) return { ok: false, problem: `update[${i}].id must be a plan item id exactly as your briefing gave it` };
+    if (u.status !== undefined && !PLAN_STATUSES.includes(u.status as PlanItemRow["status"])) {
+      return { ok: false, problem: `update[${i}].status must be one of ${PLAN_STATUSES.join(", ")}` };
+    }
+  }
+  const ids = updates.map((u) => String(u.id));
+  if (ids.length > 0) {
+    const mine = await rawQuery<{ id: string }>(
+      `SELECT id FROM correspondent_plan_items WHERE correspondent_id = $1 AND id = ANY($2::uuid[])`,
+      [input.correspondentId, ids]
+    );
+    const have = new Set(mine.map((r) => r.id));
+    const missing = ids.find((id) => !have.has(id));
+    if (missing) return { ok: false, problem: `No plan item ${missing} on your plan` };
+  }
+  const updated: string[] = [];
+  for (const u of updates) {
+    await rawQuery(
+      `UPDATE correspondent_plan_items
+          SET status = COALESCE($3, status),
+              note = COALESCE($4, note),
+              text = COALESCE($5, text),
+              updated_at = now()
+        WHERE id = $2 AND correspondent_id = $1`,
+      [
+        input.correspondentId,
+        String(u.id),
+        u.status === undefined ? null : String(u.status),
+        u.note === undefined ? null : String(u.note).slice(0, B.planItemChars),
+        u.text === undefined ? null : String(u.text).trim().slice(0, B.planItemChars) || null,
+      ]
+    );
+    updated.push(String(u.id));
+  }
+  const added: string[] = [];
+  for (const text of adds) {
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO correspondent_plan_items (correspondent_id, text) VALUES ($1, $2) RETURNING id`,
+      [input.correspondentId, text]
+    );
+    added.push(row!.id);
+  }
+  return { ok: true, added, updated };
+}
+
 export async function updateCorrespondentWorkspace(id: string, content: string): Promise<number> {
   const text = content.slice(0, CORRESPONDENT_BOUNDS.workspaceChars);
   await rawQuery(`UPDATE correspondents SET workspace = $2, updated_at = now() WHERE id = $1`, [id, text]);
@@ -853,6 +1000,9 @@ export interface CorrespondentPublic {
   updates: number;
   last_run_at: string | null;
   last_note: string | null;
+  /** What it has taught itself, as public as its brief. */
+  practice: string | null;
+  practice_revised_at: string | null;
   feed_path: string;
   updates_path: string;
   created_by: string | null;
@@ -877,6 +1027,8 @@ export function correspondentPublic(c: CorrespondentRow): CorrespondentPublic {
     updates: c.updates,
     last_run_at: c.last_run_at ? new Date(c.last_run_at).toISOString() : null,
     last_note: c.last_note,
+    practice: c.practice,
+    practice_revised_at: c.practice_revised_at ? new Date(c.practice_revised_at).toISOString() : null,
     feed_path: `/correspondents/${c.id}/feed`,
     updates_path: `/correspondents/${c.id}/updates`,
     created_by: c.created_by,

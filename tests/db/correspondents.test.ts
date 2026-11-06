@@ -25,6 +25,10 @@ import {
   publishCorrespondentUpdate,
   queueCorrespondentEvent,
   recordCorrespondentRun,
+  reviseCorrespondentPractice,
+  listPracticeVersions,
+  updateCorrespondentPlan,
+  listPlanItems,
 } from "../../src/services/correspondent-service.js";
 import { reconcileActions, CORRESPONDENT_GROUP } from "../../src/services/action-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
@@ -231,5 +235,41 @@ describe("Correspondents", () => {
     const after = await correspondentWindow(c);
     expect(after.changes).toEqual([]);
     expect(c.updates).toBe(1);
+  });
+
+  it("keeps every revision of its practice with its reason, and a plan that is its own", async () => {
+    const grantId = await mandate();
+    const make = async (title: string) => {
+      const r = await createCorrespondent({ grantId, title, brief, audience: "followers", createdBy: "test" });
+      if (!r.ok) throw new Error(r.message);
+      return r.correspondentId;
+    };
+    const id = await make("Learner");
+    const other = await make("Other");
+
+    expect(await reviseCorrespondentPractice({ correspondentId: id, text: "x", reason: "?", revisedBy: "correspondent" }))
+      .toMatchObject({ ok: false });
+    await reviseCorrespondentPractice({
+      correspondentId: id, text: "Lead with replication news.", reason: "Readers acted on the replication item.", revisedBy: "correspondent",
+    });
+    await reviseCorrespondentPractice({
+      correspondentId: id, text: "", reason: "It was steering selection away from the brief.", revisedBy: "grantmaker:review",
+    });
+    expect((await getCorrespondent(id))!.practice).toBeNull();
+    const history = await listPracticeVersions(id);
+    expect(history.map((v) => [v.revised_by, v.text])).toEqual([
+      ["grantmaker:review", ""],
+      ["correspondent", "Lead with replication news."],
+    ]);
+
+    const added = await updateCorrespondentPlan({ correspondentId: id, add: ["Follow the probe subclaims until they settle."] });
+    if (!added.ok) throw new Error(added.problem);
+    const itemId = added.added[0]!;
+    // Another correspondent cannot touch it.
+    expect(await updateCorrespondentPlan({ correspondentId: other, update: [{ id: itemId, status: "done" }] }))
+      .toMatchObject({ ok: false });
+    await updateCorrespondentPlan({ correspondentId: id, update: [{ id: itemId, status: "done", note: "Settled as doubtful." }] });
+    expect(await listPlanItems(id, { status: "open" })).toEqual([]);
+    expect((await listPlanItems(id, { status: "closed" }))[0]).toMatchObject({ status: "done", note: "Settled as doubtful." });
   });
 });

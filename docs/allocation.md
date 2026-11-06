@@ -373,6 +373,20 @@ the other half in `unexamined`: what in scope it has not looked at. A
 window is capped at 500 changes; past that the update says more followed,
 and the next one starts there.
 
+**It learns.** A correspondent keeps three records of its own across runs.
+Its **practice** is standing instructions it writes for itself as it learns
+what serves its readers (`revise_practice`). It is placed in its system
+prompt after the constitution, its role and its brief, which still governs,
+and takes effect on the next run. Every revision is kept with its reason
+(`correspondent_practice_versions`), is public as the brief is, and the
+Grantmaker sees it in `correspondent_report` and may replace or clear it,
+with a reason, when it works against the brief. Its **plan**
+(`update_plan`) holds what it means to do across runs, each item open
+until it marks it done or dropped; every open item is in each briefing,
+so it is bounded by what those items cost to read, not by a count. Its
+**record** is its published updates: the briefing lists the latest, and
+`list_my_updates` reads further back. Its workspace stays its scratch notes.
+
 **The usual rules apply.** A funded correspondent's brief, record and
 updates are public, as mandates are (the mandate page lists them). It
 selects and frames, so the Grantmaker declines briefs that would steer

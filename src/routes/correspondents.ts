@@ -29,6 +29,8 @@ import {
   listAllCorrespondents,
   listCorrespondentUpdates,
   listCorrespondentsCovering,
+  listPlanItems,
+  listPracticeVersions,
   queueCorrespondentEvent,
   renderUpdateText,
   type CorrespondentUpdateRow,
@@ -103,13 +105,35 @@ export async function correspondentRoutes(app: FastifyInstance): Promise<void> {
       tags: ["correspondents"],
       summary:
         "One correspondent: its brief, audience, scope, cadence and triggers, how many " +
-        "runs and updates, its last note, and the mandate that funds it",
+        "runs and updates, its last note, the practice it has written for itself and how it " +
+        "got there, its plan, and the mandate that funds it",
       params: idParam,
     },
     handler: async (request, reply) => {
       const c = await getCorrespondent(request.params.id);
       if (!c) return reply.code(404).send(errorBody("NOT_FOUND", "Correspondent not found"));
-      return reply.send({ correspondent: { ...correspondentPublic(c), mandate: await mandateFor(c.grant_id) } });
+      const [plan, history] = await Promise.all([listPlanItems(c.id, { limit: 100 }), listPracticeVersions(c.id, 20)]);
+      return reply.send({
+        correspondent: {
+          ...correspondentPublic(c),
+          mandate: await mandateFor(c.grant_id),
+          plan: plan.map((p) => ({
+            id: p.id,
+            status: p.status,
+            text: p.text,
+            note: p.note,
+            created_at: new Date(p.created_at).toISOString(),
+            updated_at: new Date(p.updated_at).toISOString(),
+          })),
+          practice_history: history.map((v) => ({
+            id: v.id,
+            text: v.text,
+            reason: v.reason,
+            revised_by: v.revised_by,
+            at: new Date(v.created_at).toISOString(),
+          })),
+        },
+      });
     },
   });
 

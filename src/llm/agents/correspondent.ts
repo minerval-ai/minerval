@@ -41,6 +41,10 @@ import {
   pendingCorrespondentEvents,
   publishCorrespondentUpdate,
   updateCorrespondentWorkspace,
+  listCorrespondentUpdates,
+  listPlanItems,
+  reviseCorrespondentPractice,
+  updateCorrespondentPlan,
   validateUpdateItems,
   CORRESPONDENT_BOUNDS,
   type CorrespondentEventRow,
@@ -49,6 +53,10 @@ import {
 
 /** The window's changes shown in full in the briefing; the rest one line each. */
 const WINDOW_SHOWN_IN_FULL = 120;
+/** Its own recent updates listed in the briefing; list_my_updates reads the rest. */
+const RECENT_UPDATES_SHOWN = 5;
+/** Recently closed plan items shown, so it remembers what it finished or gave up. */
+const RECENT_CLOSED_PLAN_SHOWN = 5;
 
 const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 
@@ -118,7 +126,9 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   }
 
   const skillLoader = createSkillLoadTools("correspondent", { names: c.grant_skills ?? [] });
-  const system = getCorrespondentSystemPromptBlocks();
+  // Its practice joins the system prompt as written at the start of the
+  // run; a revision this run takes effect on the next.
+  const system = getCorrespondentSystemPromptBlocks(c.practice);
   const model = input.model ?? c.model ?? config.correspondentModel;
   const reportTools = createReportTools({ model });
 
@@ -133,11 +143,11 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
           [c.scope_claim_ids]
         )
       : [];
-  const [last] = await rawQuery<{ title: string; created_at: Date }>(
-    `SELECT title, created_at FROM correspondent_updates WHERE correspondent_id = $1
-      ORDER BY created_at DESC LIMIT 1`,
-    [c.id]
-  );
+  // What it has already done: its recent updates, and its plan.
+  const { updates: recent, total: updatesTotal } = await listCorrespondentUpdates(c.id, { limit: RECENT_UPDATES_SHOWN });
+  const last = recent[0];
+  const openPlan = await listPlanItems(c.id, { status: "open", limit: 200 });
+  const closedPlan = await listPlanItems(c.id, { status: "closed", limit: RECENT_CLOSED_PLAN_SHOWN });
 
   let published: { updateId: string } | null = null;
   const changesDef = graphChangeDefinition("agent");
@@ -179,6 +189,70 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
           unexamined: { type: "string", description: "What in your scope you have not looked at, or could not judge" },
         },
         required: ["title", "body", "items", "unexamined"],
+      },
+    },
+    {
+      name: "update_plan",
+      description:
+        "Keep your plan: what you mean to do across runs (follow a question until it settles, " +
+        "write a summary once a subtree is assessed, ask your Grantmaker for a wider scope). " +
+        "`add` new items; `update` items by id to mark them done or dropped, amend their text, " +
+        "or note what became of them. Every open item is shown in your briefing on every run, " +
+        "so each costs a little on every run until you close it; closed items stay on the record. " +
+        `An item is a sentence or two, at most ${CORRESPONDENT_BOUNDS.planItemChars} characters.`,
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          add: { type: "array", items: { type: "string" } },
+          update: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                status: { type: "string", enum: ["open", "done", "dropped"] },
+                note: { type: "string" },
+                text: { type: "string" },
+              },
+              required: ["id"],
+            },
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "revise_practice",
+      description:
+        "Rewrite your practice: the standing instructions you keep for yourself about serving " +
+        "these readers, placed in your system prompt on every run after your brief, which still " +
+        "governs. Revise it when a run teaches you something that should change how you work " +
+        "(what these readers act on, which kinds of change turn out to matter in this scope, how " +
+        "to present them), not to record what happened, which belongs in your workspace. Replaces " +
+        `the whole text, up to ${CORRESPONDENT_BOUNDS.practiceChars.toLocaleString("en-US")} characters; "" clears it. ` +
+        "Takes effect on your next run. Every revision is kept with its reason, is public as your " +
+        "brief is, and your Grantmaker sees it.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          text: { type: "string" },
+          reason: { type: "string", description: "What you learned that warrants the revision." },
+        },
+        required: ["text", "reason"],
+      },
+    },
+    {
+      name: "list_my_updates",
+      description:
+        "Your own published updates, newest first, in full: items, prose, and what each did " +
+        "not cover. Your briefing lists the most recent; read further back here.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          limit: { type: "number", description: "Default 5, max 20." },
+          offset: { type: "number" },
+        },
+        required: [],
       },
     },
     {
@@ -261,6 +335,29 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       : `This is your first update. Your window starts when you were posted; for where things stand, read ` +
         `your scope's nodes and their history.\n\n`) +
     `${windowText}\n\n` +
+    `### What you have done\n\n` +
+    (recent.length === 0
+      ? `(no updates published yet)\n\n`
+      : `${updatesTotal} update${updatesTotal === 1 ? "" : "s"} published; the most recent:\n` +
+        recent
+          .map(
+            (u) =>
+              `- ${new Date(u.created_at).toISOString().slice(0, 10)} "${u.title}": ${u.items.length} item` +
+              `${u.items.length === 1 ? "" : "s"}, ${u.not_covered?.changes_total ?? 0} change` +
+              `${(u.not_covered?.changes_total ?? 0) === 1 ? "" : "s"} not covered`
+          )
+          .join("\n") +
+        (updatesTotal > recent.length ? `\n(list_my_updates reads them in full and further back)` : "") +
+        `\n\n`) +
+    `### Your plan\n\n` +
+    (openPlan.length === 0
+      ? `(no open items)`
+      : openPlan.map((p) => `- [open] ${p.id}: ${p.text}${p.note ? ` (${p.note})` : ""}`).join("\n")) +
+    (closedPlan.length > 0
+      ? `\n\nRecently closed:\n` +
+        closedPlan.map((p) => `- [${p.status}] ${p.text}${p.note ? ` (${p.note})` : ""}`).join("\n")
+      : "") +
+    `\n\n` +
     `### Your workspace\n\n` +
     (c.workspace?.trim() ? c.workspace : `(empty — this is your first run)`) +
     `\n\n---\n\n` +
@@ -344,6 +441,40 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
             update_id: published.updateId,
             items: checked.items.length,
             not_covered: { changes_total: notCovered.changes_total, more_after_window: notCovered.more_after_window },
+          });
+        }
+        if (name === "update_plan") {
+          const res = await updateCorrespondentPlan({
+            correspondentId: c.id,
+            add: toolInput.add,
+            update: toolInput.update,
+          });
+          return JSON.stringify(res);
+        }
+        if (name === "revise_practice") {
+          const res = await reviseCorrespondentPractice({
+            correspondentId: c.id,
+            text: String(toolInput.text ?? ""),
+            reason: String(toolInput.reason ?? ""),
+            revisedBy: "correspondent",
+          });
+          return JSON.stringify(res.ok ? { ...res, note: "Saved; it takes effect on your next run." } : res);
+        }
+        if (name === "list_my_updates") {
+          const page = await listCorrespondentUpdates(c.id, {
+            limit: Math.min(20, Math.max(1, Number(toolInput.limit ?? 5) || 5)),
+            offset: Math.max(0, Number(toolInput.offset ?? 0) || 0),
+          });
+          return JSON.stringify({
+            total: page.total,
+            updates: page.updates.map((u) => ({
+              id: u.id,
+              at: new Date(u.created_at).toISOString(),
+              title: u.title,
+              body: u.body,
+              items: u.items,
+              not_covered: u.not_covered,
+            })),
           });
         }
         if (name === "update_workspace") {
