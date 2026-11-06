@@ -43,8 +43,7 @@ describe("RAISING_ISSUES (#770)", () => {
   });
 
   it("keeps to what the tool descriptions cannot say", () => {
-    expect(RAISING_ISSUES).toMatch(/Look first/);
-    expect(RAISING_ISSUES).toMatch(/Ordinary difficulty is the work/);
+    expect(RAISING_ISSUES).toMatch(/search_issues/);
     expect(RAISING_ISSUES).not.toMatch(/no memory across runs/);
     expect(RAISING_ISSUES.split(/\s+/).length).toBeLessThan(200);
   });
