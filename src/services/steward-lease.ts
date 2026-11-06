@@ -64,6 +64,81 @@ export function stewardFailureSet(state: string, error: string): string {
               steward_attempts = steward_attempts + 1`;
 }
 
+/**
+ * A claim parks as 'error' inside one SQL statement whose CASE may or may
+ * not have fired (stewardFailureSet), and parking takes the claim out of
+ * every lane's candidate set: funded ledger rows on it are retired and the
+ * money sits unspent. That is a maintainer's problem, not an agent's, so
+ * the park is surfaced on the agents' own channel (#366, #834) rather than
+ * left to whoever next reads `/monitors` queue health. Call it right after
+ * the failure update, from whichever lane ran the pass; it reads the row to
+ * see whether the park actually happened, reports at most once per claim
+ * (the report's dedupe key collapses repeats onto one row with a rising
+ * count), and never throws.
+ */
+export async function reportStewardPark(
+  claimId: string,
+  lane: string
+): Promise<boolean> {
+  try {
+    const [row] = await rawQuery<{
+      steward_state: string;
+      steward_error: string | null;
+      steward_attempts: number;
+      text: string;
+      retired_backing_micro_usd: string | number;
+    }>(
+      `SELECT c.steward_state, c.steward_error, c.steward_attempts, c.text,
+              COALESCE((
+                SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
+                  FROM action_allocations al
+                  JOIN actions a ON a.exclusion_group = al.exclusion_group
+                 WHERE a.claim_id = c.id
+                   AND a.kind IN ('assess', 'reassess')
+                   AND al.released_at IS NULL
+              ), 0)::bigint AS retired_backing_micro_usd
+         FROM claims c WHERE c.id = $1`,
+      [claimId]
+    );
+    if (!row || row.steward_state !== "error") return false;
+    const backing = Number(row.retired_backing_micro_usd);
+    const { raiseIssue } = await import("./report-service.js");
+    await raiseIssue({
+      agent: "claim_steward",
+      origin: "internal",
+      kind: "system_failure",
+      // Funded work was retired unrun, so someone is waiting on a pass that
+      // will not come until this is looked at.
+      severity: backing > 0 ? "blocking" : "degraded",
+      surface: `steward park (${lane})`,
+      title: `claim ${claimId} parked as error by the Steward`,
+      body:
+        `The Steward parked this claim as 'error' after ` +
+        `${row.steward_attempts} genuine failures (lane: ${lane}), which ` +
+        `takes it out of every lane's candidate set: its assess/reassess ` +
+        `ledger rows are retired unrun and any funded item on it reads ` +
+        `cancelled until the error is addressed.` +
+        (backing > 0
+          ? ` ${(backing / 1_000_000).toFixed(2)} USD of unspent backing is ` +
+            `sitting on those retired rows.`
+          : "") +
+        `\n\nClaim: ${row.text.slice(0, 300)}\n\nLast error: ${
+          (row.steward_error ?? "(none recorded)").slice(0, 1500)
+        }`,
+      contextRefs: { claim_id: claimId },
+      claimId,
+    });
+    return true;
+  } catch (err) {
+    console.error(
+      `[steward-lease] could not report the park of claim ${claimId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    return false;
+  }
+}
+
 interface HeldLease {
   claimId: string;
   actionId?: string;
