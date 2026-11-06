@@ -13,7 +13,7 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
-import { seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 import { listGraphChanges, runGraphChanges } from "../../src/services/graph-change-service.js";
 import {
   computeNotCovered,
@@ -271,5 +271,29 @@ describe("Correspondents", () => {
     await updateCorrespondentPlan({ correspondentId: id, update: [{ id: itemId, status: "done", note: "Settled as doubtful." }] });
     expect(await listPlanItems(id, { status: "open" })).toEqual([]);
     expect((await listPlanItems(id, { status: "closed" }))[0]).toMatchObject({ status: "done", note: "Settled as doubtful." });
+  });
+
+  it("is funded even behind more than a page of covered rows waiting to run", async () => {
+    // Covered self-funded rows wait for the executor. Before #838 they took
+    // places in the funding pass's page of 100, so enough of them starved a
+    // new row; a pass must reach every row that still needs money.
+    const funder = await seedUser("covered");
+    for (let i = 0; i < 105; i++) {
+      const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 1_000_000 });
+      const group = `review:${grantId}`;
+      const actionId = await seedAction({ group, kind: "mandate_review", targetRef: grantId, costMicroUsd: 1000 });
+      await seedAllocation({ group, actionId, grantId, amountMicroUsd: 1000 });
+    }
+    const grantId = await mandate();
+    const res = await createCorrespondent({ grantId, title: "Behind the queue", brief, audience: "followers", createdBy: "test" });
+    if (!res.ok) throw new Error(res.message);
+    await reconcileActions();
+    await fundGrantSelfActions();
+    const [alloc] = await rawQuery<{ grant_id: string }>(
+      `SELECT al.grant_id FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE a.exclusion_group = $1`,
+      [CORRESPONDENT_GROUP(res.correspondentId)]
+    );
+    expect(alloc?.grant_id).toBe(grantId);
   });
 });
