@@ -631,12 +631,15 @@ export function getStewardToolDefinitions(): Tool[] {
       description:
         "Update the canonical form (text) of a claim. Wording is judged fresh " +
         "on its merits (constitution §3): the shortest neutral statement of the " +
-        "proposition as actually debated, about fifteen words. The node's " +
+        "proposition, about fifteen words. The node's " +
         "identity and history stay stable while its wording improves; never " +
         "keep a worse form because it came first. Do not change what the claim " +
-        "IS: a rewording that different considerations would bear on is a " +
-        "different claim, and rewording into the negation would flip every " +
-        "recorded stance. Escalate those to the Curator instead. The form's " +
+        "IS, which is what its words say to a reader today (§3), not what a " +
+        "source or an earlier assessment took them to mean. Stating that " +
+        "meaning more plainly is a rewording and yours to make: a rewording " +
+        "that different considerations would bear on is a different claim, and " +
+        "rewording into the negation would flip every recorded stance. For " +
+        "those, match or create the other claim, or escalate to the Curator. The form's " +
         "direction was chosen on the proposition's own terms (see the claim's " +
         "canonical_direction_note in get_claim), never from whichever " +
         "source arrived first; keep it.",

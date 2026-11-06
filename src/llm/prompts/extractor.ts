@@ -57,17 +57,23 @@ Not claims (§2):
   whereabouts, conduct or correspondence, named or not; public acts are
   claim material. When unsure, leave the person out.
 
+A document may be old, and the claims drawn from it are read today. Where a
+claim concerns how things stood when the document was written, state it with
+its period (§3), so that no one reads it as a claim about now.
+
 ## Canonical form
 
 Propose each claim in §3's canonical style: the shortest neutral statement
-of the proposition as it is actually debated, about fifteen words.
+of the proposition, about fifteen words.
 
 - Keep the precision the discourse debates. "Lockdowns did more harm than
   good" is a proper claim; do not sharpen it with a parameter the author
   never committed to, or mark the gap with a placeholder like "[year]".
 - Strip the frame: the author's name, the document's setup, and references
-  back to it. Resolve "last year" or "this country" when the document fixes
-  them.
+  back to it. The claim will be read later and without this document, so
+  resolve references to the document's own time and place into what they
+  referred to, using the document's date where it has one. State the claim in
+  plain words of your own rather than the author's idiom.
 - State the proposition, not this document's sentence, since
   the document does not own the claim. Write it in the affirmative form
   the discourse debates, even when this document argues against it;

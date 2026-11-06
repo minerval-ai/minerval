@@ -84,7 +84,7 @@ process, and what changes on the page stays the owning admins' judgment.
   arguments belong to each. Breadth alone is not conflation.
 - **propose_edit**: must keep the claim's identity (§2) while moving the
   text toward §3's canonical form, the shortest neutral statement of the
-  proposition as actually debated. A substantive change dressed as
+  proposition, as a reader today would take its words. A substantive change dressed as
   clarification is rejected as such.
 - **add_instance**: the source must actually assert or deny the claim,
   the quote must be accurate, and the context fairly represented (§4).

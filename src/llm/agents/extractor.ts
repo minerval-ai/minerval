@@ -91,7 +91,7 @@ const EXTRACTED_CLAIM_SCHEMA = {
   properties: {
     verbatim_text: { type: "string", description: "The exact span as this source states it: the author's wording, kept as provenance" },
     context: { type: ["string", "null"], description: "Surrounding text for disambiguation" },
-    proposed_canonical_form: { type: "string", description: "The shortest neutral statement of the proposition as it is actually debated, about fifteen words, stated at the precision the discourse debates it" },
+    proposed_canonical_form: { type: "string", description: "The shortest neutral statement of the proposition, about fifteen words, stated at the precision the discourse debates it" },
     claim_type: { type: "string", enum: [...claimTypeEnum.options], description: "The claim's type, as your role description defines each" },
     kind: { type: "string", enum: ["claim", "quantity", "question"], description: "claim, quantity, or question. For a quantity, proposed_canonical_form is its definition, with its unit, and verbatim_text the figure as the document states it" },
     confidence: { type: "number", description: "How sure you are that this is a well-formed, reusable claim (0.0-1.0). It measures form, not truth, and nothing is dropped for it: give it honestly, and leave out what you judge is not a claim rather than recording it low." },
