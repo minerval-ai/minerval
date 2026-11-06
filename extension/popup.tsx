@@ -770,19 +770,59 @@ function SettingsPane({
   );
 }
 
-export default function Popup() {
-  const [tab, setTab] = useState<"page" | "chat" | "settings">("page");
+export type View = "page" | "chat" | "settings";
+
+/**
+ * Whether this browser has Chrome's side panel (Chrome 114+, Edge, Brave;
+ * not Firefox, and not reliably Arc). Without it the popup is the only view.
+ */
+export function hasSidePanel(): boolean {
+  return typeof chrome !== "undefined" && "sidePanel" in chrome && !!chrome.sidePanel?.open;
+}
+
+/**
+ * The extension's view: Page, Chat and Settings. Rendered in the toolbar
+ * popup and in the side panel (entrypoints/sidepanel), which stays open
+ * while the reader clicks around the page; the popup closes whenever it
+ * loses focus. Both show the active tab. The side panel passes the selected
+ * view in, so switching tabs keeps it.
+ */
+export default function Popup({
+  surface = "popup",
+  view,
+  onView,
+}: {
+  surface?: "popup" | "panel";
+  view?: View;
+  onView?: (v: View) => void;
+}) {
+  const [ownView, setOwnView] = useState<View>("page");
+  const tab = view ?? ownView;
+  const setTab = onView ?? setOwnView;
   const [settings, setSettings] = useState<Settings | null>(null);
   const hook = usePage();
+  // sidePanel.open must run inside the click, so look the window up first.
+  const [windowId, setWindowId] = useState<number | null>(null);
 
   useEffect(() => {
     void getSettings().then(setSettings);
-  }, []);
+    if (surface === "popup" && hasSidePanel()) {
+      void chrome.windows.getCurrent().then((w) => setWindowId(w.id ?? null));
+    }
+  }, [surface]);
 
-  if (!settings) return <div className="popup" />;
+  const openPanel = () => {
+    if (windowId === null) return;
+    // Open the panel on the tab the reader was looking at here.
+    void chrome.storage.session.set({ "panel-view": tab });
+    void chrome.sidePanel.open({ windowId }).then(() => window.close());
+  };
+
+  const className = surface === "panel" ? "popup panel" : "popup";
+  if (!settings) return <div className={className} />;
 
   return (
-    <div className="popup">
+    <div className={className}>
       <header>
         <span className="brand">
           <Mark size="0.95em" /> Minerval
@@ -806,6 +846,15 @@ export default function Popup() {
           >
             Settings
           </button>
+          {surface === "popup" && windowId !== null && (
+            <button
+              onClick={openPanel}
+              title="Open in the side panel, which stays open while you read"
+              aria-label="Open in side panel"
+            >
+              ⇥
+            </button>
+          )}
         </nav>
       </header>
       {tab === "page" && <PageView settings={settings} hook={hook} />}

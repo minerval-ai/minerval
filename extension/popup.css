@@ -270,3 +270,27 @@ button:disabled {
 .developer[open] summary {
   margin-bottom: 8px;
 }
+
+/* The same view in the side panel: as wide as the panel, as tall as the
+   window, with the long lists scrolling inside it. */
+.popup.panel {
+  width: auto;
+  height: 100vh;
+  min-height: 0;
+}
+
+.panel > :not(header) {
+  flex: 1;
+  min-height: 0;
+}
+
+.panel .messages,
+.panel .claims {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel .settings {
+  overflow-y: auto;
+}
