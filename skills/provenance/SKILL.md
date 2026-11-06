@@ -1,14 +1,10 @@
 ---
 name: provenance
 description: >-
-  How to trace what a claim's support rests on: opening the sources behind
-  a claim's instances and recording whether each source's own evidence bears
-  the assertion it makes, which documents each assertion draws on and what
-  survived the crossing, which sources are one voice appearing more than
-  once, and a plain account for readers of what the support rests on, shown
-  only where it matters. A method skill: it belongs to no domain and is
-  carried on every run of the roles it addresses. It produces structure and
-  figures for the Steward to reason about; the verdict stays the Steward's.
+  How to trace what a claim's support rests on: whether each source's own
+  evidence bears what it asserts, which documents each assertion draws on,
+  which sources are one voice repeated, and a short account for readers
+  where it matters.
 metadata:
   minerval:
     version: 5

@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 9246,
-    "fullChars": 99289,
+    "roleChars": 8392,
+    "fullChars": 98435,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 7772,
-    "fullChars": 97815,
+    "roleChars": 6758,
+    "fullChars": 96801,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "Anyone submits a contribution (a challenge, support, a new instance, an argument, a merge, split or edit, a source's figure for a quantity, an answer to a question, a request or material for one) or a proposal (a new claim, question or source).",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 17065,
-    "fullChars": 107108,
+    "roleChars": 14939,
+    "fullChars": 104982,
     "skills": [
       {
         "name": "costing",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 24961,
-    "fullChars": 115004,
+    "roleChars": 22815,
+    "fullChars": 112858,
     "skills": [
       {
         "name": "costing",
@@ -139,8 +139,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 16898,
-    "fullChars": 106941,
+    "roleChars": 14752,
+    "fullChars": 104795,
     "skills": []
   },
   {
@@ -152,8 +152,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11548,
-    "fullChars": 101591,
+    "roleChars": 9418,
+    "fullChars": 99461,
     "skills": [
       {
         "name": "costing",
@@ -193,8 +193,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 11682,
-    "fullChars": 101725,
+    "roleChars": 9556,
+    "fullChars": 99599,
     "skills": [
       {
         "name": "costing",
@@ -233,8 +233,8 @@
     "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12819,
-    "fullChars": 102862,
+    "roleChars": 10649,
+    "fullChars": 100692,
     "skills": [
       {
         "name": "costing",
@@ -286,8 +286,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17940,
-    "fullChars": 107983,
+    "roleChars": 15814,
+    "fullChars": 105857,
     "skills": [
       {
         "name": "costing",
@@ -326,8 +326,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 10826,
-    "fullChars": 100869,
+    "roleChars": 8708,
+    "fullChars": 98751,
     "skills": [
       {
         "name": "costing",
@@ -364,8 +364,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 5622,
-    "fullChars": 95665,
+    "roleChars": 3504,
+    "fullChars": 93547,
     "skills": [
       {
         "name": "costing",
@@ -402,8 +402,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
-    "roleChars": 14829,
-    "fullChars": 104872,
+    "roleChars": 12711,
+    "fullChars": 102754,
     "skills": [
       {
         "name": "costing",
@@ -455,8 +455,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 15118,
-    "fullChars": 105161,
+    "roleChars": 12988,
+    "fullChars": 103031,
     "skills": [
       {
         "name": "costing",

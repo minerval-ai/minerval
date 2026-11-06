@@ -1,14 +1,11 @@
 ---
 name: mathematics
 description: >-
-  How the constitution applies to propositions of mathematics: what a
-  mathematical claim is, how proofs are arguments, how the six statuses and
-  credence read for theorems and conjectures, what a machine-checked proof
-  is as evidence, how formal statements are published and checked in Lean 4
-  against a pinned Mathlib, how the platform's solver and prize program
-  work, and what money may never touch. Applies to claims tagged
-  mathematics and to contributions on them. Does not apply to claims that
-  merely use a number or a model.
+  How the constitution applies to propositions of mathematics: proofs as
+  arguments, how statuses and credence read for theorems and conjectures,
+  machine-checked proofs as evidence, formal statements in Lean 4, the
+  solver and the prize program, and what money may never touch. Does not
+  apply to claims that merely use a number or a model.
 metadata:
   minerval:
     version: 6

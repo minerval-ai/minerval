@@ -3,10 +3,8 @@ name: costing
 description: >-
   How to estimate what a piece of work will cost before anyone pays for
   it: a request's budget, a scoping quote, a research run's ceiling, or a
-  check on a budget someone else stated. A method skill: it belongs to no
-  domain and is offered to every role that files, scopes, funds, or reviews
-  requests. Use it when you put a number on work; it does not decide
-  whether the work is worth doing, which is a judgment of value.
+  check on someone else's estimate. It prices work; whether the work is
+  worth doing is a separate judgment.
 metadata:
   minerval:
     version: 2
