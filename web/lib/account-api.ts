@@ -816,6 +816,23 @@ export interface MandateTextView {
   disclosure: string | null;
 }
 
+/** A Correspondent the mandate funds (#563): a reader for an audience. */
+export interface MandateCorrespondentView {
+  id: string;
+  title: string;
+  brief: string;
+  audience: string;
+  status: "active" | "paused" | "retired";
+  heartbeat_hours: number;
+  triggers: string[];
+  min_wake_hours: number;
+  runs: number;
+  updates: number;
+  last_run_at: string | null;
+  last_note: string | null;
+  feed_path: string;
+}
+
 export interface MandateLookoutView {
   id: string;
   title: string;
@@ -868,6 +885,8 @@ export interface MandateDetailView extends MandateSummaryView {
   last_review: { at: string; note: string } | null;
   // The standing watches the mandate funds (docs/allocation.md, "Lookouts").
   lookouts?: MandateLookoutView[];
+  // The readers the mandate funds for an audience (#563); absent from an older API.
+  correspondents?: MandateCorrespondentView[];
   plan_items: Array<{
     action: "assess" | "reassess" | "deepen" | "ingest" | "formalize" | "attempt_proof";
     claim_id?: string;

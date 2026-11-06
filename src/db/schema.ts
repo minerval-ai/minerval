@@ -486,6 +486,9 @@ export const assessments = pgTable(
     uniqueIndex("idx_assessments_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
+    // The change stream reads assessments in the order they were written
+    // (services/graph-change-service.ts, #562 / #563).
+    index("idx_assessments_assessed_at").on(table.assessedAt, table.id),
   ]
 );
 
@@ -2697,6 +2700,157 @@ export const lookoutFeedItems = pgTable(
 );
 
 export type LookoutFeedItem = typeof lookoutFeedItems.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// correspondents (#563)
+//
+// A Graph Correspondent: an agent that reads the graph for an audience and
+// sends it updates about what deserves its attention (docs/allocation.md,
+// "Correspondents"). It is the Lookout's counterpart: a lookout watches the
+// world and brings material into the graph; a correspondent reads the graph
+// and reports to people. A mandate funds it one `correspondent_run` action
+// at a time, out of its escrow and its day like a lookout run, and it is
+// woken the same way: a heartbeat, a material change in its scope, a poke.
+//
+// It holds no private access. Everything it reads (the graph reads, the
+// change stream) is the same read MCP and the API serve, so anyone can run
+// a correspondent of their own outside Minerval without registering here.
+// ---------------------------------------------------------------------------
+export const correspondents = pgTable(
+  "correspondents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The funding mandate; every run is covered from its escrow.
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    // The brief in the Grantmaker's words: what it covers, what matters to
+    // its readers, how to read the graph for them, what to leave alone, how
+    // to present it. Public, as mandates are.
+    brief: text("brief").notNull(),
+    // Who the updates are for, in words: "evaluators reviewing X", "the
+    // public following Y".
+    audience: text("audience").notNull(),
+    // What the brief links to: claims (with what lies beneath them) and
+    // tags. These answer "which correspondents cover this claim?" and are
+    // the mechanical wake filter for graph_change; what deserves the
+    // audience's attention is still the run's judgment.
+    scopeClaimIds: uuid("scope_claim_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    scopeTagIds: uuid("scope_tag_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // active | paused | retired
+    status: text("status").notNull().default("active"),
+    // Heartbeat cadence in hours (a weekly digest is 168); 0 = event-only.
+    heartbeatHours: integer("heartbeat_hours").notNull().default(168),
+    // Inputs beyond the heartbeat it wakes on: ["graph_change", "manual"].
+    triggers: jsonb("triggers").notNull().default([]),
+    // The least time between two runs a change can wake, so a busy scope
+    // does not send its readers an update every few minutes. Set by the
+    // Grantmaker for the audience; it bounds human attention, which no
+    // budget prices. The heartbeat and a poke are not held by it.
+    minWakeHours: integer("min_wake_hours").notNull().default(24),
+    // Per-correspondent model override; null = config.correspondentModel.
+    model: text("model"),
+    // Where its reading of the change stream stands (a changes cursor,
+    // services/graph-change-service.ts). Changes after it are new to it.
+    changesCursor: text("changes_cursor"),
+    // Its own durable notes, read back every run.
+    workspace: text("workspace"),
+    lastNote: text("last_note"),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    runs: integer("runs").notNull().default(0),
+    updates: integer("updates").notNull().default(0),
+    // 'grantmaker:chat' | 'grantmaker:review' | 'seed'
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_correspondents_grant").on(table.grantId, table.createdAt),
+    index("idx_correspondents_due")
+      .on(table.nextDueAt)
+      .where(sql`status = 'active'`),
+    check(
+      "ck_correspondents_status",
+      sql`${table.status} IN ('active', 'paused', 'retired')`
+    ),
+    check("ck_correspondents_heartbeat", sql`${table.heartbeatHours} >= 0`),
+    check("ck_correspondents_min_wake", sql`${table.minWakeHours} >= 0`),
+  ]
+);
+
+export type Correspondent = typeof correspondents.$inferSelect;
+
+// Inputs queued for a correspondent by something other than its heartbeat:
+// a material change in its scope (one wake, never one per change: the run
+// reads the change stream from its cursor), or a poke. Unconsumed events
+// make it due.
+export const correspondentEvents = pgTable(
+  "correspondent_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    correspondentId: uuid("correspondent_id")
+      .notNull()
+      .references(() => correspondents.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_correspondent_events_pending")
+      .on(table.correspondentId, table.createdAt)
+      .where(sql`consumed_at IS NULL`),
+  ]
+);
+
+// One update a correspondent published: structured items for agents (a
+// node, the reason it deserves attention, the changes behind it), a prose
+// rendering for people, and what it did not cover: the changes in its
+// window it did not mention (computed by the mechanism, never the agent)
+// and what in scope it has not looked at (the agent's own account).
+// Served at /correspondents/:id/updates and as an Atom feed.
+export const correspondentUpdates = pgTable(
+  "correspondent_updates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    correspondentId: uuid("correspondent_id")
+      .notNull()
+      .references(() => correspondents.id, { onDelete: "cascade" }),
+    // The mandate that paid for the run, so every update can say so.
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    // The prose rendering, in Markdown.
+    body: text("body").notNull(),
+    // [{ claim_id, reason, change_ids: [] }]
+    items: jsonb("items").notNull().default([]),
+    // { changes: [{ change_id, claim_id, kind }], changes_total, unexamined }
+    notCovered: jsonb("not_covered").notNull().default({}),
+    // The window of the change stream this update read: from the cursor it
+    // started at to the one it ended at.
+    changesFrom: text("changes_from"),
+    changesTo: text("changes_to"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_correspondent_updates_feed").on(table.correspondentId, table.createdAt),
+  ]
+);
+
+export type CorrespondentUpdate = typeof correspondentUpdates.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // consistency_sweeps

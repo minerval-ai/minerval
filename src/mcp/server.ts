@@ -46,6 +46,7 @@ import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext, untraced } from "../llm/usage-context.js";
 import { listTags, searchTags } from "../services/tag-service.js";
 import { graphReadDefinitions, runGraphRead } from "../services/graph-read-service.js";
+import { graphChangeDefinition, runGraphChanges } from "../services/graph-change-service.js";
 import {
   getClaimById,
   listClaims,
@@ -378,6 +379,27 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       async (args: Record<string, unknown>) => {
         const result = await runGraphRead(def.name, args);
         if (!result) return errorResult("NOT_FOUND", `No read named ${def.name}`);
+        return result.ok ? jsonResult(result.payload) : errorResult(result.code, result.message);
+      }
+    );
+  }
+
+  // The change stream (#562, #563): the same definition and function the
+  // graph's own Correspondents read, so one built outside Minerval sees
+  // exactly what ours do.
+  {
+    const def = graphChangeDefinition("caller");
+    server.registerTool(
+      def.name,
+      {
+        title: def.title,
+        description: def.description,
+        inputSchema: z.fromJSONSchema(
+          def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
+        ) as z.ZodObject,
+      },
+      async (args: Record<string, unknown>) => {
+        const result = await runGraphChanges(args);
         return result.ok ? jsonResult(result.payload) : errorResult(result.code, result.message);
       }
     );

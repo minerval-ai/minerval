@@ -8,6 +8,7 @@ import {
   accountApiConfigured,
   fetchMandateView,
   type MandateDetailView,
+  type MandateCorrespondentView,
   type MandateLookoutView,
   type MandatePipelineRow,
   type MandatePrizesView,
@@ -180,6 +181,43 @@ function LookoutsSection({ lookouts }: { lookouts: MandateLookoutView[] }) {
             {l.last_note && (
               <blockquote className="mandate-review-note" style={{ marginTop: ".4rem" }}>
                 {l.last_note}
+              </blockquote>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function CorrespondentsSection({ correspondents }: { correspondents: MandateCorrespondentView[] }) {
+  return (
+    <section>
+      <h2>Correspondents</h2>
+      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
+        Readers this mandate funds for an audience: an agent with a brief that
+        reads the graph and publishes updates on what changed that its readers
+        should know, each with what it did not cover. It reports the graph&rsquo;s
+        judgment, writes no assessment and moves no money. Subscribe to its feed.
+      </p>
+      <ul className="mandate-items">
+        {correspondents.map((c) => (
+          <li key={c.id} data-state={c.status === "active" ? "current" : "done"}>
+            <span className="tag">{c.status}</span>{" "}
+            <strong>{c.title}</strong>
+            <span className="mandate-state sc">
+              {" "}
+              for {c.audience}
+              {c.heartbeat_hours > 0 ? ` · every ${c.heartbeat_hours}h` : " · event-driven"}
+              {c.triggers.includes("graph_change") ? ` · on changes in scope (at most every ${c.min_wake_hours}h)` : ""}
+              {` · ${c.updates} update${c.updates === 1 ? "" : "s"}`}
+              {" · "}
+              <a href={`/correspondents/${c.id}/feed`}>feed</a>
+            </span>
+            <p className="mandate-rationale" style={{ margin: ".35rem 0 0" }}>{c.brief}</p>
+            {c.last_note && (
+              <blockquote className="mandate-review-note" style={{ marginTop: ".4rem" }}>
+                {c.last_note}
               </blockquote>
             )}
           </li>
@@ -544,6 +582,10 @@ export default async function MandatePage({
 
       {(mandate.lookouts?.length ?? 0) > 0 && (
         <LookoutsSection lookouts={mandate.lookouts ?? []} />
+      )}
+
+      {(mandate.correspondents?.length ?? 0) > 0 && (
+        <CorrespondentsSection correspondents={mandate.correspondents ?? []} />
       )}
 
       {open && <AllocationSection mandateId={mandate.id} />}

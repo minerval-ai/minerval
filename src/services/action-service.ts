@@ -70,6 +70,12 @@ export type ActionKind =
   // Group `lookout:<lookout_id>`; self-funded from the mandate's escrow
   // like a review pass, out of the mandate's day the same way.
   | "lookout_run"
+  // One run of a mandate's Correspondent (#563; docs/allocation.md,
+  // "Correspondents"): reads what changed in its scope and the graph, and
+  // writes one update for its audience. Woken like a lookout (heartbeat, a
+  // material change in scope, a poke). Group `correspondent:<id>`;
+  // self-funded from the mandate's escrow out of its day like a lookout run.
+  | "correspondent_run"
   // One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
   // sweeps"): a cheap agent reading one partition of the graph (a tag, or
   // the residual bucket) for assessments that do not cohere, raising
@@ -107,6 +113,7 @@ export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
 export const INGEST_GROUP = (url: string, focus?: string | null) => ingestGroup(url, focus);
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
+export const CORRESPONDENT_GROUP = (correspondentId: string) => `correspondent:${correspondentId}`;
 export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
 export const CURATE_GROUP = (claimId: string) => `curate:${claimId}`;
 /** The Curator's row for one request it keeps (#722). */
@@ -560,6 +567,38 @@ export async function reconcileActions(): Promise<{
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
       [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost]
+    );
+  }
+
+  // Correspondent runs (#563): the same rule as a lookout's. Due when its
+  // heartbeat has passed, when someone poked it, or when a change in its
+  // scope is waiting and its min_wake_hours have passed since the last run
+  // (that spacing is its audience's, set for their attention; a heartbeat
+  // and a poke are not held by it). What runs is the mandate's money.
+  const correspondentCost = capMicroUsd("correspondent_run");
+  const dueCorrespondents = await rawQuery<{ id: string; title: string }>(
+    `SELECT c.id, c.title
+       FROM correspondents c
+       JOIN grants g ON g.id = c.grant_id
+      WHERE c.status = 'active' AND g.status = 'active'
+        AND ((c.heartbeat_hours > 0 AND c.next_due_at <= now())
+             OR EXISTS (SELECT 1 FROM correspondent_events e
+                         WHERE e.correspondent_id = c.id AND e.consumed_at IS NULL
+                           AND (e.kind <> 'graph_change'
+                                OR c.last_run_at IS NULL
+                                OR c.last_run_at + make_interval(hours => c.min_wake_hours) <= now())))
+      LIMIT 200`
+  );
+  for (const c of dueCorrespondents) {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+       VALUES ('correspondent_run', $1, 'standard', $2, $3, $4)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost]
     );
   }
 

@@ -149,6 +149,10 @@ const configSchema = z.object({
   // brief, the graph, and the open web, and raising candidates. Set near
   // the average cost of a run that finds nothing, which is most of them.
   capLookoutRunOwls: z.coerce.number().default(0.05),
+  // One Correspondent run (kind 'correspondent_run', #563): reading the
+  // change stream and the graph in its scope and writing one update for its
+  // audience, on the standard tier. The run is shown this as its budget.
+  capCorrespondentRunOwls: z.coerce.number().default(0.25),
   // The ceiling of one consistency sweep (kind 'consistency_sweep', #330,
   // #756), a ceiling only: a partition's row is priced by its size, at the
   // variant's expected cost per assessed node (observed once its sweeps have
@@ -506,6 +510,13 @@ const configSchema = z.object({
   // runs, because one run reads everything waiting. "false" is the
   // deployment's off-switch: no lookout runs get funded.
   lookoutRunsEnabled: z
+    .string()
+    .transform((s) => s !== "false")
+    .prefault("true"),
+  // Correspondent runs (#563), funded the same way as lookout runs: out of
+  // the mandate's day, with no count of runs. "false" is the deployment's
+  // off-switch.
+  correspondentRunsEnabled: z
     .string()
     .transform((s) => s !== "false")
     .prefault("true"),
@@ -925,6 +936,11 @@ const configSchema = z.object({
   // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
+  // The Correspondent (#563): reads the graph for an audience and writes it
+  // updates people read, so it is chosen for judgment and prose, on the
+  // standard tier. A Grantmaker can pin another (correspondents.model).
+  // Pinned identically in infra/lib/api-stack.ts.
+  correspondentModel: modelId(MODELS.sonnet),
   // The Consistency Checker (#330; docs/allocation.md, "Consistency
   // sweeps"): reads one partition's assessments against each other and
   // flags where they do not fit together. What it writes is a flag the
@@ -1088,6 +1104,7 @@ export function loadConfig(): Config {
     capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
+    capCorrespondentRunOwls: process.env.CAP_CORRESPONDENT_RUN_OWLS,
     capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
     capConsistencySweepStrongOwls: process.env.CAP_CONSISTENCY_SWEEP_STRONG_OWLS,
     paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
@@ -1145,6 +1162,7 @@ export function loadConfig(): Config {
     mandateReviewMoveFractionPerDay:
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
     lookoutRunsEnabled: process.env.LOOKOUT_RUNS_ENABLED,
+    correspondentRunsEnabled: process.env.CORRESPONDENT_RUNS_ENABLED,
     lookoutRetractionPollHours: process.env.LOOKOUT_RETRACTION_POLL_HOURS,
     lookoutFeedPollMaxFeeds: process.env.LOOKOUT_FEED_POLL_MAX_FEEDS,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
@@ -1228,6 +1246,7 @@ export function loadConfig(): Config {
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
+    correspondentModel: process.env.CORRESPONDENT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
     consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,
     consistencyStrongModel: process.env.CONSISTENCY_STRONG_MODEL,

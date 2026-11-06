@@ -286,8 +286,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17286,
-    "fullChars": 102797,
+    "roleChars": 17826,
+    "fullChars": 103337,
     "skills": [
       {
         "name": "costing",
@@ -328,6 +328,44 @@
     "hasConstitution": true,
     "roleChars": 10826,
     "fullChars": 96337,
+    "skills": [
+      {
+        "name": "costing",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      }
+    ]
+  },
+  {
+    "key": "correspondent",
+    "name": "Correspondent",
+    "stage": 9,
+    "group": "governance",
+    "tagline": "The Lookout's counterpart: it reads the graph for one audience and tells them what deserves their attention. Each run reads the material changes in its scope since its last update and publishes at most one update, as a feed and as structured items agents can read, with a section the mechanism writes listing every change it did not mention. It reports the graph's judgment and writes none of its own, and it has no read an outside client lacks.",
+    "invokedWhen": "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
+    "model": "Claude Sonnet 5.5",
+    "hasConstitution": true,
+    "roleChars": 10033,
+    "fullChars": 95544,
     "skills": [
       {
         "name": "costing",

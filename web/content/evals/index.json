@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-11-03T20:30:05.684Z",
-  "gitCommit": "1e2af3f7",
+  "syncedAt": "2026-11-05T23:34:54.178Z",
+  "gitCommit": "045c19c",
   "pins": [
     {
       "agent": "steward",
@@ -63,10 +63,22 @@
       "label": "GPT-6 Luna"
     },
     {
+      "agent": "correspondent",
+      "envVar": "CORRESPONDENT_MODEL",
+      "model": "claude-sonnet-5-5",
+      "label": "Claude Sonnet 5.5"
+    },
+    {
       "agent": "consistency",
       "envVar": "CONSISTENCY_MODEL",
       "model": "openai/gpt-6-luna",
       "label": "GPT-6 Luna"
+    },
+    {
+      "agent": "consistency strong",
+      "envVar": "CONSISTENCY_STRONG_MODEL",
+      "model": "claude-sonnet-5-5",
+      "label": "Claude Sonnet 5.5"
     }
   ],
   "judge": {

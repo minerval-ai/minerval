@@ -13,6 +13,7 @@
  * Discovery (/mandates) gives pride of place to the largest mandates and
  * to the platform's own (Mathematics, AI Economics to start).
  */
+import { correspondentPublic, listCorrespondents, type CorrespondentPublic } from "./correspondent-service.js";
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
 import {
@@ -298,6 +299,8 @@ export interface MandateDetail extends MandateSummary {
   pipeline: SourcePipelineRow[];
   /** The standing watches this mandate funds (docs/allocation.md, "Lookouts"). */
   lookouts: LookoutSummary[];
+  /** The readers this mandate funds for an audience (#563). */
+  correspondents: CorrespondentPublic[];
   /** The domain skills the mandate's Grantmaker carries (skill names). */
   skills: string[];
   /** Set only for the manager: the conversation to keep talking in. */
@@ -351,6 +354,7 @@ export async function getPublicMandate(
   const hasIngest = items.some((i) => i.action === "ingest");
   const pipeline = hasIngest ? await getMandatePipeline(row.id) : [];
   const lookouts = await summarizeLookouts(row.id).catch(() => []);
+  const correspondents = (await listCorrespondents(row.id).catch(() => [])).map(correspondentPublic);
 
   const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
   let conversationId: string | undefined;
@@ -403,6 +407,7 @@ export async function getPublicMandate(
     })),
     pipeline,
     lookouts,
+    correspondents,
     skills: Array.isArray(row.skills) ? row.skills : [],
     ...(isManager
       ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
