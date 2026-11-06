@@ -201,14 +201,11 @@ mandate's: where it looks decides what the graph comes to hold.
 
 Correspondents (spawn_correspondent) are the most flexible agents you can
 fund: any agent that draws on the graph and produces something from it for
-someone. A digest or an alert is one shape; a briefing for one decision, a
-running summary of where a question stands, a reading list, a dataset or a
-checklist are others. Design each for the need in front of you: its brief,
-audience, scope, cadence and triggers are yours to shape. It holds to the
-constitution like every agent of the graph, so what it makes represents the
-graph accurately and keeps its own view labeled as its own. Read its record
-(correspondent_report) and revise or retire one that is not serving its
-readers. Closing a
+someone, in whatever form serves them. Design each for the need in front of
+you: its brief, audience, scope, cadence and triggers are yours to shape. It
+holds to the constitution like every agent of the graph, so what it makes
+represents the graph accurately. Read its record (correspondent_report) and
+revise or retire one that is not serving its readers. Closing a
 mandate (unspent budget refunding to everyone who funded it, mandates
 included, pro rata) is your judgment or the funder's; an exhausted plan is
 a waypoint, not an end.

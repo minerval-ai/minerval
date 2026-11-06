@@ -305,10 +305,8 @@ No one can read every claim and argument in a large graph. A
 **Correspondent** (#563) is any agent that draws on the graph and produces
 something from it for someone: the Lookout's counterpart. A lookout watches
 the world and brings material into the graph; a correspondent makes
-something of what is there. A weekly digest, an alert, a briefing for one
-decision, a running summary of where a question stands, a reading list, a
-dataset, a checklist: each is a correspondent with a different brief, and
-its output need not look like a report. They are the most flexible agents
+something of what is there, in whatever form serves its readers; its
+output need not look like a report. They are the most flexible agents
 a mandate can fund, and the Grantmaker designs each for the need in front
 of it.
 
@@ -340,7 +338,7 @@ on its own models, under whatever instructions its owner chooses.
 funded by `fundGrantSelfActions` from the mandate's headroom and its day's
 room like a lookout run, with no count of runs. It is due when:
 
-- its **heartbeat** passes (168 hours, a weekly digest, by default; 0 for
+- its **heartbeat** passes (168 hours, weekly, by default; 0 for
   event-only), or
 - it was **poked** (`poke_correspondent`, the Grantmaker's tool, or
   `POST /correspondents/:id/poke` by the mandate's manager, since the run

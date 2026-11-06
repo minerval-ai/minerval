@@ -60,7 +60,7 @@ const SHARED_PROPERTIES = {
   heartbeat_hours: {
     type: "number",
     description:
-      `How often it writes on its own: 168 for a weekly digest (the default), 24 ` +
+      `How often it runs on its own: 168 for weekly (the default), 24 ` +
       `for a daily one, 0 for only on triggers; at most ${B.heartbeatHours.max}.`,
   },
   triggers: {
@@ -89,9 +89,8 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
       name: "spawn_correspondent",
       description:
         "Post a CORRESPONDENT: an agent that draws on the graph and produces something " +
-        "from it for someone, in whatever form serves them: a digest, an alert, a " +
-        "briefing for a decision, a running summary of a question, a reading list, a " +
-        "dataset, a checklist. It is the Lookout's counterpart: a lookout brings " +
+        "from it for someone, in whatever form serves them. It is the Lookout's " +
+        "counterpart: a lookout brings " +
         "material into the graph; a correspondent makes something of what is there. " +
         "Each run is told what woke it and the material changes in its scope since its " +
         "last output, reads whatever else the work needs, and publishes at most one " +

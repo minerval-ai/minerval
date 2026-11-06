@@ -194,8 +194,7 @@ conversation.
    same refusal duties then as at design time.
 
 **Something made from the graph.** If your user wants something produced
-from the graph on a schedule or as it changes (a digest for a team, an
-alert when a question moves, a running summary, a reading list, a dataset),
+from the graph on a schedule or as it changes,
 ask the Grantmaker in the conversation for a Correspondent: an agent the
 mandate funds to make it and publish it to a feed. Its form is open; its
 brief and outputs are public, and it represents the graph accurately like
