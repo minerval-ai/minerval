@@ -7,6 +7,7 @@ import {
 } from "~lib/anchor";
 import { normalizePageUrl, pageUrlHash } from "~lib/page-url";
 import { getSettings, onSettingsChanged, resolveSitePolicy } from "~lib/settings";
+import { submissionLabel, submissionSettled } from "~lib/submission";
 import {
   LEVEL_VERDICTS,
   type AnalyzeProgress,
@@ -19,6 +20,7 @@ import {
   type Result,
   type Settings,
   type Submission,
+  type SubmissionProgress,
   type Verdict,
 } from "~lib/types";
 
@@ -157,6 +159,7 @@ const STYLE = `
 .ep-badge.ep-s-doubtful { background: #f3e6e0; color: #8a4a3a; }
 .ep-badge.ep-s-contradicted { background: #f6e0de; color: #b3261e; }
 .ep-badge.ep-s-unknown { background: #eee; color: #777; }
+.ep-badge.ep-s-unassessed { background: #eee; color: #777; }
 .ep-panel .ep-add { margin-top: 18px; padding: 12px; background: #f6f3ea; border: 1px solid #e2ddcd; border-radius: 3px; }
 .ep-panel .ep-add p { margin: 0 0 8px; }
 .ep-panel textarea { width: 100%; box-sizing: border-box; min-height: 84px; margin: 4px 0 8px;
@@ -249,7 +252,7 @@ function showCard(box: HTMLElement, a: PageAnnotation): void {
       ${a.proposed_canonical_form ? `<div class="ep-canonical">${esc(a.proposed_canonical_form)}</div>` : ""}
       <div class="ep-why">${esc(a.why)} Minerval hasn't checked it.</div>
       <div class="ep-hint">${
-        submitted ? "Proposed for the graph · pending review" : "Click to add it to the graph"
+        submitted ? esc(submissionLabel(submitted)) : "Click to add it to the graph"
       }</div>`;
   }
   const rect = box.getBoundingClientRect();
@@ -316,6 +319,15 @@ async function openPanel(a: PageAnnotation): Promise<void> {
 
   if (!a.claim) {
     renderAddSection(a);
+    // A proposal still under review may have been decided since: ask, and
+    // show the claim it became if this panel is still the one open.
+    const sub = state.claimSubmissions[a.verbatim_text];
+    if (sub && !submissionSettled(sub)) {
+      const shown = panel;
+      void refreshSubmissions().then((changed) => {
+        if (changed && panel === shown) void openPanel(a);
+      });
+    }
     return;
   }
 
@@ -384,13 +396,22 @@ function renderAddSection(a: PageAnnotation, error?: string): void {
   const submitted = state.claimSubmissions[a.verbatim_text];
   if (submitted) {
     const link = contributionUrl(submitted);
+    const declined = submitted.review_status === "rejected";
     box.innerHTML = `
-      <p class="ep-done"><b>Proposed for the graph.</b></p>
-      <p class="ep-muted">A reviewer checks it is a well-formed claim. If accepted it is
-        matched against the graph (landing on an existing claim if one turns out to
-        hold it) and assessed.${
-          link ? ` <a href="${esc(link)}" target="_blank" rel="noopener">Track it →</a>` : ""
-        }</p>`;
+      <p class="ep-done"><b>${esc(submissionLabel(submitted))}.</b></p>
+      <p class="ep-muted">${
+        declined
+          ? "The reviewer gave its reasons on the contribution's page."
+          : "A reviewer checks it is a well-formed claim. If accepted it is matched " +
+            "against the graph (landing on an existing claim if one turns out to hold " +
+            "it) and assessed, and this page shows it as soon as it is in."
+      }${
+        link
+          ? ` <a href="${esc(link)}" target="_blank" rel="noopener">${
+              declined ? "See why →" : "Track it →"
+            }</a>`
+          : ""
+      }</p>`;
     return;
   }
 
@@ -659,6 +680,58 @@ async function proposeFromPage(
   return result;
 }
 
+let refreshing: Promise<boolean> | null = null;
+
+/**
+ * Ask after every proposal from this page that is still in flight, and fold
+ * in what changed: a decided review, and for an accepted one the claim it
+ * became, which then shows on the page as a claim the graph holds. Resolves
+ * true if anything changed. Free reads, one per open proposal.
+ */
+function refreshSubmissions(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    let changed = false;
+    for (const [verbatimText, sub] of Object.entries(state.claimSubmissions)) {
+      if (!sub.contribution_id || submissionSettled(sub)) continue;
+      const r = await sendToBackground<SubmissionProgress>({
+        type: "submission-progress",
+        contributionId: sub.contribution_id,
+      });
+      // The page may have moved on (SPA navigation) while we asked.
+      if (!r.ok || state.claimSubmissions[verbatimText] !== sub) continue;
+      if (
+        r.data.review_status === sub.review_status &&
+        JSON.stringify(r.data.claim) === JSON.stringify(sub.claim ?? null)
+      ) {
+        continue;
+      }
+      state.claimSubmissions[verbatimText] = { ...sub, ...r.data };
+      const a = state.analysis?.annotations.find((x) => x.verbatim_text === verbatimText);
+      if (a && r.data.claim) a.claim = r.data.claim;
+      changed = true;
+    }
+    if (changed) anchorAnnotations();
+    return changed;
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+// While a proposal from this page is open, check on it now and then so the
+// page catches up without the reader opening each one. Only while the tab is
+// visible; the popup also asks whenever it is opened.
+const SUBMISSION_POLL_MS = 60_000;
+
+function watchSubmissions(): void {
+  window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    if (!Object.values(state.claimSubmissions).some((s) => !submissionSettled(s))) return;
+    void refreshSubmissions();
+  }, SUBMISSION_POLL_MS);
+}
+
 /** Scroll a claim into view and open its panel (from the popup's list). */
 function revealClaim(verbatimText: string): boolean {
   const hit = state.anchored.find((x) => x.annotation.verbatim_text === verbatimText);
@@ -777,6 +850,10 @@ export function startOverlay(): void {
         });
         return true;
       }
+      if (message.type === "refresh-submissions") {
+        void refreshSubmissions().then((changed) => sendResponse({ ok: true, data: changed }));
+        return true;
+      }
       if (message.type === "set-share") {
         state.shareOptOut = !message.share;
         sendResponse({ ok: true, data: willShare() });
@@ -807,6 +884,7 @@ export function startOverlay(): void {
       if (state.analysis) anchorAnnotations();
     });
     watchPage();
+    watchSubmissions();
     window.setTimeout(() => void showPage(), 1500);
   })();
 }

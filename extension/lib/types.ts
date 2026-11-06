@@ -138,6 +138,24 @@ export const DEFAULT_SETTINGS: Settings = {
 export interface Submission {
   contribution_id: string | null;
   submitted_at: string;
+  /**
+   * Where the review stands, as GET /contributions/:id last reported it:
+   * pending, checking, escalated or human_review while it is open; accepted
+   * or rejected once decided. Absent until first checked.
+   */
+  review_status?: string;
+  /**
+   * The claim an accepted proposal became or landed on, with its current
+   * status. Null while the proposal is open, declined, or accepted but not
+   * yet admitted.
+   */
+  claim?: AnnotationClaim | null;
+}
+
+/** What GET /contributions/:id says about a proposal now. */
+export interface SubmissionProgress {
+  review_status: string;
+  claim: AnnotationClaim | null;
 }
 
 /** The parts of GET /usage the extension shows before a paid submission. */
@@ -195,6 +213,7 @@ export type BackgroundRequest =
   | { type: "claim-detail"; claimId: string }
   | { type: "badge"; count: number }
   | { type: "propose-claim"; claim: string; argument: string }
+  | { type: "submission-progress"; contributionId: string }
   | { type: "entitlement" };
 
 export type ContentRequest =
@@ -202,6 +221,7 @@ export type ContentRequest =
   | { type: "run-analysis" }
   | { type: "propose-claim"; verbatimText: string; argument?: string }
   | { type: "reveal-claim"; verbatimText: string }
+  | { type: "refresh-submissions" }
   | { type: "set-share"; share: boolean };
 
 export interface PageState {
