@@ -177,6 +177,8 @@ describe("runCorrespondent", () => {
         "get_dependents",
         "list_graph_changes",
         "publish_update",
+        "update_plan",
+        "list_my_updates",
         "update_workspace",
       ].sort()
     );
