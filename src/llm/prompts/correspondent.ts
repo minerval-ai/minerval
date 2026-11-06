@@ -28,19 +28,7 @@ export function getCorrespondentSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
-/**
- * The constitution-plus-role block, as for every role the graph runs, and
- * then the correspondent's own practice when it has written one: its own
- * block, so the constitution and role stay one cached prefix.
- */
-export function getCorrespondentSystemPromptBlocks(practice?: string | null): string[] {
-  const blocks = buildAdminPromptBlocks(ROLE_PROMPT);
-  const text = practice?.trim();
-  if (!text) return blocks;
-  return [
-    ...blocks,
-    `# Your practice\n\nStanding instructions you wrote for yourself on earlier runs, from what you ` +
-      `learned about serving your readers. The constitution, your role and your brief come before them; ` +
-      `revise them with revise_practice.\n\n${text}`,
-  ];
+/** The constitution-plus-role block, as for every role the graph runs. */
+export function getCorrespondentSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

@@ -43,7 +43,6 @@ import {
   updateCorrespondentWorkspace,
   listCorrespondentUpdates,
   listPlanItems,
-  reviseCorrespondentPractice,
   updateCorrespondentPlan,
   validateUpdateItems,
   CORRESPONDENT_BOUNDS,
@@ -126,9 +125,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   }
 
   const skillLoader = createSkillLoadTools("correspondent", { names: c.grant_skills ?? [] });
-  // Its practice joins the system prompt as written at the start of the
-  // run; a revision this run takes effect on the next.
-  const system = getCorrespondentSystemPromptBlocks(c.practice);
+  const system = getCorrespondentSystemPromptBlocks();
   const model = input.model ?? c.model ?? config.correspondentModel;
   const reportTools = createReportTools({ model });
 
@@ -221,26 +218,6 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       },
     },
     {
-      name: "revise_practice",
-      description:
-        "Rewrite your practice: the standing instructions you keep for yourself about serving " +
-        "these readers, placed in your system prompt on every run after your brief, which still " +
-        "governs. Revise it when a run teaches you something that should change how you work " +
-        "(what these readers act on, which kinds of change turn out to matter in this scope, how " +
-        "to present them), not to record what happened, which belongs in your workspace. Replaces " +
-        `the whole text, up to ${CORRESPONDENT_BOUNDS.practiceChars.toLocaleString("en-US")} characters; "" clears it. ` +
-        "Takes effect on your next run. Every revision is kept with its reason, is public as your " +
-        "brief is, and your Grantmaker sees it.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          text: { type: "string" },
-          reason: { type: "string", description: "What you learned that warrants the revision." },
-        },
-        required: ["text", "reason"],
-      },
-    },
-    {
       name: "list_my_updates",
       description:
         "Your own published updates, newest first, in full: items, prose, and what each did " +
@@ -258,8 +235,9 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       name: "update_workspace",
       description:
         "Rewrite your workspace: your memory between runs, read back in full at the start " +
-        "of every run. Keep what you have reported and when, what you are following, what " +
-        "your readers asked for, what to look at first next time. Replaces the whole " +
+        "of every run. Keep your notes here (what you have done and when, what you are " +
+        "following, what your readers asked for) and any standing instructions you want " +
+        "your future runs to follow. Replaces the whole " +
         `document, up to ${CORRESPONDENT_BOUNDS.workspaceChars.toLocaleString("en-US")} characters.`,
       input_schema: {
         type: "object" as const,
@@ -449,15 +427,6 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
             update: toolInput.update,
           });
           return JSON.stringify(res);
-        }
-        if (name === "revise_practice") {
-          const res = await reviseCorrespondentPractice({
-            correspondentId: c.id,
-            text: String(toolInput.text ?? ""),
-            reason: String(toolInput.reason ?? ""),
-            revisedBy: "correspondent",
-          });
-          return JSON.stringify(res.ok ? { ...res, note: "Saved; it takes effect on your next run." } : res);
         }
         if (name === "list_my_updates") {
           const page = await listCorrespondentUpdates(c.id, {

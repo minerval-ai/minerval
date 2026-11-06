@@ -157,16 +157,3 @@ describe("the Correspondent's prompt", () => {
     expect(prompt).toContain("# Your Role: Correspondent");
   });
 });
-
-describe("the Correspondent's practice", () => {
-  it("joins its system prompt as its own block after the constitution and role, and only when written", async () => {
-    const { getCorrespondentSystemPromptBlocks } = await import("../../../src/llm/prompts/correspondent.js");
-    const without = getCorrespondentSystemPromptBlocks(null);
-    const withPractice = getCorrespondentSystemPromptBlocks("Lead with replication news; these readers act on it.");
-    expect(withPractice.slice(0, without.length)).toEqual(without);
-    expect(withPractice).toHaveLength(without.length + 1);
-    expect(withPractice.at(-1)).toContain("# Your practice");
-    expect(withPractice.at(-1)).toContain("Lead with replication news");
-    expect(getCorrespondentSystemPromptBlocks("   ")).toEqual(without);
-  });
-});

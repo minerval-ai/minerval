@@ -17,9 +17,7 @@ import {
   listCorrespondentUpdates,
   listCorrespondents,
   listPlanItems,
-  listPracticeVersions,
   queueCorrespondentEvent,
-  reviseCorrespondentPractice,
   updateCorrespondent,
   CORRESPONDENT_BOUNDS,
   CORRESPONDENT_TRIGGER_KINDS,
@@ -96,8 +94,8 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
         "last output, reads whatever else the work needs, and publishes at most one " +
         "output (title, Markdown body, and structured items where they fit) to its " +
         "feed, with the changes it did not mention listed. It runs under the " +
-        "constitution, writes no assessment and moves no money, and keeps a plan and a " +
-        "practice of its own that improve with use. Its runs are paid from your escrow " +
+        "constitution, writes no assessment and moves no money, and keeps its own plan " +
+        "and workspace across runs. Its runs are paid from your escrow " +
         "out of the mandate's day. The brief is yours to design for the need: what it " +
         "makes, for whom, from what, when, and how. Its brief and outputs are public, " +
         "and each output names this mandate as its funder.",
@@ -122,8 +120,7 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
       name: "correspondent_report",
       description:
         "One correspondent's recent updates, with how many changes each left " +
-        "uncovered; its practice (the standing instructions it has written for itself) " +
-        "and how it got there; its plan; and its workspace. Read it before you tighten " +
+        "uncovered, its plan, and its workspace. Read it before you tighten " +
         "its brief or retire it.",
       input_schema: {
         type: "object" as const,
@@ -138,10 +135,7 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
       name: "update_correspondent",
       description:
         "Amend a correspondent: its brief, audience, scope, cadence, triggers, model, " +
-        "or status (active, paused, retired; retiring is final). Only the fields you give change. " +
-        "`practice` replaces the standing instructions it wrote for itself (\"\" clears them), " +
-        "with `practice_reason` saying why; do this only when its practice works against its " +
-        "brief or the constitution, since its practice is how it learns.",
+        "or status (active, paused, retired; retiring is final). Only the fields you give change.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -149,8 +143,6 @@ export function getCorrespondentManagementToolDefinitions(): Tool[] {
           title: { type: "string" },
           brief: { type: "string" },
           status: { type: "string", enum: ["active", "paused", "retired"] },
-          practice: { type: "string" },
-          practice_reason: { type: "string" },
           ...SHARED_PROPERTIES,
         },
         required: ["correspondent_id"],
@@ -238,16 +230,9 @@ export async function executeCorrespondentManagementTool(
     const { updates, total } = await listCorrespondentUpdates(id, {
       limit: Math.min(50, Math.max(1, Number(toolInput.limit ?? 10) || 10)),
     });
-    const [plan, practiceHistory] = await Promise.all([listPlanItems(id, { limit: 50 }), listPracticeVersions(id, 10)]);
+    const plan = await listPlanItems(id, { limit: 50 });
     return JSON.stringify({
       correspondent: { id: current.id, title: current.title, status: current.status, workspace: current.workspace, last_note: current.last_note },
-      practice: current.practice,
-      practice_history: practiceHistory.map((v) => ({
-        at: new Date(v.created_at).toISOString(),
-        by: v.revised_by,
-        reason: v.reason,
-        chars: v.text.length,
-      })),
       plan: plan.map((p) => ({ id: p.id, status: p.status, text: p.text, note: p.note })),
       updates_total: total,
       rows: updates.map((u) => ({
@@ -261,15 +246,6 @@ export async function executeCorrespondentManagementTool(
     });
   }
   if (name === "update_correspondent") {
-    if (toolInput.practice !== undefined) {
-      const revised = await reviseCorrespondentPractice({
-        correspondentId: id,
-        text: String(toolInput.practice),
-        reason: String(toolInput.practice_reason ?? ""),
-        revisedBy: opts.createdBy,
-      });
-      if (!revised.ok) return JSON.stringify({ success: false, code: "PRACTICE", problem: revised.problem });
-    }
     const res = await updateCorrespondent({
       grantId,
       correspondentId: id,

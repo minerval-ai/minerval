@@ -1,5 +1,5 @@
 {
-  "id": "be727f2c-a028-4b27-baf8-ae6143b3714f",
+  "id": "00c7e23f-0abb-444c-a76a-eb465d1a2a98",
   "prevId": "8d7fc87a-248c-4d1e-8cf5-6dba22ec8dee",
   "version": "7",
   "dialect": "postgresql",
@@ -6873,93 +6873,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.correspondent_practice_versions": {
-      "name": "correspondent_practice_versions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "correspondent_id": {
-          "name": "correspondent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revised_by": {
-          "name": "revised_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_correspondent_practice_versions": {
-          "name": "idx_correspondent_practice_versions",
-          "columns": [
-            {
-              "expression": "correspondent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "correspondent_practice_versions_correspondent_id_correspondents_id_fk": {
-          "name": "correspondent_practice_versions_correspondent_id_correspondents_id_fk",
-          "tableFrom": "correspondent_practice_versions",
-          "tableTo": "correspondents",
-          "columnsFrom": [
-            "correspondent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.correspondent_updates": {
       "name": "correspondent_updates",
       "schema": "",
@@ -7178,18 +7091,6 @@
         "workspace": {
           "name": "workspace",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "practice": {
-          "name": "practice",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "practice_revised_at": {
-          "name": "practice_revised_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

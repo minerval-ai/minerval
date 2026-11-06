@@ -68,12 +68,6 @@ export const CORRESPONDENT_BOUNDS = {
   windowChanges: 500,
   /** Unmentioned changes listed by id on an update; past this only the count. */
   notCoveredListed: 200,
-  /**
-   * Its practice sits in its system prompt on every run, so it is kept to
-   * what a run can afford to read every time.
-   */
-  practiceChars: 8_000,
-  practiceReasonChars: 1_000,
   /** One plan item: a sentence or two, not a document. */
   planItemChars: 500,
 } as const;
@@ -93,8 +87,6 @@ export interface CorrespondentRow {
   model: string | null;
   changes_cursor: string | null;
   workspace: string | null;
-  practice: string | null;
-  practice_revised_at: Date | null;
   last_note: string | null;
   last_run_at: Date | null;
   next_due_at: Date;
@@ -108,7 +100,7 @@ export interface CorrespondentRow {
 const SELECT = `
   SELECT id, grant_id, title, brief, audience, scope_claim_ids, scope_tag_ids,
          status, heartbeat_hours, triggers, min_wake_hours, model, changes_cursor,
-         workspace, practice, practice_revised_at, last_note, last_run_at, next_due_at, runs, updates,
+         workspace, last_note, last_run_at, next_due_at, runs, updates,
          created_by, created_at, updated_at
     FROM correspondents`;
 
@@ -610,57 +602,6 @@ export async function recordCorrespondentRun(input: {
   );
 }
 
-/**
- * Replace a correspondent's practice: the standing instructions it keeps
- * for itself. The revision and its reason are recorded whoever made it; ""
- * clears it. It takes effect on the next run, whose system prompt carries it.
- */
-export async function reviseCorrespondentPractice(input: {
-  correspondentId: string;
-  text: string;
-  reason: string;
-  revisedBy: string;
-}): Promise<{ ok: true; chars: number } | { ok: false; problem: string }> {
-  const B = CORRESPONDENT_BOUNDS;
-  const text = String(input.text ?? "").trim();
-  if (text.length > B.practiceChars) {
-    return {
-      ok: false,
-      problem:
-        `Your practice is ${text.length.toLocaleString("en-US")} characters; it is read on every run, so it ` +
-        `is kept under ${B.practiceChars.toLocaleString("en-US")}. Keep what changes how you work; move the rest to your workspace.`,
-    };
-  }
-  const reason = String(input.reason ?? "").trim();
-  if (reason.length < 10) return { ok: false, problem: "Say what you learned that warrants the revision." };
-  await rawQuery(
-    `INSERT INTO correspondent_practice_versions (correspondent_id, text, reason, revised_by)
-     VALUES ($1, $2, $3, $4)`,
-    [input.correspondentId, text, reason.slice(0, B.practiceReasonChars), input.revisedBy]
-  );
-  await rawQuery(
-    `UPDATE correspondents SET practice = $2, practice_revised_at = now(), updated_at = now() WHERE id = $1`,
-    [input.correspondentId, text || null]
-  );
-  return { ok: true, chars: text.length };
-}
-
-export interface PracticeVersionRow {
-  id: string;
-  text: string;
-  reason: string;
-  revised_by: string;
-  created_at: Date;
-}
-
-export async function listPracticeVersions(correspondentId: string, limit = 20): Promise<PracticeVersionRow[]> {
-  return rawQuery<PracticeVersionRow>(
-    `SELECT id, text, reason, revised_by, created_at FROM correspondent_practice_versions
-      WHERE correspondent_id = $1 ORDER BY created_at DESC LIMIT $2`,
-    [correspondentId, Math.min(100, Math.max(1, limit))]
-  );
-}
-
 export const PLAN_STATUSES = ["open", "done", "dropped"] as const;
 
 export interface PlanItemRow {
@@ -1000,9 +941,6 @@ export interface CorrespondentPublic {
   updates: number;
   last_run_at: string | null;
   last_note: string | null;
-  /** What it has taught itself, as public as its brief. */
-  practice: string | null;
-  practice_revised_at: string | null;
   feed_path: string;
   updates_path: string;
   created_by: string | null;
@@ -1027,8 +965,6 @@ export function correspondentPublic(c: CorrespondentRow): CorrespondentPublic {
     updates: c.updates,
     last_run_at: c.last_run_at ? new Date(c.last_run_at).toISOString() : null,
     last_note: c.last_note,
-    practice: c.practice,
-    practice_revised_at: c.practice_revised_at ? new Date(c.practice_revised_at).toISOString() : null,
     feed_path: `/correspondents/${c.id}/feed`,
     updates_path: `/correspondents/${c.id}/updates`,
     created_by: c.created_by,

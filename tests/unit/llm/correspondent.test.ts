@@ -178,7 +178,6 @@ describe("runCorrespondent", () => {
         "list_graph_changes",
         "publish_update",
         "update_plan",
-        "revise_practice",
         "list_my_updates",
         "update_workspace",
       ].sort()

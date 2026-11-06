@@ -448,7 +448,6 @@ async function runMandateReviewImpl(input: {
               `${c.heartbeat_hours > 0 ? `every ${c.heartbeat_hours}h` : "event-only"}` +
               `${(c.triggers ?? []).length ? `; triggers ${c.triggers.join(", ")}` : ""}] ` +
               `${c.runs} runs, ${c.updates} updates` +
-              `${c.practice_revised_at ? `; practice last revised ${new Date(c.practice_revised_at).toISOString().slice(0, 10)}` : ""}` +
               `${c.last_note ? `. Last: ${c.last_note.slice(0, 200)}` : ""}`
           )
           .join("\n");

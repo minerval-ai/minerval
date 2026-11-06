@@ -170,7 +170,7 @@ const AGENTS: AgentMeta[] = [
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     model: modelLabel(OPENROUTER_MODELS.flash), fn: getLookoutSystemPrompt },
   { key: "correspondent", name: "Correspondent", stage: 9, group: "governance",
-    tagline: "The Lookout's counterpart and the most flexible agent a mandate can fund: any agent that draws on the graph and produces something from it for someone, in whatever form serves them. Each run is told what woke it and what changed in its scope, publishes at most one output to its feed with the changes it did not mention listed, and keeps a plan and a practice of its own that improve with use. It writes no assessment and represents the graph accurately.",
+    tagline: "The Lookout's counterpart and the most flexible agent a mandate can fund: any agent that draws on the graph and produces something from it for someone, in whatever form serves them. Each run is told what woke it and what changed in its scope, publishes at most one output to its feed with the changes it did not mention listed, and keeps its own plan and workspace across runs. It writes no assessment and represents the graph accurately.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
     model: modelLabel(MODELS.sonnet), fn: getCorrespondentSystemPrompt },
   { key: "consistency-checker", name: "Consistency Checker", stage: 10, group: "governance",

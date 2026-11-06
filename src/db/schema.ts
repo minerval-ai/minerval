@@ -2756,12 +2756,6 @@ export const correspondents = pgTable(
     changesCursor: text("changes_cursor"),
     // Its own durable notes, read back every run.
     workspace: text("workspace"),
-    // Its practice: standing instructions it writes for itself as it learns
-    // what serves its readers, placed in its system prompt after the role
-    // and below the brief, which still governs. Public, as the brief is;
-    // every revision is kept in correspondent_practice_versions.
-    practice: text("practice"),
-    practiceRevisedAt: timestamp("practice_revised_at", { withTimezone: true }),
     lastNote: text("last_note"),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     nextDueAt: timestamp("next_due_at", { withTimezone: true })
@@ -2816,30 +2810,6 @@ export const correspondentEvents = pgTable(
     index("idx_correspondent_events_pending")
       .on(table.correspondentId, table.createdAt)
       .where(sql`consumed_at IS NULL`),
-  ]
-);
-
-// Every revision of a correspondent's practice, with its reason and who
-// made it (the correspondent itself, or its Grantmaker resetting it), so
-// what it taught itself and why stays on the record.
-export const correspondentPracticeVersions = pgTable(
-  "correspondent_practice_versions",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    correspondentId: uuid("correspondent_id")
-      .notNull()
-      .references(() => correspondents.id, { onDelete: "cascade" }),
-    // The practice as revised; "" when it was cleared.
-    text: text("text").notNull(),
-    reason: text("reason").notNull(),
-    // 'correspondent' | 'grantmaker:chat' | 'grantmaker:review'
-    revisedBy: text("revised_by").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("idx_correspondent_practice_versions").on(table.correspondentId, table.createdAt),
   ]
 );
 

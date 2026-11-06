@@ -25,8 +25,6 @@ import {
   publishCorrespondentUpdate,
   queueCorrespondentEvent,
   recordCorrespondentRun,
-  reviseCorrespondentPractice,
-  listPracticeVersions,
   updateCorrespondentPlan,
   listPlanItems,
 } from "../../src/services/correspondent-service.js";
@@ -237,30 +235,15 @@ describe("Correspondents", () => {
     expect(c.updates).toBe(1);
   });
 
-  it("keeps every revision of its practice with its reason, and a plan that is its own", async () => {
+  it("keeps a plan that is its own", async () => {
     const grantId = await mandate();
     const make = async (title: string) => {
       const r = await createCorrespondent({ grantId, title, brief, audience: "followers", createdBy: "test" });
       if (!r.ok) throw new Error(r.message);
       return r.correspondentId;
     };
-    const id = await make("Learner");
+    const id = await make("Planner");
     const other = await make("Other");
-
-    expect(await reviseCorrespondentPractice({ correspondentId: id, text: "x", reason: "?", revisedBy: "correspondent" }))
-      .toMatchObject({ ok: false });
-    await reviseCorrespondentPractice({
-      correspondentId: id, text: "Lead with replication news.", reason: "Readers acted on the replication item.", revisedBy: "correspondent",
-    });
-    await reviseCorrespondentPractice({
-      correspondentId: id, text: "", reason: "It was steering selection away from the brief.", revisedBy: "grantmaker:review",
-    });
-    expect((await getCorrespondent(id))!.practice).toBeNull();
-    const history = await listPracticeVersions(id);
-    expect(history.map((v) => [v.revised_by, v.text])).toEqual([
-      ["grantmaker:review", ""],
-      ["correspondent", "Lead with replication news."],
-    ]);
 
     const added = await updateCorrespondentPlan({ correspondentId: id, add: ["Follow the probe subclaims until they settle."] });
     if (!added.ok) throw new Error(added.problem);
