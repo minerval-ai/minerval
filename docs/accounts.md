@@ -170,9 +170,14 @@ spent (§15):
 | propose a claim (`POST /claims/propose`) | **up to 2 owls** | `CAP_CLAIM_PROPOSAL_OWLS` |
 | order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
 | submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
-| extension page analysis | up to 0.1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
+| extension page analysis | up to 1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
 | extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
+
+A page analysis's cap is above its average run on purpose: it is also the
+run's budget, which the Extractor is told and which pays for matching every
+claim it records, so it is sized for a long page. A typical page settles back
+well under it.
 
 Open-ended operations (deep decomposition, grant mandates) are not capped
 per run — they are funded with escrowed owl budgets and metered against

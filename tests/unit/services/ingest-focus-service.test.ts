@@ -80,9 +80,24 @@ describe("ingestCoverage: only a complete reading covers (#738, #740)", () => {
   });
 });
 
-describe("the extraction prompt's confidence floor (#748)", () => {
-  it("is stated when the caller has one", () => {
-    expect(getExtractionPrompt("article", undefined, 0, null, 0.3)).toMatch(/confidence below 0\.3 are dropped/);
-    expect(getExtractionPrompt("article")).not.toMatch(/are dropped/);
+describe("the extraction prompt's budget", () => {
+  const budget = {
+    ceilingMicroUsd: 1_000_000,
+    spentMicroUsd: 20_000,
+    source: "the cap quoted for this operation",
+    matchMicroUsd: 100_000,
+  };
+  it("states the budget, what is spent, and what a match costs", () => {
+    const p = getExtractionPrompt("article", undefined, 0, null, budget);
+    expect(p).toMatch(/budget of \$1\.00 \(the cap quoted for this operation\),\s+of which \$0\.02 is spent/);
+    expect(p).toMatch(/at up to \$0\.10 a claim/);
+    expect(p).toMatch(/one\s+more turn/);
+  });
+  it("leaves out matching when the caller does not match, and the budget when there is none", () => {
+    expect(getExtractionPrompt("article", undefined, 0, null, { ...budget, matchMicroUsd: null })).not.toMatch(/matched/);
+    expect(getExtractionPrompt("article")).not.toMatch(/budget/);
+  });
+  it("states no confidence floor", () => {
+    expect(getExtractionPrompt("article", undefined, 0, null, budget)).not.toMatch(/dropped/);
   });
 });

@@ -74,7 +74,7 @@ vi.mock("../../../src/services/ingest-focus-service.js", () => ({
   recordExtraction: vi.fn(async () => undefined),
 }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ extractionMinConfidence: 0.3, pipelineEpoch: 1 }),
+  loadConfig: () => ({ pipelineEpoch: 1 }),
 }));
 
 import { handleUrlExtraction, statedFigures } from "../../../src/workers/url-extraction.js";
@@ -130,11 +130,12 @@ beforeEach(() => {
 });
 
 describe("ingestion", () => {
-  it("states the confidence floor to the Extractor and passes the passage to the Matcher (#748, #721)", async () => {
-    h.extracted = [proposal("A")];
+  it("matches every recorded claim, low confidence included, and passes the passage to the Matcher (#721)", async () => {
+    h.extracted = [proposal("A", { confidence: 0.1 })];
     h.decisions = [decision({})];
     await handleUrlExtraction(MESSAGE);
-    expect(h.extractInput!.minConfidence).toBe(0.3);
+    expect(h.extractInput).not.toHaveProperty("minConfidence");
+    expect(vi.mocked(matchClaim)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(matchClaim).mock.calls[0]![0]).toMatchObject({ context: "around A" });
   });
 

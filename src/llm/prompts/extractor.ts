@@ -140,17 +140,52 @@ export function getExtractorSystemPromptBlocks(
 }
 
 /**
- * The task message. `minConfidence` is the floor below which the caller
- * drops a record (#748): stated here, per call, because it differs by
- * caller (ingestion, the extension) and an agent is told every limit it
- * works under.
+ * The money an extraction runs on, as its task message states it: the
+ * run's budget and what it has spent, and, when the caller matches each
+ * recorded claim against the graph afterwards from the same budget, what
+ * one match can cost.
+ */
+export interface ExtractionBudget {
+  ceilingMicroUsd: number;
+  spentMicroUsd: number;
+  /** Where the money comes from, in the lane's words. */
+  source: string;
+  /** The most one Matcher run on a recorded claim can cost; null when the caller does not match. */
+  matchMicroUsd: number | null;
+}
+
+function usd(micro: number): string {
+  return `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
+}
+
+/** The budget paragraph of the task message. */
+export function extractionBudgetNote(b: ExtractionBudget): string {
+  let note = `This reading has a budget of ${usd(b.ceilingMicroUsd)} (${b.source}), \
+of which ${usd(b.spentMicroUsd)} is spent. Your turns draw on it, and each turn \
+costs more than the last, since it re-reads the conversation so far. `;
+  if (b.matchMicroUsd !== null) {
+    note += `After you finish, each claim you record is matched against the graph \
+from the same budget, at up to ${usd(b.matchMicroUsd)} a claim, and a claim \
+whose turn comes after the money runs out is left undecided. Record the claims \
+the document most turns on first, and leave room for their matching. `;
+  }
+  note += `You see the spend after every turn. Once the budget is spent you have one \
+more turn, and then the run ends with what you have recorded.
+`;
+  return note;
+}
+
+/**
+ * The task message. The run's budget, when it has one, is stated here, per
+ * call, because it differs by caller (the extension, the MCP text tools)
+ * and an agent is told every limit it works under, with its running state.
  */
 export function getExtractionPrompt(
   sourceType = "document",
   additionalContext?: string,
   maxClaims = 0,
   focus?: string | null,
-  minConfidence = 0
+  budget?: ExtractionBudget | null
 ): string {
   let prompt = `Identify the claims in the following ${sourceType}: the reusable \
 propositions it actually turns on, each with its exact source text, canonical form, \
@@ -165,12 +200,8 @@ not pad to reach the limit.
 `;
   }
 
-  if (minConfidence > 0) {
-    prompt += `Records with confidence below ${minConfidence} are dropped before \
-matching, as a backstop against non-claims. Confidence measures how sure you are \
-that a record is a well-formed, reusable claim, not whether it is true; give it \
-honestly rather than around this number.
-`;
+  if (budget) {
+    prompt += `\n${extractionBudgetNote(budget)}`;
   }
 
   if (additionalContext) {
