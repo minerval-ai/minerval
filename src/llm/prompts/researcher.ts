@@ -20,7 +20,6 @@
  * model can act on (see budgetGuide).
  */
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import { skillsSection } from "./skills.js";
 import { CODE_EXECUTION_USD_PER_HOUR, type BudgetEstimate } from "../instrument-harness.js";
 
@@ -208,8 +207,6 @@ met, report cannot_be_met or declined. Otherwise report revise when the
 request should change before anyone funds it, and scoped when it is ready
 to fund at your quote. The quote becomes the request's budget and the
 price funders see; it bounds the run that takes the request up.
-
-${RAISING_ISSUES}
 
 ${skillsSection("researcher")}`;
 

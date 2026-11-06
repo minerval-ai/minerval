@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import { STEWARD_CONTEXT_MAX_CHARS } from "../../services/queue-service.js";
 import {
   buildAdminPromptBlocks,
@@ -393,9 +392,7 @@ end (§22). If no one could reasonably care, send nothing.
 
 `;
 
-const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${RAISING_ISSUES}
-
-${skillsSection("claim-steward")}`;
+const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${skillsSection("claim-steward")}`;
 
 export function getClaimStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

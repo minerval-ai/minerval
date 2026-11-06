@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import { buildAdminPromptBlocks, skillsSection } from "./skills.js";
 import {
   CONSISTENCY_FLAG_KINDS,
@@ -186,8 +185,6 @@ and says when a large partition's ceiling leaves part of it unread.
   flags it warrants (a whole partition treating one contested study as
   settled, say), is a finding: note_finding, citing the claims.
 - Raise only what you have seen: ids from tool results.
-
-${RAISING_ISSUES}
 
 ${skillsSection("consistency-checker")}`;
 

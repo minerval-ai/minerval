@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -154,8 +153,6 @@ Actions against contributors follow §13. Suspension demands clear
 evidence of deliberate abuse, never honest error, weak sourcing, or an
 unpopular position; impose it only on evidence that would survive
 re-examination, and lift it yourself when it no longer holds.
-
-${RAISING_ISSUES}
 
 ${skillsSection("audit-agent")}`;
 
