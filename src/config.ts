@@ -142,7 +142,12 @@ const configSchema = z.object({
   capClaimProposalOwls: z.coerce.number().default(2),
   capAssessmentOwls: z.coerce.number().default(2),
   capSourceIngestOwls: z.coerce.number().default(0.1),
-  capExtensionAnalysisOwls: z.coerce.number().default(0.1),
+  // A page analysis's cap is also its run budget: the Extractor and every
+  // Matcher on the page spend from it (withAgenticCharge's pass budget), and
+  // the Extractor is told it in its task message with the cost of a match.
+  // So it is set for the work a long page needs rather than at the average
+  // run, which settles back well under it.
+  capExtensionAnalysisOwls: z.coerce.number().default(1),
   capExtensionChatOwls: z.coerce.number().default(0.1),
   capTextAnalysisOwls: z.coerce.number().default(0.1),
   // One lookout run (kind 'lookout_run'): a cheap-tier agent reading its
@@ -284,11 +289,6 @@ const configSchema = z.object({
   // corpus ingestion, and the cap is stated to the Extractor with its
   // running remainder.
   extensionMaxClaims: z.coerce.number().default(25),
-  // The extension's confidence floor, above ingestion's (extractionMinConfidence):
-  // a reader is waiting on the page, and each claim that passes costs a
-  // Matcher run before the page can be annotated. Stated to the Extractor
-  // in its task message (#748).
-  extensionMinConfidence: z.coerce.number().min(0).max(1).default(0.5),
 
   // Budget limits (0 = unlimited)
   llmHourlyCallLimit: z.coerce.number().default(0),
@@ -368,13 +368,11 @@ const configSchema = z.object({
   //
   // Callers that genuinely want a bound still pass one per call (the MCP text
   // tools' `max_claims`, the extension's own cap).
-  // Validity floor on extracted claims (#157 phase 3). The Extractor scores
-  // each proposition with a confidence that it IS a well-formed claim; below
-  // this floor the extraction is dropped (and counted in the job result)
-  // instead of entering the graph. Deliberately a low BACKSTOP against
-  // obvious non-claims ("i am"), not a quality judgment — judging claim
-  // well-formedness belongs to agents (the intake reviewer, the Steward),
-  // per the constitution's "Judgment over Mechanism". 0 disables.
+  // There is deliberately no confidence floor on extracted claims either.
+  // The Extractor scores each record's confidence that it is a well-formed
+  // claim, and the floors that dropped records below a number second-guessed
+  // the judgment that recorded them (Judgment over Mechanism). What it
+  // records is matched; its budget, stated to it, bounds the matching.
   // Output allowance for one turn of the Extractor's loop. The Extractor
   // records claims with tool calls across as many turns as it needs, so
   // this no longer bounds a document's extraction: a turn cut off here keeps
@@ -383,7 +381,6 @@ const configSchema = z.object({
   // extraction was one structured call), so raise it for a model that
   // thinks at length; the tokens are billed.
   extractionMaxTokens: z.coerce.number().int().min(1024).default(16384),
-  extractionMinConfidence: z.coerce.number().default(0.3),
   // Importance prior for user-proposed claims admitted through intake review
   // (#157). Deliberately below the 0.5 default: an approved suggestion enters
   // the importance-ordered steward queue behind corpus work rather than ahead
@@ -1097,7 +1094,6 @@ export function loadConfig(): Config {
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
-    extensionMinConfidence: process.env.EXTENSION_MIN_CONFIDENCE,
     agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
@@ -1121,7 +1117,6 @@ export function loadConfig(): Config {
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,
-    extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,

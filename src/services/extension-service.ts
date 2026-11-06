@@ -565,18 +565,20 @@ async function analyzePageUncached(
       ? `Page title: ${input.title} (URL: ${input.url})`
       : `URL: ${input.url}`,
     maxClaims: config.extensionMaxClaims,
-    // The floor is stated to the Extractor (#748).
-    minConfidence: config.extensionMinConfidence,
+    // Every recorded claim is matched below from the same run budget (the
+    // extension_analysis cap), so the Extractor is told what a match costs.
+    matchMicroUsd: Math.round(config.matcherBudgetUsd * 1_000_000),
   });
 
-  // Low-confidence extractions aren't worth a Matcher run from a live page.
-  const candidates = extracted.filter((c) => c.confidence >= config.extensionMinConfidence);
+  // Every claim the Extractor recorded is matched: whether something is a
+  // claim is its judgment, and the budget it was shown is what bounds the
+  // matching, not a confidence floor.
 
   // Matching dominates analyze wall-clock: one multi-turn Matcher loop per
   // claim on the cheap tier (OPENROUTER_MODELS.flash). 8 roughly halved
   // page-analysis latency vs 4 when measured on Haiku (#92); the figure has
   // not been re-tuned for the models that have held the tier since.
-  const matchStages = await mapWithConcurrency(candidates, 8, async (c) => {
+  const matchStages = await mapWithConcurrency(extracted, 8, async (c) => {
     const decision = await matchClaim({
       extractedText: c.verbatim_text,
       proposedCanonical: c.proposed_canonical_form,

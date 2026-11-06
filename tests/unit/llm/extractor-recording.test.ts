@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const createMock = vi.fn();
 const streamMock = vi.fn();
+const promptArgs = vi.hoisted(() => [] as unknown[][]);
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class AnthropicMock {
@@ -31,7 +32,10 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
 }));
 vi.mock("../../../src/llm/prompts/extractor.js", () => ({
   getExtractorSystemPromptBlocks: () => ["system"],
-  getExtractionPrompt: () => "prompt:",
+  getExtractionPrompt: (...args: unknown[]) => {
+    promptArgs.push(args);
+    return "prompt:";
+  },
 }));
 vi.mock("../../../src/llm/prompts/skills.js", () => ({
   listSkills: () => [],
@@ -42,6 +46,7 @@ vi.mock("../../../src/llm/tools/report-tools.js", () => ({
 }));
 
 import { extractClaims, ExtractionIncompleteError } from "../../../src/llm/agents/extractor.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 
 const claim = (text: string, extra: Record<string, unknown> = {}) => ({
   verbatim_text: text,
@@ -85,6 +90,7 @@ function toolResults(request: number): Array<Record<string, unknown>> {
 }
 
 beforeEach(() => {
+  promptArgs.length = 0;
   streamMock.mockReset();
   createMock.mockReset();
   process.env.ANTHROPIC_API_KEY = "test-key";
@@ -198,5 +204,43 @@ describe("the Extractor's recording", () => {
     const problems = (toolResults(1)[0]!.rejected as Array<{ problem: string }>).map((r) => r.problem);
     expect(problems[0]).toMatch(/stated_value is for a quantity/);
     expect(problems[1]).toMatch(/an interval gives low and high/);
+  });
+});
+
+describe("the Extractor's budget", () => {
+  /** Run under a pass budget of `ceiling` micro-USD with `spent` already billed. */
+  const underBudget = <T>(ceiling: number, spent: number, fn: () => Promise<T>) => {
+    const meter = { billedMicroUsd: spent };
+    return runWithUsageContext(
+      { meter, passBudget: { microUsd: ceiling, source: "the cap quoted for this operation", meter } },
+      fn
+    );
+  };
+
+  it("is stated in the task message, with what a match costs, when the run has one", async () => {
+    respondWith(turn([["finish_extraction", {}]]));
+    await underBudget(1_000_000, 50_000, () => extractClaims({ content: "doc", matchMicroUsd: 100_000 }));
+    expect(promptArgs[0]![4]).toEqual({
+      ceilingMicroUsd: 1_000_000,
+      spentMicroUsd: 50_000,
+      source: "the cap quoted for this operation",
+      matchMicroUsd: 100_000,
+    });
+  });
+
+  it("states none when the run has none", async () => {
+    respondWith(turn([["finish_extraction", {}]]));
+    await extractClaims({ content: "doc" });
+    expect(promptArgs[0]![4]).toBeNull();
+  });
+
+  it("ends the run one turn after the budget is spent, keeping what was recorded", async () => {
+    respondWith(
+      turn([["record_claims", { claims: [claim("A")] }]]),
+      turn([["record_claims", { claims: [claim("never")] }]])
+    );
+    const claims = await underBudget(100, 1_000, () => extractClaims({ content: "doc" }));
+    expect(claims.map((c) => c.verbatim_text)).toEqual(["A"]);
+    expect(streamMock).toHaveBeenCalledTimes(1);
   });
 });

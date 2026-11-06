@@ -5,7 +5,7 @@ import {
   getExtractionPrompt,
 } from "../prompts/extractor.js";
 import { knownDomains, listSkills } from "../prompts/skills.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { runBudget, withAgent, withSkills } from "../usage-context.js";
 import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
 import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
@@ -94,7 +94,7 @@ const EXTRACTED_CLAIM_SCHEMA = {
     proposed_canonical_form: { type: "string", description: "The shortest neutral statement of the proposition as it is actually debated, about fifteen words, stated at the precision the discourse debates it" },
     claim_type: { type: "string", enum: [...claimTypeEnum.options], description: "The claim's type, as your role description defines each" },
     kind: { type: "string", enum: ["claim", "quantity", "question"], description: "claim, quantity, or question. For a quantity, proposed_canonical_form is its definition, with its unit, and verbatim_text the figure as the document states it" },
-    confidence: { type: "number", description: "How sure you are that this is a well-formed, reusable claim (0.0-1.0). It measures form, not truth. The task message says the floor below which a record is dropped." },
+    confidence: { type: "number", description: "How sure you are that this is a well-formed, reusable claim (0.0-1.0). It measures form, not truth, and nothing is dropped for it: give it honestly, and leave out what you judge is not a claim rather than recording it low." },
     importance: { type: "number", description: "Provisional importance (0.0-1.0): how much it is worth getting this claim right (roughly consequence-if-wrong × liveness), from document salience, contestedness, and discourse reach. Settled/uncontested facts score low even if load-bearing. A prior the Steward will revise; distinct from confidence." },
     contestation: { type: "number", description: "Provisional contestation (0.0-1.0): how live this proposition is in the discourse at large, disputed or actively consulted, on its own — ~0 for a settled fact stated in passing, ~1 for an actively argued crux with credible parties on both sides. The liveness half of the importance formula recorded separately; a prior the Steward will revise." },
     source_location: { type: ["string", "null"], description: "Where in the document this was found (a section or position), when the format makes that meaningful; the browser extension uses it to anchor claims on the page" },
@@ -229,11 +229,12 @@ async function extractClaimsImpl(input: {
    */
   onClaims?: (claims: ExtractedClaim[]) => void;
   /**
-   * The confidence below which the caller drops a record (#748). Stated in
-   * the task message so the Extractor knows the cut-off it is scored
-   * against; 0 (the default) states none.
+   * The most one Matcher run on a recorded claim can cost, when the caller
+   * matches every recorded claim afterwards from the same run budget (the
+   * extension, assess_text). Stated with the budget, so the Extractor knows
+   * its records spend money after it finishes too.
    */
-  minConfidence?: number;
+  matchMicroUsd?: number;
   /**
    * Called when the Extractor reports, on finish_extraction, that the
    * document is not what it should be (#740). A retry on the fallback model
@@ -243,14 +244,28 @@ async function extractClaimsImpl(input: {
 }): Promise<ExtractedClaim[]> {
   const config = loadConfig();
   const cap = input.maxClaims && input.maxClaims > 0 ? input.maxClaims : 0;
-  const userPrompt =
-    getExtractionPrompt(
-      input.sourceType,
-      input.additionalContext,
-      input.maxClaims,
-      input.focus,
-      input.minConfidence ?? 0
-    ) + input.content;
+  // The run's budget, read when each attempt starts so the fallback model's
+  // retry is told what the first attempt left. A run with no budget (an
+  // ingest job) states none; its spend is metered all the same.
+  const userPrompt = (): string => {
+    const budget = runBudget();
+    return (
+      getExtractionPrompt(
+        input.sourceType,
+        input.additionalContext,
+        input.maxClaims,
+        input.focus,
+        budget
+          ? {
+              ceilingMicroUsd: budget.ceilingMicroUsd,
+              spentMicroUsd: budget.spentMicroUsd,
+              source: budget.source,
+              matchMicroUsd: input.matchMicroUsd ?? null,
+            }
+          : null
+      ) + input.content
+    );
+  };
   // The Extractor always carries every skill's "For the Extractor" view and
   // the closed list of domain names (docs/mathematics.md §3.4): it cannot see
   // the graph, so the domain prior it emits is what selects the skills the
@@ -327,10 +342,15 @@ async function extractClaimsImpl(input: {
     // stops the loop before the turn's other tool calls run, and a turn that
     // records its last claims and finishes in one go would lose them.
     const done = new Error("finished");
+    // Ends the loop once the run's budget is spent and the one turn the
+    // task message promises after that has run. What was recorded stands.
+    const spent = new Error("budget spent");
+    let graceTurnUsed = false;
+    let stoppedForBudget = false;
     let result;
     try {
       result = await toolUseLoop({
-        initialMessages: [{ role: "user", content: userPrompt }],
+        initialMessages: [{ role: "user", content: userPrompt() }],
         tools: [recordTool, finishTool, ...reportTools.definitions],
         system,
         ...(model ? { model } : {}),
@@ -346,6 +366,13 @@ async function extractClaimsImpl(input: {
         },
         beforeTurn: () => {
           if (finished) throw done;
+          const budget = runBudget();
+          if (!budget || budget.spentMicroUsd < budget.ceilingMicroUsd) return;
+          if (graceTurnUsed) {
+            stoppedForBudget = true;
+            throw spent;
+          }
+          graceTurnUsed = true;
         },
         executeTool: async (name, toolInput) => {
           const report = await reportTools.execute(name, toolInput);
@@ -414,21 +441,22 @@ async function extractClaimsImpl(input: {
         },
       });
     } catch (err) {
-      if (err !== done) throw err;
+      if (err !== done && err !== spent) throw err;
     }
     if (!finished) {
       // The loop ended without the Extractor saying it was done: cut off at
-      // the output limit twice running, or out of turns. What was recorded
-      // stands, since each claim was complete when recorded; with nothing
-      // recorded there is no extraction to return, and saying "no claims"
-      // would be false.
+      // the output limit twice running, out of turns, or out of budget. What
+      // was recorded stands, since each claim was complete when recorded;
+      // with nothing recorded there is no extraction to return, and saying
+      // "no claims" would be false.
+      const stop = stoppedForBudget ? "budget spent" : (result?.stopReason ?? "unknown");
       if (recorded.length === 0) {
         throw new ExtractionIncompleteError(
-          `The extraction ended before it finished, with no claims recorded (stop: ${result?.stopReason ?? "unknown"})`
+          `The extraction ended before it finished, with no claims recorded (stop: ${stop})`
         );
       }
       console.warn(
-        `[extractor] ended before finishing (stop: ${result?.stopReason ?? "unknown"}); ` +
+        `[extractor] ended before finishing (stop: ${stop}); ` +
           `keeping the ${recorded.length} claims recorded`
       );
     }

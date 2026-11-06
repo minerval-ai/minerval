@@ -222,15 +222,12 @@ async function processUrlExtraction(
     // A scoped ingest reads the whole document for one subject and proposes
     // only the claims bearing on it (ingest-focus-service.ts).
     const focus = normalizeFocus(message.focus);
-    const { extractionMinConfidence } = loadConfig();
     let documentProblem: DocumentProblem | null = null;
     const extracted = await extractClaims({
       content,
       sourceType: source.sourceType,
       additionalContext: source.title,
       ...(focus ? { focus } : {}),
-      // The floor below is stated to the Extractor, per call (#748).
-      minConfidence: extractionMinConfidence,
       onDocumentProblem: (p) => {
         documentProblem = p;
       },
@@ -238,7 +235,6 @@ async function processUrlExtraction(
 
     let claimsCreated = 0;
     let claimsMatched = 0;
-    let claimsDroppedLowConfidence = 0;
     let claimsDecidedOnRetry = 0;
     let curationRequests = 0;
     let instancesAlreadyRecorded = 0;
@@ -398,18 +394,6 @@ async function processUrlExtraction(
     const undecided: UndecidedProposal[] = [];
 
     for (const claim of extracted) {
-      // Validity floor (#157 phase 3): the Extractor scores each proposition
-      // with a confidence that it IS a well-formed claim. A low backstop,
-      // not a quality judgment (Judgment over Mechanism), and stated to the
-      // Extractor in its task message (#748).
-      if (
-        extractionMinConfidence > 0 &&
-        typeof claim.confidence === "number" &&
-        claim.confidence < extractionMinConfidence
-      ) {
-        claimsDroppedLowConfidence++;
-        continue;
-      }
       const proposedKind = NODE_KIND_SET.has(claim.kind ?? "") ? (claim.kind as NodeKind) : "claim";
       const matchResult = await matchFor(claim, proposedKind);
       if (matchResult.outcome === "undecided") {
@@ -474,9 +458,6 @@ async function processUrlExtraction(
         claims_extracted: extracted.length,
         claims_created: claimsCreated,
         claims_matched: claimsMatched,
-        // Never truncate silently: dropped extractions are visible in the
-        // job result so a low floor misconfiguration is diagnosable.
-        claims_dropped_low_confidence: claimsDroppedLowConfidence,
         // Proposals the Matcher decided only on its second run, and those it
         // never decided, which are kept on the source's extraction record
         // (#738).

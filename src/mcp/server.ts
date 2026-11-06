@@ -659,6 +659,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             content: text,
             sourceType: "assess_text",
             maxClaims: max_claims,
+            // Each recorded claim is matched below from the same budget.
+            matchMicroUsd: Math.round(loadConfig().matcherBudgetUsd * 1_000_000),
           });
           await progress({ claims_extracted: extracted.length, judgments: [] });
           const judgments = [];

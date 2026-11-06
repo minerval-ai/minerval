@@ -715,11 +715,12 @@ Ingestion runs three steps before governance takes over:
 - **Extractor**: reads a source and emits the discrete, reusable claims it
   asserts, in canonical form, each with a provisional importance prior and a
   confidence that the proposition is a well-formed claim at all. It is a
-  structured extraction call rather than a tool-use loop, and it is deliberately
-  selective: the claims a reader would want checked, not every sentence. A low
-  confidence floor drops obvious non-claims before they enter the graph — a
-  backstop against garbage, not a quality judgment, which stays with the
-  agents.
+  tool-use loop that records claims as it settles on them, and it is
+  deliberately selective: the claims a reader would want checked, not every
+  sentence. No confidence floor drops what it records: whether something is a
+  claim is its judgment. A run with a budget (a page analysis, the MCP text
+  tools) states it in the task message, with what matching each recorded claim
+  will cost from it, and shows the spend after every turn.
 - **Matcher**: the single decider of claim identity. For each proposition it
   searches the graph itself, under multiple framings including the negation,
   and decides match-or-create, recording the stance of the new appearance. It
