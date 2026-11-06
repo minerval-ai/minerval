@@ -235,6 +235,19 @@ export async function deleteEdges(edgeIds: string[], tx?: Runner): Promise<numbe
 }
 
 /**
+ * Rewrite an edge's reasoning note, keeping its relation and argument
+ * groupings (#833): the note can go stale when the subclaim's role in the
+ * parent changes while the relation stays right.
+ */
+export async function setEdgeReasoning(edgeId: string, reasoning: string, tx?: Runner): Promise<void> {
+  const rows = await asRunner(tx).query<{ id: string }>(
+    `UPDATE claim_relationships SET reasoning = $2 WHERE id = $1 RETURNING id`,
+    [edgeId, reasoning]
+  );
+  if (rows.length === 0) throw new Error(`Relationship edge not found: ${edgeId}`);
+}
+
+/**
  * Change an edge's relation in place (#741). The (parent, child, relation)
  * key is unique, so when an edge of the new relation already exists the old
  * edge is folded into it instead: its argument memberships move across and
