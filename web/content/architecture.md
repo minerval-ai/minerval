@@ -494,6 +494,20 @@ voices that take a position. The Matcher assigns `affirms`, `denies` or
 `poses` at ingestion; a mention is the Steward's reading of a source, recorded
 with `record_claim_instance`.
 
+A source also carries **facts** that need no judgment (authors, publisher,
+publication date at the precision stated, DOI, an archived copy, and the
+dated `source_events` a watcher recorded against it: corrections,
+retractions, expressions of concern), and **segments**, the document's
+sections and passages, each instance anchored to the passage its quote sits
+in (#507). Both are filled once, on ingest and when `provenance_read_source`
+first fetches a document (`refreshSourceFactsOnce`, `segmentSourceOnce`). A
+source stored before they existed is filled by the source backfill
+(`src/workers/source-backfill.ts`): one pass over such sources in id order,
+`SOURCE_BACKFILL_PER_TICK` a tick (default 20, every
+`SOURCE_BACKFILL_INTERVAL_SECONDS`, default 120), its cursor in
+`platform_flags` so concurrent tasks take different batches. Deleting the
+flag row starts a new pass at the next restart.
+
 #### Source provenance: what the support rests on
 
 A count of a claim's instances treats every appearance as one independent
