@@ -7,10 +7,11 @@ import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
 import { getRunStep, getRunSummary, listRunSteps } from "../../src/services/run-view-service.js";
 import { hashText } from "../../src/services/setup-split.js";
-import { seedClaim } from "./helpers.js";
 
 async function seedRun(opts: { reasons?: string[] } = {}): Promise<string> {
-  const claimId = await seedClaim("run-view");
+  // agent_runs.claim_id has no foreign key; a seeded claim would enter the
+  // Steward queue and the allocator, which other files' tests rely on.
+  const claimId = randomUUID();
   const [run] = await rawQuery<{ id: string }>(
     `INSERT INTO agent_runs (agent, claim_id, finished_at, outcome, steps, commit_sha, private_reasons, user_id)
      VALUES ('steward', $1, now(), 'ok', 4, 'abc1234', $2::text[], $3) RETURNING id`,

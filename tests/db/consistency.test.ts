@@ -196,6 +196,13 @@ describe("consistency flags (#330)", () => {
   });
 
   it("puts the flag in front of the General mandate's officers, with the Checker's expected gain", async () => {
+    // Earlier files may leave a platform General active (curation-and-audit
+    // does), and the oldest active one is the General; retire them so this
+    // test's mandate is the one the flag reaches, whatever the file order.
+    await rawQuery(
+      `UPDATE grants SET status = 'completed'
+        WHERE is_platform = true OR policy IN ('general', 'governance')`
+    );
     resetAllocationPolicyCache();
     const funder = await seedUser("general");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000, policy: "general" });
