@@ -186,6 +186,8 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   "GET /claims/:claim_id": ["get_claim", "get_decomposition"],
   "GET /claims/:claim_id/dependents": ["get_dependents"],
   "GET /claims/:claim_id/formalization": ["get_claim"],
+  // One view for agents and MCP, as get_claim (#541).
+  "GET /arguments/:argument_id": ["get_argument"],
   "GET /claims/:id/bounty": ["get_bounty_terms"],
   "GET /tags": ["list_tags"],
   // The change stream (#562), defined once with the Correspondents' read.

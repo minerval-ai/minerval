@@ -10,6 +10,7 @@ import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerRouteCatalog } from "./plugins/route-catalog.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
+import { argumentRoutes } from "../routes/arguments.js";
 import { formalizationsRoutes } from "../routes/formalizations.js";
 import { attemptsRoutes } from "../routes/attempts.js";
 import { prizesRoutes } from "../routes/prizes.js";
@@ -74,6 +75,7 @@ export async function buildApp() {
   // Routes
   await app.register(healthRoutes);
   await app.register(claimRoutes, { prefix: "/claims" });
+  await app.register(argumentRoutes, { prefix: "/arguments" });
   await app.register(sourceRoutes, { prefix: "/sources" });
   await app.register(jobRoutes, { prefix: "/jobs" });
   await app.register(contributionRoutes, { prefix: "/contributions" });

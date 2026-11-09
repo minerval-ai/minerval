@@ -23,6 +23,7 @@ const TARGET: Record<string, { field: string; via?: "argument" | "instance" }> =
   update_canonical_form: { field: "claim_id" },
   add_argument: { field: "claim_id" },
   write_argument: { field: "argument_id", via: "argument" },
+  record_argument_instance: { field: "argument_id", via: "argument" },
   evaluate_argument: { field: "argument_id", via: "argument" },
   add_relationship_edge: { field: "parent_id" },
   add_related_claim: { field: "claim_id" },

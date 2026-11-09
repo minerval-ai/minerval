@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 8589,
-    "fullChars": 100697,
+    "fullChars": 100976,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 6758,
-    "fullChars": 98866,
+    "fullChars": 99145,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 14397,
-    "fullChars": 106505,
+    "fullChars": 106784,
     "skills": [
       {
         "name": "costing",
@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 24560,
-    "fullChars": 116668,
+    "roleChars": 25247,
+    "fullChars": 117634,
     "skills": [
       {
         "name": "costing",
@@ -152,7 +152,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 16463,
-    "fullChars": 108571,
+    "fullChars": 108850,
     "skills": []
   },
   {
@@ -165,7 +165,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 8876,
-    "fullChars": 100984,
+    "fullChars": 101263,
     "skills": [
       {
         "name": "costing",
@@ -212,7 +212,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 9014,
-    "fullChars": 101122,
+    "fullChars": 101401,
     "skills": [
       {
         "name": "costing",
@@ -258,7 +258,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 10107,
-    "fullChars": 102215,
+    "fullChars": 102494,
     "skills": [
       {
         "name": "costing",
@@ -317,7 +317,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 17956,
-    "fullChars": 110064,
+    "fullChars": 110343,
     "skills": [
       {
         "name": "costing",
@@ -363,7 +363,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 8630,
-    "fullChars": 100738,
+    "fullChars": 101017,
     "skills": [
       {
         "name": "costing",
@@ -407,7 +407,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 4267,
-    "fullChars": 96375,
+    "fullChars": 96654,
     "skills": [
       {
         "name": "costing",
@@ -451,7 +451,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 2962,
-    "fullChars": 95070,
+    "fullChars": 95349,
     "skills": [
       {
         "name": "costing",
@@ -495,7 +495,7 @@
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
     "roleChars": 12169,
-    "fullChars": 104277,
+    "fullChars": 104556,
     "skills": [
       {
         "name": "costing",
@@ -553,8 +553,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 12446,
-    "fullChars": 104554,
+    "roleChars": 12616,
+    "fullChars": 105003,
     "skills": [
       {
         "name": "costing",

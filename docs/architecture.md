@@ -1161,7 +1161,7 @@ deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
-`get_source`, `get_source_examinations`, and on a request or scoping run
+`get_argument`, `get_source`, `get_source_examinations`, and on a request or scoping run
 `get_request` and `list_requests`, without who funded the work), the issue
 tools every agent carries (`raise_issue` and its companions), the
 Elicit search tools and the Pangram tools (`pangram_check_ai`,

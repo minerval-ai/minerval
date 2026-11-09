@@ -241,6 +241,17 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           <span className="assess-when">
             last assessed {fmtDate(assessment.assessed_at)}
             {assessment.model ? ` · ${modelDisplayName(assessment.model)}` : ""}
+            {/* Developer disclosure (#534): the marker sits by the assessor's
+                name, where the conflict is; the explanation it needs is in
+                the note at the foot of the page. */}
+            {assessment.developer_disclosure ? (
+              <>
+                {", "}
+                <a href="#developer-disclosure">
+                  made by {assessment.developer_disclosure.developer}, which this claim names
+                </a>
+              </>
+            ) : null}
           </span>
           {/* Funding is disclosed at the bottom of the page, with the
               explanation it needs, never beside the verdict (§12: the
@@ -478,6 +489,17 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           public standards whoever pays, funders never see or shape a
           verdict before anyone else, and mandates that attempt to steer
           conclusions are refused.
+        </p>
+      )}
+      {assessment?.developer_disclosure && (
+        <p
+          id="developer-disclosure"
+          style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}
+        >
+          The model that assessed this claim,{" "}
+          {modelDisplayName(assessment.developer_disclosure.model)}, was built by{" "}
+          {assessment.developer_disclosure.developer}, which the claim names. A model
+          may be biased about its own developer.
         </p>
       )}
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>

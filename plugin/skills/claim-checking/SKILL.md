@@ -80,6 +80,10 @@ skill bundles it in full, and the section numbers below point into it.
   incomplete or indirect. Verdict confidence is how sure the graph is of
   that reading, not the probability the claim is true; that is `credence`,
   given only where one number is an honest summary.
+- When an assessment carries `developer_disclosure`, the claim names the
+  developer of the model that assessed it. Pass that on with the verdict
+  ("assessed by Claude Opus 5.5, made by Anthropic, which the claim names").
+  It is a disclosure, not a finding that the verdict is wrong.
 - A verdict is about the claim as its words read today, not about any
   source that states it (§3, §4). Check that the claim's words say what the
   text you are checking says before you apply the verdict to the text.
@@ -132,6 +136,14 @@ premises the argument lives or dies on, and `decisive: true` means it
 settles the claim as its premises now stand; when one is decisive, say so
 plainly. `stale: true` means the evaluation predates the current
 assessment.
+
+`get_argument` opens one argument by its id: its written form, and on
+request its evaluation history, its premises with their standing, and its
+instances, the places sources make, attack or mention it. An argument is
+the inference, not anyone's statement of it, so a source's version may be
+recorded as stating it fully, leaving a premise unstated, or as a strawman.
+Instances are provenance: how often an argument is made is not a measure
+of whether it works.
 
 The same habit helps when you reason without the graph: ask what would
 make the claim true or false, and which sub-question the answer depends

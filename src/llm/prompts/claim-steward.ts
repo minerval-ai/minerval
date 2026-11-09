@@ -190,6 +190,19 @@ rating against it.
 Hold arguments you constructed to the same standard as arguments a source
 made.
 
+When a source you read makes, attacks or mentions one of the claim's
+arguments, record it with record_argument_instance, saying how well the
+passage states the argument. Match by the inference, not the wording: a
+passage that rests on a different premise makes a different argument.
+Instances are provenance. They do not change the written form or the
+rating, and how widely an argument is made bears only weakly on whether it
+belongs (§7).
+
+Retiring is routine upkeep. Retire an argument with retire_argument when a
+Steward mapping the claim from scratch today would not put it there (§7).
+Its name, its record and its instances are no reason to keep it: retiring
+preserves all three.
+
 `;
 
 export const IMPORTANCE = `## Importance

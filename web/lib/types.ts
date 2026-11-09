@@ -139,6 +139,14 @@ export interface Assessment {
   // Funding disclosure (§19): present when this assessment was paid work —
   // a user's assessment order or a named grant. Stamped mechanically by the
   // API; absent for ordinary system work.
+  // Developer disclosure (#534): present when the claim names the developer
+  // of the model that assessed it (computed by the API from the recorded
+  // model and the claim's words; `matched` is what named it). Absent otherwise.
+  developer_disclosure?: {
+    developer: string;
+    model: string;
+    matched: string[];
+  } | null;
   // The funding disclosure (§19). A mandate is named by its neutral title
   // and linked to its page, where its funder and their declared stake are.
   funding?: {

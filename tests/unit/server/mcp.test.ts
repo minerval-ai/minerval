@@ -493,6 +493,7 @@ describe("MCP tools", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "assess_text",
       "extract_claims",
+      "get_argument",
       "get_bounty_terms",
       "get_claim",
       "get_contribution_status",

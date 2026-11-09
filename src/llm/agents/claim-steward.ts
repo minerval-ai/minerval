@@ -96,6 +96,7 @@ const CLAIM_ONLY_TOOLS = new Set([
   "ungroup_subclaim",
   "revise_argument",
   "retire_argument",
+  "record_argument_instance",
 ]);
 
 /**

@@ -1,6 +1,6 @@
 {
-  "id": "7efd18b1-e78d-4f5a-b6db-c8e64b29ee20",
-  "prevId": "074a6922-14f4-40f1-88b6-d2734da44bb5",
+  "id": "074a6922-14f4-40f1-88b6-d2734da44bb5",
+  "prevId": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2090,6 +2090,182 @@
           "tableTo": "quantity_estimates",
           "columnsFrom": [
             "estimate_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.argument_instances": {
+      "name": "argument_instances",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "argument_id": {
+          "name": "argument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verbatim_text": {
+          "name": "verbatim_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context": {
+          "name": "context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stance": {
+          "name": "stance",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reading": {
+          "name": "reading",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stated_shows": {
+          "name": "stated_shows",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "speaker": {
+          "name": "speaker",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "publication": {
+          "name": "publication",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_date": {
+          "name": "source_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "link": {
+          "name": "link",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "segment_id": {
+          "name": "segment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_argument_instances_argument": {
+          "name": "idx_argument_instances_argument",
+          "columns": [
+            {
+              "expression": "argument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_argument_instances_source": {
+          "name": "idx_argument_instances_source",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "argument_instances_argument_id_arguments_id_fk": {
+          "name": "argument_instances_argument_id_arguments_id_fk",
+          "tableFrom": "argument_instances",
+          "tableTo": "arguments",
+          "columnsFrom": [
+            "argument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "argument_instances_source_id_sources_id_fk": {
+          "name": "argument_instances_source_id_sources_id_fk",
+          "tableFrom": "argument_instances",
+          "tableTo": "sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "argument_instances_segment_id_source_segments_id_fk": {
+          "name": "argument_instances_segment_id_source_segments_id_fk",
+          "tableFrom": "argument_instances",
+          "tableTo": "source_segments",
+          "columnsFrom": [
+            "segment_id"
           ],
           "columnsTo": [
             "id"
@@ -8373,12 +8549,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "officer_lease_until": {
-          "name": "officer_lease_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "events_scanned_at": {
           "name": "events_scanned_at",
           "type": "timestamp with time zone",
@@ -10041,149 +10211,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.mandate_decisions": {
-      "name": "mandate_decisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_kind": {
-          "name": "item_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision": {
-          "name": "decision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target": {
-          "name": "target",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owls_micro_usd": {
-          "name": "owls_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "petition_id": {
-          "name": "petition_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action_id": {
-          "name": "action_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_mandate_decisions_grant": {
-          "name": "idx_mandate_decisions_grant",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "mandate_decisions_grant_id_grants_id_fk": {
-          "name": "mandate_decisions_grant_id_grants_id_fk",
-          "tableFrom": "mandate_decisions",
-          "tableTo": "grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "mandate_decisions_petition_id_petitions_id_fk": {
-          "name": "mandate_decisions_petition_id_petitions_id_fk",
-          "tableFrom": "mandate_decisions",
-          "tableTo": "petitions",
-          "columnsFrom": [
-            "petition_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "mandate_decisions_action_id_actions_id_fk": {
-          "name": "mandate_decisions_action_id_actions_id_fk",
-          "tableFrom": "mandate_decisions",
-          "tableTo": "actions",
-          "columnsFrom": [
-            "action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.mandate_events": {
       "name": "mandate_events",
       "schema": "",
@@ -10295,256 +10322,6 @@
         "mandate_events_grant_id_grants_id_fk": {
           "name": "mandate_events_grant_id_grants_id_fk",
           "tableFrom": "mandate_events",
-          "tableTo": "grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.mandate_inbox": {
-      "name": "mandate_inbox",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target_node_id": {
-          "name": "target_node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_ref": {
-          "name": "target_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "detail": {
-          "name": "detail",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "handled_at": {
-          "name": "handled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "handled_by": {
-          "name": "handled_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "escalated_at": {
-          "name": "escalated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "escalation_note": {
-          "name": "escalation_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_mandate_inbox_open": {
-          "name": "idx_mandate_inbox_open",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "handled_at IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "mandate_inbox_grant_id_grants_id_fk": {
-          "name": "mandate_inbox_grant_id_grants_id_fk",
-          "tableFrom": "mandate_inbox",
-          "tableTo": "grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "mandate_inbox_target_node_id_claims_id_fk": {
-          "name": "mandate_inbox_target_node_id_claims_id_fk",
-          "tableFrom": "mandate_inbox",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "target_node_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.mandate_policy_versions": {
-      "name": "mandate_policy_versions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "part": {
-          "name": "part",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "section": {
-          "name": "section",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content": {
-          "name": "content",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "author": {
-          "name": "author",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'applied'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_mandate_policy_versions_grant": {
-          "name": "idx_mandate_policy_versions_grant",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "mandate_policy_versions_grant_id_grants_id_fk": {
-          "name": "mandate_policy_versions_grant_id_grants_id_fk",
-          "tableFrom": "mandate_policy_versions",
           "tableTo": "grants",
           "columnsFrom": [
             "grant_id"
@@ -11372,210 +11149,6 @@
       },
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.petitions": {
-      "name": "petitions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "asked_micro_usd": {
-          "name": "asked_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "plan": {
-          "name": "plan",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "why": {
-          "name": "why",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "if_refused": {
-          "name": "if_refused",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requester_agent": {
-          "name": "requester_agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requester_action_id": {
-          "name": "requester_action_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requester_node_id": {
-          "name": "requester_node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chain": {
-          "name": "chain",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "waiting": {
-          "name": "waiting",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "granted_micro_usd": {
-          "name": "granted_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "follow_up_commissioned_at": {
-          "name": "follow_up_commissioned_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_petitions_open": {
-          "name": "idx_petitions_open",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "status IN ('pending', 'escalated')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "petitions_grant_id_grants_id_fk": {
-          "name": "petitions_grant_id_grants_id_fk",
-          "tableFrom": "petitions",
-          "tableTo": "grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "petitions_requester_action_id_actions_id_fk": {
-          "name": "petitions_requester_action_id_actions_id_fk",
-          "tableFrom": "petitions",
-          "tableTo": "actions",
-          "columnsFrom": [
-            "requester_action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "petitions_requester_node_id_claims_id_fk": {
-          "name": "petitions_requester_node_id_claims_id_fk",
-          "tableFrom": "petitions",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "requester_node_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "petitions_kind_check": {
-          "name": "petitions_kind_check",
-          "value": "\"petitions\".\"kind\" IN ('more_budget', 'follow_up')"
-        },
-        "petitions_status_check": {
-          "name": "petitions_status_check",
-          "value": "\"petitions\".\"status\" IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.platform_flags": {

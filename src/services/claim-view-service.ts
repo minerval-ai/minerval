@@ -38,6 +38,7 @@ import { countClaimInstances } from "./claim-instance-service.js";
 import { getClaimSourceMap, getSourceMapSummary } from "./source-map-service.js";
 import { listRelatedClaims } from "./claim-link-service.js";
 import { listFindings } from "./finding-service.js";
+import { developerDisclosure } from "../llm/model-developers.js";
 
 /** The optional sections of the view, in the order the description gives them. */
 export const CLAIM_VIEW_INCLUDES = [
@@ -149,6 +150,22 @@ export function formatClaimViewAssessment(
   };
 }
 
+/**
+ * Add the developer disclosure (#534) to a formatted assessment when the
+ * claim names the developer of the model that assessed it. Absent otherwise,
+ * as GET /claims/:id serves it.
+ */
+function withDeveloperDisclosure(
+  formatted: ReturnType<typeof formatClaimViewAssessment>,
+  model: string | null | undefined,
+  claimText: string,
+  tagNames: readonly string[]
+) {
+  if (!formatted) return formatted;
+  const disclosure = developerDisclosure(model, claimText, tagNames);
+  return disclosure ? { ...formatted, developer_disclosure: disclosure } : formatted;
+}
+
 function iso(d: Date | string | null | undefined): string | null {
   if (d == null) return null;
   return d instanceof Date ? d.toISOString() : d;
@@ -252,7 +269,12 @@ export async function getClaimView(
       updated_at: iso(claim.updatedAt),
       page_url: claimPageUrl(claim.id),
     },
-    assessment: formatClaimViewAssessment(assessment),
+    assessment: withDeveloperDisclosure(
+      formatClaimViewAssessment(assessment),
+      assessment?.model,
+      claim.text,
+      tags.map((t) => t.name)
+    ),
     ...(preliminarySeed ? { preliminary_seed: preliminarySeed } : {}),
     quantity: quantity ? { ...quantity, ...kindJudgment } : quantity,
     threshold_of: thresholdOf,
