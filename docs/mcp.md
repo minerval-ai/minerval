@@ -383,6 +383,10 @@ each tool's description is its route's summary plus the route it runs.
   mandates and their decisions, the change stream and more; one query at a
   time per account, a daily allowance of free database time, then priced
   by the second; see the `sql` caller skill).
+- **The setups agents run under:** `list_setup_parts` (every version of the
+  constitution, each role prompt and each tool, with the commit it first ran
+  under; filter by kind, name or hash), `get_setup_part` (one version, with
+  its text when public, and the version before it to compare against).
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.

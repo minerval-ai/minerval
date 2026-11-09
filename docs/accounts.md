@@ -507,7 +507,11 @@ have to cover (#356), so the promise stays keepable as tables are added.
   `jobs` (`user_id`), and the attribution columns on `llm_usage` and
   `agent_runs` (`user_id`, plain uuids with no FK). Transcripts in
   `agent_runs`/`agent_steps` expire on their own within
-  `TRACE_RETENTION_DAYS`; a request can delete the account's rows at once.
+  `TRACE_RETENTION_DAYS`, except those of runs that wrote to the graph
+  (`agent_runs.wrote_to_graph`), which are kept as the record of how the
+  graph's public content was made. A request can delete the account's
+  transcripts that wrote nothing at once, and clears the account's
+  attribution (`user_id`) on the ones that are kept.
 - **The prize path** (`prize_claims.claimant_id`, `attachments.owner_id`,
   and the `payee` and tax columns on `prize_claims` and `prize_payouts`):
   the identity, residency, and tax-form records a paid prize requires. A

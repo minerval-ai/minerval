@@ -359,8 +359,9 @@ const configSchema = z.object({
   // sweep below bounds what production keeps.
   traceLevel: z.enum(["off", "full"]).optional(),
   // How long agent_runs (and, by cascade, agent_steps) are kept before the
-  // retention sweep (workers/trace-retention.ts) deletes them. Traces are
-  // big — a Steward run is tens of KB of transcript — so production keeps a
+  // retention sweep (workers/trace-retention.ts) deletes them. Runs that
+  // wrote to the graph (agent_runs.wrote_to_graph) are never deleted: they
+  // are the record of how the graph's content was made. The rest are a
   // window, not history; llm_usage rows keep their run_id and cost forever.
   // 0 disables the sweep (keep everything; the corpus harness wants that).
   traceRetentionDays: z.coerce.number().default(30),
@@ -393,6 +394,11 @@ const configSchema = z.object({
   // skill, docs/mathematics.md §3); the AI cohort retired under the old rules
   // was selected by date instead (scripts/cohorts/).
   pipelineEpoch: z.string().default("2026-10-assessment-as-thinking"),
+  // The commit the running code was built from, baked into the image at
+  // build time (Dockerfile GIT_SHA, from GITHUB_SHA in the deploy). Stamped
+  // on every agent run and on each setup part the first time it is seen, so
+  // a run's prompts link to their source at that commit. Unset in local runs.
+  gitSha: z.string().optional(),
   // Prompt cache lifetime for the cached system blocks ("5m" or "1h"). The
   // five-minute cache is the default; the one-hour cache is a metering
   // question for the skilled Steward population once a domain mandate's run
@@ -474,6 +480,9 @@ const configSchema = z.object({
   // MARGINAL return whether the upgrade is worth funding: back the strong
   // sibling only when Δvalue/Δcost clears the day's bar. Paid express
   // orders always use the strong model — the buyer pays for the real thing.
+  // Production sets it to the frontier tier (Fable 5.2), so the strong
+  // variant is a different model from the standard pass (Opus 5.5) and the
+  // upgrade the allocators price is a real one.
   stewardStrongModel: z.string().default(""),
   // How much more a strong-model pass is expected to be worth than a
   // standard pass of the same claim: value(strong) = value(standard) × this.
@@ -672,9 +681,11 @@ const configSchema = z.object({
   formalizationReviewAwardOwls: z.coerce.number().min(0).default(100),
 
   // --- Mathematics: the solver (§7) ---
-  // The solver runs only on the strong tier: the long-run loop needs a
-  // family that takes `effort`, streams 128K-token turns, and carries the
-  // long-run betas, so a deployment pointing it elsewhere fails at config
+  // The solver runs on the frontier tier (Fable 5.2: a multi-hour proof
+  // attempt is the long-horizon work that model is for, and the attempt's
+  // dollar ceiling bounds what it spends) and only on a long-run family: the
+  // loop needs one that takes `effort`, streams 128K-token turns, and carries
+  // the long-run betas, so a deployment pointing it elsewhere fails at config
   // load rather than deep into an attempt (§7.8). Joins the production
   // model-env guard below.
   solverModel: z
@@ -696,7 +707,7 @@ const configSchema = z.object({
         });
       }
     })
-    .default(MODELS.strong),
+    .default(MODELS.frontier),
   // The solver's own kill switch: the worker exits its loop when false.
   // Off by default so no deployment runs multi-hour attempts without
   // someone choosing that. Same string convention as enableContributions
@@ -732,7 +743,7 @@ const configSchema = z.object({
         });
       }
     })
-    .default(MODELS.strong),
+    .default(MODELS.frontier),
   researcherStandardModel: modelId(MODELS.sonnet),
   researcherCheapModel: modelId(OPENROUTER_MODELS.flash),
   // Kill switch for launching new runs; a run in flight also polls the
@@ -950,7 +961,8 @@ const configSchema = z.object({
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
   // Arbitration is the highest-stakes governance call; production sets
-  // ARBITRATION_MODEL=claude-opus-5-5.
+  // ARBITRATION_MODEL=claude-fable-5-2 (the frontier tier: few runs, each one
+  // final).
   arbitrationModel: modelId(MODELS.sonnet),
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
@@ -959,7 +971,7 @@ const configSchema = z.object({
   // quoting, and the authority to refuse mandates that would warp the
   // graph. Always the best available model — this is judgment-heavy,
   // user-facing work where a weak model would be a false economy.
-  grantmakerModel: modelId(MODELS.strong),
+  grantmakerModel: modelId(MODELS.frontier),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -1186,6 +1198,7 @@ export function loadConfig(): Config {
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,
     sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
+    gitSha: process.env.GIT_SHA || undefined,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,
@@ -1436,10 +1449,12 @@ export function loadConfig(): Config {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.strong}, ` +
+          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.frontier}, ` +
           "and the Steward's money triggers on STEWARD_MODEL. " +
           "Fine for local dev; set the env(s) (production uses " +
-          "claude-opus-5-5) if this environment does real assessment work."
+          `${MODELS.strong}, and ${MODELS.frontier} for STEWARD_STRONG_MODEL, ` +
+          "ARBITRATION_MODEL and SOLVER_MODEL) if this environment does real " +
+          "assessment work."
       );
     }
   }

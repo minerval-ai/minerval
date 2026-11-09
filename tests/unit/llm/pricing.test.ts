@@ -172,3 +172,16 @@ describe("Fable 5.1 cache reads", () => {
     expect(micro).toBe(72_750_000);
   });
 });
+
+describe("Fable 5.2 (the frontier tier)", () => {
+  it("meters at its own list price, not Fable 5's through the shared prefix", () => {
+    const micro = costMicroUsd("claude-fable-5-2", {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+    });
+    // 8 + 40 + 0.20 + 10 = 58.20 USD
+    expect(micro).toBe(58_200_000);
+  });
+});

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   config: {
     env: "development",
     traceLevel: "full" as "off" | "full" | undefined,
+    gitSha: "abc1234def" as string | undefined,
   },
 }));
 
@@ -109,6 +110,8 @@ describe("startAgentRun", () => {
     const row = mocks.insertValues.mock.calls[0]![0] as Record<string, unknown>;
     expect(row.id).toBe(trace!.runId);
     expect(row.agent).toBe("steward");
+    // The deployed commit rides on every run (config.gitSha).
+    expect(row.commitSha).toBe("abc1234def");
     expect(row.jobId).toBe("11111111-1111-1111-1111-111111111111");
     expect(row.claimId).toBe("22222222-2222-2222-2222-222222222222");
     expect(row.userId).toBeNull();

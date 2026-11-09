@@ -4,6 +4,7 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema.js";
 import { loadConfig } from "../config.js";
+import { observeStatement } from "./statement-observer.js";
 
 let _pool: pg.Pool | null = null;
 
@@ -25,8 +26,12 @@ function getPool(): pg.Pool {
   return _pool;
 }
 
+// Every statement is shown to the observer (statement-observer.ts) before it
+// runs; drizzle handles do it through their logger.
+const observingLogger = { logQuery: (query: string) => observeStatement(query) };
+
 export function getDb() {
-  return drizzle(getPool(), { schema });
+  return drizzle(getPool(), { schema, logger: observingLogger });
 }
 
 export type Db = ReturnType<typeof getDb>;
@@ -49,6 +54,7 @@ export async function rawQuery<T>(
   params: unknown[] = []
 ): Promise<T[]> {
   const pool = getPool();
+  observeStatement(queryText);
   const result = await pool.query(queryText, params);
   return result.rows as T[];
 }
@@ -80,10 +86,11 @@ export async function withTransaction<T>(
     await client.query("BEGIN");
     const tx: TxQuery = {
       async query<R>(queryText: string, params: unknown[] = []): Promise<R[]> {
+        observeStatement(queryText);
         const result = await client.query(queryText, params);
         return result.rows as R[];
       },
-      db: drizzle(client, { schema }),
+      db: drizzle(client, { schema, logger: observingLogger }),
     };
     const value = await fn(tx);
     await client.query("COMMIT");

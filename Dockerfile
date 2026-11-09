@@ -9,6 +9,10 @@ RUN npm run build
 
 # Production stage
 FROM node:22-alpine
+# The commit this image is built from (the deploy passes GITHUB_SHA): stamped
+# on agent runs and setup parts so prompts link to their source (config.ts).
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 RUN apk add --no-cache curl
 RUN addgroup -S minerval && adduser -S minerval -G minerval
 WORKDIR /app

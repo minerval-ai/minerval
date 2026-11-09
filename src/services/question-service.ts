@@ -7,6 +7,7 @@
  * question_assessments as a standing.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { getUsageContext } from "../llm/usage-context.js";
 import {
   ANSWER_BASES,
   ANSWER_RELATIONS,
@@ -184,8 +185,9 @@ export async function recordQuestionAssessment(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO question_assessments
          (claim_id, standing, favored_claim_ids, summary, reasoning_trace, incomplete,
-          model, funded_by_job_id, trigger, trigger_context, confidence, marginal_yield)
-       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+          model, funded_by_job_id, trigger, trigger_context, confidence, marginal_yield,
+          run_id)
+       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [
         input.claimId,
         input.standing,
@@ -199,6 +201,8 @@ export async function recordQuestionAssessment(input: {
         input.triggerContext ?? null,
         input.confidence ?? null,
         input.marginalYield ?? null,
+        // The run that wrote it, stamped from the usage context.
+        getUsageContext().runId ?? null,
       ]
     );
     return { id: row!.id };

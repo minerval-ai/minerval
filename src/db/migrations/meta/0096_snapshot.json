@@ -1,5 +1,5 @@
 {
-  "id": "82dea538-e326-42e3-a57d-3e5631e43d4d",
+  "id": "fc36c097-02b4-48c7-a223-335b6365232c",
   "prevId": "3313da38-7888-4210-981e-c4914d451fb0",
   "version": "7",
   "dialect": "postgresql",
@@ -1292,6 +1292,19 @@
           "type": "text[]",
           "primaryKey": false,
           "notNull": false
+        },
+        "wrote_to_graph": {
+          "name": "wrote_to_graph",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "commit_sha": {
+          "name": "commit_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1312,6 +1325,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_agent_runs_expirable": {
+          "name": "idx_agent_runs_expirable",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "wrote_to_graph = false",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2276,31 +2305,7 @@
           "name": "argument_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "direction": {
-          "name": "direction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dismissed_at": {
-          "name": "dismissed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dismissed_reason": {
-          "name": "dismissed_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "source_id": {
           "name": "source_id",
@@ -2398,21 +2403,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_argument_instances_claim": {
-          "name": "idx_argument_instances_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_argument_instances_source": {
           "name": "idx_argument_instances_source",
           "columns": [
@@ -2436,19 +2426,6 @@
           "tableTo": "arguments",
           "columnsFrom": [
             "argument_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "argument_instances_claim_id_claims_id_fk": {
-          "name": "argument_instances_claim_id_claims_id_fk",
-          "tableFrom": "argument_instances",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "claim_id"
           ],
           "columnsTo": [
             "id"
@@ -2486,12 +2463,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "ck_argument_instances_placed": {
-          "name": "ck_argument_instances_placed",
-          "value": "(\"argument_instances\".\"argument_id\" IS NULL) <> (\"argument_instances\".\"claim_id\" IS NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.argument_subclaims": {
@@ -2973,6 +2945,12 @@
         "skills": {
           "name": "skills",
           "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -13360,6 +13338,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "is_current": {
           "name": "is_current",
           "type": "boolean",
@@ -14811,6 +14795,117 @@
         "ck_research_runs_spent": {
           "name": "ck_research_runs_spent",
           "value": "spent_micro_usd >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.setup_parts": {
+      "name": "setup_parts",
+      "schema": "",
+      "columns": {
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public": {
+          "name": "public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "source_path": {
+          "name": "source_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_seen_commit": {
+          "name": "first_seen_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_setup_parts_version": {
+          "name": "uq_setup_parts_version",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "setup_parts_kind_name_hash_pk": {
+          "name": "setup_parts_kind_name_hash_pk",
+          "columns": [
+            "kind",
+            "name",
+            "hash"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_setup_parts_kind": {
+          "name": "ck_setup_parts_kind",
+          "value": "\"setup_parts\".\"kind\" IN ('constitution', 'role', 'tool')"
         }
       },
       "isRLSEnabled": false

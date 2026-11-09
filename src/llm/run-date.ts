@@ -29,6 +29,11 @@ export function runDateLine(now: Date = new Date()): string {
 
 const DATED = /\n\nToday's date is \d{4}-\d{2}-\d{2} \(UTC\)\. [^\n]*$/;
 
+/** A system block without the date line withRunDate adds, for comparing setups across days. */
+export function stripRunDate(block: string): string {
+  return block.replace(DATED, "");
+}
+
 /**
  * `system` with the date line after its last non-empty block. Idempotent, so
  * a loop that dates its prompt and then calls completeWithTools with it does

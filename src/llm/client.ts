@@ -38,6 +38,8 @@ import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
+import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
+import { loadConfig } from "../config.js";
 import { CODE_EXECUTION_TOOL, meterCodeExecution, turnUsedCodeExecution } from "./instrument-harness.js";
 import type {
   CompletionResult,
@@ -117,14 +119,37 @@ function recordPromptStep(step: {
   schemaName?: string;
   schema?: Record<string, unknown>;
 }): void {
-  const trace = getUsageContext().trace;
+  const context = getUsageContext();
+  const trace = context.trace;
   if (!trace) return;
   const tools = (step.tools ?? []).map((t) =>
     "input_schema" in t
       ? { name: t.name, description: t.description ?? null, input_schema: t.input_schema }
       : t
   );
+  // The setup as versioned parts (services/setup-service.ts): each part is
+  // stored once, and the step records which ones it ran under. Never fails
+  // the run: a setup that cannot be split or stored is left out.
+  // The registry that names role parts imports every role's prompt module,
+  // so storage loads lazily, off the step's path.
+  let setup: SetupRecord | null = null;
+  try {
+    const parts = splitSetup({
+      system: step.system ?? null,
+      tools: tools as Array<{ name: string } & Record<string, unknown>>,
+    });
+    setup = setupRecord(parts, step, loadConfig().gitSha ?? null);
+    const agent = context.agent ?? "unknown";
+    void import("../services/setup-service.js")
+      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent)))
+      .catch((err) =>
+        console.error("[trace] failed to store setup parts:", err instanceof Error ? err.message : err)
+      );
+  } catch (err) {
+    console.error("[trace] failed to split setup:", err instanceof Error ? err.message : err);
+  }
   recordAgentStep(trace, "prompt", {
+    setup,
     model: step.model,
     effort: step.effort ?? null,
     maxTokens: step.maxTokens ?? null,

@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-11-09T19:33:22.861Z",
-  "gitCommit": "db18330",
+  "syncedAt": "2026-11-09T19:39:54.869Z",
+  "gitCommit": "67f9fa8",
   "pins": [
     {
       "agent": "steward",
@@ -11,14 +11,14 @@
     {
       "agent": "solver",
       "envVar": "SOLVER_MODEL",
-      "model": "claude-opus-5-5",
-      "label": "Claude Opus 5.5"
+      "model": "claude-fable-5-2",
+      "label": "Claude Fable 5.2"
     },
     {
       "agent": "steward strong",
       "envVar": "STEWARD_STRONG_MODEL",
-      "model": "claude-opus-5-5",
-      "label": "Claude Opus 5.5"
+      "model": "claude-fable-5-2",
+      "label": "Claude Fable 5.2"
     },
     {
       "agent": "curator",
@@ -35,8 +35,8 @@
     {
       "agent": "arbitration",
       "envVar": "ARBITRATION_MODEL",
-      "model": "claude-opus-5-5",
-      "label": "Claude Opus 5.5"
+      "model": "claude-fable-5-2",
+      "label": "Claude Fable 5.2"
     },
     {
       "agent": "extractor",
@@ -96,6 +96,11 @@
       "inputPerMtok": 4,
       "outputPerMtok": 20,
       "cacheReadMultiplier": 0.05
+    },
+    "claude-fable-5-2": {
+      "inputPerMtok": 8,
+      "outputPerMtok": 40,
+      "cacheReadMultiplier": 0.025
     },
     "openai/gpt-6-luna": null,
     "claude-sonnet-5-5": {
