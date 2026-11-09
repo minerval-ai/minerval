@@ -252,6 +252,14 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                 </a>
               </>
             ) : null}
+            {/* The run behind the verdict (#553): its setup and every step,
+                or, for a run that read private data, why it is withheld. */}
+            {assessment.run_id ? (
+              <>
+                {" · "}
+                <a href={`/runs/${assessment.run_id}`}>the run</a>
+              </>
+            ) : null}
           </span>
           {/* Funding is disclosed at the bottom of the page, with the
               explanation it needs, never beside the verdict (§12: the

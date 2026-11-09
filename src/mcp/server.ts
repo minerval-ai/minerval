@@ -148,6 +148,7 @@ function formatAssessment(
     reasoningTrace: string;
     assessedAt: Date;
     model?: string | null;
+    runId?: string | null;
   } | null
 ) {
   if (!a) return null;
@@ -164,6 +165,9 @@ function formatAssessment(
     assessed_at: a.assessedAt.toISOString(),
     // The assessor behind the verdict (#294); null for legacy rows.
     model: a.model ?? null,
+    // The run that wrote this verdict (GET /runs/:id); null when written
+    // outside a traced run or before runs were linked.
+    run_id: a.runId ?? null,
   };
 }
 

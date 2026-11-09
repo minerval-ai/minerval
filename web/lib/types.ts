@@ -136,6 +136,8 @@ export interface Assessment {
   // was recorded — render the date alone, no dangling separator. Optional
   // while API deploys race the frontend.
   model?: string | null;
+  // The agent run that wrote this verdict (/runs/:id); null when unlinked.
+  run_id?: string | null;
   // Funding disclosure (§19): present when this assessment was paid work —
   // a user's assessment order or a named grant. Stamped mechanically by the
   // API; absent for ordinary system work.
@@ -1629,4 +1631,64 @@ export interface ArgumentPage {
   premises: ArgumentPremise[];
   instances: ArgumentInstanceItem[];
   instances_total: number;
+}
+
+// An agent run (GET /runs/:id): public in full, or withheld with reasons.
+export interface RunSetupPart {
+  kind: string;
+  name: string | null;
+  hash: string;
+  version: number | null;
+}
+
+export interface RunSummary {
+  id: string;
+  agent: string;
+  public: boolean;
+  private_reasons: string[];
+  claim_id: string | null;
+  started_at: string;
+  finished_at: string | null;
+  outcome: string | null;
+  error: string | null;
+  steps_counted: number;
+  steps_recorded: number;
+  skills: string[] | null;
+  wrote_to_graph: boolean;
+  commit: string | null;
+  commit_url: string | null;
+  model_calls: number;
+  cost_usd: number;
+  setup: {
+    commit: string | null;
+    model: string;
+    effort: string | null;
+    maxTokens: number | null;
+    temperature: number | null;
+    parts: RunSetupPart[];
+  } | null;
+}
+
+export interface WithheldRun {
+  id: string;
+  agent: string;
+  withheld: true;
+  public: false;
+  private_reasons: string[];
+}
+
+export interface RunStepSummary {
+  seq: number;
+  kind: string;
+  created_at: string;
+  summary: string;
+  chars: number;
+  tools: string[];
+}
+
+export interface RunStep {
+  seq: number;
+  kind: string;
+  created_at: string;
+  content: unknown;
 }
