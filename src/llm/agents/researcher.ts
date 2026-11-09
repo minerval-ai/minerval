@@ -40,7 +40,7 @@ import {
 import { LlmRefusalError } from "../errors.js";
 import { modelSupportsLongRun } from "../models.js";
 import { resolveProvider } from "../providers/routing.js";
-import { getUsageContext, withAgent, withSkills } from "../usage-context.js";
+import { getUsageContext, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import {
   CODE_EXECUTION_TOOL,
   estimateBudget,
@@ -602,6 +602,14 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const toolNames = tools.map((t) => (t as { name: string }).name);
   const offered = new Set(toolNames);
   await stampResearchRun(run.id, { runId: getUsageContext().runId ?? null, tools: toolNames });
+
+  // A Grantmaker's task comes out of a funder's private conversation
+  // (claim-extras-service.ts), and an Audit Agent's from contexts that can
+  // carry operator data, so runs they launch are private
+  // (llm/run-visibility.ts). Other launchers' tasks are public.
+  if (run.requested_by === "grantmaker" || run.requested_by === "audit") {
+    markCurrentRunPrivate(`input:${run.requested_by}-brief`);
+  }
 
   const notebook: Record<string, string> = { ...(run.notebook ?? {}) };
   const system = getResearcherSystemPromptBlocks({

@@ -60,6 +60,7 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
   withAgent: (_a: string, fn: () => unknown) => fn(),
   withSkills: (_s: string[], fn: () => unknown) => fn(),
   getUsageContext: () => ({}),
+  markCurrentRunPrivate: vi.fn(),
 }));
 vi.mock("../../../src/llm/prompts/lookout.js", () => ({
   getLookoutSystemPromptBlocks: () => ["SYSTEM"],

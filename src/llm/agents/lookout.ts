@@ -46,7 +46,7 @@ const GRAPH_FEED_PER_RUN = 60;
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
@@ -264,6 +264,11 @@ async function runLookoutImpl(input: {
     if (summarized.length === 0 && (shownInFull.length === 0 || briefingChars + full.length <= EVENTS_FULL_CHARS)) {
       shownInFull.push(full);
       briefingChars += full.length;
+      // A poke's note can relay a funder's words, which are not public
+      // (llm/run-visibility.ts); a briefing that shows one is private.
+      if (e.kind === "manual" && typeof e.payload?.note === "string") {
+        markCurrentRunPrivate("input:lookout-poke-note");
+      }
     } else {
       summarized.push(summarizeLookoutEvent(e));
     }
