@@ -163,6 +163,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { leanCheckerConfigured } from "../../services/lean-checker-client.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import {
   RESEARCHER_AGENT,
   launcherWritesGraph,
@@ -569,6 +570,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const tools: ToolUnion[] = [
     ...graphReadTools,
     ...readTools.definitions,
+    // SQL over the public views. The Researcher runs inside another run's
+    // budget (delegate_research) or a request's, so it has no commission or
+    // petition of its own: what its work shows is needed, its report says.
+    getSqlToolDefinition(),
     getReadPageToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
@@ -746,6 +751,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     }
     const read = await readTools.execute(name, toolInput);
     if (read !== null) return read;
+    const sql = await executeSqlTool(name, toolInput);
+    if (sql !== null) return sql;
     const issue = await reportTools.execute(name, toolInput);
     if (issue !== null) return issue;
     if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);

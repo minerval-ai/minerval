@@ -1,17 +1,16 @@
 /**
  * Curation and audit as funded ledger actions (#363), against real Postgres:
  * the request table's live-uniqueness and per-claim bound, the curate row's
- * open/reopen/cancel lifecycle, the curate formula (the Matcher-quiet term
- * included), the maintenance share in the allocator (a ceiling with first
- * claim whose unused part flows back), the audit formula and its recusal on
- * every path, prompt funding of a fresh request, and the reconcile-candidate
- * scan's bounds and memory.
+ * open/reopen/cancel lifecycle, a fresh curation or audit put in front of
+ * the mandate that pays for that kind of work (with recusal from an audit
+ * of oneself), a prize audit paid from the bounty's reserve, and the
+ * reconcile-candidate scan's bounds and memory.
  */
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeAll } from "vitest";
 
 import { rawQuery } from "../../src/db/client.js";
-import { OWL, seedAction, seedClaim, seedGrantWithJob, seedUser, seedValuation } from "./helpers.js";
+import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 import {
   requestCuration,
   consumeCurationRequests,
@@ -22,12 +21,6 @@ import {
   ensureCurateAction,
   reconcileActions,
 } from "../../src/services/action-service.js";
-import {
-  refreshAuditValuations,
-  refreshCurateValuations,
-  setMandateValuations,
-} from "../../src/services/mandate-valuer-service.js";
-import { runMandateAllocator } from "../../src/services/allocation-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 import { requestAudit } from "../../src/services/queue-service.js";
 import {
@@ -58,12 +51,13 @@ async function curateRow(anchor: string) {
   return row ?? null;
 }
 
-async function valuation(grantId: string, actionId: string): Promise<number | null> {
-  const [row] = await rawQuery<{ value_est: number }>(
-    `SELECT value_est FROM mandate_valuations WHERE grant_id = $1 AND action_id = $2`,
+/** What is waiting in a mandate's inbox about a ledger row. */
+async function raised(grantId: string, actionId: string) {
+  return rawQuery<{ source: string; summary: string }>(
+    `SELECT source, summary FROM mandate_inbox
+      WHERE grant_id = $1 AND detail->>'action_id' = $2 AND handled_at IS NULL`,
     [grantId, actionId]
   );
-  return row ? Number(row.value_est) : null;
 }
 
 async function placements(actionGroup: string) {
@@ -194,132 +188,51 @@ describe("curation requests (#363)", () => {
   });
 });
 
-describe("the curate formula (#363)", () => {
-  it("values an escalation at the anchor's importance, and a just-matched claim with only a scan's pair at nothing", async () => {
-    const escalated = await claim("escalated", { importance: 0.8 });
-    const fresh = await claim("fresh", { importance: 0.8, ageDays: 1 });
-    const freshOther = await claim("fresh other", { importance: 0.8 });
-    await requestCuration({ anchorClaimId: escalated, source: "steward_escalation", concern: "dup" });
-    await requestCuration({
-      anchorClaimId: fresh,
-      otherClaimId: freshOther,
-      source: "reconcile_candidate",
-      signal: 0.95,
-      concern: "alike",
-    });
-    await refreshCurateValuations(general.grantId, { scopeClaimId: null, scopeQuery: null });
-    expect(await valuation(general.grantId, (await curateRow(escalated))!.id)).toBeCloseTo(0.8, 5);
-    expect(await valuation(general.grantId, (await curateRow(fresh))!.id)).toBe(0);
-  });
-
-  it("weighs a scan's pair on an older claim below an escalation", async () => {
-    const older = await claim("older", { importance: 0.8, ageDays: 60 });
-    const olderOther = await claim("older other");
-    await requestCuration({
-      anchorClaimId: older,
-      otherClaimId: olderOther,
-      source: "reconcile_candidate",
-      signal: 0.9,
-      concern: "alike",
-    });
-    await refreshCurateValuations(general.grantId, { scopeClaimId: null, scopeQuery: null });
-    // importance 0.8 × candidate weight 0.5 × similarity 0.9
-    expect(await valuation(general.grantId, (await curateRow(older))!.id)).toBeCloseTo(0.36, 5);
-  });
-});
-
-describe("the maintenance share (#363)", () => {
-  it("funds curation first within the share, and lets its unused part flow to other work", async () => {
-    const funder = await seedUser("maint");
-    // A rate of 4 owls: a 10% share is 0.4 owl of curation a day.
-    const m = await seedGrantWithJob({
-      funderId: funder,
-      budgetMicroUsd: 100 * OWL,
-      dailyBudgetMicroUsd: 4 * OWL,
-    });
-    const a1 = await claim("m1");
-    const a2 = await claim("m2");
-    const assessClaim = await claim("m-assess");
-    const c1 = await seedAction({ group: CURATE_GROUP(a1), kind: "curate", claimId: a1, costMicroUsd: 250_000 });
-    const c2 = await seedAction({ group: CURATE_GROUP(a2), kind: "curate", claimId: a2, costMicroUsd: 250_000 });
-    const as = await seedAction({ group: `assess:${assessClaim}`, claimId: assessClaim, costMicroUsd: 1_000_000 });
-    // The assessment's ratio beats both curations'; curation still goes first.
-    await seedValuation({ grantId: m.grantId, actionId: c1, valueEst: 0.2 });
-    await seedValuation({ grantId: m.grantId, actionId: c2, valueEst: 0.1 });
-    await seedValuation({ grantId: m.grantId, actionId: as, valueEst: 5 });
-
-    await runMandateAllocator(m.grantId);
-    // One curation fits the 0.4-owl share, the better one; the second would
-    // exceed it and waits.
-    expect(await placements(CURATE_GROUP(a1))).toHaveLength(1);
-    expect(await placements(CURATE_GROUP(a2))).toHaveLength(0);
-    // The share's unused 0.15 owl stayed in the day: the assessment funded.
-    expect(await placements(`assess:${assessClaim}`)).toHaveLength(1);
+describe("a fresh curation (#363)", () => {
+  it("is put in front of the General mandate's officers, and funds nothing by itself", async () => {
+    const anchor = await claim("escalated", { importance: 0.8 });
+    await requestCuration({ anchorClaimId: anchor, source: "steward_escalation", concern: "dup" });
+    const row = (await curateRow(anchor))!;
+    expect(await raised(general.grantId, row.id)).toHaveLength(1);
+    expect(await raised(governance.grantId, row.id)).toHaveLength(0);
+    expect(await placements(CURATE_GROUP(anchor))).toEqual([]);
   });
 });
 
 describe("audits on the ledger (#363)", () => {
-  it("opens an audit row the Governance mandate values and funds at once", async () => {
+  async function auditAction(runId: string): Promise<string> {
+    const [run] = await rawQuery<{ action_id: string }>(`SELECT action_id FROM audit_runs WHERE id = $1`, [runId]);
+    expect(run!.action_id).toBeTruthy();
+    return run!.action_id;
+  }
+
+  it("opens an audit row and puts it in front of the Governance mandate's officers", async () => {
     const runId = (await requestAudit({
       auditType: "decision_audit",
       triggeredBy: "bad_faith_flag",
       context: "A bad-faith flag on contribution X.",
     }))!;
-    const [run] = await rawQuery<{ action_id: string }>(
-      `SELECT action_id FROM audit_runs WHERE id = $1`,
-      [runId]
-    );
-    expect(run!.action_id).toBeTruthy();
-    expect(await valuation(governance.grantId, run!.action_id)).toBeCloseTo(0.9, 1);
-    expect(await valuation(general.grantId, run!.action_id)).toBeNull();
-    const funded = await placements(`audit:${runId}`);
-    expect(funded).toHaveLength(1);
-    expect(funded[0]!.grant_id).toBe(governance.grantId);
+    const actionId = await auditAction(runId);
+    const items = await raised(governance.grantId, actionId);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.summary).toContain("An audit is wanted");
+    expect(await raised(general.grantId, actionId)).toHaveLength(0);
+    expect(await placements(`audit:${runId}`)).toEqual([]);
   });
 
-  it("recuses Governance from an audit of itself: General values and funds that one", async () => {
+  it("recuses Governance from an audit of itself: General's officers are asked instead", async () => {
     const runId = (await requestAudit({
       auditType: "anomaly_investigation",
       triggeredBy: "manual",
       context: "Governance declined a run of overturn audits.",
       subjectGrantId: governance.grantId,
     }))!;
-    const [run] = await rawQuery<{ action_id: string }>(
-      `SELECT action_id FROM audit_runs WHERE id = $1`,
-      [runId]
-    );
-    expect(await valuation(governance.grantId, run!.action_id)).toBeNull();
-    expect(await valuation(general.grantId, run!.action_id)).not.toBeNull();
-    const funded = await placements(`audit:${runId}`);
-    expect(funded.map((f) => f.grant_id)).toEqual([general.grantId]);
+    const actionId = await auditAction(runId);
+    expect(await raised(governance.grantId, actionId)).toHaveLength(0);
+    expect(await raised(general.grantId, actionId)).toHaveLength(1);
   });
 
-  it("holds recusal in the allocator and the valuer's pen, whatever valuation row exists", async () => {
-    const runId = (await requestAudit({
-      auditType: "decision_audit",
-      triggeredBy: "manual",
-      context: "An audit of the General mandate's allocation.",
-      subjectGrantId: general.grantId,
-    }))!;
-    const [run] = await rawQuery<{ action_id: string }>(
-      `SELECT action_id FROM audit_runs WHERE id = $1`,
-      [runId]
-    );
-    // Governance funded it; now take that away and have General try.
-    await rawQuery(`UPDATE action_allocations SET released_at = now() WHERE exclusion_group = $1`, [
-      `audit:${runId}`,
-    ]);
-    const pen = await setMandateValuations(general.grantId, [
-      { action_id: run!.action_id, value: 10, rationale: "fund my own audit" },
-    ]);
-    expect(pen.recusedActionIds).toEqual([run!.action_id]);
-    // A row slipped in by any other path still buys nothing.
-    await seedValuation({ grantId: general.grantId, actionId: run!.action_id, valueEst: 10 });
-    await runMandateAllocator(general.grantId);
-    expect(await placements(`audit:${runId}`)).toEqual([]);
-  });
-
-  it("funds a prize audit from the bounty's reserve, and has Governance co-fund what a short reserve cannot", async () => {
+  it("funds a prize audit from the bounty's reserve, and asks Governance for what a short reserve cannot cover", async () => {
     const claimId = await claim("prize");
     const ns = `Minerval.S${randomUUID().slice(0, 8)}_v1`;
     const [f] = await rawQuery<{ id: string }>(
@@ -354,40 +267,19 @@ describe("audits on the ledger (#363)", () => {
       claimId,
     }))!;
     const group = `audit:${runId}`;
-    const [reserveShare] = await rawQuery<{ amount_micro_usd: string }>(
-      `SELECT amount_micro_usd FROM action_allocations
+    const [reserveShare] = await rawQuery<{ amount_micro_usd: string; commissioned_by: string | null }>(
+      `SELECT amount_micro_usd, commissioned_by FROM action_allocations
         WHERE exclusion_group = $1 AND user_id = $2 AND released_at IS NULL`,
       [group, reserve.user_id]
     );
     expect(Number(reserveShare!.amount_micro_usd)).toBe(200_000);
+    // Short of the whole: not a commission by itself.
+    expect(reserveShare!.commissioned_by).toBeNull();
     expect((await reserveRoomMicroUsd(b!.id)).room).toBe(0);
-
-    // The sweep: Governance values the short audit and covers the rest.
-    await refreshAuditValuations();
-    await runMandateAllocator(governance.grantId);
-    const [gov] = await rawQuery<{ amount_micro_usd: string }>(
-      `SELECT amount_micro_usd FROM action_allocations
-        WHERE exclusion_group = $1 AND grant_id = $2 AND released_at IS NULL`,
-      [group, governance.grantId]
-    );
-    expect(Number(gov!.amount_micro_usd)).toBe(300_000);
-  });
-
-  it("refreshes every open audit's value in the sweep, rising as it waits", async () => {
-    const runId = (await requestAudit({
-      auditType: "pattern_analysis",
-      triggeredBy: "scheduled_sweep",
-      context: "A periodic sweep.",
-    }))!;
-    const [run] = await rawQuery<{ action_id: string }>(
-      `SELECT action_id FROM audit_runs WHERE id = $1`,
-      [runId]
-    );
-    const fresh = (await valuation(governance.grantId, run!.action_id))!;
-    await rawQuery(`UPDATE audit_runs SET requested_at = now() - interval '7 days' WHERE id = $1`, [runId]);
-    await rawQuery(`UPDATE actions SET status = 'open' WHERE id = $1`, [run!.action_id]);
-    await refreshAuditValuations();
-    expect(await valuation(governance.grantId, run!.action_id)).toBeCloseTo(fresh * 2, 1);
+    const actionId = await auditAction(runId);
+    const items = await raised(governance.grantId, actionId);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.summary).toContain("review reserve holds");
   });
 });
 

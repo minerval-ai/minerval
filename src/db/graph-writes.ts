@@ -34,6 +34,8 @@ export const BOOKKEEPING_TABLES: ReadonlySet<string> = new Set([
   "eval_runs",
   // The setups runs ran under: recorded by every run, not graph state.
   "setup_parts",
+  // A paused run's transcript, kept so it can resume: run machinery.
+  "agent_sessions",
   // Money and the work queue: charges, escrow, leases.
   "owl_ledger",
   "budget_jobs",

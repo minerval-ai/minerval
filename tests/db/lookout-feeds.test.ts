@@ -4,7 +4,7 @@
  * items land once each however often the feed is polled; a wake rule
  * queues one `feed` event, not one per item, and not again while that one
  * waits; the inbox lists and triages items, and an ingest opens a ledger
- * row valued at its urgency within the lookout's ceiling, never a plan
+ * row commissioned within the lookout's limit or raised to the officers, never a plan
  * item, with no count per run (#695); auto_ingest raises every new item at
  * the ceiling with no daily cap, and the mandate's allocator funds those
  * rows; untriaged items expire; a failing feed backs off and breaks; a page the
@@ -44,7 +44,6 @@ import {
   updateFeed,
 } from "../../src/services/feed-service.js";
 import { feedPollTick } from "../../src/workers/lookout-triggers.js";
-import { runMandateAllocator } from "../../src/services/allocation-service.js";
 
 function rss(site: string, items: Array<{ id: string; title?: string; content?: string }>): string {
   return `<?xml version="1.0"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>
@@ -84,14 +83,26 @@ const planUrls = async (grantId: string) => {
   return (g?.plan?.items ?? []).map((i) => i.url);
 };
 
-/** The mandate's valued ingest rows on the ledger, oldest first, with each one's focus. */
+/**
+ * The ingest rows a lookout acted on for the mandate, oldest first, with
+ * each one's focus and how: commissioned from the mandate within the
+ * lookout's limit, or raised to its program officers.
+ */
 const ledgerIngests = (grantId: string) =>
-  rawQuery<{ url: string; focus: string | null; value: number; status: string; group: string }>(
-    `SELECT a.target_ref AS url, f.focus, mv.value_est AS value, a.status, a.exclusion_group AS group
-       FROM mandate_valuations mv
-       JOIN actions a ON a.id = mv.action_id
+  rawQuery<{ url: string; focus: string | null; how: string; status: string; group: string }>(
+    `SELECT a.target_ref AS url, f.focus,
+            CASE WHEN EXISTS (SELECT 1 FROM action_allocations al
+                               WHERE al.exclusion_group = a.exclusion_group AND al.grant_id = $1
+                                 AND al.commissioned_by = 'lookout')
+                 THEN 'commissioned' ELSE 'raised' END AS how,
+            a.status, a.exclusion_group AS group
+       FROM actions a
        LEFT JOIN ingest_focuses f ON f.exclusion_group = a.exclusion_group
-      WHERE mv.grant_id = $1 AND a.kind = 'ingest'
+      WHERE a.kind = 'ingest'
+        AND (EXISTS (SELECT 1 FROM action_allocations al
+                      WHERE al.exclusion_group = a.exclusion_group AND al.grant_id = $1)
+             OR EXISTS (SELECT 1 FROM mandate_inbox i
+                         WHERE i.grant_id = $1 AND i.detail->>'action_id' = a.id::text))
       ORDER BY a.created_at ASC, a.id ASC`,
     [grantId]
   );
@@ -241,14 +252,14 @@ describe("the inbox", () => {
     expect(inbox.total).toBe(5);
     const ids = inbox.rows.map((r) => r.item_id);
 
-    // No count per run (#695): every ingest decision is raised, each valued
-    // at its urgency clamped to the lookout's ceiling (6, the default).
+    // No count per run (#695): every ingest decision is acted on, each
+    // commissioned from the mandate within the lookout's limit.
     const res = await triageItems({
       lookoutId,
       grantId,
-      maxValue: 6,
+      commissionLimitMicroUsd: 6_000_000,
       decisions: [
-        { item_id: ids[0], decision: "ingest", reason: "A substantive argument on the crux.", urgency: 9 },
+        { item_id: ids[0], decision: "ingest", reason: "A substantive argument on the crux.", budget_owls: 0.5 },
         { item_id: ids[1], decision: "ingest" },
         { item_id: ids[2], decision: "defer" },
         { item_id: ids[3], decision: "skip", reason: "link roundup" },
@@ -258,30 +269,31 @@ describe("the inbox", () => {
     expect(res.ingested).toBe(2);
     expect(res.outcomes.map((o) => o.ok)).toEqual([true, true, true, true, false]);
     expect(await ledgerIngests(grantId)).toMatchObject([
-      { url: inbox.rows[0]!.url, value: 6, status: "open" },
-      { url: inbox.rows[1]!.url, value: 5, status: "open" },
+      { url: inbox.rows[0]!.url, how: "commissioned", status: "open" },
+      { url: inbox.rows[1]!.url, how: "commissioned", status: "open" },
     ]);
     // Nothing goes on the plan, where it would be self-funded outside the allocator.
     expect(await planUrls(grantId)).toEqual([]);
 
     // An item already ingested is not raised twice.
-    const again = await triageItems({ lookoutId, grantId, maxValue: 6, decisions: [{ item_id: ids[0], decision: "ingest" }] });
+    const again = await triageItems({ lookoutId, grantId, commissionLimitMicroUsd: 6_000_000, decisions: [{ item_id: ids[0], decision: "ingest" }] });
     expect(again).toMatchObject({ ingested: 0, outcomes: [{ ok: false, note: "Already ingested" }] });
-    // A ceiling of 0 delegates no spending: the item stays waiting, with the reason.
-    const none = await triageItems({ lookoutId, grantId, maxValue: 0, decisions: [{ item_id: ids[2], decision: "ingest" }] });
-    expect(none.outcomes[0]).toMatchObject({ ok: false, status: "deferred", note: expect.stringMatching(/ceiling/) });
+    // A limit of 0 delegates no spending: the ingest goes to the program officers.
+    const none = await triageItems({ lookoutId, grantId, commissionLimitMicroUsd: 0, decisions: [{ item_id: ids[2], decision: "ingest" }] });
+    expect(none.outcomes[0]).toMatchObject({ ok: true, status: "ingested" });
+    expect((await ledgerIngests(grantId)).at(-1)).toMatchObject({ url: inbox.rows[2]!.url, how: "raised" });
 
     const dup = await triageItems({
-      lookoutId, grantId, maxValue: 6,
+      lookoutId, grantId, commissionLimitMicroUsd: 6_000_000,
       decisions: [{ item_id: ids[2], decision: "skip" }],
       skipRest: { feedId, reason: "caught up" },
     });
     expect(dup.skipped_in_bulk).toBe(1);
     expect((await feedInbox({ lookoutId })).total).toBe(0);
-    expect(await ledgerIngests(grantId)).toHaveLength(2);
+    expect(await ledgerIngests(grantId)).toHaveLength(3);
 
     const [report] = await feedReport(lookoutId);
-    expect(report!.items).toMatchObject({ new: 0, deferred: 0, ingested: 2, skipped: 3 });
+    expect(report!.items).toMatchObject({ new: 0, deferred: 0, ingested: 3, skipped: 2 });
     expect(site).toBeTruthy();
   });
 
@@ -352,7 +364,7 @@ describe("rules", () => {
     await pollFeed((await getFeed(auto.feed_id))!);
     const rows = (await feedInbox({ lookoutId, order: "oldest" })).rows;
     await triageItems({
-      lookoutId, grantId, maxValue: 6,
+      lookoutId, grantId, commissionLimitMicroUsd: 6_000_000,
       decisions: [
         { item_id: rows[0]!.item_id, decision: "ingest" },
         { item_id: rows[1]!.item_id, decision: "ingest", focus: "" },
@@ -366,9 +378,9 @@ describe("rules", () => {
     expect(report!.ingest_focus).toBe(focus);
   });
 
-  it("auto_ingest raises every new item at the lookout's ceiling, with no run and no daily cap, for the allocator to fund", async () => {
+  it("auto_ingest commissions every new item within the lookout's limit, with no run and no daily cap", async () => {
     const { grantId, lookoutId, site } = await seedLookout();
-    await rawQuery(`UPDATE lookouts SET max_value = 4 WHERE id = $1`, [lookoutId]);
+    await rawQuery(`UPDATE lookouts SET commission_limit_micro_usd = 4000000 WHERE id = $1`, [lookoutId]);
     net.pages.set(`${site}/feed`, rss(site, []));
     const added = await addFeed({
       grantId, lookoutId, url: `${site}/feed`, createdBy: "x",
@@ -379,7 +391,7 @@ describe("rules", () => {
     const r = await pollFeed((await getFeed(added.feed_id))!);
     expect(r).toMatchObject({ autoIngested: 3, woke: false });
     const rows = await ledgerIngests(grantId);
-    expect(rows.map((i) => i.value)).toEqual([4, 4, 4]);
+    expect(rows.map((i) => i.how)).toEqual(["commissioned", "commissioned", "commissioned"]);
     expect(await planUrls(grantId)).toEqual([]);
     expect(await feedEvents(lookoutId)).toHaveLength(0);
     // Nothing new on the next poll, so nothing more is raised.
@@ -388,10 +400,7 @@ describe("rules", () => {
     const [report] = await feedReport(lookoutId);
     expect(report!.items).toMatchObject({ new: 0, ingested: 3, auto_ingested: 3 });
 
-    // The mandate's allocator, not a count, decides what these buy: it
-    // funds the valued rows out of the mandate's room.
-    const alloc = await runMandateAllocator(grantId);
-    expect(alloc.allocated).toBeGreaterThan(0);
+    // Each was paid for whole from the mandate, at the ingest's cap.
     const placed = await rawQuery<{ exclusion_group: string }>(
       `SELECT exclusion_group FROM action_allocations WHERE grant_id = $1 AND released_at IS NULL`,
       [grantId]

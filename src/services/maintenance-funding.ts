@@ -1,88 +1,92 @@
 /**
- * Price and fund a fresh maintenance, audit or request row at once (#363).
+ * A fresh maintenance, audit or request row, put in front of the mandate
+ * that pays for that kind of work at once (#363), rather than waiting for a
+ * sweep.
  *
- * The scheduler's allocation sweep revalues and funds the whole ledger every
- * few hours; a curation request or an audit that waited for it would sit
- * idle that long, where the queue it replaced ran at once. So a new request
- * prices its own row with the same formulas and lets the mandates that fund
- * that kind take an allocation pass straight away, the way a consistency
- * flag revalues the General mandate the moment it is raised. Nothing here
- * decides differently from the sweep: the same valuations, the same
- * allocator, the same day room. It only decides sooner.
+ * Curations and work on requests go to the General mandate's program
+ * officers, audits to the Governance mandates' (General's, for an audit of a
+ * Governance mandate, so no mandate funds an audit of itself). The officers
+ * decide under their mandate's operating policy whether to commission the
+ * row and at what budget. Nothing here prices or funds anything.
  *
- * Best-effort: a failure leaves the row for the next sweep.
+ * Best-effort: a failure leaves the row open on the ledger, where a lookout
+ * or a later sitting can find it.
  */
-import {
-  getGeneralMandate,
-  getGovernanceMandateIds,
-} from "./allocation-policy-service.js";
-import {
-  refreshAuditValuations,
-  refreshCurateValuations,
-  refreshRequestValuations,
-} from "./mandate-valuer-service.js";
-import { runMandateAllocator } from "./allocation-service.js";
+import { rawQuery } from "../db/client.js";
+import { getGeneralMandate, getGovernanceMandateIds } from "./allocation-policy-service.js";
+import { raiseToMandate } from "./mandate-inbox-service.js";
 
-/** A fresh curate row: the General formula prices it, General's allocator passes. */
+interface Row {
+  id: string;
+  kind: string;
+  claim_id: string | null;
+  target_ref: string | null;
+  label: string;
+}
+
+async function row(actionId: string): Promise<Row | null> {
+  const [r] = await rawQuery<Row>(
+    `SELECT id, kind, claim_id, target_ref, label FROM actions WHERE id = $1`,
+    [actionId]
+  );
+  return r ?? null;
+}
+
+async function raise(grantId: string, r: Row, summary: string): Promise<void> {
+  await raiseToMandate({
+    grantId,
+    targetNodeId: r.claim_id,
+    targetRef: r.claim_id ? null : r.target_ref,
+    source: "the system",
+    summary,
+    detail: { action_id: r.id, kind: r.kind },
+  });
+}
+
+/** A fresh curate row: to the General mandate's officers. */
 export async function fundCurationNow(actionId: string): Promise<void> {
   try {
     const general = await getGeneralMandate();
-    if (!general) return;
-    await refreshCurateValuations(
-      general.grantId,
-      { scopeClaimId: null, scopeQuery: null },
-      actionId
-    );
-    await runMandateAllocator(general.grantId);
+    const r = await row(actionId);
+    if (!general || !r) return;
+    await raise(general.grantId, r, `A curation is wanted: ${r.label}`);
   } catch (err) {
-    console.warn(
-      `[maintenance] prompt funding of curate ${actionId} failed:`,
-      err instanceof Error ? err.message : err
-    );
+    console.warn(`[maintenance] raising curate ${actionId} failed:`, err instanceof Error ? err.message : err);
   }
 }
 
 /**
- * A fresh audit row: the Governance formula prices it (General's, for an
- * audit of a Governance mandate), and each of those mandates takes a pass.
- * A mandate never funds an audit of itself; the allocator skips such rows.
+ * A fresh audit row: to each Governance mandate that isn't its subject, and
+ * to General for an audit of a Governance mandate.
  */
-export async function fundAuditNow(actionId: string): Promise<void> {
+export async function fundAuditNow(actionId: string, opts: { note?: string } = {}): Promise<void> {
   try {
-    const valued = await refreshAuditValuations(actionId);
-    if (valued === 0) return;
+    const r = await row(actionId);
+    if (!r) return;
+    const [run] = await rawQuery<{ subject_grant_id: string | null }>(
+      `SELECT subject_grant_id FROM audit_runs WHERE id::text = $1`,
+      [r.target_ref ?? ""]
+    );
     const governance = await getGovernanceMandateIds();
     const general = await getGeneralMandate();
-    const funders = [...governance, ...(general ? [general.grantId] : [])];
-    for (const grantId of funders) await runMandateAllocator(grantId);
+    const subject = run?.subject_grant_id ?? null;
+    const funders = governance.filter((g) => g !== subject);
+    if (funders.length === 0 && general && general.grantId !== subject) funders.push(general.grantId);
+    const summary = `An audit is wanted: ${r.label}` + (opts.note ? ` ${opts.note}` : "");
+    for (const grantId of funders) await raise(grantId, r, summary);
   } catch (err) {
-    console.warn(
-      `[maintenance] prompt funding of audit ${actionId} failed:`,
-      err instanceof Error ? err.message : err
-    );
+    console.warn(`[maintenance] raising audit ${actionId} failed:`, err instanceof Error ? err.message : err);
   }
 }
 
-/**
- * A fresh request row (a request filed, its budget set, its scoping pass
- * returned): the General formula prices it and General's allocator passes,
- * as for a curate row. Mandates with narrower scopes price it on their next
- * sweep or review.
- */
+/** A fresh request row: to the General mandate's officers. */
 export async function fundRequestNow(actionId: string): Promise<void> {
   try {
     const general = await getGeneralMandate();
-    if (!general) return;
-    await refreshRequestValuations(
-      general.grantId,
-      { scopeClaimId: null, scopeQuery: null },
-      actionId
-    );
-    await runMandateAllocator(general.grantId);
+    const r = await row(actionId);
+    if (!general || !r) return;
+    await raise(general.grantId, r, `Work on a request is wanted: ${r.label}`);
   } catch (err) {
-    console.warn(
-      `[maintenance] prompt funding of request ${actionId} failed:`,
-      err instanceof Error ? err.message : err
-    );
+    console.warn(`[maintenance] raising request ${actionId} failed:`, err instanceof Error ? err.message : err);
   }
 }

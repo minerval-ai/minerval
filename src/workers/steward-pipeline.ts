@@ -43,8 +43,8 @@ import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { getGeneralMandate } from "../services/allocation-policy-service.js";
-import { runGeneralAllocator } from "../services/allocation-service.js";
 import {
+  actionBudgetMicroUsd,
   claimAction,
   completeAction,
   largestActionFunder,
@@ -52,10 +52,11 @@ import {
   releaseAction,
   type RunnableAction,
 } from "../services/action-service.js";
-import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
+import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
-type PassBudgetInput = { microUsd: number; source: string } | null;
+type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
 import {
   MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
@@ -67,7 +68,6 @@ import {
 interface StewardTaskRow {
   id: string;
   steward_trigger: string | null;
-  steward_context: string | null;
   steward_attempts: number | null;
   queue_priority: number;
 }
@@ -139,20 +139,13 @@ export async function processNextStewardTask(
   // the unattributed counters and stalled funded work along with them.)
   const mandate = await getGeneralMandate();
 
-  // The ledger's verdict first — the engine's only execution rule.
-  let action = await nextRunnableAction(["assess", "reassess"]);
+  // The ledger's verdict first — the engine's only execution rule. What
+  // runs is what some payer commissioned; with a mandate in place, nothing
+  // commissioned means the lane rests until someone commissions work.
+  const action = await nextRunnableAction(["assess", "reassess"]);
   if (!action && mandate) {
-    // Nothing covered: let the General mandate place today's next
-    // allocations, then look again. Rate- or escrow-exhausted allocators
-    // place nothing, and the lane rests until tomorrow or a top-up.
-    const placed = await runGeneralAllocator();
-    if (placed && placed.allocated > 0) {
-      action = await nextRunnableAction(["assess", "reassess"]);
-    }
-    if (!action) {
-      const pending = await pendingStewardCount();
-      return { status: pending > 0 ? "budget" : "empty" };
-    }
+    const pending = await pendingStewardCount();
+    return { status: pending > 0 ? "budget" : "empty" };
   }
   if (action) {
     return runCoveredAction(action, opts);
@@ -202,7 +195,7 @@ export async function processNextStewardTask(
          LIMIT 1
          FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, steward_trigger, steward_context, steward_attempts,
+      RETURNING id, steward_trigger, steward_attempts,
                 queue_priority`
   );
   if (rows.length === 0) return { status: "empty" };
@@ -238,7 +231,7 @@ async function runCoveredAction(
              OR (steward_state = 'running'
                  AND stewarded_at < now()
                        - make_interval(mins => ${STEWARD_LEASE_STALE_MINUTES})))
-      RETURNING id, steward_trigger, steward_context, steward_attempts,
+      RETURNING id, steward_trigger, steward_attempts,
                 queue_priority`,
     [action.claim_id]
   );
@@ -278,7 +271,11 @@ async function runCoveredAction(
   // stamps the funding disclosure) or a person.
   const usageCtx = await largestActionFunder(action.id).catch(() => ({}));
   // The pass spends what the allocations covering its action hold.
-  const passBudget = { microUsd: Number(action.coverage_micro_usd), source: "the allocations funding this pass" };
+  const passBudget = {
+    microUsd: actionBudgetMicroUsd(action),
+    source: action.commissioned ? "a commission" : "the allocations funding this pass",
+    funding: { actionId: action.id },
+  };
   return runStewardOnClaim(rows[0]!, { model, usageCtx, action, passBudget });
 }
 
@@ -309,7 +306,8 @@ async function runStewardOnClaim(
             runClaimSteward({
               trigger,
               claimId: task.id,
-              context: task.steward_context ?? "",
+              // The messages are the node's inbox, which the run reads itself.
+              context: "",
               model: input.model,
             })
           )
@@ -328,6 +326,14 @@ async function runStewardOnClaim(
               err instanceof Error ? err.message : err
             }`
         )
+      );
+    }
+    // A follow-up granted to this run's petitions is commissioned now that
+    // the run has ended (petition-service.ts). Best-effort: the scheduler's
+    // sweep picks up any this misses.
+    if (action) {
+      await commissionFollowUps(action.id).catch((err) =>
+        console.warn(`[steward] follow-ups for ${action.id} failed: ${err instanceof Error ? err.message : err}`)
       );
     }
     // Success clears the error state AND the attempt counter, so a claim that

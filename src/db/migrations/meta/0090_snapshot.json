@@ -1,5 +1,5 @@
 {
-  "id": "b9a9af0d-8eab-432d-bb84-335580565983",
+  "id": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
   "prevId": "54ba4c6e-a58b-4d1a-9242-0873baff9d57",
   "version": "7",
   "dialect": "postgresql",
@@ -1240,13 +1240,6 @@
           "type": "text[]",
           "primaryKey": false,
           "notNull": false
-        },
-        "wrote_to_graph": {
-          "name": "wrote_to_graph",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -1267,22 +1260,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_runs_expirable": {
-          "name": "idx_agent_runs_expirable",
-          "columns": [
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "wrote_to_graph = false",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2730,12 +2707,6 @@
         "skills": {
           "name": "skills",
           "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -10411,6 +10382,189 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.node_messages": {
+      "name": "node_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_kind": {
+          "name": "sender_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_node_id": {
+          "name": "sender_node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sender_ref": {
+          "name": "sender_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paid": {
+          "name": "paid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reply_to": {
+          "name": "reply_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome_note": {
+          "name": "outcome_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "answered_at": {
+          "name": "answered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_node_messages_unread": {
+          "name": "idx_node_messages_unread",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "read_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_node_messages_sender": {
+          "name": "idx_node_messages_sender",
+          "columns": [
+            {
+              "expression": "sender_node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "node_messages_node_id_claims_id_fk": {
+          "name": "node_messages_node_id_claims_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_messages_sender_node_id_claims_id_fk": {
+          "name": "node_messages_sender_node_id_claims_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "sender_node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "node_messages_reply_to_node_messages_id_fk": {
+          "name": "node_messages_reply_to_node_messages_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "node_messages",
+          "columnsFrom": [
+            "reply_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "node_messages_outcome_check": {
+          "name": "node_messages_outcome_check",
+          "value": "\"node_messages\".\"outcome\" IS NULL OR \"node_messages\".\"outcome\" IN ('changed', 'no_change', 'disagree')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.oauth_authorization_requests": {
       "name": "oauth_authorization_requests",
       "schema": "",
@@ -12300,12 +12454,6 @@
         },
         "funded_by_job_id": {
           "name": "funded_by_job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false

@@ -97,15 +97,13 @@ async function claimNextTarget(
   prior_state: string;
   decomposition_status: string;
   steward_trigger: string | null;
-  steward_context: string | null;
 } | null> {
   const rows = await rawQuery<{
     id: string;
     prior_state: string;
     decomposition_status: string;
     steward_trigger: string | null;
-    steward_context: string | null;
-  }>(
+    }>(
     `WITH RECURSIVE subtree AS (
        SELECT id FROM claims WHERE id = $1
        UNION
@@ -128,7 +126,7 @@ async function claimNextTarget(
        FROM target
       WHERE c.id = target.id
       RETURNING c.id, target.prior_state, c.decomposition_status,
-                c.steward_trigger, c.steward_context`,
+                c.steward_trigger`,
     [rootClaimId]
   );
   return rows[0] ?? null;
@@ -226,7 +224,6 @@ export async function processNextBudgetJobTask(
     ? "structure_and_assess"
     : (target.steward_trigger ?? "subclaim_change");
   const context =
-    (target.steward_context ? `${target.steward_context}\n\n` : "") +
     "This run is funded by a user's deep-decomposition budget on an " +
     "ancestor claim: steward this claim now" +
     (target.prior_state === "deferred"

@@ -34,7 +34,6 @@ import {
   estimateConsistencyNodeCostMicroUsd,
   resetCostEstimateCache,
 } from "../../src/services/cost-estimate-service.js";
-import { refreshFormulaValuations } from "../../src/services/mandate-valuer-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 
@@ -94,14 +93,19 @@ describe("consistency flags (#330)", () => {
     });
     expect(res.ok && !res.duplicate).toBe(true);
 
-    const [claim] = await rawQuery<{ steward_state: string; steward_trigger: string; steward_context: string }>(
-      `SELECT steward_state, steward_trigger, steward_context FROM claims WHERE id = $1`,
+    const [claim] = await rawQuery<{ steward_state: string; steward_trigger: string }>(
+      `SELECT steward_state, steward_trigger FROM claims WHERE id = $1`,
       [a]
     );
     expect(claim!.steward_state).toBe("pending");
     expect(claim!.steward_trigger).toBe("consistency_flag");
-    expect(claim!.steward_context).toContain(b);
-    expect(claim!.steward_context).toContain("contradicted");
+    const [message] = await rawQuery<{ body: string; sender_kind: string }>(
+      `SELECT body, sender_kind FROM node_messages WHERE node_id = $1 AND trigger = 'consistency_flag'`,
+      [a]
+    );
+    expect(message!.sender_kind).toBe("consistency_checker");
+    expect(message!.body).toContain(b);
+    expect(message!.body).toContain("contradicted");
 
     const [flag] = await rawQuery<{
       claim_ids: string[]; action_id: string | null; expected_gain: number;
@@ -162,10 +166,7 @@ describe("consistency flags (#330)", () => {
     expect([...row!.claim_ids].sort()).toEqual([a, b, c].sort());
   });
 
-  it("lapses once its pass lands, even when the claim's assess row reopens later", async () => {
-    resetAllocationPolicyCache();
-    const funder = await seedUser("general-lapse");
-    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000, policy: "general" });
+  it("takes a new flag after its pass lands as a new flag, not a repeat of the spent one", async () => {
     const a = await seedClaim("flagged", 0.8);
     const b = await seedClaim("neighbor");
     await assess(a, { status: "supported", marginalYield: 0.1 });
@@ -174,25 +175,9 @@ describe("consistency flags (#330)", () => {
       sweepId: null, kind: "overlooked_evidence", primaryClaimId: a, claimIds: [b],
       rationale: "The flagged claim never weighs the neighbor's evidence.", expectedGain: 0.9,
     });
-    const valueOf = async () => {
-      await refreshFormulaValuations(grantId, { scopeClaimId: a, scopeQuery: null });
-      const [row] = await rawQuery<{ value_est: number }>(
-        `SELECT mv.value_est FROM mandate_valuations mv JOIN actions x ON x.id = mv.action_id
-          WHERE mv.grant_id = $1 AND x.claim_id = $2 AND x.variant = 'standard'`,
-        [grantId, a]
-      );
-      return Number(row?.value_est ?? NaN);
-    };
-    const flagged = await valueOf();
-    // The pass lands: a new assessment, the row done. Later the claim is
-    // wanted again and the same row reopens.
+    // The pass lands: a new assessment, the row done.
     await assess(a, { status: "inconclusive", marginalYield: 0.1 });
     await rawQuery(`UPDATE actions SET status = 'done' WHERE exclusion_group = $1`, [ASSESS_GROUP(a)]);
-    await rawQuery(`UPDATE actions SET status = 'open' WHERE exclusion_group = $1`, [ASSESS_GROUP(a)]);
-    const reopened = await valueOf();
-    expect(reopened).toBeLessThan(flagged);
-    expect(reopened / flagged).toBeCloseTo(0.1 / 0.9, 1);
-    // And a new flag on it is a new flag, not a repeat of the spent one.
     const again = await flagInconsistency({
       sweepId: null, kind: "stale_premise", primaryClaimId: a, claimIds: [b],
       rationale: "Its new verdict still rests on the neighbor's old reading.", expectedGain: 0.5,
@@ -210,13 +195,14 @@ describe("consistency flags (#330)", () => {
     expect(await flagInconsistency({ ...base, kind: "vibes", primaryClaimId: a, claimIds: [b] })).toMatchObject({ ok: false, code: "KIND" });
   });
 
-  it("raises the formula's expected gain while the flagged group is open, and only raises it", async () => {
+  it("puts the flag in front of the General mandate's officers, with the Checker's expected gain", async () => {
     resetAllocationPolicyCache();
     const funder = await seedUser("general");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000, policy: "general" });
+    await rawQuery(`UPDATE grants SET is_platform = true, status = 'active' WHERE id = $1`, [grantId]);
+    resetAllocationPolicyCache();
     const a = await seedClaim("flagged", 0.8);
     const b = await seedClaim("neighbor");
-    // The Steward's own estimate: another pass would change little.
     await assess(a, { status: "supported", credence: 0.8, marginalYield: 0.1 });
     await assess(b, { status: "supported" });
     await flagInconsistency({
@@ -227,24 +213,21 @@ describe("consistency flags (#330)", () => {
       rationale: "The flagged claim's reasoning never weighs the neighbor's evidence.",
       expectedGain: 0.6,
     });
-    const valueOf = async () => {
-      await refreshFormulaValuations(grantId, { scopeClaimId: a, scopeQuery: null });
-      const [row] = await rawQuery<{ value_est: number }>(
-        `SELECT mv.value_est FROM mandate_valuations mv JOIN actions x ON x.id = mv.action_id
-          WHERE mv.grant_id = $1 AND x.claim_id = $2 AND x.variant = 'standard'`,
-        [grantId, a]
-      );
-      return Number(row!.value_est);
-    };
-    const flagged = await valueOf();
-    await rawQuery(`UPDATE consistency_flags SET expected_gain = 0.05 WHERE primary_claim_id = $1`, [a]);
-    const lowFlag = await valueOf();
-    // A flag below the Steward's own estimate changes nothing.
-    await rawQuery(`DELETE FROM consistency_flags WHERE primary_claim_id = $1`, [a]);
-    const unflagged = await valueOf();
-    expect(flagged).toBeGreaterThan(unflagged);
-    expect(flagged / unflagged).toBeCloseTo(0.6 / 0.1, 1);
-    expect(lowFlag).toBeCloseTo(unflagged, 5);
+    const items = await rawQuery<{ source: string; detail: { expected_gain?: number; action_id?: string } }>(
+      `SELECT source, detail FROM mandate_inbox WHERE grant_id = $1 AND target_node_id = $2`,
+      [grantId, a]
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]!.source).toBe("the Consistency Checker");
+    expect(items[0]!.detail.expected_gain).toBeCloseTo(0.6);
+    // Nothing is funded by the flag itself.
+    const [paid] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM action_allocations WHERE exclusion_group = $1 AND released_at IS NULL`,
+      [ASSESS_GROUP(a)]
+    );
+    expect(paid!.n).toBe(0);
+    await rawQuery(`UPDATE grants SET is_platform = false WHERE id = $1`, [grantId]);
+    resetAllocationPolicyCache();
   });
 });
 

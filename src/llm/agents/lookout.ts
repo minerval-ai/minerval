@@ -5,9 +5,10 @@
  * question: has anything happened, in the scope its brief describes, that
  * warrants work on the graph? Its Grantmaker wrote the brief (scope in
  * words, where to look, what to look out for), chose its triggers (a
- * heartbeat, the retraction poller, a manual poke) and delegated a bounded
- * slice of the mandate's spending judgment: a ceiling on the valuation a
- * flag or an ingest may carry (#695). The ledger funds each run
+ * heartbeat, the retraction poller, the graph feed, a manual poke) and
+ * delegated a bounded slice of the mandate's spending: the most it may
+ * commission alone for one item, the rest raised to the mandate's program
+ * officers. The ledger funds each run
  * from the mandate's escrow (`lookout_run`, fundGrantSelfActions) and the
  * engine executor runs this agent with the affordances a watcher needs —
  *
@@ -20,21 +21,28 @@
  *    follows, read at whatever depth it judges right (read_item), triaged
  *    many at a time (triage_items), and its own feeds' wake rules
  *    (set_feed_rule); read_listing for an archive or index;
- *  - three ways to raise a candidate: flag_reassessment (a valued reassess
- *    row), propose_ingest (a valued ingest row), leave_note (for the next
- *    review);
+ *  - the graph feed: what changed in its territory since its last run, and
+ *    query_sql over the public views;
+ *  - three ways to act: flag_reassessment (a pass, commissioned within its
+ *    limit or raised to the officers), propose_ingest (the same for a
+ *    source), leave_note (for the next review);
  *  - submit_contribution: what it found, through the Contribution Reviewer
  *    like anyone's, the review paid from the mandate's escrow (§19).
  *
- * What it cannot do is the point: it writes no assessment, sets no
- * importance, moves no money. Everything it raises is a candidate the
- * mechanism prices and the mandate's allocator funds or not, and its flags
- * are recorded so its precision can be read (lookout-service.ts).
+ * What it cannot do is the point: it writes no assessment and sets no
+ * importance. It spends only within its limit; the rest is the officers'
+ * call. Its flags are recorded so its precision can be read
+ * (lookout-service.ts).
  */
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
+import { GRAPH_CHANGE_KINDS, listGraphChanges } from "../../services/graph-change-service.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
+
+/** How many change-stream entries one run reads; the rest wait for the next. */
+const GRAPH_FEED_PER_RUN = 60;
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
@@ -195,6 +203,30 @@ async function runLookoutImpl(input: {
   const recentFlags = await listLookoutFlags(lookout.id, { limit: RECENT_FLAGS_SHOWN });
   const reportTools = createReportTools({ model });
   const feeds = await lookoutFeedSummaries(lookout.id);
+  // The graph feed: what changed in the lookout's territory since it last
+  // read the change stream, every kind (graph-change-service.ts).
+  const graphFeed = (lookout.triggers ?? []).includes("graph")
+    ? await listGraphChanges({
+        after: lookout.changes_cursor,
+        since: lookout.changes_cursor ? null : lookout.last_run_at ?? new Date(Date.now() - 86_400_000),
+        scope: { under: lookout.territory_claim_ids ?? [], tagIds: lookout.territory_tag_ids ?? [] },
+        kinds: [...GRAPH_CHANGE_KINDS],
+        materialOnly: true,
+        limit: GRAPH_FEED_PER_RUN,
+      })
+    : null;
+  const graphFeedText = graphFeed
+    ? graphFeed.changes.length === 0
+      ? "(nothing new in your territory)"
+      : graphFeed.changes
+          .map(
+            (c, i) =>
+              `[c${i + 1}] ${c.kind} · ${c.claim_id} ("${c.claim_text.slice(0, 100)}") · ${c.at.slice(0, 16).replace("T", " ")}` +
+              (c.summary ? ` · ${c.summary}` : c.status ? ` · ${c.prev_status ? `${c.prev_status} → ` : ""}${c.status}` : "")
+          )
+          .join("\n") +
+        (graphFeed.has_more ? `\n(more changes wait; the next run reads on from the last one here)` : "")
+    : "";
   // What bounds a run is its metered cost against the budget its action
   // carries; the turn cap only halts a loop that has stopped spending.
   const maxIterations = RUN_TURN_GUARD;
@@ -205,7 +237,7 @@ async function runLookoutImpl(input: {
   const feedTools = createLookoutFeedTools({
     lookoutId: lookout.id,
     grantId: lookout.grant_id,
-    maxValue: Number(lookout.max_value),
+    commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd ?? 0),
     onIngested: (n) => {
       ingestsProposed += n;
       flagsRaised += n;
@@ -241,6 +273,7 @@ async function runLookoutImpl(input: {
   const tools: Tool[] = [
     ...reportTools.definitions,
     ...getGraphReadToolDefinitions(),
+    getSqlToolDefinition(),
     ...contributionTools.definitions,
     ...mandateTools.definitions,
     ...(summarized.length > 0
@@ -323,39 +356,37 @@ async function runLookoutImpl(input: {
       name: "flag_reassessment",
       description:
         "Raise a claim for a fresh Steward pass because something you saw " +
-        "bears on it. The claim becomes a candidate on the ledger with the " +
-        "mandate valuing it at your urgency (clamped to the ceiling your " +
-        "Grantmaker delegated to you); the mandate's allocator decides " +
-        "whether that buys a pass. Your rationale reaches the Steward as " +
-        "the trigger context, so say concretely what happened, where you " +
-        "saw it, and why it bears on this claim. A claim you already " +
-        "flagged and that is still waiting counts as a repeat, not a new " +
-        "flag.",
+        "bears on it. With budget_owls within the limit your task message " +
+        "states, the pass is commissioned from the mandate at once; " +
+        "otherwise it is raised to the mandate's program officers, who " +
+        "decide under its operating policy. Your rationale reaches the " +
+        "Steward as its brief, so say concretely what happened, where you " +
+        "saw it, and why it bears on this claim; never name the mandate. A " +
+        "claim you already flagged and that is still waiting counts as a " +
+        "repeat, not a new flag.",
       input_schema: {
         type: "object" as const,
         properties: {
           claim_id: { type: "string" },
           rationale: { type: "string" },
-          urgency: {
+          budget_owls: {
             type: "number",
             description:
-              "0–10: how much this matters relative to everything else the " +
-              "mandate could fund, given the claim's importance and how far " +
-              "the happening would move it.",
+              "Optional: the pass's budget, from cost_sheet's high end for a pass " +
+              "on such a node. Leave it out to raise the claim to the officers.",
           },
         },
-        required: ["claim_id", "rationale", "urgency"],
+        required: ["claim_id", "rationale"],
       },
     },
     {
       name: "propose_ingest",
       description:
         "Raise a source you have actually seen for ingestion (extract and " +
-        "match its claims into the graph). It becomes a candidate ingest on " +
-        "the ledger with the mandate valuing it at your urgency (clamped to " +
-        "the ceiling your Grantmaker delegated to you), and the mandate's " +
-        "allocator decides whether that buys the ingest, against everything " +
-        "else it values. Refused for a URL already in the graph, already on " +
+        "match its claims into the graph). It becomes open work on the " +
+        "ledger; with budget_owls within the limit your task message states " +
+        "it is commissioned at once, and otherwise it is raised to the " +
+        "mandate's program officers. Refused for a URL already in the graph, already on " +
         "the plan, or already ingested; one you raised that still waits is " +
         "a repeat. A focus scopes the ingest: the " +
         "extractor reads the whole document but proposes only the claims " +
@@ -366,18 +397,18 @@ async function runLookoutImpl(input: {
         properties: {
           url: { type: "string" },
           rationale: { type: "string" },
-          urgency: {
+          budget_owls: {
             type: "number",
             description:
-              "0–10: how much having this source in the graph matters relative " +
-              "to everything else the mandate could fund.",
+              "Optional: the ingest's budget, from cost_sheet. Leave it out to " +
+              "raise the source to the officers.",
           },
           focus: {
             type: "string",
             description: "Optional: the subject to read the document for, in your brief's words. Omit for the whole document.",
           },
         },
-        required: ["url", "rationale", "urgency"],
+        required: ["url", "rationale"],
       },
     },
     {
@@ -475,11 +506,16 @@ async function runLookoutImpl(input: {
       : "") +
     `### Your brief\n\n${lookout.brief}\n\n` +
     `### Your delegated bounds\n\n` +
-    `- The urgency of a flag or an ingest you raise is clamped to ${lookout.max_value}/10 on the mandate's ` +
-    `ledger; its allocator decides what that buys.\n` +
+    (Number(lookout.commission_limit_micro_usd ?? 0) > 0
+      ? `- You may commission work yourself up to ${Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000} owls an item ` +
+        `(name budget_owls); anything above that, or without a budget, goes to the mandate's program officers.\n`
+      : `- Everything you raise goes to the mandate's program officers, who decide under its operating policy.\n`) +
     `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
+    (graphFeed
+      ? `### What changed in your territory since your last run (${graphFeed.changes.length} entries)\n\n${graphFeedText}\n\n`
+      : "") +
     (feeds.length > 0
       ? `### Your feeds and what is waiting in your inbox\n\n${feedsText}\n\n`
       : "") +
@@ -529,6 +565,8 @@ async function runLookoutImpl(input: {
           if (contributed !== null) return contributed;
           const graphRead = await executeGraphReadTool(name, toolInput);
           if (graphRead !== null) return graphRead;
+          const sqlOut = await executeSqlTool(name, toolInput);
+          if (sqlOut !== null) return sqlOut;
 
           const mandateTool = await mandateTools.execute(name, toolInput);
           if (mandateTool !== null) return mandateTool;
@@ -588,10 +626,10 @@ async function runLookoutImpl(input: {
             const res = await flagReassessment({
               lookoutId: lookout.id,
               grantId: lookout.grant_id,
-              maxValue: Number(lookout.max_value),
+              commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd ?? 0),
               claimId: String(toolInput.claim_id ?? ""),
               rationale: String(toolInput.rationale ?? ""),
-              urgency: Number(toolInput.urgency ?? 5),
+              budgetMicroUsd: Math.round(Number(toolInput.budget_owls ?? 0) * 1_000_000),
             });
             if (res.ok && !res.duplicate) flagsRaised++;
             return JSON.stringify(res);
@@ -603,8 +641,8 @@ async function runLookoutImpl(input: {
               url: String(toolInput.url ?? ""),
               rationale: String(toolInput.rationale ?? ""),
               focus: typeof toolInput.focus === "string" ? toolInput.focus : null,
-              maxValue: Number(lookout.max_value),
-              urgency: Number(toolInput.urgency ?? 5),
+              commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd ?? 0),
+              budgetMicroUsd: Math.round(Number(toolInput.budget_owls ?? 0) * 1_000_000),
             });
             if (res.ok && !res.duplicate) {
               ingestsProposed++;
@@ -646,6 +684,10 @@ async function runLookoutImpl(input: {
     lookout.id,
     events.map((e) => e.id)
   );
+  // So were the graph feed's entries: the next run reads on from here.
+  if (graphFeed?.next_cursor) {
+    await rawQuery(`UPDATE lookouts SET changes_cursor = $2 WHERE id = $1`, [lookout.id, graphFeed.next_cursor]);
+  }
 
   const note = (result.content ?? "").trim().slice(0, LOOKOUT_BOUNDS.noteChars);
   return {

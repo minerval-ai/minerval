@@ -21,11 +21,9 @@
  *     the tension as context, which opens its assess group on the ledger,
  *     and the flag records the checker's estimate that a fresh pass would
  *     change something (expected_gain). That estimate is the flag's whole
- *     say in allocation: while the group stays open it enters the formula
- *     mandates' expected-quality-gain term beside the Steward's own
- *     marginal-yield estimate and staleness (mandate-valuer-service.ts),
- *     so importance and contestation weigh a flagged pass exactly as they
- *     weigh any other, and the allocator decides whether it runs;
+ *     say in funding: it goes to the General mandate's inbox with the
+ *     flag (mandate-inbox-service.ts), and its program officers decide
+ *     under the operating policy whether the pass is worth commissioning;
  *   - the flag record, so the checker's precision ("did the passes its
  *     flags bought change anything?") is a query, as a Lookout's is.
  *
@@ -37,7 +35,8 @@ import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { refreshQueuePriority } from "./priority-service.js";
-import { refreshGeneralValuations } from "./mandate-valuer-service.js";
+import { raiseToMandate } from "./mandate-inbox-service.js";
+import { getGeneralMandate } from "./allocation-policy-service.js";
 import { credenceGap, impliedProbability } from "./quantity-math.js";
 import type { QuantityEstimate } from "../schemas/kinds.js";
 
@@ -795,9 +794,24 @@ export function consistencyFlagContext(input: {
  * before it existed. Also restamps the display priority, which
  * enqueueSteward computed before the flag row was written.
  */
-async function revalue(claimId: string): Promise<void> {
-  await refreshGeneralValuations();
+async function revalue(claimId: string, input?: { rationale?: string; expectedGain?: number }): Promise<void> {
   await refreshQueuePriority(claimId);
+  // The General mandate's officers decide whether the pass is worth paying
+  // for now; the flag's expected gain is the Checker's estimate, for them.
+  const general = await getGeneralMandate();
+  const [row] = await rawQuery<{ id: string }>(
+    `SELECT id FROM actions WHERE exclusion_group = $1 AND variant = 'standard' AND status = 'open' LIMIT 1`,
+    [`assess:${claimId}`]
+  );
+  if (general && row) {
+    await raiseToMandate({
+      grantId: general.grantId,
+      targetNodeId: claimId,
+      source: "the Consistency Checker",
+      summary: input?.rationale ?? "A consistency flag asks for a fresh pass.",
+      detail: { action_id: row.id, ...(input?.expectedGain != null ? { expected_gain: input.expectedGain } : {}) },
+    });
+  }
 }
 
 type FlagInput = {
@@ -957,7 +971,7 @@ export async function flagInconsistency(
         WHERE id = $1`,
       [open.id, expectedGain, claimIds]
     );
-    await revalue(input.primaryClaimId);
+    await revalue(input.primaryClaimId, { rationale: input.rationale, expectedGain: input.expectedGain });
     return {
       ok: true,
       flag_id: open.id,
@@ -995,7 +1009,7 @@ export async function flagInconsistency(
       primary.assessment_id,
     ]
   );
-  await revalue(input.primaryClaimId);
+  await revalue(input.primaryClaimId, { rationale: input.rationale, expectedGain: input.expectedGain });
   return {
     ok: true,
     flag_id: flag!.id,

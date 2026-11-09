@@ -13,6 +13,7 @@ import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.
 import { getQuestionDetail } from "../services/question-service.js";
 import { listRequests } from "../services/request-service.js";
 import { REQUEST_SCHEMA } from "./requests.js";
+import { waitingMessages } from "../services/inbox-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getProvenanceStory } from "../services/provenance-story-service.js";
@@ -449,6 +450,22 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               // Requests that bear on this node (Part VIII), live ones and
               // closed ones alike, newest first.
               requests: { type: "array", items: REQUEST_SCHEMA },
+              // What has arrived for the node's Steward since its last pass
+              // and has not yet been weighed (the node's inbox).
+              waiting_messages: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    trigger: { type: "string" },
+                    from: { type: "string" },
+                    sender_node_id: { type: ["string", "null"] },
+                    sent_at: { type: "string" },
+                    paid: { type: "boolean" },
+                    summary: { type: "string" },
+                  },
+                },
+              },
               // Topic tags (#272), each with the provenance of its tagging:
               // who attached it (tagger, steward, operator…) and how sure.
               tags: {
@@ -501,7 +518,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           return [];
         });
 
-        const [quantity, thresholdOf, question, nodeRequests] = await Promise.all([
+        const [quantity, thresholdOf, question, nodeRequests, waiting] = await Promise.all([
           claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
           claim.kind === "claim" ? getThresholdOf(claim_id) : null,
           claim.kind === "question" ? getQuestionDetail(claim_id) : null,
@@ -512,6 +529,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             );
             return { items: [], total: 0 };
           }),
+          // A read failure loses the list, never the page.
+          waitingMessages(claim_id).catch(() => []),
         ]);
 
         const response: Record<string, unknown> = {
@@ -523,6 +542,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           threshold_of: thresholdOf,
           question,
           requests: nodeRequests.items,
+          waiting_messages: waiting,
           tags: claimTags.map((t) => ({
             id: t.id,
             slug: t.slug,
@@ -1371,19 +1391,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /claims/:claim_id/contribute — put owls toward this claim's next
-  // assessment without buying the whole thing. Allocations accumulate
-  // across funders (people and mandates alike); the moment they cover the
-  // expected cost, the assessment runs, and the metered cost is split pro
-  // rata among the funders.
+  // POST /claims/:claim_id/contribute — commission this claim's next
+  // assessment whole, at the budget the reader chooses (commission-service.ts).
+  // The pass runs at once; what it does not spend comes back.
   app.post<{ Params: { claim_id: string }; Body: { owls: number } }>(
     "/:claim_id/contribute",
     {
       schema: {
         tags: ["claims"],
         summary:
-          "Allocate owls toward this claim's next assessment (runs when " +
-          "allocations cover the cost; funders split the cost pro rata)",
+          "Commission this claim's next assessment with a budget of owls: the pass " +
+          "runs at once, and what it does not spend comes back",
         params: {
           type: "object",
           properties: { claim_id: { type: "string", format: "uuid" } },

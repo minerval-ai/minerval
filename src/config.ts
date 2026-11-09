@@ -194,6 +194,58 @@ const configSchema = z.object({
   // audit turns on, the failure #671 saw at 1 owl.
   curateRunBudgetOwls: z.coerce.number().positive().default(5),
   auditRunBudgetOwls: z.coerce.number().positive().default(5),
+  // Program officers (petition-service.ts): each run that works a
+  // mandate's inbox is commissioned from that mandate at this budget, and a
+  // Grantmaker's run deciding what its officers escalated at the second.
+  // Both are ceilings; a run returns what it does not spend.
+  officerRunBudgetOwls: z.coerce.number().positive().default(1),
+  grantmakerDecisionBudgetOwls: z.coerce.number().positive().default(4),
+  // How long a run waiting on its petition waits. A run is paused on the
+  // answer, which is the reason the decision has a clock at all; past it
+  // the petition stays open and, if granted later, funds a follow-up pass.
+  petitionWaitSeconds: z.coerce.number().int().positive().default(180),
+  // How long a paused agent session waits for what it asked for before its
+  // answers go to its node's inbox instead (session-service.ts). Stated to
+  // the agent in the tools that pause it.
+  sessionWaitHours: z.coerce.number().positive().default(24),
+  // The longest transcript a session resumes from. A longer one is not
+  // resumed: its answers go to the node's inbox and the next pass starts
+  // fresh, since replaying it would cost more than reading the answers anew.
+  sessionMaxTranscriptChars: z.coerce.number().int().positive().default(400_000),
+  // How long an officer waits after taking a mandate's inbox, so petitions
+  // that arrive together are decided together.
+  officerBatchMs: z.coerce.number().int().min(0).default(2000),
+  // The most a program officer commits in one decision unless the mandate's
+  // operating policy says otherwise (its delegation section).
+  defaultOfficerLimitOwls: z.coerce.number().positive().default(5),
+  // Whether the scheduler holds program officer sittings for inboxes no run
+  // is waiting on. A deployment off-switch, like the lookout and review ones.
+  officerSittingsEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .prefault("false"),
+  // Read-only SQL (sql-service.ts). Each audience has its own login role,
+  // with nothing but SELECT on the public_read views; callers' points at a
+  // read replica. Unset, the SQL tools say they aren't configured.
+  sqlAgentDatabaseUrl: z.string().optional(),
+  sqlCallerDatabaseUrl: z.string().optional(),
+  /** The replica read-only SQL runs on, and the two login roles (infra/lib/database-stack.ts). */
+  sqlDbHost: z.string().optional(),
+  sqlDbPort: z.coerce.number().optional(),
+  sqlAgentDbUser: z.string().optional(),
+  sqlAgentDbPassword: z.string().optional(),
+  sqlCallerDbUser: z.string().optional(),
+  sqlCallerDbPassword: z.string().optional(),
+  // How long a query may run: an agent's run is waiting on it, and a
+  // caller's query shares a replica with other callers.
+  sqlAgentTimeoutSeconds: z.coerce.number().positive().default(20),
+  sqlCallerTimeoutSeconds: z.coerce.number().positive().default(5),
+  // The planner's cost estimate above which a query is refused before it runs.
+  sqlMaxPlanCost: z.coerce.number().positive().default(500_000),
+  // Callers' free database time per day, and its price past that.
+  sqlFreeAllowanceSeconds: z.coerce.number().min(0).default(60),
+  sqlPaidAllowanceSeconds: z.coerce.number().min(0).default(600),
+  sqlOwlsPerSecond: z.coerce.number().min(0).default(0.01),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
@@ -939,6 +991,9 @@ const configSchema = z.object({
   // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
+  // Program officers: routine decisions under a written operating policy,
+  // escalating what needs judgment to the Grantmaker, so the cheap tier.
+  programOfficerModel: modelId(OPENROUTER_MODELS.flash),
   // The Correspondent (#563): reads the graph for an audience and writes it
   // updates people read, so it is chosen for judgment and prose, on the
   // standard tier. A Grantmaker can pin another (correspondents.model).
@@ -1248,6 +1303,29 @@ export function loadConfig(): Config {
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
+    programOfficerModel: process.env.PROGRAM_OFFICER_MODEL,
+    officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
+    grantmakerDecisionBudgetOwls: process.env.GRANTMAKER_DECISION_BUDGET_OWLS,
+    petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
+    sessionWaitHours: process.env.SESSION_WAIT_HOURS,
+    sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
+    officerBatchMs: process.env.OFFICER_BATCH_MS,
+    defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
+    officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
+    sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
+    sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
+    sqlDbHost: process.env.SQL_DB_HOST,
+    sqlDbPort: process.env.SQL_DB_PORT,
+    sqlAgentDbUser: process.env.SQL_AGENT_DB_USERNAME,
+    sqlAgentDbPassword: process.env.SQL_AGENT_DB_PASSWORD,
+    sqlCallerDbUser: process.env.SQL_CALLER_DB_USERNAME,
+    sqlCallerDbPassword: process.env.SQL_CALLER_DB_PASSWORD,
+    sqlAgentTimeoutSeconds: process.env.SQL_AGENT_TIMEOUT_SECONDS,
+    sqlCallerTimeoutSeconds: process.env.SQL_CALLER_TIMEOUT_SECONDS,
+    sqlMaxPlanCost: process.env.SQL_MAX_PLAN_COST,
+    sqlFreeAllowanceSeconds: process.env.SQL_FREE_ALLOWANCE_SECONDS,
+    sqlPaidAllowanceSeconds: process.env.SQL_PAID_ALLOWANCE_SECONDS,
+    sqlOwlsPerSecond: process.env.SQL_OWLS_PER_SECOND,
     correspondentModel: process.env.CORRESPONDENT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
     consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,
@@ -1299,6 +1377,23 @@ export function loadConfig(): Config {
     _config = {
       ..._config,
       databaseUrl: `postgresql://${user}:${password}@${host}:${port}/${name}`,
+    };
+  }
+
+  // Read-only SQL's connection strings, from the replica and the two login
+  // roles' fields when no URL is given (the deployed form).
+  if (_config.sqlDbHost) {
+    const host = _config.sqlDbHost;
+    const port = _config.sqlDbPort ?? 5432;
+    const dbName = _config.dbName ?? "episteme";
+    const url = (user?: string, password?: string) =>
+      user && password
+        ? `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`
+        : undefined;
+    _config = {
+      ..._config,
+      sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
+      sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
     };
   }
 

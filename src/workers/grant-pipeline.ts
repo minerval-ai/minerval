@@ -96,7 +96,6 @@ interface TargetRow {
   prior_state: string;
   decomposition_status: string;
   steward_trigger: string | null;
-  steward_context: string | null;
 }
 
 /**
@@ -206,7 +205,7 @@ async function claimDeepenTarget(
                          steward_requeued = false
        FROM target WHERE c.id = target.id
      RETURNING c.id, target.prior_state, c.decomposition_status,
-               c.steward_trigger, c.steward_context`,
+               c.steward_trigger`,
     [scopeClaimId, scopeQuery]
   );
   return rows[0] ?? null;
@@ -225,7 +224,7 @@ async function claimSpecificTarget(claimId: string): Promise<TargetRow | null> {
         AND (c.steward_state <> 'running'
              OR c.stewarded_at < now() - interval '15 minutes')
       RETURNING c.id, prior.prior_state, c.decomposition_status,
-                c.steward_trigger, c.steward_context`,
+                c.steward_trigger`,
     [claimId]
   );
   return rows[0] ?? null;
@@ -366,12 +365,12 @@ export async function processNextGrantTask(
   const trigger = virgin
     ? "structure_and_assess"
     : (target.steward_trigger ?? "user_order");
-  // The funder's chosen name stays out of the run context on purpose: the
-  // Steward must never see funder wording that could color its work, and
-  // nothing funder-authored may reach reader surfaces (§12).
+  // Which mandate pays, its name and its kind stay out of the run context on
+  // purpose: the Steward serves the graph, not the funder, and must never
+  // see anything that could color its work; nothing funder-authored may
+  // reach reader surfaces (§12).
   const context =
-    (target.steward_context ? `${target.steward_context}\n\n` : "") +
-    `This run is scheduled under a funded mandate (policy: ${grant.policy}). ` +
+    `This run is paid for. ` +
     `Steward this claim now under the ordinary standards — funding buys ` +
     `attention, never conclusions.`;
   const model =
@@ -384,7 +383,11 @@ export async function processNextGrantTask(
         // The pass spends from the mandate's headroom (budget less committed).
         () =>
           withPassBudget(
-            { microUsd: Number(grant.budget_micro_usd) - committed, source: "the funded mandate's uncommitted budget" },
+            {
+              microUsd: Number(grant.budget_micro_usd) - committed,
+              source: "a mandate's uncommitted budget",
+              funding: { grantId: grant.id },
+            },
             () => runClaimSteward({ trigger, claimId: target.id, context, model })
           )
       )

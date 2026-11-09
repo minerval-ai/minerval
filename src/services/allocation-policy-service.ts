@@ -59,10 +59,7 @@ export interface AllocationPolicy {
   attempt_claim_lifetime_cap_owls: number;
   // --- Maintenance and audit (#363): curation and audit are ledger actions
   // a mandate chooses to buy, not work induced onto whoever is nearest.
-  /** The most of the daily rate the mandate's allocator places on
-   *  maintenance (`curate` rows) in a day. Maintenance increments are funded
-   *  first, best value per owl first, up to this share; whatever they leave
-   *  unused flows back to the rest of the day's work in the same pass. */
+  /** Retired with the allocator: kept so stored policies still parse. */
   maintenance_share: number;
   /** Cost prior for one `curate` run, in owls, until the ledger holds
    *  enough completed runs for the live p80. */
@@ -168,77 +165,6 @@ export const POLICY_BOUNDS: Record<
   est_request_scope_cost_owls: { min: 0.01, max: 20 },
 };
 
-/**
- * Whether a mandate's valuations come from the formula rather than from
- * its Grantmaker's own set_valuations calls: the platform's General lane
- * (refreshFormulaValuations) and its Governance mandates
- * (refreshAuditValuations). One predicate, so the review pass's tool
- * choice and the update_allocation_policy guard can never disagree (#687).
- */
-export function isFormulaPolicy(policy: string | null | undefined): boolean {
-  return policy === "general" || policy === "governance";
-}
-
-/**
- * The knobs every mandate's own machinery reads, whatever its policy: its
- * allocator's maintenance ceiling (allocation-service.runMandateAllocator)
- * and the attempt priors and bounds its plan's attempt_proof items are
- * priced and capped with (action-service, attempt-service). A judgment
- * mandate may set these and only these: the rest of the policy is read by
- * a formula that never runs for it.
- */
-const MANDATE_KNOBS: readonly (keyof AllocationPolicy)[] = [
-  "maintenance_share",
-  "est_attempt_standard_cost_owls",
-  "est_attempt_max_cost_owls",
-  "attempt_claim_lifetime_cap_owls",
-  "attempt_cooldown_days",
-];
-
-/** What the Governance formula reads besides: its audit class weights. */
-const GOVERNANCE_KNOBS: readonly (keyof AllocationPolicy)[] = [
-  ...MANDATE_KNOBS,
-  "audit_value_prize",
-  "audit_value_bad_faith",
-  "audit_value_overturn",
-  "audit_value_anomaly",
-  "audit_value_suspension",
-  "audit_value_sweep",
-];
-
-/**
- * The policy keys a mandate's own machinery actually reads, by its policy:
- * every key for the General lane (its formula, the platform-wide priors it
- * carries, and its audit weights for Governance's audits), the audit
- * weights plus the mandate knobs for Governance, and the mandate knobs for
- * a judgment mandate. update_allocation_policy accepts exactly these, so a
- * write that would change nothing is refused rather than reported as done.
- */
-export function policyKnobs(policy: string | null | undefined): (keyof AllocationPolicy)[] {
-  if (policy === "general") return Object.keys(POLICY_BOUNDS) as (keyof AllocationPolicy)[];
-  if (policy === "governance") return [...GOVERNANCE_KNOBS];
-  return [...MANDATE_KNOBS];
-}
-
-/**
- * The knobs a mandate may set, each with its bounds and, when given, the
- * value in force: the text a Grantmaker's update_allocation_policy shows,
- * generated from POLICY_BOUNDS so a new key or a new bound is never
- * missing from what the agent is told.
- */
-export function describePolicyKnobs(
-  policy: string | null | undefined,
-  current?: Partial<AllocationPolicy> | null
-): string {
-  return policyKnobs(policy)
-    .map((k) => {
-      const b = POLICY_BOUNDS[k];
-      const now = current?.[k];
-      return `${k} (${b.min} to ${b.max}${now !== undefined ? `, now ${now}` : ""})`;
-    })
-    .join("; ");
-}
-
 export interface GeneralMandate {
   grantId: string;
   budgetJobId: string;
@@ -307,10 +233,9 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
 }
 
 /**
- * The platform's Governance mandates (#363): formula mandates (policy
- * 'governance') whose valuations span the open `audit` rows. Every active
- * one values audits by its own policy's weights; none values an audit of
- * itself. Uncached: read by the valuer and the executor, never per row.
+ * The platform's Governance mandates (#363, policy 'governance'): the ones
+ * a fresh audit is raised to (maintenance-funding.ts), never one whose
+ * subject is itself. Uncached: read per audit, never per row.
  */
 export async function getGovernanceMandateIds(): Promise<string[]> {
   try {
@@ -435,63 +360,4 @@ export async function getMandateAllocationPolicy(
     allocation_policy: Partial<AllocationPolicy> | null;
   }>(`SELECT allocation_policy FROM grants WHERE id = $1`, [grantId]);
   return overlayPolicy(defaultsFromConfig(), row?.allocation_policy);
-}
-
-export type PolicyUpdateResult =
-  | { ok: true; policy: AllocationPolicy; changed: string[] }
-  | { ok: false; problem: string };
-
-/**
- * Amend one mandate's allocation policy — the Grantmaker's write, bounded
- * by POLICY_BOUNDS. Unknown keys are rejected loudly (the agent should
- * know its own framework), in-bounds values are stored, and the change
- * takes effect on the next drain pass.
- */
-export async function updateAllocationPolicy(
-  grantId: string,
-  updates: Record<string, unknown>,
-  /** The keys this mandate's machinery reads (policyKnobs); default all. */
-  allowedKeys: readonly string[] = Object.keys(POLICY_BOUNDS)
-): Promise<PolicyUpdateResult> {
-  const keys = Object.keys(updates);
-  if (keys.length === 0) return { ok: false, problem: "no keys to update" };
-  const valid: Partial<AllocationPolicy> = {};
-  for (const key of keys) {
-    if (!(key in POLICY_BOUNDS)) {
-      return {
-        ok: false,
-        problem: `unknown policy key "${key}"; keys this mandate reads: ${allowedKeys.join(", ")}`,
-      };
-    }
-    if (!allowedKeys.includes(key)) {
-      return {
-        ok: false,
-        problem:
-          `"${key}" is read only by a formula this mandate does not run, so setting it would ` +
-          `change nothing; keys this mandate reads: ${allowedKeys.join(", ")}`,
-      };
-    }
-    const v = clampToBounds(key as keyof AllocationPolicy, updates[key]);
-    if (v == null) {
-      return { ok: false, problem: `policy key "${key}" needs a number` };
-    }
-    valid[key as keyof AllocationPolicy] = v;
-  }
-  const rows = await rawQuery<{ allocation_policy: Partial<AllocationPolicy> }>(
-    `UPDATE grants
-        SET allocation_policy = COALESCE(allocation_policy, '{}'::jsonb) || $2::jsonb,
-            updated_at = now()
-      WHERE id = $1 AND status = 'active'
-      RETURNING allocation_policy`,
-    [grantId, JSON.stringify(valid)]
-  );
-  if (rows.length === 0) {
-    return { ok: false, problem: "grant not found or not active" };
-  }
-  resetAllocationPolicyCache();
-  return {
-    ok: true,
-    policy: overlayPolicy(defaultsFromConfig(), rows[0]!.allocation_policy),
-    changed: keys,
-  };
 }

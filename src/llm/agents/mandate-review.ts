@@ -12,9 +12,9 @@
  *  - survey its territory: the graph (search, scope survey) AND the open
  *    web (web_search) — finding the right sources is the agent's job, not
  *    a human's;
- *  - value the open ledger: write the mandate's own valuations, with
- *    rationale, over exactly the actions it judges relevant (its
- *    allocator spends against these);
+ *  - read back what its money did (mandate-reflection-service.ts) and
+ *    revise the operating policy its program officers carry out, or
+ *    commission directly;
  *  - grow its own plan: append ingest/assess items it has discovered
  *    (each priced, escrow-bounded, executed through the same ledger);
  *  - move money: regrant to a peer mandate, or spawn a new one with its
@@ -55,9 +55,6 @@ import {
   type GrantMandate,
   getBountyToolDefinitions,
   getManagementReadToolDefinitions,
-  getValuationToolDefinitions,
-  getAllocationPolicyToolDefinition,
-  writtenCount,
 } from "./grantmaker.js";
 import {
   PLAN_ITEM_SCHEMA,
@@ -67,12 +64,11 @@ import {
 } from "../../services/grant-service.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
-import {
-  getMandateAllocationPolicy,
-  isFormulaPolicy,
-} from "../../services/allocation-policy-service.js";
 import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
 import { grantmakerShareLeftMicroUsd, materializePlanItems } from "../../services/action-service.js";
+import { getMandateOperationsToolDefinitions } from "./program-officer.js";
+import { reflectionSections } from "../../services/mandate-reflection-service.js";
+import { allocationDayUseSql } from "../../services/day-use.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
@@ -81,7 +77,6 @@ import {
   grantCommittedMicroUsd,
 } from "../../services/regrant-service.js";
 import { refundUnspentBudget } from "../../services/budget-job-service.js";
-import { runMandateAllocator } from "../../services/allocation-service.js";
 import {
   WAKE_AFTER_MINUTES,
   consumeMandateEvents,
@@ -120,23 +115,13 @@ const REVIEW_NOTE_MAX_CHARS = 2000;
  */
 const CLOSE_CONFIRM_WINDOW_DAYS = 7;
 
-/** One valued action the closing allocation could not fund, as recorded. */
-interface SkippedRow {
-  group: string;
-  action_id: string | null;
-  needed_owls: number;
-  reason: "day_room" | "daily_rate" | "maintenance_share";
-}
 
 export interface MandateReviewResult {
   note: string;
-  valuationsWritten: number;
   planItemsAdded: number;
   /** The agent judged one pass wasn't enough: run another now (funded out
    * of the mandate's day like the rest of its work). */
   continueRequested: boolean;
-  /** Placements the mandate's allocator made when the pass ended. */
-  allocated: number;
 }
 
 export function runMandateReview(
@@ -188,7 +173,7 @@ async function runMandateReviewImpl(input: {
   // Today's draw on the daily rate, so a decision to chain another pass is
   // made knowing what the day has left for everything else.
   const [todayRow] = await rawQuery<{ allocated: string | number; passes: number }>(
-    `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS allocated,
+    `SELECT COALESCE(SUM(${allocationDayUseSql("al")}), 0)::bigint AS allocated,
             COUNT(*) FILTER (WHERE a.kind = 'mandate_review')::int AS passes
        FROM action_allocations al
        LEFT JOIN actions a ON a.id = al.action_id
@@ -218,13 +203,6 @@ async function runMandateReviewImpl(input: {
   // (§19); delegate_research and fund_request refuse past the uncommitted
   // budget, and the move caps below are for money leaving the mandate.
   const researchTools = createResearchTools({ requestedBy: "grantmaker", grantId: grant.id });
-  // A mandate gets the valuation lever its policy actually reads (#687).
-  // For a formula mandate (General, Governance) a hand-written valuation
-  // would fight the bulk refresh that upserts the same rows, so its lever
-  // is the formula itself; a judgment mandate values the ledger, and its
-  // policy lever holds only the keys its own allocator reads.
-  const isFormulaMandate = isFormulaPolicy(grant.policy);
-  const policyInForce = await getMandateAllocationPolicy(grant.id).catch(() => null);
   const tools: Tool[] = [
     ...reportTools.definitions, ...findingTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
@@ -238,7 +216,9 @@ async function runMandateReviewImpl(input: {
     // and the granting conversation.
     ...mandateTools.definitions,
     ...contributionTools.definitions,
-    ...(isFormulaMandate ? [] : getValuationToolDefinitions()),
+    // The spending lever: the operating policy its program officers carry
+    // out, direct commissions, and SQL over the public views.
+    ...getMandateOperationsToolDefinitions({ chat: false }),
     // Research and requests (#683): launch the researcher, read its runs,
     // read the open requests, and fund one directly.
     ...researchTools.definitions,
@@ -256,7 +236,6 @@ async function runMandateReviewImpl(input: {
         "spending or repacing.",
       input_schema: { type: "object" as const, properties: {}, required: [] },
     },
-    getAllocationPolicyToolDefinition(grant.policy, policyInForce),
     {
       name: "extend_plan",
       description:
@@ -460,7 +439,7 @@ async function runMandateReviewImpl(input: {
           .map(
             (l) =>
               `- "${l.title}" [${l.status}; ${l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-only"}` +
-              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; ceiling ${l.max_value}/10] ` +
+              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; commissions up to ${l.commission_limit_owls} owls alone] ` +
               `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
               `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
               `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}` +
@@ -489,13 +468,12 @@ async function runMandateReviewImpl(input: {
               )
               .join("\n"));
   const items = grant.plan?.items ?? [];
-  const valuationClause = isFormulaMandate
-    ? `revise the formula your valuations are computed from where what you ` +
-      `have learned about allocation itself warrants it ` +
-      `(update_allocation_policy)`
-    : `revise your valuations over the open ledger, and your maintenance ` +
-      `ceiling where upkeep deserves more or less of the day ` +
-      `(update_allocation_policy)`;
+  // What the money did since the last review, read back so this pass fixes
+  // causes, not cases (mandate-reflection-service.ts).
+  const reflection = await reflectionSections(
+    grant.id,
+    lastReviewAt ?? new Date(Date.now() - 7 * 86_400_000).toISOString()
+  ).catch(() => "");
   const REVIEW_PASS_MAX_TURNS = RUN_TURN_GUARD;
   // A decomposition's passes share a tenth of its budget: say so, and what
   // is left of it (claim-mandate-service.ts).
@@ -517,29 +495,6 @@ async function runMandateReviewImpl(input: {
         (inbox.total > inbox.events.length
           ? `\n- ...and ${inbox.total - inbox.events.length} more, shown on your next pass.`
           : ``);
-  // What the last pass's closing allocation could not fund for lack of
-  // room (#688), recorded on the mandate when it ran: shown once, here.
-  const lastSkipped = (grant.mandate as { last_allocation?: { skipped?: SkippedRow[] } } | null)
-    ?.last_allocation?.skipped ?? [];
-  const skippedText =
-    lastSkipped.length === 0
-      ? ``
-      : ` After your last pass, ${lastSkipped.length} valued action(s) did not fund for lack of room: ` +
-        lastSkipped
-          .slice(0, 10)
-          .map(
-            (r) =>
-              `${r.action_id ?? r.group} needs ${r.needed_owls} owls (` +
-              (r.reason === "daily_rate"
-                ? `more than the whole daily rate, so it never funds by valuation`
-                : r.reason === "maintenance_share"
-                  ? `more than the day's maintenance share`
-                  : `more than was left of that day`) +
-              `)`
-          )
-          .join("; ") +
-        (lastSkipped.length > 10 ? `; and ${lastSkipped.length - 10} more` : ``) +
-        `. Raise the rate or the share, or fund a request directly (fund_request), where it should run.`;
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -547,22 +502,25 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
+    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
     `(yours to set)` +
     (Number(grant.daily_budget_micro_usd) > 0
-      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is allocated so far today ` +
-        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included` +
-        (policyInForce
-          ? `; at most ${Math.round(policyInForce.maintenance_share * 100)}% of the rate goes to ` +
-            `maintenance (curate rows) in a day (maintenance_share ${policyInForce.maintenance_share}, ` +
-            `yours to set with update_allocation_policy)`
-          : ``) +
-        `. The allocator funds a valued action only when what it still needs fits in what is ` +
-        `left of today's rate; it never part-funds one`
+      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is committed so far today ` +
+        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included. ` +
+        `A commission that would take the day past its rate is refused, by your officers' tools ` +
+        `and yours alike; running work frees what it leaves as it finishes`
       : ``) +
-    `.${skippedText} Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
+    `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
     `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
+    (reflection ? `${reflection}\n\n` : ``) +
+    `Start from what happened, not from scratch. The sections above are what your money did and ` +
+    `where the agents doing the work told you it fell short. Where a shortfall recurs, fix its cause ` +
+    `in the operating policy: the budgets for that kind, what officers may grant, a lookout that ` +
+    `surfaces too much or misses what matters. Read your officers' decisions as you would a ` +
+    `colleague's; where one went wrong, say in the operating policy what you would have done. Record ` +
+    `what you learned in your workspace, so the next decision starts from it. Then do whatever else ` +
+    `the mission needs this pass.\n\n` +
     `Since your last pass (assessments on the nodes you funded, decisions on ` +
     `your contributions, sources you ingested, your lookouts' flags):\n\n${inboxText}\n\n` +
     `Your reviews wake when your mandate's work produces something like ` +
@@ -578,7 +536,8 @@ async function runMandateReviewImpl(input: {
         `yet. Start the map.)`) +
     `\n\n---\n\n` +
     `Do what the mandate needs this pass and skip what doesn't need doing; ` +
-    `your spending lever is to ${valuationClause}. Before finishing, update your workspace so ` +
+    `your spending lever is the operating policy your program officers carry out ` +
+    `(write_operating_policy) and direct commissions (commission). Before finishing, update your workspace so ` +
     `the next pass starts where this one stopped; call continue_review if ` +
     `the mission needs another pass today. Finish with a short note, at most ` +
     `${REVIEW_NOTE_MAX_CHARS} characters, recorded on the mandate's public page: ` +
@@ -593,7 +552,6 @@ async function runMandateReviewImpl(input: {
     `${microUsdToOwls(moveCapDayMicro)} per day. Larger moves belong to ` +
     `the funder: ask with note_to_funder.`;
 
-  let valuationsWritten = 0;
   let planItemsAdded = 0;
   let continueRequested = false;
   let movedThisPassMicro = 0;
@@ -674,8 +632,8 @@ async function runMandateReviewImpl(input: {
         return (await executeKindTool(name, toolInput, { role: "grantmaker", model }))!;
       }
       // The management tools this pass shares with the owner-driven chat
-      // (grant_overview, the valuation tools, update_allocation_policy, the
-      // read tools, bounties, lookouts) run the same implementation, honesty
+      // (grant_overview, the operating policy and commissions, the read
+      // tools, bounties, lookouts) run the same implementation, honesty
       // guards included. Null means "not mine".
       const management = await executeManagementTool(grant.id, name, toolInput, {
         passStartedAt,
@@ -685,7 +643,6 @@ async function runMandateReviewImpl(input: {
         confirmedBy: null,
       });
       if (management !== null) {
-        if (name === "set_valuations") valuationsWritten += writtenCount(management);
         return management;
       }
       if (name === "note_to_funder") {
@@ -930,37 +887,5 @@ async function runMandateReviewImpl(input: {
     [grant.id, note || "(review completed without a note)"]
   );
   await consumeMandateEvents(grant.id, inbox.events.map((e) => e.id)).catch(() => {});
-  // Fund what this pass decided now, not at the next scheduled sweep
-  // (hours away): the allocator is idempotent and locked per mandate, and
-  // bounded by the daily rate and the escrow like every other placement.
-  // A failure here leaves the valuations for the sweep to fund.
-  let allocated = 0;
-  if (valuationsWritten > 0) {
-    try {
-      const run = await runMandateAllocator(grant.id);
-      allocated = run.allocated;
-      // Recorded for the next briefing (#688): the pass that valued these
-      // has ended, so the next one is where the agent learns they waited.
-      const skipped: SkippedRow[] = (run.skippedForRoom ?? []).slice(0, 50).map((r) => ({
-        group: r.group,
-        action_id: r.actionId,
-        needed_owls: microUsdToOwls(r.neededMicroUsd),
-        reason: r.reason,
-      }));
-      await rawQuery(
-        `UPDATE grants
-            SET mandate = jsonb_set(COALESCE(mandate, '{}'::jsonb), '{last_allocation}',
-                  jsonb_build_object('at', to_jsonb(now()), 'skipped', $2::jsonb))
-          WHERE id = $1`,
-        [grant.id, JSON.stringify(skipped)]
-      );
-    } catch (err) {
-      console.error(
-        `[mandate-review] allocation after the pass failed for ${grant.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-    }
-  }
-  return { note, valuationsWritten, planItemsAdded, continueRequested, allocated };
+  return { note, planItemsAdded, continueRequested };
 }

@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 8392,
-    "fullChars": 98714,
+    "roleChars": 8589,
+    "fullChars": 100976,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 6758,
-    "fullChars": 97080,
+    "fullChars": 99145,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "Anyone submits a contribution (a challenge, support, a new instance, an argument, a merge, split or edit, a source's figure for a quantity, an answer to a question, a request or material for one) or a proposal (a new claim, question or source).",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 14161,
-    "fullChars": 104483,
+    "roleChars": 14397,
+    "fullChars": 106784,
     "skills": [
       {
         "name": "costing",
@@ -82,6 +82,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "sql",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -94,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 22724,
-    "fullChars": 113046,
+    "roleChars": 25247,
+    "fullChars": 117634,
     "skills": [
       {
         "name": "costing",
@@ -127,6 +133,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "sql",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -139,8 +151,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13974,
-    "fullChars": 104296,
+    "roleChars": 16463,
+    "fullChars": 108850,
     "skills": []
   },
   {
@@ -152,8 +164,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 8640,
-    "fullChars": 98962,
+    "roleChars": 8876,
+    "fullChars": 101263,
     "skills": [
       {
         "name": "costing",
@@ -181,6 +193,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "sql",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -193,8 +211,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 8778,
-    "fullChars": 99100,
+    "roleChars": 9014,
+    "fullChars": 101401,
     "skills": [
       {
         "name": "costing",
@@ -221,6 +239,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "sql",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -233,8 +257,8 @@
     "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 9871,
-    "fullChars": 100193,
+    "roleChars": 10107,
+    "fullChars": 102494,
     "skills": [
       {
         "name": "costing",
@@ -274,6 +298,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "sql",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -286,8 +316,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15955,
-    "fullChars": 106277,
+    "roleChars": 17956,
+    "fullChars": 110343,
     "skills": [
       {
         "name": "costing",
@@ -311,6 +341,12 @@
       },
       {
         "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "sql",
         "sections": [
           "For every administrator"
         ]
@@ -326,8 +362,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 7930,
-    "fullChars": 98252,
+    "roleChars": 8630,
+    "fullChars": 101017,
     "skills": [
       {
         "name": "costing",
@@ -349,6 +385,56 @@
       },
       {
         "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "sql",
+        "sections": [
+          "For every administrator"
+        ]
+      }
+    ]
+  },
+  {
+    "key": "program-officer",
+    "name": "Program Officer",
+    "stage": 9,
+    "group": "governance",
+    "tagline": "Carries a mandate out day to day under the operating policy its Grantmaker writes: works the mandate's inbox, commissions the work its lookouts raise at budgets set from the costing skill, answers petitions from the runs the mandate pays for while they wait, and sends the Grantmaker what the policy doesn't settle or what is beyond the limit it delegated. It writes no verdict, and never names its mandate to the agents that judge the graph.",
+    "invokedWhen": "A run the mandate pays for petitions it (inline, while the run waits), or the mandate's inbox has work in it: something a lookout raised, the outcome of funded work, a note from the funder.",
+    "model": "GPT-6 Luna",
+    "hasConstitution": true,
+    "roleChars": 4267,
+    "fullChars": 96654,
+    "skills": [
+      {
+        "name": "costing",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "sql",
         "sections": [
           "For every administrator"
         ]
@@ -364,8 +450,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief and an audience; the ledger then funds a run from the mandate's escrow whenever it is due: its heartbeat, a material change in its scope, or a poke.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 2726,
-    "fullChars": 93048,
+    "roleChars": 2962,
+    "fullChars": 95349,
     "skills": [
       {
         "name": "costing",
@@ -387,6 +473,12 @@
       },
       {
         "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "sql",
         "sections": [
           "For every administrator"
         ]
@@ -402,8 +494,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
-    "roleChars": 11933,
-    "fullChars": 102255,
+    "roleChars": 12169,
+    "fullChars": 104556,
     "skills": [
       {
         "name": "costing",
@@ -427,6 +519,12 @@
       },
       {
         "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "sql",
         "sections": [
           "For every administrator"
         ]
@@ -455,8 +553,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 12380,
-    "fullChars": 102702,
+    "roleChars": 12616,
+    "fullChars": 105003,
     "skills": [
       {
         "name": "costing",
@@ -481,6 +579,12 @@
       },
       {
         "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "sql",
         "sections": [
           "For every administrator"
         ]

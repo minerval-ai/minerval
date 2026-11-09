@@ -107,9 +107,12 @@ describe("the task message", () => {
     await withPassBudget({ microUsd: 1_400_000, source: "the allocations funding this pass" }, async () => {
         const line = turnBudgetLine(200);
         expect(line).toMatch(
-          /^Budget: This run has a budget of \$1\.40 \(the allocations funding this pass\), metered at real cost/
+          /^Budget: This run has a budget of \$1\.40, from the allocations funding this pass\. It is set at the high end/
         );
-        expect(line).toContain("It is a ceiling, not a target");
+        expect(line).toContain("what you leave goes back to whoever paid");
+        // Only a run that has the tools is told about them.
+        expect(line).not.toContain("petition_mandate");
+        expect(turnBudgetLine(200, { canSpend: true })).toContain("ask with petition_mandate");
         expect(line).toContain("Separately, you have up to 200 tool-use turns");
       });
   });

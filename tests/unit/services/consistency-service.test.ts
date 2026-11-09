@@ -26,7 +26,6 @@ vi.mock("../../../src/services/action-service.js", () => ({
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({ enqueueSteward: vi.fn() }));
 vi.mock("../../../src/services/priority-service.js", () => ({ refreshQueuePriority: vi.fn() }));
-vi.mock("../../../src/services/mandate-valuer-service.js", () => ({ refreshGeneralValuations: vi.fn() }));
 
 import {
   checkFlagInput,

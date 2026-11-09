@@ -45,6 +45,7 @@ const LEDGER_KINDS: Record<string, string> = {
   curate: "a Curator run reconciling the structure around one node",
   audit: "one Audit Agent run",
   request: "a request taken up: the scope variant quotes it, the full variant costs its budget",
+  research: "a Researcher run an agent commissioned from its own budget (commission, kind research); the research figures below give its cost by tier",
   lookout_run: "one run of a standing lookout",
   correspondent_run: "one run of a Correspondent: reading what changed in its scope and writing one update",
   mandate_review: "one review pass by a mandate's Grantmaker",
@@ -53,8 +54,7 @@ const LEDGER_KINDS: Record<string, string> = {
   consistency_sweep:
     "a Consistency Checker sweep over one partition (a topic tag, or the residual bucket), " +
     "reading its assessments against each other and raising flags; priced by the partition's " +
-    "assessed nodes (sweep plan items; list_open_actions kind consistency_sweep shows each " +
-    "open partition's price)",
+    "assessed nodes, from a floor up to a ceiling (sweep plan items)",
 };
 
 /** The prior a ledger line falls back to when too few rows have finished. */

@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-11-09T18:04:49.632Z",
-  "gitCommit": "60c3805",
+  "syncedAt": "2026-11-09T18:34:33.133Z",
+  "gitCommit": "2445f04e",
   "pins": [
     {
       "agent": "steward",
@@ -59,6 +59,12 @@
     {
       "agent": "lookout",
       "envVar": "LOOKOUT_MODEL",
+      "model": "openai/gpt-6-luna",
+      "label": "GPT-6 Luna"
+    },
+    {
+      "agent": "program officer",
+      "envVar": "PROGRAM_OFFICER_MODEL",
       "model": "openai/gpt-6-luna",
       "label": "GPT-6 Luna"
     },

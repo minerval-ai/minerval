@@ -3,12 +3,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 /**
  * Lookouts (docs/allocation.md, "Lookouts"): the mechanism around a
  * mandate's standing watch. Creation enforces the bounds the brief cannot;
- * a reassess flag makes the claim a candidate and writes the mandate's
- * valuation CLAMPED to the delegated ceiling, folding repeats while the
- * earlier flag is still open; an ingest flag opens (or joins) the ingest
- * row and values it the same way, never lowering a value already there,
- * and refuses a source already in the graph (#695); the run stamp advances the
- * heartbeat and backs a failed run off. DB mocked.
+ * a reassess flag makes the claim a candidate and either commissions its
+ * pass from the mandate, when the budget it names is within the lookout's
+ * commission limit, or raises it to the mandate's program officers, folding
+ * repeats while the earlier flag is still open; an ingest flag opens (or
+ * joins) the ingest row and acts on it the same way, and refuses a source
+ * already in the graph (#695); the run stamp advances the heartbeat and
+ * backs a failed run off. DB mocked.
  */
 
 const GRANT = "11111111-1111-4111-8111-111111111111";
@@ -29,8 +30,7 @@ const { state, queries } = vi.hoisted(() => ({
     lookout: null as null | Record<string, unknown>,
     ingestRow: { id: "55555555-5555-4555-8555-555555555555", status: "open" } as null | { id: string; status: string },
     ingestFlag: null as null | { id: string; created_at: Date },
-    existingValue: null as null | number,
-    valuations: [] as Array<{ grantId: string; entries: unknown[] }>,
+    commissions: [] as Array<Record<string, unknown>>,
     enqueued: [] as Array<Record<string, unknown>>,
     ensured: [] as string[],
   },
@@ -64,9 +64,7 @@ vi.mock("../../../src/db/client.js", () => ({
       return state.ingestFlag ? [state.ingestFlag] : [];
     }
     if (q.includes("SELECT id, status FROM actions")) return state.ingestRow ? [state.ingestRow] : [];
-    if (q.includes("SELECT value_est FROM mandate_valuations")) {
-      return state.existingValue === null ? [] : [{ value_est: state.existingValue }];
-    }
+    if (q.includes("SELECT title FROM lookouts WHERE id = $1")) return [{ title: "Retraction watch" }];
     if (q.includes("SELECT id, title FROM sources WHERE url = $1")) {
       return state.existingSource ? [state.existingSource] : [];
     }
@@ -91,13 +89,26 @@ vi.mock("../../../src/services/queue-service.js", () => ({
     state.enqueued.push(m);
   }),
 }));
-vi.mock("../../../src/services/mandate-valuer-service.js", () => ({
-  setMandateValuations: vi.fn(async (grantId: string, entries: unknown[]) => {
-    state.valuations.push({ grantId, entries });
-    return { written: entries.length, unknownActionIds: [] };
+vi.mock("../../../src/services/commission-service.js", () => ({
+  commissionAction: vi.fn(async (input: Record<string, unknown>) => {
+    state.commissions.push(input);
+    return { ok: true, status: "commissioned", allocationId: "al-1", kind: "reassess" };
   }),
 }));
+vi.mock("../../../src/services/graph-change-service.js", () => ({
+  resolveTagSlugs: vi.fn(async (slugs: string[]) => ({
+    ids: slugs.filter((x) => x !== "nope").map(() => "66666666-6666-4666-8666-666666666666"),
+    unknown: slugs.filter((x) => x === "nope"),
+  })),
+}));
 vi.mock("../../../src/services/owl.js", () => ({ capMicroUsd: () => 500_000 }));
+const raises = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock("../../../src/services/mandate-inbox-service.js", () => ({
+  raiseToMandate: vi.fn(async (input: Record<string, unknown>) => {
+    raises.push(input);
+    return { id: `item-${raises.length}`, folded: false };
+  }),
+}));
 vi.mock("../../../src/services/url-guard.js", () => ({
   UnsafeUrlError: class UnsafeUrlError extends Error {},
   assertPublicHttpUrl: vi.fn(async (raw: string) => {
@@ -133,8 +144,7 @@ beforeEach(() => {
   state.lookout = null;
   state.ingestRow = { id: "55555555-5555-4555-8555-555555555555", status: "open" };
   state.ingestFlag = null;
-  state.existingValue = null;
-  state.valuations = [];
+  state.commissions = [];
   state.enqueued = [];
   state.ensured = [];
 });
@@ -146,8 +156,9 @@ describe("createLookout", () => {
       title: "Retraction watch",
       brief: BRIEF,
       heartbeatHours: 100_000,
-      triggers: ["retraction", "retraction", "manual"],
-      maxValue: 42,
+      triggers: ["retraction", "retraction", "manual", "graph"],
+      commissionLimitOwls: 2.5,
+      territory: { claimIds: [CLAIM], tagSlugs: ["nutrition"] },
       createdBy: "grantmaker:review",
     });
     expect(res).toEqual({ ok: true, lookoutId: LOOKOUT });
@@ -157,10 +168,12 @@ describe("createLookout", () => {
       "Retraction watch",
       BRIEF,
       LOOKOUT_BOUNDS.heartbeatHours.max,
-      JSON.stringify(["retraction", "manual"]),
+      JSON.stringify(["retraction", "manual", "graph"]),
       null,
-      10,
       "grantmaker:review",
+      2_500_000,
+      [CLAIM],
+      ["66666666-6666-4666-8666-666666666666"],
     ]);
     // The retired per-run count is no longer written; the column keeps its default (#695).
     expect(insert.q).not.toContain("max_ingests_per_run");
@@ -173,6 +186,9 @@ describe("createLookout", () => {
     expect(await createLookout({ ...base, model: "us.anthropic.claude-x" })).toMatchObject({ ok: false, code: "MODEL" });
     expect(await createLookout({ ...base, heartbeatHours: 0 })).toMatchObject({ ok: false, code: "NEVER_WAKES" });
     expect(await createLookout({ ...base, heartbeatHours: 0, triggers: ["manual"] })).toMatchObject({ ok: true });
+    // A graph feed needs a territory, and a territory's tags must exist.
+    expect(await createLookout({ ...base, triggers: ["graph"] })).toMatchObject({ ok: false, code: "TERRITORY" });
+    expect(await createLookout({ ...base, territory: { tagSlugs: ["nope"] } })).toMatchObject({ ok: false, code: "TERRITORY" });
   });
 
   it("refuses a mandate that is not active", async () => {
@@ -187,14 +203,14 @@ describe("createLookout", () => {
 describe("updateLookout", () => {
   it("changes only the given fields, on the mandate's own lookout, and makes a resumed watch due now", async () => {
     state.lookout = { id: LOOKOUT, grant_id: GRANT, status: "paused", heartbeat_hours: 24, max_value: 6, max_ingests_per_run: 3 };
-    const res = await updateLookout({ grantId: GRANT, lookoutId: LOOKOUT, status: "active", maxValue: 3 });
+    const res = await updateLookout({ grantId: GRANT, lookoutId: LOOKOUT, status: "active", commissionLimitOwls: 3 });
     expect(res.ok).toBe(true);
     const upd = queries.find((x) => x.q.startsWith("UPDATE lookouts SET"))!;
     expect(upd.q).toContain("status = $2");
     expect(upd.q).toContain("next_due_at = $3");
-    expect(upd.q).toContain("max_value = $4");
+    expect(upd.q).toContain("commission_limit_micro_usd = $4");
     expect(upd.params[1]).toBe("active");
-    expect(upd.params[3]).toBe(3);
+    expect(upd.params[3]).toBe(3_000_000);
   });
 
   it("refuses another mandate's lookout and a retired one", async () => {
@@ -210,34 +226,42 @@ describe("flagReassessment", () => {
     flagReassessment({
       lookoutId: LOOKOUT,
       grantId: GRANT,
-      maxValue: 6,
+      commissionLimitMicroUsd: 3_000_000,
       claimId: CLAIM,
       rationale: "Crossref records a retraction notice against the primary source.",
-      urgency: 9,
+      budgetMicroUsd: 2_000_000,
       ...over,
     });
 
-  it("makes the claim a candidate with the lookout's context and values it CLAMPED to the ceiling", async () => {
+  it("makes the claim a candidate and commissions its pass from the mandate within the lookout's limit", async () => {
     const res = await flag();
-    expect(res).toMatchObject({ ok: true, duplicate: false, action_id: ACTION, value_written: 6 });
+    expect(res).toMatchObject({ ok: true, duplicate: false, action_id: ACTION, value_written: null });
     expect(state.enqueued).toHaveLength(1);
     expect(state.enqueued[0]).toMatchObject({ claimId: CLAIM, trigger: "lookout_flag" });
     expect(String(state.enqueued[0]!.context)).toContain("retraction notice");
     expect(state.ensured).toEqual([CLAIM]);
-    expect(state.valuations).toEqual([
-      { grantId: GRANT, entries: [{ action_id: ACTION, value: 6, rationale: expect.stringContaining("[lookout]") }] },
+    expect(state.commissions).toEqual([
+      expect.objectContaining({
+        payer: { kind: "grant", grantId: GRANT },
+        actionId: ACTION,
+        budgetMicroUsd: 2_000_000,
+        commissionedBy: "lookout",
+      }),
     ]);
+    expect(queries.some((x) => x.q.includes("INSERT INTO mandate_decisions") && x.q.includes("'lookout'"))).toBe(true);
     // The flag snapshots the assessment for the precision read.
     const ins = queries.find((x) => x.q.includes("INSERT INTO lookout_flags"))!;
-    expect(ins.params).toEqual([LOOKOUT, CLAIM, ACTION, expect.any(String), 9, 6, "supported", 0.8, "as-1"]);
+    expect(ins.params).toEqual([LOOKOUT, CLAIM, ACTION, expect.any(String), null, null, "supported", 0.8, "as-1"]);
   });
 
-  it("writes urgency itself when it is under the ceiling, and nothing at a ceiling of 0", async () => {
-    expect(await flag({ urgency: 4 })).toMatchObject({ value_written: 4 });
-    state.valuations = [];
-    const res = await flag({ maxValue: 0 });
-    expect(res).toMatchObject({ ok: true, value_written: null });
-    expect(state.valuations).toHaveLength(0);
+  it("raises the claim to the program officers without a budget, or above its limit", async () => {
+    await flag({ budgetMicroUsd: 0 });
+    await flag({ budgetMicroUsd: 5_000_000 });
+    expect(state.commissions).toHaveLength(0);
+    const raised = raises.slice(-2);
+    expect(raised).toHaveLength(2);
+    expect(raised[1]).toMatchObject({ grantId: GRANT, targetNodeId: CLAIM, targetRef: null });
+    expect(raised[1]!.detail).toEqual({ action_id: ACTION, suggested_budget_owls: 5 });
     // Still a candidate: the Steward lane and the ledger row exist either way.
     expect(state.enqueued).toHaveLength(2);
   });
@@ -247,7 +271,7 @@ describe("flagReassessment", () => {
     const res = await flag();
     expect(res).toMatchObject({ ok: true, duplicate: true, flag_id: "flag-0" });
     expect(state.enqueued).toHaveLength(0);
-    expect(state.valuations).toHaveLength(0);
+    expect(state.commissions).toHaveLength(0);
     expect(queries.some((x) => x.q.includes("repeats = repeats + 1"))).toBe(true);
   });
 
@@ -267,23 +291,21 @@ describe("flagIngest", () => {
       grantId: GRANT,
       url: "https://example.org/paper",
       rationale: "The primary source for the live crux; not yet in the graph.",
-      maxValue: 6,
-      urgency: 9,
+      commissionLimitMicroUsd: 1_000_000,
+      budgetMicroUsd: 500_000,
       ...over,
     });
 
-  it("opens the ingest row and values it at the urgency clamped to the ceiling, off the plan (#695)", async () => {
+  it("opens the ingest row and commissions it within the lookout's limit, off the plan (#695)", async () => {
     const res = await ingest();
-    expect(res).toMatchObject({ ok: true, duplicate: false, action_id: ROW, value_written: 6 });
+    expect(res).toMatchObject({ ok: true, duplicate: false, action_id: ROW, value_written: null });
     const open = queries.find((x) => x.q.includes("INSERT INTO actions"))!;
     expect(open.params.slice(0, 2)).toEqual(["ingest:https://example.org/paper", "https://example.org/paper"]);
-    expect(state.valuations).toEqual([
-      { grantId: GRANT, entries: [{ action_id: ROW, value: 6, rationale: expect.stringContaining("[lookout]") }] },
-    ]);
+    expect(state.commissions).toEqual([expect.objectContaining({ actionId: ROW, budgetMicroUsd: 500_000 })]);
     // Nothing is appended to the plan, where it would be self-funded outside the allocator.
     expect(queries.some((x) => x.q.includes("UPDATE grants") && x.q.includes("jsonb_set"))).toBe(false);
     const flag = queries.find((x) => x.q.includes("INSERT INTO lookout_flags"))!;
-    expect(flag.params).toEqual([LOOKOUT, "https://example.org/paper", ROW, expect.any(String), 9, 6]);
+    expect(flag.params).toEqual([LOOKOUT, "https://example.org/paper", ROW, expect.any(String), null, null]);
   });
 
   it("records a focus before opening a scoped row", async () => {
@@ -294,10 +316,11 @@ describe("flagIngest", () => {
     expect(focusAt).toBeLessThan(openAt);
   });
 
-  it("never lowers a value the mandate already put on the row", async () => {
-    state.existingValue = 8;
-    expect(await ingest({ urgency: 3 })).toMatchObject({ ok: true, value_written: 8 });
-    expect(state.valuations).toEqual([]);
+  it("raises an ingest to the officers when the lookout has no limit for it", async () => {
+    expect(await ingest({ commissionLimitMicroUsd: 0 })).toMatchObject({ ok: true });
+    expect(state.commissions).toEqual([]);
+    const raised = raises[raises.length - 1]!;
+    expect(raised).toMatchObject({ grantId: GRANT, targetNodeId: null, targetRef: "https://example.org/paper" });
   });
 
   it("counts a URL it raised that still waits as a repeat", async () => {
@@ -306,9 +329,7 @@ describe("flagIngest", () => {
     expect(queries.some((x) => x.q.includes("INSERT INTO actions"))).toBe(false);
   });
 
-  it("refuses a 0 value, a source already in the graph, a planned URL, an unsafe URL, and a closed row", async () => {
-    expect(await ingest({ maxValue: 0 })).toMatchObject({ ok: false, code: "NO_VALUE" });
-    expect(await ingest({ urgency: 0 })).toMatchObject({ ok: false, code: "NO_VALUE" });
+  it("refuses a source already in the graph, a planned URL, an unsafe URL, and a closed row", async () => {
     state.existingSource = { id: "s-1", title: "Paper" };
     expect(await ingest()).toMatchObject({ ok: false, code: "ALREADY_IN_GRAPH" });
     state.existingSource = null;
@@ -320,7 +341,7 @@ describe("flagIngest", () => {
     expect(await ingest()).toMatchObject({ ok: false, code: "LEDGER" });
     state.ingestRow = { id: ROW, status: "cancelled" };
     expect(await ingest()).toMatchObject({ ok: false, code: "LEDGER" });
-    expect(state.valuations).toEqual([]);
+    expect(state.commissions).toEqual([]);
   });
 });
 

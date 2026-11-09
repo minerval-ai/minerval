@@ -2,7 +2,7 @@
 name: commissioning-research
 description: >-
   How to fund work on the Minerval graph in good faith: commissioning a
-  mandate through the Grantmaker, ordering or co-funding an assessment,
+  mandate through the Grantmaker, commissioning an assessment,
   backing an existing mandate, and bringing sources and views to the graph
   without trying to steer its conclusions. Covers what kinds of mandate are
   appropriate and which the Grantmaker will refuse. Use when a user wants
@@ -148,25 +148,29 @@ Reading the graph is always free.
 
 ## How to commission
 
-**One claim, now.** `order_assessment` funds a whole assessment pass on a
-claim, so it runs right away. `fund_claim_assessment` puts part of the cost
-toward it and waits for co-funders. `fund_deep_decomposition` (5 owls or
+**One claim, now.** Work on the graph is paid for whole: whoever pays sets
+the budget and pays it in full, the run starts at once, and what it does
+not spend comes back. `order_assessment` buys a strong-model pass on a
+claim up to a quoted cap. `fund_claim_assessment` commissions the claim's
+next assessment at a budget your user chooses; if a pass is already
+commissioned or running, nothing is charged. `fund_deep_decomposition` (5 owls or
 more) funds a mandate on the claim: a fresh pass on it first, then the
 claims that bear on it, most consequential first, with a tenth of the
 budget for the Grantmaker that plans the work and the rest refunded when
 it is done. Its page shows your user as "a reader". Each spends or escrows
 owls; check `get_account` first.
 
-**One request.** The work on an open request is priced and funded like any
-other work, and anyone may fund it. `get_request` shows its budget (what
-doing it should cost) and what is already behind it. A request with no
-budget is scoped first: a cheap pass that finds out what the work would
-take and quotes it, and the quote becomes its budget. `fund_request_work`
-puts owls toward whichever is open now, the scoping pass or the full work;
-the Researcher takes it up once the funding covers the cost, and every
-outcome, a negative result included, is paid for alike. Your user pays
-their share of what the work actually costs, and the rest comes back, as
-does everything if the request closes first.
+**One request.** The work on an open request is commissioned like any
+other work, and anyone may commission it. `get_request` shows its budget
+(what doing it should cost) and whether it is already commissioned. A
+request with no budget is scoped first: a cheap pass that finds out what
+the work would take and quotes it, and the quote becomes its budget.
+`fund_request_work` commissions whichever is open now, the scoping pass or
+the full work, at the budget your user chooses (the request's budget is
+the usual choice); the Researcher takes it up at once, and every outcome,
+a negative result included, is paid for alike. Your user pays what the
+work actually costs, and the rest comes back, as does everything if the
+request closes first.
 
 **A mandate, through the Grantmaker.** There is no form; it is a
 conversation.
@@ -209,7 +213,13 @@ every agent of the graph. Your user may not need one: you can follow
 `get_mandate`, `get_mandate_allocation`). If one already covers what your
 user cares about, backing it with `fund_mandate` is often better value
 than starting another. Contributing buys the mandate more reach and you no
-say in how it is stewarded.
+say in how it is stewarded. `get_mandate_allocation` shows how a mandate
+spends: the operating policy its Grantmaker wrote for the program officers
+who decide what to pay for, what it commissioned and how those runs used
+their budgets, and the decisions behind them. A mandate's objective changes
+only with its funder's agreement, and every other funder is told; any
+funder may take back their share of the uncommitted money at any time
+with `withdraw_from_mandate`, again only on your user's go-ahead.
 
 ## Steering sources when you have opinions
 

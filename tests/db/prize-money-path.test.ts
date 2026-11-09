@@ -38,7 +38,6 @@ import {
   seedGrantWithJob,
   seedAction,
   seedAllocation,
-  seedValuation,
   pgCode,
   owlBalance,
   OWL,
@@ -79,7 +78,7 @@ import {
 } from "../../src/services/bounty-service.js";
 import { prizeCommitmentBreakdown } from "../../src/services/prize-commitment.js";
 import { grantCommittedMicroUsd } from "../../src/services/regrant-service.js";
-import { runMandateAllocator } from "../../src/services/allocation-service.js";
+import { commissionAction } from "../../src/services/commission-service.js";
 import { refundUnspentBudget } from "../../src/services/budget-job-service.js";
 import {
   filePrizeClaim,
@@ -190,7 +189,7 @@ beforeAll(async () => {
 });
 
 describe("the escrow hold", () => {
-  it("a posted bounty holds against the mandate: committed money rises by the amount plus the reserve, and the allocator's escrow room falls", async () => {
+  it("a posted bounty holds against the mandate: committed money rises by the amount plus the reserve, and a commission's escrow room falls", async () => {
     const config = loadConfig();
     const m = await seedMandate(2500);
     expect(await committedOwls(m.grantId, m.jobId)).toBe(0);
@@ -212,18 +211,19 @@ describe("the escrow hold", () => {
       headroom_micro_usd: (2500 - 500 - reserveOwls) * OWL,
     });
 
-    // The allocator reads the same number: an increment of 1,960 owls is
-    // larger than the 1,950 owls of room the held bounty leaves, so it is
-    // not placed; once the bounty expires the room returns and it is.
+    // A commission reads the same number: a budget of 1,960 owls is larger
+    // than the 1,950 owls of room the held bounty leaves, so it is refused;
+    // once the bounty expires the room returns and it is placed.
+    await rawQuery(`UPDATE grants SET daily_budget_micro_usd = 0 WHERE id = $1`, [m.grantId]);
     const claimId = await seedClaim("alloc-room");
-    const actionId = await seedAction({ group: `assess:${claimId}`, claimId, costMicroUsd: 1960 * OWL });
-    await seedValuation({ grantId: m.grantId, actionId, valueEst: 9 });
-    expect((await runMandateAllocator(m.grantId)).allocated).toBe(0);
+    const actionId = await seedAction({ group: `assess:${claimId}`, claimId, costMicroUsd: OWL });
+    const commission = () =>
+      commissionAction({ payer: { kind: "grant", grantId: m.grantId }, actionId, budgetMicroUsd: 1960 * OWL, commissionedBy: "program_officer" });
+    expect(await commission()).toMatchObject({ ok: false, code: "OVER_ESCROW" });
     expect(await closeBounty(s.bountyId, "expired", "test")).toBe(true);
     expect(await prizeCommitmentBreakdown(m.grantId)).toEqual({ held_micro_usd: 0, paid_micro_usd: 0, review_reserve_micro_usd: 0, total_micro_usd: 0 });
     expect(await committedOwls(m.grantId, m.jobId)).toBe(0);
-    const placed = await runMandateAllocator(m.grantId);
-    expect(placed).toMatchObject({ allocated: 1, allocatedMicroUsd: 1960 * OWL });
+    expect(await commission()).toMatchObject({ ok: true, status: "commissioned" });
   });
 
   it("a bounty beyond the mandate's headroom is refused with INSUFFICIENT_ESCROW", async () => {

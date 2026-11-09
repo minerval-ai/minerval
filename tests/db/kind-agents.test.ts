@@ -297,7 +297,7 @@ describe("the kinds' tools", () => {
 });
 
 describe("fund_request", () => {
-  it("puts the mandate's money on the request's ledger row, clipped to what the row lacks", async () => {
+  it("commissions the work on the request's ledger row whole, from the mandate", async () => {
     // An active platform mandate left by another file would price and fund
     // the scoping pass the moment the request is filed (as it should);
     // this test is about the Grantmaker's own placement, so none is active.
@@ -316,12 +316,13 @@ describe("fund_request", () => {
     });
     const funder = await seedUser("funder");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000 });
+    await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [grantId]);
     const tools = createResearchTools({ requestedBy: "grantmaker", grantId });
     expect(tools.definitions.map((t) => t.name)).toContain("fund_request");
     const out = JSON.parse((await tools.execute("fund_request", { request_id: requestId, budget_usd: 2 }))!);
-    // No budget yet: the money goes to the scoping pass (2 owl prior),
-    // which it covers; the Researcher takes it up on the executor's pass.
-    expect(out).toMatchObject({ success: true, covered: true });
+    // No budget yet: the commission is for the scoping pass, at the
+    // budget given; the Researcher takes it up on the executor's pass.
+    expect(out).toMatchObject({ success: true, status: "commissioned" });
     expect(out.funded).toContain("scoping pass");
     expect(
       await one(

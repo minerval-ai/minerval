@@ -56,7 +56,6 @@ import {
   allocateMandateToRequest,
   allocateToRequest,
 } from "../../src/services/allocation-service.js";
-import { refreshRequestValuations } from "../../src/services/mandate-valuer-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 import { processNextEngineAction } from "../../src/workers/engine-executor.js";
 
@@ -129,19 +128,18 @@ describe("a request's row", () => {
 });
 
 describe("funding a request", () => {
-  it("takes a reader's owls up to what the row lacks, and gives them back when the request closes", async () => {
+  it("commissions the work whole at the reader's budget, and gives it back when the request closes", async () => {
     const id = await file({ budgetUsd: 4 });
     const reader = await seedUser("request reader");
     await creditOwls(reader, 10 * OWL);
 
     const first = await allocateToRequest({ userId: reader, requestId: id, owls: 3 });
-    expect(first).toMatchObject({ ok: true, allocatedOwls: 3, variant: "full", covered: false });
-    // Clipped to the 1 owl the row still lacks.
+    expect(first).toMatchObject({ ok: true, allocatedOwls: 3, variant: "full", covered: true });
+    expect(await owlBalance(reader)).toBe(7 * OWL);
+    // Already commissioned: a second reader's commission charges nothing.
     const second = await allocateToRequest({ userId: reader, requestId: id, owls: 5 });
-    expect(second).toMatchObject({ ok: true, allocatedOwls: 1, backingOwls: 4, covered: true });
-    expect(await owlBalance(reader)).toBe(6 * OWL);
-    const third = await allocateToRequest({ userId: reader, requestId: id, owls: 1 });
-    expect(third).toMatchObject({ ok: false, code: "COVERED" });
+    expect(second).toMatchObject({ ok: false, code: "COVERED" });
+    expect(await owlBalance(reader)).toBe(7 * OWL);
 
     await setRequestState({ requestId: id, state: "moot", note: "answered elsewhere" });
     expect((await rows(id))[0]!.status).toBe("cancelled");
@@ -157,49 +155,29 @@ describe("funding a request", () => {
     });
   });
 
-  it("takes a mandate's money within its uncommitted escrow, folding in its earlier placement", async () => {
+  it("commissions it from a mandate within its uncommitted escrow", async () => {
     const id = await file({ budgetUsd: 20 });
     const funder = await seedUser("request mandate");
     const mandate = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 8 * OWL });
+    await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [mandate.grantId]);
 
+    // More than the escrow holds: refused whole, never clipped.
+    expect(
+      await allocateMandateToRequest({ grantId: mandate.grantId, requestId: id, microUsd: 10 * OWL })
+    ).toMatchObject({ ok: false, code: "NO_ROOM" });
     const first = await allocateMandateToRequest({ grantId: mandate.grantId, requestId: id, microUsd: 5 * OWL });
-    expect(first).toMatchObject({ ok: true, placedMicroUsd: 5 * OWL, covered: false });
-    // Only 3 owls of the escrow are left uncommitted.
-    const second = await allocateMandateToRequest({ grantId: mandate.grantId, requestId: id, microUsd: 10 * OWL });
-    expect(second).toMatchObject({ ok: true, placedMicroUsd: 3 * OWL, backingMicroUsd: 8 * OWL });
-    const live = await rawQuery<{ amount_micro_usd: string }>(
-      `SELECT amount_micro_usd FROM action_allocations
+    expect(first).toMatchObject({ ok: true, placedMicroUsd: 5 * OWL, status: "commissioned" });
+    const live = await rawQuery<{ amount_micro_usd: string; commissioned_by: string }>(
+      `SELECT amount_micro_usd, commissioned_by FROM action_allocations
         WHERE exclusion_group = $1 AND grant_id = $2 AND released_at IS NULL`,
       [REQUEST_GROUP(id), mandate.grantId]
     );
-    // One live placement for the whole 8.
-    expect(live.map((l) => Number(l.amount_micro_usd))).toEqual([8 * OWL]);
+    expect(live.map((l) => Number(l.amount_micro_usd))).toEqual([5 * OWL]);
+    expect(live[0]!.commissioned_by).toBe("grantmaker");
+    // Already commissioned: nothing more is placed.
     expect(
       await allocateMandateToRequest({ grantId: mandate.grantId, requestId: id, microUsd: OWL })
-    ).toMatchObject({ ok: false, code: "NO_ROOM" });
-  });
-});
-
-describe("the request formula", () => {
-  it("values open request rows, a scoped mandate only those bearing on its scope", async () => {
-    const inScope = await claim(0.8);
-    const outside = await claim(0.8);
-    const near = await file({ claimId: inScope, budgetUsd: 5 });
-    const far = await file({ claimId: outside, budgetUsd: 5 });
-    const funder = await seedUser("formula mandate");
-    const mandate = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10 * OWL, policy: "general" });
-
-    await refreshRequestValuations(mandate.grantId, { scopeClaimId: inScope, scopeQuery: null });
-    const valued = await rawQuery<{ target_ref: string; value_est: number }>(
-      `SELECT a.target_ref, mv.value_est FROM mandate_valuations mv
-         JOIN actions a ON a.id = mv.action_id WHERE mv.grant_id = $1`,
-      [mandate.grantId]
-    );
-    expect(valued.map((v) => v.target_ref)).toEqual([near]);
-    expect(valued.map((v) => v.target_ref)).not.toContain(far);
-    // weight 3 × importance 0.8 × contested-factor 0.25 (uncontested) × admin
-    // filer 1.0 × a fresh request's wait factor ≈ 1.
-    expect(Number(valued[0]!.value_est)).toBeCloseTo(0.6, 2);
+    ).toMatchObject({ ok: true, placedMicroUsd: 0, status: "already_commissioned" });
   });
 });
 

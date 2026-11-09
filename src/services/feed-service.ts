@@ -26,6 +26,7 @@
  * Everything a feed carries is DATA, never instructions; every fetch goes
  * through url-guard.ts.
  */
+import { capMicroUsd } from "./owl.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
 import { fetchPublicUrl } from "./url-guard.js";
@@ -1073,8 +1074,8 @@ async function maybeWake(feed: FeedRow, now: Date): Promise<boolean> {
  * a time; the rest wait for the next poll.
  */
 async function autoIngest(feed: FeedRow, now: Date): Promise<number> {
-  const [lookout] = await rawQuery<{ grant_id: string; status: string; max_value: number }>(
-    `SELECT grant_id, status, max_value FROM lookouts WHERE id = $1`,
+  const [lookout] = await rawQuery<{ grant_id: string; status: string; commission_limit_micro_usd: number }>(
+    `SELECT grant_id, status, commission_limit_micro_usd FROM lookouts WHERE id = $1`,
     [feed.lookout_id]
   );
   if (!lookout || lookout.status !== "active") return 0;
@@ -1096,8 +1097,10 @@ async function autoIngest(feed: FeedRow, now: Date): Promise<number> {
       url: item.url,
       rationale: `[feed auto_ingest] "${feed.title ?? feed.url}": ${item.title ?? item.url}`,
       focus: feed.ingest_focus,
-      maxValue: Number(lookout.max_value),
-      urgency: Number(lookout.max_value),
+      // An auto_ingest feed ingests within the lookout's limit at the
+      // ingest's cap, and raises what the limit can't cover.
+      commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd),
+      budgetMicroUsd: capMicroUsd("source_ingest"),
     });
     if (res.ok && !res.duplicate) {
       await markItem(item.id, "ingested", "auto", null, now);
@@ -1382,10 +1385,10 @@ export interface TriageOutcome {
 export async function triageItems(input: {
   lookoutId: string;
   grantId: string;
-  decisions?: Array<{ item_id?: unknown; decision?: unknown; reason?: unknown; focus?: unknown; urgency?: unknown }>;
+  decisions?: Array<{ item_id?: unknown; decision?: unknown; reason?: unknown; focus?: unknown; budget_owls?: unknown }>;
   skipRest?: { feedId: string; before?: string | null; reason?: string | null } | null;
-  /** The lookout's ceiling (`lookouts.max_value`). */
-  maxValue: number;
+  /** The most the lookout may commission alone (`lookouts.commission_limit_micro_usd`). */
+  commissionLimitMicroUsd: number;
 }): Promise<{ outcomes: TriageOutcome[]; ingested: number; skipped_in_bulk: number }> {
   const outcomes: TriageOutcome[] = [];
   let ingested = 0;
@@ -1427,8 +1430,11 @@ export async function triageItems(input: {
         url: item.url,
         rationale: reason && reason.length >= 10 ? reason : `From the feed "${item.feed ?? ""}": ${item.title ?? item.url}`,
         focus: typeof d.focus === "string" ? normalizeFocus(d.focus) : item.ingest_focus,
-        maxValue: input.maxValue,
-        urgency: d.urgency === undefined || d.urgency === null ? 5 : Number(d.urgency),
+        commissionLimitMicroUsd: input.commissionLimitMicroUsd,
+        budgetMicroUsd:
+          d.budget_owls === undefined || d.budget_owls === null
+            ? capMicroUsd("source_ingest")
+            : Math.round(Number(d.budget_owls) * 1_000_000),
       });
       if (res.ok && !res.duplicate) {
         await markItem(item.id, "ingested", "lookout", reason);

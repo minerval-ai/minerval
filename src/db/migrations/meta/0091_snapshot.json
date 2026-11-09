@@ -1,6 +1,6 @@
 {
-  "id": "484a29e0-ddeb-4fd2-ae03-1743860a42f0",
-  "prevId": "b9a9af0d-8eab-432d-bb84-335580565983",
+  "id": "074a6922-14f4-40f1-88b6-d2734da44bb5",
+  "prevId": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -70,6 +70,30 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "commissioned_by": {
+          "name": "commissioned_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "brief": {
+          "name": "brief",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parent_action_id": {
+          "name": "parent_action_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -78,6 +102,21 @@
           "columns": [
             {
               "expression": "exclusion_group",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_action_allocations_parent": {
+          "name": "idx_action_allocations_parent",
+          "columns": [
+            {
+              "expression": "parent_action_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -213,6 +252,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "action_allocations_parent_action_id_actions_id_fk": {
+          "name": "action_allocations_parent_action_id_actions_id_fk",
+          "tableFrom": "action_allocations",
+          "tableTo": "actions",
+          "columnsFrom": [
+            "parent_action_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1240,19 +1292,6 @@
           "type": "text[]",
           "primaryKey": false,
           "notNull": false
-        },
-        "wrote_to_graph": {
-          "name": "wrote_to_graph",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "commit_sha": {
-          "name": "commit_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -1273,22 +1312,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_runs_expirable": {
-          "name": "idx_agent_runs_expirable",
-          "columns": [
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "wrote_to_graph = false",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2736,12 +2759,6 @@
         "skills": {
           "name": "skills",
           "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -10417,6 +10434,189 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.node_messages": {
+      "name": "node_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_kind": {
+          "name": "sender_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_node_id": {
+          "name": "sender_node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sender_ref": {
+          "name": "sender_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paid": {
+          "name": "paid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reply_to": {
+          "name": "reply_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome_note": {
+          "name": "outcome_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "answered_at": {
+          "name": "answered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_node_messages_unread": {
+          "name": "idx_node_messages_unread",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "read_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_node_messages_sender": {
+          "name": "idx_node_messages_sender",
+          "columns": [
+            {
+              "expression": "sender_node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "node_messages_node_id_claims_id_fk": {
+          "name": "node_messages_node_id_claims_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_messages_sender_node_id_claims_id_fk": {
+          "name": "node_messages_sender_node_id_claims_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "sender_node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "node_messages_reply_to_node_messages_id_fk": {
+          "name": "node_messages_reply_to_node_messages_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "node_messages",
+          "columnsFrom": [
+            "reply_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "node_messages_outcome_check": {
+          "name": "node_messages_outcome_check",
+          "value": "\"node_messages\".\"outcome\" IS NULL OR \"node_messages\".\"outcome\" IN ('changed', 'no_change', 'disagree')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.oauth_authorization_requests": {
       "name": "oauth_authorization_requests",
       "schema": "",
@@ -12310,12 +12510,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "is_current": {
           "name": "is_current",
           "type": "boolean",
@@ -13742,117 +13936,6 @@
         "ck_research_runs_spent": {
           "name": "ck_research_runs_spent",
           "value": "spent_micro_usd >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.setup_parts": {
-      "name": "setup_parts",
-      "schema": "",
-      "columns": {
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "public": {
-          "name": "public",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "source_path": {
-          "name": "source_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_seen_commit": {
-          "name": "first_seen_commit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_seen_at": {
-          "name": "first_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_setup_parts_version": {
-          "name": "uq_setup_parts_version",
-          "columns": [
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "setup_parts_kind_name_hash_pk": {
-          "name": "setup_parts_kind_name_hash_pk",
-          "columns": [
-            "kind",
-            "name",
-            "hash"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_setup_parts_kind": {
-          "name": "ck_setup_parts_kind",
-          "value": "\"setup_parts\".\"kind\" IN ('constitution', 'role', 'tool')"
         }
       },
       "isRLSEnabled": false

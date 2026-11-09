@@ -28,6 +28,9 @@
     "correspondent": [
       "For every administrator"
     ],
+    "program-officer": [
+      "For every administrator"
+    ],
     "contribution-reviewer": [
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator"
@@ -61,7 +64,7 @@
       "name": "costing",
       "displayName": "Costing",
       "description": "How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.",
-      "version": 3,
+      "version": 4,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -95,6 +98,12 @@
         },
         {
           "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
           "sections": [
             "For every administrator"
           ]
@@ -143,7 +152,8 @@
             "researcher",
             "contribution-reviewer",
             "grantmaker",
-            "dispute-arbitrator"
+            "dispute-arbitrator",
+            "program-officer"
           ],
           "input_schema": {
             "type": "object",
@@ -152,13 +162,13 @@
           }
         }
       ],
-      "bodyChars": 7259
+      "bodyChars": 8823
     },
     {
       "name": "mathematics",
       "displayName": "Mathematics",
       "description": "How the constitution applies to propositions of mathematics: proofs as arguments, how statuses and credence read for theorems and conjectures, machine-checked proofs as evidence, formal statements in Lean 4, the solver and the prize program, and what money may never touch. Does not apply to claims that merely use a number or a model.",
-      "version": 6,
+      "version": 7,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "domain",
       "domains": [
@@ -204,6 +214,12 @@
         },
         {
           "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
           "sections": [
             "For every administrator"
           ]
@@ -543,7 +559,7 @@
           }
         }
       ],
-      "bodyChars": 29505
+      "bodyChars": 29581
     },
     {
       "name": "provenance",
@@ -588,6 +604,12 @@
         },
         {
           "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
           "sections": [
             "For every administrator"
           ]
@@ -1084,6 +1106,12 @@
           ]
         },
         {
+          "key": "program-officer",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
           "key": "contribution-reviewer",
           "sections": [
             "For every administrator"
@@ -1116,6 +1144,85 @@
       ],
       "tools": [],
       "bodyChars": 1066
+    },
+    {
+      "name": "sql",
+      "displayName": "Sql",
+      "description": "How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.",
+      "version": 1,
+      "sinceEpoch": "2026-11-responsive-funding",
+      "kind": "method",
+      "domains": [],
+      "roles": [
+        {
+          "key": "claim-steward",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "audit-agent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "grantmaker",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "contribution-reviewer",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "dispute-arbitrator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "curator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "researcher",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "consistency-checker",
+          "sections": [
+            "For every administrator"
+          ]
+        }
+      ],
+      "tools": [],
+      "bodyChars": 4865
     }
   ]
 }

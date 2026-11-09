@@ -50,7 +50,9 @@ export type PricedOp =
   | "text_analysis"
   | "lookout_run"
   | "correspondent_run"
-  | "consistency_sweep";
+  | "consistency_sweep"
+  // Read-only SQL past a caller's daily allowance, priced by database time (sql-service.ts).
+  | "sql_query";
 
 /** What one owl costs to BUY, in micro-USD ($4). Purchase display only. */
 export function owlPriceMicroUsd(): number {
@@ -100,6 +102,9 @@ export function capListOwls(): Record<PricedOp, number> {
     // One consistency sweep on the cheap model: the ceiling of a row priced
     // by its partition's size (action-service consistencySweepPrice).
     consistency_sweep: c.capConsistencySweepOwls,
+    // One read-only SQL query past the day's free allowance: its time limit
+    // at the per-second price.
+    sql_query: Math.round(c.sqlCallerTimeoutSeconds * c.sqlOwlsPerSecond * 1000) / 1000,
   };
 }
 

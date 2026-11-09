@@ -27,8 +27,25 @@ import { resolveTagBySlug } from "./tag-service.js";
 /** Who is reading; only the description's last sentence differs. */
 export type GraphChangeAudience = "caller" | "agent";
 
-export const GRAPH_CHANGE_KINDS = ["first_assessment", "status_moved", "credence_moved", "reassessed"] as const;
+export const VERDICT_CHANGE_KINDS = ["first_assessment", "status_moved", "credence_moved", "reassessed"] as const;
+/**
+ * The rest of what moves on the graph and its ledger. Read only when a
+ * caller asks for them with `kinds`, so a reader of verdicts (a digest, a
+ * Correspondent) sees exactly what it always did.
+ */
+export const EVENT_CHANGE_KINDS = [
+  "work_commissioned",
+  "run_finished",
+  "message_arrived",
+  "message_answered",
+  "contribution_accepted",
+  "ruling",
+  "petition_decided",
+  "request_filed",
+] as const;
+export const GRAPH_CHANGE_KINDS = [...VERDICT_CHANGE_KINDS, ...EVENT_CHANGE_KINDS] as const;
 export type GraphChangeKind = (typeof GRAPH_CHANGE_KINDS)[number];
+type EventKind = (typeof EVENT_CHANGE_KINDS)[number];
 
 /** The ladder a status moves along; `unknown` sits off it. */
 const STATUS_LADDER = ["verified", "supported", "inconclusive", "doubtful", "contradicted"];
@@ -43,13 +60,15 @@ const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 
 export interface GraphChange {
-  /** The assessment that made the change. */
+  /** The row that made the change: an assessment, a message, a commission… */
   change_id: string;
   at: string;
   claim_id: string;
   claim_text: string;
   kind: GraphChangeKind;
-  status: string;
+  /** For the kinds beyond verdicts: what happened, in a line (a trigger, an outcome, a budget). */
+  summary?: string;
+  status: string | null;
   prev_status: string | null;
   confidence: number;
   credence: number | null;
@@ -161,7 +180,10 @@ export function graphChangeDefinition(audience: GraphChangeAudience): GraphChang
       "on; keep it to resume later, which is how a digest or a feed knows what is " +
       "new since its last edition. Narrow it to part of the graph with `under` " +
       "(claims and everything beneath them) and/or `tags` (either matches). " +
-      "Returns ids and summaries, not whole nodes: open what matters with get_claim." +
+      "Returns ids and summaries, not whole nodes: open what matters with get_claim. " +
+      "Ask for more than verdicts with `kinds`: work_commissioned and run_finished " +
+      "(the ledger), message_arrived and message_answered (nodes' inboxes), " +
+      "contribution_accepted, ruling, petition_decided and request_filed." +
       (audience === "caller" ? " Free." : ""),
     input_schema: {
       type: "object",
@@ -189,6 +211,12 @@ export function graphChangeDefinition(audience: GraphChangeAudience): GraphChang
           minimum: 0,
           maximum: 1,
           description: `The least credence move that counts, ${delta} by default`,
+        },
+        kinds: {
+          type: "array",
+          items: { type: "string", enum: [...GRAPH_CHANGE_KINDS] },
+          description:
+            "Only these kinds of change. Leave it out for verdicts only (first_assessment, status_moved, credence_moved, and reassessed when material_only is false)",
         },
         material_only: {
           type: "boolean",
@@ -240,8 +268,154 @@ export async function listGraphChanges(input: {
   scope?: GraphChangeScope;
   minCredenceDelta?: number;
   materialOnly?: boolean;
+  /** Which kinds to return; verdicts only when absent. */
+  kinds?: GraphChangeKind[];
   limit?: number;
 }): Promise<GraphChangePage> {
+  const wanted = new Set<GraphChangeKind>(input.kinds && input.kinds.length > 0 ? input.kinds : VERDICT_CHANGE_KINDS);
+  const events = EVENT_CHANGE_KINDS.filter((k) => wanted.has(k));
+  const verdicts = VERDICT_CHANGE_KINDS.some((k) => wanted.has(k));
+  if (events.length === 0) return listVerdictChanges(input, wanted);
+  const limit = Math.min(MAX_CHANGES_PAGE, Math.max(1, Math.round(Number(input.limit ?? DEFAULT_CHANGES_PAGE)) || DEFAULT_CHANGES_PAGE));
+  const [v, e] = await Promise.all([
+    verdicts ? listVerdictChanges({ ...input, limit }, wanted) : Promise.resolve(null),
+    listEventChanges({ ...input, limit }, events),
+  ]);
+  // Merge the two scans in stream order and take a page; resume after the
+  // last change returned, or, on a short page, after both scans' positions.
+  const merged = [...(v?.changes ?? []), ...e.changes].sort((a, b) =>
+    a.at === b.at ? (a.change_id < b.change_id ? -1 : 1) : a.at < b.at ? -1 : 1
+  );
+  const page = merged.slice(0, limit);
+  const full = page.length === limit && (merged.length > limit || Boolean(v?.has_more) || e.has_more);
+  let next: string | null;
+  if (full) {
+    next = page.at(-1)!.cursor;
+  } else {
+    const positions = [v?.next_cursor, e.next_cursor].map((c) => (c ? decodeChangeCursor(c) : null)).filter(Boolean) as Array<{ at: string; id: string }>;
+    const last = positions.sort((a, b) => (a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? -1 : 1)).at(-1);
+    next = last ? encodeChangeCursor(last.at, last.id) : (input.after ?? null);
+  }
+  return { changes: page, next_cursor: next, has_more: full };
+}
+
+interface EventRow {
+  id: string;
+  at: string;
+  kind: EventKind;
+  claim_id: string;
+  claim_text: string;
+  summary: string | null;
+}
+
+/** The kinds beyond verdicts, from the ledger, inboxes, reviews and requests, in stream order. */
+async function listEventChanges(
+  input: { after?: string | null; since?: string | Date | null; scope?: GraphChangeScope; limit?: number },
+  kinds: readonly EventKind[]
+): Promise<GraphChangePage> {
+  const limit = Math.min(MAX_CHANGES_PAGE, Math.max(1, Number(input.limit ?? DEFAULT_CHANGES_PAGE)));
+  const cur = input.after ? decodeChangeCursor(input.after) : null;
+  const sinceAt = cur
+    ? cur.at
+    : toMicroIso(input.since ? new Date(input.since).toISOString() : new Date(Date.now() - 30 * 86_400_000).toISOString());
+  const sinceId = cur ? cur.id : "00000000-0000-0000-0000-000000000000";
+  const under = (input.scope?.under ?? []).filter((id) => ID_RE.test(id)).slice(0, MAX_SCOPE_IDS);
+  const tagIds = (input.scope?.tagIds ?? []).filter((id) => ID_RE.test(id)).slice(0, MAX_SCOPE_TAGS);
+  const scoped = under.length > 0 || tagIds.length > 0;
+  const rows = await rawQuery<EventRow>(
+    `WITH RECURSIVE beneath AS (
+       SELECT unnest($3::uuid[]) AS id
+       UNION
+       SELECT cr.child_claim_id FROM claim_relationships cr JOIN beneath b ON cr.parent_claim_id = b.id
+     ),
+     ev AS (
+       SELECT al.id, al.created_at AS at, 'work_commissioned'::text AS kind, al.claim_id,
+              concat((al.amount_micro_usd / 1e6)::float8, ' owls, by ', al.commissioned_by) AS summary
+         FROM action_allocations al
+        WHERE al.commissioned_by IS NOT NULL AND al.claim_id IS NOT NULL AND 'work_commissioned' = ANY($6)
+       UNION ALL
+       SELECT a.id, a.updated_at, 'run_finished', a.claim_id,
+              concat(a.kind, ', spent ', round((COALESCE(a.metered_cost_micro_usd, 0) / 1e6)::numeric, 3)::float8, ' owls')
+         FROM actions a
+        WHERE a.status = 'done' AND a.claim_id IS NOT NULL AND 'run_finished' = ANY($6)
+       UNION ALL
+       SELECT m.id, m.created_at, 'message_arrived', m.node_id, concat(m.trigger, ' from ', m.sender_kind, CASE WHEN m.paid THEN ', paid' ELSE '' END)
+         FROM node_messages m
+        WHERE m.trigger <> 'message_reply' AND 'message_arrived' = ANY($6)
+       UNION ALL
+       SELECT m.id, m.answered_at, 'message_answered', m.node_id, concat(m.trigger, ': ', m.outcome)
+         FROM node_messages m
+        WHERE m.answered_at IS NOT NULL AND 'message_answered' = ANY($6)
+       UNION ALL
+       SELECT r.id, r.reviewed_at, 'contribution_accepted', c.claim_id, c.contribution_type
+         FROM contribution_reviews r JOIN contributions c ON c.id = r.contribution_id
+        WHERE r.decision = 'accept' AND NOT r.superseded AND c.claim_id IS NOT NULL AND 'contribution_accepted' = ANY($6)
+       UNION ALL
+       SELECT x.id, x.arbitrated_at, 'ruling', c.claim_id, concat(x.outcome, ': ', x.decision)
+         FROM arbitration_results x JOIN contributions c ON c.id = x.contribution_id
+        WHERE c.claim_id IS NOT NULL AND 'ruling' = ANY($6)
+       UNION ALL
+       SELECT p.id, p.decided_at, 'petition_decided', p.requester_node_id,
+              concat(p.kind, ' ', p.status, CASE WHEN p.granted_micro_usd IS NOT NULL THEN concat(', ', (p.granted_micro_usd / 1e6)::float8, ' owls') ELSE '' END)
+         FROM petitions p
+        WHERE p.decided_at IS NOT NULL AND p.requester_node_id IS NOT NULL AND 'petition_decided' = ANY($6)
+       UNION ALL
+       SELECT q.id, q.created_at, 'request_filed', q.keeper_claim_id, left(q.ask, 200)
+         FROM requests q
+        WHERE q.keeper_claim_id IS NOT NULL AND 'request_filed' = ANY($6)
+     )
+     SELECT ev.id, to_char(ev.at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at, ev.kind,
+            ev.claim_id, left(c.text, 240) AS claim_text, ev.summary
+       FROM ev JOIN claims c ON c.id = ev.claim_id
+      WHERE (ev.at, ev.id) > ($1::timestamptz, $2::uuid)
+        AND (NOT $5::boolean
+             OR ev.claim_id IN (SELECT id FROM beneath)
+             OR EXISTS (SELECT 1 FROM taggings tg
+                         WHERE tg.subject_kind = 'claim' AND tg.subject_id = ev.claim_id
+                           AND tg.tag_id = ANY($4::uuid[])))
+      ORDER BY ev.at ASC, ev.id ASC
+      LIMIT $7`,
+    [sinceAt, sinceId, under, tagIds, scoped, [...kinds], limit + 1]
+  );
+  const page = rows.slice(0, limit);
+  const changes: GraphChange[] = page.map((r) => ({
+    change_id: r.id,
+    at: r.at,
+    claim_id: r.claim_id,
+    claim_text: r.claim_text,
+    kind: r.kind,
+    summary: r.summary ?? undefined,
+    status: null,
+    prev_status: null,
+    confidence: 0,
+    credence: null,
+    prev_credence: null,
+    credence_delta: null,
+    status_steps: null,
+    trigger: null,
+    page_url: pageUrl(r.claim_id),
+    cursor: encodeChangeCursor(r.at, r.id),
+  }));
+  const last = page.at(-1);
+  return {
+    changes,
+    next_cursor: last ? encodeChangeCursor(last.at, last.id) : input.after ?? encodeChangeCursor(sinceAt, sinceId),
+    has_more: rows.length > limit,
+  };
+}
+
+/** Verdict changes: an assessment against the one before it. */
+async function listVerdictChanges(
+  input: {
+    after?: string | null;
+    since?: string | Date | null;
+    scope?: GraphChangeScope;
+    minCredenceDelta?: number;
+    materialOnly?: boolean;
+    limit?: number;
+  },
+  wanted: Set<GraphChangeKind>
+): Promise<GraphChangePage> {
   const limit = Math.min(MAX_CHANGES_PAGE, Math.max(1, Math.round(Number(input.limit ?? DEFAULT_CHANGES_PAGE)) || DEFAULT_CHANGES_PAGE));
   const minDelta = Math.min(
     1,
@@ -312,7 +486,7 @@ export async function listGraphChanges(input: {
         minDelta,
         materialOnly
       );
-      if (!kind) continue;
+      if (!kind || !wanted.has(kind)) continue;
       out.push({
         change_id: r.id,
         at: r.at,
@@ -391,6 +565,9 @@ export async function runGraphChanges(input: Record<string, unknown>): Promise<
     scope: { under, tagIds },
     minCredenceDelta: input.min_credence_delta === undefined ? undefined : Number(input.min_credence_delta),
     materialOnly: input.material_only !== false,
+    kinds: Array.isArray(input.kinds)
+      ? (input.kinds.map(String).filter((k) => (GRAPH_CHANGE_KINDS as readonly string[]).includes(k)) as GraphChangeKind[])
+      : undefined,
     limit: input.limit === undefined ? undefined : Number(input.limit),
   });
   return { ok: true, payload: unknown.length > 0 ? { ...page, unknown_tags: unknown } : page };
