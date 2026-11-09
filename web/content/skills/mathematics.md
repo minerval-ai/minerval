@@ -110,8 +110,9 @@ never a reputation event.
 offers from that mandate's escrow, held there until the prize resolves, for
 a Lean proof or disproof of one published statement under one pin, judged
 by the checker and then by the steward for fidelity, exposed to a public
-challenge window, audited, and paid in owls. A bounty is not an allocation:
-it funds no work, it enters no valuation, and it changes no standard. The platform is never a claimant; if its own solver settles a
+challenge window, audited, and paid in owls. A bounty is not a commission:
+it funds no work, it is no reason to pay for any, and it changes no
+standard. The platform is never a claimant; if its own solver settles a
 statement, the bounty closes unpaid and the proof is published. Every
 attempt the platform makes is disclosed on the claim page before a bounty
 opens. Funders are never named on claim surfaces; Minerval is named as
@@ -262,16 +263,17 @@ back is a route or a sketch to weigh as a lead, never a checked proof.
 
 ## For the Grantmaker
 
-You value three new kinds of action for the Mathematics mandate.
-`formalize` is cheap and enabling; value it for any open claim in the
-notable range and for the lemmas several open problems rest on.
-`attempt_proof` is expected information: importance times your probability
-that this variant succeeds times a multiplier of 1.0 to 2.0 for sub-results
-several problems rest on; state the tractability in your rationale, from
-prior attempt reports, the state of Mathlib, the literature, and whether a
-route is visible. `prize_review` is self-funded when a bounty draws a claim
-and is never billed to the claimant. A bounty appears nowhere in any
-valuation. Quote attempts honestly, Lean checks included.
+You judge three new kinds of action for the Mathematics mandate, and your
+operating policy tells your officers how to. `formalize` is cheap and
+enabling; it is worth doing for any open claim in the notable range and
+for the lemmas several open problems rest on. `attempt_proof` is expected
+information: how much the problem matters, times your probability that
+this variant succeeds, worth more for a sub-result several problems rest
+on; state the tractability in your rationale, from prior attempt reports,
+the state of Mathlib, the literature, and whether a route is visible.
+`prize_review` is self-funded when a bounty draws a claim and is never
+billed to the claimant. A bounty is never a reason to pay for an attempt.
+Quote attempts honestly, Lean checks included.
 
 **How a plan item becomes work.** A `formalize` item opens one ledger row
 per claim only when the claim is active, has no published statement, and

@@ -29,6 +29,8 @@ import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
+import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -73,6 +75,8 @@ async function runAuditImpl(input: {
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getAuditToolDefinitions(),
+    ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     ...skillLoader.definitions,
     ...skillTools,
     ...reportTools.definitions, ...findingTools.definitions,
@@ -92,7 +96,7 @@ that bear on this ground, and record what you conclude: flag_issue for each
 issue found (its finding_id is what the consequence tools require), or nothing
 when the decisions under review hold up.${skillsNote}
 
-${turnBudgetLine(AUDIT_MAX_TURNS)}`;
+${turnBudgetLine(AUDIT_MAX_TURNS, { canSpend: true })}`;
 
   await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -116,6 +120,10 @@ ${turnBudgetLine(AUDIT_MAX_TURNS)}`;
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);
       if (research !== null) return research;
+      const spend = await executeSpendTool(name, toolInput);
+      if (spend !== null) return spend;
+      const sql = await executeSqlTool(name, toolInput);
+      if (sql !== null) return sql;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);

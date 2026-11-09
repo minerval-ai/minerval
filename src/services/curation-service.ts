@@ -27,8 +27,8 @@ import { ensureCurateAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
 // Who asked. Every source but the scan is an agent's or a person's
-// judgment, so it is valued as a Steward's escalation is, not as the scan's
-// pair (mandate-valuer-service.ts):
+// judgment; the General mandate's officers read the source when deciding
+// whether the curation is worth commissioning:
 //  - steward_escalation: a Steward, about its own claim;
 //  - consistency_sweep: the Consistency Checker found a structural defect
 //    (two nodes that are one, a conflation, a wrong kind, a mislabeled edge)

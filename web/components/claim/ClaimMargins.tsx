@@ -8,6 +8,7 @@ import { DependentsRail } from "./DependentsRail";
 import { RelatedRail } from "./RelatedRail";
 import { QuestionView, QuestionRail } from "@/components/question/QuestionView";
 import { RequestsRail } from "@/components/request/Requests";
+import { WaitingMessagesRail } from "./WaitingMessages";
 import styles from "./margins.module.css";
 
 // The claim page in its full three-column form (issue #42): the decomposition
@@ -49,6 +50,7 @@ export function ClaimMargins({ detail, source }: { detail: ClaimDetail; source: 
 
         {/* RIGHT — what depends on this claim */}
         <div className={styles.rightRail}>
+          <WaitingMessagesRail messages={detail.waiting_messages ?? []} />
           <DependentsRail dependents={detail.dependents ?? []} />
           {/* Requests appear where the API serves them (or offline); a page
               with none says so only once requests exist at all. */}

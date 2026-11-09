@@ -1,67 +1,45 @@
 /**
- * Allocators — how money reaches the action ledger.
+ * How people and mandates pay for work on the ledger, and what a mandate
+ * pays for its own work.
  *
- * The mechanical rule lives in action-service.ts: an action runs exactly
- * when the allocations on its exclusion group cover its expected cost,
- * and the metered cost splits among its funders pro rata. This module is
- * the two ways allocations get PLACED:
+ * Every payment for work is a commission (commission-service.ts): the
+ * payer chooses the budget, pays it whole, the run starts at once, and what
+ * it does not spend comes back. This module keeps the entry points the
+ * routes and tools call (a reader commissioning a claim's next assessment or
+ * the work on a request, a Grantmaker commissioning a request), a mandate's
+ * exposure for its accounts, and fundGrantSelfActions: a mandate paying for
+ * its own planning, review passes, lookouts, correspondents and planned
+ * ingests, and the General mandate for the consistency sweeps.
  *
- *  1. A person chips in on a claim's next assessment
- *     (allocateToClaimAssessment): an UNPINNED allocation on the assess
- *     group — it funds "assess this claim", not a model choice, so it
- *     counts toward whichever variant wins. The same for the work on a
- *     request (allocateToRequest).
- *
- *  2. A mandate's daily allocator (runMandateAllocator): reads the
- *     mandate's OWN valuations (mandate_valuations — the judgment layer),
- *     ranks the marginal increments by value per dollar of cost, and
- *     backs them best-first until the day's rate is committed or the
- *     escrow runs out. For an exclusion group the increments are:
- *
- *       base    — cover the standard sibling: ratio = value_std/cost_std,
- *                 placed UNPINNED (any sibling may consume it);
- *       upgrade — top up to the strong sibling: ratio = Δvalue/Δcost,
- *                 placed PINNED to the strong action (released back if a
- *                 cheaper sibling wins after all).
- *
- *     The day's bar — the ratio of the last increment funded — is
- *     emergent from the rate: most actions whose value merely exceeds
- *     their cost still fall below it and wait for co-funding or a
- *     cheaper day. Every mandate runs this same allocator over its own
- *     valuations; the General assessment mandate is just the first.
- *
- * Allocations never touch claims.importance and never enter any value
- * estimate; money is cost-side only, always.
+ * There is no formula and no allocation pass: what a mandate pays for
+ * beyond its own upkeep, its agents commission under its written operating
+ * policy (program-officer.ts). Money never touches claims.importance or any
+ * judgment of a claim; it buys attention, never conclusions.
  */
-import { rawQuery, withTransaction } from "../db/client.js";
+import { rawQuery } from "../db/client.js";
+import { allocationDayUseSql } from "./day-use.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
-import { withOwlBalanceLock } from "./owl-ledger-service.js";
-import {
-  ASSESS_GROUP,
-  COVERAGE_SQL,
-  REQUEST_GROUP,
-  ensureAssessActions,
-  ensureRequestActions,
-} from "./action-service.js";
-import { enqueueSteward } from "./queue-service.js";
+import { REQUEST_GROUP, ensureRequestActions } from "./action-service.js";
+import { commissionAction, commissionNodePass } from "./commission-service.js";
 import {
   POLICY_BOUNDS,
   getEffectiveAllocationPolicy,
   getGeneralMandate,
-  getMandateAllocationPolicy,
 } from "./allocation-policy-service.js";
 import { sweepYieldByVariant } from "./consistency-service.js";
-import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
 
 export type AllocateResult =
   | {
       ok: true;
+      /** The budget commissioned, in owls. */
       allocatedOwls: number;
+      /** The budget the pass runs with; what it does not spend comes back. */
       unspentOwls: number;
-      /** True when this allocation completed the pot: the action will run. */
+      /** Always true now: a commission is whole, so the pass runs. */
       covered: boolean;
+      actionId: string;
     }
   | {
       ok: false;
@@ -74,12 +52,11 @@ export type AllocateResult =
     };
 
 /**
- * A person puts owls toward a claim's next assessment: an unpinned
- * allocation on the claim's assess group. The amount is clipped so the
- * pot never exceeds the cheapest open sibling's cost (an allocation
- * should not exceed, in expectation, the action it funds; broader
- * ambitions belong in a mandate). When the pot covers that cost, the
- * action is runnable and the executor picks it up — nothing to wait for.
+ * A person commissions a claim's next assessment whole, at the budget they
+ * choose (commission-service.ts): their owls are the pass's budget, the pass
+ * runs at once, and whatever it does not spend comes back when it settles.
+ * There is no pot to wait on and no splitting among funders. When the claim
+ * already has a pass commissioned or running, nothing is charged.
  */
 export async function allocateToClaimAssessment(input: {
   userId: string;
@@ -87,114 +64,43 @@ export async function allocateToClaimAssessment(input: {
   owls: number;
 }): Promise<AllocateResult> {
   if (!(input.owls > 0)) {
-    return {
-      ok: false,
-      code: "BAD_AMOUNT",
-      message: "Allocate a positive number of owls",
-    };
+    return { ok: false, code: "BAD_AMOUNT", message: "Commission it with a positive number of owls" };
   }
-  const [claim] = await rawQuery<{ id: string; steward_state: string }>(
-    `SELECT id, steward_state FROM claims WHERE id = $1 AND state = 'active'`,
-    [input.claimId]
-  );
-  if (!claim) {
-    return {
-      ok: false,
-      code: "CLAIM_NOT_FOUND",
-      message: "Claim not found or not active",
-    };
-  }
-
-  // Make sure the action rows exist (a chip-in on a deferred stub is the
-  // normal way it becomes a candidate at all).
-  await ensureAssessActions(input.claimId);
-  const group = ASSESS_GROUP(input.claimId);
-  const [target] = await rawQuery<{
-    cost: number;
-    unpinned: number;
-  }>(
-    `SELECT MIN(a.cost_est_micro_usd)::bigint AS cost,
-            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
-                       WHERE al.exclusion_group = $1
-                         AND al.released_at IS NULL
-                         AND al.action_id IS NULL), 0)::bigint AS unpinned
-       FROM actions a
-      WHERE a.exclusion_group = $1 AND a.status = 'open'`,
-    [group]
-  );
-  if (!target || target.cost == null) {
-    return {
-      ok: false,
-      code: "COVERED",
-      message:
-        "This claim's next assessment is already funded or underway; nothing to contribute to",
-    };
-  }
-  const cheapestCost = Number(target.cost);
-  const unpinnedMicroUsd = Number(target.unpinned);
-  const room = Math.max(0, cheapestCost - unpinnedMicroUsd);
-  if (room <= 0) {
-    return {
-      ok: false,
-      code: "COVERED",
-      message:
-        "This claim's next assessment is already fully funded; it will run shortly",
-    };
-  }
-  const amountMicro = Math.min(owlsToMicroUsd(input.owls), room);
-
-  // Debit behind the balance guard, and record the allocation in the SAME
-  // transaction — a failure after the debit must not eat the user's owls.
-  // The user's owl-balance lock serializes it against their other debits.
-  const debited = await withOwlBalanceLock(input.userId, async (tx) => {
-    const rows = await tx.query<{ id: string }>(
-      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id)
-       SELECT $1, $2, 'claim_contribution', $3
-        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
-                 FROM owl_ledger WHERE user_id = $1) >= $4
-       RETURNING id`,
-      [input.userId, -amountMicro, input.claimId, amountMicro]
-    );
-    if (rows.length === 0) return false;
-    await tx.query(
-      `INSERT INTO action_allocations
-         (exclusion_group, claim_id, user_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4)`,
-      [group, input.claimId, input.userId, amountMicro]
-    );
-    return true;
+  const budget = owlsToMicroUsd(input.owls);
+  const result = await commissionNodePass({
+    payer: { kind: "user", userId: input.userId },
+    claimId: input.claimId,
+    budgetMicroUsd: budget,
+    brief:
+      "A reader commissioned this claim's assessment. Assess it under the ordinary " +
+      "standards; funding buys attention, never conclusions.",
+    reason: "A reader commissioned it.",
+    commissionedBy: "person",
+    message: { trigger: "user_order" },
   });
-  if (!debited) {
+  if (!result.ok) {
+    const code =
+      result.code === "NOT_FOUND"
+        ? ("CLAIM_NOT_FOUND" as const)
+        : result.code === "INSUFFICIENT_OWLS"
+          ? ("INSUFFICIENT_OWLS" as const)
+          : ("BAD_AMOUNT" as const);
+    return { ok: false, code, message: result.message };
+  }
+  if (result.status === "already_commissioned") {
     return {
       ok: false,
-      code: "INSUFFICIENT_OWLS",
-      message: `Allocating ${microUsdToOwls(amountMicro)} owls exceeds your balance`,
+      code: "COVERED",
+      message:
+        "This claim's next assessment is already commissioned or underway; nothing was charged",
     };
   }
-
-  const covered = unpinnedMicroUsd + amountMicro >= cheapestCost;
-  if (
-    covered &&
-    claim.steward_state !== "pending" &&
-    claim.steward_state !== "running"
-  ) {
-    // A deferred stub or an already-assessed claim: the pot buys its next
-    // pass, so make it a candidate the executor can run.
-    await enqueueSteward({
-      claimId: input.claimId,
-      trigger: "user_order",
-      context:
-        "Readers funded this claim's assessment. Assess it under the " +
-        "ordinary standards; funding buys attention, never conclusions.",
-    });
-  }
-
   return {
     ok: true,
-    allocatedOwls: microUsdToOwls(amountMicro),
-    unspentOwls: microUsdToOwls(unpinnedMicroUsd + amountMicro),
-    covered,
+    allocatedOwls: microUsdToOwls(budget),
+    unspentOwls: microUsdToOwls(budget),
+    covered: true,
+    actionId: result.actionId,
   };
 }
 
@@ -203,9 +109,9 @@ export type RequestAllocateResult =
       ok: true;
       allocatedOwls: number;
       backingOwls: number;
-      /** The row the money went to: the scoping pass, or the full work. */
+      /** The row commissioned: the scoping pass, or the full work. */
       variant: "scope" | "full";
-      /** True when this allocation completed the pot: the work will run. */
+      /** Always true now: a commission is whole, so the work runs. */
       covered: boolean;
     }
   | {
@@ -214,12 +120,36 @@ export type RequestAllocateResult =
       message: string;
     };
 
+/** The open row of a request's work, opened now if the request predates the ledger. */
+async function openRequestRow(requestId: string): Promise<{ id: string; variant: "scope" | "full" } | null> {
+  const find = async () =>
+    (
+      await rawQuery<{ id: string; variant: "scope" | "full" }>(
+        `SELECT id, variant FROM actions
+          WHERE exclusion_group = $1 AND status = 'open'
+          ORDER BY variant = 'full' DESC LIMIT 1`,
+        [REQUEST_GROUP(requestId)]
+      )
+    )[0] ?? null;
+  const row = await find();
+  if (row) return row;
+  return (await ensureRequestActions(requestId)) ? find() : null;
+}
+
+async function requestState(requestId: string): Promise<{ ok: true } | { ok: false; code: "REQUEST_NOT_FOUND" | "CLOSED"; message: string }> {
+  const [req] = await rawQuery<{ state: string }>(`SELECT state FROM requests WHERE id = $1`, [requestId]);
+  if (!req) return { ok: false, code: "REQUEST_NOT_FOUND", message: `No request ${requestId} exists` };
+  if (["met", "declined", "withdrawn", "moot"].includes(req.state)) {
+    return { ok: false, code: "CLOSED", message: `This request is ${req.state}; it takes no more work` };
+  }
+  return { ok: true };
+}
+
 /**
- * A person puts owls toward the work on a request: an unpinned allocation
- * on its ledger group, clipped to what the open row still lacks (its
- * scoping pass while it has no budget, else the full work at its budget).
- * When the pot covers the row, the executor runs it. Should the request
- * close before then, the money comes back (closeRequestActions).
+ * A person commissions the work on a request whole (its scoping pass while
+ * it has no budget, else the full work), at the budget they choose. It runs
+ * at once; unspent budget comes back when it settles, and all of it should
+ * the request close first (closeRequestActions).
  */
 export async function allocateToRequest(input: {
   userId: string;
@@ -227,172 +157,75 @@ export async function allocateToRequest(input: {
   owls: number;
 }): Promise<RequestAllocateResult> {
   if (!(input.owls > 0)) {
-    return { ok: false, code: "BAD_AMOUNT", message: "Allocate a positive number of owls" };
+    return { ok: false, code: "BAD_AMOUNT", message: "Commission it with a positive number of owls" };
   }
-  const [req] = await rawQuery<{ state: string }>(`SELECT state FROM requests WHERE id = $1`, [
-    input.requestId,
-  ]);
-  if (!req) return { ok: false, code: "REQUEST_NOT_FOUND", message: "Request not found" };
-  if (["met", "declined", "withdrawn", "moot"].includes(req.state)) {
-    return { ok: false, code: "CLOSED", message: `This request is ${req.state}; it takes no more work` };
-  }
-  const group = REQUEST_GROUP(input.requestId);
-  let [row] = await rawQuery<{ variant: "scope" | "full"; cost: string; backing: string }>(
-    `SELECT a.variant, a.cost_est_micro_usd AS cost, ${COVERAGE_SQL} AS backing
-       FROM actions a
-      WHERE a.exclusion_group = $1 AND a.status = 'open'
-      ORDER BY a.variant = 'full' DESC
-      LIMIT 1`,
-    [group]
-  );
+  const state = await requestState(input.requestId);
+  if (!state.ok) return state;
+  const row = await openRequestRow(input.requestId);
   if (!row) {
-    // An open request whose row is missing (filed before the ledger held
-    // requests): open it now.
-    if (await ensureRequestActions(input.requestId)) {
-      [row] = await rawQuery<{ variant: "scope" | "full"; cost: string; backing: string }>(
-        `SELECT a.variant, a.cost_est_micro_usd AS cost, ${COVERAGE_SQL} AS backing
-           FROM actions a
-          WHERE a.exclusion_group = $1 AND a.status = 'open'
-          ORDER BY a.variant = 'full' DESC
-          LIMIT 1`,
-        [group]
-      );
-    }
+    return { ok: false, code: "COVERED", message: "Work on this request is already underway; nothing is open to commission" };
   }
-  if (!row) {
-    return {
-      ok: false,
-      code: "COVERED",
-      message: "Work on this request is already underway; nothing is open to fund",
-    };
-  }
-  const cost = Number(row.cost);
-  const backing = Number(row.backing);
-  const room = Math.max(0, cost - backing);
-  if (room <= 0) {
-    return { ok: false, code: "COVERED", message: "This request's next piece of work is fully funded; it will run shortly" };
-  }
-  const amountMicro = Math.min(owlsToMicroUsd(input.owls), room);
-  const debited = await withOwlBalanceLock(input.userId, async (tx) => {
-    const rows = await tx.query<{ id: string }>(
-      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason)
-       SELECT $1, $2, 'request_contribution'
-        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
-                 FROM owl_ledger WHERE user_id = $1) >= $3
-       RETURNING id`,
-      [input.userId, -amountMicro, amountMicro]
-    );
-    if (rows.length === 0) return false;
-    await tx.query(
-      `INSERT INTO action_allocations (exclusion_group, user_id, amount_micro_usd)
-       VALUES ($1, $2, $3)`,
-      [group, input.userId, amountMicro]
-    );
-    return true;
+  const budget = owlsToMicroUsd(input.owls);
+  const result = await commissionAction({
+    payer: { kind: "user", userId: input.userId },
+    actionId: row.id,
+    budgetMicroUsd: budget,
+    reason: "A reader commissioned it.",
+    commissionedBy: "person",
   });
-  if (!debited) {
-    return {
-      ok: false,
-      code: "INSUFFICIENT_OWLS",
-      message: `Allocating ${microUsdToOwls(amountMicro)} owls exceeds your balance`,
-    };
+  if (!result.ok) {
+    const code = result.code === "INSUFFICIENT_OWLS" ? ("INSUFFICIENT_OWLS" as const) : ("BAD_AMOUNT" as const);
+    return { ok: false, code, message: result.message };
+  }
+  if (result.status === "already_commissioned") {
+    return { ok: false, code: "COVERED", message: "This request's next piece of work is already commissioned; nothing was charged" };
   }
   return {
     ok: true,
-    allocatedOwls: microUsdToOwls(amountMicro),
-    backingOwls: microUsdToOwls(backing + amountMicro),
+    allocatedOwls: microUsdToOwls(budget),
+    backingOwls: microUsdToOwls(budget),
     variant: row.variant,
-    covered: backing + amountMicro >= cost,
+    covered: true,
   };
 }
 
 export type MandateRequestAllocateResult =
-  | { ok: true; placedMicroUsd: number; backingMicroUsd: number; costMicroUsd: number; variant: "scope" | "full"; covered: boolean }
+  | { ok: true; placedMicroUsd: number; variant: "scope" | "full"; status: "commissioned" | "already_commissioned" }
   | { ok: false; code: "REQUEST_NOT_FOUND" | "CLOSED" | "COVERED" | "NO_ROOM" | "BAD_AMOUNT"; message: string };
 
 /**
- * A mandate puts money on the work on a request, by its Grantmaker's
- * decision (fund_request): an unpinned allocation on the request's group,
- * at most what the open row still lacks and what the escrow holds
- * uncommitted. The mandate's own earlier placement on the group is folded
- * into the new one (one live placement per mandate and group), as the
- * allocator does. Counted in the day's placements like any of its money.
+ * A mandate commissions the work on a request whole, by its Grantmaker's
+ * decision (fund_request), within its daily rate and escrow like any of its
+ * commissions.
  */
 export async function allocateMandateToRequest(input: {
   grantId: string;
   requestId: string;
   microUsd: number;
 }): Promise<MandateRequestAllocateResult> {
-  if (!(input.microUsd > 0)) return { ok: false, code: "BAD_AMOUNT", message: "Put a positive amount toward it" };
-  const [req] = await rawQuery<{ state: string }>(`SELECT state FROM requests WHERE id = $1`, [input.requestId]);
-  if (!req) return { ok: false, code: "REQUEST_NOT_FOUND", message: `No request ${input.requestId} exists` };
-  if (["met", "declined", "withdrawn", "moot"].includes(req.state)) {
-    return { ok: false, code: "CLOSED", message: `Request ${input.requestId} is ${req.state}; it takes no more work` };
-  }
-  const group = REQUEST_GROUP(input.requestId);
-  const openRow = async () =>
-    (
-      await rawQuery<{ id: string }>(
-        `SELECT id FROM actions WHERE exclusion_group = $1 AND status = 'open' LIMIT 1`,
-        [group]
-      )
-    )[0];
-  if (!(await openRow())) await ensureRequestActions(input.requestId);
-  return withTransaction(async (tx) => {
-    await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended('mandate-allocator:' || $1, 0))`, [input.grantId]);
-    const [row] = await tx.query<{ variant: "scope" | "full"; cost: string; backing: string }>(
-      `SELECT a.variant, a.cost_est_micro_usd AS cost, ${COVERAGE_SQL} AS backing
-         FROM actions a
-        WHERE a.exclusion_group = $1 AND a.status = 'open'
-        ORDER BY a.variant = 'full' DESC
-        LIMIT 1`,
-      [group]
-    );
-    if (!row) {
-      return { ok: false as const, code: "COVERED" as const, message: "Work on this request is underway; nothing is open to fund" };
-    }
-    const cost = Number(row.cost);
-    const backing = Number(row.backing);
-    const lacking = Math.max(0, cost - backing);
-    if (lacking <= 0) {
-      return { ok: false as const, code: "COVERED" as const, message: "Its next piece of work is fully funded already" };
-    }
-    const [grant] = await tx.query<{ budget_job_id: string; budget: string }>(
-      `SELECT g.budget_job_id, j.budget_micro_usd AS budget
-         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
-        WHERE g.id = $1 AND g.status = 'active' AND j.status = 'running'`,
-      [input.grantId]
-    );
-    if (!grant) return { ok: false as const, code: "NO_ROOM" as const, message: "The mandate is not active with a running budget" };
-    const committed = await grantCommittedMicroUsd({ id: input.grantId, budgetJobId: grant.budget_job_id }, tx);
-    const escrowRoom = Math.max(0, Number(grant.budget) - committed);
-    const amount = Math.min(Math.round(input.microUsd), lacking, escrowRoom);
-    if (amount <= 0) {
-      return { ok: false as const, code: "NO_ROOM" as const, message: "The mandate's uncommitted budget holds nothing to put toward it" };
-    }
-    const [own] = await tx.query<{ id: string; remaining: string }>(
-      `SELECT id, (amount_micro_usd - spent_micro_usd)::bigint AS remaining
-         FROM action_allocations
-        WHERE grant_id = $1 AND exclusion_group = $2 AND action_id IS NULL
-          AND released_at IS NULL AND spent_micro_usd < amount_micro_usd`,
-      [input.grantId, group]
-    );
-    if (own) await tx.query(`UPDATE action_allocations SET released_at = now() WHERE id = $1`, [own.id]);
-    await tx.query(
-      `INSERT INTO action_allocations (exclusion_group, grant_id, amount_micro_usd)
-       VALUES ($1, $2, $3)`,
-      [group, input.grantId, amount + Number(own?.remaining ?? 0)]
-    );
-    return {
-      ok: true as const,
-      placedMicroUsd: amount,
-      backingMicroUsd: backing + amount,
-      costMicroUsd: cost,
-      variant: row.variant,
-      covered: backing + amount >= cost,
-    };
+  if (!(input.microUsd > 0)) return { ok: false, code: "BAD_AMOUNT", message: "Commission it with a positive budget" };
+  const state = await requestState(input.requestId);
+  if (!state.ok) return state;
+  const row = await openRequestRow(input.requestId);
+  if (!row) return { ok: false, code: "COVERED", message: "Work on this request is underway; nothing is open to commission" };
+  const result = await commissionAction({
+    payer: { kind: "grant", grantId: input.grantId },
+    actionId: row.id,
+    budgetMicroUsd: Math.round(input.microUsd),
+    reason: "The mandate's Grantmaker commissioned it.",
+    commissionedBy: "grantmaker",
   });
+  if (!result.ok) {
+    return { ok: false, code: result.code === "BAD_AMOUNT" ? "BAD_AMOUNT" : "NO_ROOM", message: result.message };
+  }
+  return {
+    ok: true,
+    placedMicroUsd: result.status === "commissioned" ? Math.round(input.microUsd) : 0,
+    variant: row.variant,
+    status: result.status,
+  };
 }
+
 
 /** A mandate's committed money: consumed shares + outstanding (unreleased)
  * allocations. Released remainders returned to the escrow count nowhere. */
@@ -412,332 +245,6 @@ export async function grantAllocationExposureMicroUsd(
   };
 }
 
-export interface MandateAllocationResult {
-  /** Increments placed (base coverings + strong upgrades). */
-  allocated: number;
-  allocatedMicroUsd: number;
-  /** Value-per-dollar of the last increment funded: the day's emergent bar. */
-  thresholdRatio: number | null;
-  /**
-   * Valued increments passed over because today's room (or the maintenance
-   * share's) could not cover them whole (#688). The allocator never
-   * part-funds an increment, so these wait for a day with room; one larger
-   * than the whole daily rate waits forever. Reported so the Grantmaker who
-   * valued them is told, not left to wonder why nothing ran.
-   */
-  skippedForRoom?: Array<{
-    group: string;
-    actionId: string | null;
-    claimId: string | null;
-    neededMicroUsd: number;
-    reason: "day_room" | "daily_rate" | "maintenance_share";
-  }>;
-}
-
-/** One fundable increment, ranked by marginal value per marginal dollar. */
-interface Increment {
-  group: string;
-  claimId: string | null;
-  /** Pin: null = unpinned base cover; an action id = the strong upgrade. */
-  actionId: string | null;
-  neededMicroUsd: number;
-  ratio: number;
-  isUpgrade: boolean;
-  /** A `curate` increment: funded first, within the maintenance share. */
-  maintenance: boolean;
-}
-
-/**
- * One mandate's daily allocation pass over its own valuations. Idempotent
- * within a day: only commits what the daily rate still allows, counting
- * allocations already placed today, and never promises money the escrow
- * doesn't hold. Co-funds — allocates cost MINUS existing backing — rather
- * than duplicating other funders' money.
- */
-export async function runMandateAllocator(
-  grantId: string
-): Promise<MandateAllocationResult> {
-  const result: MandateAllocationResult = {
-    allocated: 0,
-    allocatedMicroUsd: 0,
-    thresholdRatio: null,
-  };
-
-  const [grant] = await rawQuery<{
-    budget_job_id: string;
-    daily_budget_micro_usd: number;
-    budget_micro_usd: number;
-    job_status: string;
-  }>(
-    `SELECT g.budget_job_id, g.daily_budget_micro_usd, j.budget_micro_usd,
-            j.status AS job_status
-       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
-      WHERE g.id = $1 AND g.status = 'active'`,
-    [grantId]
-  );
-  if (!grant || grant.job_status !== "running") return result;
-
-  // The whole pass runs in one transaction under a per-mandate advisory
-  // lock: every drain worker and the scheduler invoke this concurrently,
-  // and without the lock each sees the full day room / escrow headroom and
-  // commits it again (N× the daily rate, duplicate placements).
-  return withTransaction(async (tx) => {
-  await tx.query(
-    `SELECT pg_advisory_xact_lock(hashtextextended('mandate-allocator:' || $1, 0))`,
-    [grantId]
-  );
-
-  // The day's remaining room under the mandate's rate.
-  const [today] = await tx.query<{ placed: number }>(
-    `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
-       FROM action_allocations
-      WHERE grant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grantId]
-  );
-  const dailyRate = Number(grant.daily_budget_micro_usd);
-  let dayRoom =
-    dailyRate > 0
-      ? Math.max(0, dailyRate - Number(today?.placed ?? 0))
-      : Number.POSITIVE_INFINITY;
-  if (dayRoom <= 0) return result;
-
-  // Escrow headroom: never promise money the escrow doesn't hold.
-  //
-  // The SAME accounting every other consumer of this escrow uses
-  // (grantCommittedMicroUsd — also what fundGrantSelfActions computes
-  // inline). This used to subtract allocation exposure alone, which is two
-  // terms short: metered spend that never went through an allocation, and
-  // money regranted out to other mandates. Both are gone from the escrow,
-  // so counting neither meant the allocator would promise a mandate's
-  // regranted owls a second time, and the overcommit surfaced later as a
-  // covered action with no money behind it.
-  const committed = await grantCommittedMicroUsd(
-    { id: grantId, budgetJobId: grant.budget_job_id },
-    tx
-  );
-  let escrowRoom = Math.max(0, Number(grant.budget_micro_usd) - committed);
-  if (escrowRoom <= 0) return result;
-
-  // Maintenance (#363): the most of the day's rate this mandate places on
-  // `curate` rows, less what it already placed there today. Funded first,
-  // so a day of high-ratio assessments never starves the graph's upkeep;
-  // capped, so upkeep never exceeds what the mandate chose to buy; and
-  // whatever it leaves unused stays in dayRoom for everything else. An
-  // unpaced mandate (rate 0) is bounded by escrow alone, maintenance
-  // included.
-  const policy = await getMandateAllocationPolicy(grantId);
-  let maintenanceRoom = Number.POSITIVE_INFINITY;
-  if (dailyRate > 0) {
-    const [maint] = await tx.query<{ placed: number }>(
-      `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
-         FROM action_allocations
-        WHERE grant_id = $1 AND exclusion_group LIKE 'curate:%'
-          AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-      [grantId]
-    );
-    maintenanceRoom = Math.max(
-      0,
-      Math.floor(policy.maintenance_share * dailyRate) - Number(maint?.placed ?? 0)
-    );
-  }
-
-  // The mandate's valued open actions, with the live backing per action.
-  // Recusal (#363): an audit whose subject is this mandate is never funded
-  // by it, whatever valuation row exists; this is the one place a mandate's
-  // money reaches an audit, so the line holds here, not only in the valuers.
-  const valued = await tx.query<{
-    action_id: string;
-    kind: string;
-    exclusion_group: string;
-    variant: string;
-    claim_id: string | null;
-    cost_est_micro_usd: number;
-    value_est: number;
-    pinned: number;
-    unpinned: number;
-  }>(
-    `SELECT a.id AS action_id, a.kind, a.exclusion_group, a.variant, a.claim_id,
-            a.cost_est_micro_usd, mv.value_est,
-            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
-                       WHERE al.exclusion_group = a.exclusion_group
-                         AND al.released_at IS NULL
-                         AND al.action_id = a.id), 0)::bigint AS pinned,
-            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
-                       WHERE al.exclusion_group = a.exclusion_group
-                         AND al.released_at IS NULL
-                         AND al.action_id IS NULL), 0)::bigint AS unpinned
-       FROM mandate_valuations mv
-       JOIN actions a ON a.id = mv.action_id
-      WHERE mv.grant_id = $1 AND a.status = 'open'
-        AND NOT EXISTS (SELECT 1 FROM audit_runs ar
-                         WHERE ar.action_id = a.id AND ar.subject_grant_id = $1)
-      ORDER BY mv.value_est / GREATEST(1000, a.cost_est_micro_usd) DESC
-      LIMIT 500`,
-    [grantId]
-  );
-
-  // Build the marginal increments per exclusion group.
-  const byGroup = new Map<string, typeof valued>();
-  for (const row of valued) {
-    const list = byGroup.get(row.exclusion_group) ?? [];
-    list.push(row);
-    byGroup.set(row.exclusion_group, list);
-  }
-  const increments: Increment[] = [];
-  const baseCovered = new Set<string>();
-  for (const [group, siblings] of byGroup) {
-    siblings.sort(
-      (x, y) => Number(x.cost_est_micro_usd) - Number(y.cost_est_micro_usd)
-    );
-    const base = siblings[0]!;
-    const baseCost = Number(base.cost_est_micro_usd);
-    const baseBacking = Number(base.unpinned) + Number(base.pinned);
-    const baseNeeded = Math.max(0, baseCost - baseBacking);
-    if (baseNeeded > 0) {
-      increments.push({
-        group,
-        claimId: base.claim_id,
-        actionId: null,
-        neededMicroUsd: baseNeeded,
-        ratio: Number(base.value_est) / Math.max(1000, baseCost),
-        isUpgrade: false,
-        maintenance: base.kind === "curate",
-      });
-    } else {
-      baseCovered.add(group);
-    }
-    // The upgrade increment: top the group up from the cheapest sibling to
-    // a dearer one, judged by MARGINAL return. Only the best upgrade is
-    // offered (multi-step ladders can come later with more variants).
-    for (const up of siblings.slice(1)) {
-      const dCost = Number(up.cost_est_micro_usd) - baseCost;
-      const dValue = Number(up.value_est) - Number(base.value_est);
-      if (dCost <= 0 || dValue <= 0) continue;
-      const upNeeded = Math.max(0, dCost - Number(up.pinned));
-      if (upNeeded <= 0) continue;
-      increments.push({
-        group,
-        claimId: up.claim_id,
-        actionId: up.action_id,
-        neededMicroUsd: upNeeded,
-        ratio: dValue / Math.max(1000, dCost),
-        isUpgrade: true,
-        maintenance: up.kind === "curate",
-      });
-      break;
-    }
-  }
-
-  // Fund the increments best-first until the rate or escrow is committed:
-  // maintenance first within its share, then everything else by ratio.
-  increments.sort(
-    (x, y) => Number(y.maintenance) - Number(x.maintenance) || y.ratio - x.ratio
-  );
-  for (const inc of increments) {
-    if (dayRoom <= 0 || escrowRoom <= 0) break;
-    // An upgrade only makes sense on top of a covered base.
-    if (inc.isUpgrade && !baseCovered.has(inc.group)) continue;
-    // This mandate's own live placement on the same (group, pin), if any.
-    // The live-placement index allows one, so a shortfall on a group it
-    // already backs (the cost estimate rose after it placed) cannot be a
-    // second row: the old placement is released and one row for the whole
-    // remaining cost replaces it. Without this the insert below hit ON
-    // CONFLICT DO NOTHING on every pass and the group stayed short forever
-    // (#451). The day is charged the full replacement, so a top-up never
-    // lets the rate overshoot; the escrow is charged only the increment.
-    const [own] = await tx.query<{ id: string; remaining: number }>(
-      `SELECT id, (amount_micro_usd - spent_micro_usd)::bigint AS remaining
-         FROM action_allocations
-        WHERE grant_id = $1 AND exclusion_group = $2
-          AND action_id IS NOT DISTINCT FROM $3
-          AND released_at IS NULL AND spent_micro_usd < amount_micro_usd`,
-      [grantId, inc.group, inc.actionId]
-    );
-    const ownRemaining = Number(own?.remaining ?? 0);
-    const amount = inc.neededMicroUsd + ownRemaining;
-    if (amount > dayRoom || inc.neededMicroUsd > escrowRoom) {
-      if (amount > dayRoom && inc.neededMicroUsd <= escrowRoom) {
-        (result.skippedForRoom ??= []).push({
-          group: inc.group,
-          actionId: inc.actionId,
-          claimId: inc.claimId,
-          neededMicroUsd: amount,
-          reason: amount > dailyRate ? "daily_rate" : "day_room",
-        });
-      }
-      continue;
-    }
-    if (inc.maintenance && amount > maintenanceRoom) {
-      (result.skippedForRoom ??= []).push({
-        group: inc.group,
-        actionId: inc.actionId,
-        claimId: inc.claimId,
-        neededMicroUsd: amount,
-        reason: "maintenance_share",
-      });
-      continue;
-    }
-    if (own) {
-      await tx.query(
-        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
-        [own.id]
-      );
-    }
-    // ON CONFLICT backstop (uq_action_allocations_live_placement): even if
-    // the advisory lock is bypassed, one mandate never holds two live
-    // placements on the same (group, pin).
-    const placed = await tx.query<{ id: string }>(
-      `INSERT INTO action_allocations
-         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT DO NOTHING
-       RETURNING id`,
-      [inc.group, inc.actionId, inc.claimId, grantId, amount]
-    );
-    if (placed.length === 0) continue;
-    dayRoom -= amount;
-    if (inc.maintenance) maintenanceRoom -= amount;
-    escrowRoom -= inc.neededMicroUsd;
-    result.allocated++;
-    result.allocatedMicroUsd += inc.neededMicroUsd;
-    result.thresholdRatio = inc.ratio;
-    if (!inc.isUpgrade) baseCovered.add(inc.group);
-  }
-  return result;
-  });
-}
-
-/**
- * The General mandate's allocation pass — the platform lane. Null when no
- * General mandate is seeded (dev, tests: the drain's fallback governs).
- */
-export async function runGeneralAllocator(): Promise<MandateAllocationResult | null> {
-  const mandate = await getGeneralMandate();
-  if (!mandate) return null;
-  return runMandateAllocator(mandate.grantId);
-}
-
-/**
- * Grants fund their OWN work through the same ledger as everything else:
- * a planning grant covers its grant_planning action, an active mandate
- * covers its periodic valuation pass and the runs of the lookouts it
- * stands up, and an agent-policy mandate covers
- * its plan's unexecuted ingest items — all from its escrow, all fully
- * (the money is the grant's own; there is nothing to co-fund). The engine
- * executor then runs whatever is covered.
- *
- * Deliberation pays its own way: these allocations come out of the SAME
- * daily rate as the mandate's substantive work, not from beside it. They
- * always did on the spending side — runMandateAllocator counts every
- * allocation placed today, self-funded ones included — but this function
- * used to check only escrow headroom, so a day of chained review passes
- * could commit the whole rate and leave the substantive allocator with
- * dayRoom = 0. Thinking about the work now competes with the work.
- * Bounded by escrow headroom too (committed money includes these
- * allocations and any regrants out).
- */
 /**
  * Which variant of a consistency sweep the General mandate buys (#756),
  * given the two prices of one partition's rows. A sweep has no value
@@ -821,6 +328,21 @@ const SWEEP_RULE_VARIANT_SQL = `(
                                    AND strong.variant = 'strong'
                WHERE std.exclusion_group = a.exclusion_group AND std.variant = 'standard')`;
 
+/**
+ * Grants fund their OWN work through the same ledger as everything else:
+ * a planning grant covers its grant_planning action, an active mandate
+ * covers its review passes and the runs of the lookouts and correspondents
+ * it stands up, an agent-policy mandate covers its plan's unexecuted ingest
+ * items and the sweeps its sweep items name, and the General mandate covers
+ * the platform's consistency sweeps. All from
+ * the mandate's escrow, all fully (the money is the grant's own; there is
+ * nothing to co-fund). The engine executor then runs whatever is covered.
+ *
+ * Deliberation pays its own way: these allocations come out of the same
+ * daily rate as everything else the mandate commissions, so thinking about
+ * the work competes with the work. Bounded by escrow headroom too
+ * (committed money includes these allocations and any regrants out).
+ */
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
     exclusion_group: string;
@@ -872,11 +394,11 @@ export async function fundGrantSelfActions(): Promise<number> {
               - ${prizeCommitmentSql("g.id")})::bigint
               AS headroom,
             -- The day's remaining room under the mandate's rate, counted the
-            -- same way runMandateAllocator counts it. A rate of 0 means
-            -- unpaced, matching the substantive allocator's reading.
+            -- same way a commission counts it (grantDayUseMicroUsd). A rate
+            -- of 0 means unpaced.
             (CASE WHEN g.daily_budget_micro_usd > 0
                   THEN GREATEST(0, g.daily_budget_micro_usd
-                    - COALESCE((SELECT SUM(al.amount_micro_usd)
+                    - COALESCE((SELECT SUM(${allocationDayUseSql("al")})
                                   FROM action_allocations al
                                  WHERE al.grant_id = g.id
                                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0))
@@ -1005,34 +527,4 @@ export async function fundGrantSelfActions(): Promise<number> {
     coveredThisPass.add(row.exclusion_group);
   }
   return placed;
-}
-
-/**
- * Every active mandate with a daily rate takes its allocation pass — the
- * scheduler's sweep. The same allocator for all of them; the General
- * mandate is just the row whose valuations span the graph.
- */
-export async function runDailyAllocators(): Promise<{
-  mandates: number;
-  allocated: number;
-  allocatedMicroUsd: number;
-}> {
-  // Rate 0 means "no rate cap, escrow-bounded" (see grants schema), not
-  // "excluded from allocation" — a freshly funded mandate that never set a
-  // rate must still spend.
-  const rows = await rawQuery<{ id: string }>(
-    `SELECT id FROM grants
-      WHERE status = 'active'
-      ORDER BY created_at ASC`
-  );
-  const totals = { mandates: 0, allocated: 0, allocatedMicroUsd: 0 };
-  for (const row of rows) {
-    const r = await runMandateAllocator(row.id);
-    if (r.allocated > 0) {
-      totals.mandates++;
-      totals.allocated += r.allocated;
-      totals.allocatedMicroUsd += r.allocatedMicroUsd;
-    }
-  }
-  return totals;
 }

@@ -64,6 +64,14 @@ export interface UsageContext {
    */
   meter?: { billedMicroUsd: number };
   /**
+   * The agent session this run belongs to (session-service.ts): what it asks
+   * for and waits on (research it commissions, a question to another node's
+   * Steward) is answered into this session, which pauses when the run ends
+   * its turn with answers outstanding and resumes when they arrive. Set by
+   * the runs that can pause (the Stewards); absent, nothing waits.
+   */
+  session?: { id: string; role: string; nodeId: string };
+  /**
    * What the enclosing pass may spend, as the lane that funds it set it
    * (withPassBudget): the allocations covering a ledger action, a buyer's
    * quoted cap, a job's or a mandate's remaining budget. `meter` measures
@@ -76,10 +84,27 @@ export interface UsageContext {
 }
 
 export interface PassBudget {
+  /**
+   * The ceiling. It moves during a run: down when the run pays for other
+   * work from it (commission), up when a petition is granted.
+   */
   microUsd: number;
-  /** Where the money comes from, in words the agent is shown. */
+  /** Where the money comes from, in words the agent is shown. Never names a mandate. */
   source: string;
   meter: { billedMicroUsd: number };
+  /** Who is paying, for commission and petition_mandate; absent when no one can be asked. */
+  funding?: RunFunding;
+}
+
+/**
+ * Who pays for a run, as the lane that funds it knows it: the ledger row it
+ * is running (whose allocations hold its money, and along whose chain a
+ * petition is routed), and the mandate or person behind it.
+ */
+export interface RunFunding {
+  actionId?: string | null;
+  grantId?: string | null;
+  userId?: string | null;
 }
 
 /** What the enclosing pass has left to spend, or null when no lane set a budget. */
@@ -207,12 +232,17 @@ export async function withCostMeter<T>(
  * budget meters the pass and sets none.
  */
 export async function withPassBudget<T>(
-  budget: { microUsd: number; source: string } | null,
+  budget: { microUsd: number; source: string; funding?: RunFunding } | null,
   fn: () => Promise<T>
 ): Promise<{ value: T; billedMicroUsd: number }> {
   const meter = { billedMicroUsd: 0 };
   const value = await runWithUsageContext(
-    { meter, passBudget: budget ? { microUsd: Math.max(0, Math.round(budget.microUsd)), source: budget.source, meter } : undefined },
+    {
+      meter,
+      passBudget: budget
+        ? { microUsd: Math.max(0, Math.round(budget.microUsd)), source: budget.source, meter, funding: budget.funding }
+        : undefined,
+    },
     fn
   );
   return { value, billedMicroUsd: meter.billedMicroUsd };
@@ -283,12 +313,17 @@ export function budgetRefusal(tool: string, priceMicroUsd: number): string | nul
   const price = Math.max(0, priceMicroUsd);
   if (budget.remainingMicroUsd > 0 && price <= budget.remainingMicroUsd) return null;
   const usd = (micro: number) => `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
+  // A run whose lane says who pays can petition that mandate (spend-tools.ts).
+  const canPetition = Boolean(getUsageContext().passBudget?.funding);
   return JSON.stringify({
     success: false,
     message:
       `${tool} would cost about ${usd(price)}, and this run has ${usd(budget.remainingMicroUsd)} ` +
-      `of its ${usd(budget.ceilingMicroUsd)} budget left. Work with what you have and record ` +
-      `your conclusion; if the question needs more, say so in your reasoning, and a ` +
-      `better-funded pass can take it up.`,
+      `of its ${usd(budget.ceilingMicroUsd)} budget left. ` +
+      (canPetition
+        ? `If the work needs it, petition_mandate asks the mandate paying for this run for more, ` +
+          `and answers in this run. Otherwise work with what you have and record what you could ` +
+          `and couldn't establish.`
+        : `Work with what you have and record what you could and couldn't establish.`),
   });
 }

@@ -6,6 +6,8 @@
  * and suggesting cross-claim edges to the owning Stewards. Agentic tool-use loop;
  * acts through tools, no structured return value.
  */
+import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { getCuratorSystemPromptBlocks } from "../prompts/curator.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
@@ -117,6 +119,9 @@ async function runCuratorImpl(input: {
     ...claimContextTools,
     getMatcherToolDefinition(),
     ...curatorTools,
+    // Every agent with a budget can pay for other work and ask for more.
+    ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     // Kinds and requests (§2, §7a, Part VIII): correcting a node's kind, and
     // keeping the requests that bear on several nodes or on none.
     getChangeKindToolDefinition(),
@@ -158,7 +163,7 @@ Proceed:
    looking; otherwise a link, a suggestion or nothing is the recoverable
    path. Doing nothing is a fine outcome.
 
-${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}` : `You have been triggered to keep a request.
+${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNote}` : `You have been triggered to keep a request.
 
 Trigger: ${input.trigger}
 ${input.context}
@@ -172,7 +177,7 @@ Proceed:
 3. Look for structure the work exposes as wrong only where it is plain; the
    nodes' Stewards weigh the findings for their own nodes.
 
-${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
+${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNote}`;
 
   await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -201,6 +206,10 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);
       if (research !== null) return research;
+      const spend = await executeSpendTool(name, toolInput);
+      if (spend !== null) return spend;
+      const sqlOut = await executeSqlTool(name, toolInput);
+      if (sqlOut !== null) return sqlOut;
       // The Matcher receives the domains its caller knows.
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput, { domains: claimDomains });

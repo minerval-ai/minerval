@@ -242,6 +242,7 @@ describe("the curate action", () => {
     expect(state.budgets[0]).toEqual({
       microUsd: 5_000_000,
       source: "this curation's run budget, which its funding mandate covers",
+      funding: { actionId: expect.any(String) },
     });
   });
 

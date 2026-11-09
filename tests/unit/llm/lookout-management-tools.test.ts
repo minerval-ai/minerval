@@ -108,7 +108,7 @@ describe("lookout management tools", () => {
       (await executeLookoutManagementTool(
         "g-1",
         "spawn_lookout",
-        { title: "Retraction watch", brief: "b".repeat(60), heartbeat_hours: 12, triggers: ["retraction"], max_value: 4 },
+        { title: "Retraction watch", brief: "b".repeat(60), heartbeat_hours: 12, triggers: ["retraction"], commission_limit_owls: 4 },
         { createdBy: "grantmaker:review" }
       ))!
     );
@@ -118,7 +118,7 @@ describe("lookout management tools", () => {
       title: "Retraction watch",
       heartbeatHours: 12,
       triggers: ["retraction"],
-      maxValue: 4,
+      commissionLimitOwls: 4,
       createdBy: "grantmaker:review",
     });
   });

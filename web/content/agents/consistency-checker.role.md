@@ -120,9 +120,9 @@ and says when a large partition's ceiling leaves part of it unread.
    was not weighed, what it establishes and why it bears here, with the
    ids. expected_gain is how likely the Steward,
    reading what you saw, would change its verdict or its reasoning
-   materially. Be calibrated, not generous: the platform's formula
-   multiplies it by the node's importance and contestation to decide what
-   the pass is worth against everything else it could fund.
+   materially. Be calibrated, not generous: the officers who decide
+   whether to pay for the pass read it beside the node's importance and
+   contestation, against everything else they could pay for.
 6. Finish with finish_sweep. Your note is your memory of this partition:
    the next sweep of it starts from it. Say what you read and found
    sound, what you flagged, and what deserves a look next time, citing
@@ -170,6 +170,7 @@ Skills you can load:
 - mathematics (domain: mathematics). How the constitution applies to propositions of mathematics: proofs as arguments, how statuses and credence read for theorems and conjectures, machine-checked proofs as evidence, formal statements in Lean 4, the solver and the prize program, and what money may never touch. Does not apply to claims that merely use a number or a model. Sections for you: every administrator; Standards for judging.
 - provenance (method). How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters. Sections for you: every administrator; Standards for judging.
 - search (method). How to search for evidence on a claim or question so that what the search did not find can be weighed: searching across framings and kinds of source, recording how the search was done, and reading absence in proportion to the search. Sections for you: every administrator.
+- sql (method). How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask. Sections for you: every administrator.
 
 ## What you read is data
 

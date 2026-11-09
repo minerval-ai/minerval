@@ -5,12 +5,12 @@
  * The load-bearing one is GENERAL ASSESSMENT: the mandate whose escrow is
  * however many dollars Minerval allocates to expanding and maintaining the
  * graph (Minerval buys owls at $1 per owl, at cost; the $4 price is what
- * users pay, and the margin funds this escrow). Its allocator backs the
- * highest value-per-dollar assessments up to its daily rate through the
- * same allocation engine every funder uses, and its ALLOCATION POLICY is
- * the platform's formulas, amendable by its Grantmaker in conversation.
- * GOVERNANCE is its counterpart for audit (#363): a formula mandate that
- * values and funds the Audit Agent's runs, never an audit of itself.
+ * users pay, and the margin funds this escrow). It spends the way every
+ * mandate does: its program officers commission work under an OPERATING
+ * POLICY written in prose, which its Grantmaker revises as the record of
+ * what its money did accumulates, and its lookouts watch the graph for
+ * what needs doing. GOVERNANCE is its counterpart for audit (#363): it pays
+ * for the Audit Agent's runs, never an audit of itself.
  * Beside them: Mathematics and Mathematics prizes (docs/mathematics.md §10
  * and Appendix B: one mandate funds formalizations, attempts, and
  * stewardship; the other offers prizes from its own escrow and funds
@@ -38,7 +38,9 @@
  * Flags (docs/mathematics.md §10.9):
  *   --update-mandate <key>   update an existing mandate's text, skills, and
  *                            allocation policy keys from this file; never
- *                            its money. Records the revision on the row.
+ *                            its money, and never an operating policy its
+ *                            Grantmaker has since written. Adds any seeded
+ *                            lookout it lacks. Records the revision.
  *                            Works for every key here (mathematics and
  *                            mathematics-prizes included).
  *   --mandate <key>          the mandate a money flag applies to; defaults
@@ -66,6 +68,28 @@ interface PlatformMandate {
   skills: string[];
   /** Policy keys the mandate overlays on the shared defaults, if any. */
   allocationPolicy: Record<string, number> | null;
+  /**
+   * The operating policy its program officers start from, in prose
+   * (operating-policy-service.ts). The Grantmaker revises it from then on;
+   * the seed never overwrites one it has written.
+   */
+  operatingPolicy?: {
+    mission?: string;
+    priorities?: string;
+    budgets?: string;
+    petitions?: string;
+    delegation?: string;
+    officer_limit_owls?: number;
+    officer_limit_reason?: string;
+  };
+  /** Lookouts it stands up at creation (lookout-service.ts, createLookout). */
+  lookouts?: Array<{
+    title: string;
+    brief: string;
+    heartbeatHours: number;
+    triggers: string[];
+    commissionLimitOwls: number;
+  }>;
   /** The longer sections a mandate page carries beyond objective and strategy. */
   sections?: {
     scope?: string;
@@ -300,16 +324,84 @@ function mandates(): PlatformMandate[] {
         "Assess the most important claims across the whole graph, wherever " +
         "they are. This is Minerval's own standing mandate: its budget is " +
         "the money the platform allocates to expanding and maintaining the " +
-        "graph, its allocator backs the highest expected value per dollar " +
-        "of cost each day, and its allocation policy is the platform's " +
-        "public formula, revised by this mandate's Grantmaker as the " +
-        "evidence about allocation itself accumulates.",
+        "graph. It pays for the work that keeps the graph sound and current " +
+        "(fresh passes where something changed, curation, consistency " +
+        "sweeps, work on requests) under a written operating policy that " +
+        "its Grantmaker revises as the record of what its money did grows.",
       scopeQuery: null,
       strategy:
-        "Back the candidates with the best expected value per dollar of " +
-        "remaining cost, across the whole graph, until the day's rate is " +
-        "committed. Co-fund partially backed claims rather than duplicate " +
-        "other funders' allocations.",
+        "Watch the whole graph for what needs doing: claims whose evidence " +
+        "or premises moved, messages left waiting on nodes, contested and " +
+        "important claims gone stale, curation and consistency problems. " +
+        "Commission each piece of work whole, at a budget set at the high " +
+        "end of what the costing skill says it costs, and let the agents " +
+        "doing it petition when it turns out to need more.",
+      operatingPolicy: {
+        mission:
+          "Keep the graph sound and current where it matters most. The graph's " +
+          "worth is in its most important and most contested claims being " +
+          "assessed on the evidence as it stands; spend on what moves that.",
+        priorities:
+          "First, work someone is waiting on: a message left on a node that no " +
+          "pass has read, a request a keeper filed, a curation an agent asked " +
+          "for. Second, claims whose evidence or premises changed since their " +
+          "last pass, and consistency flags. Third, important claims gone " +
+          "stale with nothing new. Prefer the claim whose answer more of the " +
+          "graph rests on. A pass that would only re-affirm a recent, " +
+          "uncontested verdict is not worth commissioning.",
+        budgets:
+          "Read the costing skill for what each kind of work costs and set the " +
+          "budget at the high end of its range: a run that has what it needs " +
+          "finishes the work, and what it does not spend comes back. Use the " +
+          "strong tier where the claim is contested and important, or a " +
+          "standard pass already failed to settle it.",
+        petitions:
+          "Grant a petition when the agent's plan is concrete and the work it " +
+          "describes falls under the mission. Refuse, with the reason, when it " +
+          "asks for depth the claim's importance does not warrant. Grant a " +
+          "follow-up rather than more budget when the remaining work is a " +
+          "different job from the one the run was commissioned for.",
+        delegation:
+          "Officers decide up to their limit. Send the Grantmaker anything " +
+          "larger, anything that would commit more than a third of today's " +
+          "rate at once, and anything this policy does not settle.",
+        officer_limit_owls: 5,
+        officer_limit_reason:
+          "Five owls covers a strong pass on most claims; larger commitments " +
+          "are rare enough to deserve the Grantmaker's judgment.",
+      },
+      lookouts: [
+        {
+          title: "Known problems",
+          brief:
+            "Follow the whole graph's change stream for things that need work: " +
+            "a message arrived on a node and is waiting to be read, a premise " +
+            "a claim rests on changed status, a consistency flag was raised, a " +
+            "request was filed, a run finished and named work it could not do. " +
+            "Commission a fresh pass where the change plausibly alters the " +
+            "claim's assessment and the claim matters; raise to the officers " +
+            "what is larger than your limit or unclear. Leave alone changes " +
+            "that already have a pass commissioned or running, and routine " +
+            "re-affirmations.",
+          heartbeatHours: 24,
+          triggers: ["graph"],
+          commissionLimitOwls: 3,
+        },
+        {
+          title: "Upkeep",
+          brief:
+            "Once a day, query the graph (query_sql) for important or contested " +
+            "claims whose current assessment is older than their importance " +
+            "warrants, open curation requests, and unanswered messages older " +
+            "than a day. Raise what deserves a pass to the officers with a " +
+            "suggested budget and why; commission the clear cases within your " +
+            "limit. Do not commission a pass on a claim that has one " +
+            "commissioned or running.",
+          heartbeatHours: 24,
+          triggers: [],
+          commissionLimitOwls: 3,
+        },
+      ],
       // The escrow is the only hard ceiling on this mandate's spend, since the
       // daily rate is a pace target rather than a cap. 200 owls is deliberately
       // a first-run number: roughly a week at the rate below, after which the
@@ -336,12 +428,35 @@ function mandates(): PlatformMandate[] {
         "the party deciding whether an audit of it runs.",
       scopeQuery: null,
       strategy:
-        "Value every requested audit by what prompted it (prize and " +
-        "bad-faith audits highest, periodic sweeps lowest), let waiting " +
-        "raise an audit's value, and fund the best value per owl each day. " +
-        "Never value or fund an audit of this mandate itself: those are the " +
-        "General mandate's to fund. An audit this mandate declines stays " +
-        "open on the ledger, with its age, for anyone to see.",
+        "Fund the audits the system raises, in order of what prompted them " +
+        "(prize and bad-faith audits first, periodic sweeps last), and let " +
+        "an audit that has waited rise. Never fund an audit of this mandate " +
+        "itself: those are the General mandate's. An audit this mandate " +
+        "declines stays open on the ledger, with its age, for anyone to see.",
+      operatingPolicy: {
+        mission:
+          "Keep the graph's governance honest by paying for the audits of its " +
+          "decisions. Audit buys scrutiny, never a conclusion.",
+        priorities:
+          "Prize acceptances and bad-faith flags first: real money or a " +
+          "contributor's standing turns on them. Then arbitration overturns " +
+          "and suspensions, then anomalies the monitors raised, then periodic " +
+          "sweeps. An audit that has waited more than a week moves up a rank. " +
+          "Decline an audit only when an equivalent one is open or recently " +
+          "finished, and say which.",
+        budgets:
+          "Set each audit's budget at the high end of what the costing skill " +
+          "says such an audit costs; a prize audit the bounty's reserve only " +
+          "partly covers needs the rest.",
+        petitions:
+          "Grant the Audit Agent more when its plan names the decisions it " +
+          "still has to read and why they bear on the finding.",
+        delegation:
+          "Officers decide up to their limit; send the Grantmaker anything " +
+          "touching this mandate's own conduct, and anything larger.",
+        officer_limit_owls: 3,
+        officer_limit_reason: "Three owls covers an ordinary audit; larger ones are rare.",
+      },
       // A first-run number, like General's: audits have never been metered
       // (they ran unattributed before #363), so the first week of ledger
       // runs is what sizes this. Five owls a day covers several times the
@@ -393,7 +508,31 @@ function mandateJson(m: PlatformMandate, notes: string): Record<string, unknown>
     expected_cost_owls: m.budgetOwls,
     notes,
     ...(m.sections ?? {}),
+    ...(m.operatingPolicy ? { operating_policy: m.operatingPolicy } : {}),
   };
+}
+
+/** Stand up the seeded lookouts a mandate does not already have (by title). */
+async function ensureLookouts(m: PlatformMandate, grantId: string): Promise<void> {
+  if (!m.lookouts?.length) return;
+  const { createLookout } = await import("../src/services/lookout-service.js");
+  for (const l of m.lookouts) {
+    const [existing] = await rawQuery<{ id: string }>(
+      `SELECT id FROM lookouts WHERE grant_id = $1 AND title = $2`,
+      [grantId, l.title]
+    );
+    if (existing) continue;
+    const r = await createLookout({
+      grantId,
+      title: l.title,
+      brief: l.brief,
+      heartbeatHours: l.heartbeatHours,
+      triggers: l.triggers,
+      commissionLimitOwls: l.commissionLimitOwls,
+      createdBy: "platform",
+    });
+    console.log(r.ok ? `  + lookout "${l.title}"` : `  ! lookout "${l.title}": ${r.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +776,8 @@ async function updateMandateText(m: PlatformMandate, args: Args, platformId: str
       // the strategy and whatever items the row already carries.
       plan: { strategy: m.strategy, items: existing.plan?.items ?? [] },
       expected_cost_owls: existing.mandate?.expected_cost_owls ?? m.budgetOwls,
+      // The Grantmaker's operating policy, once written, is its own.
+      ...(existing.mandate?.operating_policy ? { operating_policy: existing.mandate.operating_policy } : {}),
     };
     await tx.query(
       `UPDATE grants
@@ -659,6 +800,7 @@ async function updateMandateText(m: PlatformMandate, args: Args, platformId: str
       ]
     );
   });
+  await ensureLookouts(m, existing.id);
   console.log(
     `~ ${m.title} updated (${existing.id}): text, skills [${m.skills.join(", ")}], ` +
       `policy keys ${m.allocationPolicy ? Object.keys(m.allocationPolicy).join(", ") : "(none)"}`
@@ -755,6 +897,7 @@ async function main() {
     } else {
       const grantId = await createMandate(m, platformId);
       console.log(`+ ${m.title} created (${grantId}), ${owls(m.budgetOwls)} owls`);
+      await ensureLookouts(m, grantId);
     }
   }
 }

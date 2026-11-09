@@ -1,54 +1,49 @@
 /**
  * Allocation scheduler — the time-based half of the allocation engine.
  *
- * Each tick walks the engine's three layers in order, all idempotent:
+ * Each tick, all idempotent:
  *
  *  1. RECONCILE the action ledger (action-service.ts): every pending claim
- *     has its assess/reassess exclusion group open, grant plans have their
+ *     has its assess/reassess rows open, grant plans have their
  *     ingest/planning actions, stale groups are cancelled. The mechanical
  *     table never lags the graph by more than a sweep.
  *
- *  2. REFRESH VALUATIONS (mandate-valuer-service.ts): every mandate
- *     re-judges the open actions it cares about — the General mandate over
- *     the whole graph (also refreshing the queue_priority display cache),
- *     scoped mandates over their scopes — so staleness drift reorders
- *     everyone's ranking without per-event bookkeeping.
+ *  2. ORDER the pending list by importance (priority-service.ts), for
+ *     display and for the fallback lane. It funds nothing.
  *
- *  3. ALLOCATE (allocation-service.ts): every mandate with a daily rate
- *     takes its allocation pass, backing its best marginal increments up
- *     to the day's room. The executor then runs whatever became covered.
+ *  3. SELF-FUND what mandates already decided: approved plan items and
+ *     their agents' runs (fundGrantSelfActions); commission the follow-ups
+ *     granted to runs that have ended; and, when enabled, hold program
+ *     officer sittings for inboxes no run is waiting on. What else runs is
+ *     what someone commissions: mandates through their officers and
+ *     lookouts under their written operating policies, agents from their
+ *     own budgets, people from their owls. There is no formula and no
+ *     allocation pass.
  *
  *  4. CADENCE (#283): an assessed claim is due a fresh look after an
- *     interval that shrinks as its value grows —
- *     stalenessBaseDays / clamp(value, 0.25, 2) days — and every claim past
- *     its interval is re-enqueued. Enqueueing only makes it a candidate:
- *     which reassessments run is the ledger's call, bounded by what the
- *     mandates' daily rates will fund, so cadence cannot cascade spending
- *     (#295's R<1 holds where the money is).
+ *     interval that shrinks as its importance grows, and every claim past
+ *     its interval is re-enqueued with a staleness message. Enqueueing
+ *     only makes it a candidate a mandate's lookouts can see; it spends
+ *     nothing.
  *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
  * is harmless (every job is idempotent).
  */
 import { loadConfig } from "../config.js";
+import { sweepFollowUps } from "../services/petition-service.js";
+import { sweepSessions } from "../services/session-service.js";
 import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
 import { reconcileActions } from "../services/action-service.js";
 import { scanReconcileCandidates } from "../services/curation-service.js";
-import {
-  refreshAuditValuations,
-  refreshGeneralValuations,
-} from "../services/mandate-valuer-service.js";
-import {
-  fundGrantSelfActions,
-  runDailyAllocators,
-} from "../services/allocation-service.js";
+import { refreshPendingQueuePriorities } from "../services/priority-service.js";
+import { fundGrantSelfActions } from "../services/allocation-service.js";
 
 export interface AllocationTickResult {
   actionsReconciled: number;
-  valuationsRefreshed: number;
+  prioritiesRefreshed: number;
   stalenessEnqueued: number;
-  allocationsPlaced: number;
 }
 
 let lastSweepAt = Number.NEGATIVE_INFINITY;
@@ -65,9 +60,8 @@ export async function allocationSchedulerTick(
   const config = loadConfig();
   const result: AllocationTickResult = {
     actionsReconciled: 0,
-    valuationsRefreshed: 0,
+    prioritiesRefreshed: 0,
     stalenessEnqueued: 0,
-    allocationsPlaced: 0,
   };
   if (config.allocationSweepIntervalHours <= 0) return result;
   const intervalMs = config.allocationSweepIntervalHours * 3_600_000;
@@ -97,8 +91,8 @@ export async function allocationSchedulerTick(
 
   // 1b. The reconcile-candidate scan (#363): curation requests for pairs
   // of unlinked, unusually similar claims, bounded per sweep by the
-  // governing policy (0, the default, is off). Requests only; the
-  // valuations below decide whether any is worth a Curator's run.
+  // governing policy (0, the default, is off). Requests only; General's
+  // officers decide whether any is worth a Curator's run.
   await scanReconcileCandidates(await getEffectiveAllocationPolicy()).catch(
     (err: unknown) =>
       console.error(
@@ -108,21 +102,28 @@ export async function allocationSchedulerTick(
       )
   );
 
-  // 2. The General mandate's formula valuations refresh (other mandates
-  // judge for themselves in their own review passes, which the reconcile
-  // above keeps opening on cadence).
-  const valued = await refreshGeneralValuations().catch(() => 0);
-  // Audits (#363): the Governance formula over open audit rows, and
-  // General's over the audits of Governance itself.
-  const auditsValued = await refreshAuditValuations().catch(() => 0);
-  result.valuationsRefreshed = valued + auditsValued;
+  // 2. The pending list's order, for display and the fallback lane. It
+  // decides no funding: mandates fund work through their agents and their
+  // written operating policies.
+  result.prioritiesRefreshed = await refreshPendingQueuePriorities().catch(() => 0);
 
-  // 3. Grants cover their own planning/review/ingest actions, then every
-  // mandate with a daily rate places its next allocations on the fresh
-  // values (the drains also do both opportunistically between sweeps).
+  // 3. Grants cover their own planning/review/ingest actions: the funded
+  // plan items and their agents' runs (the drains also do this
+  // opportunistically between sweeps).
   await fundGrantSelfActions().catch(() => 0);
-  const placed = await runDailyAllocators().catch(() => null);
-  if (placed) result.allocationsPlaced = placed.allocated;
+  // Follow-ups granted to runs that have since ended, which the lanes'
+  // settle hooks missed (petition-service.ts).
+  await sweepFollowUps().catch(() => 0);
+  // Sessions: a running one whose run died closes, a paused one past its
+  // deadline expires, and either's unshown answers go to the node's inbox.
+  await sweepSessions().catch(() => 0);
+  // Mandates' inboxes: what lookouts raised and outcomes no run is waiting
+  // on, decided by each mandate's program officers. Off unless enabled, as
+  // it runs models.
+  if (config.officerSittingsEnabled) {
+    const { workWaitingInboxes } = await import("../llm/agents/program-officer.js");
+    await workWaitingInboxes().catch(() => 0);
+  }
 
   // Cadence knobs come from the governing mandate's allocation policy.
   const policy = await getEffectiveAllocationPolicy();
@@ -170,15 +171,10 @@ export function startAllocationScheduler(options: {
     busy = true;
     try {
       const result = await allocationSchedulerTick();
-      if (
-        result.valuationsRefreshed > 0 ||
-        result.stalenessEnqueued > 0 ||
-        result.allocationsPlaced > 0
-      ) {
+      if (result.prioritiesRefreshed > 0 || result.stalenessEnqueued > 0) {
         options.logger.info(
           `Allocation scheduler: actions reconciled=${result.actionsReconciled}, ` +
-            `valuations refreshed=${result.valuationsRefreshed}, ` +
-            `allocations placed=${result.allocationsPlaced}, ` +
+            `priorities refreshed=${result.prioritiesRefreshed}, ` +
             `staleness re-enqueued=${result.stalenessEnqueued}`
         );
       }

@@ -117,6 +117,9 @@ export const claims = pgTable(
     // decomposed. A re-trigger promotes it back to 'pending'.
     stewardState: text("steward_state").notNull().default("pending"),
     stewardTrigger: text("steward_trigger"),
+    // Retired: messages for the Steward live in node_messages (the node's
+    // inbox), whole. Nothing reads or writes this column; it stays only so
+    // historical migrations that wrote it still apply.
     stewardContext: text("steward_context"),
     stewardError: text("steward_error"),
     // While 'running' this is the run's lease: set when a lane claims the row
@@ -2053,9 +2056,23 @@ export const actionAllocations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // A COMMISSION (commission-service.ts) is an allocation that pays for a
+    // run whole: its amount is the run's budget, chosen by whoever paid, and
+    // the row runs as soon as it has one. These say who commissioned it (an
+    // agent role, or 'person'), the brief the run's agent reads, the reason
+    // for the public record, and the run that paid when an agent spent from
+    // its own budget (the chain a petition is routed along). NULL on the
+    // allocator's increments.
+    commissionedBy: text("commissioned_by"),
+    brief: text("brief"),
+    reason: text("reason"),
+    parentActionId: uuid("parent_action_id").references((): AnyPgColumn => actions.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     index("idx_action_allocations_group").on(table.exclusionGroup),
+    index("idx_action_allocations_parent").on(table.parentActionId),
     index("idx_action_allocations_claim").on(table.claimId),
     index("idx_action_allocations_grant").on(table.grantId),
     index("idx_action_allocations_user").on(table.userId),
@@ -2222,6 +2239,10 @@ export const grants = pgTable(
     // entirely by the agent; a mandate-scale mission is impossible
     // without durable working state between passes.
     workspace: text("workspace"),
+    // While a program officer (or the Grantmaker, deciding escalations) is
+    // working this mandate's inbox: one at a time, so petitions that arrive
+    // together are decided together, side by side. Expires on its own.
+    officerLeaseUntil: timestamp("officer_lease_until", { withTimezone: true }),
     // How far the inbox collector (mandate-event-service.ts) has read the
     // graph for this mandate: events are what happened after this. Null
     // until the first scan, which starts from then rather than replaying
@@ -2442,6 +2463,17 @@ export const lookouts = pgTable(
     // The Grantmaker delegates this much of its spending judgment and no
     // more.
     maxValue: real("max_value").notNull().default(6),
+    // The most the lookout may commission on its own for one item, from the
+    // mandate's money; above it, or at 0, it raises the item to the
+    // mandate's program officers. Replaces max_value, which no longer
+    // writes anything (valuations are retired).
+    commissionLimitMicroUsd: bigint("commission_limit_micro_usd", { mode: "number" }).notNull().default(0),
+    // The graph feed: the part of the graph the lookout follows (nodes, with
+    // everything beneath them, and tags), and how far through the change
+    // stream it has read.
+    territoryClaimIds: uuid("territory_claim_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    territoryTagIds: uuid("territory_tag_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    changesCursor: text("changes_cursor"),
     // No longer read or written (#695): ingests are valued within
     // max_value and ranked by the allocator, not counted per run. Kept,
     // with its default, so live rows need no migration; safe to drop.
@@ -3003,11 +3035,9 @@ export type ConsistencySweep = typeof consistencySweeps.$inferSelect;
 // naming the PRIMARY claim (the one whose Steward reconciles) and every
 // claim in the tension.
 // Like lookout_flags, a flag is a candidate, never a conclusion: it
-// enqueues the primary's Steward, and while the claim's assess action stays
-// open its expected_gain enters the formula mandates' expected-quality-gain
-// term (mandate-valuer-service.ts), so a pass the checker judges likely to
-// change something is valued like one, by the same formula as any other.
-// Whether it runs is the allocator's call. The assessment at flag time is
+// enqueues the primary's Steward, and its expected_gain goes to the General
+// mandate's officers with the flag; whether the pass is commissioned is
+// theirs to decide under the operating policy. The assessment at flag time is
 // snapshotted so precision ("did the pass move anything?") is a query.
 // ---------------------------------------------------------------------------
 export const consistencyFlags = pgTable(
@@ -3972,6 +4002,14 @@ export const researchRuns = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),
+    // A commissioned run (commission kind research): the agent session its
+    // report returns to (agent_sessions), or, with none waiting, the node
+    // whose inbox gets it. Null on a run launched inline (delegate_research)
+    // or for a request.
+    replyToSession: uuid("reply_to_session"),
+    deliverToNode: uuid("deliver_to_node").references((): AnyPgColumn => claims.id, {
+      onDelete: "set null",
+    }),
     // The examination of a document this run carried out, when it was
     // launched as one (#507). One direction only: an examination's runs
     // are found from here, its spend is theirs, and a continuation run can
@@ -4969,3 +5007,230 @@ export type QuantityDefinition = typeof quantityDefinitions.$inferSelect;
 export type QuantityEstimateRow = typeof quantityEstimates.$inferSelect;
 export type QuestionAssessment = typeof questionAssessments.$inferSelect;
 export type RequestRow = typeof requests.$inferSelect;
+
+// A node's inbox: one row per message to its Steward, kept whole until
+// a pass reads it. Replaces appending to claims.steward_context, which cut the
+// oldest text past 16,000 characters and was invisible to funders and readers.
+// A message alone is a note, read on the node's next pass whenever someone
+// pays for it; `paid` marks one that came with its pass commissioned. The
+// receiving Steward answers each (outcome, outcome_note), and an answer to
+// another node's Steward arrives in that node's inbox as a reply
+// (trigger message_reply, reply_to set), which opens no work of its own.
+export const nodeMessages = pgTable(
+  "node_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    trigger: text("trigger").notNull(),
+    // steward, curator, contribution_reviewer, dispute_arbitrator, audit,
+    // consistency_checker, lookout, mandate, user, system
+    senderKind: text("sender_kind").notNull(),
+    senderNodeId: uuid("sender_node_id").references((): AnyPgColumn => claims.id, {
+      onDelete: "set null",
+    }),
+    // What the sender acted through, when it is not a node: a contribution id,
+    // a mandate id, an audit run id.
+    senderRef: text("sender_ref"),
+    body: text("body").notNull(),
+    paid: boolean("paid").notNull().default(false),
+    replyTo: uuid("reply_to").references((): AnyPgColumn => nodeMessages.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    outcome: text("outcome"),
+    outcomeNote: text("outcome_note"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+    // The session that asked (agent_sessions), when the sender waits for the
+    // answer: the answer returns into that session instead of the sender
+    // node's inbox.
+    replyToSession: uuid("reply_to_session"),
+  },
+  (table) => [
+    index("idx_node_messages_unread")
+      .on(table.nodeId, table.createdAt)
+      .where(sql`read_at IS NULL`),
+    index("idx_node_messages_sender").on(table.senderNodeId),
+    check(
+      "node_messages_outcome_check",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('changed', 'no_change', 'disagree')`
+    ),
+  ]
+);
+
+// A petition (petition_mandate): a running agent asking the mandate paying
+// for it for more money. Decided by a program officer under the mandate's
+// operating policy, or by its Grantmaker when the officer escalates. A
+// waiting petitioner reads the decision in the same run.
+export const petitions = pgTable(
+  "petitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // more_budget | follow_up
+    kind: text("kind").notNull(),
+    askedMicroUsd: bigint("asked_micro_usd", { mode: "number" }).notNull(),
+    plan: text("plan").notNull(),
+    why: text("why"),
+    ifRefused: text("if_refused"),
+    requesterAgent: text("requester_agent"),
+    requesterActionId: uuid("requester_action_id").references(() => actions.id, { onDelete: "set null" }),
+    requesterNodeId: uuid("requester_node_id").references(() => claims.id, { onDelete: "set null" }),
+    // The chain of runs that led to the petitioner: [{action_id, kind, node_id, budget_micro_usd}], root first.
+    chain: jsonb("chain").notNull().default([]),
+    waiting: boolean("waiting").notNull().default(false),
+    // pending | escalated | granted | refused | follow_up
+    status: text("status").notNull().default("pending"),
+    grantedMicroUsd: bigint("granted_micro_usd", { mode: "number" }),
+    decidedBy: text("decided_by"),
+    reason: text("reason"),
+    // A follow_up decision is commissioned once the petitioner's run has ended.
+    followUpCommissionedAt: timestamp("follow_up_commissioned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_petitions_open").on(table.grantId, table.createdAt).where(sql`status IN ('pending', 'escalated')`),
+    check("petitions_kind_check", sql`${table.kind} IN ('more_budget', 'follow_up')`),
+    check(
+      "petitions_status_check",
+      sql`${table.status} IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')`
+    ),
+  ]
+);
+
+// A mandate's inbox: what wants its program officers' attention besides
+// petitions. Work a lookout raised, a message addressed to the mandate, the
+// outcome of work it paid for, a note from its funder. An officer handles or
+// escalates each item; the Grantmaker sees escalated ones.
+export const mandateInbox = pgTable(
+  "mandate_inbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // raised | outcome | funder_note | notice
+    kind: text("kind").notNull(),
+    targetNodeId: uuid("target_node_id").references(() => claims.id, { onDelete: "set null" }),
+    targetRef: text("target_ref"),
+    // Who put it here: a lookout's title, an agent role, 'funder', 'system'.
+    source: text("source").notNull(),
+    summary: text("summary").notNull(),
+    // Structured detail: a suggested kind and budget, an outcome's spend.
+    detail: jsonb("detail").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    handledBy: text("handled_by"),
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    escalationNote: text("escalation_note"),
+  },
+  (table) => [
+    index("idx_mandate_inbox_open").on(table.grantId, table.createdAt).where(sql`handled_at IS NULL`),
+  ]
+);
+
+// The decision log: every commission, grant, refusal, decline and note a
+// mandate's agents made, with its reason, read back by the next decision and
+// by the Grantmaker's review. Public, like everything a mandate does.
+export const mandateDecisions = pgTable(
+  "mandate_decisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // officer | grantmaker | lookout
+    decidedBy: text("decided_by").notNull(),
+    // petition | commission | decline | note | escalation | policy | terms
+    itemKind: text("item_kind").notNull(),
+    decision: text("decision").notNull(),
+    target: text("target"),
+    owlsMicroUsd: bigint("owls_micro_usd", { mode: "number" }),
+    reason: text("reason"),
+    petitionId: uuid("petition_id").references(() => petitions.id, { onDelete: "set null" }),
+    actionId: uuid("action_id").references(() => actions.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_mandate_decisions_grant").on(table.grantId, table.createdAt)]
+);
+
+// Every version of a mandate's operating policy (the Grantmaker's standing
+// instructions to its program officers) and of its terms (the title and
+// objective its funder approved), with the note that justified each change.
+export const mandatePolicyVersions = pgTable(
+  "mandate_policy_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // policy | terms
+    part: text("part").notNull(),
+    // A policy section (mission, priorities, budgets, petitions, delegation), or null for the whole.
+    section: text("section"),
+    content: jsonb("content").notNull(),
+    note: text("note"),
+    author: text("author").notNull(),
+    // applied | awaiting_approval (a platform mandate's amended terms)
+    status: text("status").notNull().default("applied"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_mandate_policy_versions_grant").on(table.grantId, table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
+// agent_sessions: an agent run that pauses while it waits on something it
+// asked for (research it commissioned, an answer from another node's
+// Steward) and resumes, with its transcript, when the answer arrives
+// (session-service.ts). The run ends its turn to wait, as any agent does;
+// the session keeps what it read and reasoned, so the answer lands in the
+// context that asked for it rather than in a fresh pass.
+//
+// status: running (the run is live; replies arriving now are shown in its
+// next tool result), waiting (paused, nothing back yet), ready (an answer
+// arrived; a resumption pass is commissioned), expired (the deadline passed;
+// its answers went to the node's inbox), closed (finished).
+// ---------------------------------------------------------------------------
+export const agentSessions = pgTable(
+  "agent_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    role: text("role").notNull(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("running"),
+    // The conversation so far, in the provider-neutral message form, made
+    // portable at suspension (server-tool and thinking blocks become text or
+    // are dropped).
+    transcript: jsonb("transcript"),
+    model: text("model"),
+    // What it waits on: [{kind, ref}], kind research (a research run id) or
+    // reply (a node message id).
+    awaiting: jsonb("awaiting").notNull().default([]),
+    // What came back: [{kind, ref, text, at, delivered}].
+    replies: jsonb("replies").notNull().default([]),
+    // Who paid for the paused run, and what it had left: a resumption is
+    // commissioned from the same payer at that budget.
+    payer: jsonb("payer"),
+    budgetLeftMicroUsd: bigint("budget_left_micro_usd", { mode: "number" }).notNull().default(0),
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    deadline: timestamp("deadline", { withTimezone: true }),
+    resumedAt: timestamp("resumed_at", { withTimezone: true }),
+    resumes: integer("resumes").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_sessions_node").on(table.nodeId, table.status),
+    check(
+      "agent_sessions_status_check",
+      sql`${table.status} IN ('running', 'waiting', 'ready', 'expired', 'closed')`
+    ),
+  ]
+);

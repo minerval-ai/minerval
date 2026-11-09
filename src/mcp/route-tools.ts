@@ -40,6 +40,11 @@ const ESCROWS_OWLS =
 export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- claims ----
   "GET /claims": { name: "list_claims" },
+  // ---- read-only SQL ----
+  "POST /sql": {
+    name: "query_sql",
+    note: "Load the sql skill (minerval://skills/sql) for the views and their columns before your first query.",
+  },
   "GET /claims/:claim_id/citation": { name: "cite_claim" },
   "GET /claims/:claim_id/provenance": { name: "get_claim_provenance" },
   "GET /claims/:claim_id/nanopub": { name: "export_claim_nanopub" },
@@ -98,6 +103,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /mandates/:id": { name: "get_mandate" },
   "GET /mandates/:id/allocation": { name: "get_mandate_allocation" },
   "POST /mandates/:id/contribute": { name: "fund_mandate", note: ESCROWS_OWLS },
+  "POST /mandates/:id/withdraw": {
+    name: "withdraw_from_mandate",
+    note: "Returns owls to your balance; confirm with your user before withdrawing their share.",
+  },
   "GET /mandates/:id/lookouts/:lookoutId": { name: "get_mandate_lookout" },
 
   // ---- correspondents (#563) ----

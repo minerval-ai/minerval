@@ -25,7 +25,6 @@ const { state } = vi.hoisted(() => ({
     script: [] as Array<{ name: string; input: Record<string, unknown> }>,
     outputs: [] as string[],
     updates: [] as Array<{ sql: string; params: unknown[] }>,
-    allocator: { allocated: 0, allocatedMicroUsd: 0, thresholdRatio: null } as Record<string, unknown>,
   },
 }));
 
@@ -85,8 +84,8 @@ vi.mock("../../../src/services/lookout-service.js", async (importOriginal) => ({
   listMandateLookoutFlags: async () => [],
   summarizeLookouts: async () => [],
 }));
-vi.mock("../../../src/services/allocation-service.js", () => ({
-  runMandateAllocator: vi.fn(async () => state.allocator),
+vi.mock("../../../src/services/mandate-reflection-service.js", () => ({
+  reflectionSections: vi.fn(async () => "## What your money did since your last review"),
 }));
 vi.mock("../../../src/services/allocation-policy-service.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../src/services/allocation-policy-service.js")>()),
@@ -95,10 +94,6 @@ vi.mock("../../../src/services/allocation-policy-service.js", async (importOrigi
 vi.mock("../../../src/services/action-service.js", () => ({
   materializePlanItems: async () => [],
   grantmakerShareLeftMicroUsd: async () => null,
-}));
-vi.mock("../../../src/services/mandate-valuer-service.js", () => ({
-  setMandateValuations: async () => ({ written: 1, unknownActionIds: [], recusedActionIds: [] }),
-  listOpenActions: async () => ({ rows: [] }),
 }));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: {
@@ -137,40 +132,39 @@ beforeEach(() => {
   state.script = [];
   state.outputs = [];
   state.updates = [];
-  state.allocator = { allocated: 0, allocatedMicroUsd: 0, thresholdRatio: null };
 });
 
 const names = () => state.loop!.tools.map((t) => t.name);
 
 describe("runMandateReview", () => {
-  it("offers a judgment mandate the research, request and read tools, its valuations, and its policy lever", async () => {
+  it("offers every mandate the research, request and read tools, and its operating policy and commissions as its lever", async () => {
     await runMandateReview({ grantId: GRANT });
     for (const n of [
       "delegate_research", "get_research_run", "fund_request", "list_requests",
       "list_funded_assessments", "claims_from_source", "allocation_report",
-      "list_open_actions", "set_valuations", "update_allocation_policy", "note_to_funder",
+      "write_operating_policy", "commission", "query_sql", "withdraw_regrant", "note_to_funder",
     ]) {
       expect(names()).toContain(n);
     }
-    const policy = state.loop!.tools.find((t) => t.name === "update_allocation_policy") as unknown as { description: string };
-    expect(policy.description).toContain("maintenance_share (0 to 1, now 0.1)");
+    // The formula and valuation levers are retired; the terms change only in the funder's chat.
+    for (const n of ["list_open_actions", "set_valuations", "update_allocation_policy", "amend_objective"]) {
+      expect(names()).not.toContain(n);
+    }
     // The whole-workspace rewrite fits in a turn (#690).
     expect(state.loop!.maxTokens).toBe(16384);
   });
 
-  it("gives the Governance mandate its formula lever and not set_valuations", async () => {
+  it("gives the Governance mandate the same lever as any other", async () => {
     state.grant = grant({ policy: "governance" });
     await runMandateReview({ grantId: GRANT });
-    expect(names()).toContain("update_allocation_policy");
-    expect(names()).not.toContain("set_valuations");
-    const policy = state.loop!.tools.find((t) => t.name === "update_allocation_policy") as unknown as { description: string };
-    expect(policy.description).toContain("audit_value_overturn");
+    expect(names()).toContain("write_operating_policy");
+    expect(names()).not.toContain("update_allocation_policy");
   });
 
-  it("states the maintenance share and that the allocator never part-funds an action", async () => {
+  it("names its spending lever and asks it to start from what happened", async () => {
     await runMandateReview({ grantId: GRANT });
-    expect(state.loop!.briefing).toContain("maintenance_share 0.1");
-    expect(state.loop!.briefing).toContain("never part-funds");
+    expect(state.loop!.briefing).toContain("write_operating_policy");
+    expect(state.loop!.briefing).toContain("Start from what happened, not from scratch");
   });
 
   it("extend_plan takes the shared item schema and keeps an ingest's focus", async () => {
@@ -188,29 +182,6 @@ describe("runMandateReview", () => {
     const append = state.updates.find((u) => u.sql.includes("plan->'items'"))!;
     expect(JSON.parse(append.params[1] as string)).toEqual([
       { action: "ingest", url: "https://x.test/r", rationale: "r", focus: "grid prices" },
-    ]);
-  });
-
-  it("records valued rows the closing allocation skipped for room, and briefs the next pass on them", async () => {
-    state.script = [{ name: "set_valuations", input: { entries: [] } }];
-    state.allocator = {
-      allocated: 0,
-      allocatedMicroUsd: 0,
-      thresholdRatio: null,
-      skippedForRoom: [{ group: "attempt:x", actionId: "a-1", claimId: null, neededMicroUsd: 60_000_000, reason: "daily_rate" }],
-    };
-    state.grant = grant({
-      mandate: {
-        title: "t",
-        objective: "o",
-        last_allocation: { skipped: [{ group: "g", action_id: "a-1", needed_owls: 60, reason: "daily_rate" }] },
-      },
-    });
-    await runMandateReview({ grantId: GRANT });
-    expect(state.loop!.briefing).toContain("a-1 needs 60 owls (more than the whole daily rate");
-    const rec = state.updates.find((u) => u.sql.includes("last_allocation"))!;
-    expect(JSON.parse(rec.params[1] as string)).toEqual([
-      { group: "attempt:x", action_id: "a-1", needed_owls: 60, reason: "daily_rate" },
     ]);
   });
 

@@ -4,8 +4,7 @@
  * The allocation engine's decisions — what materialized, what is backed,
  * what ran, what was retired — are judging too, and the Audit Agent checks
  * the judging (docs/architecture.md, "Audit Agent"). Until now every other
- * role read the ledger from its own side (a mandate's list_open_actions
- * shows open rows with that mandate's valuations; grant_overview shows one
+ * role read the ledger from its own side (grant_overview shows one
  * mandate's plan), and no read-only cross-cut existed: a triage of a report
  * about a plan item could verify the claim-side facts and had to take the
  * ledger-side ones on the reporter's word.

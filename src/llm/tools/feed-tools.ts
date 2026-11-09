@@ -111,8 +111,8 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
       name: "triage_items",
       description:
         "Record your decision on inbox items, many per call. ingest: raise " +
-        "the item's URL as a candidate ingest, valued at the decision's " +
-        "urgency within your ceiling, as propose_ingest does (refused for a " +
+        "the item's URL for ingestion, as propose_ingest does: commissioned " +
+        "within your limit, or raised to the mandate's program officers (refused for a " +
         "URL already read in full or for the same focus, or already on the " +
         "plan). skip: not worth ingesting. defer: come back " +
         "to it on a later run. A reason is optional, and for an ingest it " +
@@ -134,9 +134,9 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
                 decision: { type: "string", enum: [...TRIAGE_DECISIONS] },
                 reason: { type: "string" },
                 focus: { type: "string", description: "ingest only: the subject to read it for; \"\" for the whole document." },
-                urgency: {
+                budget_owls: {
                   type: "number",
-                  description: "ingest only: 0-10, as for propose_ingest (default 5); clamped to your ceiling.",
+                  description: "ingest only: the ingest's budget, as for propose_ingest; within your limit it is commissioned, otherwise raised.",
                 },
               },
               required: ["item_id", "decision"],
@@ -187,13 +187,13 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
 }
 
 /**
- * The executor for one run. `maxValue` is the lookout's ceiling, which
- * every ingest it raises is clamped to; `onIngested` counts what it raised.
+ * The executor for one run. `commissionLimitMicroUsd` is the most the
+ * lookout may commission alone; `onIngested` counts what it raised.
  */
 export function createLookoutFeedTools(ctx: {
   lookoutId: string;
   grantId: string;
-  maxValue: number;
+  commissionLimitMicroUsd: number;
   onIngested: (n: number) => void;
 }): {
   definitions: Tool[];
@@ -252,7 +252,7 @@ export function createLookoutFeedTools(ctx: {
                   reason: typeof skip.reason === "string" ? skip.reason : null,
                 }
               : null,
-          maxValue: ctx.maxValue,
+          commissionLimitMicroUsd: ctx.commissionLimitMicroUsd,
         });
         if (res.ingested > 0) ctx.onIngested(res.ingested);
         return JSON.stringify(res);

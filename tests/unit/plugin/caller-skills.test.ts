@@ -61,6 +61,7 @@ describe("caller skills", () => {
       "claim-checking",
       "commissioning-research",
       "minerval-constitution",
+      "sql",
     ]);
     for (const s of skills) {
       expect(s.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);

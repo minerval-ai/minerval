@@ -5,13 +5,13 @@ administrators' prompts in `src/llm/prompts/`. Do not edit by hand.
 
 ## Skills
 
-### Costing (`skills/costing.md`, version 3, method skill)
+### Costing (`skills/costing.md`, version 4, method skill)
 
 How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.
 
 Sections: For every administrator; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the researcher; Failure modes.
 
-### Mathematics (`skills/mathematics.md`, version 6, domain skill)
+### Mathematics (`skills/mathematics.md`, version 7, domain skill)
 
 How the constitution applies to propositions of mathematics: proofs as arguments, how statuses and credence read for theorems and conjectures, machine-checked proofs as evidence, formal statements in Lean 4, the solver and the prize program, and what money may never touch. Does not apply to claims that merely use a number or a model.
 
@@ -26,6 +26,12 @@ Sections: For every administrator; For the Claim Steward; For the Audit Agent; F
 ### Search (`skills/search.md`, version 2, method skill)
 
 How to search for evidence on a claim or question so that what the search did not find can be weighed: searching across framings and kinds of source, recording how the search was done, and reading absence in proportion to the search.
+
+Sections: For every administrator.
+
+### Sql (`skills/sql.md`, version 1, method skill)
+
+How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.
 
 Sections: For every administrator.
 
@@ -70,6 +76,10 @@ Designs and stewards funded mandates: surveys the territory, writes its mandate'
 ### Lookout (`roles/lookout.md`)
 
 A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.
+
+### Program Officer (`roles/program-officer.md`)
+
+Carries a mandate out day to day under the operating policy its Grantmaker writes: works the mandate's inbox, commissions the work its lookouts raise at budgets set from the costing skill, answers petitions from the runs the mandate pays for while they wait, and sends the Grantmaker what the policy doesn't settle or what is beyond the limit it delegated. It writes no verdict, and never names its mandate to the agents that judge the graph.
 
 ### Correspondent (`roles/correspondent.md`)
 

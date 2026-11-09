@@ -470,9 +470,10 @@ interface PostingMandate {
 }
 
 /**
- * The posting mandate, locked for the posting: the same advisory lock the
- * allocator takes (runMandateAllocator), so a posting and an allocation
- * pass serialize on the mandate's headroom, plus a row lock on the grant.
+ * The posting mandate, locked for the posting: the same advisory lock a
+ * commission from the mandate takes (commission-service.ts, placeCommission),
+ * so a posting and a commission serialize on the mandate's headroom, plus a
+ * row lock on the grant.
  * The mandate must be active with its escrow job running; a paused or
  * closed mandate posts nothing.
  */
@@ -1151,13 +1152,29 @@ export async function fundPrizeAuditFromReserve(
     [actionId, job.user_id]
   );
   if (Number(existing?.n ?? 0) > 0) return 0;
-  const amount = Math.min(room, Math.max(0, Math.round(Number(action.cost_est_micro_usd))));
+  const cost = Math.max(0, Math.round(Number(action.cost_est_micro_usd)));
+  const amount = Math.min(room, cost);
   if (amount <= 0) return 0;
+  // A reserve that holds the audit's whole budget commissions it; a short
+  // one puts what it holds on the row, and the rest is asked of the
+  // Governance mandates' officers, whose commission then runs it.
+  const whole = amount >= cost;
   await r.query(
-    `INSERT INTO action_allocations (exclusion_group, action_id, claim_id, user_id, amount_micro_usd)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [action.exclusion_group, actionId, action.claim_id, job.user_id, amount]
+    `INSERT INTO action_allocations
+       (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      action.exclusion_group, actionId, action.claim_id, job.user_id, amount,
+      whole ? "prize_reserve" : null,
+      whole ? "The prize's review reserve pays for its audits." : null,
+    ]
   );
+  if (!whole) {
+    const { fundAuditNow } = await import("./maintenance-funding.js");
+    await fundAuditNow(actionId, {
+      note: `The prize's review reserve holds ${amount / 1_000_000} of the ${cost / 1_000_000} USD this audit is estimated to need.`,
+    });
+  }
   return amount;
 }
 

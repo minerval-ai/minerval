@@ -89,8 +89,9 @@ describe("notify_steward (Steward)", () => {
     expect(out.notified).toEqual([{ id: PARENT, kind: "claim", trigger: "subclaim_change" }]);
     const call = vi.mocked(enqueueSteward).mock.calls[0][0];
     expect(call).toMatchObject({ claimId: PARENT, trigger: "subclaim_change" });
-    expect(call.context).toContain("the key trial was retracted");
-    expect(call.context).toContain(SELF);
+    expect(call.context).toBe("moved SUPPORTED -> INCONCLUSIVE: the key trial was retracted");
+    // Who wrote goes with the message; the inbox says how the nodes are joined.
+    expect(call.sender).toEqual({ kind: "steward", nodeId: SELF });
   });
 
   it("tells a node the sender depends on that it may be mistaken (dependent_note), with the reasons", async () => {
@@ -100,10 +101,8 @@ describe("notify_steward (Steward)", () => {
     expect(out.notified).toEqual([{ id: CHILD, kind: "quantity", trigger: "dependent_note" }]);
     const call = vi.mocked(enqueueSteward).mock.calls[0][0];
     expect(call).toMatchObject({ claimId: CHILD, trigger: "dependent_note" });
-    expect(call.context).toContain(reasons);
-    expect(call.context).toContain(SELF);
-    expect(call.context).toMatch(/depends on yours/);
-    expect(call.context).toMatch(/may be mistaken/);
+    expect(call.context).toBe(reasons);
+    expect(call.sender).toEqual({ kind: "steward", nodeId: SELF });
   });
 
   it("allows a node joined by no edge, with the general trigger (steward_note)", async () => {
@@ -179,11 +178,13 @@ describe("notify_steward (Curator)", () => {
       claimId: PARENT,
       trigger: "curator_change",
       context: msg,
+      sender: { kind: "curator" },
     });
     expect(enqueueSteward).toHaveBeenCalledWith({
       claimId: CHILD,
       trigger: "curator_change",
       context: msg,
+      sender: { kind: "curator" },
     });
   });
 

@@ -99,6 +99,10 @@ export const ROLE_VIEW = {
   // the graph's judgment to it; it writes no verdict, so it too receives
   // only the section addressed to everyone.
   correspondent: ["For every administrator"],
+  // A program officer funds work under a mandate's operating policy and
+  // writes no verdict: the section addressed to everyone, which carries the
+  // costing skill's guidance on budgets.
+  "program-officer": ["For every administrator"],
   "contribution-reviewer": [
     "For every administrator",
     "For the Contribution Reviewer and the Dispute Arbitrator",
