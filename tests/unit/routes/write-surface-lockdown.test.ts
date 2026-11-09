@@ -5,7 +5,7 @@
  * contribution — a suggestion for review — and nothing is written to the
  * claims table or extracted until the Contribution Reviewer accepts it.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import Fastify from "fastify";
 import type { RequestAuth } from "../../../src/server/plugins/auth.js";
 
@@ -114,6 +114,15 @@ const PENDING_CONTRIBUTION = {
   reviewStatus: "pending",
   submittedAt: new Date("2026-07-16T00:00:00.000Z"),
 };
+
+// Load the route modules once, before the tests, with room for a cold
+// import on a loaded CI runner: buildTestApp's dynamic imports otherwise land
+// in the first test's 5s budget, which then times out on module loading
+// rather than on anything the test checks.
+beforeAll(async () => {
+  await import("../../../src/routes/claims.js");
+  await import("../../../src/routes/sources.js");
+}, 60_000);
 
 async function buildTestApp(auth: RequestAuth) {
   const { claimRoutes } = await import("../../../src/routes/claims.js");

@@ -68,3 +68,7 @@ something, and as a description of how the other side will reason.
 The files are vendored from `skills/` and `src/llm/prompts/` in the
 Minerval repository by `scripts/sync-frontend-content.ts`, and a test fails
 when they drift. They are as current as the plugin you have installed.
+For the exact text an agent ran under at a given time, use
+`list_setup_parts` and `get_setup_part`: every version of the constitution
+and each role prompt that has run, numbered in order, with the commit it
+first ran under.

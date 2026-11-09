@@ -1471,6 +1471,9 @@ export async function executeStewardTool(
           // resolved them (never by the agent's own hand). [] = an unskilled
           // run; null only for legacy call sites outside an agent.
           skills: getUsageContext().skills ?? null,
+          // The run that wrote this verdict, so its transcript is one join
+          // away; stamped from the usage context, never by the agent.
+          runId: getUsageContext().runId ?? null,
         });
 
         // Argument evaluations are derived within the assessment (issue #173),

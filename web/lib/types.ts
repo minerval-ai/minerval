@@ -1541,3 +1541,23 @@ export interface SourceContext {
     claim: { id: string; text: string } | null;
   }>;
 }
+
+// One version of a part of the setup agent runs ran under (GET /setup/parts):
+// the constitution, a role prompt, a tool. Text only on the single-version
+// read, and only when the part is public.
+export interface SetupPart {
+  kind: "constitution" | "role" | "tool";
+  name: string;
+  version: number;
+  hash: string;
+  public: boolean;
+  first_seen_at: string;
+  first_seen_commit: string | null;
+  source_path: string | null;
+  source_url: string | null;
+}
+
+export interface SetupPartDetail extends SetupPart {
+  content: string | null;
+  previous_version: number | null;
+}

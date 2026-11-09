@@ -18,10 +18,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   finishAgentRun,
+  markRunWroteGraph,
   recordAgentRunSkills,
   startAgentRun,
   type AgentTrace,
 } from "../services/trace-service.js";
+import { setStatementObserver } from "../db/statement-observer.js";
+import { writesGraph } from "../db/graph-writes.js";
 
 export interface UsageContext {
   userId?: string | null;
@@ -138,6 +141,14 @@ export function runWithUsageContext<T>(
  * shadows the outer for the duration, which is the honest reading of "an
  * agent invoked another agent".
  */
+// A run that writes to the graph keeps its transcript (db/graph-writes.ts).
+// The statement observer sees every query db/client.ts sends; the run open
+// in the current context, if any, is marked on its first graph write.
+setStatementObserver((sql) => {
+  const trace = getUsageContext().trace;
+  if (trace && !trace.wroteGraph && writesGraph(sql)) markRunWroteGraph(trace);
+});
+
 export function withAgent<T>(agent: string, fn: () => T): T {
   const context = getUsageContext();
   const trace = context.untraced ? null : startAgentRun(agent, context);

@@ -359,8 +359,9 @@ const configSchema = z.object({
   // sweep below bounds what production keeps.
   traceLevel: z.enum(["off", "full"]).optional(),
   // How long agent_runs (and, by cascade, agent_steps) are kept before the
-  // retention sweep (workers/trace-retention.ts) deletes them. Traces are
-  // big — a Steward run is tens of KB of transcript — so production keeps a
+  // retention sweep (workers/trace-retention.ts) deletes them. Runs that
+  // wrote to the graph (agent_runs.wrote_to_graph) are never deleted: they
+  // are the record of how the graph's content was made. The rest are a
   // window, not history; llm_usage rows keep their run_id and cost forever.
   // 0 disables the sweep (keep everything; the corpus harness wants that).
   traceRetentionDays: z.coerce.number().default(30),
@@ -393,6 +394,11 @@ const configSchema = z.object({
   // skill, docs/mathematics.md §3); the AI cohort retired under the old rules
   // was selected by date instead (scripts/cohorts/).
   pipelineEpoch: z.string().default("2026-10-assessment-as-thinking"),
+  // The commit the running code was built from, baked into the image at
+  // build time (Dockerfile GIT_SHA, from GITHUB_SHA in the deploy). Stamped
+  // on every agent run and on each setup part the first time it is seen, so
+  // a run's prompts link to their source at that commit. Unset in local runs.
+  gitSha: z.string().optional(),
   // Prompt cache lifetime for the cached system blocks ("5m" or "1h"). The
   // five-minute cache is the default; the one-hour cache is a metering
   // question for the skilled Steward population once a domain mandate's run
@@ -1192,6 +1198,7 @@ export function loadConfig(): Config {
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,
     sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
+    gitSha: process.env.GIT_SHA || undefined,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,
