@@ -148,6 +148,16 @@ const RECORD_INSTANCE_TOOL: Tool = getResearcherInstanceToolDefinition();
 
 /** The same, on a question: record_question_instance, question_id filled from the run. */
 const RECORD_QUESTION_INSTANCE_TOOL: Tool = getResearcherQuestionInstanceToolDefinition();
+
+/**
+ * record_argument_instance (#541), on the run's node's arguments: a claim's
+ * or a quantity's, since a question has no arguments of its own (§7a).
+ */
+const RECORD_ARGUMENT_INSTANCE_TOOL: Tool = getResearcherArgumentInstanceToolDefinition();
+import {
+  executeArgumentInstanceTool,
+  getResearcherArgumentInstanceToolDefinition,
+} from "../tools/argument-instance-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -540,6 +550,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const nodeKind = input.claim ? (input.claim.kind ?? "claim") : null;
   const recordsInstances = graphWrites && nodeKind === "claim";
   const recordsQuestionInstances = graphWrites && nodeKind === "question";
+  const recordsArgumentInstances = graphWrites && (nodeKind === "claim" || nodeKind === "quantity");
   const submitsContributions =
     run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
 
@@ -565,6 +576,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...skillTools,
     ...(recordsInstances ? [RECORD_INSTANCE_TOOL] : []),
     ...(recordsQuestionInstances ? [RECORD_QUESTION_INSTANCE_TOOL] : []),
+    ...(recordsArgumentInstances ? [RECORD_ARGUMENT_INSTANCE_TOOL] : []),
     ...reportTools.definitions,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
@@ -697,6 +709,14 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         { ...toolInput, claim_id: input.claim.id },
         { trigger: "research", context: run.task, model, recordedBy: RESEARCHER_AGENT }
       );
+    }
+    if (name === RECORD_ARGUMENT_INSTANCE_TOOL.name && input.claim && recordsArgumentInstances) {
+      // The run's node's arguments and no other: the executor refuses an
+      // argument on another node.
+      return (await executeArgumentInstanceTool(name, toolInput, {
+        recordedBy: RESEARCHER_AGENT,
+        nodeId: input.claim.id,
+      }))!;
     }
     if (name === RECORD_QUESTION_INSTANCE_TOOL.name && input.claim) {
       // The run's question and no other, as for a claim's instances; the

@@ -146,6 +146,36 @@ export type MatchedInstanceStance = (typeof MATCHED_INSTANCE_STANCES)[number];
 export const isMatchedInstanceStance = (v: unknown): v is MatchedInstanceStance =>
   (MATCHED_INSTANCE_STANCES as readonly unknown[]).includes(v);
 
+/**
+ * How a passage stands toward an argument it is an instance of (§4, §7,
+ * #541). "advances": the passage makes the argument. "criticizes": it
+ * attacks the argument (a paper rebutting it is also an instance of the
+ * defeating claim). "mentions": it names or reports the argument without
+ * making or attacking it. Like posing and mentioning instances of claims,
+ * a mention is provenance and counts in neither camp. Ingestion assigns
+ * only the first two (MATCHED_ARGUMENT_INSTANCE_STANCES); a mention is a
+ * Steward's judgment from reading the source.
+ */
+export const ARGUMENT_INSTANCE_STANCES = ["advances", "criticizes", "mentions"] as const;
+export type ArgumentInstanceStance = (typeof ARGUMENT_INSTANCE_STANCES)[number];
+export const isArgumentInstanceStance = (v: unknown): v is ArgumentInstanceStance =>
+  (ARGUMENT_INSTANCE_STANCES as readonly unknown[]).includes(v);
+export const MATCHED_ARGUMENT_INSTANCE_STANCES = ["advances", "criticizes"] as const;
+
+/**
+ * How well a passage states the argument it is an instance of (§4, §7). A
+ * fact about the passage: it never changes the argument's written form.
+ * "full": it states the inference with what it needs. "premise_unstated":
+ * it leaves a premise the inference needs unspoken. "strawman": it states
+ * a weaker version than the argument (usually a passage criticizing it). A
+ * passage that rests on a different premise is not a reading of this
+ * argument but an instance of a different one.
+ */
+export const ARGUMENT_READINGS = ["full", "premise_unstated", "strawman"] as const;
+export type ArgumentReading = (typeof ARGUMENT_READINGS)[number];
+export const isArgumentReading = (v: unknown): v is ArgumentReading =>
+  (ARGUMENT_READINGS as readonly unknown[]).includes(v);
+
 // The types a caller may submit against an EXISTING claim via
 // POST /contributions.
 export const contributionTypeEnum = z.enum([

@@ -81,6 +81,8 @@ Reading a source is governed by fidelity, however the source came to be read (at
 
 A source's figure for a quantity is an instance of that quantity: the value, interval, or bound as the source states it. A source that states a probability for a claim is an instance of that claim, and the probability is part of the instance, recorded as what the source said.
 
+An argument has instances too: a passage that makes an argument, attacks it, or mentions it is an instance of that argument, recorded with how well it states it. Fidelity governs the instance here as well, not the argument (§7). A passage that leaves out a premise the argument needs, or attacks a weaker version of it, is an instance of the argument stated poorly; a passage that rests on a different premise is an instance of a different argument. An argument's instances record where it is made. They do not rate its inference, and they bear only weakly on whether it belongs on a claim (§7).
+
 ### 5. Merging and Splitting
 
 Claims created separately may later be recognized as one claim, and a single claim may be recognized as conflating several. The admin proposes merges and splits; the Curator adjudicates them (Part VIII).
@@ -549,8 +551,10 @@ it before you record anything. When record_claim_instance is in your
 toolset too, you may also record, as you read, the instances you find: a
 source that asserts, denies or poses the claim in its own voice. On a
 question, record_question_instance does the same for a source that asks
-or answers it. The Steward owns the instance set and may correct or
-detach what you record.
+or answers it. When record_argument_instance is in your toolset, record a
+source that makes, attacks or mentions one of the node's arguments, matched
+by its inference, not its wording. The Steward owns the instance set and
+may correct or detach what you record.
 
 Your report and notebook go only to the administrator. What you record on
 the graph is shown to readers: provenance notes, examination findings, and

@@ -529,6 +529,61 @@ export const arguments_ = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// argument_instances (#541)
+// ---------------------------------------------------------------------------
+// Where a source makes, attacks or mentions an argument: the counterpart of
+// claim_instances for the argument layer (§4, §7). An argument is canonical
+// and belongs to no one who makes it; each row is one passage's use of it.
+// Instances are provenance. They do not set the written form (fidelity
+// governs the passage's reading, recorded here, not the argument), do not
+// rate the inference, and bear only weakly on whether the argument belongs
+// on its claim (§7). A retired argument keeps its instances, and new ones
+// may still be recorded on it: retiring preserves its record.
+export const argumentInstances = pgTable(
+  "argument_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    argumentId: uuid("argument_id")
+      .notNull()
+      .references((): AnyPgColumn => arguments_.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // The passage as this source states (or attacks, or mentions) the
+    // argument, verbatim.
+    verbatimText: text("verbatim_text").notNull(),
+    context: text("context"),
+    // ARGUMENT_INSTANCE_STANCES in schemas/common.ts: advances | criticizes
+    // | mentions. Free text, like claim_instances.stance.
+    stance: text("stance").notNull(),
+    // ARGUMENT_READINGS: how well the passage states the argument (full |
+    // premise_unstated | strawman). Null when not judged, as for a mention.
+    reading: text("reading"),
+    // On an argument about a quantity: what the source says the argument
+    // shows, as stated, in the valueShownSchema shape. The argument's own
+    // `shows` is the graph's judgment; a source's different range from the
+    // same inference is recorded here, as §4 records a source's figure.
+    statedShows: jsonb("stated_shows"),
+    speaker: text("speaker"),
+    publication: text("publication"),
+    sourceDate: text("source_date"),
+    link: text("link"),
+    // claim_steward | researcher | extractor
+    createdBy: text("created_by").notNull(),
+    segmentId: uuid("segment_id").references((): AnyPgColumn => sourceSegments.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_argument_instances_argument").on(table.argumentId),
+    index("idx_argument_instances_source").on(table.sourceId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // argument_subclaims
 // ---------------------------------------------------------------------------
 // Argument membership (#437): which decomposition edges a named argument

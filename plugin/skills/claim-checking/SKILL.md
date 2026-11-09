@@ -137,6 +137,14 @@ settles the claim as its premises now stand; when one is decisive, say so
 plainly. `stale: true` means the evaluation predates the current
 assessment.
 
+`get_argument` opens one argument by its id: its written form, and on
+request its evaluation history, its premises with their standing, and its
+instances, the places sources make, attack or mention it. An argument is
+the inference, not anyone's statement of it, so a source's version may be
+recorded as stating it fully, leaving a premise unstated, or as a strawman.
+Instances are provenance: how often an argument is made is not a measure
+of whether it works.
+
 The same habit helps when you reason without the graph: ask what would
 make the claim true or false, and which sub-question the answer depends
 on, before reaching for sources (§9).

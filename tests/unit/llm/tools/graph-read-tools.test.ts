@@ -110,12 +110,13 @@ describe("graph-read-tools", () => {
     mockFormalizationRecord.mockResolvedValue(EMPTY_RECORD as never);
   });
 
-  it("exposes the four reads every agent gets", () => {
+  it("exposes the five reads every agent gets", () => {
     expect(getGraphReadToolDefinitions().map((t) => t.name)).toEqual([
       "search_claims",
       "get_claim",
       "get_decomposition",
       "get_dependents",
+      "get_argument",
     ]);
   });
 

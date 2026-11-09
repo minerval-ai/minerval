@@ -89,7 +89,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_dependents`, `list_graph_changes`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
+| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_argument`, `get_decomposition`, `get_dependents`, `list_graph_changes`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap. `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — capped at 10 an hour, 3 for new/low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), stated in the tool description; priced proposals (`propose_claim`, `submit_source`) are bounded by the caller's balance instead and don't count, and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
@@ -154,7 +154,8 @@ and the tool description says what a call spends.
 `search_claims`, `get_decomposition` and `get_dependents` are defined once,
 in `src/services/graph-read-service.ts`, and served both here and to the
 graph's own agents (`src/llm/tools/graph-read-tools.ts`), as `get_claim` is
-from `src/services/claim-view-service.ts`, so the two cannot drift (#726).
+from `src/services/claim-view-service.ts` and `get_argument` from
+`src/services/argument-view-service.ts`, so the two cannot drift (#726).
 The definitions differ only in a description suffix: a caller is told the
 read is free, an agent which signals allocation turns on.
 
@@ -233,6 +234,12 @@ read is free, an agent which signals allocation turns on.
   question a `question` record (standing, answers, presuppositions,
   subquestions), a cut claim `threshold_of`, and every node its `requests`,
   as `GET /claims/:id` serves them.
+- **`get_argument`** `{argument_id, include?, instances_limit?, instances_offset?}`
+  — one argument (#541): its conclusion, stance or what it shows about a
+  quantity, written form, and retirement if retired. `include` adds
+  `evaluation` (current and history, each with `stale`), `premises` (with
+  their standing), and `instances` (where sources make, attack or mention
+  it, with each passage's `reading`). Served at `GET /arguments/:id` too.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
 - **`get_dependents`** `{claim_id, max_depth?}` — the walk up: everything
