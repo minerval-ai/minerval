@@ -9,45 +9,48 @@ section.
 
 ## The standard
 
-One engine allocates all attention, uniformly for every funder, and it is
-built as a hard split between MECHANISM and JUDGMENT.
+Every piece of work on the graph is an agent's run, and a run happens when
+someone **commissions** it: decides the work is worth doing, sets the
+budget it should have to be done properly, and pays that budget whole. The
+run starts at once; its agent is told its budget and works to it; what it
+does not spend goes back to whoever paid. One mechanism does this for every
+funder, built as a hard split between MECHANISM and JUDGMENT.
 
 **The mechanism is the action ledger** (`actions` +
-`action_allocations`): one row per potential action — assess this claim,
-ingest that source, plan that mandate — with money placed as ALLOCATIONS
-on those rows by any mix of mandates and people:
+`action_allocations`): one row per piece of work the system could do
+(assess this claim, ingest that source, curate that region, audit that
+decision), and money placed on those rows. A commission is an allocation
+with `commissioned_by` set, a budget, the brief its payer wrote and the
+reason it gave (src/services/commission-service.ts). The rule is short:
 
-    an action RUNS exactly when its allocations cover its expected cost;
-    the metered cost splits among its funders pro rata;
+    a row with a live commission runs;
+    a row whose allocations cover its estimated cost runs (a mandate's
+      own upkeep, below);
     nothing else anywhere decides what runs.
 
-Alternative ways of doing the same thing (a standard-model pass vs. a
-strong-model pass; later: effort levels, tools) are sibling rows in an
-EXCLUSIVE SET (`exclusion_group`): at most one runs, resolved by a pure
-function of the allocations — most backing wins, ties go to the cheapest,
-and an allocation pinned to a losing sibling is RELEASED back to its
-funder, not spent. An unpinned allocation ("assess this claim, however")
-counts toward every sibling and is consumed by whichever wins.
+Settlement is the ledger's: the run's metered cost is consumed from the
+allocations that paid for it and the rest is released to each payer
+(`completeAction`). The ledger holds no formula and no valuation. Whether
+work is worth its cost is a judgment, made by agents and people who can be
+asked why.
 
-**The judgment is each mandate's own** (`mandate_valuations`): every
-mandate values only the actions it knows and cares about — sparse by
-design; the Mathematics mandate holds no opinion on a politics claim —
-by its own definition of importance. A mandate's SCOPE IS ITS WORDS:
-which actions fall under it is a judgment call made by its Grantmaker
-agent, never by a keyword filter. (The one exception is the General
-assessment mandate, whose scope genuinely is "everything" and whose
-valuations are its published formula — itself agent-amendable policy.)
-Each mandate's allocator (allocation-service.ts) then ranks MARGINAL
-INCREMENTS by value per dollar — cover the cheap variant; upgrade to the
-dear one only when Δvalue/Δcost also clears — and funds them best-first
-until its daily rate is committed. The bar is emergent from the budget:
-most actions whose value merely exceeds their cost still fall below the
-day's threshold and wait for co-funding or a cheaper day.
+**The judgment is each payer's own.** A person commissions what they want
+looked at. A running agent commissions other agents' runs from its own
+budget. A mandate decides through agents: its Grantmaker writes an
+**operating policy** in prose, and its **program officers** commission work
+under it, within a limit the policy states, sending the rest to the
+Grantmaker. A mandate's SCOPE IS ITS WORDS: which work falls under it is a
+judgment its agents make, never a keyword filter's. Every decision is
+logged with its reason (`mandate_decisions`) and shown on the mandate's
+page.
 
-Value and cost are estimates; cost priors and formula knobs are each
-mandate's ALLOCATION POLICY, revised by asking its Grantmaker, not by
-editing code. Neither side is ever a verdict input: the estimates order
-work and select effort, and appear nowhere in an assessment.
+Budgets are set at the high end of what work of that kind costs (the
+costing skill), because a run that has what it needs finishes the work and
+gives back the rest. When the work turns out to need more, its agent
+**petitions** the mandate paying for the run and gets the answer in the
+run. Neither a budget nor a petition is ever a verdict input: what a
+mandate chose to pay for orders work and selects effort, and appears
+nowhere in an assessment.
 
 ## Mandates start with a planning pass
 
@@ -62,8 +65,8 @@ territory survey is the same job as every later one: the graph
 read_page), the live price list (cost_sheet, from the costing skill), and
 the mandate's workspace, so its survey notes become the mandate's opening
 working memory. What it does not have is anything that spends or moves
-money before the funder approves: no valuations, lookouts, contributions,
-research, or money moves. Its briefing is the mandate's
+money before the funder approves: no commissions, operating policy,
+lookouts, contributions, research, or money moves. Its briefing is the mandate's
 words, with any declared scope claim or query as a search aid rather than
 the scope; a mandate told to "map the nutrition literature" reaches its
 planner with no scope claim at all, and the planner's job is to find the
@@ -82,24 +85,29 @@ escrow, and the engine executor runs the mandate's Grantmaker in review
 mode (llm/agents/mandate-review.ts) with the affordances anyone entrusted
 with a budget and a mission would need:
 
+- **read back what its money did**: the briefing opens with what the
+  mandate commissioned since the last review and how those runs used their
+  budgets, by kind; the outcomes on the nodes it paid for; the petitions it
+  heard and how its officers answered; runs that spent their whole budget
+  without asking; its officers' decisions and what deciding cost; the
+  messages waiting on the nodes it pays for; and what its lookouts raised
+  and commissioned (src/services/mandate-reflection-service.ts). It starts
+  from what happened, not from scratch, and fixes causes in the operating
+  policy rather than cases;
 - **survey the territory**: the graph (search_claims, survey_scope,
-  list_open_actions) AND the open web (web_search) — finding where the
-  good physics papers are is the agent's job;
+  query_sql) AND the open web (web_search): finding where the good physics
+  papers are is the agent's job;
 - **a workspace** (`grants.workspace`): the agent's own durable working
   document, read back in full every pass — its map of the territory,
   source backlog, strategy. Mandate-scale missions are impossible
   without working memory. update_workspace replaces it whole, appends to
   it, or rewrites one section, so a large workspace never has to be
   re-emitted to change a line;
-- **write valuations** (set_valuations): value 0–10 with rationale, over
-  exactly the actions it judges relevant — this is its spending judgment.
-  The result names any valued row the day cannot cover (the allocator
-  never part-funds an increment), and the next briefing lists the rows
-  the closing allocation skipped for room. A formula mandate (General,
-  Governance) amends its formula instead (update_allocation_policy); a
-  judgment mandate's update_allocation_policy holds the keys its own
-  allocator reads: `maintenance_share` and its attempt priors and bounds;
-- **see what its money bought** (allocation_report,
+- **spend**: revise the operating policy its program officers carry out
+  (write_operating_policy), commission work directly (commission), and
+  take back a regrant (withdraw_regrant). This is its spending judgment;
+- **see what its money bought** (allocation_report, the mandate's
+  operations: policy, commissions, decisions and petitions;
   list_funded_assessments, claims_from_source, pipeline_report);
 - **launch research and fund requests** (delegate_research,
   get_research_run, list_requests, fund_request), the same instrument and
@@ -110,7 +118,7 @@ with a budget and a mission would need:
 - **pace itself** (set_daily_rate) and **chain passes**
   (continue_review): a pass that has more to do runs another immediately,
   funded out of the mandate's day like the rest of its work, and the
-  briefing says what the day has left — cost discipline lives in the
+  briefing says what the day has left: cost discipline lives in the
   money the agent can see, never in narrowed affordances;
 - **tell the funder** (note_to_funder): what only the funder can decide
   (a move above the pass's cap, a bounty confirmation, a top-up), kept on
@@ -158,8 +166,10 @@ with the narrowest question — *has anything happened, in the scope of my
 brief, that warrants work?* — posted by the Grantmaker (`spawn_lookout`,
 in the owner's chat or on a review pass) with a brief in its own words
 (scope, where to look, what to look out for, what to leave alone), a set
-of triggers, and a bounded, delegated slice of the mandate's spending
-judgment (llm/agents/lookout.ts, services/lookout-service.ts).
+of triggers, and a bounded, delegated slice of the mandate's spending:
+the most it may commission alone for one item (`commission_limit_owls`),
+the rest raised to the mandate's program officers (llm/agents/lookout.ts,
+services/lookout-service.ts).
 
 Scope is the brief's words, as a mandate's is. "This claim and what it
 turns on" is one shape; "the retraction record behind the nutrition
@@ -173,11 +183,24 @@ event-only), or by an **input event** queued for it — the daily
 carries the Retraction Watch database, for every retraction, correction,
 and expression of concern since the last poll, joins the DOIs against the
 graph's sources, and queues an event on every lookout that watches for
-retractions), or a **poke** from the Grantmaker or the funder. The set
+retractions), the **graph feed** (`graph`: the change stream has entries
+in its territory it has not read; workers/lookout-triggers.ts
+`graphFeedTick`), or a **poke** from the Grantmaker or the funder. The set
 is open: any poller that can say "this happened to this source" is a
-trigger source; the **feed poll** is the second (below, "Feeds"). The
+trigger source; the **feed poll** is another (below, "Feeds"). The
 pollers are scans, not judgments: they open no ledger row and decide
 nothing about relevance.
+
+**The graph feed.** A lookout that follows the graph has a **territory**:
+nodes (each with everything beneath it) and tags. Each run reads what
+changed there since its cursor, up to 60 entries a run, verdicts and the
+ledger and message kinds alike (below, "The change stream"), and may query
+the graph with `query_sql`. A mandate whose scope is the whole graph may
+leave the territory empty and follow everything; a scoped mandate's feed
+names what it follows. The General mandate is seeded with two lookouts:
+"Known problems", on the whole graph's feed with a 3-owl limit, and a
+daily "Upkeep" that queries for stale important claims, open curation
+requests and unanswered messages.
 
 **Runs are ledger actions.** A due lookout (heartbeat passed, or an event
 waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
@@ -189,35 +212,34 @@ the cheap tier (`LOOKOUT_MODEL`; a lookout may carry its own model). It reads
 its brief, its own workspace, and the queued inputs; then the graph
 (search, open, walk down, walk up, survey_scope, scope_sources), the
 retraction record (check_doi, recent_retractions), and the open web
-(web_search, read_page). Most runs find nothing, and say so.
+(web_search, read_page), and the graph feed and SQL. Most runs find
+nothing, and say so.
 
-**Outputs are candidates, never conclusions.** A lookout can raise three
-things and nothing else:
+**Outputs are work, within a limit, and never conclusions.** A lookout can
+do three things and nothing else:
 
-- `flag_reassessment`: the claim becomes a candidate (enqueued to the
-  Steward lane with trigger `lookout_flag` and the lookout's rationale
-  as context, which materializes its assess/reassess rows) and the
-  mandate's valuation on the standard variant is written at the
-  lookout's urgency **clamped to the ceiling the Grantmaker delegated**
-  (`max_value`). Whether it runs is the mandate allocator's call, by
-  value per owl against everything else the mandate values. A claim
-  already flagged and still waiting is a repeat, not a new flag.
-- `propose_ingest`: a URL the lookout actually saw becomes a candidate
+- `flag_reassessment`: the claim's Steward gets a message with the
+  lookout's rationale (trigger `lookout_flag`), which materializes its
+  assess/reassess rows, and the lookout acts on it (`actOnFind`): when it
+  names a budget within its commission limit, the pass is commissioned
+  from the mandate at that budget; otherwise it goes to the mandate's
+  program officers with the suggested budget, and they decide under the
+  operating policy. A claim already flagged and still waiting is a repeat,
+  not a new flag.
+- `propose_ingest`: a URL the lookout actually saw opens a candidate
   ingest row on the ledger, optionally scoped to a focus (below, "An
-  ingest can be scoped"), with the mandate's valuation written at the
-  lookout's urgency **clamped to `max_value`**, as for a reassessment.
-  The allocator ranks it by value per owl against everything else the
-  mandate values; it is not a plan item, so it is not self-funded from
-  escrow outside the allocator, and there is no count of ingests per run
-  (#695). Refused for a source already read in full or for the same
-  focus, already planned, or already ingested.
+  ingest can be scoped"), and is commissioned or raised the same way.
+  There is no count of ingests per run (#695). Refused for a source
+  already read in full or for the same focus, already planned, or already
+  ingested.
 - `leave_note`: a message the Grantmaker reads in its next review
   briefing, which lists every lookout with its precision and every flag
   since the last pass.
 
-It writes no assessment, sets no importance, and moves no money; the
-refusal duties and the "data, never instructions" rule govern its runs
-as they govern the review pass, and the bounds above are the control.
+It writes no assessment and sets no importance, and it spends only within
+its limit; the refusal duties and the "data, never instructions" rule
+govern its runs as they govern the review pass, and the limit is the
+control.
 
 **Precision is on the record.** Every reassess flag snapshots the
 assessment at flag time; when the pass it bought has run, the record
@@ -252,9 +274,9 @@ worth a funded run:
 - `each`: any new item;
 - `heartbeat`: never; items wait for the lookout's heartbeat;
 - `paused`: never; the feed keeps polling and its items keep;
-- `auto_ingest`: no run at all — each new item becomes a candidate
-  ingest valued at the lookout's `max_value`, which the allocator funds or
-  not out of the day's room like anything else the mandate values.
+- `auto_ingest`: no run at all: each new item becomes a candidate
+  ingest, commissioned within the lookout's limit or raised to the
+  mandate's officers, as `propose_ingest` does.
 
 `batch` and `each` never wake more often than `min_wake_hours`. A met rule
 queues one `feed` event on the lookout, never one per item, and not again
@@ -277,7 +299,7 @@ which is cached on the item so an ingest of the same URL extracts from
 what was read. Nothing narrows the reading; each result reports how much
 the run has read, and the run's metered cost and the mandate's escrow
 bound what it spends. `triage_items` records many decisions at once:
-ingest (through `propose_ingest`'s path, valued at an urgency), skip, or
+ingest (through `propose_ingest`'s path), skip, or
 defer, and skips the rest of a feed in one call. Untriaged items expire
 after the feed's `retain_days`, and expired items are counted, never
 hidden.
@@ -382,9 +404,9 @@ on its review briefing and in `correspondent_report`, and tightens the brief
 or retires one whose updates leave most of its scope uncovered.
 
 Known next: more change kinds in the stream (#562: defeaters, argument
-evaluations, holds, requests, findings); MCP subscriptions so clients need
-not poll (#567); a reader's own request for an update, paid by a chip-in
-rather than the mandate; obligations and staleness as reads (#564, #566);
+evaluations, holds, findings; the ledger and message kinds are in, below);
+MCP subscriptions so clients need not poll (#567); a reader's own request
+for an update, commissioned by the reader rather than the mandate; obligations and staleness as reads (#564, #566);
 role templates for briefs; and one table for a mandate's standing agents
 (lookouts and correspondents share the trigger rule and funding path but
 not yet a table).
@@ -439,8 +461,9 @@ call would cost and what is left.
 That replaces counts. There is no number of searches, Elicit calls, Lean
 checks, new subclaims, reports, flags, plan items, review passes,
 lookout runs or lookout ingests per run or per day: an agent spends its budget across its
-tools as the work warrants, and a run that needs more says so for a
-better-funded pass. What stays is short, and each item is told to the
+tools as the work warrants, and a run that needs more petitions the
+mandate paying for it (below, "Petitions") and gets the answer in the
+run. What stays is short, and each item is told to the
 agent with its reason: a turn guard far above any real run (it halts a
 loop that has stopped spending, not work), the escrow-fraction limits on
 autonomous money moves (they stand against injected text, not cost), the
@@ -511,17 +534,17 @@ gets the budget to be read rather than a small tag's: the caps,
 bound the largest partitions. A row still open is repriced when its
 partition grows; what a sweep does not spend settles back. The size is the
 work, not the importance: importance mass decides which partition is swept
-first and, through the formula, what the passes a sweep's flags ask for are
-worth. The checker's briefing states the per-node figure and where it came
+first. The checker's briefing states the per-node figure and where it came
 from, the floor, the ceiling and what its partition came to; where the
 ceiling binds it is told how far the budget reaches, reads in the
 listing's order (changed, then important), and its note says where it
 stopped so the next sweep starts there.
 
 **Which variant is bought** is the marginal-return rule, taken per
-partition from its two prices: a sweep has no value of its own to set
-against the day's bar, so the strong variant is bought when its value per
-owl is at least the standard's, that is when the strong read's **expected
+partition from its two prices (a sweep is the General mandate's own
+upkeep, so `fundGrantSelfActions` picks it): the strong variant is bought
+when it is expected to return at least as much per owl as the standard,
+that is when the strong read's **expected
 gain** (how much more it is expected to find than the standard read) times
 the standard's price covers the strong one's. The expected gain
 (`consistencyStrongExpectedGain`) is, in order: the General mandate's own
@@ -540,20 +563,19 @@ partitions and the standard for the rest. (The earlier default of 3 meant
 the strong variant was never bought.) Thinking about the work competes with the work: a day's
 sweeps come out of the same rate as the passes they ask for.
 
-**A flag is information, not money.** `flag_inconsistency` names a
-primary claim (the one whose assessment looks wrong: its Steward can
-revise only its own verdict), every claim in the tension, a rationale,
-and an **expected gain**: the checker's estimate (0–1) that a fresh pass
-would change the verdict or its reasoning materially. The primary's
-Steward is enqueued with trigger `consistency_flag` and the tension as
-context, which opens its assess group on the ledger, and while that group
-is open the flag's expected gain enters the formula's
-expected-quality-gain term beside the Steward's own marginal-yield
-estimate and staleness (below). So the formula prices a flagged pass the
-way it prices every pass, importance and contestation included, and the
-allocator decides whether it runs. The checker writes no valuation, no
-verdict, no edge and no importance; a second flag on a primary whose pass
-is still waiting is a repeat, folded into the first. The primary may be a
+**A flag is information; paying is a separate choice.**
+`flag_inconsistency` names a primary claim (the one whose assessment looks
+wrong: its Steward can revise only its own verdict), every claim in the
+tension, a rationale, and an **expected gain**: the checker's estimate
+(0–1) that a fresh pass would change the verdict or its reasoning
+materially. The tension goes to the primary's inbox (trigger
+`consistency_flag`), which opens its assess group on the ledger, and the
+pass it asks for goes to the General mandate's officers with the expected
+gain (`raiseToMandate`), who decide whether to pay for it. The checker has
+a budget and the spend tools, so it may commission a pass it judges worth
+paying for now. It writes no verdict, no edge and no importance; a second
+flag on a primary whose pass is still waiting is a repeat, folded into the
+first. The primary may be a
 claim, a quantity or a question, and may lie outside the partition: what
 a partition establishes often bears on nodes in other fields.
 
@@ -570,7 +592,7 @@ bought through the ledger like everything else (#363). They used to be
 fire-and-forget queue messages: a Curator run was billed to whichever
 mandate's Steward happened to escalate, uncapped and outside its day
 room, and audits ran attributed to nobody. Neither party pays
-automatically now. Maintenance is work a mandate chooses to buy, and
+automatically now. Maintenance is work someone chooses to commission, and
 General is simply the mandate whose scope is the whole graph and
 therefore the one that usually does.
 
@@ -582,8 +604,8 @@ metered runs on the ledger (`actions.metered_cost_micro_usd`) once
 (`est_curate_cost_owls`, `est_audit_cost_owls`), and both run through the
 engine executor under their largest funder, metered and settled like any
 other action. The action row is the queue, so neither is lost to a
-restart. The expected cost is the price funders are asked to cover; the
-run works to the larger of its coverage and its run budget
+restart. A commissioned run works to its commission; one funded by
+coverage works to the larger of its coverage and its run budget
 (`CURATE_RUN_BUDGET_OWLS`, `AUDIT_RUN_BUDGET_OWLS`, 5 owls each, as a paid
 assessment's pass does), and what it spends past its allocations is
 metered to the funding mandate.
@@ -597,7 +619,7 @@ consumes them when it ends. Three producers, each bounded:
 
 - a Steward's `escalate_to_curator`, one live request per concern (a
   repeat is a repeat), with no count per claim: a request only waits on
-  the ledger until someone values and funds the curation that reads it;
+  the ledger until someone commissions the curation that reads it;
 - the **reconcile-candidate scan**, a scan and not a judgment: SQL over
   embeddings pairs recently created active claims with their nearest
   unlinked neighbour above `reconcile_candidate_min_similarity`, at most
@@ -615,70 +637,53 @@ graph holds yet) has no anchor claim, so when work on it comes back
 null and `target_ref` the request. The run's brief is the request and the
 work returned, each with the research run whose full report
 `get_research_run` serves, and the Curator decides whether the request
-has been met. A formula mandate values the row at the importance of the
-most important live node the request bears on, or the policy's
-`request_untargeted_importance` when it bears on none; it is closed when
-the request closes or passes to a Steward. Nothing else opens a curate
+has been met. It goes to the General mandate's officers like any fresh
+curation; it is closed when the request closes or passes to a Steward. Nothing else opens a curate
 row, and nothing runs the Curator but the executor
 (tests/unit/workers/curation-trigger-lockdown.test.ts).
 
-**How much curation, and which.** Policy sets the amount; valuations set
-the order. `maintenance_share` (default 0.1) is the most of a mandate's
-daily rate its allocator places on curate rows in a day: maintenance
-increments are funded first, best value per owl first, up to the share,
-and whatever they leave stays in the day for everything else, so the
-share is a ceiling with first claim, never a reservation that wastes.
-Every mandate's Grantmaker may set its own share
-(`update_allocation_policy`), and the review briefing states it beside the
-daily rate: a mandate whose mission is upkeep should not be held to a tenth
-of its pace without being told. A formula mandate values curate rows as
-
-    value = anchor importance
-          × request weight   (a Steward's or operator's request 1.0; a
-                              scan's pair curate_candidate_weight × its
-                              similarity)
-          × freshness        (0 for an anchor the Matcher admitted within
-                              curate_matcher_quiet_days that no agent has
-                              asked about since; 1 otherwise)
-
-The freshness term is the first live epoch's lesson written as policy:
-122 unconditional sweeps of claims the Matcher had just declared novel
-cost about 13 owls and wrote nothing. A judgment mandate values curate
-rows in its territory like any other action, and one that values none
-contributes nothing.
+**Who decides curation.** A fresh curate row is put in front of the
+General mandate's program officers (`fundCurationNow`, services/
+maintenance-funding.ts), who commission it or not under its operating
+policy; the policy says how much of the day upkeep deserves and which
+requests come first (an agent's escalation ahead of a scan's pair, an
+anchor the Matcher only just admitted after it). Any mandate whose mission
+needs its region kept clean says so in its own policy and commissions
+curation in its territory; one that commissions none contributes nothing.
+The first live epoch's lesson stands as guidance for those policies: 122
+unconditional sweeps of claims the Matcher had just declared novel cost
+about 13 owls and wrote nothing.
 
 **Who funds audits.** The platform's **Governance** mandate (policy
-`governance`, seeded beside General) is a formula mandate over the open
-audit rows: an audit's value is its trigger class's weight
-(`audit_value_prize`, `_bad_faith`, `_overturn`, `_anomaly`,
-`_suspension`, `_sweep`), rising to twice that as it waits a week. It has
-its own escrow and rate, so audits never compete with assessments for
-General's day room, and its own page. Other mandates may co-fund an audit
-in their territory.
+`governance`, seeded beside General) pays for audits. A fresh audit row is
+put in front of its officers (`fundAuditNow`), whose operating policy puts
+prize acceptances and bad-faith flags first and periodic sweeps last, and
+lets an audit that has waited move up. It has its own escrow and rate, so
+audits never compete with assessments for General's day room, and its own
+page. Any other mandate may commission an audit in its territory.
 
 **Recusal.** An audit whose subject is a mandate (`audit_runs.subject_grant_id`:
-a posted bounty names its posting mandate) is never valued or funded by
-that mandate. The valuer's pen refuses it (`set_valuations` reports it as
-recused), the formulas skip it, and the allocator, the one place a
-mandate's money reaches an audit, skips it whatever valuation row
-exists. Audits of Governance itself are valued and funded by General:
+a posted bounty names its posting mandate) is never put to that mandate:
+an audit of a Governance mandate goes to General's officers instead, so
 each platform mandate pays for audits of the other. Declining an audit is
-visible, not prevented: an unfunded audit sits open on the ledger with
-its age, on the mandate's page and in `inspect_ledger`.
+visible, not prevented: an audit no one commissions sits open on the
+ledger with its age, on the mandate's page and in `inspect_ledger`, and an
+officer's decline is logged with its reason.
 
 **Prize audits** are paid from the bounty's prize-review reserve, which
 the docs always said pays for them: an audit requested with a bounty
-(the posting audit, a Steward's acceptance, a checker failure) is funded
-at once by a platform allocation pinned to its row, capped at the
-reserve's room (should the room run short, the Governance formula values
-the audit and co-funds the remainder), and the reserve's accounting (its room, its release, the
-mandate's committed money) counts it beside the reviews
-(prize-commitment.ts `reserveActionPredicateSql`).
+(the posting audit, a Steward's acceptance, a checker failure) is paid at
+once from the reserve. A reserve that holds the audit's whole estimated
+budget commissions it (`commissioned_by = 'prize_reserve'`); a short one
+puts what it holds on the row and asks the Governance mandates' officers
+for the rest, whose commission then runs it. The reserve's accounting (its
+room, its release, the mandate's committed money) counts it beside the
+reviews (prize-commitment.ts `reserveActionPredicateSql`).
 
-**Promptly.** A fresh request prices its own row with the same formulas
-and lets the mandates that fund its kind take an allocation pass at once
-(services/maintenance-funding.ts), rather than waiting for the scheduler's
-sweep. Nothing decides differently; it only decides sooner.
+**Promptly.** A fresh curation, audit or request is put in the paying
+mandate's inbox when it opens (services/maintenance-funding.ts), and, when
+officer sittings are enabled, a sitting starts at once rather than waiting
+for the scheduler.
 
 **The fallback lane.** With `BACKGROUND_FALLBACK_LANE_ENABLED` and no
 mandate that could fund the kind (no active General mandate for curate,
@@ -691,9 +696,9 @@ seeded never takes it.
 ## Requests on the ledger
 
 A request (constitution Part VIII) is work like any other: what meeting it
-would change is its value, and doing it has a cost. So the work on a
-request is a ledger row, valued and funded by the same rule as an
-assessment, and anyone may fund it.
+would change is why it is worth doing, and doing it has a cost. So the
+work on a request is a ledger row, commissioned like an assessment, and
+anyone may commission it.
 
 **The cost is the request's own.** Requests differ in size by orders of
 magnitude (a citation checked, a literature synthesized, a dataset
@@ -710,31 +715,22 @@ becomes the budget and opens the full work; a scoping pass that answers
 the request, or finds it cannot or should not be met, records that
 outcome instead. One variant is open at a time.
 
-**The value is each mandate's.** A judgment mandate's Grantmaker values a
-request row like any other, by what its outcome could move in its
-territory. A formula mandate values the requests bearing on its scope as
-`request_value_weight × importance × contested-factor` of the most
-important live claim the request bears on (`request_untargeted_importance`
-when it bears on none), times `request_reviewed_weight` for a request
-filed through review, rising to twice that as it waits
-`request_wait_days`. The weight places a request at a few assessments of
-what it bears on, so the formula funds modest requests by itself; a large
-budget needs a mandate that judges it worth that, or many funders.
-
-**Funding.** A mandate's allocator funds request rows best value per
-dollar first, like everything else. A Grantmaker may also put money on one
-directly (`fund_request`), within its uncommitted escrow. A reader chips in
-with `POST /requests/:id/contribute`, unpinned and clipped to what the open
-row lacks. A large request is funded as its funders join; the row runs the
-moment their allocations cover it, and its metered cost splits pro rata.
+**Who pays.** Whether a request is worth its budget is a judgment, made by
+whoever pays. A fresh request row is put in front of the General mandate's
+officers (`fundRequestNow`). A Grantmaker commissions one directly
+(`fund_request`), whole, within its daily rate and escrow. A reader
+commissions it with `POST /requests/:id/contribute` (MCP
+`fund_request_work`) at the budget they choose. Once one commission is on
+the row, another payer is charged nothing. The row runs at once, and what
+the run does not spend comes back.
 
 **Closing.** A request closed while its row is open cancels the row and
-returns every unspent allocation: a reader's owls to their balance, a
-mandate's placement off its escrow. Work that stopped short reports
+returns every unspent commission: a reader's owls to their balance, a
+mandate's off its escrow. Work that stopped short reports
 `partly_met` with what the rest would cost (`remaining_budget_usd`); its
 keeper sets the budget to that, which reopens the full row at the new
-price. Each stage is a fresh decision for funders, never a commitment to
-finish what someone began.
+price. Each stage is a fresh decision for whoever pays, never a commitment
+to finish what someone began.
 
 **Pricing.** The Costing skill (`skills/costing`) says how to estimate a
 budget from the steps of the work, and its `cost_sheet` tool gives the
@@ -746,110 +742,202 @@ Research an agent delegates from its own budget (`delegate_research`) is
 not on the ledger: it is that agent spending what it holds, under the
 ceiling the agent sets.
 
-## How money reaches actions
+## Commissions and budgets
 
-1. **Full funding (paid orders).** A user buys an assessment outright; it
-   runs now — a fully covered action has nothing to wait for. Cap-charge
-   at start, free cancellation while pending, settlement of the unused
-   fraction at completion, automatic refund on failure.
-2. **Partial funding (allocations).** Anyone can put owls toward a
-   specific claim's assessment (`POST /claims/:id/contribute`, capped
-   near the expected cost of the pass). A reader's chip-in is UNPINNED —
-   it funds "assess this claim", not a model choice, so it counts toward
-   whichever variant wins. Allocations accumulate across funders; the
-   action runs the moment they cover the cheapest variant's cost, and
-   each funder pays their pro-rata share of the metered actual
-   (`action_allocations.spent_micro_usd`).
-3. **Mandates.** Standing programs of work on escrowed budgets, optionally
-   paced by a daily rate (`grants.daily_budget_micro_usd`) — including
-   Minerval's own General assessment mandate. A mandate's allocator
-   co-funds partially backed actions (allocating cost minus existing
-   backing) rather than duplicating other funders' money, and pins its
-   upgrade increments to the strong variant, where they are refunded if a
-   cheaper sibling wins after all. Grants fund their OWN work the same
-   way: planning runs, mandate reviews, and plan ingest items are ledger
-   actions fully allocated from the grant's escrow and executed by the
-   engine executor (workers/engine-executor.ts) — an ingest action's cost
-   is consumed when the extraction's metered cost lands, so shares follow
-   real spend. Candidates no one funds remain embedded stubs; that is the
-   intended steady state.
+A commission pays for one run whole (src/services/commission-service.ts).
+The payer chooses the budget; the run's agent is told it in its task
+message, and the run starts as soon as the executor reaches the row. Three
+kinds of payer:
 
-## The expected-value estimate (per assessment)
+- **a mandate**: its money, within its daily rate and its escrow. The day's
+  use counts each allocation's amount while it is live and its spend once
+  it is released (`allocationDayUseSql`, src/services/day-use.ts), so
+  running work holds its budget against the rate and frees what it leaves
+  as it finishes. A commission past the day's room, or past the escrow's
+  uncommitted money, is refused whole with the figures; it is never
+  clipped. Commissions from one mandate serialize on a per-mandate lock,
+  so parallel commissions commit the rate once.
+- **a person**: their owls, debited behind the balance guard
+  (`POST /claims/:id/contribute`, `POST /requests/:id/contribute`, MCP
+  `fund_claim_assessment` and `fund_request_work`). The reader chooses the
+  budget; there is no pot to wait on and no splitting among funders.
+- **a running agent**, paying from its own budget (the `commission` tool):
+  the amount moves from the allocations paying for that run onto the new
+  row, so the money keeps its payer (a mandate's stays the mandate's, a
+  person's the person's), and `parent_action_id` records the chain a
+  petition is later routed along. The run's own ceiling falls by the same
+  amount.
 
-    value = importance                       (consequence-if-wrong, §19)
-          × (floor + (1 − floor)×contestation)
-          × expected quality gain            (marginal_yield; 1.0 when
-                                              unassessed; revived by
-                                              staleness over 90 days;
-                                              raised by an open
-                                              consistency flag's
-                                              expected gain)
-          + 0.15 if user-proposed            (provenance, #284)
+A row that already has a commission or is running is not paid for twice:
+the brief joins the node's inbox at no cost and the result says so.
 
-The multiplicative core is the essay's heuristic for the marginal value of
-assessing a claim at a given model and effort level: importance ×
-contestedness × quality-improvement-from-marginal-compute. The strong
-variant's value is the standard's × `strong_gain_multiplier` (a policy
-knob; the marginal-return rule decides whether the upgrade is bought).
-Money appears NOWHERE in this estimate: funding reduces what remains to
-be covered on the cost side, never how valuable the action is. Every knob
-is the mandate's allocation policy, rendered with its allocation view on
-its page (`GET /mandates/:id/allocation`) — aggregate tiles and a
-value-per-owl histogram first, drill-down on demand, the tail summarized:
-at graph scale a flat table of every potential action would hide more
-than it shows, and navigability is what makes the transparency real. The
-`claims.queue_priority` column survives only as a display cache of the
-General mandate's standard-variant valuation.
+A commission pins the variant its payer chose (standard or strong). A pass
+runs on the strong model where its payer judged the node contested and
+important, or a standard pass already failed to settle it. Paid orders
+(`POST /claims/:id/order`) always get the strong model.
 
-Two hard lines, by construction:
-- **Money never touches `claims.importance`** (or the value estimate at
-  all). Importance is a steward's epistemic judgment; allocation is a
-  separate ledger.
-- **The numbers are inputs to ordering, never to truth** (Part VIII).
+**A mandate's own upkeep is self-funded.** Its planning pass, review
+passes, lookout and correspondent runs, the ingest items its plan names,
+and (for the General mandate) the consistency sweeps are rows the mandate
+covers at their estimated cost from its escrow and its day
+(`fundGrantSelfActions`, src/services/allocation-service.ts): deliberating
+about the work competes with the work. These rows run by coverage; their
+estimates are live p80s of metered runs once enough exist
+(cost-estimate-service.ts), else policy priors.
 
-## The expected-cost estimate
+**Cadence** (#283) only makes candidates. An assessed claim is due a fresh
+look after `stalenessBaseDays / clamp(queue_priority, 0.25, 2)` days, where
+`queue_priority` is now the claim's importance; every claim past its
+interval is re-enqueued with a staleness message in its inbox. That spends
+nothing: whether the pass runs is for whoever commissions it, usually a
+mandate's lookout or officers reading the stream.
 
-Every action type needs a denominator before it runs
-(`cost-estimate-service.ts`): policy priors that yield to live rolling
-averages of recent metered runs once enough exist. Estimating a cost must
-never rival the cost of doing the thing, so estimates are one cached
-aggregate query. `GET /usage/allocation` still serves the raw aggregates
-for calibrating the priors, tiering thresholds, and cadence — calibration
-lands by asking the Grantmaker to update the policy.
+## Petitions
 
-## The allocation policy is agent-owned
+Any agent with a budget carries `petition_mandate` (src/llm/tools/
+spend-tools.ts). It asks the mandate paying for the run for more, in two
+forms: `more_budget` (add to this run's budget, to spend directly or to
+commission work) and `follow_up` (a fresh pass after this run ends, with
+the agent's plan as its brief). The agent says what it would do with the
+money, why its budget cannot cover it, and what it will conclude if the
+answer is no.
 
-The formulas above live on the governing mandate
-(`grants.allocation_policy`), not in code: the General mandate's
-Grantmaker amends them in conversation (`update_allocation_policy`,
-bounded by `POLICY_BOUNDS`) as we learn what allocation should look like.
-Each mandate may set exactly the keys its own machinery reads
-(`policyKnobs`): every key for General, the audit weights and the mandate
-keys for Governance, and for a judgment mandate the mandate keys alone
-(`maintenance_share` and the attempt priors and bounds). A key the
-mandate's machinery never reads is refused with the list, so the tool
-never reports a lever that does nothing.
-Env config supplies the shared defaults every mandate inherits, so the
-machinery is replicable: anyone's mandate can carry its own policy and
-daily rate, our learnings ship as defaults, and the platform dogfoods the
-same framework it offers.
+**Routing.** A petition goes to the mandate whose money the run is spending
+(src/services/petition-service.ts): the mandate behind the allocations
+covering the run, followed back along `parent_action_id`, since a
+commission's money keeps its payer down a chain of runs. A run a person
+paid for is answered by the General mandate. The chain of runs that led to
+the petitioner travels with it. The agent is never told which mandate it
+is: its work serves the graph, not its funder.
 
-## Effort selection
+**Deciding.** A petition the run waits on (the default for `more_budget`)
+starts a sitting at once; one that does not wait is decided in the
+background. A sitting takes the mandate's inbox lease
+(`grants.officer_lease_until`), pauses `OFFICER_BATCH_MS` (2 seconds) so
+petitions that arrive together are decided together, and runs a program
+officer, then the Grantmaker on whatever the officer escalated
+(src/llm/agents/program-officer.ts). The run waits up to
+`PETITION_WAIT_SECONDS` (180); past that the petition stays open, and a
+grant that comes later funds a follow-up pass.
 
-Outputs of the same estimates, not separate features:
-- **Model tiering by marginal return**: when `STEWARD_STRONG_MODEL` is
-  set, every assess/reassess exclusive set carries a strong-variant
-  sibling, and the decision between them is the funders': an allocator
-  backs the upgrade only when Δvalue/Δcost clears the same bar as the
-  money's next-best use. There is no value threshold that flips the tier
-  — "how to do the thing" is decided by the same economics as "whether
-  to do the thing at all". Paid orders always get the strong model — the
-  buyer pays for the real thing.
-- **Cadence** (#283): reassess after `stalenessBaseDays / clamp(value,
-  0.25, 2)` days. Every claim past its interval is re-enqueued, which
-  makes it a candidate and nothing more: which reassessments run is the
-  ledger's call, bounded by the mandates' daily rates, so cadence cannot
-  cascade spending (#295's R < 1 holds where the money is).
+**Applying.** A grant of more budget is a commission from the deciding
+mandate on the running row, settled with the run like any money it held;
+the waiting run's ceiling rises when it reads the answer. A follow-up is
+commissioned once the petitioner's run has ended (`commissionFollowUps`,
+with `sweepFollowUps` on the scheduler for any the lanes' settle hooks
+missed). Asking costs the petitioner nothing: the mandate pays for its own
+decision. The answer is a judgment about money, never about the
+conclusion.
+
+## The operating policy and program officers
+
+A mandate's **operating policy** is prose its Grantmaker writes
+(`write_operating_policy`, src/services/operating-policy-service.ts), in
+five sections: mission (in working terms), priorities, budgets (how to
+budget each kind of work), petitions (how to answer them), and delegation
+(what to send the Grantmaker). It carries the **officers' limit**, the most
+an officer may commit in one decision, with the reason the Grantmaker gives
+for it, which the officers are told (`DEFAULT_OFFICER_LIMIT_OWLS`, 5, when
+the policy sets none). It is stored on the mandate
+(`grants.mandate.operating_policy`), every version is kept
+(`mandate_policy_versions`), and it is shown on the mandate's page.
+
+**Program officers** work the mandate's **inbox** (`mandate_inbox`):
+petitions from runs its money pays for, what its lookouts raised, work the
+system puts in front of it (`raiseToMandate`, src/services/
+mandate-inbox-service.ts: a fresh curation, audit or request, a consistency
+flag), notices (a regranted mandate's amended objective), and notes from
+its funder. A repeat of an item still waiting on the same ledger row is
+folded into the earlier one. An officer runs on the cheap tier
+(`PROGRAM_OFFICER_MODEL`) and reads one brief: the mandate's approved terms,
+its operating policy, where its money stands, its recent decisions, and the
+items in front of it, each petition with the chain of runs behind it and
+how similar petitions went. It decides each item (`decide_petitions`,
+`commission`, `decline`, `escalate`, `log_note`), up to its limit; what is
+past the limit or what the policy does not settle goes to the Grantmaker,
+which decides in the same sitting on the strong tier and, where the policy
+did not settle it, changes the policy so the next one is settled.
+
+Both runs are commissioned from the mandate on their own rows
+(`officer:<grant>` at `OFFICER_RUN_BUDGET_OWLS`, 1; `escalation:<grant>` at
+`GRANTMAKER_DECISION_BUDGET_OWLS`, 4), so deciding counts against the
+mandate's rate and escrow like any of its work and returns what it does not
+spend. The scheduler also holds sittings for inboxes no run is waiting on
+(`workWaitingInboxes`), when `OFFICER_SITTINGS_ENABLED` is true; it is a
+deployment switch, off by default, since sittings run models.
+
+**The terms.** A mandate's title and objective are what its funder approved
+by funding it. They change only when the funder asks for it or agrees, in
+the management chat (`amend_objective`, src/services/
+mandate-terms-service.ts); a platform mandate's amendment is recorded for
+approval instead of applied. Every version is kept. Mandates that regranted
+to it are told at once in their inboxes, and any funder may take back their
+share of the uncommitted money at any time: a person to their balance
+(`POST /mandates/:id/withdraw`, MCP `withdraw_from_mandate`), a mandate to
+its escrow (`withdraw_regrant`). A share is the uncommitted money in
+proportion to what each funder still has in the mandate.
+
+## Node inboxes and messages
+
+Every reason a node is wanted (another Steward's reasons, an admitted
+contribution, a ruling, an audit send-back, a consistency flag, a staleness
+check, a commission's brief) is one row in its inbox (`node_messages`,
+src/services/inbox-service.ts), kept whole until a pass reads it. A pass
+reads every unread message on its node, oldest first, labelled m1, m2, …
+(the oldest are listed without their text past a budget of 40,000
+characters, and `read_message` reads any in full); it answers them with
+`answer_messages` (changed, no change, or disagree, with a reason), and the
+messages it was shown are marked read when it finishes. An answer to
+another node's Steward reaches that node's inbox as a `message_reply`,
+information that opens no work of its own. The claim page lists the
+messages waiting on a node (`waiting_messages`).
+
+A message costs its sender nothing and waits for the node's next pass: a
+**note**. A sender who judges that the node should be looked at now pays
+for that pass from its own budget (`notify_steward`'s `budget_owls`, or
+`commission`), and the message is the pass's brief. Nothing a message says
+is an instruction; it is a reason to look.
+
+## Reading the graph with SQL
+
+Agents (`query_sql`) and outside callers (`POST /sql`, MCP `query_sql`, the
+SQL skill) read the graph's public data with one read-only SELECT over the
+`public_read` views: nodes, assessments, edges, arguments, tags, sources,
+instances, the ledger and commissions, messages, mandates, their decisions
+and petitions, contributions, requests, and the change stream
+(src/services/sql-service.ts, migration 0091). The layers, each enough on
+its own against a different failure:
+
+1. the query is parsed with Postgres's own parser and must be one SELECT
+   over the views and its own CTEs, calling only allowlisted functions;
+2. it runs on a separate login role that can read the views and nothing
+   else, and callers' role points at a read replica;
+3. inside a read-only transaction with statement and lock timeouts
+   (`SQL_AGENT_TIMEOUT_SECONDS` 20, `SQL_CALLER_TIMEOUT_SECONDS` 5), a row
+   limit, on a connection opened for the query and closed after it;
+4. a query the planner estimates above `SQL_MAX_PLAN_COST` (500,000) is
+   refused before it runs;
+5. callers run one query at a time per account, with a daily allowance of
+   database time (`SQL_FREE_ALLOWANCE_SECONDS` 60 free, then priced at
+   `SQL_OWLS_PER_SECOND` 0.01 owls a second up to
+   `SQL_PAID_ALLOWANCE_SECONDS` 600), held in the database (`sql_usage`)
+   so it holds across API tasks; identical queries within 30 seconds are
+   served from cache, and a full connection pool answers BUSY at once
+   rather than queueing.
+
+Unset, the SQL tools say they are not configured.
+
+## The change stream
+
+`list_graph_changes` (`GET /changes`, src/services/graph-change-service.ts)
+reads what moved on the graph after a position. By default it serves the
+verdict kinds (`first_assessment`, `status_moved`, `credence_moved`,
+`reassessed`), so a reader of verdicts sees what it always did. Asked with
+`kinds`, it also serves what moves on the ledger and around nodes:
+`work_commissioned`, `run_finished`, `message_arrived`, `message_answered`,
+`contribution_accepted`, `ruling`, `petition_decided` and `request_filed`.
+A lookout's graph feed reads the stream for its territory; a correspondent
+reads it for its readers.
 
 ## Grantmakers: a conversation, not a form
 
@@ -943,8 +1031,8 @@ Design principles, in force in the implementation:
   the mandate by that title and links to its page, with the explanation
   that funding buys scheduling and nothing else. The agents that judge
   are never told who paid, or that anyone did.
-- **Subsidy, not command.** A mandate's money covers costs on the ledger;
-  it never enters the value estimates and never touches importance.
+- **Subsidy, not command.** A mandate's money pays for runs on the ledger;
+  it never touches importance or an assessment.
 
 Direct `POST /grants` creation remains for service/operator tooling only.
 
@@ -1044,7 +1132,10 @@ every other.
 The standing mandates (General, Governance, Mathematics, Mathematics
 prizes, AI Economics) were seeded before this path existed
 (`scripts/seed-platform-mandates.ts`), with their text written in code.
-Re-founding them through a conversation is a follow-up.
+General and Governance are seeded with a starting operating policy and
+officers' limit, and General with its two lookouts; a re-seed never
+overwrites a policy the Grantmaker has since written. Re-founding them
+through a conversation is a follow-up.
 
 ## Mandates are public
 
@@ -1065,10 +1156,11 @@ importance and contestation statistics per source (`grant_sources` +
 same page at any time: after funding, the conversation runs in management
 mode, where the agent has analytics tools over exactly the data the
 dashboard shows (overview, funded assessments, ingestion report,
-per-source claims, importance distributions, the allocation report) and
+per-source claims, importance distributions, the operations report) and
 the writes a mandate's steward holds: amending the unexecuted remainder of
-the plan, valuations and the allocation policy it may set, pacing,
-regrants and spawns, lookouts, bounties (and confirming one parked at the
+the plan, the operating policy and direct commissions, the objective (with
+the funder, `amend_objective`), pacing, regrants and spawns, lookouts,
+bounties (and confirming one parked at the
 threshold), contributions, request funding and research. It holds them
 under the same refusal duties it had at mandate design time, and it reads
 the review passes' workspace and notes before writing to them.
@@ -1077,7 +1169,7 @@ the review passes' workspace and notes before writing to them.
 
 Mathematics brings three new kinds of action to the ledger and one thing
 that is not an action at all. Three things are kept apart, and confusing
-them is how the invariants below would break: an **allocation** is money
+them is how the invariants below would break: a **commission** is money
 placed on an action so it runs (spend, metered and settled); a **bounty**
 is owls offered for an answer, held against the posting mandate's escrow
 until earned, funding nothing on the ledger; a **prize payout** is the
@@ -1093,19 +1185,20 @@ and `max`, an exclusive set per attempt epoch, so a closed attempt never
 reopens and a later attempt is a new group), and `prize_review` (the
 cold-lane check, the Reviewer run, the Steward's fidelity judgment, the
 audit, and any fresh replay for one prize claim). The first two are
-ordinary ledger actions: the Mathematics mandate's Grantmaker values them
-(a formalization is cheap and enabling; an attempt is expected information,
-importance × tractability × an information multiplier of 1.0 to 2.0 for
-sub-results several open problems rest on, with the tractability stated in
-the rationale), its allocator funds them from the mandate's escrow inside
-its day room, and their metered cost, Lean compute included, lands on
-`llm_usage` under the funding job like any other spend. Cost priors are
+ordinary ledger actions: the Mathematics mandate's plan names them and its
+Grantmaker judges which are worth doing (a formalization is cheap and
+enabling; an attempt is expected information, how much the problem matters
+times how tractable it looks, with a sub-result several open problems rest
+on worth more, and the tractability stated in the rationale), the mandate
+pays for them from its escrow inside its day room, and their metered cost,
+Lean compute included, lands on `llm_usage` under the funding job like any
+other spend. Cost priors are
 policy keys on the mandate (`est_formalize_cost_owls`,
 `est_attempt_standard_cost_owls`, `est_attempt_max_cost_owls`,
 `est_prize_review_cost_owls`) that yield to the live p80 once five runs
-exist. Because the allocator skips an increment larger than the day's room
-outright, the mandate's daily rate must exceed one attempt's estimate or
-attempts never fund.
+exist. Because a payment larger than the day's room is refused outright,
+the mandate's daily rate must exceed one attempt's estimate or attempts
+never run.
 
 `prize_review` is paid for by the posting mandate but reserved outside its
 day room, because a mandate's escrow can be paused, exhausted, or closing
@@ -1124,19 +1217,19 @@ on the reviews stays counted against the mandate. The mandate page shows
 the reserve and its spend beside each bounty.
 
 **A bounty is a term in committed money, like a regrant.** It appears on
-no action, enters no `mandate_valuations` row, and reduces nothing that
-remains to be covered; the constitutional channel for demand to move
-scheduling is an allocation on the attempt action, which the Grantmaker
-may place and the mandate page discloses, and a bounty moves nothing. What
+no action and reduces nothing a run holds; the constitutional channel for
+demand to move scheduling is a commission on the attempt action, which the
+Grantmaker may make and the mandate page discloses, and a bounty moves
+nothing. What
 a bounty does is hold. It is posted by a mandate's Grantmaker
 (`post_bounty`, carried by the Mathematics skill, so any mandate whose
 skills include `mathematics` can post one) and held against that mandate's
 escrow from the moment it opens until it resolves: its amount is a term in
 `grantCommittedMicroUsd` (src/services/regrant-service.ts) beside
 allocation shares, non-ledger metered spend, and regrants out, computed
-from one SQL fragment (src/services/prize-commitment.ts) that the
-allocator, the regrant path, the floor check, the posting itself, and the
-mandate's closing settlement all read, so a mandate can never promise the
+from one SQL fragment (src/services/prize-commitment.ts) that commissions,
+self-funding, the regrant path, the floor check, the posting itself, and
+the mandate's closing settlement all read, so a mandate can never promise the
 same owl to an attempt and to a prize. There is no prize fund, no deposit
 route, and no second ledger; the escrow the bounty holds against is the
 only source of the prize.
@@ -1180,8 +1273,8 @@ the mandate's headroom and within per-pass and per-day fractions of its
 escrow budget (`BOUNTY_ESCROW_FRACTION_PER_PASS` 0.4,
 `BOUNTY_ESCROW_FRACTION_PER_DAY` 0.5); between `MIN_BOUNTY_PER_CLAIM_OWLS`
 and `MAX_BOUNTY_PER_CLAIM_OWLS` (250 and 5,000 in v1) per claim; one live
-bounty per claim. The posting takes the mandate's allocator lock, so a
-posting and an allocation pass serialize on the same headroom. A mandate
+bounty per claim. The posting takes the mandate's commission lock, so a
+posting and a commission serialize on the same headroom. A mandate
 with a bounty in a holding status, or with a non-terminal prize claim,
 cannot complete: `complete_mandate` refuses at both passes and the `deepen`
 exhaustion path leaves it live, until the Grantmaker has withdrawn the
@@ -1234,8 +1327,8 @@ and legitimate — but the unit economics must stay visible
    explanation.
 3. Quoted figures are caps; charges settle to metered cost; failures
    refund; budgets pause rather than die; unspent escrow returns.
-4. Every allocation number (caps, estimates, budgets, spend) is
-   inspectable by anyone.
+4. Every money number (caps, budgets, commissions, spend, decisions and
+   their reasons) is inspectable by anyone.
 5. Bounded spending everywhere: escrows, daily rates and per-run budgets
    bound what runs, so a producer may raise candidates freely (flags,
    curation requests, reassessments, plan items) without cascading
@@ -1245,16 +1338,22 @@ and legitimate — but the unit economics must stay visible
    tool's price, and any hard limit that remains with the reason for it.
    No constraint is enforced on an agent that has not been told it.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
-6a. A lookout raises candidates, never conclusions: it writes no
-    assessment, sets no importance, moves no money, and its flags carry
-    at most the value its Grantmaker delegated.
-6b. The Consistency Checker raises candidates, never conclusions: it
-    writes no assessment and no valuation; its flag's only say in
-    allocation is an expected gain the formula weighs like any other.
-7. A bounty is not an allocation: it funds nothing, enters no valuation,
-   and reduces nothing that remains to be covered.
-8. Prize money never enters a valuation, an importance, an assessment, or
-   a standard; assessments and their reasoning never mention money.
+6a. A lookout raises work, never conclusions: it writes no assessment,
+    sets no importance, and commissions only within the limit its
+    Grantmaker delegated, raising the rest to the officers.
+6b. The Consistency Checker raises work, never conclusions: it writes no
+    assessment; its flag's say in funding is an expected gain the
+    officers read, and anything it pays for comes from its own budget.
+6c. No formula decides what runs. Whether work is worth its cost is a
+    judgment, logged with its reason, by an agent or a person who can be
+    asked why.
+6d. The agents that judge the graph are never told which mandate pays for
+    their work.
+7. A bounty is not a commission: it funds nothing and reduces nothing a
+   run holds.
+8. Prize money never enters a budget decision's reasoning about a claim,
+   an importance, an assessment, or a standard; assessments and their
+   reasoning never mention money.
 9. A prize is held, not allocated. A prize of N owls is held against the
    posting mandate's escrow from the day the bounty opens and retires N
    owls of it when paid; it never enters an allocation, and every prize
@@ -1262,9 +1361,8 @@ and legitimate — but the unit economics must stay visible
 10. The platform is never a claimant. A house solve closes the bounty
     unpaid and publishes the proof.
 11. Maintenance is chosen, never induced. No mandate's activity creates a
-    bill on another: curation runs only when someone values and funds
-    it, within the share of the day its funder chose.
+    bill on another: curation runs only when someone commissions it.
 12. No mandate funds its own audit. An audit whose subject is a mandate
-    is never valued or funded by that mandate; declining any other audit
-    is a funding decision like any other, and it is on the record.
+    is never put to that mandate; declining any other audit is a funding
+    decision like any other, and it is on the record.
 
