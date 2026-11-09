@@ -1135,9 +1135,13 @@ launches it
 with `delegate_research`: a brief written for a capable assistant that
 knows nothing of the claim and cannot ask a question back, a model tier, a
 dollar ceiling, an effort level, and whether the constitution is prepended
-to its prompt, which it is by default. The run is synchronous: the
+to its prompt, which it is by default. That run is synchronous: the
 launcher's tool call blocks until the researcher reports, and the report is
-the tool result. It answers only to its launcher, owns nothing, and cannot
+the tool result. A Steward may instead commission research (`commission`,
+kind `research`): a `research` ledger row the engine executor runs on its
+own, whose report returns into the Steward's session when it has paused to
+wait for it, or into the node's inbox (docs/allocation.md, "Sessions that
+pause and resume"). It answers only to its launcher, owns nothing, and cannot
 launch instruments of its own. The report opens with an outcome (answered,
 partly answered, not answered, ill posed) and gives each finding with its
 locator and the words or numbers it rests on, so the launcher can check the
