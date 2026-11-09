@@ -151,3 +151,96 @@ export async function listArgumentInstances(
   );
   return { total: count?.n ?? 0, items };
 }
+
+// ---------------------------------------------------------------------------
+// Unplaced passages (#541): reasoning about a claim that matched none of its
+// arguments at ingestion, kept on the claim (claim_id set, argument_id null)
+// until its Steward places or dismisses it.
+// ---------------------------------------------------------------------------
+
+/** Who records an argument passage at ingestion. */
+export const INGEST_RECORDER = "matcher";
+
+export async function insertUnplacedPassage(input: {
+  claimId: string;
+  sourceId: string;
+  verbatimText: string;
+  context: string | null;
+  stance: ArgumentInstanceStance;
+  direction: "for" | "against" | null;
+}): Promise<string> {
+  const [row] = await rawQuery<{ id: string }>(
+    `INSERT INTO argument_instances
+       (claim_id, source_id, verbatim_text, context, stance, direction, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id`,
+    [input.claimId, input.sourceId, input.verbatimText, input.context, input.stance, input.direction, INGEST_RECORDER]
+  );
+  return row!.id;
+}
+
+export interface UnplacedPassage {
+  id: string;
+  source_id: string;
+  source_url: string | null;
+  source_title: string | null;
+  verbatim_text: string;
+  context: string | null;
+  stance: string;
+  direction: string | null;
+  recorded_at: Date;
+}
+
+/** A claim's passages waiting for its Steward: unplaced and not dismissed, oldest first. */
+export async function listUnplacedPassages(claimId: string, limit = 20): Promise<{ total: number; items: UnplacedPassage[] }> {
+  const [count] = await rawQuery<{ n: number }>(
+    `SELECT count(*)::int AS n FROM argument_instances WHERE claim_id = $1 AND dismissed_at IS NULL`,
+    [claimId]
+  );
+  const items = await rawQuery<UnplacedPassage>(
+    `SELECT ai.id, ai.source_id, s.url AS source_url, s.title AS source_title,
+            ai.verbatim_text, ai.context, ai.stance, ai.direction, ai.created_at AS recorded_at
+       FROM argument_instances ai
+       JOIN sources s ON s.id = ai.source_id
+      WHERE ai.claim_id = $1 AND ai.dismissed_at IS NULL
+      ORDER BY ai.created_at, ai.id
+      LIMIT $2`,
+    [claimId, limit]
+  );
+  return { total: count?.n ?? 0, items };
+}
+
+/** The unplaced passage with this id, with the claim it waits on, or null. */
+export async function getUnplacedPassage(
+  instanceId: string
+): Promise<{ id: string; claim_id: string; source_id: string; dismissed_at: Date | null } | null> {
+  const [row] = await rawQuery<{ id: string; claim_id: string; source_id: string; dismissed_at: Date | null }>(
+    `SELECT id, claim_id, source_id, dismissed_at FROM argument_instances WHERE id = $1 AND claim_id IS NOT NULL`,
+    [instanceId]
+  );
+  return row ?? null;
+}
+
+/** Place an unplaced passage on an argument of its claim. */
+export async function placePassage(input: {
+  instanceId: string;
+  argumentId: string;
+  stance: ArgumentInstanceStance;
+  reading: ArgumentReading | null;
+}): Promise<void> {
+  await rawQuery(
+    `UPDATE argument_instances
+        SET argument_id = $2, claim_id = NULL, direction = NULL, stance = $3, reading = $4,
+            dismissed_at = NULL, dismissed_reason = NULL
+      WHERE id = $1`,
+    [input.instanceId, input.argumentId, input.stance, input.reading]
+  );
+}
+
+/** Dismiss an unplaced passage with the reason; the row stays as provenance. */
+export async function dismissPassage(instanceId: string, reason: string): Promise<void> {
+  await rawQuery(
+    `UPDATE argument_instances SET dismissed_at = now(), dismissed_reason = $2 WHERE id = $1`,
+    [instanceId, reason]
+  );
+}

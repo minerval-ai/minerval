@@ -1,0 +1,2 @@
+ALTER TABLE "arguments" ADD COLUMN "merged_into" uuid;--> statement-breakpoint
+ALTER TABLE "arguments" ADD CONSTRAINT "arguments_merged_into_arguments_id_fk" FOREIGN KEY ("merged_into") REFERENCES "public"."arguments"("id") ON DELETE set null ON UPDATE no action;

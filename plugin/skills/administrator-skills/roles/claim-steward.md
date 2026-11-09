@@ -192,6 +192,13 @@ Instances are provenance. They do not change the written form or the
 rating, and how widely an argument is made bears only weakly on whether it
 belongs (§7).
 
+get_claim with include arguments lists unplaced_argument_passages: reasoning
+a source gave about the claim at ingestion that matched none of its
+arguments. Decide each with place_argument_passage: place it on the argument
+it makes or attacks, creating that argument first if the page should carry
+it by §7's test, or dismiss it with the reason. A passage is not a reason to
+add an argument the claim does not need.
+
 Retiring is routine upkeep. Retire an argument with retire_argument when a
 Steward mapping the claim from scratch today would not put it there (§7).
 Its name, its record and its instances are no reason to keep it: retiring

@@ -80,6 +80,21 @@ There is no atomic split; you are the transaction. Stepwise:
    re-assess, as soon as that claim's redistribution is settled rather than
    in a batch at the end.
 
+## Arguments
+
+Arguments are merged and split on the same terms as claims (§5, §7). Two
+arguments on one node are one argument when they reach the same conclusion
+through the same inference, so that whatever would break one would break the
+other: merge_arguments. A merge of two claims often leaves such a pair on the
+survivor. The survivor keeps whichever written form states the inference
+better (written_form_from), never the older one for being older. Arguments
+on different nodes or opposite sides are different arguments. An argument
+whose premises make separate lines of reasoning, each of which could
+succeed or fail without the others, is split: split_argument, one part per
+line. Whether an argument belongs on the claim at all is its Steward's call
+(§7), not yours: a merge or split is not a retirement. Notify the Steward
+after either.
+
 ## Kinds, types and definitions
 
 - Wrong kind: change_node_kind.
@@ -114,8 +129,8 @@ graph.
 
 ## Undoing
 
-Every merge, kind change, split step, definition and reclassification is
-logged, and the tools return its event_id. A wrong one is yours to reverse
+Every merge, kind change, split step, definition, reclassification, and
+argument merge or split is logged, and the tools return its event_id. A wrong one is yours to reverse
 (§5, §24): reverse_reconciliation, newest first when several touched the
 same nodes; list_reconciliation_events finds earlier ones. Then notify the
 Stewards involved.

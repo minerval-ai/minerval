@@ -191,7 +191,8 @@ export function getExtractionPrompt(
   additionalContext?: string,
   maxClaims = 0,
   focus?: string | null,
-  budget?: ExtractionBudget | null
+  budget?: ExtractionBudget | null,
+  recordArguments = false
 ): string {
   let prompt = `Identify the claims in the following ${sourceType}: the reusable \
 propositions it actually turns on, each with its exact source text, canonical form, \
@@ -203,6 +204,19 @@ type, confidence, and provisional importance.
     prompt += `Extract at most ${maxClaims} claims, the most central and contested \
 propositions the ${sourceType} turns on. If fewer pass the bar, extract fewer; do \
 not pad to reach the limit.
+`;
+  }
+
+  if (recordArguments) {
+    prompt += `
+Record where the ${sourceType} reasons about each claim you record, in its \
+argument_passages: a passage that makes an argument for the ${sourceType}'s position on \
+the claim (role makes), or attacks someone's reasoning about it (role attacks), \
+verbatim. The claim stays the conclusion, stated per the Arguments rule above, and \
+its premises are proposed as claims only where they could anchor debate in their own \
+right. One entry per line of reasoning: the inference, not each sentence of it. Each \
+passage is matched afterwards to the argument it makes; leave the list empty for a \
+claim the ${sourceType} only asserts.
 `;
   }
 

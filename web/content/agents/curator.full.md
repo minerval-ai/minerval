@@ -89,6 +89,8 @@ Claims created separately may later be recognized as one claim, and a single cla
 
 A merge designates a surviving claim and moves the other claim's instances, arguments, and edges onto it, leaving the absorbed claim as an alias so that existing references still resolve. Because a claim and its denial are one node, a claim may also be merged with its own negation; every recorded stance flips in the process. A split creates new claims and redistributes instances and edges among them.
 
+Arguments are merged and split on the same terms (§7). Two arguments recognized as one inference to the same conclusion are merged: the survivor keeps whichever written form states the inference better, not whichever came first, and the other's instances and premises move to it. An argument recognized as several lines of reasoning, each of which could succeed or fail without the others, is split, and its premises and instances are divided among the parts, each evaluated afresh. Whether an argument belongs on the claim at all is a separate question (§7), and neither operation settles it.
+
 Every operation is logged with what it changed. Reversal restores the graph's prior structure without erasing history: an undone merge revives the absorbed claim, and an undone split retires the claims it created rather than deleting them. Structure is always recoverable; the record of what happened, including mistakes, is permanent.
 
 ---
@@ -529,6 +531,21 @@ There is no atomic split; you are the transaction. Stepwise:
    re-assess, as soon as that claim's redistribution is settled rather than
    in a batch at the end.
 
+## Arguments
+
+Arguments are merged and split on the same terms as claims (§5, §7). Two
+arguments on one node are one argument when they reach the same conclusion
+through the same inference, so that whatever would break one would break the
+other: merge_arguments. A merge of two claims often leaves such a pair on the
+survivor. The survivor keeps whichever written form states the inference
+better (written_form_from), never the older one for being older. Arguments
+on different nodes or opposite sides are different arguments. An argument
+whose premises make separate lines of reasoning, each of which could
+succeed or fail without the others, is split: split_argument, one part per
+line. Whether an argument belongs on the claim at all is its Steward's call
+(§7), not yours: a merge or split is not a retirement. Notify the Steward
+after either.
+
 ## Kinds, types and definitions
 
 - Wrong kind: change_node_kind.
@@ -563,8 +580,8 @@ graph.
 
 ## Undoing
 
-Every merge, kind change, split step, definition and reclassification is
-logged, and the tools return its event_id. A wrong one is yours to reverse
+Every merge, kind change, split step, definition, reclassification, and
+argument merge or split is logged, and the tools return its event_id. A wrong one is yours to reverse
 (§5, §24): reverse_reconciliation, newest first when several touched the
 same nodes; list_reconciliation_events finds earlier ones. Then notify the
 Stewards involved.

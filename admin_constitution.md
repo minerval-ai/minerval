@@ -87,6 +87,8 @@ Claims created separately may later be recognized as one claim, and a single cla
 
 A merge designates a surviving claim and moves the other claim's instances, arguments, and edges onto it, leaving the absorbed claim as an alias so that existing references still resolve. Because a claim and its denial are one node, a claim may also be merged with its own negation; every recorded stance flips in the process. A split creates new claims and redistributes instances and edges among them.
 
+Arguments are merged and split on the same terms (§7). Two arguments recognized as one inference to the same conclusion are merged: the survivor keeps whichever written form states the inference better, not whichever came first, and the other's instances and premises move to it. An argument recognized as several lines of reasoning, each of which could succeed or fail without the others, is split, and its premises and instances are divided among the parts, each evaluated afresh. Whether an argument belongs on the claim at all is a separate question (§7), and neither operation settles it.
+
 Every operation is logged with what it changed. Reversal restores the graph's prior structure without erasing history: an undone merge revives the absorbed claim, and an undone split retires the claims it created rather than deleting them. Structure is always recoverable; the record of what happened, including mistakes, is permanent.
 
 ---

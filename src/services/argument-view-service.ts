@@ -30,7 +30,8 @@ export const ARGUMENT_VIEW_DESCRIPTION =
   "or quantity, with its page_url), its name, `stance` (for or against the claim; `neutral` on a " +
   "quantity, with `shows`, what it shows about the value), the written form (inline " +
   "[[claim:<id>]] references are its premises), and `retired` (when and why its Steward retired " +
-  "it, else null; a retired argument keeps its record). Add sections with `include`: " +
+  "it, else null; a retired argument keeps its record; `merged_into` names the argument a " +
+  "merged one became). Add sections with `include`: " +
   "`evaluation` (the current rating of the inference, worded conditionally: certain or likely " +
   "if the premises hold, slight or no support even if they hold; whether it is decisive; and " +
   "earlier evaluations, each dated against the assessment or estimate it was made under, with " +
@@ -84,6 +85,9 @@ export async function getArgumentView(
       has_written_form: hasWrittenForm(argument),
       created_at: iso(argument.createdAt),
       retired: argument.retiredAt ? { at: iso(argument.retiredAt), reason: argument.retiredReason } : null,
+      // An alias the Curator merged into another argument (§5): its record
+      // is history, and its instances and premises are on that one.
+      merged_into: argument.mergedInto ?? null,
     },
   };
 

@@ -95,6 +95,29 @@ normally matches the claim X; one asking how much, how many, how often, or
 when matches the quantity. When nothing matches and the proposal is of the
 wrong kind, say in \`kind\` which kind the new node should be.
 
+## Arguments
+
+At ingestion you also place the passages where a source reasons about a
+claim. An argument is canonical like a claim and belongs to no one who makes
+it (§7): two passages make the same argument when they reach the same
+conclusion through the same inference, so that whatever would break one
+would break the other, however differently they are worded and whichever
+premises they leave unspoken. You are shown the claim, the passage, and the
+claim's arguments, retired ones included. Name the argument the passage
+makes or attacks, or none. A passage that rests on a different premise makes
+a different argument; do not stretch a candidate to fit it. A passage you
+leave unplaced waits for the claim's Steward, who alone creates arguments
+(Part VIII), so leaving it is the recoverable error, as "new" is for claims.
+A retired argument is a match like any other: the passage joins its record,
+and that does not bring it back.
+
+Say whether the passage advances the argument or criticizes it, and how well
+it states it (§4): full, premise_unstated (it leaves a premise the inference
+needs unspoken), or strawman (it states a weaker version, usually to attack
+it). How well a passage states an argument is a fact about the passage, not
+the argument. For a passage you leave unplaced, say whether it bears for or
+against the claim as worded, or neither where that cannot be told.
+
 ## Your Decision
 
 \`alternative_matches\` and \`relationship_notes\` are read by the caller to
@@ -203,4 +226,57 @@ function matcherBudgetText(run: { turnBudget?: number; budgetUsd?: number }): st
     );
   }
   return turns ? `\n${turns} ${batching}\n` : "";
+}
+
+/** The user turn for placing one argument passage (#541). */
+export function getArgumentMatchingPrompt(input: {
+  claim: { text: string; kind: string };
+  /** How the source stands on the claim: its instance's stance. */
+  sourceStance: string | null;
+  passage: { verbatim_text: string; context: string | null; role: "makes" | "attacks" };
+  candidates: ReadonlyArray<{
+    id: string;
+    name: string | null;
+    stance: string;
+    shows: unknown;
+    written_form: string;
+    retired: boolean;
+  }>;
+}): string {
+  const side =
+    input.sourceStance === "affirms"
+      ? "The source affirms the claim."
+      : input.sourceStance === "denies"
+        ? "The source denies the claim."
+        : input.sourceStance
+          ? `The source's stance on the claim: ${input.sourceStance}.`
+          : "";
+  const role =
+    input.passage.role === "makes"
+      ? "The Extractor read the passage as making an argument for the source's position."
+      : "The Extractor read the passage as attacking someone's reasoning about the claim.";
+  const candidates = input.candidates
+    .map(
+      (c) =>
+        `- id ${c.id}${c.retired ? " (retired)" : ""}: ${c.name ?? "unnamed"} [${
+          c.stance === "neutral" ? `shows ${JSON.stringify(c.shows ?? null)}` : c.stance
+        }]\n  ${c.written_form.replace(/\s+/g, " ").slice(0, 1200)}`
+    )
+    .join("\n");
+  const context = input.passage.context?.trim()
+    ? `\nWhat the source was doing there: "${input.passage.context.trim()}"\n`
+    : "";
+  return `Place this passage among the claim's arguments.
+
+Claim (${input.claim.kind}): "${input.claim.text}"
+${side}
+
+Passage, verbatim: "${input.passage.verbatim_text}"
+${context}${role}
+
+The claim's arguments:
+${candidates}
+
+Return argument_id (one of the ids above, or null), stance, reading, direction, and your reasoning in one or two sentences.
+`;
 }
