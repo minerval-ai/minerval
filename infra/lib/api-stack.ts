@@ -7,6 +7,7 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 
 /**
@@ -30,6 +31,10 @@ export interface ApiStackProps extends cdk.StackProps {
   apiSg: ec2.SecurityGroup;
   dbInstance: rds.DatabaseInstance;
   dbSecret: rds.DatabaseSecret;
+  /** Where read-only SQL runs (sql-service.ts), and the two login roles it runs as. */
+  dbReadReplica: rds.DatabaseInstanceReadReplica;
+  sqlAgentSecret: rds.DatabaseSecret;
+  sqlCallerSecret: rds.DatabaseSecret;
   urlExtractionQueue: sqs.Queue;
   claimPipelineQueue: sqs.Queue;
   openaiApiKeySecret: secretsmanager.Secret;
@@ -68,6 +73,8 @@ export class ApiStack extends cdk.Stack {
     props.claimPipelineQueue.grantSendMessages(taskDef.taskRole);
     props.claimPipelineQueue.grantConsumeMessages(taskDef.taskRole);
     props.dbSecret.grantRead(taskDef.taskRole);
+    props.sqlAgentSecret.grantRead(taskDef.taskRole);
+    props.sqlCallerSecret.grantRead(taskDef.taskRole);
     props.openaiApiKeySecret.grantRead(taskDef.taskRole);
     props.openrouterApiKeySecret.grantRead(taskDef.taskRole);
     props.anthropicApiKeySecret.grantRead(taskDef.taskRole);
@@ -138,6 +145,10 @@ export class ApiStack extends cdk.Stack {
         DB_HOST: props.dbInstance.dbInstanceEndpointAddress,
         DB_PORT: props.dbInstance.dbInstanceEndpointPort,
         DB_NAME: "episteme",
+        // Read-only SQL over the public views runs on the replica, never
+        // the primary (src/services/sql-service.ts).
+        SQL_DB_HOST: props.dbReadReplica.dbInstanceEndpointAddress,
+        SQL_DB_PORT: props.dbReadReplica.dbInstanceEndpointPort,
         // Only the ingestion queues use SQS. The Steward is a DB-backed,
         // importance-prioritized drain (claims.steward_state) run in-process by
         // the local runner, so it needs no queue here — and the Curator + other
@@ -291,6 +302,10 @@ export class ApiStack extends cdk.Stack {
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
         DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbSecret, "password"),
+        SQL_AGENT_DB_USERNAME: ecs.Secret.fromSecretsManager(props.sqlAgentSecret, "username"),
+        SQL_AGENT_DB_PASSWORD: ecs.Secret.fromSecretsManager(props.sqlAgentSecret, "password"),
+        SQL_CALLER_DB_USERNAME: ecs.Secret.fromSecretsManager(props.sqlCallerSecret, "username"),
+        SQL_CALLER_DB_PASSWORD: ecs.Secret.fromSecretsManager(props.sqlCallerSecret, "password"),
         OPENAI_API_KEY: ecs.Secret.fromSecretsManager(
           props.openaiApiKeySecret
         ),
@@ -357,6 +372,52 @@ export class ApiStack extends cdk.Stack {
       // default idle timeout 504'd real page analyses while the API kept
       // working (#91). 300s covers a capped analyze; #93 makes it async.
       idleTimeout: cdk.Duration.seconds(300),
+    });
+
+    // Per-IP rate limit on read-only SQL (POST /sql): the first line
+    // against a flood, before the per-caller allowance and the role's
+    // connection limit inside the app (sql-service.ts) are even reached.
+    // A caller's own allowance is the real bound; this only keeps one
+    // address from spending everyone's capacity being refused.
+    const webAcl = new wafv2.CfnWebACL(this, "ApiWebAcl", {
+      scope: "REGIONAL",
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: "episteme-api",
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        {
+          name: "sql-per-ip",
+          priority: 0,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: {
+              // Requests per 5-minute window from one address.
+              limit: 300,
+              aggregateKeyType: "IP",
+              scopeDownStatement: {
+                byteMatchStatement: {
+                  fieldToMatch: { uriPath: {} },
+                  positionalConstraint: "ENDS_WITH",
+                  searchString: "/sql",
+                  textTransformations: [{ priority: 0, type: "LOWERCASE" }],
+                },
+              },
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: "episteme-api-sql-per-ip",
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+    });
+    new wafv2.CfnWebACLAssociation(this, "ApiWebAclAssociation", {
+      resourceArn: alb.loadBalancerArn,
+      webAclArn: webAcl.attrArn,
     });
 
     const listener = alb.addListener("HttpListener", {

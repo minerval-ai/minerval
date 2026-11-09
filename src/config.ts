@@ -221,6 +221,13 @@ const configSchema = z.object({
   // read replica. Unset, the SQL tools say they aren't configured.
   sqlAgentDatabaseUrl: z.string().optional(),
   sqlCallerDatabaseUrl: z.string().optional(),
+  /** The replica read-only SQL runs on, and the two login roles (infra/lib/database-stack.ts). */
+  sqlDbHost: z.string().optional(),
+  sqlDbPort: z.coerce.number().optional(),
+  sqlAgentDbUser: z.string().optional(),
+  sqlAgentDbPassword: z.string().optional(),
+  sqlCallerDbUser: z.string().optional(),
+  sqlCallerDbPassword: z.string().optional(),
   // How long a query may run: an agent's run is waiting on it, and a
   // caller's query shares a replica with other callers.
   sqlAgentTimeoutSeconds: z.coerce.number().positive().default(20),
@@ -1290,6 +1297,12 @@ export function loadConfig(): Config {
     officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
     sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
     sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
+    sqlDbHost: process.env.SQL_DB_HOST,
+    sqlDbPort: process.env.SQL_DB_PORT,
+    sqlAgentDbUser: process.env.SQL_AGENT_DB_USERNAME,
+    sqlAgentDbPassword: process.env.SQL_AGENT_DB_PASSWORD,
+    sqlCallerDbUser: process.env.SQL_CALLER_DB_USERNAME,
+    sqlCallerDbPassword: process.env.SQL_CALLER_DB_PASSWORD,
     sqlAgentTimeoutSeconds: process.env.SQL_AGENT_TIMEOUT_SECONDS,
     sqlCallerTimeoutSeconds: process.env.SQL_CALLER_TIMEOUT_SECONDS,
     sqlMaxPlanCost: process.env.SQL_MAX_PLAN_COST,
@@ -1347,6 +1360,23 @@ export function loadConfig(): Config {
     _config = {
       ..._config,
       databaseUrl: `postgresql://${user}:${password}@${host}:${port}/${name}`,
+    };
+  }
+
+  // Read-only SQL's connection strings, from the replica and the two login
+  // roles' fields when no URL is given (the deployed form).
+  if (_config.sqlDbHost) {
+    const host = _config.sqlDbHost;
+    const port = _config.sqlDbPort ?? 5432;
+    const dbName = _config.dbName ?? "episteme";
+    const url = (user?: string, password?: string) =>
+      user && password
+        ? `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`
+        : undefined;
+    _config = {
+      ..._config,
+      sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
+      sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
     };
   }
 
