@@ -72,6 +72,8 @@ export class SolverStack extends cdk.Stack {
     taskDef.addContainer("solver", {
       image: ecs.ContainerImage.fromAsset("..", {
         platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
+        // The deployed commit, stamped on agent runs and setup parts.
+        buildArgs: { GIT_SHA: process.env.GITHUB_SHA ?? "" },
       }),
       command: ["npm", "run", "worker:solver"],
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "episteme-solver" }),

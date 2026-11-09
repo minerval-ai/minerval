@@ -144,6 +144,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /requests/:request_id": { name: "get_request" },
   "POST /requests/:request_id/contribute": { name: "fund_request_work", note: ESCROWS_OWLS },
 
+  // ---- the setups agent runs ran under: constitution, role prompts, tools ----
+  "GET /setup/parts": { name: "list_setup_parts" },
+  "GET /setup/parts/:kind/:name/:version": { name: "get_setup_part" },
+
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
   "GET /findings": { name: "list_findings" },

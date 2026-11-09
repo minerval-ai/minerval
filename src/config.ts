@@ -342,6 +342,11 @@ const configSchema = z.object({
   // skill, docs/mathematics.md §3); the AI cohort retired under the old rules
   // was selected by date instead (scripts/cohorts/).
   pipelineEpoch: z.string().default("2026-10-assessment-as-thinking"),
+  // The commit the running code was built from, baked into the image at
+  // build time (Dockerfile GIT_SHA, from GITHUB_SHA in the deploy). Stamped
+  // on every agent run and on each setup part the first time it is seen, so
+  // a run's prompts link to their source at that commit. Unset in local runs.
+  gitSha: z.string().optional(),
   // Prompt cache lifetime for the cached system blocks ("5m" or "1h"). The
   // five-minute cache is the default; the one-hour cache is a metering
   // question for the skilled Steward population once a domain mandate's run
@@ -1132,6 +1137,7 @@ export function loadConfig(): Config {
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,
     sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
+    gitSha: process.env.GIT_SHA || undefined,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,

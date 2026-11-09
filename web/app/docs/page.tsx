@@ -121,6 +121,11 @@ export default function DocsPage() {
         </div>
         <ul>
           <li>
+            <Link href="/docs/setup">Setup versions</Link>: every version of the
+            constitution, role prompts and tools the agents have run under, with what
+            changed and the commit each first ran under.
+          </li>
+          <li>
             <Link href="/docs/skills">The skills</Link>: how the constitution applies to a
             subject or a kind of work, which an agent loads when its work calls for it.
           </li>

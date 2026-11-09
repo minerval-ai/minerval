@@ -373,6 +373,10 @@ each tool's description is its route's summary plus the route it runs.
 - **Requests:** `list_requests`, `get_request`, `fund_request_work` (owls
   toward the work on a request: its scoping pass, or the full work at its
   budget; escrowed until it runs or the request closes).
+- **The setups agents run under:** `list_setup_parts` (every version of the
+  constitution, each role prompt and each tool, with the commit it first ran
+  under; filter by kind, name or hash), `get_setup_part` (one version, with
+  its text when public, and the version before it to compare against).
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.

@@ -23,6 +23,8 @@ import type {
   SourceDocument,
   Examination,
   SourceContext,
+  SetupPart,
+  SetupPartDetail,
 } from "./types";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
@@ -500,5 +502,31 @@ export async function fetchMandateAllocation(
     return r.allocation;
   } catch {
     return null;
+  }
+}
+
+// The setups agent runs ran under (#552 groundwork). A 404 (an API that
+// predates the route) reads as none recorded.
+export async function fetchSetupParts(): Promise<SetupPart[]> {
+  try {
+    return (await apiGet<{ parts: SetupPart[] }>(`/setup/parts`)).parts;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return [];
+    throw err;
+  }
+}
+
+export async function fetchSetupPart(
+  kind: string,
+  name: string,
+  version: number,
+): Promise<SetupPartDetail | null> {
+  try {
+    return await apiGet<SetupPartDetail>(
+      `/setup/parts/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/${version}`,
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
   }
 }

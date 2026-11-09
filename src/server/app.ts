@@ -13,6 +13,7 @@ import { claimRoutes } from "../routes/claims.js";
 import { argumentRoutes } from "../routes/arguments.js";
 import { formalizationsRoutes } from "../routes/formalizations.js";
 import { attemptsRoutes } from "../routes/attempts.js";
+import { setupRoutes } from "../routes/setup.js";
 import { prizesRoutes } from "../routes/prizes.js";
 import { sourceRoutes } from "../routes/sources.js";
 import { jobRoutes } from "../routes/jobs.js";
@@ -104,6 +105,8 @@ export async function buildApp() {
   await app.register(reportRoutes, { prefix: "/reports" });
   await app.register(findingRoutes, { prefix: "/findings" });
   await app.register(tagRoutes, { prefix: "/tags" });
+  // The versioned setups agent runs ran under (#552 groundwork).
+  await app.register(setupRoutes, { prefix: "/setup" });
   await app.register(requestRoutes, { prefix: "/requests" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,

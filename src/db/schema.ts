@@ -1614,6 +1614,9 @@ export const agentRuns = pgTable(
     // first graph write. A run that did is kept for good; the retention
     // sweep (workers/trace-retention.ts) expires only the others.
     wroteToGraph: boolean("wrote_to_graph").notNull().default(false),
+    // The commit the code that ran was built from (config.gitSha); NULL for
+    // runs before it was recorded and for local runs.
+    commitSha: text("commit_sha"),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -1646,6 +1649,39 @@ export const agentSteps = pgTable(
       .defaultNow(),
   },
   (table) => [index("idx_agent_steps_run").on(table.runId, table.seq)]
+);
+
+// ---------------------------------------------------------------------------
+// setup_parts — the versioned parts of agent runs' setups (#552 groundwork)
+//
+// One row per distinct text of a setup part: the constitution, a role prompt
+// (system block with the constitution and date removed), a tool descriptor.
+// Identity is (kind, name, hash); `version` numbers the texts of one
+// (kind, name) in order of first sighting and never changes. A run's prompt
+// step records which parts it ran under (services/setup-service.ts).
+// `public` marks text the API may serve: the constitution and role prompts
+// that match the repository's code; other parts are served by hash only.
+// ---------------------------------------------------------------------------
+export const setupParts = pgTable(
+  "setup_parts",
+  {
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    hash: text("hash").notNull(),
+    version: integer("version").notNull(),
+    content: text("content").notNull(),
+    public: boolean("public").notNull().default(false),
+    sourcePath: text("source_path"),
+    firstSeenCommit: text("first_seen_commit"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.name, table.hash] }),
+    uniqueIndex("uq_setup_parts_version").on(table.kind, table.name, table.version),
+    check("ck_setup_parts_kind", sql`${table.kind} IN ('constitution', 'role', 'tool')`),
+  ]
 );
 
 // ---------------------------------------------------------------------------

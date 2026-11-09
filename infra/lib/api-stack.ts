@@ -129,6 +129,8 @@ export class ApiStack extends cdk.Stack {
     const container = taskDef.addContainer("api", {
       image: ecs.ContainerImage.fromAsset("..", {
         platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
+        // The deployed commit, stamped on agent runs and setup parts.
+        buildArgs: { GIT_SHA: process.env.GITHUB_SHA ?? "" },
       }),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "episteme-api" }),
       environment: {

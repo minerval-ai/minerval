@@ -145,6 +145,7 @@ export function startAgentRun(
         jobId: attribution.jobId ?? null,
         claimId: attribution.claimId ?? null,
         requestId: attribution.requestId ?? null,
+        commitSha: loadConfig().gitSha ?? null,
       });
     } catch (err) {
       console.error(
