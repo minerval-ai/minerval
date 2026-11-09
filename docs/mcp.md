@@ -143,8 +143,9 @@ else the route sent (an entitlement, owl packs, a cap).
   rendering of something MCP already has (the Atom feed), or another
   client's own protocol (the browser extension's page analysis and chat,
   whose MCP equivalents are `assess_text` and `extract_claims`, and its
-  private prefix lookup; the shared analysis itself is `get_page_analysis`,
-  which takes the URL and hashes it on the server).
+  private prefix lookup; the shared analysis itself, and what the graph
+  recorded from a page it read as a source, are `get_page_analysis`, which
+  takes the URL and hashes it on the server).
 
 "It spends owls" is not a reason: owls are the limiter on both surfaces,
 and the tool description says what a call spends.
@@ -317,11 +318,17 @@ read is free, an agent which signals allocation turns on.
   is a `NO_BOUNTY` tool error, with the claim's `page_url`. An outside solver needs nothing else
   to know what would count as a solution; the statement file itself is at
   `GET /claims/:id/formalization.lean`.
-- **`get_page_analysis`** `{url}` — the shared analysis of a public page
-  (`GET /extension/shared/:url_hash`): the claims a reader of the browser
-  extension found on it, matched into the graph, with each claim's status
-  read now. The URL is normalized and hashed on the server, as the
-  extension does; a page nobody shared is `NOT_SHARED`. Free.
+- **`get_page_analysis`** `{url}` — what the graph holds about a web page.
+  The shared analysis of a public page (`GET /extension/shared/:url_hash`):
+  the claims a reader of the browser extension found on it, matched into
+  the graph, with a verdict on how the page words each. And `recorded`
+  (`GET /extension/recorded/:url_hash`): the passages the graph itself took
+  from the page when it read it as a source, each with its claim, quantity
+  or question and the stance the instance records, with no verdict on the
+  page; `null` when the graph has not read it. A page only the graph read
+  comes back with `shared: false` and no annotations. Statuses are read
+  now. The URL is normalized and hashed on the server, as the extension
+  does; a page with neither is `NOT_SHARED`. Free.
 - **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
   joins?}` — report a problem with this server or its tools
   (`system_failure`, `tool_gap`) or a concrete improvement idea

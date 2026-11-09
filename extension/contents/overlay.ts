@@ -15,6 +15,8 @@ import {
   type ContentRequest,
   type PageAnalysis,
   type PageAnnotation,
+  type PageLookup,
+  type RecordedPage,
   type Entitlement,
   type PageState,
   type Result,
@@ -92,6 +94,13 @@ const state: {
   shared: boolean;
   /** The reader opted this page out of sharing (from the popup). */
   shareOptOut: boolean;
+  /**
+   * Passages the graph recorded from this page when it read it as a source.
+   * Kept apart from the analysis: they need none, and a fresh analysis of
+   * the page replaces the analysis, not these.
+   */
+  recorded: PageAnnotation[];
+  recordedSources: Array<{ title: string; url: string }>;
 } = {
   settings: null,
   analysis: null,
@@ -102,6 +111,8 @@ const state: {
   claimSubmissions: {},
   shared: false,
   shareOptOut: false,
+  recorded: [],
+  recordedSources: [],
 };
 
 function sendToBackground<T>(message: BackgroundRequest): Promise<Result<T>> {
@@ -120,6 +131,10 @@ const STYLE = `
    reads as "found, not yet checked" rather than as a wall of warnings. */
 .ep-box.ep-unknown { border-bottom: 1px dashed rgba(110, 110, 110, 0.6); }
 .ep-box.ep-unknown:hover { background: rgba(110, 110, 110, 0.07); }
+/* Recorded by the graph from this page: a plain marker, not a warning. No
+   judgment of the page was made, so it takes no verdict's color. */
+.ep-box.ep-recorded { border-bottom: 1px solid rgba(62, 98, 138, 0.55); }
+.ep-box.ep-recorded:hover { background: rgba(62, 98, 138, 0.07); }
 .ep-card {
   /* Explicit width: the card lives in a zero-width overlay container, so
      shrink-to-fit (max-width alone) would collapse it to min-content. */
@@ -214,9 +229,83 @@ function verdictLabel(v: Verdict): string {
       return "In the claim graph";
     case "unknown":
       return "Not in the claim graph yet";
+    case "recorded":
+      return "Recorded by the claim graph";
     default:
       return "";
   }
+}
+
+/** How a recorded passage stands toward its node, in the page's terms. */
+function stanceNote(stance: string): string {
+  switch (stance) {
+    case "affirms":
+      return "This page states it.";
+    case "denies":
+      return "This page argues against it.";
+    case "poses":
+      return "This page raises it without taking a side.";
+    case "mentions":
+      return "This page refers to it without taking a side.";
+    case "states":
+      return "This page gives a value for it.";
+    case "asks":
+      return "This page asks it.";
+    case "answers":
+      return "This page gives an answer to it.";
+    default:
+      return "";
+  }
+}
+
+/**
+ * What to show where a status goes. Only a claim has one; a quantity or a
+ * question is named as what it is, and its summary says what the graph holds.
+ */
+function standingOf(claim: NonNullable<PageAnnotation["claim"]>): { label: string; cls: string } {
+  if (claim.kind && claim.kind !== "claim") return { label: claim.kind, cls: "unknown" };
+  return { label: claim.status, cls: claim.status };
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
+}
+
+function toRecordedAnnotations(page: RecordedPage): PageAnnotation[] {
+  const sourceUrl = new Map(page.sources.map((s) => [s.id, s.url]));
+  return page.passages.map((p) => ({
+    verbatim_text: p.verbatim_text,
+    context: null,
+    source_location: null,
+    verdict: "recorded" as const,
+    why: "",
+    confidence: p.claim.status_confidence,
+    stance: p.stance,
+    claim: p.claim,
+    source_url: sourceUrl.get(p.source_id),
+  }));
+}
+
+function squash(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The recorded passages worth marking beside the analysis. One the analysis
+ * already covers (the same node, on the same or overlapping words) is left
+ * out: the analysis judged the page's wording there, which says more.
+ */
+function recordedToShow(): PageAnnotation[] {
+  const analyzed = (state.analysis?.annotations ?? [])
+    .filter((a) => a.claim)
+    .map((a) => ({ id: a.claim!.id, text: squash(a.verbatim_text) }));
+  if (analyzed.length === 0) return state.recorded;
+  return state.recorded.filter((r) => {
+    const text = squash(r.verbatim_text);
+    return !analyzed.some(
+      (a) => a.id === r.claim!.id && (a.text.includes(text) || text.includes(a.text))
+    );
+  });
 }
 
 function esc(s: string): string {
@@ -235,7 +324,18 @@ function showCard(box: HTMLElement, a: PageAnnotation): void {
     card.addEventListener("mouseleave", scheduleHideCard);
     ensureContainer().appendChild(card);
   }
-  if (a.claim) {
+  if (a.verdict === "recorded" && a.claim) {
+    const standing = standingOf(a.claim);
+    const isClaim = !a.claim.kind || a.claim.kind === "claim";
+    card.innerHTML = `
+      <div class="ep-status"><b>${esc(verdictLabel(a.verdict))}</b>
+        · ${isClaim ? "graph status: " : ""}<b class="ep-s-${esc(standing.cls)}">${esc(standing.label)}</b></div>
+      <div class="ep-canonical">${esc(a.claim.canonical_form)}</div>
+      <div class="ep-why">${esc(stanceNote(a.stance))}${
+        a.claim.summary ? ` ${esc(clip(a.claim.summary, 260))}` : ""
+      }</div>
+      <div class="ep-hint">The graph read this page as a source · click for more</div>`;
+  } else if (a.claim) {
     const status = a.claim.status;
     card.innerHTML = `
       <div class="ep-status"><b class="ep-s-${esc(a.verdict)}">${esc(verdictLabel(a.verdict))}</b>
@@ -287,7 +387,30 @@ async function openPanel(a: PageAnnotation): Promise<void> {
   panel.setAttribute("data-minerval-ui", "");
 
   const status = a.claim?.status ?? "unknown";
-  panel.innerHTML = a.claim
+  const standing = a.claim ? standingOf(a.claim) : null;
+  panel.innerHTML = a.verdict === "recorded" && a.claim && standing
+    ? `
+    <button class="ep-close" title="Close">×</button>
+    <div class="ep-status" style="margin-bottom:8px">
+      <span class="ep-badge ep-s-${esc(standing.cls)}">${esc(standing.label)}</span>
+    </div>
+    <h1>${esc(a.claim.canonical_form)}</h1>
+    <div class="ep-muted">The graph read this page as a source and recorded this passage from it.
+      ${esc(stanceNote(a.stance))} What follows is the graph's view of the ${esc(
+        a.claim.kind ?? "claim"
+      )}, not a check of how this page words it.</div>
+    <h2>On this page</h2>
+    <div class="ep-quote">${esc(a.verbatim_text)}</div>
+    ${a.claim.summary ? `<h2>What the graph says</h2><div>${esc(a.claim.summary)}</div>` : ""}
+    <div class="ep-detail"><p class="ep-muted">Loading decomposition & evidence…</p></div>
+    <p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open it on minerval.ai →</a><br>
+       ${
+         a.source_url
+           ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener">Everything the graph took from this page →</a><br>`
+           : ""
+       }
+       <a href="${esc(contributeUrl(a.claim.url, a.verbatim_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
+    : a.claim
     ? `
     <button class="ep-close" title="Close">×</button>
     <div class="ep-status" style="margin-bottom:8px">
@@ -345,7 +468,8 @@ async function openPanel(a: PageAnnotation): Promise<void> {
   const d = result.data;
   const parts: string[] = [];
   const trace = d.assessment?.reasoning_trace;
-  if (trace) {
+  // A recorded passage already shows the reader-facing summary above.
+  if (trace && !(a.verdict === "recorded" && a.claim.summary)) {
     parts.push(`<h2>Why the graph thinks so</h2><div>${esc(trace.slice(0, 900))}${
       trace.length > 900 ? "…" : ""
     }</div>`);
@@ -469,6 +593,7 @@ function visibleVerdicts(): Set<Verdict> {
   const level = state.settings?.markupLevel ?? "conservative";
   const show = new Set<Verdict>(LEVEL_VERDICTS[level]);
   if (level !== "off" && (state.settings?.showNewClaims ?? true)) show.add("unknown");
+  if (level !== "off" && (state.settings?.showRecorded ?? true)) show.add("recorded");
   return show;
 }
 
@@ -506,7 +631,7 @@ function anchorAnnotations(index?: TextIndex): void {
   const show = visibleVerdicts();
   state.anchored = [];
 
-  for (const annotation of state.analysis?.annotations ?? []) {
+  for (const annotation of [...(state.analysis?.annotations ?? []), ...recordedToShow()]) {
     if (!show.has(annotation.verdict)) continue;
     const occurrences = findOccurrences(normalized, annotation.verbatim_text, 3);
     const ranges = occurrences
@@ -562,8 +687,10 @@ function willShare(): boolean {
 }
 
 /**
- * Show another reader's analysis of this page, if the shared cache has one.
- * Only a short prefix of the address's hash is sent unless it does.
+ * Show what is already known about this page: another reader's analysis, if
+ * the shared cache has one, and the passages the graph recorded, if it read
+ * the page as a source. Only a short prefix of the address's hash is sent
+ * unless one of them exists. Resolves true if an analysis was shown.
  */
 async function lookupShared(): Promise<boolean> {
   const settings = state.settings ?? (await getSettings());
@@ -574,9 +701,9 @@ async function lookupShared(): Promise<boolean> {
   if (!url) return false;
   const lookedUpFor = location.href;
 
-  let result: Result<PageAnalysis | null>;
+  let result: Result<PageLookup>;
   try {
-    result = await sendToBackground<PageAnalysis | null>({
+    result = await sendToBackground<PageLookup>({
       type: "shared-lookup",
       urlHash: await pageUrlHash(url),
     });
@@ -584,12 +711,20 @@ async function lookupShared(): Promise<boolean> {
     return false;
   }
   // The reader may have navigated, or analyzed the page themselves, meanwhile.
-  if (!result.ok || !result.data || location.href !== lookedUpFor) return false;
-  if (state.analysis || state.running) return false;
-  state.analysis = result.data;
-  state.shared = true;
-  anchorAnnotations();
-  return true;
+  if (!result.ok || location.href !== lookedUpFor) return false;
+  const { analysis, recorded } = result.data;
+  if (recorded) {
+    state.recorded = toRecordedAnnotations(recorded);
+    state.recordedSources = recorded.sources.map((s) => ({ title: s.title, url: s.url }));
+  }
+  // The reader's own analysis, done or under way, stands over a shared one.
+  const showShared = analysis !== null && !state.analysis && !state.running;
+  if (showShared) {
+    state.analysis = analysis;
+    state.shared = true;
+  }
+  if (showShared || recorded) anchorAnnotations();
+  return showShared;
 }
 
 /** The page's readable text as sent to the API, or null if too little. */
@@ -757,7 +892,7 @@ function debounce(fn: () => void, ms: number): () => void {
 }
 
 const reanchor = debounce(() => {
-  if (state.analysis) anchorAnnotations();
+  if (state.analysis || state.recorded.length) anchorAnnotations();
 }, 1200);
 
 function watchPage(): void {
@@ -790,6 +925,9 @@ function watchPage(): void {
     state.claimSubmissions = {};
     state.shared = false;
     state.shareOptOut = false;
+    state.recorded = [];
+    state.recordedSources = [];
+    state.anchored = [];
     clearOverlays();
     closePanel();
     void showPage();
@@ -836,6 +974,8 @@ export function startOverlay(): void {
           annotations: state.analysis?.annotations ?? [],
           analyzedAt: state.analysis?.analyzed_at ?? null,
           shared: state.shared,
+          recorded: recordedToShow(),
+          recordedSources: state.recordedSources,
           isDraft: looksLikeDraft(),
           share: willShare(),
           claimSubmissions: state.claimSubmissions,
@@ -881,7 +1021,7 @@ export function startOverlay(): void {
     state.settings = await getSettings();
     onSettingsChanged((s) => {
       state.settings = s;
-      if (state.analysis) anchorAnnotations();
+      if (state.analysis || state.recorded.length) anchorAnnotations();
     });
     watchPage();
     watchSubmissions();

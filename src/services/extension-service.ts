@@ -344,6 +344,8 @@ export interface MatchedClaim {
   canonicalForm: string;
   /** A claim's status; "unknown" when it has no verdict, and for the other kinds. */
   status: string;
+  /** Whether the node has a current assessment, estimate or standing at all. */
+  assessed: boolean;
   statusConfidence: number;
   /**
    * The reader-facing summary of the current assessment, estimate or
@@ -394,6 +396,7 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
     kind,
     canonicalForm: claim.text,
     status: assessment?.status ?? "unknown",
+    assessed: !!assessment,
     statusConfidence: assessment?.confidence ?? 0,
     summary: readerSummary(assessment?.summary, assessment?.reasoningTrace),
     definition: null,
@@ -409,6 +412,7 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
     ]);
     matched.definition = definition;
     matched.estimate = current?.estimate ?? null;
+    matched.assessed = !!current;
     matched.summary = readerSummary(current?.assessed.summary, current?.assessed.work);
   } else if (kind === "question") {
     const [row] = await rawQuery<{
@@ -421,6 +425,7 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
       [claimId]
     );
     matched.standing = row?.standing ?? null;
+    matched.assessed = !!row;
     matched.summary = readerSummary(row?.summary, row?.reasoning_trace);
   }
   return matched;

@@ -712,7 +712,18 @@ export const sources = pgTable("sources", {
   // can still be read as it was.
   archivedUrl: text("archived_url"),
   factsCheckedAt: timestamp("facts_checked_at", { withTimezone: true }),
-}, (table) => [index("idx_sources_doi").on(table.doi)]);
+  // SHA-256 of the URL as a web page's identity (services/page-url.ts): the
+  // key the browser extension looks a page up by, so a reader of a page the
+  // graph holds as a source sees the passages recorded from it
+  // (services/recorded-page-service.ts). Not unique: two rows whose URLs
+  // differ only in what normalization drops are the same page. Set when the
+  // row is created and filled for older rows at startup; '' marks a URL that
+  // is not a web page, null one not yet looked at.
+  pageUrlHash: text("page_url_hash"),
+}, (table) => [
+  index("idx_sources_doi").on(table.doi),
+  index("idx_sources_page_url_hash").on(table.pageUrlHash),
+]);
 
 // ---------------------------------------------------------------------------
 // source_events (#507, phase 3)

@@ -4,7 +4,7 @@ import {
   getAnalysisStatus,
   getClaimDetail,
   getEntitlement,
-  lookupSharedAnalysis,
+  lookupPage,
   proposeClaim,
   getSubmissionProgress,
 } from "~lib/api";
@@ -146,9 +146,9 @@ export function startBackground(): void {
               });
               break;
             case "shared-lookup": {
-              const analysis = await lookupSharedAnalysis(message.urlHash);
-              if (analysis) cacheAnalysis(analysis);
-              respond({ ok: true, data: analysis });
+              const found = await lookupPage(message.urlHash);
+              if (found.analysis) cacheAnalysis(found.analysis);
+              respond({ ok: true, data: found });
               break;
             }
             case "entitlement":
