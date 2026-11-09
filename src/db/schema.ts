@@ -3381,6 +3381,16 @@ export const contributions = pgTable(
     mergeTargetClaimId: uuid("merge_target_claim_id").references(
       () => claims.id
     ),
+    // A contribution about one of the node's arguments (#541): the argument
+    // an add_instance says a source makes, a propose_split would divide, or
+    // a propose_merge would join with merge_target_argument_id (both on the
+    // contribution's node). Null for a contribution about the node itself.
+    argumentId: uuid("argument_id").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
+    mergeTargetArgumentId: uuid("merge_target_argument_id").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
     proposedCanonicalForm: text("proposed_canonical_form"),
     // 'propose_source' intake (#157): the stored document awaiting review. A
     // source row is inert until extraction runs — it appears in no read path

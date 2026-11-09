@@ -286,14 +286,19 @@ read is free, an agent which signals allocation turns on.
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id?, contribution_type, content,
-  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
+  evidence_urls?, merge_target_claim_id?, argument_id?,
+  merge_target_argument_id?, proposed_canonical_form?,
   request_id?}` — file any of `contribution_type`'s values: challenge,
   support, add_instance, propose_argument, propose_merge, propose_split,
   propose_edit, add_estimate (a source's figure for a quantity),
   propose_answer (a candidate answer to a question), propose_request, and
   answer_request. `claim_id` is required for every type but
   `propose_request`, which may bear on several nodes, sources, or something
-  the graph does not hold yet (#724). An `answer_request` names the request
+  the graph does not hold yet (#724). `argument_id` makes the contribution
+  about one of the node's arguments (#541): `add_instance` (a source that
+  makes, attacks or mentions it), `propose_split`, or `propose_merge` with
+  `merge_target_argument_id` (two arguments on the node are one); both
+  arguments must be on `claim_id`'s node, else `ARGUMENT_TARGET`. An `answer_request` names the request
   it is offered for in `request_id` (the request must bear on `claim_id` and
   be open); the id is carried to the reviewer at the head of the content,
   since accepting one needs it (#723). Requires a key bound to a contributor

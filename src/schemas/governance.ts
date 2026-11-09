@@ -24,6 +24,10 @@ export const createContributionBody = z
     content: z.string().min(1).max(10000),
     evidence_urls: z.array(z.string().url()).optional(),
     merge_target_claim_id: uuidSchema.optional(),
+    // One of the node's arguments (#541): with add_instance, propose_split,
+    // or propose_merge (then with merge_target_argument_id).
+    argument_id: uuidSchema.optional(),
+    merge_target_argument_id: uuidSchema.optional(),
     proposed_canonical_form: z.string().max(2000).optional(),
     // answer_request only: the request the material is offered for (#723).
     request_id: uuidSchema.optional(),
@@ -74,6 +78,8 @@ export const contributionResponse = z.object({
   submitted_at: z.string(),
   review_status: z.string(),
   merge_target_claim_id: uuidSchema.nullable(),
+  argument_id: uuidSchema.nullable().optional(),
+  merge_target_argument_id: uuidSchema.nullable().optional(),
   proposed_canonical_form: z.string().nullable(),
 });
 

@@ -54,6 +54,17 @@ export function getGrantContributionToolDefinition(): Tool {
           type: "string",
           description: "propose_merge only: the other node, which claim_id's node duplicates.",
         },
+        argument_id: {
+          type: "string",
+          description:
+            "One of the node's arguments, when the contribution is about it: add_instance (a source that makes, " +
+            "attacks or mentions the argument), propose_split (it carries several lines of reasoning), or " +
+            "propose_merge with merge_target_argument_id (two arguments on the node are one).",
+        },
+        merge_target_argument_id: {
+          type: "string",
+          description: "propose_merge of two arguments on the node: the other argument.",
+        },
         content: {
           type: "string",
           description:
