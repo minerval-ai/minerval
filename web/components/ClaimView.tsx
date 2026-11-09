@@ -496,16 +496,10 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           id="developer-disclosure"
           style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}
         >
-          This claim names {assessment.developer_disclosure.developer} (
-          {assessment.developer_disclosure.matched.map((m) => `“${m}”`).join(", ")}), which
-          built the model that assessed it,{" "}
-          {modelDisplayName(assessment.developer_disclosure.model)}. A model may carry
-          biases about its own developer that it cannot see, so the graph says so
-          rather than leaving it to the reader to notice. The assessment ran under
-          the same standards as any other, and its reasoning is on this page to be
-          checked; this note is a disclosure, not a finding that the verdict is
-          wrong. The match is mechanical, so it also catches claims that only
-          mention the developer.
+          The model that assessed this claim,{" "}
+          {modelDisplayName(assessment.developer_disclosure.model)}, was built by{" "}
+          {assessment.developer_disclosure.developer}, which the claim names. A model
+          may be biased about its own developer.
         </p>
       )}
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
