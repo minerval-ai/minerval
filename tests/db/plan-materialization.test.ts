@@ -15,7 +15,6 @@ import {
   type PlanItemLedger,
 } from "../../src/services/action-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
-import { listOpenActions } from "../../src/services/mandate-valuer-service.js";
 import { getPublicMandate } from "../../src/services/mandate-service.js";
 import { seedClaim, seedUser, seedGrantWithJob, creditOwls, OWL } from "./helpers.js";
 
@@ -152,10 +151,12 @@ describe("plan-to-ledger materialization (#416)", () => {
     expect(ledger[10]!.status).toBe("blocked");
     expect(ledger[10]!.reason).toContain("archived");
 
-    // What the mandate's Grantmaker sees through list_open_actions.
-    expect((await listOpenActions({ grantId, kind: "formalize", query: null })).total).toBeGreaterThanOrEqual(1);
-    const attempts = await listOpenActions({ grantId, kind: "attempt_proof" });
-    expect(attempts.actions.some((a) => a.claim_id === published)).toBe(true);
+    // What the mandate's agents see when they look at the ledger.
+    const open = await rawQuery<{ kind: string; claim_id: string | null }>(
+      `SELECT kind, claim_id FROM actions WHERE status = 'open' AND kind IN ('formalize', 'attempt_proof')`
+    );
+    expect(open.some((a) => a.kind === "formalize")).toBe(true);
+    expect(open.some((a) => a.kind === "attempt_proof" && a.claim_id === published)).toBe(true);
 
     // What the dashboard shows: state words derived from the ledger.
     const detail = await getPublicMandate(grantId);

@@ -89,7 +89,7 @@ const DECIDE_PETITIONS: Tool = {
   },
 };
 
-const COMMISSION_FOR_MANDATE: Tool = {
+export const COMMISSION_FOR_MANDATE: Tool = {
   name: "commission",
   description:
     "Pay for runs from your mandate's money: one entry or many. Each entry is " +
@@ -758,4 +758,121 @@ export async function workWaitingInboxes(limit = 20): Promise<number> {
     }
   }
   return n;
+}
+
+export const AMEND_OBJECTIVE: Tool = {
+  name: "amend_objective",
+  description:
+    "Change the mandate's title or objective: what its funder approved by funding it. Use it only in " +
+    "conversation with the funder, when they ask for the change or agree to one you proposed, and only " +
+    "once they have seen the new text. Apply the same duties you had when the mandate was drafted: " +
+    "decline a change that tries to steer the graph's conclusions, exactly as you would decline such a " +
+    "mandate. The change takes effect at once. Every other funder (users who contributed, and mandates " +
+    "that regranted to this one) is told immediately, with the old and new text and your note, and may " +
+    "withdraw their unspent share. Afterwards, revise the operating policy so it serves the new " +
+    "objective. A platform mandate's terms are re-approved the way it was funded: this records the " +
+    "amended draft for that approval instead of applying it. In a review pass, propose a change to your " +
+    "funder with note_to_funder.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      title: { type: "string", description: "Optional: the new title. Leave it out to keep the current one." },
+      objective: { type: "string", description: "Optional: the new objective, in full. Leave it out to keep the current one." },
+      note: { type: "string", description: "Why the mission is changing, in words the other funders and the public will read." },
+    },
+    required: ["note"],
+  },
+};
+
+export const WITHDRAW_REGRANT: Tool = {
+  name: "withdraw_regrant",
+  description:
+    "Take back your mandate's unspent share of a mandate you regranted to, into your escrow. Use it when " +
+    "that mandate's objective has changed and no longer serves your mission, or when you judge the money " +
+    "would do more here. Money already spent or committed to running work stays where it is. The " +
+    "withdrawal and your reason are shown on both mandates' pages.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      grant_id: { type: "string", description: "The mandate you regranted to." },
+      owls: { type: "number", description: "Optional: how much to take back, up to your unspent share. Leave it out to take it all." },
+      reason: { type: "string", description: "Why, for both mandates' public records." },
+    },
+    required: ["grant_id", "reason"],
+  },
+};
+
+/** The Grantmaker's spending tools, in review passes and the management chat. */
+export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): Tool[] {
+  return [
+    WRITE_OPERATING_POLICY,
+    COMMISSION_FOR_MANDATE,
+    getSqlToolDefinition(),
+    WITHDRAW_REGRANT,
+    ...(opts.chat ? [AMEND_OBJECTIVE] : []),
+  ];
+}
+
+/**
+ * Run one of the Grantmaker's operations tools for a mandate, or null when
+ * `name` is not one. In a review pass amend_objective is refused: the terms
+ * change only with the funder present.
+ */
+export async function executeMandateOperationsTool(
+  grantId: string,
+  name: string,
+  input: Record<string, unknown>,
+  opts: { chat: boolean }
+): Promise<string | null> {
+  if (name === "query_sql") return executeSqlTool(name, input);
+  if (name === "amend_objective") {
+    if (!opts.chat) {
+      return JSON.stringify({
+        success: false,
+        message: "Not in a review pass: propose the change to your funder with note_to_funder, and amend it in their chat once they agree.",
+      });
+    }
+    const { amendObjective } = await import("../../services/mandate-terms-service.js");
+    const r = await amendObjective({
+      grantId,
+      title: typeof input.title === "string" ? input.title : null,
+      objective: typeof input.objective === "string" ? input.objective : null,
+      note: String(input.note ?? ""),
+      author: "grantmaker:chat",
+    });
+    if (!r.ok) return JSON.stringify({ success: false, message: r.message });
+    return JSON.stringify({
+      success: true,
+      message:
+        r.status === "awaiting_approval"
+          ? "Recorded the amended draft for approval. The terms in force are unchanged until the approval lands."
+          : `The mandate's terms are amended; the earlier version is kept on its page. ${r.notified} other funder(s) were told and may withdraw their unspent share. Revise the operating policy next, so it serves the new objective.`,
+    });
+  }
+  if (name === "withdraw_regrant") {
+    const { withdrawFromMandate } = await import("../../services/mandate-terms-service.js");
+    const target = String(input.grant_id ?? "").trim();
+    const r = await withdrawFromMandate({
+      grantId: target,
+      funder: { grantId },
+      owls: input.owls != null ? Number(input.owls) : null,
+    });
+    if (!r.ok) return JSON.stringify({ success: false, message: r.message });
+    await rawQuery(
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason)
+       VALUES ($1, 'grantmaker', 'withdrawal', 'withdrew a regrant', $2, $3, $4)`,
+      [grantId, target, owlsToMicroUsd(r.withdrawnOwls), String(input.reason ?? "")]
+    );
+    return JSON.stringify({ success: true, message: `Withdrew ${r.withdrawnOwls} owls into your escrow.` });
+  }
+  if (name !== "write_operating_policy" && name !== "commission") return null;
+  const grant = await loadGrant(grantId);
+  if (!grant) return JSON.stringify({ success: false, message: "No such mandate." });
+  return executeOfficerTool(name, input, {
+    grant,
+    role: "grantmaker",
+    labels: new Map(),
+    limitMicroUsd: Number.MAX_SAFE_INTEGER,
+    decidedBy: "grantmaker",
+  });
 }

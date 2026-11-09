@@ -43,7 +43,6 @@ import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { getGeneralMandate } from "../services/allocation-policy-service.js";
-import { runGeneralAllocator } from "../services/allocation-service.js";
 import {
   actionBudgetMicroUsd,
   claimAction,
@@ -139,20 +138,13 @@ export async function processNextStewardTask(
   // the unattributed counters and stalled funded work along with them.)
   const mandate = await getGeneralMandate();
 
-  // The ledger's verdict first — the engine's only execution rule.
-  let action = await nextRunnableAction(["assess", "reassess"]);
+  // The ledger's verdict first — the engine's only execution rule. What
+  // runs is what some payer commissioned; with a mandate in place, nothing
+  // commissioned means the lane rests until someone commissions work.
+  const action = await nextRunnableAction(["assess", "reassess"]);
   if (!action && mandate) {
-    // Nothing covered: let the General mandate place today's next
-    // allocations, then look again. Rate- or escrow-exhausted allocators
-    // place nothing, and the lane rests until tomorrow or a top-up.
-    const placed = await runGeneralAllocator();
-    if (placed && placed.allocated > 0) {
-      action = await nextRunnableAction(["assess", "reassess"]);
-    }
-    if (!action) {
-      const pending = await pendingStewardCount();
-      return { status: pending > 0 ? "budget" : "empty" };
-    }
+    const pending = await pendingStewardCount();
+    return { status: pending > 0 ? "budget" : "empty" };
   }
   if (action) {
     return runCoveredAction(action, opts);

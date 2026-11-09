@@ -258,9 +258,8 @@ export async function ensureCurateAction(anchorClaimId: string): Promise<string 
  * work on it has come back for the keeper to judge. The Curator keeps the
  * requests that bear on several nodes, on a source, or on nothing the
  * graph holds yet; none has an anchor claim, so the row carries the
- * request in target_ref and runs a request-anchored brief. Priced like any
- * curation run and valued from the request's own standing
- * (mandate-valuer-service.ts). Null when the request is closed or has
+ * request in target_ref and runs a request-anchored brief. Commissioned
+ * like any curation run. Null when the request is closed or has
  * passed to a Steward.
  */
 export async function ensureRequestCurateAction(requestId: string): Promise<string | null> {

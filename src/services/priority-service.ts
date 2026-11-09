@@ -1,130 +1,36 @@
 /**
- * Expected marginal value of assessing a claim — the EV in the allocation
- * core's value/cost standard.
+ * claims.queue_priority: the order pending claims are shown in, and the
+ * order the fallback lane (a deployment with no mandate) drains them.
  *
- * Every mandate's decision rule is the essay's: take the actions with the
- * highest expected marginal value per unit of expected marginal cost, up
- * to the budget. This module estimates the VALUE side for one action type
- * — a Steward assessment pass — with the multiplicative heuristic:
- *
- *   value = importance                         (consequence-if-wrong, §19)
- *         × (floor + (1 − floor)×contestation) (live disagreement sharpens
- *                                               what a verdict is worth)
- *         × expected quality gain              (the last pass's
- *                                               marginal_yield, 1.0 when
- *                                               unassessed, revived by
- *                                               staleness as evidence
- *                                               drifts, or raised by an
- *                                               open consistency flag)
- *         + provenance boost                   (a human proposed it, #284)
- *
- * Money appears NOWHERE in this estimate. Reader contributions toward a
- * claim's assessment are allocated funds, not signals: they reduce the
- * platform's effective COST for the claim (and once they cover it, the
- * pass simply runs, funded — steward-pipeline.ts). Value stays epistemics.
- *
- * The result is stored on claims.queue_priority — a DISPLAY CACHE for
- * claim pages and the fallback drain. The authoritative store is
- * mandate_valuations, written per mandate by mandate-valuer-service.ts
- * (the same formula, bulk SQL over open actions); cost lives elsewhere
- * (cost-estimate-service.ts) and each mandate's allocator divides the two.
- * Every knob is config — legible, tunable, printable. The formula is an
- * INPUT TO JUDGMENT about ordering, not a black box that decides what is
- * true (Part VIII): heuristics start as guesses and get revised as the
- * eval engine grows. By construction, neither contributions nor any other
- * money ever touches `claims.importance` (§19 as amended).
- *
- * Computed in one SQL statement so refreshes are cheap enough to run at
- * enqueue and in the allocation scheduler's periodic sweep.
+ * It decides nothing about funding. Mandates decide what to fund through
+ * their agents and their written operating policies (program-officer.ts),
+ * not through a formula; this column only orders a list, by the claim's
+ * importance, which its Steward judges (§19). Money never touches it.
  */
-import { nodeAssessedAtSql, nodeMarginalYieldSql } from "./node-judgment-sql.js";
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
 
-/** Any mandate's live valuation of this claim's standard open action, as a
- * floor under the platform formula. queue_priority is one column shared by
- * every funder's opinion (mandate-valuer-service's
- * refreshQueuePriorityCache writes the same max), so a per-claim refresh
- * here must not silently demote a claim some other mandate values highly:
- * without this term, an enqueue-time refresh would overwrite a topical
- * mandate's 9 with the platform formula's 2 until the next full recompute. */
-const OTHER_MANDATE_FLOOR_SQL = `
-  COALESCE((SELECT MAX(mv.value_est)
-              FROM mandate_valuations mv
-              JOIN actions a ON a.id = mv.action_id
-             WHERE a.claim_id = c.id
-               AND a.variant = 'standard'
-               AND a.status = 'open'), 0)`;
+/** The ordering for one claims row `c` (SQL fragment). */
+const ORDER_SQL = `COALESCE(c.importance, 0)`;
 
-/** The SQL expression computing the expected value for one claims row `c`.
- * The knobs come from the governing mandate's allocation policy (config
- * defaults overlaid with what its Grantmaker has set). */
-async function valueSql(): Promise<{ sql: string; params: number[] }> {
-  const c = await getEffectiveAllocationPolicy();
-  // Parameters: $2 contestation floor, $3 staleSaturationDays,
-  // $4 provenanceBoost ($1 is the claim id or reserved by the caller's
-  // WHERE clause).
-  return {
-    sql: `
-      LEAST(10.0,
-        c.importance
-        * ($2::real + (1.0 - $2::real) * COALESCE(c.contestation, 0))
-        * GREATEST(
-            -- Yield and recency from whichever table the node's kind
-            -- keeps its judgment in (#755).
-            COALESCE(${nodeMarginalYieldSql("c")}, 1.0),
-            LEAST(1.0,
-              COALESCE(EXTRACT(EPOCH FROM (now() - ${nodeAssessedAtSql("c")})) / 86400.0
-                / NULLIF($3::real, 0), 0)),
-            -- An open consistency flag's expected gain (#330), as in
-            -- mandate-valuer-service.ts's GENERAL_VALUE_SQL.
-            COALESCE(
-              (SELECT MAX(f.expected_gain) FROM consistency_flags f
-                 JOIN actions fx ON fx.id = f.action_id
-                WHERE f.primary_claim_id = c.id
-                  AND fx.status IN ('open', 'running')
-                  AND f.assessment_id_at_flag = (
-                    SELECT a.id FROM assessments a
-                     WHERE a.claim_id = c.id AND a.is_current = true
-                     ORDER BY a.assessed_at DESC LIMIT 1)),
-              0))
-        + CASE WHEN c.created_by = 'user' THEN $4::real ELSE 0 END
-      )`,
-    params: [
-      c.contestation_floor,
-      c.staleness_saturation_days,
-      c.user_provenance_boost,
-    ],
-  };
-}
-
-/** Recompute one claim's expected value. Returns the new value. */
+/** Restamp one claim's place in the list. Returns it. */
 export async function refreshQueuePriority(claimId: string): Promise<number> {
-  const { sql, params } = await valueSql();
   const rows = await rawQuery<{ queue_priority: number }>(
-    `UPDATE claims c
-        SET queue_priority = GREATEST(${sql}, ${OTHER_MANDATE_FLOOR_SQL})
-      WHERE c.id = $1
-      RETURNING c.queue_priority`,
-    [claimId, ...params]
+    `UPDATE claims c SET queue_priority = ${ORDER_SQL} WHERE c.id = $1 RETURNING c.queue_priority`,
+    [claimId]
   );
   return rows[0]?.queue_priority ?? 0;
 }
 
 /**
- * Refresh every PENDING claim's expected value (the live candidate set) —
- * the allocation scheduler's sweep, so staleness drift reorders the lane
- * without per-event bookkeeping. Returns how many rows were touched.
+ * Restamp every pending claim's place in the list. Returns how many rows
+ * were touched.
  */
 export async function refreshPendingQueuePriorities(): Promise<number> {
-  const { sql, params } = await valueSql();
   const rows = await rawQuery<{ id: string }>(
-    `UPDATE claims c
-        SET queue_priority = GREATEST(${sql}, ${OTHER_MANDATE_FLOOR_SQL})
-      WHERE c.state = 'active' AND c.steward_state = 'pending' AND $1::int = 1
-      RETURNING c.id`,
-    [1, ...params]
+    `UPDATE claims c SET queue_priority = ${ORDER_SQL}
+      WHERE c.state = 'active' AND c.steward_state = 'pending'
+      RETURNING c.id`
   );
   return rows.length;
 }

@@ -180,20 +180,18 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  // POST /requests/:request_id/contribute — put owls toward the work on a
-  // request: its scoping pass while it has no budget, else the full work.
-  // Allocations accumulate across funders (people and mandates alike); the
-  // moment they cover the row's cost, the Researcher takes it up, and the
-  // metered cost is split pro rata among the funders. Unspent money comes
-  // back when the run settles or the request closes.
+  // POST /requests/:request_id/contribute — commission the work on a
+  // request whole (its scoping pass while it has no budget, else the full
+  // work), at the budget the reader chooses. The Researcher takes it up at
+  // once; unspent money comes back when the run settles or the request closes.
   app.post<{ Params: { request_id: string }; Body: { owls: number } }>(
     "/:request_id/contribute",
     {
       schema: {
         tags: ["requests"],
         summary:
-          "Allocate owls toward the work on this request (runs when " +
-          "allocations cover the cost; funders split the cost pro rata)",
+          "Commission the work on this request with a budget of owls: it runs at " +
+          "once, and what it does not spend comes back",
         params: {
           type: "object",
           properties: { request_id: { type: "string", format: "uuid" } },

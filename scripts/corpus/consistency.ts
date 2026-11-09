@@ -370,7 +370,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
   const { stewardTierCostEstimates } = await import("../../src/services/cost-estimate-service.js");
   const { resetAllocationPolicyCache } = await import("../../src/services/allocation-policy-service.js");
   const { reconcileActions } = await import("../../src/services/action-service.js");
-  const { refreshGeneralValuations } = await import("../../src/services/mandate-valuer-service.js");
+  const { commissionNodePass } = await import("../../src/services/commission-service.js");
   const { enqueueSteward } = await import("../../src/services/queue-service.js");
   const { drainLocalQueues } = await import("../../src/workers/local-runner.js");
   const { consistencyPrecision } = await import("../../src/services/consistency-service.js");
@@ -396,14 +396,24 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
       LIMIT $1`,
     [cadenceK, plantClaims]
   );
+  // The General mandate commissions each cadence pass whole, at the
+  // standard tier's estimate, within its daily rate, as its officers would
+  // under an upkeep policy.
   for (const c of cadence) {
     await enqueueSteward({ claimId: c.id, trigger: "staleness_check", context: "Periodic refresh (eval cadence)." });
+    await commissionNodePass({
+      payer: { kind: "grant", grantId },
+      claimId: c.id,
+      budgetMicroUsd: tiers.standardMicroUsd,
+      brief: "Periodic refresh (eval cadence).",
+      commissionedBy: "program_officer",
+      message: { trigger: "staleness_check" },
+    });
   }
 
   const events: Array<{ round: number; queue: string; message: unknown; ok: boolean; error?: string }> = [];
   for (let round = 1; round <= 8; round++) {
     await reconcileActions();
-    await refreshGeneralValuations();
     const before = events.length;
     // Parallel drains, as production runs several workers: the Steward and
     // engine lanes claim their rows with SKIP LOCKED, so N loops never run

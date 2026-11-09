@@ -1365,19 +1365,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /claims/:claim_id/contribute — put owls toward this claim's next
-  // assessment without buying the whole thing. Allocations accumulate
-  // across funders (people and mandates alike); the moment they cover the
-  // expected cost, the assessment runs, and the metered cost is split pro
-  // rata among the funders.
+  // POST /claims/:claim_id/contribute — commission this claim's next
+  // assessment whole, at the budget the reader chooses (commission-service.ts).
+  // The pass runs at once; what it does not spend comes back.
   app.post<{ Params: { claim_id: string }; Body: { owls: number } }>(
     "/:claim_id/contribute",
     {
       schema: {
         tags: ["claims"],
         summary:
-          "Allocate owls toward this claim's next assessment (runs when " +
-          "allocations cover the cost; funders split the cost pro rata)",
+          "Commission this claim's next assessment with a budget of owls: the pass " +
+          "runs at once, and what it does not spend comes back",
         params: {
           type: "object",
           properties: { claim_id: { type: "string", format: "uuid" } },

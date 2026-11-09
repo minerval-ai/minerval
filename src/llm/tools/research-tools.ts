@@ -109,15 +109,15 @@ export function getFundRequestToolDefinition(): Tool {
   return {
     name: FUND_REQUEST_TOOL_NAME,
     description:
-      "Put money from your mandate toward the work on an open request in your scope (list_requests " +
-      "shows them). The work is a row on the action ledger: a scoping pass while the request has no " +
-      "budget (it returns a quote, which becomes the budget), then the full work at its budget. The " +
-      "row runs once its funders cover its cost, and anyone may chip in, so you may fund part of it. " +
-      "You decide whether the request is worth that and how much to put toward it; the request is " +
-      "the brief, and how the work is done and what it finds are not yours to shape. Every outcome " +
-      "is a complete one and paid for alike, and is recorded on the request for its keeper to judge. " +
-      "budget_usd is the most you put toward it: it is clipped to what the row still lacks and what " +
-      "your uncommitted budget holds; unspent money comes back when the run settles or the request closes.",
+      "Commission the work on an open request in your scope (list_requests shows them), whole, from " +
+      "your mandate. The work is a row on the action ledger: a scoping pass while the request has no " +
+      "budget (it returns a quote, which becomes the budget), then the full work. You decide whether " +
+      "the request is worth doing and the budget it should have to be done properly (set it at the " +
+      "high end of what the costing skill says such work costs); the request is the brief, and how " +
+      "the work is done and what it finds are not yours to shape. Every outcome is a complete one and " +
+      "paid for alike, and is recorded on the request for its keeper to judge. The run starts at once; " +
+      "what it does not spend comes back when it settles, and all of it if the request closes first. " +
+      "It counts against your daily rate and escrow like any commission.",
     input_schema: {
       type: "object",
       properties: {
@@ -787,18 +787,17 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       microUsd: Math.round(budgetUsd * 1_000_000),
     });
     if (!placed.ok) return refuse(`${placed.message}.`);
-    const what = placed.variant === "scope" ? "its scoping pass (it has no budget yet)" : "the full work at its budget";
+    const what = placed.variant === "scope" ? "its scoping pass (it has no budget yet)" : "the full work";
     return JSON.stringify({
       success: true,
       request_id: requestId,
       funded: what,
-      placed_usd: usdText(placed.placedMicroUsd),
-      backing_usd: usdText(placed.backingMicroUsd),
-      cost_usd: usdText(placed.costMicroUsd),
-      covered: placed.covered,
-      note: placed.covered
-        ? "The row is covered: the Researcher takes it up on the next pass, and its outcome is recorded on the request for its keeper."
-        : "The row waits for the rest of its cost from other funders; your money stays on it, and comes back if the request closes first.",
+      status: placed.status,
+      budget_usd: usdText(placed.placedMicroUsd),
+      note:
+        placed.status === "commissioned"
+          ? "Commissioned whole: the Researcher takes it up on the next pass with this budget, and its outcome is recorded on the request for its keeper. What it does not spend comes back."
+          : "Its next piece of work is already commissioned or running; nothing was charged.",
       ...(await budgetLeft()),
     });
   };

@@ -2949,11 +2949,9 @@ export type ConsistencySweep = typeof consistencySweeps.$inferSelect;
 // naming the PRIMARY claim (the one whose Steward reconciles) and every
 // claim in the tension.
 // Like lookout_flags, a flag is a candidate, never a conclusion: it
-// enqueues the primary's Steward, and while the claim's assess action stays
-// open its expected_gain enters the formula mandates' expected-quality-gain
-// term (mandate-valuer-service.ts), so a pass the checker judges likely to
-// change something is valued like one, by the same formula as any other.
-// Whether it runs is the allocator's call. The assessment at flag time is
+// enqueues the primary's Steward, and its expected_gain goes to the General
+// mandate's officers with the flag; whether the pass is commissioned is
+// theirs to decide under the operating policy. The assessment at flag time is
 // snapshotted so precision ("did the pass move anything?") is a query.
 // ---------------------------------------------------------------------------
 export const consistencyFlags = pgTable(
