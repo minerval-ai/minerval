@@ -26,14 +26,19 @@ import {
 import { valueShownSchema, type ValueShown } from "../../schemas/kinds.js";
 import { getArgument } from "../../services/argument-service.js";
 import {
+  dismissPassage,
   findArgumentInstance,
+  getUnplacedPassage,
   insertArgumentInstance,
+  placePassage,
   updateArgumentInstance,
 } from "../../services/argument-instance-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
+import { rawQuery } from "../../db/client.js";
 import { notYourNode } from "./steward-ownership.js";
 
 export const RECORD_ARGUMENT_INSTANCE = "record_argument_instance";
+export const PLACE_ARGUMENT_PASSAGE = "place_argument_passage";
 
 /** Who may record an argument instance: the Steward, or a researcher it launched. */
 export type ArgumentInstanceRecorder = "claim_steward" | "researcher";
@@ -133,6 +138,41 @@ export function getArgumentInstanceToolDefinition(): Tool {
 }
 
 /**
+ * place_argument_passage (#541): the Steward's decision on a passage
+ * ingestion left unplaced on its node. Only the Steward creates arguments
+ * (Part VIII), so a passage that matched none of them waits here.
+ */
+export function getPlaceArgumentPassageToolDefinition(): Tool {
+  return {
+    name: PLACE_ARGUMENT_PASSAGE,
+    description:
+      "Decide a passage that ingestion left unplaced on your node: reasoning a source gives " +
+      "about the claim that matched none of its arguments (get_claim with include arguments " +
+      "lists them as unplaced_argument_passages). Place it on the argument it makes or attacks " +
+      "(argument_id; create the argument first with add_argument when the claim's page should " +
+      "carry it and the graph lacks it), or dismiss it with dismiss_reason: it makes no argument, " +
+      "or one the claim's page should not carry by §7's test. A dismissed passage is kept as " +
+      "provenance with your reason. Placing records an instance of the argument; it does not " +
+      "change the argument's written form or rating.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        instance_id: { type: "string", description: "The unplaced passage's instance_id." },
+        argument_id: { type: "string", description: "The argument it makes or attacks, on your node." },
+        stance: {
+          type: "string",
+          enum: ["advances", "criticizes", "mentions"],
+          description: "With argument_id: advances, criticizes, or mentions; defaults to the recorded stance.",
+        },
+        reading: PROPERTIES.reading,
+        dismiss_reason: { type: "string", description: "Instead of argument_id: why the passage is not placed." },
+      },
+      required: ["instance_id"],
+    },
+  };
+}
+
+/**
  * The tool as a researcher a Steward launched sees it: no instance_id,
  * since correcting the instance set is the Steward's, and a description
  * addressed to an instrument.
@@ -180,6 +220,7 @@ export async function executeArgumentInstanceTool(
   input: Record<string, unknown>,
   opts: { recordedBy?: ArgumentInstanceRecorder; nodeId?: string } = {}
 ): Promise<string | null> {
+  if (name === PLACE_ARGUMENT_PASSAGE) return placeArgumentPassage(input);
   if (name !== RECORD_ARGUMENT_INSTANCE) return null;
   const recordedBy = opts.recordedBy ?? "claim_steward";
   const byResearcher = recordedBy === "researcher";
@@ -197,6 +238,9 @@ export async function executeArgumentInstanceTool(
   }
   const foreign = notYourNode(argument.claimId, `argument ${argumentId}`);
   if (foreign) return foreign;
+  if (argument.mergedInto) {
+    return refuse(`Argument ${argumentId} was merged into ${argument.mergedInto}; record on that argument.`);
+  }
 
   const quantity = argument.stance === "neutral";
   const rawStance = input.stance === undefined ? undefined : String(input.stance).toLowerCase();
@@ -299,5 +343,67 @@ export async function executeArgumentInstanceTool(
       `Recorded a ${rawStance} instance of argument "${argument.name ?? argument.id}" from ${source.url ?? url}.` +
       (byResearcher ? " It is recorded as yours; the Steward owns the set. List it in your report." : "") +
       retiredNote,
+  });
+}
+
+async function placeArgumentPassage(input: Record<string, unknown>): Promise<string> {
+  const instanceId = optText(input.instance_id);
+  if (!instanceId) return refuse("instance_id is required: the unplaced passage's id, from get_claim.");
+  const passage = await getUnplacedPassage(instanceId);
+  if (!passage) return refuse(`No unplaced passage ${instanceId}; a placed instance is corrected with record_argument_instance.`);
+  const foreign = notYourNode(passage.claim_id, `passage ${instanceId}`);
+  if (foreign) return foreign;
+
+  const argumentId = optText(input.argument_id);
+  const dismissReason = optText(input.dismiss_reason);
+  if (argumentId && dismissReason) return refuse("Pass argument_id to place it or dismiss_reason to dismiss it, not both.");
+
+  if (dismissReason) {
+    await dismissPassage(instanceId, dismissReason);
+    return JSON.stringify({ success: true, instance_id: instanceId, message: "Dismissed; the passage is kept as provenance with your reason." });
+  }
+  if (!argumentId) return refuse("Pass argument_id to place the passage, or dismiss_reason to dismiss it.");
+
+  const argument = await getArgument(argumentId);
+  if (!argument) return refuse(`Argument not found: ${argumentId}`);
+  if (argument.mergedInto) {
+    return refuse(`Argument ${argumentId} was merged into ${argument.mergedInto}; place the passage on that argument.`);
+  }
+  if (argument.claimId !== passage.claim_id) {
+    return refuse(`Argument ${argumentId} is on node ${argument.claimId}, not on ${passage.claim_id}, the node the passage is about.`);
+  }
+  const [current] = await rawQuery<{ stance: string }>(`SELECT stance FROM argument_instances WHERE id = $1`, [instanceId]);
+  const rawStance = input.stance === undefined ? current?.stance ?? "advances" : String(input.stance).toLowerCase();
+  if (!isArgumentInstanceStance(rawStance)) return refuse(`Unknown stance "${rawStance}". Use advances, criticizes, or mentions.`);
+  const rawReading = input.reading === undefined || input.reading === null ? undefined : String(input.reading).toLowerCase();
+  if (rawReading !== undefined && !isArgumentReading(rawReading)) {
+    return refuse(`Unknown reading "${rawReading}". Use full, premise_unstated, or strawman.`);
+  }
+  if (rawStance === "mentions" && rawReading !== undefined) return refuse("A mention has no reading: omit reading.");
+
+  // One instance per (argument, source): a passage whose source already has
+  // one on this argument is dismissed as a duplicate instead.
+  const existing = await findArgumentInstance({ argumentId, sourceId: passage.source_id, speaker: null });
+  if (existing) {
+    await dismissPassage(instanceId, `This source is already recorded on argument ${argumentId} (instance ${existing.id}).`);
+    return JSON.stringify({
+      success: true,
+      deduplicated: true,
+      instance_id: existing.id,
+      message: `This source already has an instance of the argument (${existing.id}); the passage was dismissed as a duplicate.`,
+    });
+  }
+  await placePassage({
+    instanceId,
+    argumentId,
+    stance: rawStance,
+    reading: rawStance === "mentions" ? null : ((rawReading as ArgumentReading | undefined) ?? null),
+  });
+  return JSON.stringify({
+    success: true,
+    instance_id: instanceId,
+    message:
+      `Placed the passage on argument "${argument.name ?? argument.id}" as a ${rawStance} instance.` +
+      (argument.retiredAt ? " The argument is retired; the instance joins its record and does not bring it back." : ""),
   });
 }

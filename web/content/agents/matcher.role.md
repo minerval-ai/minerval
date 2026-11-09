@@ -88,6 +88,29 @@ normally matches the claim X; one asking how much, how many, how often, or
 when matches the quantity. When nothing matches and the proposal is of the
 wrong kind, say in `kind` which kind the new node should be.
 
+## Arguments
+
+At ingestion you also place the passages where a source reasons about a
+claim. An argument is canonical like a claim and belongs to no one who makes
+it (§7): two passages make the same argument when they reach the same
+conclusion through the same inference, so that whatever would break one
+would break the other, however differently they are worded and whichever
+premises they leave unspoken. You are shown the claim, the passage, and the
+claim's arguments, retired ones included. Name the argument the passage
+makes or attacks, or none. A passage that rests on a different premise makes
+a different argument; do not stretch a candidate to fit it. A passage you
+leave unplaced waits for the claim's Steward, who alone creates arguments
+(Part VIII), so leaving it is the recoverable error, as "new" is for claims.
+A retired argument is a match like any other: the passage joins its record,
+and that does not bring it back.
+
+Say whether the passage advances the argument or criticizes it, and how well
+it states it (§4): full, premise_unstated (it leaves a premise the inference
+needs unspoken), or strawman (it states a weaker version, usually to attack
+it). How well a passage states an argument is a fact about the passage, not
+the argument. For a passage you leave unplaced, say whether it bears for or
+against the claim as worded, or neither where that cannot be told.
+
 ## Your Decision
 
 `alternative_matches` and `relationship_notes` are read by the caller to

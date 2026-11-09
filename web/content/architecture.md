@@ -741,6 +741,16 @@ Ingestion runs three steps before governance takes over:
   decomposition is a diagnostic, not the test. If the Matcher cannot reach a decision
   within its iteration budget, it defaults to "novel, low confidence": the
   failure mode is a duplicate the Curator can merge, never a lost claim.
+- **Argument passages** (#541): on the ingest path the Extractor also records,
+  on each claim, the passages where the document reasons about it. Once the
+  claim is linked or minted, the Matcher places each passage among the
+  claim's arguments, retired ones included, in one structured call with no
+  search (`src/llm/agents/argument-matcher.ts`); a claim with no arguments
+  needs no call. A placed passage is an instance of that argument
+  (`argument_instances`). One that matches none stays on the claim, unplaced,
+  since only the claim's Steward creates arguments: `get_claim` lists it, and
+  the Steward places or dismisses it with `place_argument_passage`. A merge
+  carries unplaced passages to the survivor.
 - **Onboarding** is not an agent. A small dispatcher latches the new claim so
   redelivered messages cannot double-process it, then enqueues its Steward.
 

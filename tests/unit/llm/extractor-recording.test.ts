@@ -140,6 +140,47 @@ describe("the Extractor's recording", () => {
     expect(problems[2]).toMatch(/importance must be a number from 0 to 1/);
   });
 
+  it("records argument passages only when asked, and checks them (#541)", async () => {
+    respondWith(
+      turn([
+        [
+          "record_claims",
+          {
+            claims: [
+              claim("A", {
+                argument_passages: [{ verbatim_text: "Since X, A.", context: null, role: "makes" }],
+              }),
+              claim("bad role", { argument_passages: [{ verbatim_text: "Y", context: null, role: "supports" }] }),
+              claim("Which?", {
+                kind: "question",
+                argument_passages: [{ verbatim_text: "Z", context: null, role: "makes" }],
+              }),
+            ],
+          },
+        ],
+      ]),
+      turn([["finish_extraction", {}]])
+    );
+    const claims = await extractClaims({ content: "doc", recordArguments: true });
+    expect(claims.map((c) => c.verbatim_text)).toEqual(["A"]);
+    expect(claims[0]!.argument_passages).toEqual([{ verbatim_text: "Since X, A.", context: null, role: "makes" }]);
+    const problems = (toolResults(1)[0]!.rejected as Array<{ problem: string }>).map((r) => r.problem);
+    expect(problems[0]).toMatch(/role must be makes or attacks/);
+    expect(problems[1]).toMatch(/question has no arguments/);
+    // The schema and the task message carry the field only when asked.
+    const schema = streamMock.mock.calls[0]![0].tools[0].input_schema.properties.claims.items;
+    expect(schema.required).toContain("argument_passages");
+    expect(promptArgs[0]!.at(-1)).toBe(true);
+  });
+
+  it("leaves argument passages out of the schema by default", async () => {
+    respondWith(turn([["finish_extraction", {}]]));
+    expect(await extractClaims({ content: "doc" })).toEqual([]);
+    const schema = streamMock.mock.calls[0]![0].tools[0].input_schema.properties.claims.items;
+    expect(schema.properties).not.toHaveProperty("argument_passages");
+    expect(promptArgs[0]!.at(-1)).toBe(false);
+  });
+
   it("holds to a stated cap, and says how many remain", async () => {
     respondWith(
       turn([["record_claims", { claims: [claim("A"), claim("B"), claim("C")] }]]),

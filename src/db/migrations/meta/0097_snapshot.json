@@ -1,5 +1,5 @@
 {
-  "id": "ec7e9eec-0e0c-4e22-ab1c-6c9f3a81ce58",
+  "id": "9f2c703e-9073-44be-abcb-596c2910ac63",
   "prevId": "fc36c097-02b4-48c7-a223-335b6365232c",
   "version": "7",
   "dialect": "postgresql",
@@ -1305,13 +1305,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "private_reasons": {
-          "name": "private_reasons",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
         }
       },
       "indexes": {
@@ -2312,7 +2305,31 @@
           "name": "argument_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dismissed_at": {
+          "name": "dismissed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dismissed_reason": {
+          "name": "dismissed_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "source_id": {
           "name": "source_id",
@@ -2410,6 +2427,21 @@
           "method": "btree",
           "with": {}
         },
+        "idx_argument_instances_claim": {
+          "name": "idx_argument_instances_claim",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_argument_instances_source": {
           "name": "idx_argument_instances_source",
           "columns": [
@@ -2433,6 +2465,19 @@
           "tableTo": "arguments",
           "columnsFrom": [
             "argument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "argument_instances_claim_id_claims_id_fk": {
+          "name": "argument_instances_claim_id_claims_id_fk",
+          "tableFrom": "argument_instances",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
           ],
           "columnsTo": [
             "id"
@@ -2470,7 +2515,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_argument_instances_placed": {
+          "name": "ck_argument_instances_placed",
+          "value": "(\"argument_instances\".\"argument_id\" IS NULL) <> (\"argument_instances\".\"claim_id\" IS NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.argument_subclaims": {
