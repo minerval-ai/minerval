@@ -69,6 +69,8 @@ export const CORRESPONDENT_BOUNDS = {
   windowChanges: 500,
   /** Unmentioned changes listed by id on an update; past this only the count. */
   notCoveredListed: 200,
+  /** One plan item: a sentence or two, not a document. */
+  planItemChars: 500,
 } as const;
 
 export interface CorrespondentRow {
@@ -601,6 +603,92 @@ export async function recordCorrespondentRun(input: {
   );
 }
 
+export const PLAN_STATUSES = ["open", "done", "dropped"] as const;
+
+export interface PlanItemRow {
+  id: string;
+  text: string;
+  status: (typeof PLAN_STATUSES)[number];
+  note: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export async function listPlanItems(
+  correspondentId: string,
+  opts: { status?: "open" | "closed" | "all"; limit?: number } = {}
+): Promise<PlanItemRow[]> {
+  const status = opts.status ?? "all";
+  return rawQuery<PlanItemRow>(
+    `SELECT id, text, status, note, created_at, updated_at FROM correspondent_plan_items
+      WHERE correspondent_id = $1
+        AND ($2 = 'all' OR ($2 = 'open' AND status = 'open') OR ($2 = 'closed' AND status <> 'open'))
+      ORDER BY (status = 'open') DESC, updated_at DESC
+      LIMIT $3`,
+    [correspondentId, status, Math.min(200, Math.max(1, opts.limit ?? 50))]
+  );
+}
+
+/**
+ * Add plan items and close or amend existing ones, in one call. Items
+ * belong to this correspondent only; a closed item stays on the record.
+ */
+export async function updateCorrespondentPlan(input: {
+  correspondentId: string;
+  add?: unknown;
+  update?: unknown;
+}): Promise<{ ok: true; added: string[]; updated: string[] } | { ok: false; problem: string }> {
+  const B = CORRESPONDENT_BOUNDS;
+  const adds = Array.isArray(input.add) ? input.add.map((t) => String(t ?? "").trim()).filter(Boolean) : [];
+  const updates = Array.isArray(input.update) ? (input.update as Array<Record<string, unknown>>) : [];
+  const long = adds.find((t) => t.length > B.planItemChars);
+  if (long) return { ok: false, problem: `A plan item is a sentence or two (at most ${B.planItemChars} characters); put detail in your workspace.` };
+  for (const [i, u] of updates.entries()) {
+    if (!isUuid(u?.id)) return { ok: false, problem: `update[${i}].id must be a plan item id exactly as your briefing gave it` };
+    if (u.status !== undefined && !PLAN_STATUSES.includes(u.status as PlanItemRow["status"])) {
+      return { ok: false, problem: `update[${i}].status must be one of ${PLAN_STATUSES.join(", ")}` };
+    }
+  }
+  const ids = updates.map((u) => String(u.id));
+  if (ids.length > 0) {
+    const mine = await rawQuery<{ id: string }>(
+      `SELECT id FROM correspondent_plan_items WHERE correspondent_id = $1 AND id = ANY($2::uuid[])`,
+      [input.correspondentId, ids]
+    );
+    const have = new Set(mine.map((r) => r.id));
+    const missing = ids.find((id) => !have.has(id));
+    if (missing) return { ok: false, problem: `No plan item ${missing} on your plan` };
+  }
+  const updated: string[] = [];
+  for (const u of updates) {
+    await rawQuery(
+      `UPDATE correspondent_plan_items
+          SET status = COALESCE($3, status),
+              note = COALESCE($4, note),
+              text = COALESCE($5, text),
+              updated_at = now()
+        WHERE id = $2 AND correspondent_id = $1`,
+      [
+        input.correspondentId,
+        String(u.id),
+        u.status === undefined ? null : String(u.status),
+        u.note === undefined ? null : String(u.note).slice(0, B.planItemChars),
+        u.text === undefined ? null : String(u.text).trim().slice(0, B.planItemChars) || null,
+      ]
+    );
+    updated.push(String(u.id));
+  }
+  const added: string[] = [];
+  for (const text of adds) {
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO correspondent_plan_items (correspondent_id, text) VALUES ($1, $2) RETURNING id`,
+      [input.correspondentId, text]
+    );
+    added.push(row!.id);
+  }
+  return { ok: true, added, updated };
+}
+
 export async function updateCorrespondentWorkspace(id: string, content: string): Promise<number> {
   const text = content.slice(0, CORRESPONDENT_BOUNDS.workspaceChars);
   await rawQuery(`UPDATE correspondents SET workspace = $2, updated_at = now() WHERE id = $1`, [id, text]);
@@ -643,7 +731,7 @@ export function validateUpdateItems(
     const claimId = String(o.claim_id ?? "");
     if (!knownClaimIds.has(claimId)) return { problem: `items[${i}].claim_id "${claimId}" is not an active claim` };
     const reason = String(o.reason ?? "").trim();
-    if (reason.length < 10) return { problem: `items[${i}].reason: say why it deserves the audience's attention` };
+    if (reason.length < 10) return { problem: `items[${i}].reason: say why this node is in the output` };
     const changeIds = Array.isArray(o.change_ids) ? [...new Set(o.change_ids.map(String))] : [];
     const notInWindow = changeIds.find((id) => !windowChangeIds.has(id));
     if (notInWindow) return { problem: `items[${i}].change_ids: "${notInWindow}" is not a change in this run's window` };

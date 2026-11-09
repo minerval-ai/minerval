@@ -1,4 +1,4 @@
-# Method skill: Costing (version 3)
+# Method skill: Costing (version 4)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -88,6 +88,10 @@ work:
 - **formalize and attempt_proof**: their own lines. An attempt at the max
   variant costs several times the standard one.
 - **curation**: one Curator run for each curate row you commission.
+- **consistency sweeps**: one sweep per partition you buy, priced by the
+  partition's size: cost_sheet's per-node figure times its assessed
+  nodes, from a floor to a ceiling. The passes its flags ask for are more
+  passes, priced as reassess.
 - **requests**: a request's budget is the price of the work. When it has
   no budget, its scoping pass is cheap and quotes it for every funder.
   You weigh what meeting the request would change in your territory

@@ -1,6 +1,6 @@
 {
-  "id": "074a6922-14f4-40f1-88b6-d2734da44bb5",
-  "prevId": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
+  "id": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
+  "prevId": "00c7e23f-0abb-444c-a76a-eb465d1a2a98",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -70,30 +70,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "commissioned_by": {
-          "name": "commissioned_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "brief": {
-          "name": "brief",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_action_id": {
-          "name": "parent_action_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -102,21 +78,6 @@
           "columns": [
             {
               "expression": "exclusion_group",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_action_allocations_parent": {
-          "name": "idx_action_allocations_parent",
-          "columns": [
-            {
-              "expression": "parent_action_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -252,19 +213,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "action_allocations_parent_action_id_actions_id_fk": {
-          "name": "action_allocations_parent_action_id_actions_id_fk",
-          "tableFrom": "action_allocations",
-          "tableTo": "actions",
-          "columnsFrom": [
-            "parent_action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -6817,6 +6765,112 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.correspondent_plan_items": {
+      "name": "correspondent_plan_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "correspondent_id": {
+          "name": "correspondent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_correspondent_plan_items": {
+          "name": "idx_correspondent_plan_items",
+          "columns": [
+            {
+              "expression": "correspondent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "correspondent_plan_items_correspondent_id_correspondents_id_fk": {
+          "name": "correspondent_plan_items_correspondent_id_correspondents_id_fk",
+          "tableFrom": "correspondent_plan_items",
+          "tableTo": "correspondents",
+          "columnsFrom": [
+            "correspondent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_correspondent_plan_items_status": {
+          "name": "ck_correspondent_plan_items_status",
+          "value": "\"correspondent_plan_items\".\"status\" IN ('open', 'done', 'dropped')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.correspondent_updates": {

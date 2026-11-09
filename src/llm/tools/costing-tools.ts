@@ -15,9 +15,11 @@
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import {
+  estimateConsistencyNodeCostMicroUsd,
   estimateLedgerKindCostMicroUsd,
   stewardTierCostEstimates,
 } from "../../services/cost-estimate-service.js";
+import { CONSISTENCY_SWEEP_MIN_NODES, consistencySweepPrice } from "../../services/action-service.js";
 import { getEffectiveAllocationPolicy } from "../../services/allocation-policy-service.js";
 import { reviewCostEstimateMicroUsd } from "../../services/contribution-service.js";
 import { capMicroUsd } from "../../services/owl.js";
@@ -48,7 +50,10 @@ const LEDGER_KINDS: Record<string, string> = {
   mandate_review: "one review pass by a mandate's Grantmaker",
   grant_planning: "a Grantmaker's planning pass on a new mandate",
   prize_review: "a review of a prize claim",
-  consistency_sweep: "a Consistency Checker sweep over one region",
+  consistency_sweep:
+    "a Consistency Checker sweep over one partition (a topic tag, or the residual bucket), " +
+    "reading its assessments against each other and raising flags; priced by the partition's " +
+    "assessed nodes, from a floor up to a ceiling (sweep plan items)",
 };
 
 /** The prior a ledger line falls back to when too few rows have finished. */
@@ -76,9 +81,34 @@ async function ledgerPriorMicroUsd(kind: string, variant: string): Promise<numbe
       return estimateLedgerKindCostMicroUsd(kind);
     case "request":
       return variant === "scope" ? estimateLedgerKindCostMicroUsd("request_scope") : null;
+    case "consistency_sweep":
+      // A sweep of the smallest partition: the floor, not a typical price.
+      return (await sweepPricing(variant === "strong" ? "strong" : "standard")).floorMicroUsd;
     default:
       return null;
   }
+}
+
+/**
+ * How a sweep of `variant` is priced (#756): per assessed node, counting at
+ * least CONSISTENCY_SWEEP_MIN_NODES, up to the variant's ceiling. A sweep's
+ * price is its partition's size, so its line carries the rule, not one
+ * figure: past sweeps of other partitions say little about this one.
+ */
+async function sweepPricing(variant: "standard" | "strong"): Promise<{
+  perNodeMicroUsd: number;
+  basis: string;
+  floorMicroUsd: number;
+  capMicroUsd: number;
+}> {
+  const perNode = await estimateConsistencyNodeCostMicroUsd(variant, CONSISTENCY_SWEEP_MIN_NODES);
+  const floor = consistencySweepPrice(variant, 0, perNode);
+  return {
+    perNodeMicroUsd: perNode.microUsd,
+    basis: perNode.basis,
+    floorMicroUsd: floor.microUsd,
+    capMicroUsd: floor.capMicroUsd,
+  };
 }
 
 /** Every kind of work on the action ledger, priced from its finished rows. */
@@ -102,6 +132,7 @@ async function ledgerLines(): Promise<Record<string, unknown>[]> {
     ["attempt_proof", "standard"], ["attempt_proof", "max"],
     ["curate", "standard"], ["audit", "standard"], ["request", "scope"],
     ["lookout_run", "standard"], ["correspondent_run", "standard"], ["mandate_review", "standard"], ["grant_planning", "standard"],
+    ["consistency_sweep", "standard"], ["consistency_sweep", "strong"],
   ];
   for (const r of rows) {
     if (!wanted.some(([k, v]) => k === r.kind && v === r.variant)) wanted.push([r.kind, r.variant]);
@@ -109,6 +140,31 @@ async function ledgerLines(): Promise<Record<string, unknown>[]> {
   const lines: Record<string, unknown>[] = [];
   for (const [kind, variant] of wanted) {
     const r = seen.get(`${kind}:${variant}`);
+    if (kind === "consistency_sweep") {
+      // Priced by size, so the line is the rule (#831): what one node costs,
+      // the floor every partition pays, and the ceiling.
+      const p = await sweepPricing(variant === "strong" ? "strong" : "standard").catch(() => null);
+      lines.push({
+        kind,
+        variant,
+        what: LEDGER_KINDS[kind],
+        runs_last_30_days: r?.runs ?? 0,
+        typical_usd: usd(r?.p50),
+        ceiling_usd: p ? usd(p.capMicroUsd) : usd(r?.p80),
+        ...(p
+          ? {
+              per_assessed_node_usd: Math.round(p.perNodeMicroUsd / 100) / 10_000,
+              per_node_basis: p.basis,
+              floor_usd: usd(p.floorMicroUsd),
+              note:
+                `One sweep costs per_assessed_node_usd times the partition's assessed nodes ` +
+                `(at least ${CONSISTENCY_SWEEP_MIN_NODES}), up to ceiling_usd; what it does not ` +
+                `spend settles back. A partition's open row carries its exact price.`,
+            }
+          : {}),
+      });
+      continue;
+    }
     const thin = (r?.runs ?? 0) < MIN_RUNS;
     const prior = thin ? await ledgerPriorMicroUsd(kind, variant).catch(() => null) : null;
     lines.push({

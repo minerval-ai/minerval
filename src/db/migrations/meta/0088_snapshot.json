@@ -1,5 +1,5 @@
 {
-  "id": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
+  "id": "00c7e23f-0abb-444c-a76a-eb465d1a2a98",
   "prevId": "8d7fc87a-248c-4d1e-8cf5-6dba22ec8dee",
   "version": "7",
   "dialect": "postgresql",
@@ -6767,6 +6767,112 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.correspondent_plan_items": {
+      "name": "correspondent_plan_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "correspondent_id": {
+          "name": "correspondent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_correspondent_plan_items": {
+          "name": "idx_correspondent_plan_items",
+          "columns": [
+            {
+              "expression": "correspondent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "correspondent_plan_items_correspondent_id_correspondents_id_fk": {
+          "name": "correspondent_plan_items_correspondent_id_correspondents_id_fk",
+          "tableFrom": "correspondent_plan_items",
+          "tableTo": "correspondents",
+          "columnsFrom": [
+            "correspondent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_correspondent_plan_items_status": {
+          "name": "ck_correspondent_plan_items_status",
+          "value": "\"correspondent_plan_items\".\"status\" IN ('open', 'done', 'dropped')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.correspondent_updates": {
       "name": "correspondent_updates",
       "schema": "",
@@ -10098,189 +10204,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.node_messages": {
-      "name": "node_messages",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sender_kind": {
-          "name": "sender_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sender_node_id": {
-          "name": "sender_node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sender_ref": {
-          "name": "sender_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "paid": {
-          "name": "paid",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "reply_to": {
-          "name": "reply_to",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome_note": {
-          "name": "outcome_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "answered_at": {
-          "name": "answered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_node_messages_unread": {
-          "name": "idx_node_messages_unread",
-          "columns": [
-            {
-              "expression": "node_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "read_at IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_node_messages_sender": {
-          "name": "idx_node_messages_sender",
-          "columns": [
-            {
-              "expression": "sender_node_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "node_messages_node_id_claims_id_fk": {
-          "name": "node_messages_node_id_claims_id_fk",
-          "tableFrom": "node_messages",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "node_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "node_messages_sender_node_id_claims_id_fk": {
-          "name": "node_messages_sender_node_id_claims_id_fk",
-          "tableFrom": "node_messages",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "sender_node_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "node_messages_reply_to_node_messages_id_fk": {
-          "name": "node_messages_reply_to_node_messages_id_fk",
-          "tableFrom": "node_messages",
-          "tableTo": "node_messages",
-          "columnsFrom": [
-            "reply_to"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "node_messages_outcome_check": {
-          "name": "node_messages_outcome_check",
-          "value": "\"node_messages\".\"outcome\" IS NULL OR \"node_messages\".\"outcome\" IN ('changed', 'no_change', 'disagree')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.oauth_authorization_requests": {

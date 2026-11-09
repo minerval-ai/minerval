@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import { buildAdminPromptBlocks, skillsSection } from "./skills.js";
 
 // The role prompt is the same for every mandate and every run, so its cached
@@ -42,7 +41,6 @@ its mission or priorities.
 Every decision you make is recorded with your reason on the mandate's
 public record and read at the Grantmaker's next review.
 
-${RAISING_ISSUES}
 
 ${skillsSection("program-officer")}`;
 

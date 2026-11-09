@@ -60,6 +60,7 @@ type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding 
 import {
   MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
+  reportStewardPark,
   stewardReleaseSet,
   withStewardLease,
 } from "../services/steward-lease.js";
@@ -411,6 +412,9 @@ async function runStewardOnClaim(
       console.error(
         `[steward] claim ${task.id} parked as error after ${nextAttempts} attempts: ${msg}`
       );
+      // A park retires funded rows unrun, so it is surfaced to maintainers
+      // rather than left for whoever next reads queue health (#834).
+      await reportStewardPark(task.id, "steward-pipeline");
     } else {
       await rawQuery(
         `UPDATE claims

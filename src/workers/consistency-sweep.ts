@@ -148,7 +148,7 @@ export function consistencySweepBudgetBasis(price: ConsistencySweepPrice, assess
     return (
       head +
       `It is meant to cover reading every node here and comparing what needs comparing; ` +
-      `what you do not spend goes back to the General mandate.`
+      `what you do not spend goes back to whoever funded the sweep.`
     );
   }
   const reach = Math.floor(price.capMicroUsd / Math.max(1, price.perNodeMicroUsd));

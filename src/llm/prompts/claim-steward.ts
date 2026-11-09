@@ -1,5 +1,4 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -405,9 +404,7 @@ so its sender learns what it did.
 
 `;
 
-const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${RAISING_ISSUES}
-
-${skillsSection("claim-steward")}`;
+const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${skillsSection("claim-steward")}`;
 
 export function getClaimStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

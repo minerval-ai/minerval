@@ -399,7 +399,10 @@ non-coalesced enqueue; the `queue_depth_snapshots` trend over the last 48
 points (earliest, latest, delta, least-squares slope per hour); and the
 claims parked in `error` with their last error, most important first —
 the #97 failure mode (81 of 142 parked with nothing surfacing it) kept
-visible.
+visible. A park no longer waits to be read here: the lane that parks a
+claim files it on the agents' own channel as it happens
+(`reportStewardPark`, #834), blocking when it retired funded ledger rows
+unrun.
 
 **Is not:** about content. A deep queue under a corpus drain is expected;
 a growing one on an idle deployment is not. Read the slope with the

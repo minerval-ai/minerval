@@ -28,6 +28,14 @@ const { state, queries } = vi.hoisted(() => ({
     publishedFor: new Set<string>(),
     lastAttemptFinishedAt: null as Date | null,
     dueLookouts: [] as Array<{ id: string; title: string }>,
+    // The Steward standing of the claims a test names (#834): its queue
+    // state and, when it parked, the failure recorded against it.
+    stewardState: "done" as string,
+    stewardError: null as string | null,
+    stewardAttempts: 0,
+    // The action row `groupLedger` finds by id, for an item that already
+    // carries an action_id.
+    rowById: null as null | { id: string; status: string; exclusion_group: string },
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -40,7 +48,24 @@ vi.mock("../../../src/db/client.js", () => ({
     // name is active and assessed; published iff the test says so.
     if (q.includes("FROM claims c WHERE c.id = $1")) {
       const id = params[0] as string;
-      return [{ id, state: "active", steward_state: "done", published: state.publishedFor.has(id) }];
+      return [
+        {
+          id,
+          state: "active",
+          steward_state: state.stewardState,
+          steward_error: state.stewardError,
+          steward_attempts: state.stewardAttempts,
+          published: state.publishedFor.has(id),
+        },
+      ];
+    }
+    // ensureAssessActions' own claim read (its label and whether the claim
+    // is already assessed).
+    if (q.includes("FROM claims c") && q.includes("c.state = 'active'") && q.includes("AS assessed")) {
+      return [{ text: "a claim", assessed: true }];
+    }
+    if (q.includes("FROM actions WHERE id = $1")) {
+      return state.rowById && state.rowById.id === params[0] ? [state.rowById] : [];
     }
     if (q.includes("FROM grants") && q.includes("plan_cursor")) return [state.grant];
     if (q.includes("FROM lookouts l")) return state.dueLookouts;
@@ -110,6 +135,10 @@ beforeEach(() => {
   state.publishedFor = new Set();
   state.lastAttemptFinishedAt = null;
   state.dueLookouts = [];
+  state.stewardState = "done";
+  state.stewardError = null;
+  state.stewardAttempts = 0;
+  state.rowById = null;
 });
 
 describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
@@ -356,5 +385,67 @@ describe("plan-to-ledger materialization writes each item's standing back (#416)
     expect(ledgerOf(0)?.status).toBe("blocked");
     expect(ledgerOf(0)?.reason).toContain("estimator down");
     expect(raiseIssue).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A funded stewarding item whose row was retired because the claim parked
+ * as 'error' (#834). The park, not the ledger, is the thing to fix: the
+ * item says so with the recorded failure rather than inviting another item
+ * that would be retired the same way. Once the park clears, the funder's
+ * item gets the pass it paid for.
+ */
+describe("a stewarding item whose row was retired while the claim was parked (#834)", () => {
+  const ROW = { id: "act-1", status: "cancelled", exclusion_group: `assess:${CLAIM_A}` };
+  const ledgerOf = (index: number) => {
+    const w = queries
+      .filter((x) => x.q.includes("UPDATE grants") && x.q.includes("jsonb_set(plan, $2::text[]"))
+      .find((x) => (x.params[1] as string[])[1] === String(index));
+    return w ? (JSON.parse(w.params[2] as string) as { status: string; reason?: string }) : null;
+  };
+  const parkedItem = () => [
+    {
+      action: "reassess",
+      claim_id: CLAIM_A,
+      rationale: "r",
+      ledger: { status: "open", action_id: ROW.id, checked_at: "2026-01-01T00:00:00.000Z" },
+    },
+  ];
+
+  it("states the park and its error, and does not ask for another item", async () => {
+    state.stewardState = "error";
+    state.stewardError = "boom: null reference in decomposition";
+    state.stewardAttempts = 3;
+    state.rowById = ROW;
+    state.grant.plan.items = parkedItem();
+    const { enqueueSteward } = await import("../../../src/services/queue-service.js");
+    await reconcileActions();
+    const ledger = ledgerOf(0);
+    expect(ledger?.status).toBe("cancelled");
+    expect(ledger?.reason).toContain("parked this claim as 'error'");
+    expect(ledger?.reason).toContain("3 failed passes");
+    expect(ledger?.reason).toContain("boom: null reference in decomposition");
+    expect(ledger?.reason).not.toContain("add another item");
+    // Nothing is queued while the claim is parked: the pass would fail the
+    // same way, and the lanes would retire the row again.
+    expect(enqueueSteward).not.toHaveBeenCalled();
+  });
+
+  it("opens a fresh row once the park has cleared, rather than reading cancelled forever", async () => {
+    state.stewardState = "done";
+    state.rowById = ROW;
+    state.grant.plan.items = parkedItem();
+    const { enqueueSteward } = await import("../../../src/services/queue-service.js");
+    await reconcileActions();
+    expect(enqueueSteward).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: CLAIM_A, trigger: "mandate_plan" })
+    );
+    // ensureAssessActions reopens the retired row for the funded pass
+    // (its kind is a bound parameter, so match the group).
+    const opened = queries.filter(
+      (x) => x.q.includes("INSERT INTO actions") && x.params[1] === `assess:${CLAIM_A}`
+    );
+    expect(opened.length).toBeGreaterThan(0);
+    expect(opened[0]!.params[0]).toBe("reassess");
   });
 });

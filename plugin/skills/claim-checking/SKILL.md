@@ -48,11 +48,13 @@ skill bundles it in full, and the section numbers below point into it.
   graph's own Correspondents use, so you can build one for your user from it:
   read the changes in their scope, open what matters with `get_claim`, and
   report it with the same habits below, saying what you did not cover.
-- **Updates someone already writes**: `list_correspondents` (with `claim_id`,
-  the ones covering that claim) and `list_correspondent_updates`. A
-  Correspondent's update is the graph's judgment selected for an audience by
-  a mandate's agent; report its items as the graph's, and read its
-  `not_covered` before treating its silence as news. Free.
+- **Outputs someone already makes from the graph**: `list_correspondents`
+  (with `claim_id`, the ones covering that claim) and
+  `list_correspondent_updates`. A Correspondent is a mandate's agent making
+  something from the graph for an audience; when you cite one, separate what
+  it reports the graph holding from its own framing, check what matters with
+  `get_claim`, and read its `not_covered` before treating its silence as news.
+  Free.
 - **A whole document or diff to clear before shipping**: prefer delegating
   to the `fact-checker` subagent, or point the user at `/minerval:check` and
   `/minerval:factcheck-diff`.

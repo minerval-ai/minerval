@@ -621,36 +621,43 @@
     {
       "idx": 88,
       "version": "7",
-      "when": 1794240173464,
-      "tag": "0088_node_messages",
+      "when": 1794000228492,
+      "tag": "0088_correspondent_plan",
       "breakpoints": true
     },
     {
       "idx": 89,
       "version": "7",
-      "when": 1794241078714,
-      "tag": "0089_commissions",
+      "when": 1794240173464,
+      "tag": "0089_node_messages",
       "breakpoints": true
     },
     {
       "idx": 90,
       "version": "7",
-      "when": 1794241652280,
-      "tag": "0090_mandate_operations",
+      "when": 1794241078714,
+      "tag": "0090_commissions",
       "breakpoints": true
     },
     {
       "idx": 91,
       "version": "7",
-      "when": 1794242516074,
-      "tag": "0091_public_read_views",
+      "when": 1794241652280,
+      "tag": "0091_mandate_operations",
       "breakpoints": true
     },
     {
       "idx": 92,
       "version": "7",
+      "when": 1794242516074,
+      "tag": "0092_public_read_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
       "when": 1794243103607,
-      "tag": "0092_lookout_graph_feed",
+      "tag": "0093_lookout_graph_feed",
       "breakpoints": true
     }
   ]

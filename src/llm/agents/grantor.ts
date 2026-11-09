@@ -20,7 +20,7 @@
  * the planner's job is to go and find the sources.
  *
  * The plan is every kind of work a mandate can fund (assess, reassess,
- * deepen, ingest, formalize, attempt_proof), priced against the escrow by
+ * deepen, ingest, formalize, attempt_proof, sweep), priced against the escrow by
  * the same estimate the funder was quoted. The judgment is the essay's
  * marginal-value estimate made conversational: prefer contested,
  * consequential, unassessed or stale claims and sources that would seed
@@ -285,8 +285,8 @@ async function runGrantorImpl(input: {
           const problem = validatePlanItems(items);
           if (problem) return JSON.stringify({ success: false, problem });
           // A backstop, not a quote: a plan whose least possible cost
-          // already overruns the escrow never reaches the funder. formalize
-          // and attempt_proof are priced by the ledger at run time and
+          // already overruns the escrow never reaches the funder. formalize,
+          // attempt_proof and sweep are priced by the ledger at run time and
           // bounded by the escrow there.
           const floor = await planCostFloorOwls(items);
           if (floor.floor_owls > budgetOwls) {

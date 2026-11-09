@@ -29,6 +29,7 @@ import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import {
+  reportStewardPark,
   stewardFailureSet,
   stewardReleaseSet,
   withStewardLease,
@@ -119,6 +120,15 @@ async function claimNextGrantTarget(
       // reconcile sweep does that), so plan progress stays honest.
       if (item.action === "ingest") {
         waitingOnLedger = true;
+        continue;
+      }
+      // A 'sweep' item (#831) is ledger work too, funded from the escrow
+      // by fundGrantSelfActions and run by the engine executor; it holds
+      // the mandate open while its row waits or runs.
+      if (item.action === "sweep") {
+        if (item.ledger?.status === "open" || item.ledger?.status === "running") {
+          waitingOnLedger = true;
+        }
         continue;
       }
       if (!item.claim_id) {
@@ -417,6 +427,8 @@ export async function processNextGrantTask(
         WHERE id = $1`,
       [target.id, target.prior_state, msg]
     );
+    // Reports only if that CASE actually parked the claim (#834).
+    await reportStewardPark(target.id, "grant-pipeline");
     await rawQuery(
       `UPDATE budget_jobs SET error = $2, updated_at = now() WHERE id = $1`,
       [grant.budget_job_id, msg]

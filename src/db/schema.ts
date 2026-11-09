@@ -2845,6 +2845,37 @@ export const correspondentEvents = pgTable(
   ]
 );
 
+// A correspondent's plan: what it means to do across runs (follow a
+// question until it settles, write a summary once a subtree is assessed,
+// ask its Grantmaker for a wider scope), each item open until it marks it
+// done or dropped, with a note on what became of it.
+export const correspondentPlanItems = pgTable(
+  "correspondent_plan_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    correspondentId: uuid("correspondent_id")
+      .notNull()
+      .references(() => correspondents.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    // open | done | dropped
+    status: text("status").notNull().default("open"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_correspondent_plan_items").on(table.correspondentId, table.status, table.createdAt),
+    check(
+      "ck_correspondent_plan_items_status",
+      sql`${table.status} IN ('open', 'done', 'dropped')`
+    ),
+  ]
+);
+
 // One update a correspondent published: structured items for agents (a
 // node, the reason it deserves attention, the changes behind it), a prose
 // rendering for people, and what it did not cover: the changes in its
