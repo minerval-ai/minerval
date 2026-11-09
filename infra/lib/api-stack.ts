@@ -242,6 +242,11 @@ export class ApiStack extends cdk.Stack {
         // Grantmaker, so the cheap tier. Pinned to the config default so the
         // model guard covers it.
         PROGRAM_OFFICER_MODEL: "openai/gpt-6-luna",
+        // Officers sit on what waits in a mandate's inbox (what lookouts
+        // and the system raised) when no run is waiting on the answer.
+        // Without them nothing but a waiting petition is ever decided, and
+        // the General and Governance mandates fund nothing they are asked.
+        OFFICER_SITTINGS_ENABLED: "true",
         // The Correspondent (#563): reads the graph for an audience and
         // writes updates people read, on the standard tier. Pinned to the
         // config default so the model guard covers it.
