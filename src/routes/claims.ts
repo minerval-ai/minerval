@@ -40,6 +40,7 @@ import {
   MIN_DECOMPOSITION_OWLS,
 } from "../services/claim-mandate-service.js";
 import { getFundingLabelForJob } from "../services/grant-service.js";
+import { developerDisclosure } from "../llm/model-developers.js";
 import { emptyClaimExtras, loadClaimExtras } from "../services/claim-extras-service.js";
 import { leanChecksByArgument } from "../services/formalization-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
@@ -177,6 +178,17 @@ export const assessmentSchema = {
     // Raw API id of the model that produced the assessment (#294); null for
     // rows written before the column existed.
     model: { type: "string", nullable: true },
+    // Developer disclosure (#534): present when the claim names the
+    // developer of the model that assessed it; absent otherwise.
+    developer_disclosure: {
+      type: "object",
+      nullable: true,
+      properties: {
+        developer: { type: "string" },
+        model: { type: "string" },
+        matched: { type: "array", items: { type: "string" } },
+      },
+    },
     // Funding disclosure (§19): present when the assessing run was paid work
     // (an assessment order or a named grant); absent for system work.
     funding: {
@@ -532,6 +544,20 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               label: funding.label,
               ...(funding.mandate ? { mandate: funding.mandate } : {}),
             };
+          }
+        }
+
+        // Developer disclosure (#534): when the claim names the developer of
+        // the model that assessed it, say so. Computed from the recorded
+        // model and the claim's own words, never declared by the assessor.
+        if (assessment) {
+          const disclosure = developerDisclosure(
+            assessment.model,
+            claim.text,
+            claimTags.map((t) => t.name)
+          );
+          if (disclosure) {
+            (response.assessment as Record<string, unknown>).developer_disclosure = disclosure;
           }
         }
 

@@ -241,6 +241,17 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           <span className="assess-when">
             last assessed {fmtDate(assessment.assessed_at)}
             {assessment.model ? ` · ${modelDisplayName(assessment.model)}` : ""}
+            {/* Developer disclosure (#534): the marker sits by the assessor's
+                name, where the conflict is; the explanation it needs is in
+                the note at the foot of the page. */}
+            {assessment.developer_disclosure ? (
+              <>
+                {", "}
+                <a href="#developer-disclosure">
+                  made by {assessment.developer_disclosure.developer}, which this claim names
+                </a>
+              </>
+            ) : null}
           </span>
           {/* Funding is disclosed at the bottom of the page, with the
               explanation it needs, never beside the verdict (§12: the
@@ -478,6 +489,23 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           public standards whoever pays, funders never see or shape a
           verdict before anyone else, and mandates that attempt to steer
           conclusions are refused.
+        </p>
+      )}
+      {assessment?.developer_disclosure && (
+        <p
+          id="developer-disclosure"
+          style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}
+        >
+          This claim names {assessment.developer_disclosure.developer} (
+          {assessment.developer_disclosure.matched.map((m) => `“${m}”`).join(", ")}), which
+          built the model that assessed it,{" "}
+          {modelDisplayName(assessment.developer_disclosure.model)}. A model may carry
+          biases about its own developer that it cannot see, so the graph says so
+          rather than leaving it to the reader to notice. The assessment ran under
+          the same standards as any other, and its reasoning is on this page to be
+          checked; this note is a disclosure, not a finding that the verdict is
+          wrong. The match is mechanical, so it also catches claims that only
+          mention the developer.
         </p>
       )}
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
