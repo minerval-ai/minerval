@@ -244,8 +244,8 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.leanCheckOverheadMicroUsd).toBe(20_000);
     expect(c.formalizationReviewPeriodDays).toBe(14);
     expect(c.formalizationReviewAwardOwls).toBe(100);
-    // §7: the solver, on the strong tier, off by default.
-    expect(c.solverModel).toBe(MODELS.strong);
+    // §7: the solver, on the frontier tier, off by default.
+    expect(c.solverModel).toBe(MODELS.frontier);
     expect(c.solverEnabled).toBe(false);
     expect(c.solverDailyCapOwls).toBe(400);
     expect(c.solverCalibrationDailyCapOwls).toBe(100);

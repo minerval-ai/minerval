@@ -19,6 +19,7 @@ describe("model helpers", () => {
   it("allows temperature only for families known to accept it", () => {
     // Fable 5.1, Sonnet 5, and Opus 4.7+ reject non-default sampling params with
     // a 400 — and the client sends temperature: 0, which is non-default.
+    expect(modelAcceptsTemperature(MODELS.frontier)).toBe(false);
     expect(modelAcceptsTemperature(MODELS.strong)).toBe(false);
     expect(modelAcceptsTemperature(MODELS.sonnet)).toBe(false);
     expect(modelAcceptsTemperature(MODELS.opus)).toBe(false);
@@ -35,6 +36,7 @@ describe("model helpers", () => {
   });
 
   it("opts only Opus 5.5, Sonnet 5.5 and the Fable/Mythos family into the refusal fallback", () => {
+    expect(modelNeedsRefusalFallback(MODELS.frontier)).toBe(true);
     expect(modelNeedsRefusalFallback(MODELS.strong)).toBe(true);
     expect(modelNeedsRefusalFallback("claude-fable-5-1")).toBe(true);
     expect(modelNeedsRefusalFallback("claude-mythos-5")).toBe(true);
@@ -46,6 +48,9 @@ describe("model helpers", () => {
   });
 
   it("gives Sonnet 5.5 the default form and the rest the array form", () => {
+    // Fable 5.2's permitted fallback targets are Opus 4.8 and Opus 5; the
+    // array form names MODELS.opus (4.8).
+    expect(modelRefusalFallbackForm(MODELS.frontier)).toBe("array");
     expect(modelRefusalFallbackForm(MODELS.strong)).toBe("array");
     expect(modelRefusalFallbackForm("claude-fable-5-1")).toBe("array");
     expect(modelRefusalFallbackForm("claude-sonnet-5-5")).toBe("default");
@@ -55,6 +60,7 @@ describe("model helpers", () => {
 
 describe("modelSupportsLongRun", () => {
   it("admits the strong-tier families only", () => {
+    expect(modelSupportsLongRun(MODELS.frontier)).toBe(true);
     expect(modelSupportsLongRun(MODELS.strong)).toBe(true);
     expect(modelSupportsLongRun("claude-fable-5-1")).toBe(true);
     expect(modelSupportsLongRun("claude-fable-5")).toBe(true);

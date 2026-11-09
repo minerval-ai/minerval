@@ -84,16 +84,16 @@ export class SolverStack extends cdk.Stack {
         // says otherwise, so no environment runs multi-hour attempts by
         // accident.
         SOLVER_ENABLED: props.solverEnabled ?? "false",
-        // The strong tier; config refuses production without it (7.8).
-        SOLVER_MODEL: props.solverModel ?? "claude-opus-5-5",
+        // The frontier tier; config refuses production without it (7.8).
+        SOLVER_MODEL: props.solverModel ?? "claude-fable-5-2",
         // The model-env guard names every load-bearing agent, and the
         // Steward's attempt_completed run is invoked from this process on
         // the strong tier (6.4).
         STEWARD_MODEL: "claude-opus-5-5",
-        STEWARD_STRONG_MODEL: "claude-opus-5-5",
+        STEWARD_STRONG_MODEL: "claude-fable-5-2",
         CURATOR_MODEL: "claude-opus-5-5",
         AUDIT_MODEL: "claude-opus-5-5",
-        ARBITRATION_MODEL: "claude-opus-5-5",
+        ARBITRATION_MODEL: "claude-fable-5-2",
         EXTRACTOR_MODEL: "claude-opus-5-5",
         MATCHER_MODEL: "openai/gpt-6-luna",
         PUBLIC_API_BASE_URL: "https://api.claimgraph.io",
