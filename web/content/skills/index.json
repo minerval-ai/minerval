@@ -168,7 +168,7 @@
       "name": "mathematics",
       "displayName": "Mathematics",
       "description": "How the constitution applies to propositions of mathematics: proofs as arguments, how statuses and credence read for theorems and conjectures, machine-checked proofs as evidence, formal statements in Lean 4, the solver and the prize program, and what money may never touch. Does not apply to claims that merely use a number or a model.",
-      "version": 6,
+      "version": 7,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "domain",
       "domains": [

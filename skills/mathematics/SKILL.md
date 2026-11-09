@@ -8,7 +8,7 @@ description: >-
   apply to claims that merely use a number or a model.
 metadata:
   minerval:
-    version: 6
+    version: 7
     since_epoch: 2026-09-domain-skills
     changelog:
       2: "requires is for a result every proof of the claim depends on; a result only one of several proofs uses is supports (constitution §6)"
@@ -16,6 +16,7 @@ metadata:
       4: "a challenge whose only ground is dislike of the result is rejected without the bad-faith flag; the prize-specific abuses map to the misinformation and sybil categories; the Arbitrator reads the prize claim and records challenge_upheld"
       5: "a section for the researcher, on what lean_search and lean_elaborate can and cannot show on a research run; it no longer reads the Steward's section"
       6: "inside the attempt cooldown a further attempt opens on a rationale that says what changed since the last one, judged by the Grantmaker, not on a rationale of a set length"
+      7: "work is commissioned whole under a mandate's written operating policy; no valuation or allocator decides what runs, and a prize still appears in no budget or judgment of a claim"
     domains: [mathematics]
 ---
 

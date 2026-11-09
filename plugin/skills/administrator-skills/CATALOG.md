@@ -11,7 +11,7 @@ How to estimate what a piece of work will cost before anyone pays for it: a requ
 
 Sections: For every administrator; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the researcher; Failure modes.
 
-### Mathematics (`skills/mathematics.md`, version 6, domain skill)
+### Mathematics (`skills/mathematics.md`, version 7, domain skill)
 
 How the constitution applies to propositions of mathematics: proofs as arguments, how statuses and credence read for theorems and conjectures, machine-checked proofs as evidence, formal statements in Lean 4, the solver and the prize program, and what money may never touch. Does not apply to claims that merely use a number or a model.
 

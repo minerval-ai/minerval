@@ -88,7 +88,7 @@ describe("the Mathematics skill", () => {
   it("loads with the frontmatter Appendix A specifies", () => {
     const m = getSkill("mathematics");
     expect(m.displayName).toBe("Mathematics");
-    expect(m.version).toBe(6);
+    expect(m.version).toBe(7);
     expect(m.sinceEpoch).toBe("2026-09-domain-skills");
     expect(m.domains).toEqual(["mathematics"]);
     expect(m.description).toMatch(/^How the constitution applies to propositions of mathematics/);
@@ -279,7 +279,7 @@ describe("views", () => {
 
   it("wraps the role's sections with the citable heading and the standing sentence", () => {
     const view = getSkillView(m, "claim-steward");
-    expect(view.startsWith("# Domain skill: Mathematics (version 6)\n\n" + SKILL_STANDING)).toBe(
+    expect(view.startsWith("# Domain skill: Mathematics (version 7)\n\n" + SKILL_STANDING)).toBe(
       true
     );
     for (const h of ROLE_VIEW["claim-steward"]) expect(view).toContain(`## ${h}\n`);

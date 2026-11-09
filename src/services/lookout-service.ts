@@ -21,12 +21,11 @@
  *     move anything? — which is how its Grantmaker decides whether to keep
  *     paying for it.
  *
- * What a lookout can cause to happen is deliberately a candidate on the
- * ledger, never a conclusion: a reassess valued within its ceiling (its
- * mandate's allocator then funds it or not, best value per owl first, like
- * any other row), an ingest valued the same way (#695), a note for the
- * Grantmaker. Money it never touches directly; importance and assessments
- * it cannot reach.
+ * What a lookout can cause to happen is work, never a conclusion: a pass
+ * or an ingest it commissions from its mandate within the limit its
+ * Grantmaker set, or raises to the mandate's program officers when it is
+ * larger, and a note for the Grantmaker. Importance and assessments it
+ * cannot reach.
  */
 import { rawQuery } from "../db/client.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
@@ -35,6 +34,7 @@ import { enqueueSteward } from "./queue-service.js";
 import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
 import { ingestCoverage, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { capMicroUsd } from "./owl.js";
+import { raiseToMandate } from "./mandate-inbox-service.js";
 
 /** Input kinds a lookout can wake on, beyond its heartbeat. */
 export const LOOKOUT_TRIGGER_KINDS = [
@@ -537,21 +537,19 @@ async function actOnFind(input: {
       };
     }
   }
-  await rawQuery(
-    `INSERT INTO mandate_inbox (grant_id, kind, target_node_id, target_ref, source, summary, detail)
-     VALUES ($1, 'raised', $2, $3, $4, $5, $6::jsonb)`,
-    [
-      input.grantId,
-      input.claimId,
-      input.url,
-      `the lookout "${title}"`,
-      input.rationale,
-      JSON.stringify({
-        action_id: input.actionId,
-        ...(input.budgetMicroUsd > 0 ? { suggested_budget_owls: input.budgetMicroUsd / 1_000_000 } : {}),
-      }),
-    ]
-  );
+  // Through raiseToMandate, so a repeat about the same row folds into the
+  // item still waiting and, when sittings are on, an officer sits on it now.
+  await raiseToMandate({
+    grantId: input.grantId,
+    targetNodeId: input.claimId,
+    targetRef: input.url,
+    source: `the lookout "${title}"`,
+    summary: input.rationale,
+    detail: {
+      action_id: input.actionId,
+      ...(input.budgetMicroUsd > 0 ? { suggested_budget_owls: input.budgetMicroUsd / 1_000_000 } : {}),
+    },
+  });
   return { commissioned: false, note: "Raised to the mandate's program officers, who decide under its operating policy." };
 }
 
@@ -678,19 +676,14 @@ export async function flagReassessment(input: {
 
 /**
  * An ingest flag (#695): open (or join) the ingest row on the action ledger
- * for the URL, scoped to a focus when one is given, and write the funding
- * mandate's valuation on it at the lookout's urgency clamped to the ceiling
- * its Grantmaker delegated, exactly as flagReassessment does for a pass.
- * The mandate's allocator then ranks the row by value per owl against
- * everything else the mandate values and funds it or not out of the day's
- * room. It used to be appended to the mandate's plan, where plan ingests
- * are self-funded from escrow outside the allocator, so a count of ingests
- * per run was the only check on a lookout's spending.
+ * for the URL, scoped to a focus when one is given, and commission it
+ * within the lookout's limit or raise it to the mandate's officers, exactly
+ * as flagReassessment does for a pass (actOnFind).
  *
  * Refused when the source's extraction record already covers it (read
  * whole, or for the same focus), when the Grantmaker already planned the
- * same ingest, when the URL is not safely fetchable, when the valuation
- * would be 0, or when the ledger has the ingest running or retired. A URL
+ * same ingest, when the URL is not safely fetchable, or when the ledger has
+ * the ingest running or retired. A URL
  * this lookout already flagged and that is still waiting is a repeat.
  */
 export async function flagIngest(input: {

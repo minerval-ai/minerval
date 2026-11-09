@@ -102,6 +102,13 @@ vi.mock("../../../src/services/graph-change-service.js", () => ({
   })),
 }));
 vi.mock("../../../src/services/owl.js", () => ({ capMicroUsd: () => 500_000 }));
+const raises = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock("../../../src/services/mandate-inbox-service.js", () => ({
+  raiseToMandate: vi.fn(async (input: Record<string, unknown>) => {
+    raises.push(input);
+    return { id: `item-${raises.length}`, folded: false };
+  }),
+}));
 vi.mock("../../../src/services/url-guard.js", () => ({
   UnsafeUrlError: class UnsafeUrlError extends Error {},
   assertPublicHttpUrl: vi.fn(async (raw: string) => {
@@ -251,10 +258,10 @@ describe("flagReassessment", () => {
     await flag({ budgetMicroUsd: 0 });
     await flag({ budgetMicroUsd: 5_000_000 });
     expect(state.commissions).toHaveLength(0);
-    const raised = queries.filter((x) => x.q.includes("INSERT INTO mandate_inbox"));
+    const raised = raises.slice(-2);
     expect(raised).toHaveLength(2);
-    expect(raised[1]!.params.slice(0, 3)).toEqual([GRANT, CLAIM, null]);
-    expect(JSON.parse(String(raised[1]!.params[5]))).toEqual({ action_id: ACTION, suggested_budget_owls: 5 });
+    expect(raised[1]).toMatchObject({ grantId: GRANT, targetNodeId: CLAIM, targetRef: null });
+    expect(raised[1]!.detail).toEqual({ action_id: ACTION, suggested_budget_owls: 5 });
     // Still a candidate: the Steward lane and the ledger row exist either way.
     expect(state.enqueued).toHaveLength(2);
   });
@@ -312,8 +319,8 @@ describe("flagIngest", () => {
   it("raises an ingest to the officers when the lookout has no limit for it", async () => {
     expect(await ingest({ commissionLimitMicroUsd: 0 })).toMatchObject({ ok: true });
     expect(state.commissions).toEqual([]);
-    const raised = queries.find((x) => x.q.includes("INSERT INTO mandate_inbox"))!;
-    expect(raised.params.slice(0, 3)).toEqual([GRANT, null, "https://example.org/paper"]);
+    const raised = raises[raises.length - 1]!;
+    expect(raised).toMatchObject({ grantId: GRANT, targetNodeId: null, targetRef: "https://example.org/paper" });
   });
 
   it("counts a URL it raised that still waits as a repeat", async () => {

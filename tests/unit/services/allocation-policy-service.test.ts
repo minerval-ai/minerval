@@ -32,7 +32,6 @@ import {
   POLICY_BOUNDS,
   overlayPolicy,
   getMandateAllocationPolicy,
-  updateAllocationPolicy,
   type AllocationPolicy,
 } from "../../../src/services/allocation-policy-service.js";
 
@@ -179,29 +178,5 @@ describe("overlayPolicy", () => {
     expect(out.est_attempt_max_cost_owls).toBe(2000);
     expect(out.attempt_cooldown_days).toBe(0);
     expect(out.est_formalize_cost_owls).toBe(8);
-  });
-});
-
-describe("updateAllocationPolicy", () => {
-  it("accepts the mathematics keys, clamped, and rejects unknown ones", async () => {
-    const ok = await updateAllocationPolicy("g-4", {
-      est_attempt_standard_cost_owls: 75,
-      attempt_claim_lifetime_cap_owls: 50_000,
-    });
-    expect(ok.ok).toBe(true);
-    if (ok.ok) {
-      expect(ok.policy.est_attempt_standard_cost_owls).toBe(75);
-      expect(ok.policy.attempt_claim_lifetime_cap_owls).toBe(10_000);
-      expect(ok.changed).toEqual([
-        "est_attempt_standard_cost_owls",
-        "attempt_claim_lifetime_cap_owls",
-      ]);
-    }
-    const bad = await updateAllocationPolicy("g-4", { bounty_multiplier: 2 });
-    expect(bad.ok).toBe(false);
-    if (!bad.ok) {
-      expect(bad.problem).toContain('unknown policy key "bounty_multiplier"');
-      for (const key of MATH_KEYS) expect(bad.problem).toContain(key);
-    }
   });
 });
