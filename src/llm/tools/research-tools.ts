@@ -194,7 +194,10 @@ export function getResearchToolDefinitions(
               "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), "
             : "nothing to the graph (it reads and reports; it does not record provenance or examine " +
               "documents), ") +
-        "and cannot launch instruments of its own. Delegate work " +
+        "and cannot launch instruments of its own. This runs inside your turn: you wait " +
+        "for the report. Where commission (kind research) is in your toolset, use it for " +
+        "anything longer than a quick check: the research runs on its own while you carry " +
+        "on, and its report returns to you. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
         "checking whether a dataset shows what a paper says, or exploring a route to a proof " +

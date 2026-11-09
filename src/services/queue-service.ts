@@ -101,6 +101,13 @@ export interface StewardMessage {
     | "request_returned"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"
+    // A paused session on this node got back what it asked for (research it
+    // commissioned, an answer from another node's Steward): this pass
+    // resumes that session, with its transcript (session-service.ts).
+    | "session_resume"
+    // Research commissioned from this node finished, and no session of the
+    // node waits for it: the report is a message for the next pass.
+    | "research_report"
     // The Curator merged/split this claim, or suggests a structural edge — review
     // and reconcile (re-assess; adopt the suggested edge if apt).
     | "curator_change"

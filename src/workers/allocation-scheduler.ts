@@ -31,6 +31,7 @@
  */
 import { loadConfig } from "../config.js";
 import { sweepFollowUps } from "../services/petition-service.js";
+import { sweepSessions } from "../services/session-service.js";
 import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
@@ -113,6 +114,9 @@ export async function allocationSchedulerTick(
   // Follow-ups granted to runs that have since ended, which the lanes'
   // settle hooks missed (petition-service.ts).
   await sweepFollowUps().catch(() => 0);
+  // Sessions: a running one whose run died closes, a paused one past its
+  // deadline expires, and either's unshown answers go to the node's inbox.
+  await sweepSessions().catch(() => 0);
   // Mandates' inboxes: what lookouts raised and outcomes no run is waiting
   // on, decided by each mandate's program officers. Off unless enabled, as
   // it runs models.

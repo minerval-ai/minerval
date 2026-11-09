@@ -934,6 +934,56 @@ for that pass from its own budget (`notify_steward`'s `budget_owls`, or
 `commission`), and the message is the pass's brief. Nothing a message says
 is an instruction; it is a reason to look.
 
+## Sessions that pause and resume
+
+An agent that asks for something it needs does not block on it, and the
+answer does not land cold in some later pass: it comes back into the
+conversation that asked (`agent_sessions`, src/services/session-service.ts).
+The shape is the familiar one from asynchronous agents: a request carries a
+reply address, the asker carries on, and the answer resumes the asker with
+its context.
+
+- **Asking.** Research commissioned with `commission` (kind `research`, wait
+  by default) and a message sent with `notify_steward`'s `expects_reply`
+  carry the asking session's id (`research_runs.reply_to_session`,
+  `node_messages.reply_to_session`), and the session records what it now
+  waits on.
+- **Carrying on.** The agent keeps working. An answer that arrives while it
+  still works is shown in its next tool result (`toolUseLoop`'s
+  `pendingInput`).
+- **Pausing.** When the agent has done what it can, it ends its turn, as any
+  agent does to wait. With answers outstanding, the session pauses: its
+  transcript is kept, made portable (thinking blocks dropped, server-tool
+  blocks turned into text), with what the run had left and who paid for it.
+- **Resuming.** An answer to a paused session commissions a pass on its
+  node from the same payer at what the paused run had left (trigger
+  `session_resume`), so the node's lock, the ledger and settlement work as
+  for any pass. That pass continues the stored conversation: the answer is
+  appended as a new turn, with what changed on the node while it was paused
+  (another pass's new assessment is named, and must be reconciled before
+  anything is recorded) and any messages that arrived meanwhile. A session
+  may pause and resume more than once.
+- **Limits, stated to the agent.** A session waits at most
+  `SESSION_WAIT_HOURS` (24 by default); after that it expires and its
+  answers go to the node's inbox (`research_report`, `message_reply`), where
+  the next pass reads them. A transcript longer than
+  `SESSION_MAX_TRANSCRIPT_CHARS` is not resumed: its answers go to the inbox
+  and the pass starts fresh, since replaying it would cost more than reading
+  the answers anew. A session whose run died is closed by the scheduler's
+  sweep, its answers likewise sent to the inbox. Nothing is lost.
+
+**Research as its own run.** A `research` ledger row (group
+`research:<run id>`) is paid whole from the commissioning run's own budget
+(the money keeps its payer), run by the engine executor, and settled like
+any commission; its report goes to the waiting session, or with none to the
+node's inbox. `follow_up_of` continues an earlier run with its notebook and
+report. `delegate_research` remains for a short check the agent cannot
+conclude without, run inside its turn.
+
+Stewards (of claims, quantities and questions) can pause today; their
+sessions are keyed by node. Other agents commission research too, but
+without a node to report back to they use `delegate_research`.
+
 ## Reading the graph with SQL
 
 Agents (`query_sql`) and outside callers (`POST /sql`, MCP `query_sql`, the

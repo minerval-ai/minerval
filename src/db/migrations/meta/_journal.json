@@ -659,6 +659,13 @@
       "when": 1794243103607,
       "tag": "0093_lookout_graph_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1794248026377,
+      "tag": "0094_agent_sessions",
+      "breakpoints": true
     }
   ]
 }

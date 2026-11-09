@@ -420,3 +420,27 @@ export async function placeCommission(input: {
     return { ok: true, allocationId: first! } as const;
   });
 }
+
+/**
+ * Who is ultimately paying for the running work: the mandate or person behind
+ * its money, not the run itself. A paused session's resumption is
+ * commissioned from them (session-service.ts).
+ */
+export async function originalPayer(): Promise<CommissionPayer | null> {
+  const { getUsageContext } = await import("../llm/usage-context.js");
+  const funding = getUsageContext().passBudget?.funding;
+  if (!funding) return null;
+  if (funding.actionId) {
+    const [row] = await rawQuery<{ grant_id: string | null; user_id: string | null }>(
+      `SELECT grant_id, user_id FROM action_allocations
+        WHERE action_id = $1 OR exclusion_group = (SELECT exclusion_group FROM actions WHERE id = $1)
+        ORDER BY amount_micro_usd DESC LIMIT 1`,
+      [funding.actionId]
+    );
+    if (row?.grant_id) return { kind: "grant", grantId: row.grant_id };
+    if (row?.user_id) return { kind: "user", userId: row.user_id };
+  }
+  if (funding.grantId) return { kind: "grant", grantId: funding.grantId };
+  if (funding.userId) return { kind: "user", userId: funding.userId };
+  return null;
+}
