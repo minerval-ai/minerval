@@ -478,6 +478,19 @@ export interface ClaimDetail {
   question?: QuestionDetail | null;
   /** Requests that bear on this node (Part VIII, Requests). */
   requests?: RequestItem[];
+  /** What has arrived for the node's Steward since its last pass and has not yet been weighed. */
+  waiting_messages?: WaitingMessage[];
+}
+
+/** One message waiting in a node's inbox for its Steward's next pass. */
+export interface WaitingMessage {
+  trigger: string;
+  /** Who sent it, in a reader's terms. */
+  from: string;
+  sender_node_id: string | null;
+  sent_at: string;
+  paid: boolean;
+  summary: string;
 }
 
 // ---------------------------------------------------------------------------

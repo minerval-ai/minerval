@@ -364,21 +364,41 @@ export async function answerMessages(
 
 export interface WaitingMessage {
   trigger: string;
+  /** Who sent it, in a reader's terms ("the Steward of a claim that depends on this one"). */
   from: string;
+  /** The sending node, when a Steward sent it. */
+  sender_node_id: string | null;
   sent_at: string;
   paid: boolean;
-  /** The first 200 characters, for a reader. */
+  /** The first 200 characters. */
   summary: string;
 }
 
-/** The messages waiting on a node, for its page and for funders. */
+/** Who sent a message, for a reader of the node's page rather than its Steward. */
+function describeSenderForReader(m: MessageRow): string {
+  switch (m.sender_kind) {
+    case "steward":
+      return m.joined === "above"
+        ? "the Steward of a node that depends on this one"
+        : m.joined === "beneath"
+          ? "the Steward of a node this one depends on"
+          : "the Steward of another node";
+    case "user":
+      return "a reader who paid for a pass";
+    default:
+      return describeSender({ ...m, sender_ref: null });
+  }
+}
+
+/** The messages waiting on a node, for its page, for funders and for callers. */
 export async function waitingMessages(nodeId: string): Promise<WaitingMessage[]> {
   const rows = await unreadMessages(nodeId);
   return rows
     .filter((m) => m.trigger !== "message_reply")
     .map((m) => ({
       trigger: m.trigger,
-      from: describeSender(m),
+      from: describeSenderForReader(m),
+      sender_node_id: m.sender_kind === "steward" ? m.sender_node_id : null,
       sent_at: m.created_at,
       paid: m.paid,
       summary: quoteHead(m.body, 200),
