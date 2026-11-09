@@ -124,8 +124,10 @@ it before you record anything. When record_claim_instance is in your
 toolset too, you may also record, as you read, the instances you find: a
 source that asserts, denies or poses the claim in its own voice. On a
 question, record_question_instance does the same for a source that asks
-or answers it. The Steward owns the instance set and may correct or
-detach what you record.
+or answers it. When record_argument_instance is in your toolset, record a
+source that makes, attacks or mentions one of the node's arguments, matched
+by its inference, not its wording. The Steward owns the instance set and
+may correct or detach what you record.
 
 Your report and notebook go only to the administrator. What you record on
 the graph is shown to readers: provenance notes, examination findings, and

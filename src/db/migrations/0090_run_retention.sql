@@ -1,7 +1,8 @@
 ALTER TABLE "agent_runs" ADD COLUMN "wrote_to_graph" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "assessments" ADD COLUMN "run_id" uuid;--> statement-breakpoint
 ALTER TABLE "question_assessments" ADD COLUMN "run_id" uuid;--> statement-breakpoint
-CREATE INDEX "idx_agent_runs_expirable" ON "agent_runs" USING btree ("started_at") WHERE wrote_to_graph = false;--> statement-breakpoint
+CREATE INDEX "idx_agent_runs_expirable" ON "agent_runs" USING btree ("started_at") WHERE wrote_to_graph = false;
+--> statement-breakpoint
 -- Every run already recorded is kept. Which of them wrote to the graph was
 -- never recorded, so this errs toward keeping: at most one retention window
 -- of runs, once.

@@ -81,6 +81,10 @@ import {
   executeStewardStructureTool,
   getStewardStructureToolDefinitions,
 } from "./steward-structure-tools.js";
+import {
+  executeArgumentInstanceTool,
+  getArgumentInstanceToolDefinition,
+} from "./argument-instance-tools.js";
 
 /**
  * Relations a node can stand in to a parent above it (add_parent_claim,
@@ -1318,6 +1322,8 @@ export function getStewardToolDefinitions(): Tool[] {
     // Correcting structure already built (#741): remove, retype, ungroup,
     // revise and retire.
     ...getStewardStructureToolDefinitions(),
+    // Where a source makes, attacks or mentions an argument (#541).
+    getArgumentInstanceToolDefinition(),
   ];
 }
 
@@ -3210,7 +3216,11 @@ export async function executeStewardTool(
 
       default: {
         const structure = await executeStewardStructureTool(toolName, input);
-        return structure ?? `Error: Unknown steward tool: ${toolName}`;
+        if (structure !== null) return structure;
+        const argumentInstance = await executeArgumentInstanceTool(toolName, input, {
+          recordedBy: run.recordedBy,
+        });
+        return argumentInstance ?? `Error: Unknown steward tool: ${toolName}`;
       }
     }
   } catch (err) {

@@ -96,6 +96,14 @@ import {
   getClaimView,
 } from "../services/claim-view-service.js";
 import {
+  ARGUMENT_VIEW_DESCRIPTION,
+  ARGUMENT_VIEW_INCLUDE_DESCRIPTION,
+  ARGUMENT_VIEW_INCLUDES,
+  DEFAULT_INSTANCES_PAGE,
+  MAX_INSTANCES_PAGE,
+  getArgumentView,
+} from "../services/argument-view-service.js";
+import {
   getTextAnalysis,
   startTextAnalysis,
   type ReportProgress,
@@ -478,6 +486,34 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         dependentsOffset: dependents_offset,
       });
       if (!view) return errorResult("NOT_FOUND", "Claim not found");
+      return jsonResult(view);
+    }
+  );
+
+  server.registerTool(
+    "get_argument",
+    {
+      title: "Get argument",
+      // One description and one view for MCP and the graph's own agents
+      // (#541): src/services/argument-view-service.ts.
+      description: ARGUMENT_VIEW_DESCRIPTION,
+      inputSchema: {
+        argument_id: z.guid(),
+        include: z
+          .array(z.enum(ARGUMENT_VIEW_INCLUDES))
+          .default([])
+          .describe(ARGUMENT_VIEW_INCLUDE_DESCRIPTION),
+        instances_limit: z.number().int().min(1).max(MAX_INSTANCES_PAGE).default(DEFAULT_INSTANCES_PAGE),
+        instances_offset: z.number().int().min(0).default(0),
+      },
+    },
+    async ({ argument_id, include, instances_limit, instances_offset }) => {
+      const view = await getArgumentView(argument_id, {
+        include,
+        instancesLimit: instances_limit,
+        instancesOffset: instances_offset,
+      });
+      if (!view) return errorResult("NOT_FOUND", "Argument not found");
       return jsonResult(view);
     }
   );
