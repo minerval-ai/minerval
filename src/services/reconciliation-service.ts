@@ -9,7 +9,7 @@
  * the prior structure without erasing history). `reverseReconciliation`
  * undoes a logged event.
  */
-import { getDb, rawQuery } from "../db/client.js";
+import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
@@ -383,6 +383,23 @@ export async function mergeClaims(input: {
     ]);
   }
 
+  // 2a. Argument passages waiting on the loser for its Steward (#541): onto
+  //     the survivor, their side flipped for an opposed merge. A quantity
+  //     has no sides, so a merge into one clears it. Prior sides are kept
+  //     for the undo.
+  const movedPassages = await rawQuery<{ id: string; direction: string | null }>(
+    `UPDATE argument_instances ai
+        SET claim_id = $1,
+            direction = CASE
+              WHEN $4::boolean THEN NULL
+              WHEN $3::boolean THEN (CASE p.direction WHEN 'for' THEN 'against' WHEN 'against' THEN 'for' ELSE p.direction END)
+              ELSE p.direction END
+       FROM (SELECT id, direction FROM argument_instances WHERE claim_id = $2) p
+      WHERE ai.id = p.id
+      RETURNING ai.id, p.direction`,
+    [survivorId, loserId, opposed, crossKind && survivorKind === "quantity"]
+  );
+
   // 2b. The kinds' rows that point at the loser: a quantity's readings and
   //     cuts, a question's answer relations, the answers sources gave, and
   //     the requests that bear on it.
@@ -482,6 +499,7 @@ export async function mergeClaims(input: {
     loser_prev_state: loserPrevState,
     moved_instance_ids: movedInstances.map((r) => r.id),
     moved_argument_ids: movedArguments.map((r) => r.id),
+    moved_argument_passages: movedPassages,
     repointed_child_edge_ids: repointedChild.map((r) => r.id),
     repointed_parent_edge_ids: repointedParent.map((r) => r.id),
     deleted_edges: [...deletedChildEdges, ...deletedParentEdges],
@@ -759,6 +777,9 @@ const NODE_KEYS = [
   "child_id",
   "from_claim_id",
   "to_claim_id",
+  "survivor_argument_id",
+  "absorbed_argument_id",
+  "argument_id",
 ] as const;
 
 function eventNodeIds(payload: Record<string, unknown>): string[] {
@@ -779,6 +800,237 @@ function eventNodeIds(payload: Record<string, unknown>): string[] {
     ids.add(l.claim_b_id);
   }
   return [...ids];
+}
+
+// ---------------------------------------------------------------------------
+// Merging and splitting arguments (§5, §7, #541)
+// ---------------------------------------------------------------------------
+
+interface ArgumentRow {
+  id: string;
+  claim_id: string;
+  name: string | null;
+  stance: string;
+  content: string;
+  description: string | null;
+  retired_at: Date | null;
+  retired_reason: string | null;
+  merged_into: string | null;
+}
+
+async function argumentRow(id: string): Promise<ArgumentRow | null> {
+  const [row] = await rawQuery<ArgumentRow>(
+    `SELECT id, claim_id, name, stance, content, description, retired_at, retired_reason, merged_into
+       FROM arguments WHERE id = $1`,
+    [id]
+  );
+  return row ?? null;
+}
+
+/**
+ * Merge two arguments recognized as one: the same conclusion reached
+ * through the same inference (§7). The survivor keeps whichever written
+ * form states the inference better (`writtenFormFrom`), never the older
+ * one by default; the absorbed argument's instances and premise groupings
+ * move to the survivor, and the absorbed row stays as an alias, retired
+ * with the reason, its evaluations as history. Logged for undo.
+ */
+export async function mergeArguments(input: {
+  survivorId: string;
+  absorbedId: string;
+  writtenFormFrom: "survivor" | "absorbed";
+  reasoning: string;
+}): Promise<{ eventId?: string; claimId: string; movedInstances: number; movedPremises: number }> {
+  const { survivorId, absorbedId, reasoning } = input;
+  if (survivorId === absorbedId) throw new Error("Cannot merge an argument into itself.");
+  const survivor = await argumentRow(survivorId);
+  const absorbed = await argumentRow(absorbedId);
+  if (!survivor) throw new Error(`Argument not found: ${survivorId}`);
+  if (!absorbed) throw new Error(`Argument not found: ${absorbedId}`);
+  if (survivor.merged_into || absorbed.merged_into) {
+    throw new Error("One of these arguments is already merged into another; merge into the one it names.");
+  }
+  // The conclusion is part of an argument's identity (§7): arguments on
+  // different nodes, or on opposite sides of one, are different arguments.
+  if (survivor.claim_id !== absorbed.claim_id) {
+    throw new Error(
+      "Arguments on different nodes reach different conclusions, so they are different arguments (§7). " +
+        "If the nodes are one claim, merge the claims first."
+    );
+  }
+  if (survivor.stance !== absorbed.stance) {
+    throw new Error(
+      `One argument is ${survivor.stance} and the other ${absorbed.stance}: they reach opposite conclusions, so they are different arguments (§7).`
+    );
+  }
+  if (survivor.retired_at && !absorbed.retired_at) {
+    throw new Error(
+      "The survivor is retired and the absorbed argument is live. Make the live one the survivor " +
+        "(take the written form you judge better with written_form_from), so the merge does not take an argument off the claim."
+    );
+  }
+
+  return withTransaction(async (tx) => {
+    // Instances follow the argument.
+    const movedInstances = await tx.query<{ id: string }>(
+      `UPDATE argument_instances SET argument_id = $1 WHERE argument_id = $2 RETURNING id`,
+      [survivorId, absorbedId]
+    );
+    // Premise groupings: the absorbed argument's edges join the survivor's
+    // where they are not already grouped there; the absorbed rows go, kept
+    // in the payload for the undo.
+    const absorbedMemberships = await tx.query<{ relationship_id: string; created_at: Date }>(
+      `DELETE FROM argument_subclaims WHERE argument_id = $1 RETURNING relationship_id, created_at`,
+      [absorbedId]
+    );
+    const addedMemberships = await tx.query<{ relationship_id: string }>(
+      `INSERT INTO argument_subclaims (argument_id, relationship_id)
+       SELECT $1, rid FROM unnest($2::uuid[]) AS rid
+        WHERE NOT EXISTS (SELECT 1 FROM argument_subclaims WHERE argument_id = $1 AND relationship_id = rid)
+       RETURNING relationship_id`,
+      [survivorId, absorbedMemberships.map((m) => m.relationship_id)]
+    );
+    const replacedWrittenForm = input.writtenFormFrom === "absorbed";
+    if (replacedWrittenForm) {
+      await tx.query(`UPDATE arguments SET content = $2, description = $3 WHERE id = $1`, [
+        survivorId,
+        absorbed.content,
+        absorbed.description,
+      ]);
+    }
+    await tx.query(
+      `UPDATE arguments
+          SET merged_into = $2,
+              retired_at = COALESCE(retired_at, now()),
+              retired_reason = $3
+        WHERE id = $1`,
+      [absorbedId, survivorId, `Merged into argument ${survivorId}: ${reasoning}`]
+    );
+    const [event] = await tx.query<{ id: string }>(
+      `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
+       VALUES ('merge_arguments', $1, $2::jsonb, 'curator') RETURNING id`,
+      [
+        reasoning,
+        JSON.stringify({
+          claim_id: survivor.claim_id,
+          survivor_argument_id: survivorId,
+          absorbed_argument_id: absorbedId,
+          moved_instance_ids: movedInstances.map((r) => r.id),
+          absorbed_relationship_ids: absorbedMemberships.map((m) => m.relationship_id),
+          added_relationship_ids: addedMemberships.map((m) => m.relationship_id),
+          replaced_written_form: replacedWrittenForm
+            ? { content: survivor.content, description: survivor.description }
+            : null,
+          absorbed_prev_retired: absorbed.retired_at
+            ? { at: new Date(absorbed.retired_at).toISOString(), reason: absorbed.retired_reason }
+            : null,
+        }),
+      ]
+    );
+    return {
+      eventId: event?.id,
+      claimId: survivor.claim_id,
+      movedInstances: movedInstances.length,
+      movedPremises: addedMemberships.length,
+    };
+  });
+}
+
+/**
+ * Split an argument recognized as several lines of reasoning (§5, §7).
+ * Each part becomes a new argument on the same node with the same stance,
+ * taking the premise groupings (edge ids) and instances named for it; the
+ * original keeps the rest. The original's current evaluation rated an
+ * inference it no longer makes, so it stops being current, and every part
+ * awaits its Steward's written form and evaluation. Logged for undo, which
+ * retires the parts rather than deleting them.
+ */
+export async function splitArgument(input: {
+  argumentId: string;
+  parts: Array<{ name: string; writtenForm: string; relationshipIds: string[]; instanceIds: string[] }>;
+  reasoning: string;
+}): Promise<{ eventId?: string; claimId: string; partIds: string[] }> {
+  const original = await argumentRow(input.argumentId);
+  if (!original) throw new Error(`Argument not found: ${input.argumentId}`);
+  if (original.merged_into) throw new Error("That argument is merged into another; split the one it names.");
+  if (original.retired_at) throw new Error("That argument is retired; a split is for an argument on the claim.");
+  if (input.parts.length === 0) throw new Error("Name at least one part to split off.");
+
+  const grouped = new Set(
+    (
+      await rawQuery<{ relationship_id: string }>(
+        `SELECT relationship_id FROM argument_subclaims WHERE argument_id = $1`,
+        [original.id]
+      )
+    ).map((r) => r.relationship_id)
+  );
+  const instances = new Set(
+    (await rawQuery<{ id: string }>(`SELECT id FROM argument_instances WHERE argument_id = $1`, [original.id])).map(
+      (r) => r.id
+    )
+  );
+  const seenEdges = new Set<string>();
+  const seenInstances = new Set<string>();
+  for (const part of input.parts) {
+    if (!part.name.trim() || !part.writtenForm.trim()) throw new Error("Each part needs a name and a written form.");
+    for (const r of part.relationshipIds) {
+      if (!grouped.has(r)) throw new Error(`Edge ${r} is not grouped under argument ${original.id}.`);
+      if (seenEdges.has(r)) throw new Error(`Edge ${r} is named for two parts; name it once.`);
+      seenEdges.add(r);
+    }
+    for (const i of part.instanceIds) {
+      if (!instances.has(i)) throw new Error(`Instance ${i} is not an instance of argument ${original.id}.`);
+      if (seenInstances.has(i)) throw new Error(`Instance ${i} is named for two parts; name it once.`);
+      seenInstances.add(i);
+    }
+  }
+
+  return withTransaction(async (tx) => {
+    const partIds: string[] = [];
+    const moves: Array<{ part_id: string; relationship_ids: string[]; instance_ids: string[] }> = [];
+    for (const part of input.parts) {
+      const [row] = await tx.query<{ id: string }>(
+        `INSERT INTO arguments (claim_id, stance, name, content, created_by)
+         VALUES ($1, $2, $3, $4, 'curator') RETURNING id`,
+        [original.claim_id, original.stance, part.name.trim(), part.writtenForm.trim()]
+      );
+      const partId = row!.id;
+      partIds.push(partId);
+      if (part.relationshipIds.length > 0) {
+        await tx.query(
+          `UPDATE argument_subclaims SET argument_id = $1
+            WHERE argument_id = $2 AND relationship_id = ANY($3::uuid[])`,
+          [partId, original.id, part.relationshipIds]
+        );
+      }
+      if (part.instanceIds.length > 0) {
+        await tx.query(`UPDATE argument_instances SET argument_id = $1 WHERE id = ANY($2::uuid[])`, [
+          partId,
+          part.instanceIds,
+        ]);
+      }
+      moves.push({ part_id: partId, relationship_ids: part.relationshipIds, instance_ids: part.instanceIds });
+    }
+    const retiredEvaluations = await tx.query<{ id: string }>(
+      `UPDATE argument_evaluations SET is_current = false
+        WHERE argument_id = $1 AND is_current = true RETURNING id`,
+      [original.id]
+    );
+    const [event] = await tx.query<{ id: string }>(
+      `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
+       VALUES ('split_argument', $1, $2::jsonb, 'curator') RETURNING id`,
+      [
+        input.reasoning,
+        JSON.stringify({
+          claim_id: original.claim_id,
+          argument_id: original.id,
+          moves,
+          retired_evaluation_ids: retiredEvaluations.map((r) => r.id),
+        }),
+      ]
+    );
+    return { eventId: event?.id, claimId: original.claim_id, partIds };
+  });
 }
 
 /** How many events list_reconciliation_events returns at most, newest first. */
@@ -1037,6 +1289,14 @@ export async function reverseReconciliation(
           [loserId, movedArguments, opposed, survivorId]
         );
       }
+      // Argument passages still waiting on the survivor go back with their
+      // prior side; any its Steward placed since stay where they were put.
+      for (const ap of (p.moved_argument_passages as Array<{ id: string; direction: string | null }>) ?? []) {
+        await rawQuery(
+          `UPDATE argument_instances SET claim_id = $2, direction = $3 WHERE id = $1 AND claim_id = $4`,
+          [ap.id, loserId, ap.direction, survivorId]
+        );
+      }
       // A merge across kinds: the stances it rewrote, and its kinds' rows.
       await restoreStances((p.remapped_stances as StanceRef[]) ?? []);
       for (const a of (p.neutralized_arguments as StanceRef[]) ?? []) {
@@ -1182,6 +1442,86 @@ export async function reverseReconciliation(
         p.from_claim_id as string,
         p.instance_id as string,
       ]);
+      break;
+    }
+
+    case "merge_arguments": {
+      const survivorId = p.survivor_argument_id as string;
+      const absorbedId = p.absorbed_argument_id as string;
+      await rawQuery(`UPDATE argument_instances SET argument_id = $1 WHERE id = ANY($2::uuid[]) AND argument_id = $3`, [
+        absorbedId,
+        (p.moved_instance_ids as string[]) ?? [],
+        survivorId,
+      ]);
+      const added = (p.added_relationship_ids as string[]) ?? [];
+      if (added.length) {
+        await rawQuery(
+          `DELETE FROM argument_subclaims WHERE argument_id = $1 AND relationship_id = ANY($2::uuid[])`,
+          [survivorId, added]
+        );
+      }
+      const absorbedEdges = (p.absorbed_relationship_ids as string[]) ?? [];
+      if (absorbedEdges.length) {
+        // Edges deleted since the merge are gone; only the ones that remain
+        // are grouped again.
+        await rawQuery(
+          `INSERT INTO argument_subclaims (argument_id, relationship_id)
+           SELECT $1, cr.id FROM claim_relationships cr WHERE cr.id = ANY($2::uuid[])
+           ON CONFLICT DO NOTHING`,
+          [absorbedId, absorbedEdges]
+        );
+      }
+      const prior = p.replaced_written_form as { content: string; description: string | null } | null;
+      if (prior) {
+        await rawQuery(`UPDATE arguments SET content = $2, description = $3 WHERE id = $1`, [
+          survivorId,
+          prior.content,
+          prior.description,
+        ]);
+      }
+      const prevRetired = p.absorbed_prev_retired as { at: string; reason: string | null } | null;
+      await rawQuery(
+        `UPDATE arguments SET merged_into = NULL, retired_at = $2, retired_reason = $3 WHERE id = $1`,
+        [absorbedId, prevRetired?.at ?? null, prevRetired?.reason ?? null]
+      );
+      break;
+    }
+
+    case "split_argument": {
+      const originalId = p.argument_id as string;
+      for (const move of (p.moves as Array<{ part_id: string; relationship_ids: string[]; instance_ids: string[] }>) ?? []) {
+        if (move.relationship_ids.length) {
+          await rawQuery(
+            `UPDATE argument_subclaims SET argument_id = $1
+              WHERE argument_id = $2 AND relationship_id = ANY($3::uuid[])`,
+            [originalId, move.part_id, move.relationship_ids]
+          );
+        }
+        if (move.instance_ids.length) {
+          await rawQuery(
+            `UPDATE argument_instances SET argument_id = $1 WHERE id = ANY($2::uuid[]) AND argument_id = $3`,
+            [originalId, move.instance_ids, move.part_id]
+          );
+        }
+        // The parts are retired, not deleted: the record of what happened,
+        // mistakes included, is permanent (§5).
+        await rawQuery(
+          `UPDATE arguments SET retired_at = now(), retired_reason = 'The split that created it was undone.'
+            WHERE id = $1 AND retired_at IS NULL`,
+          [move.part_id]
+        );
+        await rawQuery(`DELETE FROM argument_subclaims WHERE argument_id = $1`, [move.part_id]);
+      }
+      // The original's evaluation comes back only if none was recorded since.
+      const retiredEvaluations = (p.retired_evaluation_ids as string[]) ?? [];
+      if (retiredEvaluations.length) {
+        await rawQuery(
+          `UPDATE argument_evaluations SET is_current = true
+            WHERE id = ANY($1::uuid[])
+              AND NOT EXISTS (SELECT 1 FROM argument_evaluations WHERE argument_id = $2 AND is_current = true)`,
+          [retiredEvaluations, originalId]
+        );
+      }
       break;
     }
 

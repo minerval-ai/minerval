@@ -89,6 +89,8 @@ Claims created separately may later be recognized as one claim, and a single cla
 
 A merge designates a surviving claim and moves the other claim's instances, arguments, and edges onto it, leaving the absorbed claim as an alias so that existing references still resolve. Because a claim and its denial are one node, a claim may also be merged with its own negation; every recorded stance flips in the process. A split creates new claims and redistributes instances and edges among them.
 
+Arguments are merged and split on the same terms (§7). Two arguments recognized as one inference to the same conclusion are merged: the survivor keeps whichever written form states the inference better, not whichever came first, and the other's instances and premises move to it. An argument recognized as several lines of reasoning, each of which could succeed or fail without the others, is split, and its premises and instances are divided among the parts, each evaluated afresh. Whether an argument belongs on the claim at all is a separate question (§7), and neither operation settles it.
+
 Every operation is logged with what it changed. Reversal restores the graph's prior structure without erasing history: an undone merge revives the absorbed claim, and an undone split retires the claims it created rather than deleting them. Structure is always recoverable; the record of what happened, including mistakes, is permanent.
 
 ---
@@ -630,6 +632,13 @@ passage that rests on a different premise makes a different argument.
 Instances are provenance. They do not change the written form or the
 rating, and how widely an argument is made bears only weakly on whether it
 belongs (§7).
+
+get_claim with include arguments lists unplaced_argument_passages: reasoning
+a source gave about the claim at ingestion that matched none of its
+arguments. Decide each with place_argument_passage: place it on the argument
+it makes or attacks, creating that argument first if the page should carry
+it by §7's test, or dismiss it with the reason. A passage is not a reason to
+add an argument the claim does not need.
 
 Retiring is routine upkeep. Retire an argument with retire_argument when a
 Steward mapping the claim from scratch today would not put it there (§7).

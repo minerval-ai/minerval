@@ -533,6 +533,14 @@ export const arguments_ = pgTable(
     // the basis (or their other arguments) when it was retired.
     retiredAt: timestamp("retired_at", { withTimezone: true }),
     retiredReason: text("retired_reason"),
+    // Set when the Curator merges this argument into another on the same
+    // claim (§5, #541): the two were one inference to one conclusion. The
+    // absorbed row is kept as an alias, retired with the reason, its
+    // evaluations as history; its instances and premise groupings moved to
+    // the survivor. Cleared by the merge's undo.
+    mergedInto: uuid("merged_into").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
 );
@@ -552,9 +560,27 @@ export const argumentInstances = pgTable(
   "argument_instances",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    argumentId: uuid("argument_id")
-      .notNull()
-      .references((): AnyPgColumn => arguments_.id, { onDelete: "cascade" }),
+    // The argument the passage makes, attacks or mentions. Null while the
+    // passage is unplaced: ingestion found reasoning about a claim that
+    // matched none of the claim's arguments, and only the claim's Steward
+    // creates arguments (Part VIII), so the passage waits on the claim
+    // (claim_id) for the Steward to place or dismiss. Exactly one of the
+    // two is set (ck_argument_instances_placed).
+    argumentId: uuid("argument_id").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "cascade",
+    }),
+    claimId: uuid("claim_id").references((): AnyPgColumn => claims.id, { onDelete: "cascade" }),
+    // An unplaced passage's side on its claim as canonically worded: for,
+    // against, or null where it cannot be told (a passage attacking
+    // reasoning, or a quantity, which has no sides). A placed passage takes
+    // its side from its argument. Flipped when a merge joins the claim to
+    // its negation.
+    direction: text("direction"),
+    // Set when the claim's Steward dismisses an unplaced passage (it makes
+    // no argument the claim's page should carry, or none at all): the row
+    // is kept as provenance with the reason.
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    dismissedReason: text("dismissed_reason"),
     sourceId: uuid("source_id")
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
@@ -577,7 +603,7 @@ export const argumentInstances = pgTable(
     publication: text("publication"),
     sourceDate: text("source_date"),
     link: text("link"),
-    // claim_steward | researcher | extractor
+    // claim_steward | researcher | matcher (ingestion)
     createdBy: text("created_by").notNull(),
     segmentId: uuid("segment_id").references((): AnyPgColumn => sourceSegments.id, {
       onDelete: "set null",
@@ -588,7 +614,12 @@ export const argumentInstances = pgTable(
   },
   (table) => [
     index("idx_argument_instances_argument").on(table.argumentId),
+    index("idx_argument_instances_claim").on(table.claimId),
     index("idx_argument_instances_source").on(table.sourceId),
+    check(
+      "ck_argument_instances_placed",
+      sql`(${table.argumentId} IS NULL) <> (${table.claimId} IS NULL)`
+    ),
   ]
 );
 
