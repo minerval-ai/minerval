@@ -148,8 +148,10 @@ export function getStewardStructureToolDefinitions(): Tool[] {
     {
       name: "retire_argument",
       description:
-        "Retire one of your node's arguments: a poor argument better left out (§7), one that " +
-        "duplicates another, or one created by mistake. It is kept in history with your reason, " +
+        "Retire one of your node's arguments: one that no longer belongs, because a Steward mapping " +
+        "the claim from scratch today would not put it there (§7), one that duplicates another, or " +
+        "one created by mistake. Its name and record are no reason to keep it: retiring preserves " +
+        "them, and it is kept in history with your reason, " +
         "and leaves the page and the arguments get_claim lists. Its subclaims keep their edges and " +
         "return to the claim's basis, or stay in any other argument they are grouped under; remove " +
         "with remove_subclaim_edge any that no longer belong. Logged with your reasoning.",
