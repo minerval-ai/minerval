@@ -28,6 +28,9 @@
     "correspondent": [
       "For every administrator"
     ],
+    "program-officer": [
+      "For every administrator"
+    ],
     "contribution-reviewer": [
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator"
@@ -100,6 +103,12 @@
           ]
         },
         {
+          "key": "program-officer",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
           "key": "contribution-reviewer",
           "sections": [
             "For every administrator",
@@ -143,7 +152,8 @@
             "researcher",
             "contribution-reviewer",
             "grantmaker",
-            "dispute-arbitrator"
+            "dispute-arbitrator",
+            "program-officer"
           ],
           "input_schema": {
             "type": "object",
@@ -204,6 +214,12 @@
         },
         {
           "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
           "sections": [
             "For every administrator"
           ]
@@ -588,6 +604,12 @@
         },
         {
           "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
           "sections": [
             "For every administrator"
           ]
@@ -1079,6 +1101,12 @@
         },
         {
           "key": "correspondent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "program-officer",
           "sections": [
             "For every administrator"
           ]

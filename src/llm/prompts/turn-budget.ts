@@ -22,19 +22,24 @@ function usd(micro: number): string {
 }
 
 /** The budget sentence alone, or "" when the run has no budget. */
-export function runBudgetSentence(): string {
+export function runBudgetSentence(opts: { canSpend?: boolean } = {}): string {
   const budget = runBudget();
   if (!budget) return "";
   return (
-    `This run has a budget of ${usd(budget.ceilingMicroUsd)} (${budget.source}), ` +
-    `metered at real cost: model tokens and any paid tool. It is a ceiling, ` +
-    `not a target: spend what the work warrants. Paid tools say what they ` +
-    `cost and decline a call the remaining budget cannot cover.`
+    `This run has a budget of ${usd(budget.ceilingMicroUsd)}, from ${budget.source}. It is ` +
+    `set at the high end of what work like this usually costs, so most runs finish well ` +
+    `inside it: spend what the work warrants, and what you leave goes back to whoever paid, ` +
+    `for other work. It is metered at real cost, model tokens and any paid tool; paid ` +
+    `tools say what they cost and decline a call the remaining budget cannot cover.` +
+    (opts.canSpend
+      ? ` If doing this properly needs more, ask with petition_mandate and you will get the ` +
+        `answer in this run. You can pay for other agents' work from this budget with commission.`
+      : "")
   );
 }
 
-export function turnBudgetLine(maxTurns: number): string {
-  const budget = runBudgetSentence();
+export function turnBudgetLine(maxTurns: number, opts: { canSpend?: boolean } = {}): string {
+  const budget = runBudgetSentence(opts);
   const turns =
     `you have up to ${maxTurns} tool-use turns in this run, the one ` +
     `that records your conclusion included. That is a backstop, not a ` +

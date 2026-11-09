@@ -324,14 +324,32 @@ export function turnCounterLine(used: number, max: number): string {
  * normally ends such a run.
  */
 export const BUDGET_WRAP_UP_FRACTION = 0.85;
-export function budgetWrapUpNotice(spentMicroUsd: number, ceilingMicroUsd: number): string {
+export function budgetWrapUpNotice(
+  spentMicroUsd: number,
+  ceilingMicroUsd: number,
+  canPetition = false
+): string {
   const over = spentMicroUsd >= ceilingMicroUsd;
-  return over
-    ? `Budget notice: this run has spent its whole budget. Make your concluding ` +
-        `tool call(s) now; whatever is not recorded is lost.`
-    : `Budget notice: most of this run's budget is spent. Finish the work in ` +
-        `hand and make your concluding tool call(s) soon; whatever is not ` +
-        `recorded when the run ends is lost.`;
+  if (over) {
+    return (
+      `Budget notice: this run has spent its whole budget. Make your concluding ` +
+      `tool call(s) now, and record what you could and couldn't establish; ` +
+      `whatever is not recorded is lost.` +
+      (canPetition
+        ? ` If the work needs another pass, petition for a follow-up ` +
+          `(petition_mandate, kind follow_up) so it can start where you stop.`
+        : "")
+    );
+  }
+  return (
+    `Budget notice: most of this run's budget is spent. ` +
+    (canPetition
+      ? `If what is left of the work is essential and needs more, petition for ` +
+        `it now (petition_mandate) and say what it is for. Otherwise finish `
+      : `Finish `) +
+    `the work in hand and make your concluding tool call(s) soon; whatever is ` +
+    `not recorded when the run ends is lost.`
+  );
 }
 
 /**
@@ -667,7 +685,11 @@ export async function toolUseLoop(options: {
         budgetWarned = stage;
         userContent.push({
           type: "text",
-          text: budgetWrapUpNotice(budget.spentMicroUsd, budget.ceilingMicroUsd),
+          text: budgetWrapUpNotice(
+            budget.spentMicroUsd,
+            budget.ceilingMicroUsd,
+            options.tools.some((t) => "name" in t && t.name === "petition_mandate")
+          ),
         });
       }
     }

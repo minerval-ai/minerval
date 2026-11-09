@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 23183,
-    "fullChars": 113226,
+    "roleChars": 23583,
+    "fullChars": 113626,
     "skills": [
       {
         "name": "costing",
@@ -139,8 +139,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15086,
-    "fullChars": 105129,
+    "roleChars": 15486,
+    "fullChars": 105529,
     "skills": []
   },
   {
@@ -328,6 +328,44 @@
     "hasConstitution": true,
     "roleChars": 8708,
     "fullChars": 98751,
+    "skills": [
+      {
+        "name": "costing",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
+      }
+    ]
+  },
+  {
+    "key": "program-officer",
+    "name": "Program Officer",
+    "stage": 9,
+    "group": "governance",
+    "tagline": "Carries a mandate out day to day under the operating policy its Grantmaker writes: works the mandate's inbox, commissions the work its lookouts raise at budgets set from the costing skill, answers petitions from the runs the mandate pays for while they wait, and sends the Grantmaker what the policy doesn't settle or what is beyond the limit it delegated. It writes no verdict, and never names its mandate to the agents that judge the graph.",
+    "invokedWhen": "A run the mandate pays for petitions it (inline, while the run waits), or the mandate's inbox has work in it: something a lookout raised, the outcome of funded work, a note from the funder.",
+    "model": "GPT-6 Luna",
+    "hasConstitution": true,
+    "roleChars": 4808,
+    "fullChars": 94851,
     "skills": [
       {
         "name": "costing",

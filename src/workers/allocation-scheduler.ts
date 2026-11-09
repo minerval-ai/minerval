@@ -30,6 +30,7 @@
  * is harmless (every job is idempotent).
  */
 import { loadConfig } from "../config.js";
+import { sweepFollowUps } from "../services/petition-service.js";
 import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
@@ -121,6 +122,9 @@ export async function allocationSchedulerTick(
   // mandate with a daily rate places its next allocations on the fresh
   // values (the drains also do both opportunistically between sweeps).
   await fundGrantSelfActions().catch(() => 0);
+  // Follow-ups granted to runs that have since ended, which the lanes'
+  // settle hooks missed (petition-service.ts).
+  await sweepFollowUps().catch(() => 0);
   const placed = await runDailyAllocators().catch(() => null);
   if (placed) result.allocationsPlaced = placed.allocated;
 

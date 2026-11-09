@@ -56,6 +56,7 @@ import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-t
 import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
+import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
 import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -584,6 +585,7 @@ async function runClaimStewardImpl(input: {
     getReadPageToolDefinition(),
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
+    ...getSpendToolDefinitions(),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
@@ -679,7 +681,7 @@ a cent.`
 Today's date: ${today}
 Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
-${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget)}
+${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
 ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
 
@@ -738,6 +740,8 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
     const inboxOutput = await executeInboxTool(name, toolInput, { nodeId: input.claimId, labels: inbox.labels });
     if (inboxOutput !== null) return inboxOutput;
+    const spendOutput = await executeSpendTool(name, toolInput);
+    if (spendOutput !== null) return spendOutput;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".

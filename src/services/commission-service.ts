@@ -265,10 +265,17 @@ export async function placeCommission(input: {
         } as const;
       }
       const [row] = await tx.query<{ id: string }>(
+        // A mandate holds one live placement per row (uq_action_allocations_
+        // live_placement): more money from it on the same row, a granted
+        // petition's top-up, adds to that placement.
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd,
             commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
+           WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
+         DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
+         RETURNING id`,
         [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason]
       );
       return { ok: true, allocationId: row!.id } as const;
@@ -352,7 +359,11 @@ export async function placeCommission(input: {
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, user_id, amount_micro_usd,
             commissioned_by, brief, reason, parent_action_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
+           WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
+         DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
+         RETURNING id`,
         [input.group, input.actionId, input.claimId, src.grant_id, src.user_id, take,
          input.commissionedBy, input.brief, input.reason, payer.actionId]
       );

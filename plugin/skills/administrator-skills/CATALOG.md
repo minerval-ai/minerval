@@ -71,6 +71,10 @@ Designs and stewards funded mandates: surveys the territory, writes its mandate'
 
 A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.
 
+### Program Officer (`roles/program-officer.md`)
+
+Carries a mandate out day to day under the operating policy its Grantmaker writes: works the mandate's inbox, commissions the work its lookouts raise at budgets set from the costing skill, answers petitions from the runs the mandate pays for while they wait, and sends the Grantmaker what the policy doesn't settle or what is beyond the limit it delegated. It writes no verdict, and never names its mandate to the agents that judge the graph.
+
 ### Correspondent (`roles/correspondent.md`)
 
 The Lookout's counterpart: it reads the graph for one audience and tells them what deserves their attention. Each run reads the material changes in its scope since its last update and publishes at most one update, as a feed and as structured items agents can read, with a section the mechanism writes listing every change it did not mention. It reports the graph's judgment and writes none of its own, and it has no read an outside client lacks.

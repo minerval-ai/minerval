@@ -194,6 +194,22 @@ const configSchema = z.object({
   // audit turns on, the failure #671 saw at 1 owl.
   curateRunBudgetOwls: z.coerce.number().positive().default(5),
   auditRunBudgetOwls: z.coerce.number().positive().default(5),
+  // Program officers (petition-service.ts): each run that works a
+  // mandate's inbox is commissioned from that mandate at this budget, and a
+  // Grantmaker's run deciding what its officers escalated at the second.
+  // Both are ceilings; a run returns what it does not spend.
+  officerRunBudgetOwls: z.coerce.number().positive().default(1),
+  grantmakerDecisionBudgetOwls: z.coerce.number().positive().default(4),
+  // How long a run waiting on its petition waits. A run is paused on the
+  // answer, which is the reason the decision has a clock at all; past it
+  // the petition stays open and, if granted later, funds a follow-up pass.
+  petitionWaitSeconds: z.coerce.number().int().positive().default(180),
+  // How long an officer waits after taking a mandate's inbox, so petitions
+  // that arrive together are decided together.
+  officerBatchMs: z.coerce.number().int().min(0).default(2000),
+  // The most a program officer commits in one decision unless the mandate's
+  // operating policy says otherwise (its delegation section).
+  defaultOfficerLimitOwls: z.coerce.number().positive().default(5),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
@@ -933,6 +949,9 @@ const configSchema = z.object({
   // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
+  // Program officers: routine decisions under a written operating policy,
+  // escalating what needs judgment to the Grantmaker, so the cheap tier.
+  programOfficerModel: modelId(OPENROUTER_MODELS.flash),
   // The Correspondent (#563): reads the graph for an audience and writes it
   // updates people read, so it is chosen for judgment and prose, on the
   // standard tier. A Grantmaker can pin another (correspondents.model).
@@ -1241,6 +1260,12 @@ export function loadConfig(): Config {
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
+    programOfficerModel: process.env.PROGRAM_OFFICER_MODEL,
+    officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
+    grantmakerDecisionBudgetOwls: process.env.GRANTMAKER_DECISION_BUDGET_OWLS,
+    petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
+    officerBatchMs: process.env.OFFICER_BATCH_MS,
+    defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
     correspondentModel: process.env.CORRESPONDENT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
     consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,

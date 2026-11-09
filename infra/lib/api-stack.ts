@@ -226,6 +226,11 @@ export class ApiStack extends cdk.Stack {
         // on the cheap tier. Pinned to the config default so the model
         // guard covers it; a lookout can carry its own model override.
         LOOKOUT_MODEL: "openai/gpt-6-luna",
+        // Program officers: a mandate's routine funding decisions under its
+        // written operating policy, escalating what needs judgment to the
+        // Grantmaker, so the cheap tier. Pinned to the config default so the
+        // model guard covers it.
+        PROGRAM_OFFICER_MODEL: "openai/gpt-6-luna",
         // The Correspondent (#563): reads the graph for an audience and
         // writes updates people read, on the standard tier. Pinned to the
         // config default so the model guard covers it.

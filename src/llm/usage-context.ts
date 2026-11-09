@@ -305,12 +305,17 @@ export function budgetRefusal(tool: string, priceMicroUsd: number): string | nul
   const price = Math.max(0, priceMicroUsd);
   if (budget.remainingMicroUsd > 0 && price <= budget.remainingMicroUsd) return null;
   const usd = (micro: number) => `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
+  // A run whose lane says who pays can petition that mandate (spend-tools.ts).
+  const canPetition = Boolean(getUsageContext().passBudget?.funding);
   return JSON.stringify({
     success: false,
     message:
       `${tool} would cost about ${usd(price)}, and this run has ${usd(budget.remainingMicroUsd)} ` +
-      `of its ${usd(budget.ceilingMicroUsd)} budget left. Work with what you have and record ` +
-      `your conclusion; if the question needs more, say so in your reasoning, and a ` +
-      `better-funded pass can take it up.`,
+      `of its ${usd(budget.ceilingMicroUsd)} budget left. ` +
+      (canPetition
+        ? `If the work needs it, petition_mandate asks the mandate paying for this run for more, ` +
+          `and answers in this run. Otherwise work with what you have and record what you could ` +
+          `and couldn't establish.`
+        : `Work with what you have and record what you could and couldn't establish.`),
   });
 }

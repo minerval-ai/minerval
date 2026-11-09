@@ -54,6 +54,7 @@ import {
   type RunnableAction,
 } from "../services/action-service.js";
 import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
+import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
 type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
@@ -332,6 +333,14 @@ async function runStewardOnClaim(
               err instanceof Error ? err.message : err
             }`
         )
+      );
+    }
+    // A follow-up granted to this run's petitions is commissioned now that
+    // the run has ended (petition-service.ts). Best-effort: the scheduler's
+    // sweep picks up any this misses.
+    if (action) {
+      await commissionFollowUps(action.id).catch((err) =>
+        console.warn(`[steward] follow-ups for ${action.id} failed: ${err instanceof Error ? err.message : err}`)
       );
     }
     // Success clears the error state AND the attempt counter, so a claim that

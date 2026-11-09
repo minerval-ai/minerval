@@ -221,6 +221,10 @@ describe("ROLE_VIEW", () => {
     // The Correspondent (#563) reports the graph's judgment to an audience
     // and writes none of its own: the same.
     expect(ROLE_VIEW.correspondent).toEqual(["For every administrator"]);
+    // A program officer funds work under a mandate's operating policy and
+    // writes no verdict: the section for everyone, which carries the costing
+    // guidance it sets budgets from.
+    expect(ROLE_VIEW["program-officer"]).toEqual(["For every administrator"]);
     expect(ROLE_VIEW["contribution-reviewer"]).toEqual([
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator",
@@ -249,6 +253,7 @@ describe("ROLE_VIEW", () => {
       "grantmaker",
       "lookout",
       "correspondent",
+      "program-officer",
       "contribution-reviewer",
       "dispute-arbitrator",
       "curator",

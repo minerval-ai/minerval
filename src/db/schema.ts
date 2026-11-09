@@ -2184,6 +2184,10 @@ export const grants = pgTable(
     // entirely by the agent; a mandate-scale mission is impossible
     // without durable working state between passes.
     workspace: text("workspace"),
+    // While a program officer (or the Grantmaker, deciding escalations) is
+    // working this mandate's inbox: one at a time, so petitions that arrive
+    // together are decided together, side by side. Expires on its own.
+    officerLeaseUntil: timestamp("officer_lease_until", { withTimezone: true }),
     // How far the inbox collector (mandate-event-service.ts) has read the
     // graph for this mandate: events are what happened after this. Null
     // until the first scan, which starts from then rather than replaying
@@ -4947,4 +4951,127 @@ export const nodeMessages = pgTable(
       sql`${table.outcome} IS NULL OR ${table.outcome} IN ('changed', 'no_change', 'disagree')`
     ),
   ]
+);
+
+// A petition (petition_mandate): a running agent asking the mandate paying
+// for it for more money. Decided by a program officer under the mandate's
+// operating policy, or by its Grantmaker when the officer escalates. A
+// waiting petitioner reads the decision in the same run.
+export const petitions = pgTable(
+  "petitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // more_budget | follow_up
+    kind: text("kind").notNull(),
+    askedMicroUsd: bigint("asked_micro_usd", { mode: "number" }).notNull(),
+    plan: text("plan").notNull(),
+    why: text("why"),
+    ifRefused: text("if_refused"),
+    requesterAgent: text("requester_agent"),
+    requesterActionId: uuid("requester_action_id").references(() => actions.id, { onDelete: "set null" }),
+    requesterNodeId: uuid("requester_node_id").references(() => claims.id, { onDelete: "set null" }),
+    // The chain of runs that led to the petitioner: [{action_id, kind, node_id, budget_micro_usd}], root first.
+    chain: jsonb("chain").notNull().default([]),
+    waiting: boolean("waiting").notNull().default(false),
+    // pending | escalated | granted | refused | follow_up
+    status: text("status").notNull().default("pending"),
+    grantedMicroUsd: bigint("granted_micro_usd", { mode: "number" }),
+    decidedBy: text("decided_by"),
+    reason: text("reason"),
+    // A follow_up decision is commissioned once the petitioner's run has ended.
+    followUpCommissionedAt: timestamp("follow_up_commissioned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_petitions_open").on(table.grantId, table.createdAt).where(sql`status IN ('pending', 'escalated')`),
+    check("petitions_kind_check", sql`${table.kind} IN ('more_budget', 'follow_up')`),
+    check(
+      "petitions_status_check",
+      sql`${table.status} IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')`
+    ),
+  ]
+);
+
+// A mandate's inbox: what wants its program officers' attention besides
+// petitions. Work a lookout raised, a message addressed to the mandate, the
+// outcome of work it paid for, a note from its funder. An officer handles or
+// escalates each item; the Grantmaker sees escalated ones.
+export const mandateInbox = pgTable(
+  "mandate_inbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // raised | outcome | funder_note | notice
+    kind: text("kind").notNull(),
+    targetNodeId: uuid("target_node_id").references(() => claims.id, { onDelete: "set null" }),
+    targetRef: text("target_ref"),
+    // Who put it here: a lookout's title, an agent role, 'funder', 'system'.
+    source: text("source").notNull(),
+    summary: text("summary").notNull(),
+    // Structured detail: a suggested kind and budget, an outcome's spend.
+    detail: jsonb("detail").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    handledBy: text("handled_by"),
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    escalationNote: text("escalation_note"),
+  },
+  (table) => [
+    index("idx_mandate_inbox_open").on(table.grantId, table.createdAt).where(sql`handled_at IS NULL`),
+  ]
+);
+
+// The decision log: every commission, grant, refusal, decline and note a
+// mandate's agents made, with its reason, read back by the next decision and
+// by the Grantmaker's review. Public, like everything a mandate does.
+export const mandateDecisions = pgTable(
+  "mandate_decisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // officer | grantmaker | lookout
+    decidedBy: text("decided_by").notNull(),
+    // petition | commission | decline | note | escalation | policy | terms
+    itemKind: text("item_kind").notNull(),
+    decision: text("decision").notNull(),
+    target: text("target"),
+    owlsMicroUsd: bigint("owls_micro_usd", { mode: "number" }),
+    reason: text("reason"),
+    petitionId: uuid("petition_id").references(() => petitions.id, { onDelete: "set null" }),
+    actionId: uuid("action_id").references(() => actions.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_mandate_decisions_grant").on(table.grantId, table.createdAt)]
+);
+
+// Every version of a mandate's operating policy (the Grantmaker's standing
+// instructions to its program officers) and of its terms (the title and
+// objective its funder approved), with the note that justified each change.
+export const mandatePolicyVersions = pgTable(
+  "mandate_policy_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    // policy | terms
+    part: text("part").notNull(),
+    // A policy section (mission, priorities, budgets, petitions, delegation), or null for the whole.
+    section: text("section"),
+    content: jsonb("content").notNull(),
+    note: text("note"),
+    author: text("author").notNull(),
+    // applied | awaiting_approval (a platform mandate's amended terms)
+    status: text("status").notNull().default("applied"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_mandate_policy_versions_grant").on(table.grantId, table.createdAt)]
 );

@@ -1,0 +1,139 @@
+/**
+ * A mandate's operating policy: the Grantmaker's standing instructions to
+ * the program officers who carry the mandate out day to day, and the public
+ * statement of how it spends. One part of the mandate document, beside its
+ * terms (the title and objective its funder approved), and stored on it as
+ * `grants.mandate.operating_policy`. Every version is kept in
+ * mandate_policy_versions with the note that justified it.
+ *
+ * The Grantmaker writes it in prose. The one number in it is the officers'
+ * delegation limit: the most an officer commits in one decision without the
+ * Grantmaker, which is the Grantmaker's own choice, stated to the officers
+ * with the Grantmaker's reason.
+ */
+import { rawQuery } from "../db/client.js";
+import { loadConfig } from "../config.js";
+import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+
+export const POLICY_SECTIONS = ["mission", "priorities", "budgets", "petitions", "delegation"] as const;
+export type PolicySection = (typeof POLICY_SECTIONS)[number];
+
+export interface OperatingPolicy {
+  mission?: string;
+  priorities?: string;
+  budgets?: string;
+  petitions?: string;
+  delegation?: string;
+  officer_limit_owls?: number;
+  /** The reason the Grantmaker gave for the limit, stated to the officers. */
+  officer_limit_reason?: string;
+}
+
+const HEADINGS: Record<PolicySection, string> = {
+  mission: "Mission",
+  priorities: "Priorities",
+  budgets: "Budgets",
+  petitions: "Petitions",
+  delegation: "Delegation",
+};
+
+export async function getOperatingPolicy(grantId: string): Promise<OperatingPolicy> {
+  const [row] = await rawQuery<{ policy: OperatingPolicy | null }>(
+    `SELECT mandate->'operating_policy' AS policy FROM grants WHERE id = $1`,
+    [grantId]
+  );
+  return row?.policy ?? {};
+}
+
+/** The policy as the officers and the public read it. */
+export function renderOperatingPolicy(policy: OperatingPolicy): string {
+  const parts = POLICY_SECTIONS.filter((s) => policy[s]?.trim()).map(
+    (s) => `### ${HEADINGS[s]}\n${policy[s]!.trim()}`
+  );
+  return parts.length > 0
+    ? parts.join("\n\n")
+    : "(No operating policy written yet. Decide as a careful steward of the mandate's terms would, and escalate what you can't settle.)";
+}
+
+/** The most an officer may commit in one decision, and why. */
+export function officerLimit(policy: OperatingPolicy): { microUsd: number; reason: string } {
+  const owls = policy.officer_limit_owls ?? loadConfig().defaultOfficerLimitOwls;
+  return {
+    microUsd: owlsToMicroUsd(owls),
+    reason:
+      policy.officer_limit_reason?.trim() ||
+      (policy.officer_limit_owls == null
+        ? "the platform's default until the Grantmaker sets one"
+        : "set by the Grantmaker"),
+  };
+}
+
+/**
+ * Write the policy, or one section of it, and keep the version. The
+ * delegation limit, when given, is stated to the officers with the note as
+ * its reason.
+ */
+export async function writeOperatingPolicy(input: {
+  grantId: string;
+  section?: PolicySection | null;
+  content: string;
+  note: string;
+  author: string;
+  officerLimitOwls?: number | null;
+}): Promise<{ ok: true; policy: OperatingPolicy } | { ok: false; message: string }> {
+  const content = input.content.trim();
+  const note = input.note.trim();
+  if (!note) return { ok: false, message: "note is required: it is the public record of why." };
+  const current = await getOperatingPolicy(input.grantId);
+  const next: OperatingPolicy = { ...current };
+  if (input.section) {
+    if (!POLICY_SECTIONS.includes(input.section)) {
+      return { ok: false, message: `section must be one of ${POLICY_SECTIONS.join(", ")}.` };
+    }
+    next[input.section] = content;
+  } else if (content) {
+    // A whole policy: split on its own ### headings when it has them;
+    // otherwise it is the mission section, read whole.
+    const bySection = splitSections(content);
+    for (const s of POLICY_SECTIONS) delete next[s];
+    Object.assign(next, bySection);
+  }
+  if (input.officerLimitOwls != null) {
+    const owls = Number(input.officerLimitOwls);
+    if (!(owls >= 0)) return { ok: false, message: "officer_limit_owls must be zero or more." };
+    next.officer_limit_owls = owls;
+    next.officer_limit_reason = note;
+  }
+  await rawQuery(
+    `UPDATE grants
+        SET mandate = jsonb_set(COALESCE(mandate, '{}'::jsonb), '{operating_policy}', $2::jsonb),
+            updated_at = now()
+      WHERE id = $1`,
+    [input.grantId, JSON.stringify(next)]
+  );
+  await rawQuery(
+    `INSERT INTO mandate_policy_versions (grant_id, part, section, content, note, author)
+     VALUES ($1, 'policy', $2, $3::jsonb, $4, $5)`,
+    [input.grantId, input.section ?? null, JSON.stringify(next), note, input.author]
+  );
+  return { ok: true, policy: next };
+}
+
+function splitSections(text: string): OperatingPolicy {
+  const out: OperatingPolicy = {};
+  const re = /^###\s+(.+)$/gm;
+  const marks: Array<{ name: string; at: number; end: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) marks.push({ name: m[1]!.trim().toLowerCase(), at: m.index, end: m.index + m[0].length });
+  if (marks.length === 0) return { mission: text };
+  marks.forEach((mk, i) => {
+    const body = text.slice(mk.end, i + 1 < marks.length ? marks[i + 1]!.at : text.length).trim();
+    const key = POLICY_SECTIONS.find((s) => mk.name.startsWith(s));
+    if (key && body) out[key] = body;
+  });
+  return out;
+}
+
+export function describeLimit(limit: { microUsd: number; reason: string }): string {
+  return `You may commit up to ${microUsdToOwls(limit.microUsd)} owls in one decision without the Grantmaker (${limit.reason}).`;
+}
