@@ -638,6 +638,13 @@
       "when": 1794241652280,
       "tag": "0090_mandate_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1794242516074,
+      "tag": "0091_public_read_views",
+      "breakpoints": true
     }
   ]
 }

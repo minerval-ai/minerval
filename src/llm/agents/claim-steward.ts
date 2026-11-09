@@ -57,6 +57,7 @@ import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../us
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -586,6 +587,7 @@ async function runClaimStewardImpl(input: {
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
     ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
@@ -742,6 +744,8 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
     if (inboxOutput !== null) return inboxOutput;
     const spendOutput = await executeSpendTool(name, toolInput);
     if (spendOutput !== null) return spendOutput;
+    const sqlOutput = await executeSqlTool(name, toolInput);
+    if (sqlOutput !== null) return sqlOutput;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".

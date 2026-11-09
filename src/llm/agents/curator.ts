@@ -7,6 +7,7 @@
  * acts through tools, no structured return value.
  */
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { getCuratorSystemPromptBlocks } from "../prompts/curator.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
@@ -120,6 +121,7 @@ async function runCuratorImpl(input: {
     ...curatorTools,
     // Every agent with a budget can pay for other work and ask for more.
     ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     // Kinds and requests (§2, §7a, Part VIII): correcting a node's kind, and
     // keeping the requests that bear on several nodes or on none.
     getChangeKindToolDefinition(),
@@ -206,6 +208,8 @@ ${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNot
       if (research !== null) return research;
       const spend = await executeSpendTool(name, toolInput);
       if (spend !== null) return spend;
+      const sqlOut = await executeSqlTool(name, toolInput);
+      if (sqlOut !== null) return sqlOut;
       // The Matcher receives the domains its caller knows.
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput, { domains: claimDomains });

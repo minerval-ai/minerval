@@ -210,6 +210,21 @@ const configSchema = z.object({
   // The most a program officer commits in one decision unless the mandate's
   // operating policy says otherwise (its delegation section).
   defaultOfficerLimitOwls: z.coerce.number().positive().default(5),
+  // Read-only SQL (sql-service.ts). Each audience has its own login role,
+  // with nothing but SELECT on the public_read views; callers' points at a
+  // read replica. Unset, the SQL tools say they aren't configured.
+  sqlAgentDatabaseUrl: z.string().optional(),
+  sqlCallerDatabaseUrl: z.string().optional(),
+  // How long a query may run: an agent's run is waiting on it, and a
+  // caller's query shares a replica with other callers.
+  sqlAgentTimeoutSeconds: z.coerce.number().positive().default(20),
+  sqlCallerTimeoutSeconds: z.coerce.number().positive().default(5),
+  // The planner's cost estimate above which a query is refused before it runs.
+  sqlMaxPlanCost: z.coerce.number().positive().default(500_000),
+  // Callers' free database time per day, and its price past that.
+  sqlFreeAllowanceSeconds: z.coerce.number().min(0).default(60),
+  sqlPaidAllowanceSeconds: z.coerce.number().min(0).default(600),
+  sqlOwlsPerSecond: z.coerce.number().min(0).default(0.01),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
@@ -1266,6 +1281,14 @@ export function loadConfig(): Config {
     petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
     officerBatchMs: process.env.OFFICER_BATCH_MS,
     defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
+    sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
+    sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
+    sqlAgentTimeoutSeconds: process.env.SQL_AGENT_TIMEOUT_SECONDS,
+    sqlCallerTimeoutSeconds: process.env.SQL_CALLER_TIMEOUT_SECONDS,
+    sqlMaxPlanCost: process.env.SQL_MAX_PLAN_COST,
+    sqlFreeAllowanceSeconds: process.env.SQL_FREE_ALLOWANCE_SECONDS,
+    sqlPaidAllowanceSeconds: process.env.SQL_PAID_ALLOWANCE_SECONDS,
+    sqlOwlsPerSecond: process.env.SQL_OWLS_PER_SECOND,
     correspondentModel: process.env.CORRESPONDENT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
     consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,

@@ -23,6 +23,7 @@ import { runWithUsageContext, withAgent, withPassBudget, withSkills } from "../u
 import { getProgramOfficerSystemPromptBlocks } from "../prompts/program-officer.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { getGraphReadToolDefinitions, executeGraphReadTool } from "../tools/graph-read-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
@@ -207,7 +208,7 @@ export const WRITE_OPERATING_POLICY: Tool = {
 
 export function getOfficerToolDefinitions(role: Role): Tool[] {
   const costing = getActiveSkillToolDefinitions(listSkills(), "program-officer");
-  const base = [DECIDE_PETITIONS, COMMISSION_FOR_MANDATE, DECLINE, LOG_NOTE, ...getGraphReadToolDefinitions(), ...costing];
+  const base = [DECIDE_PETITIONS, COMMISSION_FOR_MANDATE, DECLINE, LOG_NOTE, ...getGraphReadToolDefinitions(), getSqlToolDefinition(), ...costing];
   return role === "officer" ? [...base, ESCALATE] : [...base, WRITE_OPERATING_POLICY];
 }
 
@@ -559,6 +560,8 @@ async function markHandled(ctx: ToolCtx, item: InboxItem | undefined) {
 export async function executeOfficerTool(name: string, input: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
   const graph = await executeGraphReadTool(name, input);
   if (graph !== null) return graph;
+  const sqlOut = await executeSqlTool(name, input);
+  if (sqlOut !== null) return sqlOut;
   if (name === "cost_sheet") return executeSkillTool(name, input, { role: "program-officer" });
 
   if (name === "decide_petitions") {

@@ -29,6 +29,12 @@ How to search for evidence on a claim or question so that what the search did no
 
 Sections: For every administrator.
 
+### Sql (`skills/sql.md`, version 1, method skill)
+
+How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.
+
+Sections: For every administrator.
+
 ## Roles
 
 ### Extractor (`roles/extractor.md`)
