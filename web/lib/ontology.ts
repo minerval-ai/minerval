@@ -313,7 +313,7 @@ export interface PremiseCount {
   cls: string;
 }
 
-export function premiseSummary(nodes: TreeNode[]): PremiseCount[] {
+export function premiseSummary(nodes: ReadonlyArray<{ assessment_status?: string | null }>): PremiseCount[] {
   const counts = new Map<AssessmentStatus | "unassessed", number>();
   for (const n of nodes) {
     const key = n.assessment_status ? normalizeStatus(n.assessment_status) : "unassessed";

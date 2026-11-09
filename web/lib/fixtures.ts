@@ -22,14 +22,14 @@ import { KIND_CLAIMS, KIND_INDEX } from "./fixtures-kinds";
 // (as the tree API does) and into the argument record itself. The comparison
 // of the two figures is a derivation step, not a claim (§6), so it lives here
 // in the prose.
-const ARG_DIRECT_WRITTEN =
+export const ARG_DIRECT_WRITTEN =
   "Because [[claim:bls-cpi|the BLS measured 6.5% CPI growth for 2022]] and " +
   "[[claim:threshold-def|the threshold for “high” annual inflation is 5%]], " +
   "and 6.5% exceeds that threshold, the claim follows.";
 
 // The steward's evaluation of the argument (issue #173): does the inference
 // go through granting its premises, and which premises carry the weight?
-const ARG_DIRECT_EVALUATION =
+export const ARG_DIRECT_EVALUATION =
   "Granting its premises, the inference is simple arithmetic and goes " +
   "through. The argument lives or dies on [[claim:threshold-def|where the " +
   "threshold for “high” inflation is set]]: the measured figure is verified, " +
