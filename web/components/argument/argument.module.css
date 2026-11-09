@@ -1,0 +1,82 @@
+/* ==========================================================================
+   The argument page (#541): the inference first (written form, whether it
+   follows, its premises), then where sources make it, then earlier ratings.
+   Same paper, ink and status voice as the claim page.
+   ========================================================================== */
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin: 0.4rem 0 1.4rem;
+  font-family: var(--sans);
+}
+.conclusion { color: var(--muted); }
+.conclusion a { color: inherit; }
+
+.notice {
+  border-left: 3px solid var(--rule-strong);
+  padding: 0.5rem 0.9rem;
+  margin: 0 0 1.4rem;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.92rem;
+}
+
+.shows { margin: 0 0 1.2rem; font-family: var(--sans); }
+
+.section {
+  margin: 0 0 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.section h2 { margin: 0 0 0.7rem; font-weight: 400; }
+
+.muted {
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+
+.premises,
+.instances,
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.premises li {
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.badge { flex: none; }
+
+.instance,
+.historyEntry {
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.instanceHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-family: var(--sans);
+  font-size: 0.92rem;
+}
+.instanceStance { color: var(--muted); }
+.reading { font-size: 0.85rem; color: var(--muted); }
+.quote {
+  margin: 0.45rem 0 0.3rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--rule);
+}
+.historyText { margin: 0.4rem 0 0; }
+
+@media (max-width: 40rem) {
+  .premises li { flex-direction: column; gap: 0.25rem; }
+}

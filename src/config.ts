@@ -1094,6 +1094,13 @@ const configSchema = z.object({
   // this many such reports, oldest first. 0 disables the worker.
   reportEmbeddingBackfillPerTick: z.coerce.number().default(20),
   reportEmbeddingBackfillIntervalSeconds: z.coerce.number().default(300),
+  // The source backfill (#507): one pass over the sources stored before
+  // source facts and segments existed, filling each once. Every source it
+  // takes costs up to two outside lookups (Crossref for a DOI, the Wayback
+  // Machine for an archived copy), so a tick takes at most this many, to
+  // stay a polite client of both. 0 disables the worker.
+  sourceBackfillPerTick: z.coerce.number().default(20),
+  sourceBackfillIntervalSeconds: z.coerce.number().default(120),
   // GitHub issue filing for agent reports: every report written on first
   // sighting is filed as an issue in GITHUB_ISSUES_REPO ("owner/repo"),
   // labelled GITHUB_ISSUES_LABEL so agent-generated issues are told apart
@@ -1357,6 +1364,8 @@ export function loadConfig(): Config {
       process.env.REPORT_EMBEDDING_BACKFILL_PER_TICK,
     reportEmbeddingBackfillIntervalSeconds:
       process.env.REPORT_EMBEDDING_BACKFILL_INTERVAL_SECONDS,
+    sourceBackfillPerTick: process.env.SOURCE_BACKFILL_PER_TICK,
+    sourceBackfillIntervalSeconds: process.env.SOURCE_BACKFILL_INTERVAL_SECONDS,
     githubToken: process.env.GITHUB_TOKEN,
     githubAppId: process.env.GITHUB_APP_ID,
     githubAppInstallationId: process.env.GITHUB_APP_INSTALLATION_ID,

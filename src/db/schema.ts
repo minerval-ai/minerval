@@ -1662,6 +1662,12 @@ export const agentRuns = pgTable(
     // The commit the code that ran was built from (config.gitSha); NULL for
     // runs before it was recorded and for local runs.
     commitSha: text("commit_sha"),
+    // Why the run's transcript is private (llm/run-visibility.ts): its
+    // agent's inputs are not public by construction, or it called a tool
+    // that reads private data or that no one has classified. Empty = public.
+    // A reason is only ever added while the run is live; nothing removes one
+    // except a release that names it (a grant conversation that has closed).
+    privateReasons: text("private_reasons").array().notNull().default(sql`'{}'::text[]`),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),

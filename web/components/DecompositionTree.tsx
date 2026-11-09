@@ -28,7 +28,7 @@ function argKey(group: ArgumentGroup): string {
 // verdict on the site (cf. the claim's assessment badge), so it reads as a
 // judgment rather than a structural label (#250). Nothing renders until the
 // argument has been evaluated.
-function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
+export function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
   const meta = argumentVerdictMeta(verdict);
   if (!meta) return null;
   return (
@@ -40,7 +40,7 @@ function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
 
 // The decisive mark (§7, #540), in the argument's head: the one label on an
 // argument that speaks to whether its conclusion is true.
-function DecisiveTag({ decisive }: { decisive: boolean }) {
+export function DecisiveTag({ decisive }: { decisive: boolean }) {
   if (!decisive) return null;
   return (
     <Term gloss={DECISIVE.gloss} href={DEFINED_IN.argument} className="badge arg-verdict arg-decisive st-verified">
@@ -76,7 +76,7 @@ function ArgumentCheck({ group }: { group: ArgumentGroup }) {
 }
 
 // An argument's stance on the claim it hangs from, defined on hover/click.
-function StanceTag({ stance }: { stance: Stance }) {
+export function StanceTag({ stance }: { stance: Stance }) {
   return (
     <Term gloss={STANCE_GLOSS[stance]} href={DEFINED_IN.argument} className={`arg-stance ${stance}`}>
       {STANCE_LABEL[stance]}
@@ -211,7 +211,13 @@ function ArgumentBlock({
       ) : (
         <div className="arghead">
           <span className="sc">argument</span>
-          <span className="argname">{group.name}</span>
+          {group.id ? (
+            <Link className="argname" href={`/arguments/${group.id}`} title="Open this argument's page">
+              {group.name}
+            </Link>
+          ) : (
+            <span className="argname">{group.name}</span>
+          )}
           {group.stance && <StanceTag stance={group.stance} />}
           <DecisiveTag decisive={group.decisive} />
           {group.shows && (

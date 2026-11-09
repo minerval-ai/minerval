@@ -1,5 +1,5 @@
 {
-  "id": "00a5802b-2d07-4be1-a8c6-94c6f97c5bf5",
+  "id": "7fcab3a6-e20e-45ac-9950-37a00f95ca76",
   "prevId": "51652355-ddc7-4e0d-ae45-66149da501ae",
   "version": "7",
   "dialect": "postgresql",
@@ -1305,6 +1305,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "private_reasons": {
+          "name": "private_reasons",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
         }
       },
       "indexes": {
@@ -15680,12 +15687,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "page_url_hash": {
-          "name": "page_url_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -15694,21 +15695,6 @@
           "columns": [
             {
               "expression": "doi",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_sources_page_url_hash": {
-          "name": "idx_sources_page_url_hash",
-          "columns": [
-            {
-              "expression": "page_url_hash",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

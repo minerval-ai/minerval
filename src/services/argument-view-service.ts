@@ -26,7 +26,7 @@ export const MAX_INSTANCES_PAGE = 100;
 
 export const ARGUMENT_VIEW_DESCRIPTION =
   "Open one argument: a line of reasoning to a conclusion, canonical like a claim and belonging to " +
-  "no one who makes it (§7). Every read returns `argument`: the conclusion it reaches (the claim " +
+  "no one who makes it (§7). Every read returns `argument`: its page_url, the conclusion it reaches (the claim " +
   "or quantity, with its page_url), its name, `stance` (for or against the claim; `neutral` on a " +
   "quantity, with `shows`, what it shows about the value), the written form (inline " +
   "[[claim:<id>]] references are its premises), and `retired` (when and why its Steward retired " +
@@ -75,6 +75,8 @@ export async function getArgumentView(
   const payload: Record<string, unknown> = {
     argument: {
       id: argument.id,
+      // The argument's own page (#541), a permanent URL as a claim's is.
+      page_url: `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/arguments/${argument.id}`,
       conclusion: conclusion
         ? { id: conclusion.id, text: conclusion.text, kind: conclusion.kind, page_url: pageUrl(conclusion.id) }
         : { id: argument.claimId },

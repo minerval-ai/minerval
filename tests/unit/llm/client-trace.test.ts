@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   completeStructured: vi.fn(),
   recordAgentStep: vi.fn(),
+  markRunPrivate: vi.fn(),
 }));
 
 vi.mock("../../../src/llm/providers/index.js", () => ({
@@ -20,6 +21,7 @@ vi.mock("../../../src/llm/providers/index.js", () => ({
 
 vi.mock("../../../src/services/trace-service.js", () => ({
   recordAgentStep: mocks.recordAgentStep,
+  markRunPrivate: mocks.markRunPrivate,
   startAgentRun: vi.fn(() => null),
   finishAgentRun: vi.fn(),
 }));
@@ -60,6 +62,7 @@ beforeEach(() => {
   mocks.complete.mockReset();
   mocks.completeStructured.mockReset();
   mocks.recordAgentStep.mockReset();
+  mocks.markRunPrivate.mockReset();
 });
 
 // Single-shot completions are whole agent turns for the agents that never
@@ -178,5 +181,41 @@ describe("toolUseLoop step recording", () => {
       executeTool: async () => "unused",
     });
     expect(mocks.recordAgentStep).not.toHaveBeenCalled();
+  });
+});
+
+// A run that executes a tool whose output can carry private data, or a tool
+// nobody has classified, keeps its transcript private (run-visibility.ts).
+describe("toolUseLoop visibility marks", () => {
+  const loop = (name: string) => {
+    const turn = {
+      ...toolTurn,
+      toolUses: [{ id: "t1", name, input: {} }],
+      rawContent: [{ type: "tool_use", id: "t1", name, input: {} }],
+    };
+    mocks.completeWithTools.mockResolvedValueOnce(turn).mockResolvedValueOnce(finalTurn);
+    const trace = { runId: "run-v", seq: { n: 0 }, ready: Promise.resolve() };
+    return runWithUsageContext({ trace }, () =>
+      toolUseLoop({
+        initialMessages: [{ role: "user", content: "go" }],
+        tools: [{ name, description: "", input_schema: { type: "object" as const } }],
+        executeTool: async () => "out",
+      })
+    );
+  };
+
+  it("marks the run for an unclassified tool", async () => {
+    await loop("search");
+    expect(mocks.markRunPrivate).toHaveBeenCalledWith(expect.anything(), "tool:search:unclassified");
+  });
+
+  it("marks the run for a tool that reads private data", async () => {
+    await loop("inspect_ledger");
+    expect(mocks.markRunPrivate).toHaveBeenCalledWith(expect.anything(), "tool:inspect_ledger");
+  });
+
+  it("leaves the run alone for a public read", async () => {
+    await loop("get_claim");
+    expect(mocks.markRunPrivate).not.toHaveBeenCalled();
   });
 });

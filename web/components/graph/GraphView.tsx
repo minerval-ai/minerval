@@ -134,7 +134,7 @@ interface PreviewState {
 // one consistent tooltip surface (pinned on click for pills, #249).
 const MAP_KEY = {
   claim: "A box is a claim: a single proposition the graph assesses, with its own page and map. Click any claim to centre the map on it.",
-  argument: "A pill is an argument: one line of reasoning stating how the claims beneath it combine to bear on the claim above it, for or against. Arguments are not destinations; click their claims to explore.",
+  argument: "A pill is an argument: one line of reasoning stating how the claims beneath it combine to bear on the claim above it, for or against. Click one to see its reasoning and open its page.",
   prize: "A double ring marks a claim with a live prize: an amount in owls offered for a machine-checked proof or disproof of its published formal statement. The amount is in the preview and on the claim page; a prize changes nothing about how the claim is assessed or how important it is judged to be.",
   checked: "⊢ marks a claim whose published formal statement has a machine-checked proof or disproof. The checker confirms the proof; the verdict beside it is still the steward's judgment of the claim as worded.",
   quantity: "A box with a rule beneath its text is a quantity: a value the graph estimates rather than a proposition it affirms or denies. Its estimate stands where a claim's status would.",
@@ -1082,10 +1082,14 @@ export function GraphView({
                 )}
                 {preview.nudge && (
                   <div className={styles.previewNudge}>
-                    An argument is not a destination on this map; the claims it
-                    rests on are. Click one of the claims highlighted beneath it
-                    to keep exploring.
+                    The claims it rests on are highlighted beneath it; click one
+                    to keep exploring the map.
                   </div>
+                )}
+                {preview.pill.argId && (
+                  <p className={styles.previewText}>
+                    <Link href={`/arguments/${preview.pill.argId}`}>Open this argument&apos;s page →</Link>
+                  </p>
                 )}
                 <div className={styles.previewFoot}>
                   <span>an argument states how its subclaims combine to bear on the claim</span>
