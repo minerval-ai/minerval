@@ -222,9 +222,8 @@ describe("runLookout", () => {
     const res = await runLookout({ lookoutId: LOOKOUT });
     const b = state.loop!.briefing;
     expect(b).toContain("Watch the retraction record behind the nutrition sources.");
-    expect(b).toContain("clamped to 6/10");
-    // One ceiling for everything it raises, no count of ingests (#695).
-    expect(b).toContain("The urgency of a flag or an ingest you raise is clamped to 6/10");
+    // What it raises goes to the officers unless its Grantmaker gave it a limit; no count of ingests (#695).
+    expect(b).toContain("Everything you raise goes to the mandate's program officers");
     expect(b).not.toMatch(/ingests? this run/);
     expect(b).toContain("[retraction] 2026-09-10T08:00");
     expect(b).toContain("still waiting for its pass (repeated 2x)");
@@ -241,6 +240,7 @@ describe("runLookout", () => {
       "web_search",
       "raise_issue",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
+      "query_sql",
       "submit_contribution",
       "survey_scope", "read_page", "scope_sources", "check_doi", "recent_retractions",
       "read_listing",
@@ -262,10 +262,10 @@ describe("runLookout", () => {
     expect(state.loop!.model).toBe("openai/gpt-6-luna");
   });
 
-  it("routes the candidate tools to the service with the delegated ceiling, and counts no ingests", async () => {
+  it("routes the candidate tools to the service with the delegated limit, and counts no ingests", async () => {
     state.script = [
-      { name: "flag_reassessment", input: { claim_id: "c-1", rationale: "retracted primary source", urgency: 9 } },
-      { name: "propose_ingest", input: { url: "https://example.org/a", rationale: "primary source missing", urgency: 8 } },
+      { name: "flag_reassessment", input: { claim_id: "c-1", rationale: "retracted primary source", budget_owls: 2 } },
+      { name: "propose_ingest", input: { url: "https://example.org/a", rationale: "primary source missing", budget_owls: 0.5 } },
       { name: "propose_ingest", input: { url: "https://example.org/b", rationale: "another" } },
       { name: "leave_note", input: { text: "Two more sources look relevant; noting them for the review." } },
       { name: "update_workspace", input: { content: "checked: 10.1/x" } },
@@ -273,12 +273,12 @@ describe("runLookout", () => {
       { name: "nope", input: {} },
     ];
     const res = await runLookout({ lookoutId: LOOKOUT });
-    expect(state.reassess[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, maxValue: 6, claimId: "c-1", urgency: 9 });
-    // Both ingests reach the service, each with the ceiling and its urgency
-    // (a missing urgency reads as 5).
+    expect(state.reassess[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, commissionLimitMicroUsd: 0, claimId: "c-1", budgetMicroUsd: 2_000_000 });
+    // Both ingests reach the service, each with the limit and its budget
+    // (no budget raises it to the officers).
     expect(state.ingests).toEqual([
-      expect.objectContaining({ url: "https://example.org/a", maxValue: 6, urgency: 8 }),
-      expect.objectContaining({ url: "https://example.org/b", maxValue: 6, urgency: 5 }),
+      expect.objectContaining({ url: "https://example.org/a", commissionLimitMicroUsd: 0, budgetMicroUsd: 500_000 }),
+      expect.objectContaining({ url: "https://example.org/b", commissionLimitMicroUsd: 0, budgetMicroUsd: 0 }),
     ]);
     expect(state.notes[0]).toMatchObject({ text: expect.stringContaining("noting them") });
     expect(state.workspace).toBe("checked: 10.1/x");
@@ -286,12 +286,12 @@ describe("runLookout", () => {
     const ingestTool = state.loop!.tools.find((t) => t.name === "propose_ingest") as unknown as {
       input_schema: { required: string[] };
     };
-    expect(ingestTool.input_schema.required).toContain("urgency");
+    expect(ingestTool.input_schema.required).not.toContain("budget_owls");
     expect(JSON.parse(await state.loop!.executeTool("nope", {}))).toEqual({ error: "unknown tool nope" });
   });
 
   it("gives a lookout that follows feeds its inbox and a feeds briefing, and triages within its ceiling", async () => {
-    state.lookout = lookout({ max_value: 4 });
+    state.lookout = lookout({ commission_limit_micro_usd: 4_000_000 });
     state.feeds = [
       { feed_id: "f-1", title: "Some Substack", url: "https://x.substack.com/feed", status: "active", wake: "batch", waiting: 7, deferred: 2, oldest_waiting: "2026-09-09T10:00:00.000Z", last_polled_at: null, last_error: null },
     ];
@@ -306,7 +306,7 @@ describe("runLookout", () => {
     expect(state.maxIterations).toBe(200);
     expect(state.loop!.briefing).toContain('f-1 "Some Substack"');
     expect(state.loop!.briefing).toContain("7 waiting, 2 deferred");
-    expect(state.triage[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, maxValue: 4 });
+    expect(state.triage[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, commissionLimitMicroUsd: 4_000_000 });
     expect(state.triage[0]).not.toHaveProperty("ingestAllowance");
     expect(state.ingests).toHaveLength(2);
     expect(res).toMatchObject({ ingestsProposed: 4 });

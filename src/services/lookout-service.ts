@@ -32,7 +32,6 @@ import { rawQuery } from "../db/client.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
 import { ensureAssessActions, ASSESS_GROUP, INGEST_GROUP } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
-import { setMandateValuations } from "./mandate-valuer-service.js";
 import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
 import { ingestCoverage, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { capMicroUsd } from "./owl.js";
@@ -44,6 +43,10 @@ export const LOOKOUT_TRIGGER_KINDS = [
   "retraction",
   // A person or a Grantmaker poked the lookout with a note.
   "manual",
+  // The change stream has new entries in the lookout's territory: the graph
+  // feed (lookout-triggers.ts, graphFeedTick), which looks inward the way
+  // the other triggers look out.
+  "graph",
   // A feed the lookout follows met its wake rule: new items are waiting in
   // its inbox (services/feed-service.ts).
   "feed",
@@ -74,7 +77,14 @@ export interface LookoutRow {
   heartbeat_hours: number;
   triggers: LookoutTriggerKind[];
   model: string | null;
+  /** Retired: valuations are no longer written. */
   max_value: number;
+  /** The most it may commission alone for one item, from the mandate's money. */
+  commission_limit_micro_usd: number;
+  /** The graph feed's territory and how far it has read the change stream. */
+  territory_claim_ids: string[];
+  territory_tag_ids: string[];
+  changes_cursor: string | null;
   workspace: string | null;
   last_note: string | null;
   last_run_at: Date | null;
@@ -88,7 +98,8 @@ export interface LookoutRow {
 
 const LOOKOUT_SELECT = `
   SELECT id, grant_id, title, brief, status, heartbeat_hours, triggers, model,
-         max_value, workspace, last_note, last_run_at,
+         max_value, commission_limit_micro_usd, territory_claim_ids, territory_tag_ids,
+         changes_cursor, workspace, last_note, last_run_at,
          next_due_at, runs, flags, created_by, created_at, updated_at
     FROM lookouts`;
 
@@ -123,11 +134,7 @@ function clampInt(v: unknown, min: number, max: number, dflt: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-function clampReal(v: unknown, min: number, max: number, dflt: number): number {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return dflt;
-  return Math.min(max, Math.max(min, n));
-}
+
 
 /**
  * Stand up a lookout on an active mandate. The brief is the lookout's
@@ -142,7 +149,10 @@ export async function createLookout(input: {
   heartbeatHours?: number;
   triggers?: unknown;
   model?: string | null;
-  maxValue?: number;
+  /** The most it may commission alone for one item, in owls; 0 raises everything to the officers. */
+  commissionLimitOwls?: number;
+  /** The graph feed's territory: node ids (each with everything beneath it) and tag slugs. */
+  territory?: { claimIds?: unknown; tagSlugs?: unknown };
   createdBy: string;
 }): Promise<LookoutWriteResult> {
   const [grant] = await rawQuery<{ id: string }>(
@@ -186,10 +196,20 @@ export async function createLookout(input: {
       message: "A lookout with no heartbeat and no triggers would never run",
     };
   }
+  const territory = await resolveTerritory(input.territory);
+  if (typeof territory === "string") return { ok: false, code: "TERRITORY", message: territory };
+  if (triggers.includes("graph") && territory.claimIds.length + territory.tagIds.length === 0) {
+    return {
+      ok: false,
+      code: "TERRITORY",
+      message: "A graph feed needs a territory: the nodes (each with everything beneath it) and tags it follows.",
+    };
+  }
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookouts
-       (grant_id, title, brief, heartbeat_hours, triggers, model, max_value, created_by)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+       (grant_id, title, brief, heartbeat_hours, triggers, model, max_value, created_by,
+        commission_limit_micro_usd, territory_claim_ids, territory_tag_ids)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, $7, $8, $9::uuid[], $10::uuid[])
      RETURNING id`,
     [
       input.grantId,
@@ -198,8 +218,10 @@ export async function createLookout(input: {
       heartbeat,
       JSON.stringify(triggers),
       model,
-      clampReal(input.maxValue, LOOKOUT_BOUNDS.maxValue.min, LOOKOUT_BOUNDS.maxValue.max, 6),
       input.createdBy,
+      Math.round(Math.max(0, Number(input.commissionLimitOwls ?? 0) || 0) * 1_000_000),
+      territory.claimIds,
+      territory.tagIds,
     ]
   );
   return { ok: true, lookoutId: row!.id };
@@ -219,7 +241,8 @@ export async function updateLookout(input: {
   heartbeatHours?: number;
   triggers?: unknown;
   model?: string | null;
-  maxValue?: number;
+  commissionLimitOwls?: number;
+  territory?: { claimIds?: unknown; tagSlugs?: unknown };
 }): Promise<LookoutWriteResult> {
   const current = isUuid(input.lookoutId) ? await getLookout(input.lookoutId) : null;
   if (!current || current.grant_id !== input.grantId) {
@@ -269,8 +292,16 @@ export async function updateLookout(input: {
     if (model && !resolveProvider(model)) return { ok: false, code: "MODEL", message: unresolvableModelIdMessage(model) };
     set("model", model);
   }
-  if (input.maxValue !== undefined) {
-    set("max_value", clampReal(input.maxValue, LOOKOUT_BOUNDS.maxValue.min, LOOKOUT_BOUNDS.maxValue.max, current.max_value));
+  if (input.commissionLimitOwls !== undefined) {
+    set("commission_limit_micro_usd", Math.round(Math.max(0, Number(input.commissionLimitOwls) || 0) * 1_000_000));
+  }
+  if (input.territory !== undefined) {
+    const territory = await resolveTerritory(input.territory);
+    if (typeof territory === "string") return { ok: false, code: "TERRITORY", message: territory };
+    params.push(territory.claimIds);
+    sets.push(`territory_claim_ids = $${params.length}::uuid[]`);
+    params.push(territory.tagIds);
+    sets.push(`territory_tag_ids = $${params.length}::uuid[]`);
   }
   if (sets.length === 0) return { ok: true, lookoutId: input.lookoutId };
   await rawQuery(
@@ -278,6 +309,22 @@ export async function updateLookout(input: {
     params
   );
   return { ok: true, lookoutId: input.lookoutId };
+}
+
+/** A territory's node ids, checked, and its tag slugs, resolved; or the problem. */
+async function resolveTerritory(
+  t: { claimIds?: unknown; tagSlugs?: unknown } | undefined
+): Promise<{ claimIds: string[]; tagIds: string[] } | string> {
+  const rawIds = Array.isArray(t?.claimIds) ? (t?.claimIds as unknown[]) : [];
+  const claimIds = rawIds.map(String).filter(Boolean).slice(0, 100);
+  const bad = claimIds.find((id) => !isUuid(id));
+  if (bad) return `territory: "${bad}" is not a node id`;
+  const rawSlugs = Array.isArray(t?.tagSlugs) ? (t?.tagSlugs as unknown[]) : [];
+  const slugs = rawSlugs.map(String).filter(Boolean).slice(0, 20);
+  const { resolveTagSlugs } = await import("./graph-change-service.js");
+  const { ids, unknown } = await resolveTagSlugs(slugs);
+  if (unknown.length > 0) return `territory: no tag ${unknown.map((u) => `"${u}"`).join(", ")}`;
+  return { claimIds, tagIds: ids };
 }
 
 export async function getLookout(lookoutId: string): Promise<LookoutRow | null> {
@@ -435,13 +482,73 @@ export type FlagResult =
   | { ok: false; code: string; problem: string };
 
 /**
+ * What a lookout does with something it found (a pass on a claim, an
+ * ingest): commission it from the mandate when the budget it names is
+ * within the limit its Grantmaker delegated, and otherwise raise it to the
+ * mandate's program officers, who decide under the operating policy.
+ */
+async function actOnFind(input: {
+  lookoutId: string;
+  grantId: string;
+  actionId: string;
+  claimId: string | null;
+  url: string | null;
+  rationale: string;
+  budgetMicroUsd: number;
+  commissionLimitMicroUsd: number;
+}): Promise<{ commissioned: boolean; note: string }> {
+  const [lookout] = await rawQuery<{ title: string }>(`SELECT title FROM lookouts WHERE id = $1`, [input.lookoutId]);
+  const title = lookout?.title ?? "a lookout";
+  if (input.budgetMicroUsd > 0 && input.budgetMicroUsd <= input.commissionLimitMicroUsd) {
+    const { commissionAction } = await import("./commission-service.js");
+    const res = await commissionAction({
+      payer: { kind: "grant", grantId: input.grantId },
+      actionId: input.actionId,
+      budgetMicroUsd: input.budgetMicroUsd,
+      brief: input.rationale,
+      reason: `Raised by the lookout "${title}"`,
+      commissionedBy: "lookout",
+    });
+    if (res.ok) {
+      await rawQuery(
+        `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id)
+         VALUES ($1, 'lookout', 'commission', $2, $3, $4, $5, $6)`,
+        [input.grantId, res.status === "commissioned" ? "commissioned" : "joined a paid pass", input.claimId ?? input.url,
+         res.status === "commissioned" ? input.budgetMicroUsd : null, input.rationale, input.actionId]
+      );
+      return {
+        commissioned: res.status === "commissioned",
+        note:
+          res.status === "commissioned"
+            ? `Commissioned at ${input.budgetMicroUsd / 1_000_000} owls from the mandate, within your limit.`
+            : "It already had a run paid for; nothing more was spent.",
+      };
+    }
+  }
+  await rawQuery(
+    `INSERT INTO mandate_inbox (grant_id, kind, target_node_id, target_ref, source, summary, detail)
+     VALUES ($1, 'raised', $2, $3, $4, $5, $6::jsonb)`,
+    [
+      input.grantId,
+      input.claimId,
+      input.url,
+      `the lookout "${title}"`,
+      input.rationale,
+      JSON.stringify({
+        action_id: input.actionId,
+        ...(input.budgetMicroUsd > 0 ? { suggested_budget_owls: input.budgetMicroUsd / 1_000_000 } : {}),
+      }),
+    ]
+  );
+  return { commissioned: false, note: "Raised to the mandate's program officers, who decide under its operating policy." };
+}
+
+/**
  * A reassess flag: the claim becomes a candidate (enqueued to the Steward
  * lane with the lookout's trigger and context, which materializes its
- * assess/reassess rows), and the funding mandate's valuation on the
- * standard variant is written at the lookout's urgency clamped to its
- * ceiling. Whether the row then RUNS is the mandate allocator's call,
- * by value per owl against everything else the mandate values — the
- * lookout has raised a candidate, not spent money.
+ * assess/reassess rows), and the lookout acts on it (actOnFind): it
+ * commissions the pass within the limit its Grantmaker delegated, or
+ * raises it to the mandate's program officers.
  *
  * Folding: a second flag on the same claim while the earlier one's action
  * is still open or running is a repeat, not a new flag, and rewrites
@@ -451,10 +558,12 @@ export type FlagResult =
 export async function flagReassessment(input: {
   lookoutId: string;
   grantId: string;
-  maxValue: number;
+  /** The most the lookout may commission alone (lookouts.commission_limit_micro_usd). */
+  commissionLimitMicroUsd: number;
   claimId: string;
   rationale: string;
-  urgency: number;
+  /** The pass's budget, when the lookout names one; 0 raises it to the officers. */
+  budgetMicroUsd: number;
 }): Promise<FlagResult> {
   const rationale = String(input.rationale ?? "").trim().slice(0, LOOKOUT_BOUNDS.rationaleChars);
   if (rationale.length < 10) {
@@ -495,8 +604,6 @@ export async function flagReassessment(input: {
     };
   }
 
-  const urgency = clampReal(input.urgency, 0, 10, 5);
-  const value = Math.min(urgency, clampReal(input.maxValue, 0, 10, 0));
   const [current] = await rawQuery<{ id: string; status: string; claim_credence: number | null }>(
     `SELECT id, status, claim_credence FROM assessments
       WHERE claim_id = $1 AND is_current = true LIMIT 1`,
@@ -517,17 +624,18 @@ export async function flagReassessment(input: {
       LIMIT 1`,
     [ASSESS_GROUP(input.claimId)]
   );
-  let valueWritten: number | null = null;
-  if (standard && value > 0) {
-    const res = await setMandateValuations(input.grantId, [
-      {
-        action_id: standard.id,
-        value,
-        rationale: `[lookout] ${rationale}`,
-      },
-    ]);
-    if (res.written > 0) valueWritten = value;
-  }
+  const acted = standard
+    ? await actOnFind({
+        lookoutId: input.lookoutId,
+        grantId: input.grantId,
+        actionId: standard.id,
+        claimId: input.claimId,
+        url: null,
+        rationale,
+        budgetMicroUsd: Math.max(0, Math.round(input.budgetMicroUsd || 0)),
+        commissionLimitMicroUsd: Math.max(0, Number(input.commissionLimitMicroUsd) || 0),
+      })
+    : { commissioned: false, note: "The ledger row isn't open; recorded as a candidate only." };
   const [flag] = await rawQuery<{ id: string }>(
     `INSERT INTO lookout_flags
        (lookout_id, kind, claim_id, action_id, rationale, urgency, value_written,
@@ -539,8 +647,8 @@ export async function flagReassessment(input: {
       input.claimId,
       standard?.id ?? null,
       rationale,
-      urgency,
-      valueWritten,
+      null,
+      null,
       current?.status ?? null,
       current?.claim_credence ?? null,
       current?.id ?? null,
@@ -551,11 +659,8 @@ export async function flagReassessment(input: {
     flag_id: flag!.id,
     duplicate: false,
     action_id: standard?.id ?? null,
-    value_written: valueWritten,
-    note:
-      valueWritten === null
-        ? "Recorded as a candidate; no valuation written (the mandate's ceiling for you is 0, or the ledger row is not open)."
-        : `Recorded. The claim is a candidate for reassessment with your mandate valuing it at ${valueWritten}/10; its allocator decides whether that buys a pass today.`,
+    value_written: null,
+    note: `Recorded. ${acted.note}`,
   };
 }
 
@@ -582,10 +687,10 @@ export async function flagIngest(input: {
   url: string;
   rationale: string;
   focus?: string | null;
-  /** The lookout's ceiling (`lookouts.max_value`). */
-  maxValue: number;
-  /** 0-10, the lookout's own judgment of how much this matters. */
-  urgency: number;
+  /** The most the lookout may commission alone (lookouts.commission_limit_micro_usd). */
+  commissionLimitMicroUsd: number;
+  /** The ingest's budget, when the lookout names one; 0 raises it to the officers. */
+  budgetMicroUsd: number;
 }): Promise<FlagResult> {
   const focus = normalizeFocus(input.focus);
   const rationale = String(input.rationale ?? "").trim().slice(0, LOOKOUT_BOUNDS.rationaleChars);
@@ -600,19 +705,6 @@ export async function flagIngest(input: {
       ok: false,
       code: "URL",
       problem: err instanceof UnsafeUrlError ? err.message : "Not a fetchable public URL",
-    };
-  }
-  const urgency = clampReal(input.urgency, 0, 10, 5);
-  const ceiling = clampReal(input.maxValue, 0, 10, 0);
-  const value = Math.min(urgency, ceiling);
-  if (value <= 0) {
-    return {
-      ok: false,
-      code: "NO_VALUE",
-      problem:
-        ceiling <= 0
-          ? "Your Grantmaker's ceiling for you is 0, so an ingest you raise could carry no value on the ledger. Leave a note naming the source instead."
-          : "An urgency of 0 says it is not worth an ingest; leave a note if it matters at all.",
     };
   }
   const coverage = await ingestCoverage(url, focus);
@@ -690,37 +782,28 @@ export async function flagIngest(input: {
           : "The ledger has already closed an ingest of that URL (it ran, or was retired as unreadable); it cannot be raised again.",
     };
   }
-  // Never lower a value the mandate already put on the row (its
-  // Grantmaker's own, or an earlier flag's).
-  const [existing] = await rawQuery<{ value_est: number }>(
-    `SELECT value_est FROM mandate_valuations WHERE grant_id = $1 AND action_id = $2`,
-    [input.grantId, row.id]
-  );
-  let valueWritten: number | null = null;
-  if (existing && Number(existing.value_est) >= value) {
-    valueWritten = Number(existing.value_est);
-  } else {
-    const res = await setMandateValuations(input.grantId, [
-      { action_id: row.id, value, rationale: `[lookout] ${rationale}` },
-    ]);
-    if (res.written > 0) valueWritten = value;
-  }
+  const acted = await actOnFind({
+    lookoutId: input.lookoutId,
+    grantId: input.grantId,
+    actionId: row.id,
+    claimId: null,
+    url,
+    rationale,
+    budgetMicroUsd: Math.max(0, Math.round(input.budgetMicroUsd || 0)),
+    commissionLimitMicroUsd: Math.max(0, Number(input.commissionLimitMicroUsd) || 0),
+  });
   const [flag] = await rawQuery<{ id: string }>(
     `INSERT INTO lookout_flags (lookout_id, kind, url, action_id, rationale, urgency, value_written)
      VALUES ($1, 'ingest', $2, $3, $4, $5, $6) RETURNING id`,
-    [input.lookoutId, url, row.id, rationale, urgency, valueWritten]
+    [input.lookoutId, url, row.id, rationale, null, null]
   );
   return {
     ok: true,
     flag_id: flag!.id,
     duplicate: false,
     action_id: row.id,
-    value_written: valueWritten,
-    note:
-      valueWritten === null
-        ? "Recorded, but no valuation could be written on the ingest row."
-        : `Recorded. The source${focus ? ` (scoped to "${focus}")` : ""} is a candidate ingest on the ledger ` +
-          `with your mandate valuing it at ${valueWritten}/10; its allocator decides whether that buys the ingest.`,
+    value_written: null,
+    note: `Recorded. The source${focus ? ` (scoped to "${focus}")` : ""} is open work on the ledger. ${acted.note}`,
   };
 }
 

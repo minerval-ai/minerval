@@ -210,6 +210,12 @@ const configSchema = z.object({
   // The most a program officer commits in one decision unless the mandate's
   // operating policy says otherwise (its delegation section).
   defaultOfficerLimitOwls: z.coerce.number().positive().default(5),
+  // Whether the scheduler holds program officer sittings for inboxes no run
+  // is waiting on. A deployment off-switch, like the lookout and review ones.
+  officerSittingsEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .prefault("false"),
   // Read-only SQL (sql-service.ts). Each audience has its own login role,
   // with nothing but SELECT on the public_read views; callers' points at a
   // read replica. Unset, the SQL tools say they aren't configured.
@@ -1281,6 +1287,7 @@ export function loadConfig(): Config {
     petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
     officerBatchMs: process.env.OFFICER_BATCH_MS,
     defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
+    officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
     sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
     sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
     sqlAgentTimeoutSeconds: process.env.SQL_AGENT_TIMEOUT_SECONDS,

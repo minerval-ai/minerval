@@ -86,23 +86,21 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
     {
       name: "spawn_lookout",
       description:
-        "Post a LOOKOUT: a cheap standing watch over part of your mission, " +
-        "run from your escrow on a heartbeat and on triggers, that reads " +
-        "the graph, the retraction record, and the open web and raises " +
-        "candidates: a claim for reassessment or a source to ingest (each " +
-        "valued on your behalf up to the ceiling you set, then ranked by " +
-        "your allocator), a note for your next review pass, or a " +
-        "contribution through the Contribution Reviewer, its review paid " +
-        "from your escrow. It never writes an assessment or moves money. Write the brief as you " +
-        "would for a careful person paid to keep watch over one thing: the " +
-        "scope in your words (a claim and what it turns on, a literature, " +
-        "a set of sources, a question), where to look, what kinds of " +
-        "happening warrant work and what to leave alone. Use it wherever " +
-        "the mission needs to notice things between your review passes: a " +
-        "retraction watch over the sources behind your assessed claims, a " +
-        "new-results watch on a live crux, a feed to keep an eye on. Each " +
-        "run costs a small fraction of an assessment and is paid from your " +
-        "escrow out of the mandate's day.",
+        "Post a lookout: a standing agent that keeps watch over part of your " +
+        "mission and brings what it finds to your program officers. It runs " +
+        "from your money, on a heartbeat and on triggers. It can look outward " +
+        "(the retraction record, feeds, the open web) and inward: with the " +
+        "graph feed it reads the change stream for its territory from where it " +
+        "last stopped (new and reopened work on the ledger, messages arriving " +
+        "on nodes, accepted contributions, rulings, finished runs and what they " +
+        "changed, verdicts moving, requests filed), and queries the graph with " +
+        "SQL as it needs. It raises what deserves your money to your program " +
+        "officers' inbox, with its reasons, and may commission work itself up " +
+        "to the limit you give it. It never writes an assessment. Write the " +
+        "brief as you would for a careful person paid to keep watch: the " +
+        "territory in your words, what kinds of happening warrant work, and " +
+        "what to leave alone. A lookout that reads only what changed since its " +
+        "last run costs a small fraction of an assessment.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -126,17 +124,27 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
               "Inputs it also wakes on: 'retraction' (the daily Crossref " +
               "poll matched a retraction or correction to a source in the " +
               "graph), 'manual' (you or the funder poke it with a note), " +
-              "'feed' (a feed it follows has new items; added for you with feeds).",
+              "'feed' (a feed it follows has new items; added for you with feeds), " +
+              "'graph' (the change stream has new entries in its territory).",
           },
-          max_value: {
+          territory: {
+            type: "object",
+            properties: {
+              claim_ids: { type: "array", items: { type: "string" } },
+              tags: { type: "array", items: { type: "string" } },
+            },
+            description:
+              "For the graph feed: the part of the graph it follows, as node ids " +
+              "(each with everything beneath it) and tag slugs. The brief still " +
+              "says what falls under the mission; draw the territory wider than " +
+              "the mission rather than narrower.",
+          },
+          commission_limit_owls: {
             type: "number",
             description:
-              "The ceiling (0–10) on the valuation anything it raises (a " +
-              "reassessment, an ingest, an auto_ingest feed item) may write " +
-              "on your behalf. This is how much of your spending judgment you " +
-              "delegate; default 6. Your allocator still ranks each against " +
-              "everything else you value, out of the day's room; 0 lets it " +
-              "raise only notes.",
+              "The most it may commission on its own for one item, from your " +
+              "money. Above that, or at 0 (the default), it raises the item to " +
+              "your program officers.",
           },
           model: {
             type: "string",
@@ -168,9 +176,9 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "has waited max_wait_hours), each (any new item), heartbeat (items " +
         "wait for the lookout's heartbeat), paused (keeps polling, never " +
         "wakes), or auto_ingest (no run at all: each new item becomes a " +
-        "candidate ingest valued at the lookout's max_value, which your " +
-        "allocator funds or not like anything else you value, for a " +
-        "source you already trust wholesale). min_wake_hours spaces wakes " +
+        "ingest, commissioned at the ingest's cap within the lookout's " +
+        "commission limit and otherwise raised to your program officers, " +
+        "for a source you already trust wholesale). min_wake_hours spaces wakes " +
         "out. The first poll records what the feed already carries without " +
         "queueing it; for the back-catalogue, read it with read_listing and " +
         "plan what matters. The brief, not the feed, decides relevance: a " +
@@ -262,7 +270,14 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           status: { type: "string", enum: ["active", "paused", "retired"] },
           heartbeat_hours: { type: "number" },
           triggers: { type: "array", items: { type: "string", enum: [...LOOKOUT_TRIGGER_KINDS] } },
-          max_value: { type: "number" },
+          territory: {
+            type: "object",
+            properties: {
+              claim_ids: { type: "array", items: { type: "string" } },
+              tags: { type: "array", items: { type: "string" } },
+            },
+          },
+          commission_limit_owls: { type: "number" },
           model: { type: "string" },
         },
         required: ["lookout_id"],
@@ -313,7 +328,9 @@ export async function executeLookoutManagementTool(
         toolInput.heartbeat_hours === undefined ? undefined : Number(toolInput.heartbeat_hours),
       triggers,
       model: typeof toolInput.model === "string" ? toolInput.model : null,
-      maxValue: toolInput.max_value === undefined ? undefined : Number(toolInput.max_value),
+      commissionLimitOwls:
+        toolInput.commission_limit_owls === undefined ? undefined : Number(toolInput.commission_limit_owls),
+      territory: territoryOf(toolInput.territory),
       createdBy: opts.createdBy,
     });
     if (!res.ok) return JSON.stringify({ success: false, code: res.code, problem: res.message });
@@ -369,7 +386,10 @@ export async function executeLookoutManagementTool(
         ? { heartbeatHours: Number(toolInput.heartbeat_hours) }
         : {}),
       ...(toolInput.triggers !== undefined ? { triggers: toolInput.triggers } : {}),
-      ...(toolInput.max_value !== undefined ? { maxValue: Number(toolInput.max_value) } : {}),
+      ...(toolInput.commission_limit_owls !== undefined
+        ? { commissionLimitOwls: Number(toolInput.commission_limit_owls) }
+        : {}),
+      ...(toolInput.territory !== undefined ? { territory: territoryOf(toolInput.territory) } : {}),
       ...(toolInput.model !== undefined ? { model: String(toolInput.model) } : {}),
     });
     return JSON.stringify(
@@ -433,4 +453,11 @@ export async function executeLookoutManagementTool(
     );
   }
   return null;
+}
+
+/** A tool's territory input, as the service takes it. */
+function territoryOf(raw: unknown): { claimIds?: unknown; tagSlugs?: unknown } | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const t = raw as { claim_ids?: unknown; tags?: unknown };
+  return { claimIds: t.claim_ids, tagSlugs: t.tags };
 }

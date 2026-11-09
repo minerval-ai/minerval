@@ -2408,6 +2408,17 @@ export const lookouts = pgTable(
     // The Grantmaker delegates this much of its spending judgment and no
     // more.
     maxValue: real("max_value").notNull().default(6),
+    // The most the lookout may commission on its own for one item, from the
+    // mandate's money; above it, or at 0, it raises the item to the
+    // mandate's program officers. Replaces max_value, which no longer
+    // writes anything (valuations are retired).
+    commissionLimitMicroUsd: bigint("commission_limit_micro_usd", { mode: "number" }).notNull().default(0),
+    // The graph feed: the part of the graph the lookout follows (nodes, with
+    // everything beneath them, and tags), and how far through the change
+    // stream it has read.
+    territoryClaimIds: uuid("territory_claim_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    territoryTagIds: uuid("territory_tag_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    changesCursor: text("changes_cursor"),
     // No longer read or written (#695): ingests are valued within
     // max_value and ranked by the allocator, not counted per run. Kept,
     // with its default, so live rows need no migration; safe to drop.

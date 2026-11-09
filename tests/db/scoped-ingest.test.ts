@@ -151,29 +151,29 @@ describe("what an ingest would only repeat", () => {
     const lookoutId = await seedLookout(grantId);
     const url = `https://example.org/${randomUUID()}`;
     const raise = (focus?: string) =>
-      flagIngest({ lookoutId, grantId, url, rationale: "bears on the mandate", focus, maxValue: 6, urgency: 7 });
+      flagIngest({ lookoutId, grantId, url, rationale: "bears on the mandate", focus, commissionLimitMicroUsd: 1_000_000, budgetMicroUsd: 500_000 });
 
     const first = await raise(FOCUS);
-    expect(first).toMatchObject({ ok: true, duplicate: false, value_written: 6 });
+    expect(first).toMatchObject({ ok: true, duplicate: false });
     const again = await raise(FOCUS);
     expect(again).toMatchObject({ ok: true, duplicate: true });
     const whole = await raise();
     expect(whole).toMatchObject({ ok: true, duplicate: false });
 
-    // One ledger row per focus, the focus on record, each valued by the
-    // mandate (#695); nothing on the plan.
-    const rows = await rawQuery<{ group: string; focus: string | null; value: number }>(
-      `SELECT a.exclusion_group AS group, f.focus, mv.value_est AS value
+    // One ledger row per focus, the focus on record, each commissioned from
+    // the mandate within the lookout's limit (#695); nothing on the plan.
+    const rows = await rawQuery<{ group: string; focus: string | null; budget: string }>(
+      `SELECT a.exclusion_group AS group, f.focus, al.amount_micro_usd AS budget
          FROM actions a
-         JOIN mandate_valuations mv ON mv.action_id = a.id AND mv.grant_id = $2
+         JOIN action_allocations al ON al.exclusion_group = a.exclusion_group AND al.grant_id = $2
          LEFT JOIN ingest_focuses f ON f.exclusion_group = a.exclusion_group
         WHERE a.kind = 'ingest' AND a.target_ref = $1
         ORDER BY a.created_at ASC, a.id ASC`,
       [url, grantId]
     );
     expect(rows).toEqual([
-      { group: ingestGroup(url, FOCUS), focus: FOCUS, value: 6 },
-      { group: ingestGroup(url, null), focus: null, value: 6 },
+      { group: ingestGroup(url, FOCUS), focus: FOCUS, budget: "500000" },
+      { group: ingestGroup(url, null), focus: null, budget: "500000" },
     ]);
     const [g] = await rawQuery<{ plan: { items?: unknown[] } | null }>(`SELECT plan FROM grants WHERE id = $1`, [grantId]);
     expect(g!.plan?.items ?? []).toEqual([]);

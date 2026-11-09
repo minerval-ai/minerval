@@ -206,6 +206,53 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
   };
 }
 
+/**
+ * Pay for any open row on the ledger whole: an ingest, a curation, an audit,
+ * work on a request, a formalization. A row already paid for or running is
+ * left as it is.
+ */
+export async function commissionAction(input: {
+  payer: CommissionPayer;
+  actionId: string;
+  budgetMicroUsd: number;
+  brief?: string | null;
+  reason?: string | null;
+  commissionedBy: string;
+}): Promise<
+  | { ok: true; status: "commissioned"; allocationId: string; kind: string }
+  | { ok: true; status: "already_commissioned"; kind: string }
+  | Extract<CommissionResult, { ok: false }>
+> {
+  const budget = Math.round(input.budgetMicroUsd);
+  if (!(budget > 0)) return { ok: false, code: "BAD_AMOUNT", message: "A commission needs a budget above zero." };
+  const [row] = await rawQuery<{ id: string; kind: string; exclusion_group: string; claim_id: string | null; status: string; commissioned: boolean }>(
+    `SELECT a.id, a.kind, a.exclusion_group, a.claim_id, a.status,
+            EXISTS (SELECT 1 FROM action_allocations al
+                     WHERE al.exclusion_group = a.exclusion_group AND al.released_at IS NULL
+                       AND al.commissioned_by IS NOT NULL AND al.spent_micro_usd < al.amount_micro_usd
+                       AND (al.action_id IS NULL OR al.action_id = a.id)) AS commissioned
+       FROM actions a WHERE a.id = $1`,
+    [input.actionId]
+  );
+  if (!row) return { ok: false, code: "NOT_FOUND", message: "No ledger row has that id." };
+  if (row.status === "running" || row.commissioned) return { ok: true, status: "already_commissioned", kind: row.kind };
+  if (row.status !== "open") {
+    return { ok: false, code: "NOT_FOUND", message: `That row is ${row.status}; only open work can be commissioned.` };
+  }
+  const placed = await placeCommission({
+    group: row.exclusion_group,
+    actionId: row.id,
+    claimId: row.claim_id,
+    payer: input.payer,
+    budget,
+    commissionedBy: input.commissionedBy,
+    brief: input.brief ?? null,
+    reason: input.reason ?? null,
+  });
+  if (!placed.ok) return placed;
+  return { ok: true, status: "commissioned", allocationId: placed.allocationId, kind: row.kind };
+}
+
 type Placed = { ok: true; allocationId: string } | Extract<CommissionResult, { ok: false }>;
 
 /**

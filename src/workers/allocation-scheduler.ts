@@ -125,6 +125,13 @@ export async function allocationSchedulerTick(
   // Follow-ups granted to runs that have since ended, which the lanes'
   // settle hooks missed (petition-service.ts).
   await sweepFollowUps().catch(() => 0);
+  // Mandates' inboxes: what lookouts raised and outcomes no run is waiting
+  // on, decided by each mandate's program officers. Off unless enabled, as
+  // it runs models.
+  if (config.officerSittingsEnabled) {
+    const { workWaitingInboxes } = await import("../llm/agents/program-officer.js");
+    await workWaitingInboxes().catch(() => 0);
+  }
   const placed = await runDailyAllocators().catch(() => null);
   if (placed) result.allocationsPlaced = placed.allocated;
 

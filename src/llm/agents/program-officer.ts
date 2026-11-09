@@ -28,7 +28,7 @@ import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import { claimAction, completeAction, releaseAction } from "../../services/action-service.js";
-import { commissionNodePass, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
+import { commissionAction, commissionNodePass, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import {
   decidePetition,
@@ -93,7 +93,9 @@ const COMMISSION_FOR_MANDATE: Tool = {
   name: "commission",
   description:
     "Pay for runs from your mandate's money: one entry or many. Each entry is " +
-    "a Steward pass on a node, with a budget from the operating policy and the " +
+    "a Steward pass on a node (target), or any open row on the ledger by its " +
+    "action_id (an ingest, a curation, an audit, work on a request; an inbox " +
+    "item names its row), with a budget from the operating policy and the " +
     "costing skill (the high end, unless the operating policy says otherwise), " +
     "a tier, a brief for the Steward, and your reason for the public record. " +
     "The brief reaches the node's Steward as a message; it may not name the " +
@@ -110,13 +112,14 @@ const COMMISSION_FOR_MANDATE: Tool = {
           type: "object",
           properties: {
             item: { type: "string", description: "Optional: the inbox item this answers (i1, i2, …); it is marked handled." },
-            target: { type: "string", description: "The node's id." },
+            target: { type: "string", description: "For a Steward pass: the node's id." },
+            action_id: { type: "string", description: "For any other work: the ledger row's id." },
             budget_owls: { type: "number" },
             tier: { type: "string", enum: ["standard", "strong"] },
             brief: { type: "string", description: "What the Steward should look at, and why." },
             reason: { type: "string", description: "Why this is worth the mandate's money, in a line." },
           },
-          required: ["target", "budget_owls", "brief", "reason"],
+          required: ["budget_owls", "brief", "reason"],
         },
       },
     },
@@ -609,6 +612,40 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
         results.push({ target, ok: false, message: `More than your limit of ${owls(ctx.limitMicroUsd)} owls in one decision. Escalate it.` });
         continue;
       }
+      const actionId = typeof e.action_id === "string" && e.action_id.trim() ? e.action_id.trim() : null;
+      if (actionId) {
+        const r = await commissionAction({
+          payer: { kind: "grant", grantId: ctx.grant.id },
+          actionId,
+          budgetMicroUsd: budget,
+          brief: String(e.brief ?? ""),
+          reason: String(e.reason ?? ""),
+          commissionedBy: ctx.decidedBy === "officer" ? "program_officer" : "grantmaker",
+        });
+        const item = e.item ? ctx.labels.get(String(e.item))?.item : undefined;
+        if (r.ok) {
+          await markHandled(ctx, item);
+          await logDecision(ctx, {
+            itemKind: "commission",
+            decision: r.status === "commissioned" ? "commissioned" : "already paid for",
+            target: actionId,
+            owls: r.status === "commissioned" ? budget : null,
+            reason: String(e.reason ?? ""),
+            actionId,
+          });
+          results.push({
+            target: actionId,
+            ok: true,
+            message:
+              r.status === "commissioned"
+                ? `Commissioned the ${r.kind} at ${owls(budget)} owls.`
+                : "That work already has a run paid for or underway; nothing more was spent.",
+          });
+        } else {
+          results.push({ target: actionId, ok: false, message: r.message });
+        }
+        continue;
+      }
       const res = await commissionNodePass({
         payer: { kind: "grant", grantId: ctx.grant.id },
         claimId: target,
@@ -689,4 +726,36 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
   }
 
   return JSON.stringify({ success: false, message: `Unknown tool: ${name}` });
+}
+
+/**
+ * Hold a sitting for every mandate with something in its inbox that no run
+ * is waiting on (what lookouts raised, outcomes, funder notes): the
+ * scheduler's sweep. A petition with a run waiting never waits for this; its
+ * petitioner holds the sitting itself.
+ */
+export async function workWaitingInboxes(limit = 20): Promise<number> {
+  const { takeInboxLease, releaseInboxLease } = await import("../../services/petition-service.js");
+  const grants = await rawQuery<{ id: string }>(
+    `SELECT DISTINCT g.id FROM grants g
+      WHERE g.status = 'active'
+        AND (g.officer_lease_until IS NULL OR g.officer_lease_until < now())
+        AND (EXISTS (SELECT 1 FROM mandate_inbox i WHERE i.grant_id = g.id AND i.handled_at IS NULL)
+             OR EXISTS (SELECT 1 FROM petitions p WHERE p.grant_id = g.id AND p.status IN ('pending', 'escalated')))
+      LIMIT $1`,
+    [limit]
+  );
+  let n = 0;
+  for (const g of grants) {
+    if (!(await takeInboxLease(g.id))) continue;
+    try {
+      await workMandateInbox(g.id);
+      n++;
+    } catch (err) {
+      console.error(`[officer] sitting for ${g.id} failed:`, err instanceof Error ? err.message : err);
+    } finally {
+      await releaseInboxLease(g.id);
+    }
+  }
+  return n;
 }
