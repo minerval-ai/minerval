@@ -22,6 +22,8 @@ import {
 } from "../../services/queue-service.js";
 import type { MessageSender } from "../../services/inbox-service.js";
 import { commissionNodePass } from "../../services/commission-service.js";
+import { registerAwait } from "../../services/session-service.js";
+import { loadConfig } from "../../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
 
@@ -92,7 +94,14 @@ export function getNotifyStewardToolDefinition(
       "looked at now, because its page is wrong in a way readers rely on, " +
       "pay for its pass with budget_owls: your message becomes that pass's " +
       "brief. If your budget can't cover it, petition_mandate asks the " +
-      "mandate paying for your run for the money.",
+      "mandate paying for your run for the money.\n\n" +
+      "When you need the answer for your own work, set expects_reply: the " +
+      "answer returns into this session. Carry on with what you can do " +
+      "without it; when that is done, end your turn, and your session pauses " +
+      "and resumes with the answer, this conversation intact. The other " +
+      "Steward answers on its node's next pass, so pay for that pass " +
+      "(budget_owls) if you need the answer soon. A paused session waits at " +
+      `most ${loadConfig().sessionWaitHours} hours; after that the answer goes to your node's inbox.`,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -109,6 +118,10 @@ export function getNotifyStewardToolDefinition(
             "think it means for their node.",
         },
         budget_owls: budgetOwls,
+        expects_reply: {
+          type: "boolean",
+          description: "true when you need the answer for your own work: it returns into this session.",
+        },
       },
       required: ["claim_id", "target_ids", "message"],
     },
@@ -261,6 +274,25 @@ export async function executeNotifySteward(
     notified.push({ id, kind: kindOf.get(id)!, trigger });
   }
 
+  // A question this session waits on: each message carries the session's id,
+  // and its answer returns into it (session-service.ts).
+  let awaited = 0;
+  if (sender.role === "steward" && input.expects_reply === true) {
+    for (const n of notified) {
+      const [m] = await rawQuery<{ id: string }>(
+        `SELECT id FROM node_messages
+          WHERE node_id = $1 AND sender_node_id = $2 AND body = $3 AND answered_at IS NULL
+          ORDER BY created_at DESC LIMIT 1`,
+        [n.id, sender.claimId, message]
+      );
+      if (!m) continue;
+      const sessionId = await registerAwait("reply", m.id);
+      if (!sessionId) break;
+      await rawQuery(`UPDATE node_messages SET reply_to_session = $2 WHERE id = $1`, [m.id, sessionId]);
+      awaited++;
+    }
+  }
+
   const paid = notified.filter((n) => n.paid_owls !== undefined);
   const joined = notified.filter((n) => n.joined_paid_pass);
   const notes = notified.length - paid.length - joined.length;
@@ -296,6 +328,13 @@ export async function executeNotifySteward(
               `other work.`
       );
     }
+  }
+  if (input.expects_reply === true && sender.role === "steward") {
+    parts.push(
+      awaited > 0
+        ? `You wait for ${awaited} answer(s): each returns into this session. When you have done what you can without them, end your turn; your session pauses and resumes with them.`
+        : `This run can't pause to wait, so answers go to your node's inbox as replies.`
+    );
   }
   return JSON.stringify({
     success: notified.length > 0,

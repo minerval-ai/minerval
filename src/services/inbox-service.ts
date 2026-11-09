@@ -28,6 +28,7 @@ export type MessageSenderKind =
   | "lookout"
   | "mandate"
   | "user"
+  | "researcher"
   | "system";
 
 export type MessageOutcome = "changed" | "no_change" | "disagree";
@@ -183,6 +184,8 @@ export function describeSender(m: Pick<MessageRow, "sender_kind" | "sender_node_
       return "a mandate's plan";
     case "user":
       return "a user who paid for this pass";
+    case "researcher":
+      return m.sender_ref ? `the Researcher, reporting on research run ${m.sender_ref} commissioned from this node` : "the Researcher";
     default:
       return "the system";
   }
@@ -324,11 +327,11 @@ export async function answerMessages(
       continue;
     }
     const note = String(a.note ?? "").trim();
-    const [m] = await rawQuery<{ sender_kind: string; sender_node_id: string | null; body: string; created_at: string }>(
+    const [m] = await rawQuery<{ sender_kind: string; sender_node_id: string | null; body: string; created_at: string; reply_to_session: string | null }>(
       `UPDATE node_messages
           SET outcome = $2, outcome_note = $3, answered_at = now()
         WHERE id = $1 AND node_id = $4
-        RETURNING sender_kind, sender_node_id, body, created_at`,
+        RETURNING sender_kind, sender_node_id, body, created_at, reply_to_session`,
       [id, outcome, note || null, nodeId]
     );
     if (!m) {
@@ -342,14 +345,28 @@ export async function answerMessages(
         `Answering your message of ${date} ("${quoteHead(m.body)}"): ` +
         `${OUTCOME_WORDS[outcome]}.` +
         (note ? ` ${note}` : "");
-      const reply = await postMessage({
-        nodeId: m.sender_node_id,
-        trigger: "message_reply",
-        body,
-        sender: { kind: "steward", nodeId },
-        replyTo: id,
-      });
-      if (reply) replies++;
+      if (m.reply_to_session) {
+        // The sender waits for this answer in its session: it returns there,
+        // or to the sender's inbox if that session has gone.
+        const { deliverReply } = await import("./session-service.js");
+        const routed = await deliverReply({
+          sessionId: m.reply_to_session,
+          kind: "reply",
+          ref: id,
+          text: `The Steward of ${nodeId} answered: ${body}`,
+          fallback: { nodeId: m.sender_node_id, trigger: "message_reply", sender: { kind: "steward", nodeId }, replyTo: id },
+        });
+        if (routed !== "dropped") replies++;
+      } else {
+        const reply = await postMessage({
+          nodeId: m.sender_node_id,
+          trigger: "message_reply",
+          body,
+          sender: { kind: "steward", nodeId },
+          replyTo: id,
+        });
+        if (reply) replies++;
+      }
     }
   }
   return JSON.stringify({

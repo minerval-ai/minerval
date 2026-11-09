@@ -14,6 +14,9 @@ import { creditRunBudget, debitRunBudget, runBudgetLeft, runPayer } from "../run
 import { commissionNodePass } from "../../services/commission-service.js";
 import { awaitDecision, filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
+import { loadConfig } from "../../config.js";
+import { commissionResearch } from "../../services/research-commission-service.js";
+import type { ResearchModelTier } from "../../services/research-run-service.js";
 
 type Tool = Anthropic.Tool;
 
@@ -25,22 +28,33 @@ export function getSpendToolDefinitions(): Tool[] {
     {
       name: COMMISSION,
       description:
-        "Pay for another agent's run from your own budget: a Steward pass on a " +
-        "node (kind pass). You set the run's budget: read the costing skill's " +
-        "cost_sheet for what such runs cost and use the high end of the range, " +
-        "not the middle, since what the run doesn't spend comes back. The budget " +
-        "leaves yours at once. The run's agent is told its budget and your brief, " +
-        "and that a run paid for it, never which mandate; it may petition the " +
-        "mandate paying for it if it needs more. The run starts on its own and " +
-        "its outcome is recorded on its target. A commission buys attention, " +
-        "never a conclusion: write the brief as the question you want looked at, " +
-        "not the answer you want. For research you need before you conclude, use " +
-        "delegate_research.",
+        "Pay for another agent's run from your own budget. kind pass: a Steward pass on a node. " +
+        "kind research: a Researcher run on a question this work needs answered, which runs on its " +
+        "own while you carry on. You set the run's budget: read the costing skill's cost_sheet for " +
+        "what such runs cost and use the high end of the range, not the middle, since what the run " +
+        "doesn't spend comes back. The budget leaves yours at once. The run's agent is told its " +
+        "budget and your brief, and that a run paid for it, never which mandate; it may petition " +
+        "the mandate paying for it if it needs more. A commission buys attention, never a " +
+        "conclusion: write the brief as the question you want looked at, not the answer you want.\n\n" +
+        "Research comes back to you. With wait (the default), carry on with what you can do " +
+        "without it; when that is done, end your turn. Your session then pauses and resumes when " +
+        "the report arrives, with everything you have read and reasoned still in front of you; a " +
+        "report that arrives while you are still working appears in your next tool result. A " +
+        `paused session waits at most ${loadConfig().sessionWaitHours} hours; after that the ` +
+        "report goes to this node's inbox for a later pass. The resumption is paid from what this " +
+        "run has left, by whoever paid for this run. Without wait, the report goes to this node's " +
+        "inbox for its next pass. follow_up_of continues an earlier research run from where it " +
+        "stopped, with its notebook. For a quick check you need inside this turn, delegate_research " +
+        "runs the Researcher inline instead.",
       input_schema: {
         type: "object" as const,
         properties: {
-          kind: { type: "string", enum: ["pass"], description: "What work to pay for: pass, a Steward pass on a node." },
-          target: { type: "string", description: "The node's id." },
+          kind: {
+            type: "string",
+            enum: ["pass", "research"],
+            description: "pass: a Steward pass on a node. research: a Researcher run, its report returned to you.",
+          },
+          target: { type: "string", description: "For a pass: the node's id." },
           budget_owls: {
             type: "number",
             description:
@@ -52,12 +66,22 @@ export function getSpendToolDefinitions(): Tool[] {
             type: "string",
             description:
               "What you want looked at and why, for the agent that will do it, " +
-              "readable without your transcript. It arrives as a message in the " +
-              "node's inbox.",
+              "readable without your transcript. For a pass it arrives as a message in the " +
+              "node's inbox; for research it is the Researcher's whole task: the question, the " +
+              "context, what a good answer looks like, where to start.",
           },
-          tier: { type: "string", enum: ["standard", "strong"], description: "Optional; standard by default." },
+          tier: {
+            type: "string",
+            enum: ["cheap", "standard", "strong"],
+            description: "Optional; standard by default. A pass runs standard or strong; research also cheap.",
+          },
+          wait: {
+            type: "boolean",
+            description: "For research: true (the default) to have the report return into this session; false to send it to this node's inbox.",
+          },
+          follow_up_of: { type: "string", description: "For research: the id of an earlier research run this continues." },
         },
-        required: ["target", "budget_owls", "brief"],
+        required: ["budget_owls", "brief"],
       },
     },
     {
@@ -133,6 +157,7 @@ function workSoon(grantId: string): void {
 }
 
 export async function executeSpendTool(name: string, input: Record<string, unknown>): Promise<string | null> {
+  if (name === COMMISSION && input.kind === "research") return commissionResearchTool(input);
   if (name === COMMISSION) {
     const budget = owlsToMicroUsd(Number(input.budget_owls ?? 0));
     if (!(budget > 0)) return JSON.stringify({ success: false, message: "budget_owls must be above zero." });
@@ -262,4 +287,73 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
     });
   }
   return null;
+}
+
+/** commission kind research: a Researcher run, its report returned to this session or node. */
+async function commissionResearchTool(input: Record<string, unknown>): Promise<string> {
+  const budget = owlsToMicroUsd(Number(input.budget_owls ?? 0));
+  if (!(budget > 0)) return JSON.stringify({ success: false, message: "budget_owls must be above zero." });
+  const brief = String(input.brief ?? "").trim();
+  if (brief.length < 40) {
+    return JSON.stringify({
+      success: false,
+      message: "brief must be a real task for the Researcher: the question, the context, what a good answer looks like, where to start.",
+    });
+  }
+  if (!loadConfig().researcherEnabled) {
+    return JSON.stringify({ success: false, message: "The Researcher is disabled in this deployment. Do the work inline." });
+  }
+  const payer = runPayer();
+  if (!payer) {
+    return JSON.stringify({ success: false, message: "This run isn't paid in a way that can pay for other work." });
+  }
+  const left = runBudgetLeft();
+  if (left !== null && budget > left) {
+    return JSON.stringify({
+      success: false,
+      message:
+        `A budget of ${owls(budget)} owls is more than this run has left (${owls(left)}). Nothing was ` +
+        `commissioned. Commission with less, or petition for more and commission once it is granted.`,
+    });
+  }
+  const ctx = getUsageContext();
+  const nodeId = ctx.session?.nodeId ?? ctx.claimId ?? null;
+  if (!nodeId) {
+    return JSON.stringify({
+      success: false,
+      message:
+        "Research commissioned from here has no node to report back to. Use delegate_research, which runs the Researcher inside this run.",
+    });
+  }
+  const tierRaw = String(input.tier ?? "standard");
+  const tier: ResearchModelTier = tierRaw === "strong" || tierRaw === "cheap" ? tierRaw : "standard";
+  const wantsWait = input.wait !== false;
+  const res = await commissionResearch({
+    payer,
+    nodeId,
+    task: brief,
+    budgetMicroUsd: budget,
+    tier,
+    requestedBy: ctx.agent === "steward" || !ctx.agent ? "claim_steward" : ctx.agent,
+    wait: wantsWait,
+    followUpOf: typeof input.follow_up_of === "string" && input.follow_up_of.trim() ? input.follow_up_of.trim() : null,
+  });
+  if (!res.ok) return JSON.stringify({ success: false, message: res.message });
+  debitRunBudget(budget);
+  const after = runBudgetLeft();
+  const spent = `with a budget of ${owls(budget)} owls from your budget` + (after !== null ? ` (you have ${owls(after)} left)` : "");
+  return JSON.stringify({
+    success: true,
+    research_run_id: res.runId,
+    message: res.waits
+      ? `Commissioned research run ${res.runId} ${spent}. It runs on its own. Carry on with what you can do ` +
+        `without it, and record what you can already conclude. When that is done, end your turn: your session ` +
+        `pauses and resumes when the report arrives, with this conversation intact. If it arrives while you ` +
+        `are still working, it appears in your next tool result. ` +
+        `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report goes to this node's inbox.`
+      : `Commissioned research run ${res.runId} ${spent}. ` +
+        (wantsWait
+          ? `This run can't pause to wait for it, so its report goes to this node's inbox for its next pass.`
+          : `Its report goes to this node's inbox for its next pass.`),
+  });
 }

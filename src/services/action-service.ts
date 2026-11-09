@@ -41,6 +41,10 @@ import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
 export { allocationDayUseSql } from "./day-use.js";
 
 export type ActionKind =
+  // Research an agent commissioned from its own budget (commission kind
+  // research, research-commission-service.ts): group `research:<run id>`,
+  // target_ref the research run. Its report returns to the agent's session.
+  | "research"
   | "assess"
   | "reassess"
   | "ingest"

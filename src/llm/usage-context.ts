@@ -64,6 +64,14 @@ export interface UsageContext {
    */
   meter?: { billedMicroUsd: number };
   /**
+   * The agent session this run belongs to (session-service.ts): what it asks
+   * for and waits on (research it commissions, a question to another node's
+   * Steward) is answered into this session, which pauses when the run ends
+   * its turn with answers outstanding and resumes when they arrive. Set by
+   * the runs that can pause (the Stewards); absent, nothing waits.
+   */
+  session?: { id: string; role: string; nodeId: string };
+  /**
    * What the enclosing pass may spend, as the lane that funds it set it
    * (withPassBudget): the allocations covering a ledger action, a buyer's
    * quoted cap, a job's or a mandate's remaining budget. `meter` measures

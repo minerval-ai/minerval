@@ -47,6 +47,8 @@ vi.mock("../../../src/services/priority-service.js", () => ({
   }),
 }));
 
+vi.mock("../../../src/services/session-service.js", () => ({ sweepSessions: vi.fn(async () => 0) }));
+
 vi.mock("../../../src/services/petition-service.js", () => ({
   sweepFollowUps: vi.fn(async () => {
     state.followUpSweeps++;

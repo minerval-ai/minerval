@@ -3947,6 +3947,14 @@ export const researchRuns = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),
+    // A commissioned run (commission kind research): the agent session its
+    // report returns to (agent_sessions), or, with none waiting, the node
+    // whose inbox gets it. Null on a run launched inline (delegate_research)
+    // or for a request.
+    replyToSession: uuid("reply_to_session"),
+    deliverToNode: uuid("deliver_to_node").references((): AnyPgColumn => claims.id, {
+      onDelete: "set null",
+    }),
     // The examination of a document this run carried out, when it was
     // launched as one (#507). One direction only: an examination's runs
     // are found from here, its spend is theirs, and a continuation run can
@@ -4980,6 +4988,10 @@ export const nodeMessages = pgTable(
     outcome: text("outcome"),
     outcomeNote: text("outcome_note"),
     answeredAt: timestamp("answered_at", { withTimezone: true }),
+    // The session that asked (agent_sessions), when the sender waits for the
+    // answer: the answer returns into that session instead of the sender
+    // node's inbox.
+    replyToSession: uuid("reply_to_session"),
   },
   (table) => [
     index("idx_node_messages_unread")
@@ -5114,4 +5126,56 @@ export const mandatePolicyVersions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("idx_mandate_policy_versions_grant").on(table.grantId, table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
+// agent_sessions: an agent run that pauses while it waits on something it
+// asked for (research it commissioned, an answer from another node's
+// Steward) and resumes, with its transcript, when the answer arrives
+// (session-service.ts). The run ends its turn to wait, as any agent does;
+// the session keeps what it read and reasoned, so the answer lands in the
+// context that asked for it rather than in a fresh pass.
+//
+// status: running (the run is live; replies arriving now are shown in its
+// next tool result), waiting (paused, nothing back yet), ready (an answer
+// arrived; a resumption pass is commissioned), expired (the deadline passed;
+// its answers went to the node's inbox), closed (finished).
+// ---------------------------------------------------------------------------
+export const agentSessions = pgTable(
+  "agent_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    role: text("role").notNull(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("running"),
+    // The conversation so far, in the provider-neutral message form, made
+    // portable at suspension (server-tool and thinking blocks become text or
+    // are dropped).
+    transcript: jsonb("transcript"),
+    model: text("model"),
+    // What it waits on: [{kind, ref}], kind research (a research run id) or
+    // reply (a node message id).
+    awaiting: jsonb("awaiting").notNull().default([]),
+    // What came back: [{kind, ref, text, at, delivered}].
+    replies: jsonb("replies").notNull().default([]),
+    // Who paid for the paused run, and what it had left: a resumption is
+    // commissioned from the same payer at that budget.
+    payer: jsonb("payer"),
+    budgetLeftMicroUsd: bigint("budget_left_micro_usd", { mode: "number" }).notNull().default(0),
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    deadline: timestamp("deadline", { withTimezone: true }),
+    resumedAt: timestamp("resumed_at", { withTimezone: true }),
+    resumes: integer("resumes").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_sessions_node").on(table.nodeId, table.status),
+    check(
+      "agent_sessions_status_check",
+      sql`${table.status} IN ('running', 'waiting', 'ready', 'expired', 'closed')`
+    ),
+  ]
 );

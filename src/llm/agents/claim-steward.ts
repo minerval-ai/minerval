@@ -63,6 +63,16 @@ import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import { randomUUID } from "node:crypto";
+import { runBudgetLeft } from "../run-funding.js";
+import {
+  renderResearchSessionArrivals,
+  resumeMessages,
+  suspendSession,
+  takeLiveReplies,
+  takeReadySession,
+} from "../../services/session-service.js";
+import { originalPayer } from "../../services/commission-service.js";
 import { getQuestionStewardSystemPromptBlocks } from "../prompts/question-steward.js";
 import {
   executeKindTool,
@@ -700,8 +710,29 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
   // is missing. `done` holds every tool that succeeded this run.
   const done = new Set<string>();
 
-  await withSkills([], () => toolUseLoop({
-    initialMessages: [{ role: "user", content: userMessage }],
+  // The session this pass belongs to (session-service.ts). A paused session
+  // on this node that got back what it asked for is resumed: the pass
+  // continues that conversation, with the answers and what changed while it
+  // was paused, instead of starting fresh. Otherwise the pass is a new
+  // session, which pauses at the end if it is waiting on anything.
+  // A failure here never costs the pass: it runs fresh.
+  const resumed = await takeReadySession(input.claimId, "steward").catch(() => null);
+  const session = { id: resumed?.session.id ?? randomUUID(), role: "steward", nodeId: input.claimId };
+  const initialMessages = resumed
+    ? await resumeMessages(resumed.session, resumed.replies, {
+        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief].filter(Boolean).join("\n\n"),
+        budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
+      })
+    : [{ role: "user" as const, content: userMessage }];
+  let transcript: Parameters<NonNullable<Parameters<typeof toolUseLoop>[0]["onEnd"]>>[0] | null = null;
+
+  await runWithUsageContext({ session }, () => withSkills([], () => toolUseLoop({
+    initialMessages,
+    onEnd: (t) => {
+      transcript = t;
+    },
+    // What it asked for that comes back while it is still working.
+    pendingInput: async () => renderResearchSessionArrivals(await takeLiveReplies(session.id).catch(() => [])),
     tools,
     system,
     model,
@@ -732,7 +763,22 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
       if (succeeded(output)) done.add(name);
       return output;
     },
-  }));
+  })));
+
+  // The run ended its turn. Waiting on what it asked for, the session pauses
+  // with its transcript, to resume when an answer arrives (paid by whoever
+  // paid for this pass, from what it has left); otherwise it closes.
+  if (transcript) {
+    await suspendSession({
+      id: session.id,
+      transcript,
+      model,
+      budgetLeftMicroUsd: runBudgetLeft() ?? 0,
+      payer: await originalPayer().catch(() => null),
+    }).catch((err) =>
+      console.warn(`[steward] pausing session ${session.id} failed:`, err instanceof Error ? err.message : err)
+    );
+  }
 
   // The pass finished: the messages it was shown are read. One that arrived
   // mid-pass was not shown and stays unread for the next pass.

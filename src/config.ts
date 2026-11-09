@@ -204,6 +204,14 @@ const configSchema = z.object({
   // answer, which is the reason the decision has a clock at all; past it
   // the petition stays open and, if granted later, funds a follow-up pass.
   petitionWaitSeconds: z.coerce.number().int().positive().default(180),
+  // How long a paused agent session waits for what it asked for before its
+  // answers go to its node's inbox instead (session-service.ts). Stated to
+  // the agent in the tools that pause it.
+  sessionWaitHours: z.coerce.number().positive().default(24),
+  // The longest transcript a session resumes from. A longer one is not
+  // resumed: its answers go to the node's inbox and the next pass starts
+  // fresh, since replaying it would cost more than reading the answers anew.
+  sessionMaxTranscriptChars: z.coerce.number().int().positive().default(400_000),
   // How long an officer waits after taking a mandate's inbox, so petitions
   // that arrive together are decided together.
   officerBatchMs: z.coerce.number().int().min(0).default(2000),
@@ -1292,6 +1300,8 @@ export function loadConfig(): Config {
     officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
     grantmakerDecisionBudgetOwls: process.env.GRANTMAKER_DECISION_BUDGET_OWLS,
     petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
+    sessionWaitHours: process.env.SESSION_WAIT_HOURS,
+    sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
     officerBatchMs: process.env.OFFICER_BATCH_MS,
     defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
     officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,

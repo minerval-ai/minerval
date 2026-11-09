@@ -437,10 +437,26 @@ export async function toolUseLoop(options: {
    * reply while it forms.
    */
   onText?: (delta: string, turn: number) => void;
+  /**
+   * Asked after every turn's tools have run: text that arrived for the run
+   * while it worked (an answer to something it asked for, session-service.ts),
+   * appended to that turn's tool results so the run reads it next turn.
+   */
+  pendingInput?: () => Promise<string | null>;
+  /**
+   * Called once when the loop returns, with the whole conversation: the
+   * messages sent and the final assistant turn. A run that pauses keeps it
+   * to resume from (session-service.ts).
+   */
+  onEnd?: (transcript: MessageParam[]) => void;
 }): Promise<ToolCompletionResult> {
   // Dated once for the whole loop, so every turn sends the same prompt.
   options = { ...options, system: withRunDate(options.system) };
   const messages = [...options.initialMessages];
+  const finish = (r: ToolCompletionResult): ToolCompletionResult => {
+    options.onEnd?.([...messages, { role: "assistant", content: r.rawContent } as MessageParam]);
+    return r;
+  };
   const streamModel = options.model ?? DEFAULT_MODEL;
   const streamAdapter = getAdapter(streamModel);
   const streaming =
@@ -598,7 +614,7 @@ export async function toolUseLoop(options: {
         }
         continue;
       }
-      return result;
+      return finish(result);
     }
 
     if (result.stopReason === "end_turn" || result.toolUses.length === 0) {
@@ -620,7 +636,7 @@ export async function toolUseLoop(options: {
         }
         continue;
       }
-      return result;
+      return finish(result);
     }
 
     // Check for final tool
@@ -628,7 +644,7 @@ export async function toolUseLoop(options: {
       for (const tu of result.toolUses) {
         const finalResult = options.onFinalTool(tu.name, tu.input);
         if (finalResult !== null && finalResult !== undefined) {
-          return result;
+          return finish(result);
         }
       }
     }
@@ -696,13 +712,17 @@ export async function toolUseLoop(options: {
     if (remaining > 0 && remaining <= notice.warnWithin) {
       userContent.push({ type: "text", text: notice.message(remaining) });
     }
+    if (options.pendingInput) {
+      const arrived = await options.pendingInput();
+      if (arrived) userContent.push({ type: "text", text: arrived });
+    }
 
     // Append assistant message and tool results
     messages.push({ role: "assistant", content: result.rawContent });
     messages.push({ role: "user", content: userContent });
   }
 
-  return lastResult!;
+  return finish(lastResult!);
 }
 
 // --- The long-run path -----------------------------------------------------
