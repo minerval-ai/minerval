@@ -81,6 +81,8 @@ Reading a source is governed by fidelity, however the source came to be read (at
 
 A source's figure for a quantity is an instance of that quantity: the value, interval, or bound as the source states it. A source that states a probability for a claim is an instance of that claim, and the probability is part of the instance, recorded as what the source said.
 
+An argument has instances too: a passage that makes an argument, attacks it, or mentions it is an instance of that argument, recorded with how well it states it. Fidelity governs the instance here as well, not the argument (§7). A passage that leaves out a premise the argument needs, or attacks a weaker version of it, is an instance of the argument stated poorly; a passage that rests on a different premise is an instance of a different argument. An argument's instances record where it is made. They do not rate its inference, and they bear only weakly on whether it belongs on a claim (§7).
+
 ### 5. Merging and Splitting
 
 Claims created separately may later be recognized as one claim, and a single claim may be recognized as conflating several. The admin proposes merges and splits; the Curator adjudicates them (Part VIII).

@@ -3,8 +3,9 @@
  *
  * These are the reads any agent reasoning ABOUT the graph needs: find claims,
  * open one in full, walk down into what it rests on, walk up into what rests
- * on it. They cost no LLM tokens of their own and touch no money, so every
- * agent gets the same four regardless of what else it is allowed to do.
+ * on it, and open one of its arguments (#541). They cost no LLM tokens of
+ * their own and touch no money, so every agent gets the same five
+ * regardless of what else it is allowed to do.
  *
  * The reads themselves are defined once and served to outside callers over
  * MCP too: get_claim in services/claim-view-service.ts (#774), and
@@ -25,12 +26,21 @@ import {
   getClaimView,
 } from "../../services/claim-view-service.js";
 import { graphReadDefinitions, runGraphRead } from "../../services/graph-read-service.js";
+import {
+  ARGUMENT_VIEW_DESCRIPTION,
+  ARGUMENT_VIEW_INCLUDE_DESCRIPTION,
+  ARGUMENT_VIEW_INCLUDES,
+  DEFAULT_INSTANCES_PAGE,
+  MAX_INSTANCES_PAGE,
+  getArgumentView,
+} from "../../services/argument-view-service.js";
 
 export const GRAPH_READ_TOOL_NAMES = [
   "search_claims",
   "get_claim",
   "get_decomposition",
   "get_dependents",
+  "get_argument",
 ] as const;
 
 /**
@@ -65,6 +75,31 @@ export function getClaimToolDefinition(): Tool {
   };
 }
 
+/** The one `get_argument` (#541), shared with MCP as get_claim is. */
+export function getArgumentToolDefinition(): Tool {
+  return {
+    name: "get_argument",
+    description: ARGUMENT_VIEW_DESCRIPTION,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        argument_id: { type: "string" },
+        include: {
+          type: "array",
+          items: { type: "string", enum: [...ARGUMENT_VIEW_INCLUDES] },
+          description: ARGUMENT_VIEW_INCLUDE_DESCRIPTION,
+        },
+        instances_limit: {
+          type: "number",
+          description: `With include "instances": how many, ${DEFAULT_INSTANCES_PAGE} by default, ${MAX_INSTANCES_PAGE} at most.`,
+        },
+        instances_offset: { type: "number", description: `With include "instances": how many to skip.` },
+      },
+      required: ["argument_id"],
+    },
+  };
+}
+
 function optionalNumber(raw: unknown): number | undefined {
   const n = Number(raw);
   return raw == null || !Number.isFinite(n) ? undefined : n;
@@ -76,7 +111,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
     description: d.description,
     input_schema: d.input_schema,
   }));
-  return [search!, getClaimToolDefinition(), decomposition!, dependents!];
+  return [search!, getClaimToolDefinition(), decomposition!, dependents!, getArgumentToolDefinition()];
 }
 
 /**
@@ -96,7 +131,10 @@ export async function executeGraphReadTool(
     // (Postgres rejects the malformed uuid with 22P02).
     if ((err as { code?: string } | null)?.code === "22P02") {
       return JSON.stringify({
-        error: "claim_id must be a full claim id (a uuid) exactly as a tool result gave it",
+        error:
+          name === "get_argument"
+            ? "argument_id must be a full argument id (a uuid) exactly as a tool result gave it"
+            : "claim_id must be a full claim id (a uuid) exactly as a tool result gave it",
       });
     }
     throw err;
@@ -114,6 +152,14 @@ async function executeGraphReadToolUnchecked(
       dependentsOffset: optionalNumber(input.dependents_offset),
     });
     return JSON.stringify(view ?? { error: "claim not found" });
+  }
+  if (name === "get_argument") {
+    const view = await getArgumentView(String(input.argument_id ?? ""), {
+      include: Array.isArray(input.include) ? input.include.map(String) : [],
+      instancesLimit: optionalNumber(input.instances_limit),
+      instancesOffset: optionalNumber(input.instances_offset),
+    });
+    return JSON.stringify(view ?? { error: "argument not found" });
   }
   const result = await runGraphRead(name, input);
   if (!result) return null;
