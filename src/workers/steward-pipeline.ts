@@ -66,7 +66,6 @@ import {
 interface StewardTaskRow {
   id: string;
   steward_trigger: string | null;
-  steward_context: string | null;
   steward_attempts: number | null;
   queue_priority: number;
 }
@@ -201,7 +200,7 @@ export async function processNextStewardTask(
          LIMIT 1
          FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, steward_trigger, steward_context, steward_attempts,
+      RETURNING id, steward_trigger, steward_attempts,
                 queue_priority`
   );
   if (rows.length === 0) return { status: "empty" };
@@ -237,7 +236,7 @@ async function runCoveredAction(
              OR (steward_state = 'running'
                  AND stewarded_at < now()
                        - make_interval(mins => ${STEWARD_LEASE_STALE_MINUTES})))
-      RETURNING id, steward_trigger, steward_context, steward_attempts,
+      RETURNING id, steward_trigger, steward_attempts,
                 queue_priority`,
     [action.claim_id]
   );
@@ -308,7 +307,8 @@ async function runStewardOnClaim(
             runClaimSteward({
               trigger,
               claimId: task.id,
-              context: task.steward_context ?? "",
+              // The messages are the node's inbox, which the run reads itself.
+              context: "",
               model: input.model,
             })
           )

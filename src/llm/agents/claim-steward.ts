@@ -55,6 +55,8 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
+import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -581,6 +583,7 @@ async function runClaimStewardImpl(input: {
     // table, or a retraction notice actually is (#333).
     getReadPageToolDefinition(),
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
+    ...getInboxToolDefinitions(),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
@@ -667,14 +670,16 @@ a cent.`
       isInitial || !(await hasCurrentJudgment(input.claimId, kind))
     );
 
+  // Every unread message on the node, whole (inbox-service.ts). The lane's
+  // own context, when it has one, still comes first.
+  const inbox = await openInbox(input.claimId);
+
   const userMessage = `You have been triggered to steward a ${noun}.
 
 Today's date: ${today}
 Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
-Context: ${input.context}
-
-${turnBudgetLine(iterationBudget)}
+${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget)}
 
 ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
 
@@ -725,8 +730,14 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
     },
   }));
 
+  // The pass finished: the messages it was shown are read. One that arrived
+  // mid-pass was not shown and stays unread for the next pass.
+  await markMessagesRead(inbox.ids);
+
   async function dispatch(name: string, toolInput: Record<string, unknown>): Promise<string> {
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+    const inboxOutput = await executeInboxTool(name, toolInput, { nodeId: input.claimId, labels: inbox.labels });
+    if (inboxOutput !== null) return inboxOutput;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".

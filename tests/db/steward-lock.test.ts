@@ -56,13 +56,12 @@ interface StewardRow {
   steward_state: string;
   steward_requeued: boolean;
   steward_trigger: string | null;
-  steward_context: string | null;
   stewarded_at: Date | null;
 }
 
 async function stewardRow(id: string): Promise<StewardRow> {
   const [row] = await rawQuery<StewardRow>(
-    `SELECT steward_state, steward_requeued, steward_trigger, steward_context,
+    `SELECT steward_state, steward_requeued, steward_trigger,
             stewarded_at
        FROM claims WHERE id = $1`,
     [id]
@@ -83,9 +82,7 @@ async function toHead(id: string): Promise<void> {
 async function seedHeadClaim(label: string): Promise<string> {
   const id = await seedClaim(label);
   await rawQuery(
-    `UPDATE claims SET steward_trigger = 'structure_and_assess',
-            steward_context = 'first pass'
-      WHERE id = $1`,
+    `UPDATE claims SET steward_trigger = 'structure_and_assess' WHERE id = $1`,
     [id]
   );
   await toHead(id);
@@ -148,9 +145,14 @@ describe("a message for a claim mid-run (#482)", () => {
     expect(midRun).toMatchObject({ steward_state: "running", steward_requeued: true });
     // The two mid-run messages coalesce into one slot, as into a pending one.
     expect(midRun!.steward_trigger).toBe("subclaim_change");
-    expect(midRun!.steward_context).toBe(
-      "[subclaim_change] Subclaim X changed\n\n[edge_proposal] Adopt Y"
+    const waiting = await rawQuery<{ trigger: string; body: string }>(
+      `SELECT trigger, body FROM node_messages WHERE node_id = $1 AND read_at IS NULL ORDER BY created_at`,
+      [id]
     );
+    expect(waiting).toEqual([
+      { trigger: "subclaim_change", body: "Subclaim X changed" },
+      { trigger: "edge_proposal", body: "Adopt Y" },
+    ]);
 
     const after = await stewardRow(id);
     expect(after).toMatchObject({ steward_state: "pending", steward_requeued: false });
@@ -159,8 +161,9 @@ describe("a message for a claim mid-run (#482)", () => {
     await toHead(id);
     await processNextStewardTask();
     const second = mocks.runClaimSteward.mock.calls.at(-1)![0];
-    expect(second).toMatchObject({ claimId: id, trigger: "subclaim_change" });
-    expect(second.context).toContain("Adopt Y");
+    // The run reads its node's inbox itself (inbox-service.ts), so the lane
+    // passes no context of its own, and nothing stale is re-sent.
+    expect(second).toMatchObject({ claimId: id, trigger: "subclaim_change", context: "" });
     expect(await stewardRow(id)).toMatchObject({ steward_state: "done", steward_requeued: false });
   });
 

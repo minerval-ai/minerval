@@ -109,23 +109,6 @@ function readTargetIds(raw: unknown): string[] {
   return [...new Set(ids)];
 }
 
-function stewardContext(trigger: Trigger, senderId: string, message: string): string {
-  switch (trigger) {
-    case "subclaim_change":
-      return `The Steward of ${senderId}, a node yours depends on, writes: ${message}`;
-    case "dependent_note":
-      return (
-        `The Steward of ${senderId}, a node that depends on yours, thinks your ` +
-        `assessment may be mistaken and says why: ${message}`
-      );
-    default:
-      return (
-        `The Steward of ${senderId}, a node not joined to yours by an edge, ` +
-        `writes: ${message}`
-      );
-  }
-}
-
 export async function executeNotifySteward(
   sender: NotifyStewardSender,
   input: Record<string, unknown>
@@ -202,19 +185,26 @@ export async function executeNotifySteward(
   const notified: Notified[] = [];
   for (const id of targets) {
     let trigger: Trigger;
-    let context: string;
     if (sender.role === "curator") {
       trigger = "curator_change";
-      context = message;
     } else {
       trigger = above.has(id)
         ? "subclaim_change"
         : beneath.has(id)
           ? "dependent_note"
           : "steward_note";
-      context = stewardContext(trigger, sender.claimId, message);
     }
-    await enqueueSteward({ claimId: id, trigger, context });
+    // The message goes whole into the target's inbox, which tells its
+    // Steward who wrote and how the two nodes are joined (inbox-service.ts).
+    await enqueueSteward({
+      claimId: id,
+      trigger,
+      context: message,
+      sender:
+        sender.role === "curator"
+          ? { kind: "curator" }
+          : { kind: "steward", nodeId: sender.claimId },
+    });
     notified.push({ id, kind: kindOf.get(id)!, trigger });
   }
 

@@ -117,6 +117,9 @@ export const claims = pgTable(
     // decomposed. A re-trigger promotes it back to 'pending'.
     stewardState: text("steward_state").notNull().default("pending"),
     stewardTrigger: text("steward_trigger"),
+    // Retired: messages for the Steward live in node_messages (the node's
+    // inbox), whole. Nothing reads or writes this column; it stays only so
+    // historical migrations that wrote it still apply.
     stewardContext: text("steward_context"),
     stewardError: text("steward_error"),
     // While 'running' this is the run's lease: set when a lane claims the row
@@ -4883,3 +4886,51 @@ export type QuantityDefinition = typeof quantityDefinitions.$inferSelect;
 export type QuantityEstimateRow = typeof quantityEstimates.$inferSelect;
 export type QuestionAssessment = typeof questionAssessments.$inferSelect;
 export type RequestRow = typeof requests.$inferSelect;
+
+// A node's inbox: one row per message to its Steward, kept whole until
+// a pass reads it. Replaces appending to claims.steward_context, which cut the
+// oldest text past 16,000 characters and was invisible to funders and readers.
+// A message alone is a note, read on the node's next pass whenever someone
+// pays for it; `paid` marks one that came with its pass commissioned. The
+// receiving Steward answers each (outcome, outcome_note), and an answer to
+// another node's Steward arrives in that node's inbox as a reply
+// (trigger message_reply, reply_to set), which opens no work of its own.
+export const nodeMessages = pgTable(
+  "node_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    trigger: text("trigger").notNull(),
+    // steward, curator, contribution_reviewer, dispute_arbitrator, audit,
+    // consistency_checker, lookout, mandate, user, system
+    senderKind: text("sender_kind").notNull(),
+    senderNodeId: uuid("sender_node_id").references((): AnyPgColumn => claims.id, {
+      onDelete: "set null",
+    }),
+    // What the sender acted through, when it is not a node: a contribution id,
+    // a mandate id, an audit run id.
+    senderRef: text("sender_ref"),
+    body: text("body").notNull(),
+    paid: boolean("paid").notNull().default(false),
+    replyTo: uuid("reply_to").references((): AnyPgColumn => nodeMessages.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    outcome: text("outcome"),
+    outcomeNote: text("outcome_note"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_node_messages_unread")
+      .on(table.nodeId, table.createdAt)
+      .where(sql`read_at IS NULL`),
+    index("idx_node_messages_sender").on(table.senderNodeId),
+    check(
+      "node_messages_outcome_check",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('changed', 'no_change', 'disagree')`
+    ),
+  ]
+);

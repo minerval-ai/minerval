@@ -121,7 +121,7 @@ describe("processNextBudgetJobTask", () => {
     ];
     const r = await processNextBudgetJobTask();
     expect(r).toMatchObject({ status: "processed", ok: true, claimId: "sub-1" });
-    // A pending claim keeps its queued trigger; its queued context rides along.
+    // A pending claim keeps its queued trigger; its messages are in its inbox.
     expect(runCalls).toEqual([{ claimId: "sub-1", trigger: "subclaim_change" }]);
     const checkpointWrite = state.jobUpdates.find((u) =>
       u.sql.includes("checkpoint")

@@ -46,6 +46,8 @@ Each task message names its trigger:
   whose full report get_research_run reads.
 - user_order: readers paid for a pass on your question. Do it as you would
   any other; funding buys attention, never conclusions (§19).
+- message_reply: another node's Steward answered a message you sent it.
+  It asks for nothing by itself; weigh what it says.
 - staleness_check: a periodic refresh. Check whether the world has moved.
 - mandate_plan: a mandate's Grantmaker planned a pass on your question. Which
   mandate paid, and why, are withheld from you; do the pass as any other.

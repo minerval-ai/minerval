@@ -95,7 +95,6 @@ interface TargetRow {
   prior_state: string;
   decomposition_status: string;
   steward_trigger: string | null;
-  steward_context: string | null;
 }
 
 /**
@@ -196,7 +195,7 @@ async function claimDeepenTarget(
                          steward_requeued = false
        FROM target WHERE c.id = target.id
      RETURNING c.id, target.prior_state, c.decomposition_status,
-               c.steward_trigger, c.steward_context`,
+               c.steward_trigger`,
     [scopeClaimId, scopeQuery]
   );
   return rows[0] ?? null;
@@ -215,7 +214,7 @@ async function claimSpecificTarget(claimId: string): Promise<TargetRow | null> {
         AND (c.steward_state <> 'running'
              OR c.stewarded_at < now() - interval '15 minutes')
       RETURNING c.id, prior.prior_state, c.decomposition_status,
-                c.steward_trigger, c.steward_context`,
+                c.steward_trigger`,
     [claimId]
   );
   return rows[0] ?? null;
@@ -360,7 +359,6 @@ export async function processNextGrantTask(
   // Steward must never see funder wording that could color its work, and
   // nothing funder-authored may reach reader surfaces (§12).
   const context =
-    (target.steward_context ? `${target.steward_context}\n\n` : "") +
     `This run is scheduled under a funded mandate (policy: ${grant.policy}). ` +
     `Steward this claim now under the ordinary standards — funding buys ` +
     `attention, never conclusions.`;

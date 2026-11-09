@@ -93,14 +93,19 @@ describe("consistency flags (#330)", () => {
     });
     expect(res.ok && !res.duplicate).toBe(true);
 
-    const [claim] = await rawQuery<{ steward_state: string; steward_trigger: string; steward_context: string }>(
-      `SELECT steward_state, steward_trigger, steward_context FROM claims WHERE id = $1`,
+    const [claim] = await rawQuery<{ steward_state: string; steward_trigger: string }>(
+      `SELECT steward_state, steward_trigger FROM claims WHERE id = $1`,
       [a]
     );
     expect(claim!.steward_state).toBe("pending");
     expect(claim!.steward_trigger).toBe("consistency_flag");
-    expect(claim!.steward_context).toContain(b);
-    expect(claim!.steward_context).toContain("contradicted");
+    const [message] = await rawQuery<{ body: string; sender_kind: string }>(
+      `SELECT body, sender_kind FROM node_messages WHERE node_id = $1 AND trigger = 'consistency_flag'`,
+      [a]
+    );
+    expect(message!.sender_kind).toBe("consistency_checker");
+    expect(message!.body).toContain(b);
+    expect(message!.body).toContain("contradicted");
 
     const [flag] = await rawQuery<{
       claim_ids: string[]; action_id: string | null; expected_gain: number;

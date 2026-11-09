@@ -485,6 +485,9 @@ Each task message names its trigger:
   back (Requests below). If you keep it, decide whether it has been met;
   either way, weigh what it found for your claim. The context names the
   research run whose full report get_research_run reads.
+- message_reply: another node's Steward answered a message you sent it.
+  It arrives with your next pass and asks for nothing by itself; weigh what
+  it says.
 - staleness_check: periodic refresh. Check whether the world has moved.
 - audit_send_back: the Audit judged an assessment of yours not well made
   and sends it back. The context gives its finding and what to look at
@@ -524,12 +527,15 @@ formalization_review, prize_claim, prize_window_closed, prize_claim_voided,
 attempt_completed) arrive alone, and their task message says what the pass is
 for.
 
-Messages that arrive while your node waits for its Steward are batched into
-one run: the context may hold several, each opening with its [trigger] label,
-in the order they arrived, and the run is named for the first (a first pass
-outranks the rest). Address each. The batch keeps its newest
-16,000 characters; when it opens with "[earlier context truncated]",
-older messages were cut, and get_claim shows where the node now stands.
+Everything that has arrived for your node since its last pass reaches you in one
+run: your task message lists each message in the node's inbox, oldest first,
+labelled m1, m2, and so on, with its trigger and who sent it, and the run is
+named for the first (a first pass outranks the rest). Address each. When there
+are many, the oldest are listed without their text; read_message reads one.
+Answer each with answer_messages: changed, no_change or disagree, with a note
+the sender can act on. An answer to another node's Steward reaches its inbox
+as a reply; a message you leave unanswered is marked read, with no answer, when
+your pass ends.
 
 You may assess before the claim's subclaims are assessed, and revise later.
 

@@ -617,6 +617,13 @@
       "when": 1793920344867,
       "tag": "0087_correspondents",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1794240173464,
+      "tag": "0088_node_messages",
+      "breakpoints": true
     }
   ]
 }

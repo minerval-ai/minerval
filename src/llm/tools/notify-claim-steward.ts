@@ -205,6 +205,7 @@ export async function executeNotifyClaimSteward(
     // integrating a ruling, not an acceptance.
     trigger: role === "contribution_reviewer" ? "contribution_accepted" : "arbitration_outcome",
     context: handoff.context,
+    sender: { kind: role, ref: contributionId },
   });
   return JSON.stringify({
     success: true,
