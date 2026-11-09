@@ -269,9 +269,9 @@ export class ApiStack extends cdk.Stack {
         // Agent traces (#334 L0): the full tool-use transcript of every agent
         // run, persisted for the eval harness, debugging and the production
         // monitors. On by default now; this pin makes the choice visible.
-        // Kept for 30 days by the retention sweep — a Steward run is tens of
-        // KB of transcript, so this is a window, not history. llm_usage keeps
-        // run_id and cost indefinitely.
+        // Runs that wrote to the graph are kept for good; the rest for 30
+        // days by the retention sweep (workers/trace-retention.ts).
+        // llm_usage keeps run_id and cost indefinitely.
         TRACE_LEVEL: "full",
         TRACE_RETENTION_DAYS: "30",
         // Agent reports (#366) are filed as GitHub issues in this repo,

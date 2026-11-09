@@ -26,6 +26,8 @@
  * everywhere else, production included: the retention sweep
  * (workers/trace-retention.ts, TRACE_RETENTION_DAYS) bounds what production
  * keeps, which is what "off until a retention job exists" was waiting for.
+ * Runs that wrote to the graph are exempt and kept for good: the statement
+ * observer marks them (markRunWroteGraph, db/graph-writes.ts).
  *
  * What is traced is a privacy decision, not a size one (#356). A transcript
  * is verbatim: the document the Extractor read, the span the Matcher was
@@ -61,6 +63,11 @@ export interface AgentTrace {
    * foreign key.
    */
   ready: Promise<void>;
+  /**
+   * Set on the run's first write to the graph (db/graph-writes.ts), so the
+   * mark is written once. A run so marked is kept by the retention sweep.
+   */
+  wroteGraph?: boolean;
 }
 
 export interface RunAttribution {
@@ -169,6 +176,30 @@ export function recordAgentRunSkills(
     } catch (err) {
       console.error(
         "[trace] failed to record agent run skills:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  })();
+}
+
+/**
+ * Mark the run as having written to the graph, so the retention sweep keeps
+ * it. Called by the usage context's statement observer on the run's first
+ * graph write; idempotent, and fire-and-forget like every trace write.
+ */
+export function markRunWroteGraph(trace: AgentTrace): void {
+  if (trace.wroteGraph) return;
+  trace.wroteGraph = true;
+  void (async () => {
+    try {
+      await trace.ready;
+      await getDb()
+        .update(agentRuns)
+        .set({ wroteToGraph: true })
+        .where(eq(agentRuns.id, trace.runId));
+    } catch (err) {
+      console.error(
+        "[trace] failed to mark agent run as a graph writer:",
         err instanceof Error ? err.message : err
       );
     }

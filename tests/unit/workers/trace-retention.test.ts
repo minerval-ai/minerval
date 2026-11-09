@@ -33,6 +33,8 @@ describe("traceRetentionTick", () => {
     expect(mocks.rawQuery).toHaveBeenCalledTimes(2);
     const [sqlText, params] = mocks.rawQuery.mock.calls[0]!;
     expect(sqlText).toMatch(/DELETE FROM agent_runs/);
+    // Runs that wrote to the graph are kept for good.
+    expect(sqlText).toMatch(/wrote_to_graph = false/);
     expect((params as [Date, number])[0].toISOString()).toBe("2026-08-03T00:00:00.000Z");
     expect((params as [Date, number])[1]).toBe(500);
   });

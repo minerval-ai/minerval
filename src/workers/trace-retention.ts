@@ -2,6 +2,10 @@
  * Trace retention sweep (#334 L0): delete agent_runs older than
  * TRACE_RETENTION_DAYS, agent_steps cascading with them, so production can
  * keep tracing on by default without the tables growing without bound.
+ *
+ * A run that wrote to the graph (agent_runs.wrote_to_graph, set by
+ * db/graph-writes.ts) is never deleted: its transcript is how the verdicts,
+ * arguments and records it left can be checked. Only the other runs expire.
  * llm_usage is untouched — its rows keep run_id and cost indefinitely; only
  * the transcript behind a run expires.
  *
@@ -36,7 +40,8 @@ export async function traceRetentionTick(
     const rows = await rawQuery<{ id: string }>(
       `DELETE FROM agent_runs
         WHERE id IN (
-          SELECT id FROM agent_runs WHERE started_at < $1
+          SELECT id FROM agent_runs
+           WHERE started_at < $1 AND wrote_to_graph = false
           ORDER BY started_at LIMIT $2
         )
         RETURNING id`,

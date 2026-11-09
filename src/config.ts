@@ -307,8 +307,9 @@ const configSchema = z.object({
   // sweep below bounds what production keeps.
   traceLevel: z.enum(["off", "full"]).optional(),
   // How long agent_runs (and, by cascade, agent_steps) are kept before the
-  // retention sweep (workers/trace-retention.ts) deletes them. Traces are
-  // big — a Steward run is tens of KB of transcript — so production keeps a
+  // retention sweep (workers/trace-retention.ts) deletes them. Runs that
+  // wrote to the graph (agent_runs.wrote_to_graph) are never deleted: they
+  // are the record of how the graph's content was made. The rest are a
   // window, not history; llm_usage rows keep their run_id and cost forever.
   // 0 disables the sweep (keep everything; the corpus harness wants that).
   traceRetentionDays: z.coerce.number().default(30),

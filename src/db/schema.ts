@@ -474,6 +474,12 @@ export const assessments = pgTable(
     // NULL = legacy rows from before skills existed; [] = a run that had
     // loaded none.
     skills: text("skills").array(),
+    // The agent run that wrote this assessment, stamped from the usage
+    // context (never by the agent), so the transcript behind a verdict is
+    // one join away. Such a run is kept for good. No FK, like llm_usage.run_id.
+    // NULL = written outside a traced run, or before the column existed and
+    // not matched by the backfill in the migration that added it.
+    runId: uuid("run_id"),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
     trigger: text("trigger"),
@@ -1549,9 +1555,17 @@ export const agentRuns = pgTable(
     // it opened (usually none) and each it loaded with load_skill, updated
     // at every load; NULL for runs that never opened a skills list.
     skills: text("skills").array(),
+    // Whether the run wrote to the graph (db/graph-writes.ts), set on its
+    // first graph write. A run that did is kept for good; the retention
+    // sweep (workers/trace-retention.ts) expires only the others.
+    wroteToGraph: boolean("wrote_to_graph").notNull().default(false),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
+    // The retention sweep reads only the runs it may expire.
+    index("idx_agent_runs_expirable")
+      .on(table.startedAt)
+      .where(sql`wrote_to_graph = false`),
     index("idx_agent_runs_claim").on(table.claimId),
     index("idx_agent_runs_job").on(table.jobId),
   ]
@@ -4724,6 +4738,8 @@ export const questionAssessments = pgTable(
     marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
+    // The agent run that wrote it, as on assessments.run_id.
+    runId: uuid("run_id"),
     isCurrent: boolean("is_current").notNull().default(true),
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
