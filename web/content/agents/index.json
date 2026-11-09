@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 25247,
-    "fullChars": 117634,
+    "roleChars": 25641,
+    "fullChars": 118028,
     "skills": [
       {
         "name": "costing",
@@ -151,8 +151,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 16463,
-    "fullChars": 108850,
+    "roleChars": 16745,
+    "fullChars": 109132,
     "skills": []
   },
   {
@@ -362,8 +362,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 8630,
-    "fullChars": 101017,
+    "roleChars": 8786,
+    "fullChars": 101173,
     "skills": [
       {
         "name": "costing",
