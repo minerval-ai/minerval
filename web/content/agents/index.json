@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 6758,
-    "fullChars": 97080,
+    "roleChars": 8146,
+    "fullChars": 98468,
     "skills": [
       {
         "name": "mathematics",
@@ -94,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 22724,
-    "fullChars": 113046,
+    "roleChars": 23140,
+    "fullChars": 113462,
     "skills": [
       {
         "name": "costing",

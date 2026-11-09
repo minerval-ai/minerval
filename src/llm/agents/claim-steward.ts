@@ -83,6 +83,7 @@ const CLAIM_ONLY_TOOLS = new Set([
   "revise_argument",
   "retire_argument",
   "record_argument_instance",
+  "place_argument_passage",
 ]);
 
 /**

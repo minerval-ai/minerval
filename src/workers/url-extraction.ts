@@ -33,6 +33,7 @@ import { fetchPublicUrl } from "../services/url-guard.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
+import { recordArgumentPassages } from "../services/argument-passage-service.js";
 
 /**
  * Handle a URL extraction message:
@@ -231,6 +232,8 @@ async function processUrlExtraction(
       onDocumentProblem: (p) => {
         documentProblem = p;
       },
+      // Where the document reasons about each claim (#541).
+      recordArguments: true,
     });
 
     let claimsCreated = 0;
@@ -254,6 +257,38 @@ async function processUrlExtraction(
         // Extractor's prior for this claim.
         domains: sanitizeDomains(claim.domains),
       });
+
+    // Where the document reasons about each claim (#541): each passage is
+    // matched within the claim's arguments, and one that matches none waits
+    // on the claim for its Steward. A failure here never fails the reading.
+    let argumentPassagesPlaced = 0;
+    let argumentPassagesUnplaced = 0;
+    const placeArgumentPassages = async (
+      claim: ExtractedClaim,
+      claimId: string,
+      nodeKind: NodeKind,
+      sourceStance: string
+    ): Promise<void> => {
+      if (!claim.argument_passages?.length) return;
+      try {
+        const [node] = await rawQuery<{ text: string }>(`SELECT text FROM claims WHERE id = $1`, [claimId]);
+        const counts = await recordArgumentPassages({
+          claimId,
+          claimText: node?.text ?? claim.proposed_canonical_form,
+          claimKind: nodeKind,
+          sourceId: source.id,
+          sourceStance,
+          passages: claim.argument_passages,
+        });
+        argumentPassagesPlaced += counts.placed;
+        argumentPassagesUnplaced += counts.unplaced;
+      } catch (err) {
+        console.error(
+          "[url-extraction] argument passages not recorded:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    };
 
     /** Link or mint the node a decided proposal names, and record this source's instance of it. */
     const recordProposal = async (
@@ -356,14 +391,15 @@ async function processUrlExtraction(
       // A source read again (for another focus, or whole) can propose a
       // claim an earlier reading already linked here: one instance per
       // claim and source, so the second reading adds nothing for it.
-      const [already] = await rawQuery<{ id: string }>(
-        `SELECT id FROM claim_instances
+      const [already] = await rawQuery<{ id: string; stance: string }>(
+        `SELECT id, stance FROM claim_instances
           WHERE claim_id = $1 AND source_id = $2 AND detached_at IS NULL
           LIMIT 1`,
         [claimId, source.id]
       );
       if (already) {
         instancesAlreadyRecorded++;
+        await placeArgumentPassages(claim, claimId, nodeKind, already.stance);
         return;
       }
       const stance = instanceStanceFor(proposedKind, nodeKind, matchResult.instance_stance);
@@ -380,6 +416,7 @@ async function processUrlExtraction(
         // instance of a claim.
         ...statedFigures(claim, nodeKind, stance),
       });
+      await placeArgumentPassages(claim, claimId, nodeKind, stance);
     };
 
     // Proposals the Matcher reached no verdict on (#419). A claim minted from
@@ -467,6 +504,10 @@ async function processUrlExtraction(
         curation_requests: curationRequests,
         // Matched to a claim this source already carries an instance of.
         instances_already_recorded: instancesAlreadyRecorded,
+        // Argument passages (#541): placed on an argument, or left on the
+        // claim for its Steward.
+        argument_passages_placed: argumentPassagesPlaced,
+        argument_passages_unplaced: argumentPassagesUnplaced,
         ...(problem ? { document_problem: problem } : {}),
         ...(focus ? { focus } : {}),
       },

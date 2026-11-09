@@ -383,6 +383,23 @@ export async function mergeClaims(input: {
     ]);
   }
 
+  // 2a. Argument passages waiting on the loser for its Steward (#541): onto
+  //     the survivor, their side flipped for an opposed merge. A quantity
+  //     has no sides, so a merge into one clears it. Prior sides are kept
+  //     for the undo.
+  const movedPassages = await rawQuery<{ id: string; direction: string | null }>(
+    `UPDATE argument_instances ai
+        SET claim_id = $1,
+            direction = CASE
+              WHEN $4::boolean THEN NULL
+              WHEN $3::boolean THEN (CASE p.direction WHEN 'for' THEN 'against' WHEN 'against' THEN 'for' ELSE p.direction END)
+              ELSE p.direction END
+       FROM (SELECT id, direction FROM argument_instances WHERE claim_id = $2) p
+      WHERE ai.id = p.id
+      RETURNING ai.id, p.direction`,
+    [survivorId, loserId, opposed, crossKind && survivorKind === "quantity"]
+  );
+
   // 2b. The kinds' rows that point at the loser: a quantity's readings and
   //     cuts, a question's answer relations, the answers sources gave, and
   //     the requests that bear on it.
@@ -482,6 +499,7 @@ export async function mergeClaims(input: {
     loser_prev_state: loserPrevState,
     moved_instance_ids: movedInstances.map((r) => r.id),
     moved_argument_ids: movedArguments.map((r) => r.id),
+    moved_argument_passages: movedPassages,
     repointed_child_edge_ids: repointedChild.map((r) => r.id),
     repointed_parent_edge_ids: repointedParent.map((r) => r.id),
     deleted_edges: [...deletedChildEdges, ...deletedParentEdges],
@@ -1035,6 +1053,14 @@ export async function reverseReconciliation(
           `UPDATE arguments SET claim_id = $1, stance = ${FLIP_ARGUMENT_STANCE}
             WHERE id = ANY($2::uuid[]) AND claim_id = $4`,
           [loserId, movedArguments, opposed, survivorId]
+        );
+      }
+      // Argument passages still waiting on the survivor go back with their
+      // prior side; any its Steward placed since stay where they were put.
+      for (const ap of (p.moved_argument_passages as Array<{ id: string; direction: string | null }>) ?? []) {
+        await rawQuery(
+          `UPDATE argument_instances SET claim_id = $2, direction = $3 WHERE id = $1 AND claim_id = $4`,
+          [ap.id, loserId, ap.direction, survivorId]
         );
       }
       // A merge across kinds: the stances it rewrote, and its kinds' rows.

@@ -84,6 +84,7 @@ import {
 import {
   executeArgumentInstanceTool,
   getArgumentInstanceToolDefinition,
+  getPlaceArgumentPassageToolDefinition,
 } from "./argument-instance-tools.js";
 
 /**
@@ -1322,8 +1323,10 @@ export function getStewardToolDefinitions(): Tool[] {
     // Correcting structure already built (#741): remove, retype, ungroup,
     // revise and retire.
     ...getStewardStructureToolDefinitions(),
-    // Where a source makes, attacks or mentions an argument (#541).
+    // Where a source makes, attacks or mentions an argument (#541), and the
+    // passages ingestion left unplaced on the node.
     getArgumentInstanceToolDefinition(),
+    getPlaceArgumentPassageToolDefinition(),
   ];
 }
 
