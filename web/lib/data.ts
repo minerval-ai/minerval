@@ -1,15 +1,16 @@
 import {
-  apiConfigured, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
+  apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
   fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
   fetchTag, fetchTags,
 } from "./api";
 import { getSourcePageFixture } from "./fixtures-source";
+import { getArgumentPageFixture } from "./fixtures-argument";
 import { REQUESTS, getRequest } from "./fixtures-kinds";
 import {
   getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizeMandates, listOpenPrizes,
 } from "./fixtures";
 import type {
-  AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
+  ArgumentPage, AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
   RequestItem, SearchResultItem, SourcePage, TagSummary,
 } from "./types";
 import {
@@ -222,5 +223,19 @@ export async function loadSourcePage(
   } catch (err) {
     console.error("[minerval] live source fetch failed, using fixture:", err);
     return { page: getSourcePageFixture(id), source: "fixture" };
+  }
+}
+
+// An argument's page (#541), with the offline sample when the API is not
+// configured or the live fetch fails.
+export async function loadArgument(
+  id: string,
+): Promise<{ page: ArgumentPage | null; source: DataSource }> {
+  if (!apiConfigured()) return { page: getArgumentPageFixture(id), source: "fixture" };
+  try {
+    return { page: await fetchArgumentPage(id), source: "live" };
+  } catch (err) {
+    console.error("[minerval] live argument fetch failed, using fixture:", err);
+    return { page: getArgumentPageFixture(id), source: "fixture" };
   }
 }

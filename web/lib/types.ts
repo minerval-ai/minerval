@@ -1561,3 +1561,72 @@ export interface SetupPartDetail extends SetupPart {
   content: string | null;
   previous_version: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// The argument page (#541): GET /arguments/:id with every section, the same
+// view get_argument serves to agents and MCP.
+// ---------------------------------------------------------------------------
+
+export interface ArgumentEvaluationEntry {
+  verdict: string;
+  decisive: boolean;
+  content: string;
+  /** Made under an assessment or estimate of the conclusion that is no longer current. */
+  stale: boolean;
+  assessment_id: string | null;
+  estimate_id: string | null;
+  created_at: string | null;
+}
+
+export interface ArgumentPremise {
+  id: string;
+  text: string;
+  kind?: string;
+  relation: string | null;
+  /** Grouped under the argument now; false for a retired argument's premises, read from its written form. */
+  grouped: boolean;
+  assessment_status: string | null;
+  assessment_confidence: number | null;
+  assessment_credence: number | null;
+  estimate?: unknown;
+  page_url: string;
+}
+
+export interface ArgumentInstanceItem {
+  id: string;
+  source: { id: string; url: string | null; title: string | null };
+  verbatim_text: string;
+  context: string | null;
+  /** advances | criticizes | mentions */
+  stance: string;
+  /** full | premise_unstated | strawman, or null */
+  reading: string | null;
+  stated_shows?: ValueShown | null;
+  speaker: string | null;
+  publication: string | null;
+  source_date: string | null;
+  link: string | null;
+  recorded_by: string;
+  recorded_at: string | null;
+}
+
+export interface ArgumentPage {
+  argument: {
+    id: string;
+    page_url?: string;
+    conclusion: { id: string; text?: string; kind?: string; page_url?: string };
+    name: string | null;
+    stance: string;
+    shows?: ValueShown | null;
+    written_form: string;
+    has_written_form: boolean;
+    created_at: string | null;
+    retired: { at: string | null; reason: string | null } | null;
+    merged_into: string | null;
+  };
+  evaluation: ArgumentEvaluationEntry | null;
+  evaluation_history: ArgumentEvaluationEntry[];
+  premises: ArgumentPremise[];
+  instances: ArgumentInstanceItem[];
+  instances_total: number;
+}

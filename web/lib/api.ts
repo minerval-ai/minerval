@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  ArgumentPage,
   AttemptStats,
   AttemptSummary,
   ClaimCitationPayload,
@@ -179,6 +180,22 @@ export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
     apiGet<SourceContext>(`/sources/${seg}/context`).catch(() => null),
   ]);
   return { facts, document, examinations, context };
+}
+
+// An argument's page (#541): the view get_argument serves, with its
+// evaluation history, premises and instances. Null when no argument has
+// this id.
+export const ARGUMENT_PAGE_INSTANCES = 100;
+export async function fetchArgumentPage(id: string): Promise<ArgumentPage | null> {
+  try {
+    const seg = pathSegment(id);
+    return await apiGet<ArgumentPage>(
+      `/arguments/${seg}?include=evaluation&include=premises&include=instances&instances_limit=${ARGUMENT_PAGE_INSTANCES}`
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 // The unified per-claim history (#175): assessments, contributions, decisions,
