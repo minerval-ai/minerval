@@ -35,6 +35,7 @@ import { getQuantityDetail, getThresholdOf } from "./quantity-service.js";
 import { getQuestionDetail } from "./question-service.js";
 import { listRequests } from "./request-service.js";
 import { countClaimInstances } from "./claim-instance-service.js";
+import { listUnplacedPassages } from "./argument-instance-service.js";
 import { getClaimSourceMap, getSourceMapSummary } from "./source-map-service.js";
 import { listRelatedClaims } from "./claim-link-service.js";
 import { listFindings } from "./finding-service.js";
@@ -91,8 +92,10 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`instance_count`, and `source_map` (the account of what the support " +
   "rests on). Contestation (how actively the claim is disputed, 0..1) is " +
   "not a status. Add sections with `include`: `arguments` (each with its " +
-  "written form and current evaluation, and as `retired_arguments` any " +
-  "its Steward retired, with the reason), `subclaims` (the direct " +
+  "written form and current evaluation; as `retired_arguments` any " +
+  "its Steward retired, with the reason; and as " +
+  "`unplaced_argument_passages` passages where sources reason about the " +
+  "claim that matched none of its arguments at ingestion), `subclaims` (the direct " +
   "subclaims, one row per argument each serves, with the edge's reasoning " +
   "and their standing and credence), " +
   "`provenance` (the instances with their readings, and the edges among " +
@@ -331,6 +334,21 @@ export async function getClaimView(
             lean_check: checks.get(a.id) ?? null,
           };
         });
+        // Passages where sources reason about the claim that matched none
+        // of its arguments at ingestion (#541), waiting for the Steward to
+        // place or dismiss them.
+        const unplaced = await listUnplacedPassages(claimId);
+        if (unplaced.total > 0) {
+          payload.unplaced_argument_passages = unplaced.items.map((p) => ({
+            instance_id: p.id,
+            source: { id: p.source_id, url: p.source_url, title: p.source_title },
+            verbatim_text: p.verbatim_text,
+            context: p.context,
+            stance: p.stance,
+            direction: p.direction,
+          }));
+          payload.unplaced_argument_passages_total = unplaced.total;
+        }
         // Retired arguments (#741) are history: listed apart, by name and
         // reason, so a Steward does not rebuild one it or a predecessor
         // retired.

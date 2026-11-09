@@ -14,6 +14,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { ZodError } from "zod";
 import {
+  mergeArguments,
+  splitArgument,
   mergeClaims,
   setQuantityDefinition,
   reclassifyClaim,
@@ -98,6 +100,67 @@ export function getCuratorToolDefinitions(): Tool[] {
           reasoning: { type: "string", description: "Why these are one claim" },
         },
         required: ["survivor_id", "loser_id", "stance_relation", "reasoning"],
+      },
+    },
+    {
+      name: "merge_arguments",
+      description:
+        "Merge two arguments on the same node that are one argument: they reach the same " +
+        "conclusion through the same inference, so that whatever would break one would break the " +
+        "other, however they are worded (§7). Arguments on different nodes, or on opposite sides of " +
+        "one, are different arguments. The absorbed argument's instances and premise groupings move " +
+        "to the survivor, and it stays as an alias with its evaluations as history. written_form_from " +
+        "says whose written form the survivor keeps: whichever states the inference better, not " +
+        "whichever came first. Read both with get_argument first. After merging, notify the node's " +
+        "Steward to check the written form and evaluation. Returns the event_id that " +
+        "reverse_reconciliation takes.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          survivor_id: { type: "string", description: "The argument that remains" },
+          absorbed_id: { type: "string", description: "The argument merged into it" },
+          written_form_from: {
+            type: "string",
+            enum: ["survivor", "absorbed"],
+            description: "Whose written form the survivor keeps: the one that states the inference better",
+          },
+          reasoning: { type: "string", description: "Why these are one argument" },
+        },
+        required: ["survivor_id", "absorbed_id", "written_form_from", "reasoning"],
+      },
+    },
+    {
+      name: "split_argument",
+      description:
+        "Split an argument that conflates several lines of reasoning, each of which could succeed or " +
+        "fail without the others (§7). Each part becomes a new argument on the same node with the " +
+        "same stance, taking the premise edges (edge ids, from get_claim's subclaims) and instances " +
+        "(from get_argument) named for it; the original keeps the rest and its current evaluation " +
+        "stops being current. Give each part a name by its reasoning and a written form referencing " +
+        "its premises inline as [[claim:<id>]]. After splitting, notify the node's Steward to rewrite " +
+        "and evaluate what results. Returns the event_id that reverse_reconciliation takes; the undo " +
+        "retires the parts rather than deleting them.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          argument_id: { type: "string", description: "The argument to split" },
+          parts: {
+            type: "array",
+            description: "The lines of reasoning to split off; the original keeps whatever no part names",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                written_form: { type: "string" },
+                edge_ids: { type: "array", items: { type: "string" } },
+                instance_ids: { type: "array", items: { type: "string" } },
+              },
+              required: ["name", "written_form"],
+            },
+          },
+          reasoning: { type: "string", description: "Why these are separate arguments" },
+        },
+        required: ["argument_id", "parts", "reasoning"],
       },
     },
     {
@@ -360,6 +423,59 @@ export async function executeCuratorTool(
           success: true,
           message: `Merged ${result.loserId} into ${result.survivorId}. Now notify the survivor's Steward to reconcile and re-assess.`,
           survivor_id: result.survivorId,
+          event_id: result.eventId,
+        });
+      }
+
+      case "merge_arguments": {
+        const from = input.written_form_from;
+        if (from !== "survivor" && from !== "absorbed") {
+          return JSON.stringify({
+            success: false,
+            message: `written_form_from must be "survivor" or "absorbed". Nothing was merged.`,
+          });
+        }
+        const reasoning = String(input.reasoning ?? "").trim();
+        if (!reasoning) return JSON.stringify({ success: false, message: "reasoning is required. Nothing was merged." });
+        const result = await mergeArguments({
+          survivorId: String(input.survivor_id ?? ""),
+          absorbedId: String(input.absorbed_id ?? ""),
+          writtenFormFrom: from,
+          reasoning,
+        });
+        return JSON.stringify({
+          success: true,
+          message:
+            `Merged argument ${String(input.absorbed_id)} into ${String(input.survivor_id)}: ` +
+            `${result.movedInstances} instance(s) and ${result.movedPremises} premise grouping(s) moved. ` +
+            `Now notify the Steward of node ${result.claimId} to check the written form and evaluation.`,
+          claim_id: result.claimId,
+          event_id: result.eventId,
+        });
+      }
+
+      case "split_argument": {
+        const reasoning = String(input.reasoning ?? "").trim();
+        if (!reasoning) return JSON.stringify({ success: false, message: "reasoning is required. Nothing was split." });
+        const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+        const parts = (Array.isArray(input.parts) ? input.parts : []).map((raw) => {
+          const part = (raw ?? {}) as Record<string, unknown>;
+          return {
+            name: String(part.name ?? ""),
+            writtenForm: String(part.written_form ?? ""),
+            relationshipIds: strings(part.edge_ids),
+            instanceIds: strings(part.instance_ids),
+          };
+        });
+        const result = await splitArgument({ argumentId: String(input.argument_id ?? ""), parts, reasoning });
+        return JSON.stringify({
+          success: true,
+          message:
+            `Split ${parts.length} part(s) off argument ${String(input.argument_id)}: ${result.partIds.join(", ")}. ` +
+            `Its evaluation is no longer current. Now notify the Steward of node ${result.claimId} to ` +
+            `rewrite and evaluate what results.`,
+          claim_id: result.claimId,
+          argument_ids: result.partIds,
           event_id: result.eventId,
         });
       }

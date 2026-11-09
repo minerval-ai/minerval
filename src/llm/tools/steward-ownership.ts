@@ -13,7 +13,7 @@ import { rawQuery } from "../../db/client.js";
 import { getUsageContext } from "../usage-context.js";
 
 /** Where each Steward write tool names its target node. */
-const TARGET: Record<string, { field: string; via?: "argument" | "instance" }> = {
+const TARGET: Record<string, { field: string; via?: "argument" | "instance" | "passage" }> = {
   update_claim_assessment: { field: "claim_id" },
   record_claim_instance: { field: "claim_id" },
   update_claim_instance: { field: "instance_id", via: "instance" },
@@ -24,6 +24,7 @@ const TARGET: Record<string, { field: string; via?: "argument" | "instance" }> =
   add_argument: { field: "claim_id" },
   write_argument: { field: "argument_id", via: "argument" },
   record_argument_instance: { field: "argument_id", via: "argument" },
+  place_argument_passage: { field: "instance_id", via: "passage" },
   evaluate_argument: { field: "argument_id", via: "argument" },
   add_relationship_edge: { field: "parent_id" },
   add_related_claim: { field: "claim_id" },
@@ -94,7 +95,15 @@ export async function ownershipRefusal(toolName: string, input: Record<string, u
   const [row] =
     target.via === "argument"
       ? await rawQuery<{ claim_id: string }>(`SELECT claim_id FROM arguments WHERE id = $1`, [id])
-      : await rawQuery<{ claim_id: string }>(`SELECT claim_id FROM claim_instances WHERE id = $1`, [id]);
+      : target.via === "passage"
+        ? await rawQuery<{ claim_id: string }>(
+            `SELECT claim_id FROM argument_instances WHERE id = $1 AND claim_id IS NOT NULL`,
+            [id]
+          )
+        : await rawQuery<{ claim_id: string }>(`SELECT claim_id FROM claim_instances WHERE id = $1`, [id]);
   if (!row) return null; // not found: the tool's own refusal says so
-  return notYourNode(row.claim_id, target.via === "argument" ? `Argument ${id}` : `Instance ${id}`);
+  return notYourNode(
+    row.claim_id,
+    target.via === "argument" ? `Argument ${id}` : target.via === "passage" ? `Passage ${id}` : `Instance ${id}`
+  );
 }

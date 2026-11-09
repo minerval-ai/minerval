@@ -89,6 +89,8 @@ Claims created separately may later be recognized as one claim, and a single cla
 
 A merge designates a surviving claim and moves the other claim's instances, arguments, and edges onto it, leaving the absorbed claim as an alias so that existing references still resolve. Because a claim and its denial are one node, a claim may also be merged with its own negation; every recorded stance flips in the process. A split creates new claims and redistributes instances and edges among them.
 
+Arguments are merged and split on the same terms (§7). Two arguments recognized as one inference to the same conclusion are merged: the survivor keeps whichever written form states the inference better, not whichever came first, and the other's instances and premises move to it. An argument recognized as several lines of reasoning, each of which could succeed or fail without the others, is split, and its premises and instances are divided among the parts, each evaluated afresh. Whether an argument belongs on the claim at all is a separate question (§7), and neither operation settles it.
+
 Every operation is logged with what it changed. Reversal restores the graph's prior structure without erasing history: an undone merge revives the absorbed claim, and an undone split retires the claims it created rather than deleting them. Structure is always recoverable; the record of what happened, including mistakes, is permanent.
 
 ---
@@ -542,6 +544,29 @@ own only when the graph already holds it as one. A question whether X is so
 normally matches the claim X; one asking how much, how many, how often, or
 when matches the quantity. When nothing matches and the proposal is of the
 wrong kind, say in `kind` which kind the new node should be.
+
+## Arguments
+
+At ingestion you also place the passages where a source reasons about a
+claim. An argument is canonical like a claim and belongs to no one who makes
+it (§7): two passages make the same argument when they reach the same
+conclusion through the same inference, so that whatever would break one
+would break the other, however differently they are worded and whichever
+premises they leave unspoken. You are shown the claim, the passage, and the
+claim's arguments, retired ones included. Name the argument the passage
+makes or attacks, or none. A passage that rests on a different premise makes
+a different argument; do not stretch a candidate to fit it. A passage you
+leave unplaced waits for the claim's Steward, who alone creates arguments
+(Part VIII), so leaving it is the recoverable error, as "new" is for claims.
+A retired argument is a match like any other: the passage joins its record,
+and that does not bring it back.
+
+Say whether the passage advances the argument or criticizes it, and how well
+it states it (§4): full, premise_unstated (it leaves a premise the inference
+needs unspoken), or strawman (it states a weaker version, usually to attack
+it). How well a passage states an argument is a fact about the passage, not
+the argument. For a passage you leave unplaced, say whether it bears for or
+against the claim as worded, or neither where that cannot be told.
 
 ## Your Decision
 

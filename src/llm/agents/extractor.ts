@@ -43,7 +43,43 @@ export interface ExtractedClaim {
   stated_value?: QuantityEstimate | null;
   /** A probability the document gives for the claim (§4, #744). */
   stated_probability?: number | null;
+  /**
+   * Where the document reasons about this claim (#541): passages that make
+   * an argument for the document's position on it, or attack reasoning
+   * about it. Recorded only when the caller asks (recordArguments); the
+   * ingest path matches each within the claim's arguments.
+   */
+  argument_passages?: ArgumentPassage[];
 }
+
+/** One argument passage, as the Extractor records it on a claim (#541). */
+export interface ArgumentPassage {
+  verbatim_text: string;
+  context: string | null;
+  /** makes: it reasons to the document's position on the claim. attacks: it attacks reasoning about the claim. */
+  role: "makes" | "attacks";
+}
+
+export const ARGUMENT_PASSAGE_ROLES = ["makes", "attacks"] as const;
+
+const ARGUMENT_PASSAGES_SCHEMA = {
+  type: "array",
+  description:
+    "Where the document reasons about this claim: each passage that makes an argument for the " +
+    "document's position on it (role makes), or attacks someone's reasoning about it (role " +
+    "attacks), verbatim. Empty when the document only asserts the claim. One entry per line of " +
+    "reasoning, not per sentence.",
+  items: {
+    type: "object",
+    properties: {
+      verbatim_text: { type: "string", description: "The passage, verbatim, under 2,000 characters." },
+      context: { type: ["string", "null"], description: "What the document was doing there, when the passage alone does not say." },
+      role: { type: "string", enum: [...ARGUMENT_PASSAGE_ROLES] },
+    },
+    required: ["verbatim_text", "context", "role"],
+    additionalProperties: false,
+  },
+} as const;
 
 /**
  * What the Extractor reported about the document itself on
@@ -65,12 +101,13 @@ export const DOCUMENT_PROBLEM_NOTE_MAX_CHARS = 1000;
  * call so the `domains` enum is the closed list of domains the skills define
  * at run time.
  */
-export function getExtractedClaimSchema(): Record<string, unknown> {
+export function getExtractedClaimSchema(opts: { argumentPassages?: boolean } = {}): Record<string, unknown> {
   const domains = knownDomains();
   return {
     ...EXTRACTED_CLAIM_SCHEMA,
     properties: {
       ...EXTRACTED_CLAIM_SCHEMA.properties,
+      ...(opts.argumentPassages ? { argument_passages: ARGUMENT_PASSAGES_SCHEMA } : {}),
       domains: {
         type: "array",
         // An empty enum is not a valid schema; with no skills the list is
@@ -82,7 +119,11 @@ export function getExtractedClaimSchema(): Record<string, unknown> {
           "; an empty array when none applies. A prior the Steward confirms or corrects.",
       },
     },
-    required: [...EXTRACTED_CLAIM_SCHEMA.required, "domains"],
+    required: [
+      ...EXTRACTED_CLAIM_SCHEMA.required,
+      "domains",
+      ...(opts.argumentPassages ? ["argument_passages"] : []),
+    ],
   };
 }
 
@@ -178,6 +219,22 @@ function claimProblem(raw: unknown, domains: ReadonlySet<string>): string | null
     const p = c.stated_probability;
     if (typeof p !== "number" || !(p >= 0 && p <= 1)) return "stated_probability must be a number from 0 to 1, or null";
   }
+  if (c.argument_passages != null) {
+    if (!Array.isArray(c.argument_passages)) return "argument_passages must be an array (empty when none)";
+    if (c.kind === "question" && c.argument_passages.length > 0) {
+      return "a question has no arguments of its own (§7a): give argument_passages as an empty array";
+    }
+    for (const a of c.argument_passages as unknown[]) {
+      const ap = (a ?? {}) as Record<string, unknown>;
+      if (typeof ap.verbatim_text !== "string" || !ap.verbatim_text.trim()) {
+        return "each argument passage needs a non-empty verbatim_text";
+      }
+      if (ap.verbatim_text.length > 2000) return "an argument passage's verbatim_text must stay under 2,000 characters";
+      if (!(ARGUMENT_PASSAGE_ROLES as readonly unknown[]).includes(ap.role)) {
+        return "each argument passage's role must be makes or attacks";
+      }
+    }
+  }
   return null;
 }
 
@@ -204,6 +261,15 @@ function toClaim(c: Record<string, unknown>): ExtractedClaim {
         ? (quantityEstimateSchema.parse(statedValueInput(c.stated_value)) as QuantityEstimate)
         : null,
     stated_probability: typeof c.stated_probability === "number" ? c.stated_probability : null,
+    ...(Array.isArray(c.argument_passages)
+      ? {
+          argument_passages: (c.argument_passages as Record<string, unknown>[]).map((a) => ({
+            verbatim_text: String(a.verbatim_text).trim(),
+            context: typeof a.context === "string" ? a.context : null,
+            role: a.role as ArgumentPassage["role"],
+          })),
+        }
+      : {}),
   };
 }
 
@@ -241,6 +307,12 @@ async function extractClaimsImpl(input: {
    * reports afresh.
    */
   onDocumentProblem?: (problem: DocumentProblem) => void;
+  /**
+   * Record, on each claim, the passages where the document reasons about it
+   * (#541). The ingest path asks for them and matches each within the
+   * claim's arguments; callers that only show claims leave it off.
+   */
+  recordArguments?: boolean;
 }): Promise<ExtractedClaim[]> {
   const config = loadConfig();
   const cap = input.maxClaims && input.maxClaims > 0 ? input.maxClaims : 0;
@@ -262,7 +334,8 @@ async function extractClaimsImpl(input: {
               source: budget.source,
               matchMicroUsd: input.matchMicroUsd ?? null,
             }
-          : null
+          : null,
+        input.recordArguments ?? false
       ) + input.content
     );
   };
@@ -297,7 +370,7 @@ async function extractClaimsImpl(input: {
     input_schema: {
       type: "object" as const,
       properties: {
-        claims: { type: "array", items: getExtractedClaimSchema() },
+        claims: { type: "array", items: getExtractedClaimSchema({ argumentPassages: input.recordArguments }) },
       },
       required: ["claims"],
     },
