@@ -4,14 +4,15 @@ import {
   type MandateAllocationView,
 } from "../../../lib/api";
 import { OwlMark } from "../../../components/OwlMark";
+import { Markdown } from "../../../components/Markdown";
 
 /**
- * The mandate's allocation section: how THIS mandate is judging and
- * funding the open actions. Aggregation first — kind tiles and a
- * value-per-owl histogram with the day's bar — then drill-down on demand;
- * the tail is summarized, never enumerated. Transparency through
- * navigability: at graph scale a flat table of every potential action
- * would hide more than it shows.
+ * The mandate's operations: how THIS mandate spends. Its Grantmaker writes
+ * an operating policy in prose; its program officers decide what to
+ * commission under it, within a limit the policy states; each run is paid
+ * for whole and gives back what it does not spend. This section shows the
+ * policy, the money, the runs and the decisions, all from the ledger and
+ * the decision log.
  */
 
 function owls(n: number): string {
@@ -19,37 +20,41 @@ function owls(n: number): string {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  assess: "first assessments",
+  assess: "assessments",
   reassess: "reassessments",
   ingest: "ingestions",
   grant_planning: "mandate planning",
   mandate_review: "mandate reviews",
   lookout_run: "lookout runs",
+  correspondent_run: "correspondent runs",
   consistency_sweep: "consistency sweeps",
-  // maintenance and audit (#363): chosen, funded work like the rest
   curate: "curation",
   audit: "audits",
-  // mathematics (docs/mathematics.md §8.3): compute, not prize money
   formalize: "formal statements",
   attempt_proof: "proof attempts",
   prize_review: "prize reviews",
+  request: "work on requests",
+  officer_run: "officer sittings",
+  grantmaker_decision: "Grantmaker decisions",
+};
+
+const STATE_LABEL: Record<string, string> = {
+  waiting: "commissioned",
+  running: "running",
+  settled: "finished",
 };
 
 function KindTiles({ view }: { view: MandateAllocationView }) {
+  if (view.kinds.length === 0) return null;
   return (
     <div className="alloc-tiles">
       {view.kinds.map((k) => (
         <div className="alloc-tile" key={k.kind}>
           <span className="alloc-tile-kind sc">{KIND_LABEL[k.kind] ?? k.kind}</span>
-          <span className="alloc-tile-big">{k.candidates.toLocaleString()}</span>
+          <span className="alloc-tile-big">{k.runs.toLocaleString()}</span>
           <span className="alloc-tile-sub">
-            {k.valued.toLocaleString()} valued · {k.covered.toLocaleString()}{" "}
-            covered
-          </span>
-          <span className="alloc-tile-sub">
-            {owls(k.allocated_owls)}{" "}
-            {k.allocated_owls === 1 ? "owl" : "owls"} allocated ·{" "}
-            {owls(k.est_total_cost_owls)} to do it all
+            {k.running > 0 ? `${k.running.toLocaleString()} under way · ` : ""}
+            {owls(k.spent_owls)} of {owls(k.budget_owls)} owls used
           </span>
         </div>
       ))}
@@ -57,142 +62,110 @@ function KindTiles({ view }: { view: MandateAllocationView }) {
   );
 }
 
-// The value-per-owl distribution as CSS bars, the day's bar marked where
-// it falls: everything to the marker's right cleared today's threshold.
-function ValueHistogram({ view }: { view: MandateAllocationView }) {
-  const buckets = view.histogram;
-  const total = buckets.reduce((s, b) => s + b.count, 0);
-  const max = Math.max(1, ...buckets.map((b) => b.count));
-  const bar = view.budget.today_bar;
-  const upper = buckets[buckets.length - 1]?.max ?? 0;
-  const barPct =
-    bar != null && upper > 0
-      ? Math.min(100, Math.max(0, (bar / upper) * 100))
-      : null;
-  return (
-    <div className="alloc-hist-wrap">
-      <div className="alloc-hist" aria-hidden>
-        {barPct != null && (
-          <span
-            className="alloc-hist-bar-marker"
-            style={{ left: `${barPct}%` }}
-            title={`today's bar: ${bar} value per owl`}
-          />
-        )}
-        {buckets.map((b, i) => (
-          <span
-            key={i}
-            className="alloc-hist-col"
-            style={{ height: `${6 + Math.round((b.count / max) * 40)}px` }}
-            data-empty={b.count === 0 ? "" : undefined}
-            title={`${b.min}–${b.max} value/owl: ${b.count} action${b.count === 1 ? "" : "s"}`}
-          />
-        ))}
-      </div>
-      <p className="alloc-hist-caption">
-        Expected value per owl across the{" "}
-        {total.toLocaleString()} action{total === 1 ? "" : "s"} this mandate
-        has valued
-        {bar != null
-          ? `; the marker is today's bar (${bar} value/owl) — the marginal return of the last increment funded. Below it, an action waits for co-funding or a cheaper day.`
-          : "; no allocations placed yet today, so the day's bar has not formed."}
-      </p>
-    </div>
-  );
-}
-
 export async function AllocationSection({ mandateId }: { mandateId: string }) {
   const view = await fetchMandateAllocation(mandateId);
-  if (!view || view.kinds.length === 0) return null;
+  if (!view) return null;
   const b = view.budget;
+  const p = view.petitions;
   return (
     <section>
       <h2>Where the owls go</h2>
       <p className="alloc-lede">
-        The judgment is this mandate&rsquo;s own: it values the actions it
-        knows and cares about, ranks them by expected value per owl of
-        remaining cost, and allocates its daily rate best-first. An action
-        runs the moment allocations — from any mix of mandates and readers
-        — cover its cost, and the metered cost splits pro rata. Where
-        alternatives conflict (a standard or a strong-model pass), the
-        upgrade is bought only when its marginal return clears the bar.
+        This mandate pays for work whole. Its Grantmaker writes the operating
+        policy below; its program officers decide under it what to commission
+        and with what budget, and send what they can&rsquo;t settle to the
+        Grantmaker. Each run starts at once with the budget it was given and
+        gives back what it does not spend. Agents doing the work may petition
+        for more when the work turns out to need it.
       </p>
       <div className="usage-chips">
         <span className="summary-chip">
           <OwlMark size={14} className="owl-mark" />
-          {owls(b.daily_rate_owls)} owls/day rate
+          {owls(b.used_today_owls)} of {owls(b.daily_rate_owls)} owls of today&rsquo;s rate used
         </span>
+        <span className="summary-chip">{owls(b.held_owls)} held by running work</span>
         <span className="summary-chip">
-          {owls(b.allocated_today_owls)} allocated today
+          officers decide up to {owls(view.officer_limit.owls)} owls
         </span>
-        {b.today_bar != null && (
-          <span className="summary-chip">bar: {b.today_bar} value/owl</span>
+        {view.inbox_waiting > 0 && (
+          <span className="summary-chip">{view.inbox_waiting} waiting for the officers</span>
         )}
       </div>
 
-      <KindTiles view={view} />
-      <ValueHistogram view={view} />
+      <details className="alloc-top">
+        <summary>The operating policy</summary>
+        <Markdown>{view.operating_policy}</Markdown>
+        <p className="alloc-tail">Officers&rsquo; limit: {view.officer_limit.reason}</p>
+      </details>
 
-      {view.top.length > 0 && (
+      <KindTiles view={view} />
+      <p className="alloc-hist-caption">
+        Runs commissioned in the last {view.window_days} days, by kind.
+        {p.received > 0 &&
+          ` Petitions heard: ${p.received} (${p.granted} granted, ${p.refused} refused, ` +
+            `${p.follow_up} follow-ups, ${p.escalated + p.pending} still open).`}
+      </p>
+
+      {view.commissions.length > 0 && (
         <details className="alloc-top">
-          <summary>
-            The {view.top.length} actions this mandate ranks highest
-          </summary>
+          <summary>The {view.commissions.length} most recent commissions</summary>
           <table className="account-table">
             <thead>
               <tr>
-                <th>action</th>
-                <th>variant</th>
-                <th>value</th>
-                <th>cost</th>
-                <th>value/owl</th>
-                <th>backing</th>
+                <th>work</th>
+                <th>by</th>
+                <th>budget</th>
+                <th>used</th>
+                <th>state</th>
               </tr>
             </thead>
             <tbody>
-              {view.top.map((a) => (
-                <tr key={a.action_id}>
+              {view.commissions.map((c) => (
+                <tr key={`${c.action_id}-${c.created_at}`}>
                   <td className="alloc-label">
-                    <span className="tag">{a.kind}</span>{" "}
-                    {a.claim_id ? (
-                      <Link href={`/claims/${a.claim_id}`}>{a.label}</Link>
-                    ) : (
-                      a.label
-                    )}
+                    <span className="tag">{c.kind}</span>{" "}
+                    {c.claim_id ? <Link href={`/claims/${c.claim_id}`}>{c.label}</Link> : c.label}
+                    {c.reason && <span className="alloc-marginal"> — {c.reason}</span>}
                   </td>
-                  <td>
-                    {a.variant}
-                    {a.marginal_ratio != null && (
-                      <span
-                        className="alloc-marginal"
-                        title="the marginal return of upgrading from the cheaper variant"
-                      >
-                        {" "}
-                        Δ{a.marginal_ratio}/owl
-                      </span>
-                    )}
-                  </td>
-                  <td>{a.value_est}</td>
-                  <td>{owls(a.cost_owls)}</td>
-                  <td>{a.value_per_owl}</td>
-                  <td>
-                    {a.covered
-                      ? "covered — will run"
-                      : a.backing_owls > 0
-                        ? `${owls(a.backing_owls)} owls so far`
-                        : "·"}
-                  </td>
+                  <td>{c.commissioned_by.replace(/_/g, " ")}</td>
+                  <td>{owls(c.budget_owls)}</td>
+                  <td>{owls(c.spent_owls)}</td>
+                  <td>{STATE_LABEL[c.state] ?? c.state}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {view.more > 0 && (
-            <p className="alloc-tail">
-              …and {view.more.toLocaleString()} more valued actions below,
-              most of them under today&rsquo;s bar. They are not lost:
-              anyone&rsquo;s allocation can cover one at any time.
-            </p>
+            <p className="alloc-tail">…and {view.more.toLocaleString()} earlier in the window.</p>
           )}
+        </details>
+      )}
+
+      {view.decisions.length > 0 && (
+        <details className="alloc-top">
+          <summary>Recent decisions by its officers and Grantmaker</summary>
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th>who</th>
+                <th>on</th>
+                <th>decision</th>
+                <th>owls</th>
+                <th>why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.decisions.map((d, i) => (
+                <tr key={i}>
+                  <td>{d.decided_by.replace(/_/g, " ")}</td>
+                  <td>{d.item_kind.replace(/_/g, " ")}</td>
+                  <td>{d.decision.replace(/_/g, " ")}</td>
+                  <td>{d.owls != null ? owls(d.owls) : "·"}</td>
+                  <td className="alloc-label">{d.reason ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </details>
       )}
     </section>

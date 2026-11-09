@@ -103,6 +103,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /mandates/:id": { name: "get_mandate" },
   "GET /mandates/:id/allocation": { name: "get_mandate_allocation" },
   "POST /mandates/:id/contribute": { name: "fund_mandate", note: ESCROWS_OWLS },
+  "POST /mandates/:id/withdraw": {
+    name: "withdraw_from_mandate",
+    note: "Returns owls to your balance; confirm with your user before withdrawing their share.",
+  },
   "GET /mandates/:id/lookouts/:lookoutId": { name: "get_mandate_lookout" },
 
   // ---- correspondents (#563) ----

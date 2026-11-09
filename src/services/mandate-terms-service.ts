@@ -161,7 +161,16 @@ export async function withdrawFromMandate(input: {
         if (left <= 0) break;
         const take = Math.min(left, Number(r.room));
         if (take <= 0) continue;
-        await tx.query(`UPDATE regrants SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`, [r.id, take]);
+        // A regrant taken back whole (nothing returned from it yet) leaves
+        // no share behind: the row goes, and the withdrawal is recorded in
+        // the decision log below. Otherwise it keeps what remains.
+        if (take >= Number(r.room) && (await tx.query<{ refunded: number }>(
+          `SELECT refunded_micro_usd AS refunded FROM regrants WHERE id = $1`, [r.id]
+        ))[0]?.refunded == 0) {
+          await tx.query(`DELETE FROM regrants WHERE id = $1`, [r.id]);
+        } else {
+          await tx.query(`UPDATE regrants SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`, [r.id, take]);
+        }
         left -= take;
       }
     }

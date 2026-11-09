@@ -439,49 +439,60 @@ export async function fetchContributorProfile(
   }
 }
 
-// --- allocation transparency (owl economy, §15) ------------------------------
-// The EV/EC computation belongs to the mandates, so the public surface is
-// per-mandate: GET /mandates/:id/allocation, rendered on the mandate page.
+// --- a mandate's operations (docs/allocation.md) ----------------------------
+// What a mandate commissioned, under what written policy, and what its
+// officers decided: GET /mandates/:id/allocation, rendered on its page.
 
-export interface AllocationKindTile {
+export interface OperationsKindRow {
   kind: string;
-  candidates: number;
-  valued: number;
-  covered: number;
-  allocated_owls: number;
-  est_total_cost_owls: number;
+  runs: number;
+  running: number;
+  budget_owls: number;
+  spent_owls: number;
 }
 
-export interface AllocationActionRow {
+export interface OperationsCommissionRow {
   action_id: string;
   kind: string;
-  variant: string;
   claim_id: string | null;
   label: string;
-  value_est: number;
-  cost_owls: number;
-  value_per_owl: number;
-  backing_owls: number;
-  covered: boolean;
-  my_allocation_owls: number;
-  marginal_ratio: number | null;
+  commissioned_by: string;
+  budget_owls: number;
+  spent_owls: number;
+  state: "waiting" | "running" | "settled";
+  reason: string | null;
+  created_at: string;
+}
+
+export interface OperationsDecisionRow {
+  decided_by: string;
+  item_kind: string;
+  decision: string;
+  target: string | null;
+  owls: number | null;
+  reason: string | null;
+  created_at: string;
 }
 
 export interface MandateAllocationView {
   grant_id: string;
   title: string;
-  policy: Record<string, number>;
+  operating_policy: string;
+  officer_limit: { owls: number; reason: string };
   budget: {
     escrow_owls: number;
     spent_owls: number;
     daily_rate_owls: number;
-    allocated_today_owls: number;
-    today_bar: number | null;
+    used_today_owls: number;
+    held_owls: number;
   };
-  kinds: AllocationKindTile[];
-  histogram: Array<{ min: number; max: number; count: number }>;
-  top: AllocationActionRow[];
+  window_days: number;
+  kinds: OperationsKindRow[];
+  commissions: OperationsCommissionRow[];
   more: number;
+  decisions: OperationsDecisionRow[];
+  petitions: { received: number; granted: number; refused: number; follow_up: number; escalated: number; pending: number };
+  inbox_waiting: number;
 }
 
 export async function fetchMandateAllocation(

@@ -102,9 +102,11 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["mandates"],
       summary:
-        "The mandate's allocation view: its policy, budget and daily rate, " +
-        "per-kind action tiles, a value-per-owl histogram with the day's " +
-        "bar, and its best-ranked actions (paged; the tail is summarized)",
+        "The mandate's operations: the operating policy its program officers " +
+        "carry out, its budget and today's use of its daily rate, what it " +
+        "commissioned in the last 30 days and how those runs used their " +
+        "budgets (paged), its officers' and Grantmaker's recent decisions, " +
+        "and the petitions it heard",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
@@ -195,6 +197,45 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
             .send({ error: result.message, code: result.code });
         }
         return reply.send({ mandate: result.mandate });
+      },
+    }
+  );
+
+  // POST /mandates/:id/withdraw — a funder takes back their share of the
+  // mandate's uncommitted money (mandate-terms-service.ts): the uncommitted
+  // money in proportion to what they still have in it, or less if asked.
+  // Any funder may, at any time; it is how one leaves a mandate whose
+  // objective has changed (amend_objective) or no longer serves them.
+  app.post<{ Params: { id: string }; Body: { owls?: number } }>(
+    "/:id/withdraw",
+    {
+      schema: {
+        tags: ["mandates"],
+        summary:
+          "Withdraw your share of a mandate's uncommitted money back to your " +
+          "balance (all of it, or up to `owls`); money already committed to " +
+          "running work stays with it",
+        params: {
+          type: "object",
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          properties: { owls: { type: "number", exclusiveMinimum: 0 } },
+        },
+      },
+      preHandler: [app.authenticate, app.requireUser],
+      handler: async (request, reply) => {
+        const { withdrawFromMandate } = await import("../services/mandate-terms-service.js");
+        const result = await withdrawFromMandate({
+          grantId: request.params.id,
+          funder: { userId: request.auth!.userId! },
+          owls: request.body?.owls ?? null,
+        });
+        if (!result.ok) {
+          return reply.code(409).send({ error: result.message, code: "NOTHING_TO_WITHDRAW" });
+        }
+        return reply.send({ withdrawn_owls: result.withdrawnOwls });
       },
     }
   );

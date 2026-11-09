@@ -459,72 +459,80 @@ export async function listMandateAttempts(grantId: string, limit = 100): Promise
 }
 
 // ---------------------------------------------------------------------------
-// The allocation view — how THIS mandate is judging and funding the open
-// actions. The EV/EC computation belongs to the mandates, so this renders
-// on their pages: the General assessment mandate's view is the canonical
-// global one, and every scoped mandate gets the identical section over its
-// scope. Aggregation first (kind tiles, a value-per-owl histogram with the
-// day's bar marked), drill-down on demand (top actions per kind, paged),
-// tail summarized, never enumerated — transparency through navigability.
+// The operations view — how THIS mandate is spending: the operating policy
+// its program officers carry out, its money today, what it has commissioned
+// and how those runs used their budgets, the decisions its officers and
+// Grantmaker made, and the petitions it heard. Every figure is from the
+// ledger and the decision log; there is no formula to show, because there
+// is none. Rendered on the mandate page and read by its Grantmaker
+// (allocation_report).
 // ---------------------------------------------------------------------------
 
-export interface AllocationKindTile {
+export interface OperationsKindRow {
   kind: string;
-  /** Open exclusion groups of this kind (each = one thing that could happen). */
-  candidates: number;
-  /** Groups this mandate has valued (its judgment layer knows them). */
-  valued: number;
-  /** Groups whose allocations already cover some variant: they will run. */
-  covered: number;
-  /** This mandate's outstanding (unspent, unreleased) allocations, owls. */
-  allocated_owls: number;
-  /** Sum of each group's cheapest-variant cost: the price of doing it all. */
-  est_total_cost_owls: number;
+  /** Runs this mandate commissioned of this kind in the window. */
+  runs: number;
+  running: number;
+  budget_owls: number;
+  spent_owls: number;
 }
 
-export interface AllocationActionRow {
+export interface OperationsCommissionRow {
   action_id: string;
   kind: string;
-  variant: string;
   claim_id: string | null;
   label: string;
-  value_est: number;
-  cost_owls: number;
-  value_per_owl: number;
-  backing_owls: number;
-  covered: boolean;
-  my_allocation_owls: number;
-  /** For a dearer variant: the marginal ratio Δvalue/Δcost vs. the
-   * cheapest sibling — the number that decides whether the upgrade is
-   * worth buying. Null on the cheapest variant. */
-  marginal_ratio: number | null;
+  commissioned_by: string;
+  budget_owls: number;
+  spent_owls: number;
+  /** waiting: commissioned, not yet started; running; settled: finished and refunded. */
+  state: "waiting" | "running" | "settled";
+  reason: string | null;
+  created_at: string;
+}
+
+export interface OperationsDecisionRow {
+  decided_by: string;
+  item_kind: string;
+  decision: string;
+  target: string | null;
+  owls: number | null;
+  reason: string | null;
+  created_at: string;
 }
 
 export interface MandateAllocationView {
   grant_id: string;
   title: string;
-  policy: Record<string, number>;
+  /** The operating policy, as the officers and the public read it. */
+  operating_policy: string;
+  /** The most an officer may commit in one decision, and why. */
+  officer_limit: { owls: number; reason: string };
   budget: {
     escrow_owls: number;
     spent_owls: number;
     daily_rate_owls: number;
-    allocated_today_owls: number;
-    /** Value-per-owl of the weakest increment funded today: the emergent bar. */
-    today_bar: number | null;
+    /** Spent or held by running work today, against the daily rate. */
+    used_today_owls: number;
+    /** Budgets commissioned and not yet settled. */
+    held_owls: number;
   };
-  kinds: AllocationKindTile[];
-  /** Value-per-owl distribution over the mandate's valued actions. */
-  histogram: Array<{ min: number; max: number; count: number }>;
-  top: AllocationActionRow[];
-  /** Valued actions not shown in `top` (the tail is summarized, not listed). */
+  window_days: number;
+  kinds: OperationsKindRow[];
+  commissions: OperationsCommissionRow[];
+  /** Commissions in the window not shown in `commissions` (paged). */
   more: number;
+  decisions: OperationsDecisionRow[];
+  petitions: { received: number; granted: number; refused: number; follow_up: number; escalated: number; pending: number };
+  /** Items waiting for the officers in the mandate's inbox. */
+  inbox_waiting: number;
 }
 
-const HISTOGRAM_BUCKETS = 8;
+const OPERATIONS_WINDOW_DAYS = 30;
 
 /**
- * Assemble one mandate's allocation view. `kind` filters the drill-down
- * list (tiles always cover every kind); `offset`/`limit` page it.
+ * Assemble one mandate's operations view. `kind` filters the commission
+ * list (the kind rows always cover every kind); `offset`/`limit` page it.
  */
 export async function getMandateAllocationView(
   grantId: string,
@@ -546,228 +554,144 @@ export async function getMandateAllocationView(
   );
   if (!grant) return null;
 
-  const { getMandateAllocationPolicy } = await import(
-    "./allocation-policy-service.js"
+  const { getOperatingPolicy, renderOperatingPolicy, officerLimit } = await import(
+    "./operating-policy-service.js"
   );
-  const policy = await getMandateAllocationPolicy(grantId);
+  const { grantDayUseMicroUsd } = await import("./commission-service.js");
+  const policy = await getOperatingPolicy(grantId);
+  const limit = officerLimit(policy);
 
-  // Spend + today's placements + the day's emergent bar.
-  const [jobSpent, exposure] = await Promise.all([
+  const [jobSpent, exposure, usedToday] = await Promise.all([
     getJobSpentMicroUsd(grant.budget_job_id),
     grantAllocationExposureMicroUsd(grantId),
+    grantDayUseMicroUsd(grantId),
   ]);
-  const [today] = await rawQuery<{ placed: number; bar: number | null }>(
-    `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS placed,
-            MIN(mv.value_est /
-                GREATEST(0.001, a.cost_est_micro_usd / 1000000.0)) AS bar
-       FROM action_allocations al
-       LEFT JOIN actions a ON a.exclusion_group = al.exclusion_group
-        AND (al.action_id = a.id OR (al.action_id IS NULL
-             AND a.cost_est_micro_usd = (SELECT MIN(x.cost_est_micro_usd)
-                                           FROM actions x
-                                          WHERE x.exclusion_group = a.exclusion_group
-                                            AND x.status = 'open')))
-       LEFT JOIN mandate_valuations mv
-         ON mv.action_id = a.id AND mv.grant_id = al.grant_id
-      WHERE al.grant_id = $1
-        AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+
+  const window = `now() - make_interval(days => ${OPERATIONS_WINDOW_DAYS})`;
+  const kinds = await rawQuery<{ kind: string; runs: number; running: number; budget: string; spent: string }>(
+    `SELECT a.kind, count(*)::int AS runs,
+            count(*) FILTER (WHERE al.released_at IS NULL)::int AS running,
+            COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS budget,
+            COALESCE(SUM(al.spent_micro_usd), 0)::bigint AS spent
+       FROM action_allocations al JOIN actions a ON a.id = al.action_id
+      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.created_at >= ${window}
+      GROUP BY a.kind ORDER BY runs DESC`,
     [grantId]
   );
 
-  // Kind tiles over the whole open ledger, with this mandate's judgment
-  // and money joined in.
-  const tiles = await rawQuery<{
-    kind: string;
-    candidates: number;
-    valued: number;
-    covered: number;
-    my_micro: number;
-    est_total_micro: number;
-  }>(
-    `WITH acts AS (
-       SELECT a.id, a.kind, a.exclusion_group, a.cost_est_micro_usd,
-              COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                          FROM action_allocations al
-                         WHERE al.exclusion_group = a.exclusion_group
-                           AND al.released_at IS NULL
-                           AND (al.action_id IS NULL OR al.action_id = a.id)),
-                       0) AS coverage,
-              COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                          FROM action_allocations al
-                         WHERE al.exclusion_group = a.exclusion_group
-                           AND al.released_at IS NULL AND al.grant_id = $1
-                           AND (al.action_id IS NULL OR al.action_id = a.id)),
-                       0) AS mine,
-              (mv.action_id IS NOT NULL) AS valued
-         FROM actions a
-         LEFT JOIN mandate_valuations mv
-           ON mv.action_id = a.id AND mv.grant_id = $1
-        WHERE a.status = 'open'
-     ),
-     grps AS (
-       SELECT kind, exclusion_group,
-              MIN(cost_est_micro_usd) AS min_cost,
-              BOOL_OR(coverage >= cost_est_micro_usd) AS covered,
-              BOOL_OR(valued) AS valued,
-              MAX(mine) AS mine
-         FROM acts GROUP BY kind, exclusion_group
-     )
-     SELECT kind, COUNT(*)::int AS candidates,
-            COUNT(*) FILTER (WHERE valued)::int AS valued,
-            COUNT(*) FILTER (WHERE covered)::int AS covered,
-            COALESCE(SUM(mine), 0)::bigint AS my_micro,
-            COALESCE(SUM(min_cost), 0)::bigint AS est_total_micro
-       FROM grps GROUP BY kind ORDER BY candidates DESC`,
-    [grantId]
-  );
-
-  // Value-per-owl histogram over the valued actions (cheapest variant per
-  // group, so an action counts once).
-  const hist = await rawQuery<{ bucket: number; count: number }>(
-    `WITH ratios AS (
-       SELECT mv.value_est /
-              GREATEST(0.001, a.cost_est_micro_usd / 1000000.0) AS ratio
-         FROM mandate_valuations mv
-         JOIN actions a ON a.id = mv.action_id AND a.status = 'open'
-        WHERE mv.grant_id = $1
-          AND a.cost_est_micro_usd = (SELECT MIN(x.cost_est_micro_usd)
-                                        FROM actions x
-                                       WHERE x.exclusion_group = a.exclusion_group
-                                         AND x.status = 'open')
-     ),
-     bounds AS (SELECT GREATEST(0.01, MAX(ratio)) AS max_ratio FROM ratios)
-     SELECT width_bucket(r.ratio, 0, b.max_ratio * 1.0001, $2::int) AS bucket,
-            COUNT(*)::int AS count
-       FROM ratios r, bounds b
-      GROUP BY bucket ORDER BY bucket`,
-    [grantId, HISTOGRAM_BUCKETS]
-  );
-  const [{ max_ratio: maxRatio } = { max_ratio: 0 }] = await rawQuery<{
-    max_ratio: number;
-  }>(
-    `SELECT COALESCE(MAX(mv.value_est /
-              GREATEST(0.001, a.cost_est_micro_usd / 1000000.0)), 0)
-              AS max_ratio
-       FROM mandate_valuations mv
-       JOIN actions a ON a.id = mv.action_id AND a.status = 'open'
-      WHERE mv.grant_id = $1`,
-    [grantId]
-  );
-  const bucketWidth = Math.max(0.01, Number(maxRatio)) / HISTOGRAM_BUCKETS;
-  const histogram = Array.from({ length: HISTOGRAM_BUCKETS }, (_, i) => ({
-    min: Math.round(i * bucketWidth * 100) / 100,
-    max: Math.round((i + 1) * bucketWidth * 100) / 100,
-    count: 0,
-  }));
-  for (const row of hist) {
-    const i = Math.min(HISTOGRAM_BUCKETS, Math.max(1, Number(row.bucket))) - 1;
-    histogram[i]!.count += Number(row.count);
-  }
-
-  // Drill-down: this mandate's best-ranked actions, paged, tail counted.
   const offset = Math.max(0, opts.offset ?? 0);
-  const limit = Math.min(50, Math.max(1, opts.limit ?? 10));
-  const kindFilter = opts.kind ? `AND a.kind = $4` : "";
-  const params: unknown[] = [grantId, limit, offset];
+  const pageLimit = Math.min(50, Math.max(1, opts.limit ?? 10));
+  const params: unknown[] = [grantId, pageLimit, offset];
   if (opts.kind) params.push(opts.kind);
-  const top = await rawQuery<{
+  const commissions = await rawQuery<{
     action_id: string;
     kind: string;
-    variant: string;
     claim_id: string | null;
     label: string;
-    value_est: number;
-    cost_est_micro_usd: number;
-    coverage: number;
-    mine: number;
-    base_value: number;
-    base_cost: number;
+    commissioned_by: string;
+    amount: string;
+    spent: string;
+    released: boolean;
+    status: string;
+    reason: string | null;
+    created_at: string;
     total: number;
   }>(
-    `SELECT a.id AS action_id, a.kind, a.variant, a.claim_id, a.label,
-            mv.value_est, a.cost_est_micro_usd,
-            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
-                       WHERE al.exclusion_group = a.exclusion_group
-                         AND al.released_at IS NULL
-                         AND (al.action_id IS NULL OR al.action_id = a.id)),
-                     0)::bigint AS coverage,
-            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
-                       WHERE al.exclusion_group = a.exclusion_group
-                         AND al.released_at IS NULL AND al.grant_id = $1
-                         AND (al.action_id IS NULL OR al.action_id = a.id)),
-                     0)::bigint AS mine,
-            (SELECT mv2.value_est FROM mandate_valuations mv2
-               JOIN actions x ON x.id = mv2.action_id
-              WHERE mv2.grant_id = $1
-                AND x.exclusion_group = a.exclusion_group
-              ORDER BY x.cost_est_micro_usd ASC LIMIT 1) AS base_value,
-            (SELECT x.cost_est_micro_usd FROM actions x
-              WHERE x.exclusion_group = a.exclusion_group
-                AND x.status = 'open'
-              ORDER BY x.cost_est_micro_usd ASC LIMIT 1) AS base_cost,
-            COUNT(*) OVER ()::int AS total
-       FROM mandate_valuations mv
-       JOIN actions a ON a.id = mv.action_id
-      WHERE mv.grant_id = $1 AND a.status = 'open' ${kindFilter}
-      ORDER BY mv.value_est / GREATEST(1000, a.cost_est_micro_usd) DESC
+    `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by,
+            al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
+            (al.released_at IS NOT NULL) AS released, a.status, al.reason,
+            al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
+       FROM action_allocations al JOIN actions a ON a.id = al.action_id
+      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.created_at >= ${window}
+        ${opts.kind ? "AND a.kind = $4" : ""}
+      ORDER BY al.created_at DESC
       LIMIT $2 OFFSET $3`,
     params
   );
-  const total = Number(top[0]?.total ?? 0);
-  const topRows: AllocationActionRow[] = top.map((r) => {
-    const costOwls = microUsdToOwls(Number(r.cost_est_micro_usd));
-    const isBase = Number(r.cost_est_micro_usd) <= Number(r.base_cost ?? 0);
-    const dCost = Number(r.cost_est_micro_usd) - Number(r.base_cost ?? 0);
-    const dValue = Number(r.value_est) - Number(r.base_value ?? 0);
-    return {
-      action_id: r.action_id,
-      kind: r.kind,
-      variant: r.variant,
-      claim_id: r.claim_id,
-      label: r.label,
-      value_est: Math.round(Number(r.value_est) * 1000) / 1000,
-      cost_owls: costOwls,
-      value_per_owl:
-        costOwls > 0
-          ? Math.round((Number(r.value_est) / costOwls) * 100) / 100
-          : 0,
-      backing_owls: microUsdToOwls(Number(r.coverage)),
-      covered: Number(r.coverage) >= Number(r.cost_est_micro_usd),
-      my_allocation_owls: microUsdToOwls(Number(r.mine)),
-      marginal_ratio:
-        !isBase && dCost > 0
-          ? Math.round((dValue / microUsdToOwls(dCost)) * 100) / 100
-          : null,
-    };
-  });
+  const total = Number(commissions[0]?.total ?? 0);
+
+  const decisions = await rawQuery<{
+    decided_by: string;
+    item_kind: string;
+    decision: string;
+    target: string | null;
+    owls_micro_usd: string | null;
+    reason: string | null;
+    created_at: string;
+  }>(
+    `SELECT decided_by, item_kind, decision, target, owls_micro_usd, reason, created_at::text AS created_at
+       FROM mandate_decisions WHERE grant_id = $1
+      ORDER BY created_at DESC LIMIT 20`,
+    [grantId]
+  );
+  const [pet] = await rawQuery<Record<string, number>>(
+    `SELECT count(*)::int AS received,
+            count(*) FILTER (WHERE status = 'granted')::int AS granted,
+            count(*) FILTER (WHERE status = 'refused')::int AS refused,
+            count(*) FILTER (WHERE status = 'follow_up')::int AS follow_up,
+            count(*) FILTER (WHERE status = 'escalated')::int AS escalated,
+            count(*) FILTER (WHERE status = 'pending')::int AS pending
+       FROM petitions WHERE grant_id = $1 AND created_at >= ${window}`,
+    [grantId]
+  );
+  const [inbox] = await rawQuery<{ n: number }>(
+    `SELECT count(*)::int AS n FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL`,
+    [grantId]
+  );
 
   const escrow = Number(grant.budget_micro_usd);
   const spent = jobSpent + exposure.spentMicroUsd;
   return {
     grant_id: grantId,
     title: grant.title ?? grant.name,
-    policy: policy as unknown as Record<string, number>,
+    operating_policy: renderOperatingPolicy(policy),
+    officer_limit: { owls: microUsdToOwls(limit.microUsd), reason: limit.reason },
     budget: {
       escrow_owls: microUsdToOwls(escrow),
       spent_owls: microUsdToOwls(Math.min(spent, escrow)),
       daily_rate_owls: microUsdToOwls(Number(grant.daily_budget_micro_usd)),
-      allocated_today_owls: microUsdToOwls(Number(today?.placed ?? 0)),
-      today_bar:
-        today?.bar != null ? Math.round(Number(today.bar) * 100) / 100 : null,
+      used_today_owls: microUsdToOwls(usedToday),
+      held_owls: microUsdToOwls(exposure.outstandingMicroUsd),
     },
-    kinds: tiles.map((t) => ({
-      kind: t.kind,
-      candidates: Number(t.candidates),
-      valued: Number(t.valued),
-      covered: Number(t.covered),
-      allocated_owls: microUsdToOwls(Number(t.my_micro)),
-      est_total_cost_owls: microUsdToOwls(Number(t.est_total_micro)),
+    window_days: OPERATIONS_WINDOW_DAYS,
+    kinds: kinds.map((k) => ({
+      kind: k.kind,
+      runs: Number(k.runs),
+      running: Number(k.running),
+      budget_owls: microUsdToOwls(Number(k.budget)),
+      spent_owls: microUsdToOwls(Number(k.spent)),
     })),
-    histogram,
-    top: topRows,
-    more: Math.max(0, total - offset - topRows.length),
+    commissions: commissions.map((c) => ({
+      action_id: c.action_id,
+      kind: c.kind,
+      claim_id: c.claim_id,
+      label: c.label,
+      commissioned_by: c.commissioned_by,
+      budget_owls: microUsdToOwls(Number(c.amount)),
+      spent_owls: microUsdToOwls(Number(c.spent)),
+      state: c.released ? "settled" : c.status === "running" ? "running" : "waiting",
+      reason: c.reason,
+      created_at: c.created_at,
+    })),
+    more: Math.max(0, total - offset - commissions.length),
+    decisions: decisions.map((d) => ({
+      decided_by: d.decided_by,
+      item_kind: d.item_kind,
+      decision: d.decision,
+      target: d.target,
+      owls: d.owls_micro_usd == null ? null : microUsdToOwls(Number(d.owls_micro_usd)),
+      reason: d.reason,
+      created_at: d.created_at,
+    })),
+    petitions: {
+      received: Number(pet?.received ?? 0),
+      granted: Number(pet?.granted ?? 0),
+      refused: Number(pet?.refused ?? 0),
+      follow_up: Number(pet?.follow_up ?? 0),
+      escalated: Number(pet?.escalated ?? 0),
+      pending: Number(pet?.pending ?? 0),
+    },
+    inbox_waiting: Number(inbox?.n ?? 0),
   };
 }
 

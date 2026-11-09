@@ -836,22 +836,23 @@ export function getManagementReadToolDefinitions(): Tool[] {
     {
       name: "allocation_report",
       description:
-        "This mandate's live allocation view, the same data its public " +
-        "page renders: the policy in force, budget and daily rate, today's " +
-        "placements and the day's emergent value-per-owl bar, per-kind " +
-        "action tiles (candidates / valued / covered), and the mandate's " +
-        "best-ranked open actions with backing and marginal upgrade ratios. " +
-        "Use this for 'where is the money going and why' questions.",
+        "This mandate's operations, the same data its public page renders: " +
+        "the operating policy in force and the officers' limit, the budget " +
+        "and today's use of the daily rate, what the mandate commissioned in " +
+        "the last 30 days by kind and run by run (budget, spent, state, " +
+        "reason), its officers' and your recent decisions, the petitions it " +
+        "heard, and what waits in its inbox. Use this for 'where is the " +
+        "money going and why' questions; query_sql reaches further back.",
       input_schema: {
         type: "object" as const,
         properties: {
           kind: {
             type: "string",
             description:
-              "Optional drill-down filter: assess, reassess, ingest, or " +
-              "grant_planning.",
+              "Optional filter on the run list by kind: assess, reassess, " +
+              "ingest, curate, audit, request, and so on.",
           },
-          limit: { type: "number", description: "Max ranked rows, default 10." },
+          limit: { type: "number", description: "Max runs listed, default 10." },
         },
         required: [],
       },
