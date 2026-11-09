@@ -47,7 +47,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
+import { agentPrivateReason } from "../llm/run-visibility.js";
 import { agentRuns, agentSteps } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 
@@ -68,6 +69,8 @@ export interface AgentTrace {
    * mark is written once. A run so marked is kept by the retention sweep.
    */
   wroteGraph?: boolean;
+  /** Reasons already recorded on the run, so each is written once. */
+  privateReasons?: Set<string>;
 }
 
 export interface RunAttribution {
@@ -136,6 +139,8 @@ export function startAgentRun(
 ): AgentTrace | null {
   if (!traceable(agent)) return null;
   const runId = randomUUID();
+  const agentReason = agentPrivateReason(agent);
+  const initialReasons = agentReason ? [agentReason] : [];
   const ready = (async () => {
     try {
       await getDb().insert(agentRuns).values({
@@ -146,6 +151,9 @@ export function startAgentRun(
         claimId: attribution.claimId ?? null,
         requestId: attribution.requestId ?? null,
         commitSha: loadConfig().gitSha ?? null,
+        // A run starts private when its agent's inputs are not public by
+        // construction (llm/run-visibility.ts); tools can add reasons later.
+        privateReasons: initialReasons,
       });
     } catch (err) {
       console.error(
@@ -154,7 +162,7 @@ export function startAgentRun(
       );
     }
   })();
-  return { runId, seq: { n: 0 }, ready };
+  return { runId, seq: { n: 0 }, ready, privateReasons: new Set(initialReasons) };
 }
 
 /**
@@ -201,6 +209,34 @@ export function markRunWroteGraph(trace: AgentTrace): void {
     } catch (err) {
       console.error(
         "[trace] failed to mark agent run as a graph writer:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  })();
+}
+
+/**
+ * Record a reason the run's transcript is private (llm/run-visibility.ts).
+ * Idempotent per reason, fire-and-forget like every trace write. The client
+ * calls it for each tool a run executes that reads private data; agent code
+ * calls it (through markCurrentRunPrivate) when it hands a run private input.
+ */
+export function markRunPrivate(trace: AgentTrace, reason: string): void {
+  const seen = (trace.privateReasons ??= new Set());
+  if (seen.has(reason)) return;
+  seen.add(reason);
+  void (async () => {
+    try {
+      await trace.ready;
+      await rawQuery(
+        `UPDATE agent_runs
+            SET private_reasons = array_append(private_reasons, $2)
+          WHERE id = $1 AND NOT ($2 = ANY(private_reasons))`,
+        [trace.runId, reason]
+      );
+    } catch (err) {
+      console.error(
+        "[trace] failed to mark agent run private:",
         err instanceof Error ? err.message : err
       );
     }

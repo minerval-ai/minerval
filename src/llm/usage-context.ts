@@ -18,6 +18,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   finishAgentRun,
+  markRunPrivate,
   markRunWroteGraph,
   recordAgentRunSkills,
   startAgentRun,
@@ -148,6 +149,16 @@ setStatementObserver((sql) => {
   const trace = getUsageContext().trace;
   if (trace && !trace.wroteGraph && writesGraph(sql)) markRunWroteGraph(trace);
 });
+
+/**
+ * Mark the run open in this context private, with a reason (run-visibility.ts):
+ * for agent code that hands a run private input its agent's default does not
+ * cover. No run open, nothing to mark.
+ */
+export function markCurrentRunPrivate(reason: string): void {
+  const trace = getUsageContext().trace;
+  if (trace) markRunPrivate(trace, reason);
+}
 
 export function withAgent<T>(agent: string, fn: () => T): T {
   const context = getUsageContext();
