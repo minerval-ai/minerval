@@ -166,7 +166,7 @@ describe("runCorrespondent", () => {
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
   });
 
-  it("reads with the graph reads and the change stream outside clients have, plus publishing", async () => {
+  it("reads with the graph reads, the change stream and SQL outside clients have, plus publishing and the spend tools", async () => {
     await runCorrespondent({ correspondentId: CORR });
     expect(state.loop!.tools.map((t) => t.name).sort()).toEqual(
       [
@@ -178,6 +178,9 @@ describe("runCorrespondent", () => {
         "list_graph_changes",
         "publish_update",
         "update_workspace",
+        "commission",
+        "petition_mandate",
+        "query_sql",
       ].sort()
     );
   });

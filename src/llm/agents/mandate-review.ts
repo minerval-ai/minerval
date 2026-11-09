@@ -12,9 +12,9 @@
  *  - survey its territory: the graph (search, scope survey) AND the open
  *    web (web_search) — finding the right sources is the agent's job, not
  *    a human's;
- *  - value the open ledger: write the mandate's own valuations, with
- *    rationale, over exactly the actions it judges relevant (its
- *    allocator spends against these);
+ *  - read back what its money did (mandate-reflection-service.ts) and
+ *    revise the operating policy its program officers carry out, or
+ *    commission directly;
  *  - grow its own plan: append ingest/assess items it has discovered
  *    (each priced, escrow-bounded, executed through the same ledger);
  *  - move money: regrant to a peer mandate, or spawn a new one with its
@@ -439,7 +439,7 @@ async function runMandateReviewImpl(input: {
           .map(
             (l) =>
               `- "${l.title}" [${l.status}; ${l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-only"}` +
-              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; ceiling ${l.max_value}/10] ` +
+              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; commissions up to ${l.commission_limit_owls} owls alone] ` +
               `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
               `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
               `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}` +
@@ -502,15 +502,14 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
+    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
     `(yours to set)` +
     (Number(grant.daily_budget_micro_usd) > 0
-      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is allocated so far today ` +
-        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included` +
-
-        `. The allocator funds a valued action only when what it still needs fits in what is ` +
-        `left of today's rate; it never part-funds one`
+      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is committed so far today ` +
+        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included. ` +
+        `A commission that would take the day past its rate is refused, by your officers' tools ` +
+        `and yours alike; running work frees what it leaves as it finishes`
       : ``) +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
     `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
@@ -633,8 +632,8 @@ async function runMandateReviewImpl(input: {
         return (await executeKindTool(name, toolInput, { role: "grantmaker", model }))!;
       }
       // The management tools this pass shares with the owner-driven chat
-      // (grant_overview, the valuation tools, update_allocation_policy, the
-      // read tools, bounties, lookouts) run the same implementation, honesty
+      // (grant_overview, the operating policy and commissions, the read
+      // tools, bounties, lookouts) run the same implementation, honesty
       // guards included. Null means "not mine".
       const management = await executeManagementTool(grant.id, name, toolInput, {
         passStartedAt,

@@ -12,11 +12,12 @@
  * evidence is found), the partition listing, a side-by-side comparison,
  * load_skill, and its writes:
  *
- *  - flag_inconsistency: the primary node (a claim, a quantity or a
- *    question, #735) becomes a candidate on the ledger (its Steward
- *    enqueued with the tension as context), and the checker's estimate that
- *    a pass would change something enters the formula's expected-gain term
- *    for it;
+ *  - flag_inconsistency: the tension goes to the primary node's inbox (a
+ *    claim, a quantity or a question, #735), and the pass it asks for goes
+ *    to the General mandate's officers with the checker's estimate that it
+ *    would change something;
+ *  - commission and petition_mandate: a pass it judges worth paying for
+ *    now, from its own budget, and more budget when the sweep needs it;
  *  - escalate_to_curator: a structural defect (two nodes that are one, a
  *    conflation, a wrong kind, a mislabeled edge) goes to the Curator as a
  *    curation request, rather than through a Steward pass bought only to
@@ -26,12 +27,14 @@
  *  - finish_sweep: the note that closes the sweep and briefs the next
  *    sweep of the same partition.
  *
- * Like the Lookout, what it cannot do is the point: it writes no
- * assessment, edge or importance, and moves no money. Everything it raises
- * is a candidate the allocator funds or not, and its flags are recorded so
- * operators can read what they bought (consistency-service.ts).
+ * What it cannot do is the point: it writes no assessment, edge or
+ * importance. What it raises, others decide whether to pay for, unless it
+ * pays from its own budget; its flags are recorded so operators can read
+ * what they bought (consistency-service.ts).
  */
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
+import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -140,6 +143,8 @@ async function runConsistencyCheckerImpl(input: {
     ...findingTools.definitions,
     ...skillLoader.definitions,
     ...getGraphReadToolDefinitions(),
+    ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     {
       name: "list_partition_claims",
       description:
@@ -197,9 +202,10 @@ async function runConsistencyCheckerImpl(input: {
         "Raise a tension you judged real, or a consideration established elsewhere " +
         "that the primary's assessment does not weigh. The primary may be anywhere in " +
         "the graph, in this partition or not. Its Steward is asked to " +
-        "reconcile it, and its reassessment becomes a candidate on the ledger, " +
-        "valued by the platform's formula (importance, contestation) with your " +
-        "expected_gain; the allocator decides whether it runs. The primary is " +
+        "reconcile it: the flag goes to its inbox, and the reassessment is put " +
+        "to the General mandate's officers with your expected_gain, who decide " +
+        "whether to pay for it. If it matters enough to pay for now, commission " +
+        "the pass yourself from your budget. The primary is " +
         "the node whose judgment looks wrong: a claim's verdict, a quantity's " +
         "estimate or a question's standing. A primary whose earlier flag is " +
         "still waiting is a repeat: your reading is added to the waiting pass " +
@@ -302,7 +308,7 @@ async function runConsistencyCheckerImpl(input: {
       : input.dryRun
         ? ""
         : `No flag in this partition is still waiting for its pass.\n\n`) +
-    `${turnBudgetLine(MAX_ITERATIONS)}\n\n` +
+    `${turnBudgetLine(MAX_ITERATIONS, { canSpend: true })}\n\n` +
     (input.budgetBasis ? `${input.budgetBasis}\n\n` : "") +
     `Read the partition, compare what needs comparing, and flag what does not ` +
     `fit together, here or wherever in the graph what this partition ` +
@@ -349,6 +355,10 @@ async function runConsistencyCheckerImpl(input: {
       if (loaded !== null) return loaded;
       const graphRead = await executeGraphReadTool(name, toolInput);
       if (graphRead !== null) return graphRead;
+      const spend = await executeSpendTool(name, toolInput);
+      if (spend !== null) return spend;
+      const sql = await executeSqlTool(name, toolInput);
+      if (sql !== null) return sql;
 
       if (name === "list_partition_claims") {
         const offset = Math.max(0, Math.floor(Number(toolInput.offset ?? 0)) || 0);

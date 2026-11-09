@@ -183,8 +183,8 @@ const MANDATE_SCHEMA = {
         strategy: {
           type: "string",
           description:
-            "How you read the scope and why this allocation maximizes " +
-            "epistemic value per owl.",
+            "How you read the scope, and why this plan buys the most " +
+            "epistemic movement for its cost.",
         },
         items: {
           type: "array",
@@ -498,17 +498,6 @@ async function runGrantmakerTurnImpl(input: {
   });
   // Contributions are paid from the escrow: a live mandate only (§19).
   const contributionTools = managed ? createGrantContributionTools(input.grantId!) : null;
-  // The live mandate's policy decides which spending lever the chat holds
-  // (#687): a judgment mandate revalues the ledger itself, as its review
-  // passes do; a formula mandate amends the formula. Either way
-  // update_allocation_policy lists exactly the knobs this mandate reads.
-  const [policyRow] = managed
-    ? await rawQuery<{ policy: string | null }>(
-        `SELECT policy FROM grants WHERE id = $1`,
-        [input.grantId]
-      ).catch(() => [])
-    : [];
-  const mandatePolicy = policyRow?.policy ?? null;
   // What the review passes left for the funder (#701), newest last: the
   // chat is where the funder hears it.
   const [notesRow] = managed
@@ -518,7 +507,6 @@ async function runGrantmakerTurnImpl(input: {
       ).catch(() => [])
     : [];
   const funderNotes = (notesRow?.notes ?? []).slice(-5);
-  void mandatePolicy;
   const tools: Tool[] = [
     ...graphReadTools,
     ...reportTools.definitions, ...findingTools.definitions,
@@ -783,8 +771,8 @@ export function getConfirmBountyToolDefinition(): Tool {
 /**
  * The read tools both the management chat and the autonomous review pass
  * carry (#683): what the mandate's money bought (list_funded_assessments),
- * what one ingested source carries (claims_from_source), and today's
- * placements against the day's bar (allocation_report). One definition and
+ * what one ingested source carries (claims_from_source), and the mandate's
+ * operations: its policy, commissions and decisions (allocation_report). One definition and
  * one handler (executeManagementTool), so the two paths read the same.
  */
 export function getManagementReadToolDefinitions(): Tool[] {
@@ -963,8 +951,8 @@ async function executePostBounty(
 /**
  * The funded-grant tool surface: live analytics over exactly the data the
  * public dashboard shows, and the writes a live mandate's steward holds
- * (the plan's remainder, valuations, policy, pacing, money moves, bounties,
- * lookouts). Returns null for tool names it doesn't own.
+ * (the plan's remainder, the operating policy and commissions, pacing,
+ * money moves, bounties, lookouts). Returns null for tool names it doesn't own.
  *
  * Shared with the autonomous review pass (mandate-review.ts): one
  * implementation, so a guard added here holds on both paths rather than

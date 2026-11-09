@@ -24,6 +24,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
+import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
@@ -145,6 +147,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const tools: Tool[] = [
     ...reportTools.definitions,
     ...getGraphReadToolDefinitions(),
+    ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     { name: changesDef.name, description: changesDef.description, input_schema: changesDef.input_schema },
     {
       name: "publish_update",
@@ -240,7 +244,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
         ` and tags ${JSON.stringify(scopeArgs.tags)}.\n\n`
       : "") +
     `### Your bounds\n\n` +
-    `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
+    `- ${runBudgetSentence({ canSpend: true }) || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     (room
       ? `- Your mandate has ${usd(room.headroomMicroUsd)} uncommitted in escrow` +
         (room.dayRoomMicroUsd !== null ? ` and ${usd(room.dayRoomMicroUsd)} left of today's rate` : "") +
@@ -291,6 +295,10 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
         if (report !== null) return report;
         const graphRead = await executeGraphReadTool(name, toolInput);
         if (graphRead !== null) return graphRead;
+        const spend = await executeSpendTool(name, toolInput);
+        if (spend !== null) return spend;
+        const sql = await executeSqlTool(name, toolInput);
+        if (sql !== null) return sql;
         if (name === changesDef.name) {
           const res = await runGraphChanges(toolInput);
           return JSON.stringify(res.ok ? res.payload : { error: res.message, code: res.code });

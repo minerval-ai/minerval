@@ -198,12 +198,24 @@ export async function createLookout(input: {
   }
   const territory = await resolveTerritory(input.territory);
   if (typeof territory === "string") return { ok: false, code: "TERRITORY", message: territory };
+  // An empty territory follows the whole graph. Only a mandate whose own
+  // scope is the whole graph (no scope node, no scope query) may watch it
+  // all; a scoped mandate's feed names what it follows.
   if (triggers.includes("graph") && territory.claimIds.length + territory.tagIds.length === 0) {
-    return {
-      ok: false,
-      code: "TERRITORY",
-      message: "A graph feed needs a territory: the nodes (each with everything beneath it) and tags it follows.",
-    };
+    const [scope] = await rawQuery<{ scoped: boolean }>(
+      `SELECT (COALESCE(mandate->>'scope_claim_id', '') <> '' OR COALESCE(mandate->>'scope_query', '') <> '') AS scoped
+         FROM grants WHERE id = $1`,
+      [input.grantId]
+    );
+    if (scope?.scoped !== false) {
+      return {
+        ok: false,
+        code: "TERRITORY",
+        message:
+          "A graph feed needs a territory: the nodes (each with everything beneath it) and tags it follows. " +
+          "Only a mandate whose scope is the whole graph may leave it empty and follow everything.",
+      };
+    }
   }
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookouts
@@ -950,7 +962,10 @@ export interface LookoutSummary {
   heartbeat_hours: number;
   triggers: LookoutTriggerKind[];
   model: string | null;
-  max_value: number;
+  /** The most it may commission alone for one item, in owls; the rest goes to the officers. */
+  commission_limit_owls: number;
+  /** The graph feed's territory; empty follows the whole graph. */
+  territory: { claim_ids: string[]; tag_ids: string[] };
   runs: number;
   flags: number;
   last_run_at: string | null;
@@ -1029,7 +1044,8 @@ export async function summarizeLookouts(grantId: string): Promise<LookoutSummary
       heartbeat_hours: l.heartbeat_hours,
       triggers: l.triggers ?? [],
       model: l.model,
-      max_value: l.max_value,
+      commission_limit_owls: Number(l.commission_limit_micro_usd ?? 0) / 1_000_000,
+      territory: { claim_ids: l.territory_claim_ids ?? [], tag_ids: l.territory_tag_ids ?? [] },
       runs: l.runs,
       flags: l.flags,
       last_run_at: l.last_run_at ? new Date(l.last_run_at).toISOString() : null,

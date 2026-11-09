@@ -841,7 +841,8 @@ export interface MandateLookoutView {
   heartbeat_hours: number;
   triggers: string[];
   model: string | null;
-  max_value: number;
+  commission_limit_owls: number;
+  territory: { claim_ids: string[]; tag_ids: string[] };
   runs: number;
   flags: number;
   last_run_at: string | null;

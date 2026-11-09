@@ -9,11 +9,10 @@
  * Nothing here moves money. A lookout's runs are self-funded from the
  * mandate's escrow through the ledger (fundGrantSelfActions), out of the
  * mandate's day like the rest of its work, with no count of runs (#689).
- * What a lookout raises is a candidate the mandate's allocator funds or
- * not. What the Grantmaker delegates with spawn_lookout is judgment (the
- * brief) under bounds it sets: the ceiling on the value anything the
- * lookout raises may carry (a reassessment or an ingest, #695), and the
- * cadence.
+ * What the Grantmaker delegates with spawn_lookout is judgment (the brief)
+ * under bounds it sets: the territory its graph feed follows, the most it
+ * may commission alone for one item (the rest goes to the mandate's
+ * program officers), and the cadence.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -137,7 +136,8 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
               "For the graph feed: the part of the graph it follows, as node ids " +
               "(each with everything beneath it) and tag slugs. The brief still " +
               "says what falls under the mission; draw the territory wider than " +
-              "the mission rather than narrower.",
+              "the mission rather than narrower. A mandate whose scope is the " +
+              "whole graph may leave it out to follow everything.",
           },
           commission_limit_owls: {
             type: "number",

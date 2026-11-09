@@ -5,9 +5,10 @@
  * question: has anything happened, in the scope its brief describes, that
  * warrants work on the graph? Its Grantmaker wrote the brief (scope in
  * words, where to look, what to look out for), chose its triggers (a
- * heartbeat, the retraction poller, a manual poke) and delegated a bounded
- * slice of the mandate's spending judgment: a ceiling on the valuation a
- * flag or an ingest may carry (#695). The ledger funds each run
+ * heartbeat, the retraction poller, the graph feed, a manual poke) and
+ * delegated a bounded slice of the mandate's spending: the most it may
+ * commission alone for one item, the rest raised to the mandate's program
+ * officers. The ledger funds each run
  * from the mandate's escrow (`lookout_run`, fundGrantSelfActions) and the
  * engine executor runs this agent with the affordances a watcher needs —
  *
@@ -20,16 +21,18 @@
  *    follows, read at whatever depth it judges right (read_item), triaged
  *    many at a time (triage_items), and its own feeds' wake rules
  *    (set_feed_rule); read_listing for an archive or index;
- *  - three ways to raise a candidate: flag_reassessment (a valued reassess
- *    row), propose_ingest (a valued ingest row), leave_note (for the next
- *    review);
+ *  - the graph feed: what changed in its territory since its last run, and
+ *    query_sql over the public views;
+ *  - three ways to act: flag_reassessment (a pass, commissioned within its
+ *    limit or raised to the officers), propose_ingest (the same for a
+ *    source), leave_note (for the next review);
  *  - submit_contribution: what it found, through the Contribution Reviewer
  *    like anyone's, the review paid from the mandate's escrow (§19).
  *
- * What it cannot do is the point: it writes no assessment, sets no
- * importance, moves no money. Everything it raises is a candidate the
- * mechanism prices and the mandate's allocator funds or not, and its flags
- * are recorded so its precision can be read (lookout-service.ts).
+ * What it cannot do is the point: it writes no assessment and sets no
+ * importance. It spends only within its limit; the rest is the officers'
+ * call. Its flags are recorded so its precision can be read
+ * (lookout-service.ts).
  */
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
