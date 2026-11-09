@@ -34,6 +34,16 @@ function definedTools(): Map<string, string> {
       if (/input_schema|inputSchema/.test(own)) found.set(m[1]!, relative(ROOT, file));
     }
   }
+  // Skill tools are declared in each skill's tools.json.
+  for (const dir of readdirSync(join(ROOT, "skills"))) {
+    const path = join(ROOT, "skills", dir, "tools.json");
+    try {
+      const tools = JSON.parse(readFileSync(path, "utf8")) as Array<{ name: string }>;
+      for (const t of tools) found.set(t.name, relative(ROOT, path));
+    } catch {
+      // A skill without tools.
+    }
+  }
   return found;
 }
 
@@ -44,7 +54,8 @@ function definedAgents(): Set<string> {
     // The agent argument may be a literal or a choice between literals
     // (program-officer.ts); every literal before the first comma counts.
     for (const m of readFileSync(file, "utf8").matchAll(/withAgent\(([^,]*),/g)) {
-      for (const lit of m[1]!.matchAll(/"([a-z_]+)"/g)) agents.add(lit[1]!);
+      // Literals compared against (role === "officer") are not agent names.
+      for (const lit of m[1]!.matchAll(/(?<!===?\s*)"([a-z_]+)"/g)) agents.add(lit[1]!);
     }
   }
   return agents;
