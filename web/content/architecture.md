@@ -46,10 +46,10 @@ metered per account.
 The work is done once, at ingestion, and reused everywhere a claim recurs: the
 same claim appears across thousands of documents but is decomposed and assessed
 a single time. Nor does every claim get the full treatment immediately. Each
-claim carries an importance score that anchors the expected-value estimates
-the allocation engine funds work by (docs/allocation.md), so the most
-consequential claims draw assessment first while minor ones remain
-searchable stubs until an allocation covers them.
+claim carries an importance score, the first thing those who decide what
+to pay for read (docs/allocation.md), so the most consequential claims draw
+assessment first while minor ones remain searchable stubs until someone
+commissions a pass on them.
 
 The stack is TypeScript end to end: a Fastify API, background workers driven by
 a job queue (AWS SQS in production, an in-memory runner locally), and
@@ -118,12 +118,11 @@ claim, how live the dispute is stated unfused from the consequence half, and
 `marginal_yield` on each assessment, the Steward's exit judgment of how much
 another, stronger pass would improve it. A quantity's estimate and a
 question's assessment carry the same field (a question also records its
-confidence), and the allocation SQL reads yield and recency from whichever
+confidence), and the ledger's reads take yield and recency from whichever
 table the node's kind keeps its judgment in (`node-judgment-sql.ts`, #755).
-Both are live inputs to the
-expected-value estimate the allocation engine funds work by
-(docs/allocation.md): value = importance × contested-factor × expected
-quality gain, with cost on the other side of the ratio.
+Both are what a mandate's officers and lookouts read when they decide what
+a fresh pass is worth paying for (docs/allocation.md); no formula combines
+them.
 
 Two of the claim's fields carry two different judgments about its kind.
 `claim_type` is the proposition-kind facet that the page eyebrow, the cards,
@@ -687,6 +686,18 @@ Steward its reasons (trigger `dependent_note`); one that writes to a node not
 joined to its own by an edge does so under `steward_note`. In every case the
 receiving Steward decides, since only the owner writes.
 
+Every such message is a row in the node's inbox (`node_messages`,
+services/inbox-service.ts), kept whole until a pass reads it; this replaced
+appending text to `claims.steward_context` (retired; the column is kept only
+for a historical migration's test). A pass reads every unread message,
+answers each (`answer_messages`: changed, no change, or disagree, with a
+reason; a reply to another node's Steward lands in that node's inbox as
+`message_reply`), and marks what it was shown read when it finishes. A
+message is a free note by default; a sender that judges the node should be
+looked at now pays for the pass from its own budget (`notify_steward`'s
+`budget_owls`), and the message is its brief. The claim page lists what
+waits.
+
 ---
 
 ## The Agent Pipeline
@@ -772,8 +783,9 @@ These act through tools over the life of a claim and the graph:
   owning Stewards to adopt. It runs as a funded `curate` ledger action
   (docs/allocation.md, "Maintenance and audit"): a Steward's escalation,
   the bounded reconcile-candidate scan, or an operator records a curation
-  request on an anchor claim, a mandate values and funds the row, and one
-  run reads every concern waiting on the anchor. Every structural
+  request on an anchor claim, the General mandate's officers (or any
+  mandate) commission the row, and one run reads every concern waiting on
+  the anchor. Every structural
   operation lands in an append-only reconciliation log with enough payload to
   reverse it, and the Curator never overrides a Steward's verdict. It also
   corrects a node created as the wrong kind (`change_node_kind`, reversible),
@@ -823,7 +835,7 @@ These act through tools over the life of a claim and the graph:
   a structural question to the Curator (`recommend_recuration`, a curation
   request), each requiring a finding. Curator merges and Matcher decisions
   have no read of their own yet (#703).
-  The allocation engine's decisions are judging too, so the Audit carries a
+  The ledger's decisions are judging too, so the Audit carries a
   read-only cross-cut of the action ledger and the mandate plan surface
   (`inspect_ledger`, services/ledger-inspection-service.ts): every row in
   scope in every status with its allocation history, and every plan item
@@ -832,19 +844,29 @@ These act through tools over the life of a claim and the graph:
   on the reporter's word.
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest
-  costs, and drafts or refuses a mandate; once the mandate is live it takes
-  autonomous review passes that value the open action ledger, grow the
-  plan, pace the spend, and move budget between peer mandates.
+  costs, and drafts or refuses a mandate; once the mandate is live it writes
+  the operating policy its program officers carry out and takes autonomous
+  review passes that read back what its money did, revise the policy, grow
+  the plan, pace the spend, and move budget between peer mandates.
+- **Program officer** works a mandate's inbox on the cheap tier
+  (llm/agents/program-officer.ts): petitions from the runs the mandate pays
+  for, what its lookouts raised, curations, audits, requests and
+  consistency flags put in front of it. It decides under the operating
+  policy, up to the limit the policy states with its reason, and escalates
+  the rest to the Grantmaker, which decides in the same sitting. Every
+  decision is logged with its reason (`mandate_decisions`). Like the
+  Grantmaker it serves the mandate; the agents whose runs it pays for are
+  never told which mandate it is.
 - **Lookout** is the cheapest administrator with the narrowest question: a
   standing watch a mandate's Grantmaker posts with a brief (scope in words,
   where to look, what warrants work), woken by a heartbeat or a trigger (the
-  daily Crossref retraction poll, a poke), that reads the graph, the
-  retraction record, and the open web and raises *candidates*: a claim to
-  reassess or a source to ingest, each valued on the mandate's behalf up
-  to a ceiling the Grantmaker delegated and ranked by its allocator; a
-  note for the next review pass. A Steward or the Grantmaker decides on what it
-  raises: it writes no assessment, sets no importance, and moves no
-  money, and every flag is
+  daily Crossref retraction poll, the graph feed of changes in its
+  territory, a poke), that reads the graph (SQL included), the retraction
+  record, and the open web and acts on what it finds: a claim to reassess
+  or a source to ingest, commissioned from the mandate within the limit the
+  Grantmaker delegated or raised to the mandate's program officers; a note
+  for the next review pass. It writes no assessment and sets no importance,
+  and every flag is
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
   (docs/allocation.md, "Lookouts").
@@ -857,14 +879,25 @@ These act through tools over the life of a claim and the graph:
   assessments elsewhere that never weighed it (§21). It may reason about
   anything that bears on whether assessments fit together, including which
   reading of the evidence is right; what it writes is a flag on the node
-  that looks wrong, anywhere in the graph: its Steward is queued with the
-  tension as context and decides, and the checker's estimate that a pass
-  would change something enters the formula's expected-gain term, so the
-  pass is priced and funded like any other. Structural defects it finds go
-  to the Curator as curation requests. Its sweeps are ledger actions the
-  General mandate funds (a standard and a strong variant, the funder buying
-  one by marginal return); it writes no verdict and no valuation
+  that looks wrong, anywhere in the graph: the tension goes to its Steward's
+  inbox and the Steward decides, and the pass it asks for goes to the
+  General mandate's officers with the checker's estimate that it would
+  change something; the checker may also commission the pass from its own
+  budget. Structural defects it finds go to the Curator as curation
+  requests. Its sweeps are ledger actions the General mandate funds (a
+  standard and a strong variant, the cheaper bought unless the strong read
+  is expected to return as much per owl); it writes no verdict
   (docs/allocation.md, "Consistency sweeps").
+
+The agents that run on a budget of their own (the Stewards, the Curator,
+the Consistency Checker, the Audit Agent, the Correspondent) carry
+`commission`, which pays for another agent's run from that budget, and
+`petition_mandate`, which asks the mandate paying for the run for more and
+gets the answer in the run (docs/allocation.md, "Petitions"). Lookouts and
+program officers spend the mandate's money directly, within their limits.
+These agents, the officers, lookouts and the Researcher also carry
+`query_sql`, one read-only SELECT over the `public_read` views
+(services/sql-service.ts).
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
@@ -1347,10 +1380,10 @@ one lookout whose brief warrants it. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a
-standard-model and a strong-model variant on the action ledger, and the
-upgrade is bought exactly when its marginal gain justifies its marginal cost
-(docs/allocation.md) — so the most capable model is spent where it buys the
-most; what goes unfunded is the tail. The exception is the Steward's six money
+standard-model and a strong-model variant on the action ledger, and whoever
+commissions a pass chooses the tier (docs/allocation.md), the strong one
+where the node is contested and important; what no one commissions is the
+tail. The exception is the Steward's six money
 triggers (`formalize`, `formalization_review`, `prize_claim`,
 `prize_claim_voided`, `prize_window_closed`, `attempt_completed`), which
 always run on the strong model whatever variant the ledger funded, because
@@ -1466,9 +1499,10 @@ Ingestion and the governance pipelines ride SQS queues in production and an
 in-memory runner locally, with identical handlers. Stewardship is the
 exception: it has no message queue at all. A claim's steward-state column
 marks it a CANDIDATE (idempotently — a claim re-triggered while already
-pending coalesces into one run), the action ledger holds its priced
-assess/reassess actions, and the executor runs whatever the allocations on
-that ledger cover (docs/allocation.md), claiming work with
+pending coalesces into one run), the action ledger holds its
+assess/reassess actions, and the executor runs whatever has been
+commissioned (or, for a mandate's own upkeep, covered) on that ledger
+(docs/allocation.md), claiming work with
 `FOR UPDATE SKIP LOCKED` so concurrent workers never collide. Prize checks
 and solver attempts are DB-backed jobs with workers of their own, never SQS
 messages: a check can run fifteen minutes and an attempt six hours, far past
@@ -1569,7 +1603,17 @@ formal statements and every check), `proof_attempts` (the solver's runs),
 `bounties` (owls held against the escrow of the mandate that posted each
 one; there is no prize fund), `prize_claims`, `prize_payouts`,
 `attachments`, and `platform_flags` (operator switches such as
-`solver_paused`).
+`solver_paused`). The money side is the action ledger (`actions`,
+`action_allocations`, where a commission is an allocation with
+`commissioned_by`, a brief, a reason and the `parent_action_id` of the run
+that paid for it) and, per mandate: `mandate_inbox` (what waits for its
+program officers), `petitions` (agents asking it for more, with the chain
+of runs behind each), `mandate_decisions` (every decision its officers,
+Grantmaker and lookouts made, with the reason), and
+`mandate_policy_versions` (every version of its operating policy and its
+terms). `node_messages` is each node's inbox. The `public_read` schema holds
+the views `query_sql` reads, behind their own login roles, and `sql_usage`
+holds each caller's daily database time and the one-query-at-a-time lock.
 ### Attachments
 
 Uploaded files (a prize claim's Lean source, documents, and data; a
@@ -1665,8 +1709,9 @@ for searching and reading claims (`search_claims`, `get_claim`,
 `get_decomposition`), for the pipeline's judgments (`match_claim`,
 `extract_claims`, `assess_text`), and for contributing
 (`submit_contribution`, `get_contribution_status`), for the machine-readable
-terms of a prize (`get_bounty_terms`), plus claim resources and
-fact-checking prompts. Clients authenticate with an API key or via the OAuth
+terms of a prize (`get_bounty_terms`), for read-only SQL over the public
+views (`query_sql`), plus claim resources and fact-checking prompts. Every
+route an account can call is also a tool (docs/mcp.md). Clients authenticate with an API key or via the OAuth
 2.1 authorization flow — the API acts as an authorization server for the
 `/mcp` resource, handing sign-in and consent to the web app — which is what
 lets hosted clients such as Claude.ai connect. Every call is attributed to an

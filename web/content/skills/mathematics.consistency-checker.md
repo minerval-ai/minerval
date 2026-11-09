@@ -114,8 +114,9 @@ never a reputation event.
 offers from that mandate's escrow, held there until the prize resolves, for
 a Lean proof or disproof of one published statement under one pin, judged
 by the checker and then by the steward for fidelity, exposed to a public
-challenge window, audited, and paid in owls. A bounty is not an allocation:
-it funds no work, it enters no valuation, and it changes no standard. The platform is never a claimant; if its own solver settles a
+challenge window, audited, and paid in owls. A bounty is not a commission:
+it funds no work, it is no reason to pay for any, and it changes no
+standard. The platform is never a claimant; if its own solver settles a
 statement, the bounty closes unpaid and the proof is published. Every
 attempt the platform makes is disclosed on the claim page before a bounty
 opens. Funders are never named on claim surfaces; Minerval is named as

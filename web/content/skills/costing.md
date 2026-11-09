@@ -9,6 +9,24 @@ unspent goes back to them. So a budget is an honest estimate of what the
 work needs, with room for what cannot be foreseen. It is not a bid, a
 target, or a signal of how much the work matters.
 
+**Budgeting a commission.** Every piece of work is commissioned whole:
+whoever pays sets the run's budget and pays it in full, the run starts at
+once, and what it does not spend comes back. So when you commission a run
+(a Steward pass with `commission`, a request with fund_request, anything an
+officer decides to pay for), set the budget at the high end of what
+cost_sheet says such work costs, not the middle: a run that has what it
+needs finishes the work, and the rest returns. Go higher when you expect
+this run to be larger than most, and say why in the brief. A budget is
+held against its payer's daily rate while the run is working, so a padded
+one delays other work by a few minutes; a short one stops work half done.
+
+**When your own run needs more.** If doing the work properly needs more
+than your budget holds, ask with petition_mandate: say what you would do
+with the money, why your budget cannot cover it, and what you will
+conclude if the answer is no. The answer comes in the run. A petition is
+not a failure of your estimate; a pattern of petitions for one kind of
+work tells the mandate its budgets for that kind are set too low.
+
 **Why it matters to get it right.** A budget set too low funds a run that
 stops short of the work: it reports partly met, and the rest has to be
 asked for and funded again. A budget set too high makes the request look
@@ -65,12 +83,13 @@ work:
   unassessed; assessing them is more passes.
 - **formalize and attempt_proof**: their own lines. An attempt at the max
   variant costs several times the standard one.
-- **curation**: one Curator run for each curate row you fund.
+- **curation**: one Curator run for each curate row you commission.
 - **requests**: a request's budget is the price of the work. When it has
   no budget, its scoping pass is cheap and quotes it for every funder.
   You weigh what meeting the request would change in your territory
-  against that price. A request that came back partly met, with a stated
-  remainder, is a fresh decision at the new price.
+  against that price, and commission it whole or not at all. A request
+  that came back partly met, with a stated remainder, is a fresh decision
+  at the new price.
 - **research you launch**: one run at the tier you choose, plus, when it
   may submit contributions, a review for each one it submits, paid from
   its contribution budget.
@@ -79,6 +98,12 @@ work:
 - **contributions you submit**: a review each.
 - **your own passes**: the planning pass, each review pass on your
   cadence, and the granting conversation.
+- **your officers**: each sitting on the mandate's inbox is a program
+  officer run, and a run of yours on what it escalates; both are
+  commissioned from the mandate and give back what they do not spend.
+  Petitions and lookouts make sittings, so a busy mandate has more.
+- **petitions**: what your officers grant to runs that turned out to need
+  more. Keep room for it in proportion to how hard the work is to foresee.
 
 The daily rate decides how fast the budget is spent, not how much.
 
