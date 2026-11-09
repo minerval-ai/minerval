@@ -533,6 +533,14 @@ export const arguments_ = pgTable(
     // the basis (or their other arguments) when it was retired.
     retiredAt: timestamp("retired_at", { withTimezone: true }),
     retiredReason: text("retired_reason"),
+    // Set when the Curator merges this argument into another on the same
+    // claim (§5, #541): the two were one inference to one conclusion. The
+    // absorbed row is kept as an alias, retired with the reason, its
+    // evaluations as history; its instances and premise groupings moved to
+    // the survivor. Cleared by the merge's undo.
+    mergedInto: uuid("merged_into").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
 );

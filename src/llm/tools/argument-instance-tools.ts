@@ -238,6 +238,9 @@ export async function executeArgumentInstanceTool(
   }
   const foreign = notYourNode(argument.claimId, `argument ${argumentId}`);
   if (foreign) return foreign;
+  if (argument.mergedInto) {
+    return refuse(`Argument ${argumentId} was merged into ${argument.mergedInto}; record on that argument.`);
+  }
 
   const quantity = argument.stance === "neutral";
   const rawStance = input.stance === undefined ? undefined : String(input.stance).toLowerCase();
@@ -363,6 +366,9 @@ async function placeArgumentPassage(input: Record<string, unknown>): Promise<str
 
   const argument = await getArgument(argumentId);
   if (!argument) return refuse(`Argument not found: ${argumentId}`);
+  if (argument.mergedInto) {
+    return refuse(`Argument ${argumentId} was merged into ${argument.mergedInto}; place the passage on that argument.`);
+  }
   if (argument.claimId !== passage.claim_id) {
     return refuse(`Argument ${argumentId} is on node ${argument.claimId}, not on ${passage.claim_id}, the node the passage is about.`);
   }

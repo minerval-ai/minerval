@@ -31,7 +31,7 @@ export async function argumentCandidates(claimId: string): Promise<ArgumentCandi
   }>(
     `SELECT id, name, stance, shows, content, retired_at
        FROM arguments
-      WHERE claim_id = $1
+      WHERE claim_id = $1 AND merged_into IS NULL
       ORDER BY (retired_at IS NOT NULL), created_at`,
     [claimId]
   );
