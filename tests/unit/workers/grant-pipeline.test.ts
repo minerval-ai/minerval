@@ -240,7 +240,11 @@ describe("processNextGrantTask", () => {
     });
     // The pass spends from the mandate's headroom: budget less committed.
     expect(state.usageContexts[1]).toEqual({
-      passBudget: { microUsd: 40_000_000 - state.spent, source: "the funded mandate's uncommitted budget" },
+      passBudget: {
+        microUsd: 40_000_000 - state.spent,
+        source: "a mandate's uncommitted budget",
+        funding: { grantId: expect.any(String) },
+      },
     });
   });
 

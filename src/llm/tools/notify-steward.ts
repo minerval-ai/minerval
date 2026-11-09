@@ -20,6 +20,10 @@ import {
   enqueueSteward,
   type StewardMessage,
 } from "../../services/queue-service.js";
+import type { MessageSender } from "../../services/inbox-service.js";
+import { commissionNodePass } from "../../services/commission-service.js";
+import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
+import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
 
 type Tool = Anthropic.Tool;
 
@@ -40,6 +44,13 @@ export function getNotifyStewardToolDefinition(
       "The ids of the nodes (claims, quantities or questions) whose Stewards " +
       "to notify. Each receives the same message.",
   };
+  const budgetOwls = {
+    type: "number",
+    description:
+      "Optional: pay for each receiving node's pass from your budget, at this " +
+      "budget in owls, so it runs now. Leave it out to send a note. cost_sheet " +
+      "gives what a pass on such a node costs; use the high end.",
+  };
   if (role === "curator") {
     return {
       name: "notify_steward",
@@ -47,8 +58,10 @@ export function getNotifyStewardToolDefinition(
         "Send one or more nodes' Stewards a message: what you did and what you " +
         "ask of them (e.g. 'I merged X into you, reconcile the flipped arguments " +
         "and re-assess', or 'you were split from Y, re-derive your " +
-        "decomposition'). Each Steward is enqueued and decides what to do. " +
-        "Always do this after a merge or split.",
+        "decomposition'). Always do this after a merge or split, and pay for " +
+        "the pass (budget_owls) when the node's page no longer describes what " +
+        "the node now is. A message alone is a note, read on the node's next " +
+        "funded pass.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -57,6 +70,7 @@ export function getNotifyStewardToolDefinition(
             type: "string",
             description: "What you did and what you ask the Steward to do",
           },
+          budget_owls: budgetOwls,
         },
         required: ["target_ids", "message"],
       },
@@ -65,12 +79,20 @@ export function getNotifyStewardToolDefinition(
   return {
     name: "notify_steward",
     description:
-      "Send the Steward of one or more other nodes (claims, quantities or " +
-      "questions) your reasons, for instance what changed on your node and why " +
-      "it may matter to theirs, or why you think their assessment is mistaken. " +
-      "Each Steward is enqueued and decides for itself whether anything should " +
-      "change; you cannot change another node. The Steward is told how its " +
-      "node and yours are joined.",
+      "Send the Stewards of one or more other nodes (claims, quantities or " +
+      "questions) your reasons: what changed on your node and why it may " +
+      "matter to theirs, or why you think their assessment is mistaken. Each " +
+      "message is kept whole in the receiving node's inbox until its Steward " +
+      "reads it, and is shown on that node's page and to the mandates that " +
+      "fund work there. The Steward is told how its node and yours are " +
+      "joined, and answers you. You cannot change another node: the " +
+      "receiving Steward decides whether anything should change.\n\n" +
+      "A message alone is a note: free to send, and read on the node's next " +
+      "pass, whenever someone pays for it. When the other node should be " +
+      "looked at now, because its page is wrong in a way readers rely on, " +
+      "pay for its pass with budget_owls: your message becomes that pass's " +
+      "brief. If your budget can't cover it, petition_mandate asks the " +
+      "mandate paying for your run for the money.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -82,8 +104,11 @@ export function getNotifyStewardToolDefinition(
         message: {
           type: "string",
           description:
-            "Your reasons, written so the receiving Steward can weigh them",
+            "Your reasons, written so the receiving Steward can weigh them " +
+            "without your transcript: what you found, where, and what you " +
+            "think it means for their node.",
         },
+        budget_owls: budgetOwls,
       },
       required: ["claim_id", "target_ids", "message"],
     },
@@ -96,6 +121,10 @@ interface Notified {
   id: string;
   kind: string;
   trigger: Trigger;
+  /** Set when this message came with the node's pass paid for. */
+  paid_owls?: number;
+  /** Set when the node already had a pass paid for: the message joined it, at no cost. */
+  joined_paid_pass?: boolean;
 }
 
 interface Refused {
@@ -114,6 +143,9 @@ export async function executeNotifySteward(
   input: Record<string, unknown>
 ): Promise<string> {
   const message = String(input.message ?? "").trim();
+  const budgetOwls = Number(input.budget_owls ?? 0);
+  const budgetMicro = Number.isFinite(budgetOwls) && budgetOwls > 0 ? owlsToMicroUsd(budgetOwls) : 0;
+  const payer = budgetMicro > 0 ? runPayer() : null;
   const requested = readTargetIds(input.target_ids);
   if (requested.length === 0) {
     return JSON.stringify({
@@ -194,27 +226,80 @@ export async function executeNotifySteward(
           ? "dependent_note"
           : "steward_note";
     }
+    const from: MessageSender =
+      sender.role === "curator" ? { kind: "curator" } : { kind: "steward", nodeId: sender.claimId };
+
+    // A paid message: commission the target's pass from this run's budget,
+    // with the message as its brief (commission-service.ts). What this run
+    // can't cover goes as a note.
+    if (budgetMicro > 0 && payer) {
+      const left = runBudgetLeft();
+      if (left === null || left >= budgetMicro) {
+        const res = await commissionNodePass({
+          payer,
+          claimId: id,
+          budgetMicroUsd: budgetMicro,
+          brief: message,
+          commissionedBy: sender.role,
+          message: { trigger, sender: from },
+        });
+        if (res.ok && res.status === "commissioned") {
+          debitRunBudget(budgetMicro);
+          notified.push({ id, kind: kindOf.get(id)!, trigger, paid_owls: microUsdToOwls(budgetMicro) });
+          continue;
+        }
+        if (res.ok && res.status === "already_commissioned") {
+          notified.push({ id, kind: kindOf.get(id)!, trigger, joined_paid_pass: true });
+          continue;
+        }
+      }
+    }
+
     // The message goes whole into the target's inbox, which tells its
     // Steward who wrote and how the two nodes are joined (inbox-service.ts).
-    await enqueueSteward({
-      claimId: id,
-      trigger,
-      context: message,
-      sender:
-        sender.role === "curator"
-          ? { kind: "curator" }
-          : { kind: "steward", nodeId: sender.claimId },
-    });
+    await enqueueSteward({ claimId: id, trigger, context: message, sender: from });
     notified.push({ id, kind: kindOf.get(id)!, trigger });
   }
 
+  const paid = notified.filter((n) => n.paid_owls !== undefined);
+  const joined = notified.filter((n) => n.joined_paid_pass);
+  const notes = notified.length - paid.length - joined.length;
+  const parts: string[] = [];
+  if (budgetMicro <= 0) {
+    if (notified.length > 0) {
+      parts.push(
+        `Sent to the Steward of ${notified.length} node(s) as a note. Each waits ` +
+          `in that node's inbox, shown on its page and to its funders, until a pass reads it.`
+      );
+    }
+  } else {
+    if (paid.length > 0) {
+      parts.push(
+        `Paid for the pass on ${paid.map((n) => n.id).join(", ")} at ` +
+          `${microUsdToOwls(budgetMicro)} owls each from your budget; ` +
+          `${paid.length === 1 ? "it runs" : "they run"} on ${paid.length === 1 ? "its" : "their"} own.` +
+          (runBudgetLeft() !== null ? ` You have ${microUsdToOwls(runBudgetLeft()!)} owls left.` : "")
+      );
+    }
+    if (joined.length > 0) {
+      parts.push(
+        `${joined.map((n) => n.id).join(", ")} already had a pass paid for; your ` +
+          `message joined it, at no cost.`
+      );
+    }
+    if (notes > 0) {
+      parts.push(
+        payer
+          ? `${notes} went as notes: your budget did not cover them. Petition your ` +
+              `mandate (petition_mandate) if they should run now.`
+          : `${notes} went as notes: this run isn't paid in a way that can pay for ` +
+              `other work.`
+      );
+    }
+  }
   return JSON.stringify({
     success: notified.length > 0,
-    message:
-      notified.length > 0
-        ? `Notified the Steward of ${notified.length} node(s); each decides ` +
-          `what to do.`
-        : "No Steward was notified.",
+    message: parts.length > 0 ? parts.join(" ") : "No Steward was notified.",
     notified,
     ...(refused.length > 0 ? { refused } : {}),
   });

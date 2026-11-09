@@ -2001,9 +2001,23 @@ export const actionAllocations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // A COMMISSION (commission-service.ts) is an allocation that pays for a
+    // run whole: its amount is the run's budget, chosen by whoever paid, and
+    // the row runs as soon as it has one. These say who commissioned it (an
+    // agent role, or 'person'), the brief the run's agent reads, the reason
+    // for the public record, and the run that paid when an agent spent from
+    // its own budget (the chain a petition is routed along). NULL on the
+    // allocator's increments.
+    commissionedBy: text("commissioned_by"),
+    brief: text("brief"),
+    reason: text("reason"),
+    parentActionId: uuid("parent_action_id").references((): AnyPgColumn => actions.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     index("idx_action_allocations_group").on(table.exclusionGroup),
+    index("idx_action_allocations_parent").on(table.parentActionId),
     index("idx_action_allocations_claim").on(table.claimId),
     index("idx_action_allocations_grant").on(table.grantId),
     index("idx_action_allocations_user").on(table.userId),

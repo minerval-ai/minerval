@@ -45,6 +45,7 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { getGeneralMandate } from "../services/allocation-policy-service.js";
 import { runGeneralAllocator } from "../services/allocation-service.js";
 import {
+  actionBudgetMicroUsd,
   claimAction,
   completeAction,
   largestActionFunder,
@@ -52,10 +53,10 @@ import {
   releaseAction,
   type RunnableAction,
 } from "../services/action-service.js";
-import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
-type PassBudgetInput = { microUsd: number; source: string } | null;
+type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
 import {
   MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
@@ -276,7 +277,11 @@ async function runCoveredAction(
   // stamps the funding disclosure) or a person.
   const usageCtx = await largestActionFunder(action.id).catch(() => ({}));
   // The pass spends what the allocations covering its action hold.
-  const passBudget = { microUsd: Number(action.coverage_micro_usd), source: "the allocations funding this pass" };
+  const passBudget = {
+    microUsd: actionBudgetMicroUsd(action),
+    source: action.commissioned ? "a commission" : "the allocations funding this pass",
+    funding: { actionId: action.id },
+  };
   return runStewardOnClaim(rows[0]!, { model, usageCtx, action, passBudget });
 }
 

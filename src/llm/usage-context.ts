@@ -76,10 +76,27 @@ export interface UsageContext {
 }
 
 export interface PassBudget {
+  /**
+   * The ceiling. It moves during a run: down when the run pays for other
+   * work from it (commission), up when a petition is granted.
+   */
   microUsd: number;
-  /** Where the money comes from, in words the agent is shown. */
+  /** Where the money comes from, in words the agent is shown. Never names a mandate. */
   source: string;
   meter: { billedMicroUsd: number };
+  /** Who is paying, for commission and petition_mandate; absent when no one can be asked. */
+  funding?: RunFunding;
+}
+
+/**
+ * Who pays for a run, as the lane that funds it knows it: the ledger row it
+ * is running (whose allocations hold its money, and along whose chain a
+ * petition is routed), and the mandate or person behind it.
+ */
+export interface RunFunding {
+  actionId?: string | null;
+  grantId?: string | null;
+  userId?: string | null;
 }
 
 /** What the enclosing pass has left to spend, or null when no lane set a budget. */
@@ -207,12 +224,17 @@ export async function withCostMeter<T>(
  * budget meters the pass and sets none.
  */
 export async function withPassBudget<T>(
-  budget: { microUsd: number; source: string } | null,
+  budget: { microUsd: number; source: string; funding?: RunFunding } | null,
   fn: () => Promise<T>
 ): Promise<{ value: T; billedMicroUsd: number }> {
   const meter = { billedMicroUsd: 0 };
   const value = await runWithUsageContext(
-    { meter, passBudget: budget ? { microUsd: Math.max(0, Math.round(budget.microUsd)), source: budget.source, meter } : undefined },
+    {
+      meter,
+      passBudget: budget
+        ? { microUsd: Math.max(0, Math.round(budget.microUsd)), source: budget.source, meter, funding: budget.funding }
+        : undefined,
+    },
     fn
   );
   return { value, billedMicroUsd: meter.billedMicroUsd };

@@ -355,11 +355,12 @@ export async function processNextGrantTask(
   const trigger = virgin
     ? "structure_and_assess"
     : (target.steward_trigger ?? "user_order");
-  // The funder's chosen name stays out of the run context on purpose: the
-  // Steward must never see funder wording that could color its work, and
-  // nothing funder-authored may reach reader surfaces (§12).
+  // Which mandate pays, its name and its kind stay out of the run context on
+  // purpose: the Steward serves the graph, not the funder, and must never
+  // see anything that could color its work; nothing funder-authored may
+  // reach reader surfaces (§12).
   const context =
-    `This run is scheduled under a funded mandate (policy: ${grant.policy}). ` +
+    `This run is paid for. ` +
     `Steward this claim now under the ordinary standards — funding buys ` +
     `attention, never conclusions.`;
   const model =
@@ -372,7 +373,11 @@ export async function processNextGrantTask(
         // The pass spends from the mandate's headroom (budget less committed).
         () =>
           withPassBudget(
-            { microUsd: Number(grant.budget_micro_usd) - committed, source: "the funded mandate's uncommitted budget" },
+            {
+              microUsd: Number(grant.budget_micro_usd) - committed,
+              source: "a mandate's uncommitted budget",
+              funding: { grantId: grant.id },
+            },
             () => runClaimSteward({ trigger, claimId: target.id, context, model })
           )
       )

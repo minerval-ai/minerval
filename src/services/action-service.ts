@@ -32,6 +32,7 @@ import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
 import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
+export { allocationDayUseSql } from "./day-use.js";
 
 export type ActionKind =
   | "assess"
@@ -141,6 +142,19 @@ const FORMALIZE_RETRY_HOURS = 24;
 
 /** A live attempt stamps updated_at every turn; only a dead worker trips this. */
 const ATTEMPT_REOPEN_HOURS = 3;
+
+/**
+ * Whether a live commission pays for actions row `a` (SQL fragment). A
+ * commissioned row runs as soon as it has one, at its payer's budget; the
+ * row's own cost estimate only gates the allocator's increments.
+ */
+export const COMMISSIONED_SQL = `
+  EXISTS (SELECT 1 FROM action_allocations al
+           WHERE al.exclusion_group = a.exclusion_group
+             AND al.released_at IS NULL
+             AND al.commissioned_by IS NOT NULL
+             AND al.spent_micro_usd < al.amount_micro_usd
+             AND (al.action_id IS NULL OR al.action_id = a.id))`;
 
 /** Coverage subquery for one actions row `a` (SQL fragment). */
 export const COVERAGE_SQL = `
@@ -1556,6 +1570,8 @@ export interface RunnableAction {
   target_ref: string | null;
   cost_est_micro_usd: number;
   coverage_micro_usd: number;
+  /** True when a commission pays for it: it runs at exactly the budget its payer chose. */
+  commissioned?: boolean;
   updated_at: Date;
 }
 
@@ -1567,7 +1583,11 @@ export interface RunnableAction {
 export function actionBudgetMicroUsd(action: {
   cost_est_micro_usd: number | string;
   coverage_micro_usd: number | string;
+  commissioned?: boolean;
 }): number {
+  // A commission's budget is its payer's choice, made from the costing
+  // skill's figures; it is never raised to the row's estimate.
+  if (action.commissioned) return Number(action.coverage_micro_usd) || 0;
   return Math.max(Number(action.cost_est_micro_usd) || 0, Number(action.coverage_micro_usd) || 0);
 }
 
@@ -1583,10 +1603,12 @@ export async function nextRunnableAction(
   const rows = await rawQuery<RunnableAction>(
     `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
             a.target_ref, a.cost_est_micro_usd, a.updated_at,
-            ${COVERAGE_SQL} AS coverage_micro_usd
+            ${COVERAGE_SQL} AS coverage_micro_usd,
+            ${COMMISSIONED_SQL} AS commissioned
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
-        AND ${COVERAGE_SQL} >= a.cost_est_micro_usd
+        AND ${COVERAGE_SQL} > 0
+        AND (${COVERAGE_SQL} >= a.cost_est_micro_usd OR ${COMMISSIONED_SQL})
       ORDER BY coverage_micro_usd DESC, a.updated_at ASC
       LIMIT 20`,
     [kinds]

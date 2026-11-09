@@ -34,6 +34,7 @@
  * estimate; money is cost-side only, always.
  */
 import { rawQuery, withTransaction } from "../db/client.js";
+import { allocationDayUseSql } from "./day-use.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
@@ -489,7 +490,7 @@ export async function runMandateAllocator(
 
   // The day's remaining room under the mandate's rate.
   const [today] = await tx.query<{ placed: number }>(
-    `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
+    `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS placed
        FROM action_allocations
       WHERE grant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [grantId]
@@ -529,7 +530,7 @@ export async function runMandateAllocator(
   let maintenanceRoom = Number.POSITIVE_INFINITY;
   if (dailyRate > 0) {
     const [maint] = await tx.query<{ placed: number }>(
-      `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
+      `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS placed
          FROM action_allocations
         WHERE grant_id = $1 AND exclusion_group LIKE 'curate:%'
           AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
@@ -861,7 +862,7 @@ export async function fundGrantSelfActions(): Promise<number> {
             -- unpaced, matching the substantive allocator's reading.
             (CASE WHEN g.daily_budget_micro_usd > 0
                   THEN GREATEST(0, g.daily_budget_micro_usd
-                    - COALESCE((SELECT SUM(al.amount_micro_usd)
+                    - COALESCE((SELECT SUM(${allocationDayUseSql("al")})
                                   FROM action_allocations al
                                  WHERE al.grant_id = g.id
                                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0))

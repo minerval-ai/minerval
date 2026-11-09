@@ -59,6 +59,7 @@ import {
   type PlanItem,
 } from "../../services/grant-service.js";
 import { materializePlanItems } from "../../services/action-service.js";
+import { allocationDayUseSql } from "../../services/day-use.js";
 import { countPlanItems, describePlanItems } from "../../services/plan-state.js";
 import { getMandatePipeline } from "../../services/mandate-service.js";
 import {
@@ -1052,7 +1053,7 @@ export async function valuationRoomCheck(
   if (actionIds.length === 0) return null;
   const [g] = await rawQuery<{ rate: number; placed: number }>(
     `SELECT g.daily_budget_micro_usd AS rate,
-            COALESCE((SELECT SUM(al.amount_micro_usd) FROM action_allocations al
+            COALESCE((SELECT SUM(${allocationDayUseSql("al")}) FROM action_allocations al
                        WHERE al.grant_id = g.id
                          AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),
                      0)::bigint AS placed

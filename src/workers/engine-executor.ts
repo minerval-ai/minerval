@@ -54,7 +54,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
@@ -251,8 +251,8 @@ async function funderContext(
 }
 
 /** The pass budget for running `action`: its allocations, or its estimate when more. */
-function actionBudget(action: RunnableAction, source: string): { microUsd: number; source: string } {
-  return { microUsd: actionBudgetMicroUsd(action), source };
+function actionBudget(action: RunnableAction, source: string): { microUsd: number; source: string; funding: RunFunding } {
+  return { microUsd: actionBudgetMicroUsd(action), source, funding: { actionId: action.id } };
 }
 
 /**
@@ -267,14 +267,15 @@ function maintenanceBudget(
   action: RunnableAction,
   kind: "curate" | "audit",
   what: string
-): { microUsd: number; source: string } {
+): { microUsd: number; source: string; funding: RunFunding } {
   const config = loadConfig();
   const owls = kind === "curate" ? config.curateRunBudgetOwls : config.auditRunBudgetOwls;
   const floor = Math.round((owls ?? 5) * (config.owlCostMicroUsd ?? 1_000_000));
   const covered = actionBudgetMicroUsd(action);
+  const funding = { actionId: action.id };
   return covered >= floor
-    ? { microUsd: covered, source: `the allocations funding ${what}` }
-    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers` };
+    ? { microUsd: covered, source: `the allocations funding ${what}`, funding }
+    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers`, funding };
 }
 
 /**
@@ -564,7 +565,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     const metered = await runWithUsageContext(
       { userId: funder.userId, jobId: funder.jobId, ...(claim ? { claimId: claim.id } : {}) },
       () =>
-        withPassBudget({ microUsd: ceiling, source: "the allocations funding this request" }, () =>
+        withPassBudget({ microUsd: ceiling, source: "the allocations funding this request", funding: { actionId: action.id } }, () =>
           runResearcher({
             run: {
               id: run.id,
@@ -1133,7 +1134,7 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
       () =>
         withPassBudget(
-          actionBudget(action, "the General mandate's allocation for this sweep, priced by the partition's size"),
+          actionBudget(action, "a mandate's allocation for this sweep, priced by the partition's size"),
           () =>
             // The strong variant reads with the stronger model (#756), and
             // the sweep is told how its budget was priced.

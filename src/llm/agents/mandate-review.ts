@@ -73,6 +73,7 @@ import {
 } from "../../services/allocation-policy-service.js";
 import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
 import { grantmakerShareLeftMicroUsd, materializePlanItems } from "../../services/action-service.js";
+import { allocationDayUseSql } from "../../services/day-use.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
@@ -188,7 +189,7 @@ async function runMandateReviewImpl(input: {
   // Today's draw on the daily rate, so a decision to chain another pass is
   // made knowing what the day has left for everything else.
   const [todayRow] = await rawQuery<{ allocated: string | number; passes: number }>(
-    `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS allocated,
+    `SELECT COALESCE(SUM(${allocationDayUseSql("al")}), 0)::bigint AS allocated,
             COUNT(*) FILTER (WHERE a.kind = 'mandate_review')::int AS passes
        FROM action_allocations al
        LEFT JOIN actions a ON a.id = al.action_id

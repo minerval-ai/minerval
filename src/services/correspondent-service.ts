@@ -23,6 +23,7 @@
  * reads and the change stream), so anyone can build one outside Minerval
  * from MCP alone; such a one is not registered here and needs nothing here.
  */
+import { allocationDayUseSql } from "./day-use.js";
 import { rawQuery } from "../db/client.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
@@ -824,7 +825,7 @@ export async function mandateRoom(grantId: string): Promise<{ headroomMicroUsd: 
   if (!g) return null;
   const committed = await grantCommittedMicroUsd({ id: grantId, budgetJobId: g.budget_job_id });
   const [today] = await rawQuery<{ placed: number }>(
-    `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed FROM action_allocations
+    `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS placed FROM action_allocations
       WHERE grant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [grantId]
   );
