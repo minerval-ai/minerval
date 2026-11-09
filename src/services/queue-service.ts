@@ -4,6 +4,7 @@ import { rawQuery } from "../db/client.js";
 import { refreshQueuePriority } from "./priority-service.js";
 import { ensureAssessActions, ensureAuditAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
+import { postMessage, type MessageSender } from "./inbox-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -100,6 +101,13 @@ export interface StewardMessage {
     | "request_returned"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"
+    // A paused session on this node got back what it asked for (research it
+    // commissioned, an answer from another node's Steward): this pass
+    // resumes that session, with its transcript (session-service.ts).
+    | "session_resume"
+    // Research commissioned from this node finished, and no session of the
+    // node waits for it: the report is a message for the next pass.
+    | "research_report"
     // The Curator merged/split this claim, or suggests a structural edge — review
     // and reconcile (re-assess; adopt the suggested edge if apt).
     | "curator_change"
@@ -113,7 +121,12 @@ export interface StewardMessage {
     // One-shot backfill (issue #173): named arguments predating
     // evaluate_argument lack an evaluation — evaluate each.
     | "argument_evaluation_backfill";
+  /** The message itself, kept whole in the node's inbox. */
   context: string;
+  /** Who is writing; defaults to what the trigger implies (inbox-service.ts). */
+  sender?: MessageSender;
+  /** True when the pass this message asks for was commissioned with it. */
+  paid?: boolean;
 }
 
 /**
@@ -241,30 +254,20 @@ export async function enqueueArbitration(
   });
 }
 
-// Backstop against a propagation storm growing a pending slot without bound:
-// keep the NEWEST chunks up to this many characters (roughly 4k tokens). The
-// oldest context is what gets dropped, marked so the Steward knows it is
-// working from a partial batch.
-export const STEWARD_CONTEXT_MAX_CHARS = 16000;
-
 /**
  * "Enqueue" a Steward run by marking the claim pending in the DB — the claim row
- * IS the work queue. Re-triggers still coalesce into the single pending slot
- * (taming the propagation storm where one assessment notifies many dependents),
- * but losslessly (#182): while the claim is already pending, the new context is
- * APPENDED rather than clobbering the earlier message, so everything that
- * arrived before the drain reaches the Steward as one batched run. Each chunk
- * is labeled `[trigger]` since the row holds a single trigger column; for that
- * column, `structure_and_assess` outranks any re-trigger (the first pass
- * subsumes a re-assessment), otherwise the pending value is kept. Once the slot
- * is consumed (running/done/error), the next message starts a fresh context.
+ * IS the work queue — and keeping the message in the node's inbox
+ * (inbox-service.ts), whole. Re-triggers coalesce into the single pending slot
+ * (taming the propagation storm where one assessment notifies many dependents):
+ * the next pass reads every unread message, however many arrived. For the
+ * single trigger column, `structure_and_assess` outranks any re-trigger (the
+ * first pass subsumes a re-assessment), otherwise the pending value is kept.
  * A message for a claim that is mid-run does NOT flip it to 'pending' (#482):
  * every lane treats 'pending' as free to claim, so that handed the claim to a
  * second Steward while the first was still writing. The row stays 'running'
- * with `steward_requeued` set, later messages coalesce into that slot as they
- * would into a pending one, and the run's release (steward-lease.ts) turns it
- * into 'pending' for the next pass.
- * The whole update is one statement, so concurrent enqueues cannot interleave.
+ * with `steward_requeued` set, and the run's release (steward-lease.ts) turns
+ * it into 'pending' for the next pass, which reads what arrived meanwhile.
+ * The claim update is one statement, so concurrent enqueues cannot interleave.
  * Ordering is by the persisted `claims.importance` column, so the message
  * carries no importance of its own. Works identically in dev and prod — there
  * is no SQS path for the Steward.
@@ -272,7 +275,6 @@ export const STEWARD_CONTEXT_MAX_CHARS = 16000;
 export async function enqueueSteward(
   message: StewardMessage
 ): Promise<void> {
-  const chunk = `[${message.trigger}] ${message.context}`.trim();
   // The FROM subquery locks the row and carries its PRE-update state out
   // through RETURNING (SET expressions always read old values, so the CASE
   // semantics are unchanged) — that's how the enqueue event below can tell
@@ -298,16 +300,6 @@ export async function enqueueSteward(
                 THEN COALESCE(steward_trigger, $2)
               ELSE $2
             END,
-            steward_context = CASE
-              WHEN ${queued} AND COALESCE(steward_context, '') <> ''
-                THEN CASE
-                  WHEN length(steward_context || E'\\n\\n' || $3) > ${STEWARD_CONTEXT_MAX_CHARS}
-                    THEN '[earlier context truncated]' || E'\\n'
-                         || right(steward_context || E'\\n\\n' || $3, ${STEWARD_CONTEXT_MAX_CHARS})
-                  ELSE steward_context || E'\\n\\n' || $3
-                END
-              ELSE $3
-            END,
             updated_at = now()
        FROM (SELECT id, steward_state AS prev_state,
                     steward_requeued AS prev_requeued
@@ -316,12 +308,20 @@ export async function enqueueSteward(
         AND state = 'active'
       RETURNING prev.prev_state AS prev_state,
                 prev.prev_requeued AS prev_requeued`,
-    [message.claimId, message.trigger, chunk]
+    [message.claimId, message.trigger]
   );
 
   // No row = the claim is missing or inactive; nothing was enqueued, so
-  // there is no event to record.
+  // there is no event to record and no message to keep.
   if (rows.length > 0) {
+    // The message itself goes to the node's inbox, whole (inbox-service.ts).
+    await postMessage({
+      nodeId: message.claimId,
+      trigger: message.trigger,
+      body: message.context,
+      sender: message.sender,
+      paid: message.paid,
+    });
     recordEnqueueEvent({
       queue: "steward",
       trigger: message.trigger,
@@ -370,9 +370,10 @@ export async function enqueueSteward(
  *
  * Who pays: a prize audit (bountyId) is funded at once from the bounty's
  * prize-review reserve, like the prize review itself; every other audit is
- * valued and funded by the Governance mandate, which never funds an audit
- * whose subject it is (subjectGrantId), and whose own audits the General
- * mandate funds instead (mandate-valuer-service.refreshAuditValuations).
+ * raised to the Governance mandates' program officers, who never fund an
+ * audit whose subject is their own mandate (subjectGrantId); an audit of a
+ * Governance mandate goes to the General mandate instead
+ * (maintenance-funding.ts, fundAuditNow).
  *
  * Returns the run id, or null when an earlier request already claimed the
  * dedupe key.
@@ -444,8 +445,8 @@ export async function requestAudit(input: {
       )
     );
   } else {
-    // Priced and offered to the Governance mandate now, not at the next
-    // sweep (lazily: the allocator imports this module).
+    // Put in front of the Governance mandates' officers now (lazily:
+    // maintenance-funding reaches this module through its imports).
     const { fundAuditNow } = await import("./maintenance-funding.js");
     await fundAuditNow(actionId);
   }

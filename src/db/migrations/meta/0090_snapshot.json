@@ -1,5 +1,5 @@
 {
-  "id": "6bb52897-9494-422c-8f0b-3e417c0f032f",
+  "id": "aa2d88b7-7ea7-477f-b6dc-f61f4b54eec1",
   "prevId": "54ba4c6e-a58b-4d1a-9242-0873baff9d57",
   "version": "7",
   "dialect": "postgresql",
@@ -2067,31 +2067,7 @@
           "name": "argument_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "direction": {
-          "name": "direction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dismissed_at": {
-          "name": "dismissed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dismissed_reason": {
-          "name": "dismissed_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "source_id": {
           "name": "source_id",
@@ -2189,21 +2165,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_argument_instances_claim": {
-          "name": "idx_argument_instances_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_argument_instances_source": {
           "name": "idx_argument_instances_source",
           "columns": [
@@ -2227,19 +2188,6 @@
           "tableTo": "arguments",
           "columnsFrom": [
             "argument_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "argument_instances_claim_id_claims_id_fk": {
-          "name": "argument_instances_claim_id_claims_id_fk",
-          "tableFrom": "argument_instances",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "claim_id"
           ],
           "columnsTo": [
             "id"
@@ -2277,12 +2225,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "ck_argument_instances_placed": {
-          "name": "ck_argument_instances_placed",
-          "value": "(\"argument_instances\".\"argument_id\" IS NULL) <> (\"argument_instances\".\"claim_id\" IS NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.argument_subclaims": {
@@ -10437,6 +10380,189 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.node_messages": {
+      "name": "node_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_kind": {
+          "name": "sender_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_node_id": {
+          "name": "sender_node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sender_ref": {
+          "name": "sender_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paid": {
+          "name": "paid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reply_to": {
+          "name": "reply_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome_note": {
+          "name": "outcome_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "answered_at": {
+          "name": "answered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_node_messages_unread": {
+          "name": "idx_node_messages_unread",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "read_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_node_messages_sender": {
+          "name": "idx_node_messages_sender",
+          "columns": [
+            {
+              "expression": "sender_node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "node_messages_node_id_claims_id_fk": {
+          "name": "node_messages_node_id_claims_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_messages_sender_node_id_claims_id_fk": {
+          "name": "node_messages_sender_node_id_claims_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "sender_node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "node_messages_reply_to_node_messages_id_fk": {
+          "name": "node_messages_reply_to_node_messages_id_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "node_messages",
+          "columnsFrom": [
+            "reply_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "node_messages_outcome_check": {
+          "name": "node_messages_outcome_check",
+          "value": "\"node_messages\".\"outcome\" IS NULL OR \"node_messages\".\"outcome\" IN ('changed', 'no_change', 'disagree')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.oauth_authorization_requests": {

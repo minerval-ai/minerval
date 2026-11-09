@@ -324,14 +324,32 @@ export function turnCounterLine(used: number, max: number): string {
  * normally ends such a run.
  */
 export const BUDGET_WRAP_UP_FRACTION = 0.85;
-export function budgetWrapUpNotice(spentMicroUsd: number, ceilingMicroUsd: number): string {
+export function budgetWrapUpNotice(
+  spentMicroUsd: number,
+  ceilingMicroUsd: number,
+  canPetition = false
+): string {
   const over = spentMicroUsd >= ceilingMicroUsd;
-  return over
-    ? `Budget notice: this run has spent its whole budget. Make your concluding ` +
-        `tool call(s) now; whatever is not recorded is lost.`
-    : `Budget notice: most of this run's budget is spent. Finish the work in ` +
-        `hand and make your concluding tool call(s) soon; whatever is not ` +
-        `recorded when the run ends is lost.`;
+  if (over) {
+    return (
+      `Budget notice: this run has spent its whole budget. Make your concluding ` +
+      `tool call(s) now, and record what you could and couldn't establish; ` +
+      `whatever is not recorded is lost.` +
+      (canPetition
+        ? ` If the work needs another pass, petition for a follow-up ` +
+          `(petition_mandate, kind follow_up) so it can start where you stop.`
+        : "")
+    );
+  }
+  return (
+    `Budget notice: most of this run's budget is spent. ` +
+    (canPetition
+      ? `If what is left of the work is essential and needs more, petition for ` +
+        `it now (petition_mandate) and say what it is for. Otherwise finish `
+      : `Finish `) +
+    `the work in hand and make your concluding tool call(s) soon; whatever is ` +
+    `not recorded when the run ends is lost.`
+  );
 }
 
 /**
@@ -419,10 +437,26 @@ export async function toolUseLoop(options: {
    * reply while it forms.
    */
   onText?: (delta: string, turn: number) => void;
+  /**
+   * Asked after every turn's tools have run: text that arrived for the run
+   * while it worked (an answer to something it asked for, session-service.ts),
+   * appended to that turn's tool results so the run reads it next turn.
+   */
+  pendingInput?: () => Promise<string | null>;
+  /**
+   * Called once when the loop returns, with the whole conversation: the
+   * messages sent and the final assistant turn. A run that pauses keeps it
+   * to resume from (session-service.ts).
+   */
+  onEnd?: (transcript: MessageParam[]) => void;
 }): Promise<ToolCompletionResult> {
   // Dated once for the whole loop, so every turn sends the same prompt.
   options = { ...options, system: withRunDate(options.system) };
   const messages = [...options.initialMessages];
+  const finish = (r: ToolCompletionResult): ToolCompletionResult => {
+    options.onEnd?.([...messages, { role: "assistant", content: r.rawContent } as MessageParam]);
+    return r;
+  };
   const streamModel = options.model ?? DEFAULT_MODEL;
   const streamAdapter = getAdapter(streamModel);
   const streaming =
@@ -580,7 +614,7 @@ export async function toolUseLoop(options: {
         }
         continue;
       }
-      return result;
+      return finish(result);
     }
 
     if (result.stopReason === "end_turn" || result.toolUses.length === 0) {
@@ -602,7 +636,7 @@ export async function toolUseLoop(options: {
         }
         continue;
       }
-      return result;
+      return finish(result);
     }
 
     // Check for final tool
@@ -610,7 +644,7 @@ export async function toolUseLoop(options: {
       for (const tu of result.toolUses) {
         const finalResult = options.onFinalTool(tu.name, tu.input);
         if (finalResult !== null && finalResult !== undefined) {
-          return result;
+          return finish(result);
         }
       }
     }
@@ -667,12 +701,20 @@ export async function toolUseLoop(options: {
         budgetWarned = stage;
         userContent.push({
           type: "text",
-          text: budgetWrapUpNotice(budget.spentMicroUsd, budget.ceilingMicroUsd),
+          text: budgetWrapUpNotice(
+            budget.spentMicroUsd,
+            budget.ceilingMicroUsd,
+            options.tools.some((t) => "name" in t && t.name === "petition_mandate")
+          ),
         });
       }
     }
     if (remaining > 0 && remaining <= notice.warnWithin) {
       userContent.push({ type: "text", text: notice.message(remaining) });
+    }
+    if (options.pendingInput) {
+      const arrived = await options.pendingInput();
+      if (arrived) userContent.push({ type: "text", text: arrived });
     }
 
     // Append assistant message and tool results
@@ -680,7 +722,7 @@ export async function toolUseLoop(options: {
     messages.push({ role: "user", content: userContent });
   }
 
-  return lastResult!;
+  return finish(lastResult!);
 }
 
 // --- The long-run path -----------------------------------------------------

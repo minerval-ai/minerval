@@ -348,7 +348,9 @@ each tool's description is its route's summary plus the route it runs.
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
   `get_claim_events`, `propose_claim` (reviewed by the Contribution Reviewer
   before anything enters the graph).
-- **Funding:** `order_assessment`, `fund_claim_assessment`,
+- **Funding:** `order_assessment`, `fund_claim_assessment` (commission a
+  claim's next assessment whole, at a budget you choose; what it does not
+  spend comes back),
   `fund_deep_decomposition`, `list_orders`, `get_order`, `cancel_order`,
   `list_budget_jobs`, `get_budget_job`, `top_up_budget_job`,
   `cancel_budget_job`.
@@ -356,8 +358,10 @@ each tool's description is its route's summary plus the route it runs.
   `list_grant_conversations`, `get_grant_conversation`,
   `get_platform_grant_conversation`, `send_grant_message`, `fund_grant`,
   `list_grants`, `get_grant`, `approve_grant_plan`, `top_up_grant`,
-  `cancel_grant`, `list_mandates`, `get_mandate`, `get_mandate_allocation`,
-  `fund_mandate`, `get_mandate_lookout`.
+  `cancel_grant`, `list_mandates`, `get_mandate`, `get_mandate_allocation`
+  (the mandate's operations: its operating policy, commissions, decisions
+  and petitions), `fund_mandate`, `withdraw_from_mandate` (take back your
+  share of a mandate's uncommitted money), `get_mandate_lookout`.
 - **Correspondents (#563):** `list_correspondents` (with `claim_id`, the
   ones covering a claim), `get_correspondent`, `list_correspondent_updates`,
   `get_correspondent_update`, `poke_correspondent` (the mandate's manager).
@@ -370,9 +374,15 @@ each tool's description is its route's summary plus the route it runs.
   `list_contributors`, `get_contributor`.
 - **Your account:** `get_account` (balance, entitlement, the cap list),
   `get_usage`, `list_owl_packs`, `get_owl_ledger`, `list_api_keys`.
-- **Requests:** `list_requests`, `get_request`, `fund_request_work` (owls
-  toward the work on a request: its scoping pass, or the full work at its
-  budget; escrowed until it runs or the request closes).
+- **Requests:** `list_requests`, `get_request`, `fund_request_work`
+  (commission the work on a request whole, at a budget you choose: its
+  scoping pass, or the full work; it runs at once, and what it does not
+  spend comes back, all of it if the request closes first).
+- **Reading with SQL:** `query_sql` (one read-only SELECT over the public
+  views: nodes, assessments, edges, the ledger and commissions, messages,
+  mandates and their decisions, the change stream and more; one query at a
+  time per account, a daily allowance of free database time, then priced
+  by the second; see the `sql` caller skill).
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.
@@ -415,6 +425,8 @@ than governance, from the **caller skills** in `plugin/skills/`:
 - `commissioning-research`: funding work in good faith: what kinds of
   mandate are appropriate and which the Grantmaker declines, how to hold
   the granting conversation, what is public, and what money buys.
+- `sql`: how to read the graph with `query_sql`: the views, what each
+  column means, and queries that stay inside the limits.
 - `minerval-constitution`: a reader's guide to the constitution, with the
   constitution itself bundled as `constitution.md`.
 - `administrator-skills`: the administrators' own skills and role prompts,

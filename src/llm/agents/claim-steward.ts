@@ -55,10 +55,24 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
+import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
+import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import { randomUUID } from "node:crypto";
+import { runBudgetLeft } from "../run-funding.js";
+import {
+  renderResearchSessionArrivals,
+  resumeMessages,
+  suspendSession,
+  takeLiveReplies,
+  takeReadySession,
+} from "../../services/session-service.js";
+import { originalPayer } from "../../services/commission-service.js";
 import { getQuestionStewardSystemPromptBlocks } from "../prompts/question-steward.js";
 import {
   executeKindTool,
@@ -583,6 +597,9 @@ async function runClaimStewardImpl(input: {
     // table, or a retraction notice actually is (#333).
     getReadPageToolDefinition(),
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
+    ...getInboxToolDefinitions(),
+    ...getSpendToolDefinitions(),
+    getSqlToolDefinition(),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
@@ -669,14 +686,16 @@ a cent.`
       isInitial || !(await hasCurrentJudgment(input.claimId, kind))
     );
 
+  // Every unread message on the node, whole (inbox-service.ts). The lane's
+  // own context, when it has one, still comes first.
+  const inbox = await openInbox(input.claimId);
+
   const userMessage = `You have been triggered to steward a ${noun}.
 
 Today's date: ${today}
 Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
-Context: ${input.context}
-
-${turnBudgetLine(iterationBudget)}
+${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
 ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
 
@@ -693,8 +712,29 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
   // is missing. `done` holds every tool that succeeded this run.
   const done = new Set<string>();
 
-  await withSkills([], () => toolUseLoop({
-    initialMessages: [{ role: "user", content: userMessage }],
+  // The session this pass belongs to (session-service.ts). A paused session
+  // on this node that got back what it asked for is resumed: the pass
+  // continues that conversation, with the answers and what changed while it
+  // was paused, instead of starting fresh. Otherwise the pass is a new
+  // session, which pauses at the end if it is waiting on anything.
+  // A failure here never costs the pass: it runs fresh.
+  const resumed = await takeReadySession(input.claimId, "steward").catch(() => null);
+  const session = { id: resumed?.session.id ?? randomUUID(), role: "steward", nodeId: input.claimId };
+  const initialMessages = resumed
+    ? await resumeMessages(resumed.session, resumed.replies, {
+        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief].filter(Boolean).join("\n\n"),
+        budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
+      })
+    : [{ role: "user" as const, content: userMessage }];
+  let transcript: Parameters<NonNullable<Parameters<typeof toolUseLoop>[0]["onEnd"]>>[0] | null = null;
+
+  await runWithUsageContext({ session }, () => withSkills([], () => toolUseLoop({
+    initialMessages,
+    onEnd: (t) => {
+      transcript = t;
+    },
+    // What it asked for that comes back while it is still working.
+    pendingInput: async () => renderResearchSessionArrivals(await takeLiveReplies(session.id).catch(() => [])),
     tools,
     system,
     model,
@@ -725,10 +765,35 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
       if (succeeded(output)) done.add(name);
       return output;
     },
-  }));
+  })));
+
+  // The run ended its turn. Waiting on what it asked for, the session pauses
+  // with its transcript, to resume when an answer arrives (paid by whoever
+  // paid for this pass, from what it has left); otherwise it closes.
+  if (transcript) {
+    await suspendSession({
+      id: session.id,
+      transcript,
+      model,
+      budgetLeftMicroUsd: runBudgetLeft() ?? 0,
+      payer: await originalPayer().catch(() => null),
+    }).catch((err) =>
+      console.warn(`[steward] pausing session ${session.id} failed:`, err instanceof Error ? err.message : err)
+    );
+  }
+
+  // The pass finished: the messages it was shown are read. One that arrived
+  // mid-pass was not shown and stays unread for the next pass.
+  await markMessagesRead(inbox.ids);
 
   async function dispatch(name: string, toolInput: Record<string, unknown>): Promise<string> {
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+    const inboxOutput = await executeInboxTool(name, toolInput, { nodeId: input.claimId, labels: inbox.labels });
+    if (inboxOutput !== null) return inboxOutput;
+    const spendOutput = await executeSpendTool(name, toolInput);
+    if (spendOutput !== null) return spendOutput;
+    const sqlOutput = await executeSqlTool(name, toolInput);
+    if (sqlOutput !== null) return sqlOutput;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".

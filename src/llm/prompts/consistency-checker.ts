@@ -148,9 +148,9 @@ and says when a large partition's ceiling leaves part of it unread.
    was not weighed, what it establishes and why it bears here, with the
    ids. expected_gain is how likely the Steward,
    reading what you saw, would change its verdict or its reasoning
-   materially. Be calibrated, not generous: the platform's formula
-   multiplies it by the node's importance and contestation to decide what
-   the pass is worth against everything else it could fund.
+   materially. Be calibrated, not generous: the officers who decide
+   whether to pay for the pass read it beside the node's importance and
+   contestation, against everything else they could pay for.
 6. Finish with finish_sweep. Your note is your memory of this partition:
    the next sweep of it starts from it. Say what you read and found
    sound, what you flagged, and what deserves a look next time, citing

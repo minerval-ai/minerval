@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // The allocation scheduler's control flow: interval gating, the engine's
-// three layers running in order (reconcile ledger → refresh valuations →
-// allocate), and the bounded staleness inflow (#295's R<1 by construction)
+// steps running in order (reconcile ledger → order the pending list →
+// self-fund what mandates decided), and the bounded staleness inflow (#295's R<1 by construction)
 // wired into the normal enqueue path. DB + services mocked; the SQL runs
 // live in the Stage 3 smoke/corpus harness.
 
@@ -10,8 +10,9 @@ const { state } = vi.hoisted(() => ({
   state: {
     dueClaims: [] as Array<{ id: string; days_old: number }>,
     reconciles: 0,
-    valuationRuns: 0,
-    allocatorRuns: 0,
+    priorityRuns: 0,
+    selfFunds: 0,
+    followUpSweeps: 0,
     enqueued: [] as Array<{ claimId: string; trigger: string }>,
     scans: [] as number[],
     config: {
@@ -39,13 +40,27 @@ vi.mock("../../../src/services/action-service.js", () => ({
   }),
 }));
 
-vi.mock("../../../src/services/mandate-valuer-service.js", () => ({
-  refreshGeneralValuations: vi.fn(async () => {
-    state.valuationRuns++;
+vi.mock("../../../src/services/priority-service.js", () => ({
+  refreshPendingQueuePriorities: vi.fn(async () => {
+    state.priorityRuns++;
     return 3;
   }),
-  // Audits (#363): none open in these tests.
-  refreshAuditValuations: vi.fn(async () => 0),
+}));
+
+vi.mock("../../../src/services/session-service.js", () => ({ sweepSessions: vi.fn(async () => 0) }));
+
+vi.mock("../../../src/services/petition-service.js", () => ({
+  sweepFollowUps: vi.fn(async () => {
+    state.followUpSweeps++;
+    return 0;
+  }),
+}));
+
+vi.mock("../../../src/services/allocation-policy-service.js", () => ({
+  getEffectiveAllocationPolicy: vi.fn(async () => ({
+    reconcile_candidates_max_per_sweep: 0,
+    staleness_base_days: state.config.stalenessBaseDays,
+  })),
 }));
 
 vi.mock("../../../src/services/curation-service.js", () => ({
@@ -56,10 +71,9 @@ vi.mock("../../../src/services/curation-service.js", () => ({
 }));
 
 vi.mock("../../../src/services/allocation-service.js", () => ({
-  fundGrantSelfActions: vi.fn(async () => 0),
-  runDailyAllocators: vi.fn(async () => {
-    state.allocatorRuns++;
-    return { mandates: 0, allocated: 0, allocatedMicroUsd: 0 };
+  fundGrantSelfActions: vi.fn(async () => {
+    state.selfFunds++;
+    return 0;
   }),
 }));
 
@@ -84,8 +98,9 @@ beforeEach(() => {
   resetAllocationScheduler();
   state.dueClaims = [];
   state.reconciles = 0;
-  state.valuationRuns = 0;
-  state.allocatorRuns = 0;
+  state.priorityRuns = 0;
+  state.selfFunds = 0;
+  state.followUpSweeps = 0;
   state.enqueued = [];
   state.scans = [];
   state.config = {
@@ -95,7 +110,7 @@ beforeEach(() => {
 });
 
 describe("allocationSchedulerTick", () => {
-  it("reconciles, refreshes valuations, allocates, and re-enqueues due claims", async () => {
+  it("reconciles, orders, self-funds, sweeps follow-ups, and re-enqueues due claims", async () => {
     state.dueClaims = [
       { id: "c-1", days_old: 100 },
       { id: "c-2", days_old: 70 },
@@ -103,12 +118,12 @@ describe("allocationSchedulerTick", () => {
     const result = await allocationSchedulerTick(1_000_000);
     expect(result).toEqual({
       actionsReconciled: 2,
-      valuationsRefreshed: 3,
+      prioritiesRefreshed: 3,
       stalenessEnqueued: 2,
-      allocationsPlaced: 0,
     });
     expect(state.reconciles).toBe(1);
-    expect(state.allocatorRuns).toBe(1);
+    expect(state.selfFunds).toBe(1);
+    expect(state.followUpSweeps).toBe(1);
     // The reconcile-candidate scan runs each sweep, under the governing
     // policy, which ships it off (#363).
     expect(state.scans).toEqual([0]);
@@ -133,14 +148,13 @@ describe("allocationSchedulerTick", () => {
     const second = await allocationSchedulerTick(1_000_000 + 60_000);
     expect(second).toEqual({
       actionsReconciled: 0,
-      valuationsRefreshed: 0,
+      prioritiesRefreshed: 0,
       stalenessEnqueued: 0,
-      allocationsPlaced: 0,
     });
-    expect(state.valuationRuns).toBe(1);
+    expect(state.priorityRuns).toBe(1);
 
     const later = await allocationSchedulerTick(1_000_000 + 7 * 3_600_000);
-    expect(later.valuationsRefreshed).toBe(3);
+    expect(later.prioritiesRefreshed).toBe(3);
   });
 
   it("is disabled entirely by allocationSweepIntervalHours = 0", async () => {
@@ -148,10 +162,9 @@ describe("allocationSchedulerTick", () => {
     const result = await allocationSchedulerTick(1_000_000);
     expect(result).toEqual({
       actionsReconciled: 0,
-      valuationsRefreshed: 0,
+      prioritiesRefreshed: 0,
       stalenessEnqueued: 0,
-      allocationsPlaced: 0,
     });
-    expect(state.valuationRuns).toBe(0);
+    expect(state.priorityRuns).toBe(0);
   });
 });

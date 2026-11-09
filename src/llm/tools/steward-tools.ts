@@ -3191,8 +3191,8 @@ export async function executeStewardTool(
             : null;
 
         // A curation request on the ledger, not a message billed to this
-        // run's funder (#363): whether the Curator runs is the mandates'
-        // valuation, and whoever values it pays for it.
+        // run's funder (#363): it goes to the General mandate's officers,
+        // and whether the Curator runs is theirs to decide.
         const escalatingCtx = getUsageContext();
         const requested = await requestCuration({
           anchorClaimId: claimId,

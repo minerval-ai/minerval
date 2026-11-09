@@ -54,7 +54,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
@@ -83,12 +83,15 @@ import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
+import { renderResearchReport } from "../services/research-commission-service.js";
+import { deliverReply } from "../services/session-service.js";
 import {
   carriedNotebook,
   closeResearchRun,
   latestRequestRun,
   modelForTier,
   openResearchRun,
+  getResearchRun,
   readResearcherPaused,
 } from "../services/research-run-service.js";
 import {
@@ -171,7 +174,7 @@ export async function processNextEngineAction(
       "audit",
       "ingest",
       "formalize",
-      ...(researcherOn ? (["request"] as const) : []),
+      ...(researcherOn ? (["request", "research"] as const) : []),
     ])) ?? (await nextFallbackAction());
   if (!action || !(await claimAction(action.id))) return { status: "empty" };
 
@@ -183,6 +186,7 @@ export async function processNextEngineAction(
   if (action.kind === "curate") return runCurateAction(action);
   if (action.kind === "audit") return runAuditAction(action);
   if (action.kind === "request") return runRequestAction(action);
+  if (action.kind === "research") return runResearchAction(action);
   return runGrantAgentAction(action, opts);
 }
 
@@ -251,8 +255,8 @@ async function funderContext(
 }
 
 /** The pass budget for running `action`: its allocations, or its estimate when more. */
-function actionBudget(action: RunnableAction, source: string): { microUsd: number; source: string } {
-  return { microUsd: actionBudgetMicroUsd(action), source };
+function actionBudget(action: RunnableAction, source: string): { microUsd: number; source: string; funding: RunFunding } {
+  return { microUsd: actionBudgetMicroUsd(action), source, funding: { actionId: action.id } };
 }
 
 /**
@@ -267,14 +271,15 @@ function maintenanceBudget(
   action: RunnableAction,
   kind: "curate" | "audit",
   what: string
-): { microUsd: number; source: string } {
+): { microUsd: number; source: string; funding: RunFunding } {
   const config = loadConfig();
   const owls = kind === "curate" ? config.curateRunBudgetOwls : config.auditRunBudgetOwls;
   const floor = Math.round((owls ?? 5) * (config.owlCostMicroUsd ?? 1_000_000));
   const covered = actionBudgetMicroUsd(action);
+  const funding = { actionId: action.id };
   return covered >= floor
-    ? { microUsd: covered, source: `the allocations funding ${what}` }
-    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers` };
+    ? { microUsd: covered, source: `the allocations funding ${what}`, funding }
+    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers`, funding };
 }
 
 /**
@@ -503,6 +508,116 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
  * funder. A request closed while its row waited is cancelled, its money
  * returned.
  */
+async function runResearchAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const runId = action.target_ref ?? "";
+  const run = runId ? await getResearchRun(runId) : null;
+  if (!run) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder = await funderContext(action);
+  const ceiling = actionBudgetMicroUsd(action);
+  const [node] = run.claim_id
+    ? await rawQuery<{ id: string; text: string; domains: string[] | null; kind: string | null }>(
+        `SELECT id, text, domains, kind FROM claims WHERE id = $1`,
+        [run.claim_id]
+      ).catch(() => [])
+    : [];
+  const claim = node ? { id: node.id, text: node.text, domains: node.domains ?? [], kind: node.kind ?? "claim" } : null;
+
+  let billedMicroUsd = 0;
+  let result: Awaited<ReturnType<typeof runResearcher>> | null = null;
+  let failure: unknown = null;
+  try {
+    const metered = await runWithUsageContext(
+      { userId: funder.userId, jobId: funder.jobId, ...(claim ? { claimId: claim.id } : {}) },
+      () =>
+        withPassBudget(
+          { microUsd: ceiling, source: "the budget the agent that commissioned this research gave it", funding: { actionId: action.id } },
+          () =>
+            runResearcher({
+              run: {
+                id: run.id,
+                claim_id: run.claim_id,
+                grant_id: run.grant_id,
+                requested_by: run.requested_by,
+                task: run.task,
+                model: run.model,
+                model_tier: run.model_tier,
+                effort: run.effort,
+                include_constitution: run.include_constitution,
+                ceiling_micro_usd: run.ceiling_micro_usd,
+                notebook: run.notebook,
+                job_id: run.job_id,
+              },
+              claim,
+            })
+        )
+    );
+    result = metered.value;
+    billedMicroUsd = metered.billedMicroUsd;
+  } catch (err) {
+    failure = err;
+  }
+
+  if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
+    // Nothing ran and it was not the research's fault: the row waits again.
+    await releaseAction(action.id).catch(() => {});
+    return {
+      status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
+      actionId: action.id,
+      kind: "research",
+      grantId: funder.grantId,
+      error: failure instanceof Error ? failure.message : String(failure),
+    };
+  }
+
+  const closed = await closeResearchRun(run.id, {
+    status: failure || !result ? "failed" : result.status,
+    report: result?.report ?? null,
+    spentMicroUsd: billedMicroUsd,
+    turns: result?.turns,
+    servedModels: result?.servedModels,
+    error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+  }).catch(() => null);
+  await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
+    console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
+  );
+
+  // The report goes back to whoever asked: the waiting session, or the node's inbox.
+  const [route] = await rawQuery<{ reply_to_session: string | null; deliver_to_node: string | null }>(
+    `SELECT reply_to_session, deliver_to_node FROM research_runs WHERE id = $1`,
+    [run.id]
+  );
+  const text = renderResearchReport({
+    id: run.id,
+    status: closed?.status ?? (failure ? "failed" : (result?.status ?? "failed")),
+    spent_micro_usd: billedMicroUsd,
+    ceiling_micro_usd: Number(run.ceiling_micro_usd),
+    report: result?.report ?? null,
+    notebook: closed?.notebook ?? run.notebook ?? {},
+    error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+  });
+  await deliverReply({
+    sessionId: route?.reply_to_session ?? null,
+    kind: "research",
+    ref: run.id,
+    text,
+    fallback: route?.deliver_to_node
+      ? { nodeId: route.deliver_to_node, trigger: "research_report", sender: { kind: "researcher", ref: run.id } }
+      : null,
+  }).catch((err: unknown) => console.error(`[engine] delivering research ${run.id} failed:`, err instanceof Error ? err.message : err));
+
+  return {
+    status: "processed",
+    ok: !failure && !!result?.report,
+    actionId: action.id,
+    kind: "research",
+    grantId: funder.grantId,
+    ...(failure ? { error: failure instanceof Error ? failure.message : String(failure) } : {}),
+  };
+}
+
 async function runRequestAction(action: RunnableAction): Promise<EngineProcessResult> {
   const requestId = action.target_ref ?? "";
   const request = requestId ? await getRequest(requestId) : null;
@@ -564,7 +679,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     const metered = await runWithUsageContext(
       { userId: funder.userId, jobId: funder.jobId, ...(claim ? { claimId: claim.id } : {}) },
       () =>
-        withPassBudget({ microUsd: ceiling, source: "the allocations funding this request" }, () =>
+        withPassBudget({ microUsd: ceiling, source: "the allocations funding this request", funding: { actionId: action.id } }, () =>
           runResearcher({
             run: {
               id: run.id,
@@ -1136,7 +1251,7 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
       () =>
         withPassBudget(
-          actionBudget(action, "the funding mandate's allocation for this sweep, priced by the partition's size"),
+          actionBudget(action, "a mandate's allocation for this sweep, priced by the partition's size"),
           () =>
             // The strong variant reads with the stronger model (#756), and
             // the sweep is told how its budget was priced.

@@ -13,6 +13,7 @@
  * (arguments, subclaims, instances, dependents, related links, findings,
  * check records) come only when asked for.
  */
+import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
@@ -84,7 +85,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "parent Steward's prior, only while the node is unassessed; the " +
   "formalization record (`formalization`, `formalization_pending`, " +
   "`formalization_history`, `verification`, `lean_checks`), null or empty " +
-  "when there is none; `requests` bearing on the node (the newest " +
+  "when there is none; `waiting_messages`, what has arrived for the node's " +
+  "Steward since its last pass and has not yet been weighed (each with its " +
+  "trigger, sender, date and the start of its text); `requests` bearing on the node (the newest " +
   `${REQUESTS_LIMIT}, with \`requests_total\` beside them); \`subclaim_count\`, ` +
   "`instance_count`, and `source_map` (the account of what the support " +
   "rests on). Contestation (how actively the claim is disputed, 0..1) is " +
@@ -196,6 +199,7 @@ export async function getClaimView(
     instanceCount,
     sourceMap,
     kindJudgment,
+    waiting,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -219,6 +223,10 @@ export async function getClaimView(
     // A quantity's or question's own judgment fields beside its record: the
     // estimate's yield, and a question's confidence and yield (#755, #760).
     kindJudgmentFields(claimId, kind),
+    // What is waiting for the node's Steward (inbox-service.ts). Shown so
+    // readers and funders can see what the assessment has not yet weighed;
+    // a read failure loses the list, never the read.
+    waitingMessages(claimId).catch(() => []),
   ]);
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left
@@ -275,6 +283,7 @@ export async function getClaimView(
     threshold_of: thresholdOf,
     question: question ? { ...question, ...kindJudgment } : question,
     ...formalizationRecord,
+    waiting_messages: waiting,
     requests: requests.items.map((r) => ({
       ...r,
       // The Steward of the one node a request bears on keeps it.

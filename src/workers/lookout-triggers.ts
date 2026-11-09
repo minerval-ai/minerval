@@ -316,6 +316,12 @@ export function startLookoutTriggers(options: {
           );
         }
       }
+      try {
+        const g = await graphFeedTick();
+        if (g.woke > 0) options.logger.info(`Lookout graph feed: ${g.woke} lookouts woken`);
+      } catch (err) {
+        options.logger.error("Lookout graph feed error", err instanceof Error ? err.message : err);
+      }
       if (feeds) {
         try {
           const f = await feedPollTick();
@@ -337,4 +343,46 @@ export function startLookoutTriggers(options: {
   const timer = setInterval(tick, interval);
   void tick();
   return { stop: () => clearInterval(timer) };
+}
+
+/**
+ * The graph feed: wake each active lookout that follows the change stream
+ * when its territory has entries it hasn't read. Code, not judgment: it
+ * queues one `graph` event and the lookout decides what matters. A lookout
+ * that ran in the last 15 minutes waits, so a burst of changes is read
+ * together rather than one run per change.
+ */
+export async function graphFeedTick(): Promise<{ woke: number }> {
+  const { listGraphChanges, GRAPH_CHANGE_KINDS } = await import("../services/graph-change-service.js");
+  const { queueLookoutEvent } = await import("../services/lookout-service.js");
+  const rows = await rawQuery<{
+    id: string;
+    changes_cursor: string | null;
+    last_run_at: Date | null;
+    territory_claim_ids: string[];
+    territory_tag_ids: string[];
+  }>(
+    `SELECT l.id, l.changes_cursor, l.last_run_at, l.territory_claim_ids, l.territory_tag_ids
+       FROM lookouts l JOIN grants g ON g.id = l.grant_id
+      WHERE l.status = 'active' AND g.status = 'active'
+        AND l.triggers ? 'graph'
+        AND (l.last_run_at IS NULL OR l.last_run_at < now() - interval '15 minutes')
+        AND NOT EXISTS (SELECT 1 FROM lookout_events e
+                         WHERE e.lookout_id = l.id AND e.kind = 'graph' AND e.consumed_at IS NULL)
+      LIMIT 200`
+  );
+  let woke = 0;
+  for (const l of rows) {
+    const page = await listGraphChanges({
+      after: l.changes_cursor,
+      since: l.changes_cursor ? null : l.last_run_at ?? new Date(Date.now() - 86_400_000),
+      scope: { under: l.territory_claim_ids ?? [], tagIds: l.territory_tag_ids ?? [] },
+      kinds: [...GRAPH_CHANGE_KINDS],
+      limit: 1,
+    });
+    if (page.changes.length === 0) continue;
+    const q = await queueLookoutEvent({ lookoutId: l.id, kind: "graph", payload: { first_change: page.changes[0]!.kind } });
+    if (q.queued) woke++;
+  }
+  return { woke };
 }

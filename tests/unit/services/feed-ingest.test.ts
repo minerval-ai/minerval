@@ -29,8 +29,8 @@ vi.mock("../../../src/db/client.js", () => ({
         title: "A post", status: "new", feed: "Feed", ingest_focus: null,
       }];
     }
-    if (q.includes("SELECT grant_id, status, max_value FROM lookouts")) {
-      return [{ grant_id: GRANT, status: "active", max_value: 4 }];
+    if (q.includes("SELECT grant_id, status, commission_limit_micro_usd FROM lookouts")) {
+      return [{ grant_id: GRANT, status: "active", commission_limit_micro_usd: 4_000_000 }];
     }
     if (q.includes("FROM lookout_feed_items") && q.includes("status = 'new'") && q.includes("ORDER BY first_seen_at")) {
       state.waitingLimit = params[1];
@@ -61,16 +61,16 @@ beforeEach(() => {
 });
 
 describe("triageItems", () => {
-  it("raises every ingest decision at its urgency within the ceiling, with no allowance", async () => {
+  it("raises every ingest decision at its budget within the limit, with no allowance", async () => {
     const decisions = Array.from({ length: 12 }, (_, i) => ({
-      item_id: ITEM(i), decision: "ingest", ...(i === 0 ? { urgency: 9 } : {}),
+      item_id: ITEM(i), decision: "ingest", ...(i === 0 ? { budget_owls: 0.75 } : {}),
     }));
-    const res = await triageItems({ lookoutId: LOOKOUT, grantId: GRANT, decisions, maxValue: 4 });
+    const res = await triageItems({ lookoutId: LOOKOUT, grantId: GRANT, decisions, commissionLimitMicroUsd: 4_000_000 });
     expect(res.ingested).toBe(12);
     expect(state.flagged).toHaveLength(12);
-    expect(state.flagged[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, maxValue: 4, urgency: 9 });
-    // No urgency given reads as 5; flagIngest clamps it to the ceiling.
-    expect(state.flagged[1]).toMatchObject({ maxValue: 4, urgency: 5 });
+    expect(state.flagged[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, commissionLimitMicroUsd: 4_000_000, budgetMicroUsd: 750_000 });
+    // No budget given reads as the ingest's cap; flagIngest commissions it within the limit or raises it.
+    expect(state.flagged[1]).toMatchObject({ commissionLimitMicroUsd: 4_000_000, budgetMicroUsd: expect.any(Number) });
   });
 });
 
@@ -83,7 +83,7 @@ describe("auto_ingest", () => {
     last_error: null, created_by: null, created_at: new Date(),
   });
 
-  it("raises every new item at the lookout's ceiling, a poll's worth at a time, with no daily count", async () => {
+  it("raises every new item within the lookout's limit, a poll's worth at a time, with no daily count", async () => {
     state.waiting = Array.from({ length: 30 }, (_, i) => ({ id: ITEM(i), url: `https://x.org/p/${i}`, title: `Post ${i}` }));
     state.waiting.push({ id: ITEM(99), url: null, title: "No link" });
     const res = await pollFeed(feed(), { parsed: { format: "rss", title: "T", siteUrl: null, items: [] } as never });
@@ -91,7 +91,7 @@ describe("auto_ingest", () => {
     expect(res.autoIngested).toBe(30);
     expect(state.waitingLimit).toBe(FEED_BOUNDS.itemsPerPoll);
     expect(state.flagged).toHaveLength(30);
-    expect(state.flagged[0]).toMatchObject({ grantId: GRANT, maxValue: 4, urgency: 4, focus: "housing" });
+    expect(state.flagged[0]).toMatchObject({ grantId: GRANT, commissionLimitMicroUsd: 4_000_000, focus: "housing" });
     expect(state.marked).toContainEqual({ id: ITEM(99), status: "skipped" });
   });
 });
