@@ -145,7 +145,7 @@ const AGENTS: AgentMeta[] = [
   { key: "claim-steward", name: "Claim Steward", stage: 4, group: "governance",
     tagline: "The owner of a claim: it decomposes the claim, maintains its canonical form, and assesses it over time. Its duty runs to the constitution and the health of the graph, not to any one contributor.",
     invokedWhen: "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
-    model: "Claude Opus 5.5", fn: getClaimStewardSystemPrompt },
+    model: `${modelLabel(MODELS.strong)} (standard pass), ${modelLabel(MODELS.frontier)} (strong pass and money decisions)`, fn: getClaimStewardSystemPrompt },
   { key: "question-steward", name: "Question Steward", stage: 4, group: "governance",
     tagline: "The owner of a question: it keeps the question's wording and presuppositions, gathers its candidate answers and subquestions, and gives the best answer it can with how well answered the question is.",
     invokedWhen: "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
@@ -157,7 +157,7 @@ const AGENTS: AgentMeta[] = [
   { key: "dispute-arbitrator", name: "Dispute Arbitrator", stage: 6, group: "governance",
     tagline: "Resolves escalations and appeals through careful adjudication, the highest-stakes governance call.",
     invokedWhen: "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
-    model: "Claude Opus 5.5", fn: getDisputeArbitratorSystemPrompt },
+    model: modelLabel(MODELS.frontier), fn: getDisputeArbitratorSystemPrompt },
   { key: "audit-agent", name: "Audit Agent", stage: 7, group: "governance",
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
     invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
@@ -165,7 +165,7 @@ const AGENTS: AgentMeta[] = [
   { key: "grantmaker", name: "Grantmaker", stage: 8, group: "governance",
     tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
     invokedWhen: "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
-    model: "Claude Opus 5.5", fn: getGrantmakerSystemPrompt },
+    model: modelLabel(MODELS.frontier), fn: getGrantmakerSystemPrompt },
   { key: "lookout", name: "Lookout", stage: 9, group: "governance",
     tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. Others decide on what it raises: it can neither write an assessment nor move money.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
@@ -189,7 +189,7 @@ const AGENTS: AgentMeta[] = [
   { key: "math-solver", name: "Solver", stage: 11, group: "instruments",
     tagline: "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
     invokedWhen: "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
-    model: "Claude Opus 5.5", fn: getMathSolverSystemPrompt },
+    model: modelLabel(MODELS.frontier), fn: getMathSolverSystemPrompt },
   // The researcher (#298): the general instrument, of which the solver is
   // the special case. An administrator briefs it, picks its tier and budget,
   // and chooses whether it carries the constitution (the default). It
@@ -198,7 +198,7 @@ const AGENTS: AgentMeta[] = [
   { key: "researcher", name: "Researcher", stage: 10, group: "instruments",
     tagline: "An instrument for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. An administrator launches it with a brief, or it takes up a funded request on its own account. It carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node (and, on a funded request, may file a request of its own), and returns a report: to its launcher, who weighs it, or on the request it answers.",
     invokedWhen: "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
-    model: `Chosen per launch: ${modelLabel(MODELS.strong)} (strong), ${modelLabel(MODELS.sonnet)} (standard), ${modelLabel(OPENROUTER_MODELS.flash)} (cheap)`, fn: getResearcherSystemPrompt },
+    model: `Chosen per launch: ${modelLabel(MODELS.frontier)} (strong), ${modelLabel(MODELS.sonnet)} (standard), ${modelLabel(OPENROUTER_MODELS.flash)} (cheap)`, fn: getResearcherSystemPrompt },
 ];
 
 export interface AgentIndexEntry {

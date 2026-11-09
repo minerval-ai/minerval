@@ -474,6 +474,9 @@ const configSchema = z.object({
   // MARGINAL return whether the upgrade is worth funding: back the strong
   // sibling only when Δvalue/Δcost clears the day's bar. Paid express
   // orders always use the strong model — the buyer pays for the real thing.
+  // Production sets it to the frontier tier (Fable 5.2), so the strong
+  // variant is a different model from the standard pass (Opus 5.5) and the
+  // upgrade the allocators price is a real one.
   stewardStrongModel: z.string().default(""),
   // How much more a strong-model pass is expected to be worth than a
   // standard pass of the same claim: value(strong) = value(standard) × this.
@@ -672,9 +675,11 @@ const configSchema = z.object({
   formalizationReviewAwardOwls: z.coerce.number().min(0).default(100),
 
   // --- Mathematics: the solver (§7) ---
-  // The solver runs only on the strong tier: the long-run loop needs a
-  // family that takes `effort`, streams 128K-token turns, and carries the
-  // long-run betas, so a deployment pointing it elsewhere fails at config
+  // The solver runs on the frontier tier (Fable 5.2: a multi-hour proof
+  // attempt is the long-horizon work that model is for, and the attempt's
+  // dollar ceiling bounds what it spends) and only on a long-run family: the
+  // loop needs one that takes `effort`, streams 128K-token turns, and carries
+  // the long-run betas, so a deployment pointing it elsewhere fails at config
   // load rather than deep into an attempt (§7.8). Joins the production
   // model-env guard below.
   solverModel: z
@@ -696,7 +701,7 @@ const configSchema = z.object({
         });
       }
     })
-    .default(MODELS.strong),
+    .default(MODELS.frontier),
   // The solver's own kill switch: the worker exits its loop when false.
   // Off by default so no deployment runs multi-hour attempts without
   // someone choosing that. Same string convention as enableContributions
@@ -732,7 +737,7 @@ const configSchema = z.object({
         });
       }
     })
-    .default(MODELS.strong),
+    .default(MODELS.frontier),
   researcherStandardModel: modelId(MODELS.sonnet),
   researcherCheapModel: modelId(OPENROUTER_MODELS.flash),
   // Kill switch for launching new runs; a run in flight also polls the
@@ -950,7 +955,8 @@ const configSchema = z.object({
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
   // Arbitration is the highest-stakes governance call; production sets
-  // ARBITRATION_MODEL=claude-opus-5-5.
+  // ARBITRATION_MODEL=claude-fable-5-2 (the frontier tier: few runs, each one
+  // final).
   arbitrationModel: modelId(MODELS.sonnet),
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
@@ -959,7 +965,7 @@ const configSchema = z.object({
   // quoting, and the authority to refuse mandates that would warp the
   // graph. Always the best available model — this is judgment-heavy,
   // user-facing work where a weak model would be a false economy.
-  grantmakerModel: modelId(MODELS.strong),
+  grantmakerModel: modelId(MODELS.frontier),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -1436,10 +1442,12 @@ export function loadConfig(): Config {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.strong}, ` +
+          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.frontier}, ` +
           "and the Steward's money triggers on STEWARD_MODEL. " +
           "Fine for local dev; set the env(s) (production uses " +
-          "claude-opus-5-5) if this environment does real assessment work."
+          `${MODELS.strong}, and ${MODELS.frontier} for STEWARD_STRONG_MODEL, ` +
+          "ARBITRATION_MODEL and SOLVER_MODEL) if this environment does real " +
+          "assessment work."
       );
     }
   }

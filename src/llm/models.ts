@@ -16,10 +16,28 @@
  */
 export const MODELS = {
   /**
-   * Opus 5.5 — the strong tier: the load-bearing agents (Steward, Curator,
-   * Audit, Arbitration, Extractor, Grantmaker, solver) run on it in production
-   * (issue #77; moved off Fable 5.1). $4/$20 per MTok with cache reads at
-   * $0.20 — well under Fable's $10/$50.
+   * Fable 5.2 — the frontier tier, for the judgments and the long runs where
+   * the best model class pays for itself and volume is low or already bounded
+   * by a budget: the Steward's strong variant and its money triggers
+   * (STEWARD_STRONG_MODEL), the Dispute Arbitrator, the Grantmaker, the
+   * solver, and the researcher's strong tier. $8/$40 per MTok with cache reads
+   * at $0.20: twice Opus 5.5 on input and output, the same on cache reads.
+   *
+   * Its request surface is the strong tier's (below) with these differences:
+   * an omitted `effort` defaults to `high`, where Opus 5.5 defaults to
+   * `medium`; the prefix check on replayed thinking blocks is enforced for
+   * every account whatever its age, so an edited history is a 400 here even
+   * where Opus 5.5 lets it through; no other model reads its thinking blocks,
+   * so a refusal fallback runs without them; its server-side fallback targets
+   * are Opus 4.8 and Opus 5 only (MODELS.opus is one); it needs 30-day data
+   * retention; and its rate limit is its own, lower than Opus 5.5's.
+   */
+  frontier: "claude-fable-5-2",
+  /**
+   * Opus 5.5 — the strong tier: the high-volume load-bearing agents (the
+   * Steward's standard pass, Curator, Audit, Extractor) run on it in
+   * production (issue #77; moved off Fable 5.1). $4/$20 per MTok with cache
+   * reads at $0.20 — half the frontier tier's $8/$40.
    *
    * Its request surface matches Fable 5.1's, and each difference matters to
    * this codebase: thinking is always on (never send a `thinking` config —
@@ -98,7 +116,7 @@ export function isAnthropicModelId(id: string): boolean {
 
 /**
  * Whether a model accepts the `temperature` request parameter. The Claude 5
- * family (Opus 5.5, Fable 5.1, Sonnet 5.5) and Opus 4.7+ reject non-default sampling params
+ * family (Opus 5.5, Fable 5.2, Sonnet 5.5) and Opus 4.7+ reject non-default sampling params
  * with a 400 — and the client sends `temperature: 0`, which counts as
  * non-default — so this is an ALLOWLIST of families known to accept it
  * (Haiku 4.x, Sonnet 4.x), not a blocklist of ones that don't. The version is

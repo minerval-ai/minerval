@@ -45,6 +45,11 @@ const MODEL_RATES: Record<string, ModelRates> = {
   // own entry or every cost estimate meters their cache reads at four times
   // the real price. Longest prefix wins, so 5.1 lands here and 5 stays below.
   "claude-fable-5-1": { inputPerMtok: 10, outputPerMtok: 50, cacheReadMultiplier: 0.025 },
+  // Fable 5.2 — the frontier tier — is cheaper than 5.1: $8/$40, cache reads
+  // $0.20/MTok (0.025× input). It needs its own entry for the same reason 5.1
+  // does: "claude-fable-5" is a PREFIX of its id, and would meter it at
+  // $10/$50 with 0.1× reads.
+  "claude-fable-5-2": { inputPerMtok: 8, outputPerMtok: 40, cacheReadMultiplier: 0.025 },
   "claude-fable-5": { inputPerMtok: 10, outputPerMtok: 50 },
   "claude-mythos-5": { inputPerMtok: 10, outputPerMtok: 50 },
   // Opus 5.5 — the strong tier — undercuts Opus 5 at $4/$20 and bills cache

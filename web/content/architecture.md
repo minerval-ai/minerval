@@ -57,7 +57,7 @@ PostgreSQL with the `pgvector` extension as the single store, carrying vector
 search and full-text search alongside the relational data. Anthropic Claude
 models sit behind every agent by default; model ids are centralized in
 `src/llm/models.ts`, and in production the load-bearing agents run on Claude
-Opus 5.5. Any agent can be pointed at OpenAI or OpenRouter instead with a
+Opus 5.5, the highest-stakes few on Claude Fable 5.2. Any agent can be pointed at OpenAI or OpenRouter instead with a
 single env var — the Matcher runs on GPT-6 Luna this way — see
 [Providers](#providers).
 
@@ -1368,9 +1368,10 @@ Model choice follows the value of the judgment, not a single default:
 |-------|------------------|
 | Tagger · Matcher · Lookout | GPT-6 Luna (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5.5 |
-| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Opus 5.5 |
-| Solver (`math_solver`) | Claude Opus 5.5 at effort `max` (`SOLVER_MODEL`), fallbacks off |
-| Researcher (`researcher`) | Chosen per launch by the administrator: Claude Opus 5.5 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
+| Claim Steward (standard pass) · Curator · Audit Agent | Claude Opus 5.5 |
+| Claim Steward (strong pass, money triggers) · Dispute Arbitrator · Grantmaker | Claude Fable 5.2 |
+| Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`), fallbacks off |
+| Researcher (`researcher`) | Chosen per launch by the administrator: Claude Fable 5.2 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
@@ -1381,9 +1382,12 @@ production as in dev. The Lookout's question ("did something happen that
 warrants work in my scope?") raises candidates rather than verdicts, and it runs often,
 so it shares the tier too, and a Grantmaker can pin a stronger model on
 one lookout whose brief warrants it. The load-bearing epistemic work
-(stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,
-with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
-gracefully instead of failing the job. Background assessments carry a
+(stewardship, structural adjudication, audit) runs on Opus 5.5. The few
+judgments that are final or bought deliberately (arbitration, the Steward's
+strong pass, the Grantmaker) and the long runs whose budget already bounds
+them (the solver, the researcher's strong tier) run on Fable 5.2, at twice
+the price per token. Both tiers carry a server-side fallback to Opus 4.8 so a
+safety-classifier refusal degrades gracefully instead of failing the job. Background assessments carry a
 standard-model and a strong-model variant on the action ledger, and whoever
 commissions a pass chooses the tier (docs/allocation.md), the strong one
 where the node is contested and important; what no one commissions is the

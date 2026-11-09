@@ -176,33 +176,41 @@ export class ApiStack extends cdk.Stack {
         // on the top of the queue; the rest stay embedded stubs until budget
         // allows.
         STEWARD_MODEL: "claude-opus-5-5",
-        // The solver runs on the strong tier; config refuses production
+        // The solver runs on the frontier tier, Fable 5.2: a multi-hour
+        // proof attempt is the long-horizon work that model is for, and the
+        // attempt's ceiling bounds the spend. Config refuses production
         // without it (docs/mathematics.md §7.8).
-        SOLVER_MODEL: "claude-opus-5-5",
+        SOLVER_MODEL: "claude-fable-5-2",
         // The Steward's six money triggers (formalize, formalization_review,
         // prize_claim, prize_claim_voided, prize_window_closed,
         // attempt_completed) run on this tier from the workers that own
         // them, never on STEWARD_MODEL by way of the queue; config refuses
         // production without it (docs/mathematics.md §6.4). Setting it also
         // turns on model tiering: every assess/reassess group carries a
-        // 'strong' variant the allocators buy by marginal return.
-        STEWARD_STRONG_MODEL: "claude-opus-5-5",
+        // 'strong' variant the allocators buy by marginal return. Fable 5.2
+        // ($8/$40 per MTok, twice Opus 5.5): the variant is bought only where
+        // a node is contested and important, and a money trigger is rare and
+        // final, so this is where the best model's judgment is worth its
+        // price. Unlike Opus 5.5, an omitted effort runs at `high`.
+        STEWARD_STRONG_MODEL: "claude-fable-5-2",
         // The researcher (#298): the instrument a Steward or a Grantmaker
         // launches for one bounded investigation, and the runner of document
-        // examinations (#507). Its tiers ride the config defaults (Opus 5.5,
-        // Sonnet 5, GLM 5.3 Flash through OpenRouter); the daily cap, the
+        // examinations (#507). Its tiers ride the config defaults (Fable 5.2,
+        // Sonnet 5.5, GPT-6 Luna through OpenRouter); the daily cap, the
         // per-run ceiling, and the per-pass count are its backstops, and a
         // researcher_paused platform flag halts it without a deploy.
         RESEARCHER_ENABLED: "true",
-        // The other load-bearing governance agents also run on Opus 5.5: the
-        // Curator adjudicates merges/splits, the Audit Agent polices the
-        // governance system, and the Dispute Arbitrator resolves escalations
-        // and appeals. The Contribution Reviewer stays on the Sonnet default
-        // (governanceModel). Refusal false-positives degrade to Opus 4.8 via
-        // the server-side fallback in src/llm/client.ts.
+        // The other load-bearing governance agents: the Curator adjudicates
+        // merges/splits and the Audit Agent polices the governance system,
+        // both on Opus 5.5. The Dispute Arbitrator resolves escalations and
+        // appeals, the last word on a dispute and a handful of runs, so it
+        // takes the frontier tier, Fable 5.2. The Contribution Reviewer stays
+        // on the Sonnet default (governanceModel). Refusal false-positives
+        // on either tier degrade to Opus 4.8 via the server-side fallback in
+        // src/llm/providers/anthropic.ts.
         CURATOR_MODEL: "claude-opus-5-5",
         AUDIT_MODEL: "claude-opus-5-5",
-        ARBITRATION_MODEL: "claude-opus-5-5",
+        ARBITRATION_MODEL: "claude-fable-5-2",
         // The Extractor authors the graph's canonical language from arbitrary,
         // wholly untrusted documents whose framing it must not adopt, and
         // everything downstream inherits its wording. It also runs once per
@@ -269,7 +277,9 @@ export class ApiStack extends cdk.Stack {
         // (issue #77); the drain works the top of the importance queue each
         // window and pauses when spent. NOTE: these were sized when the strong
         // tier was Fable 5.1 ($10/$50 per MTok); Opus 5.5 is $4/$20 (cache reads
-        // $0.20), so the same ceiling now caps well under half the spend.
+        // $0.20), so the same ceiling now caps well under half the spend on
+        // the Opus agents, and about four fifths of it on the Fable 5.2 ones
+        // ($8/$40).
         LLM_HOURLY_CALL_LIMIT: "167",
         LLM_DAILY_CALL_LIMIT: "1667",
         LLM_HOURLY_TOKEN_LIMIT: "133333",
