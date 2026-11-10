@@ -16,6 +16,7 @@ import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
+import { EmbedClaim } from "./claim/EmbedClaim";
 import { OrderAssessment } from "./claim/OrderAssessment";
 import { FundDecomposition } from "./claim/FundDecomposition";
 import { FormalStatement } from "./claim/FormalStatement";
@@ -459,6 +460,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           citation pinned to the current assessment version, plus the evidence
           record for carrying the page's provenance out of the graph. */}
       <CiteClaim claimId={claim.id} />
+      {/* its neighbour on the way out: the claim shown on another site,
+          with the judgment whole */}
+      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no

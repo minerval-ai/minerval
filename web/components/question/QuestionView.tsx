@@ -9,6 +9,7 @@ import { AssessmentText } from "@/components/AssessmentText";
 import { Term } from "@/components/Term";
 import { Contribute } from "@/components/claim/Contribute";
 import { CiteClaim } from "@/components/claim/CiteClaim";
+import { EmbedClaim } from "@/components/claim/EmbedClaim";
 import styles from "./question.module.css";
 
 // A question's page (constitution §7a): first-class, like a claim's. It
@@ -234,6 +235,7 @@ export function QuestionView({ detail }: { detail: ClaimDetail }) {
       )}
 
       <CiteClaim claimId={claim.id} />
+      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
       <Contribute claimId={claim.id} />
 
       <hr className="thin" />

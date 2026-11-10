@@ -1691,3 +1691,28 @@ export interface RunStep {
   created_at: string;
   content: unknown;
 }
+
+// The claim card (GET /claims/:claim_id/card): the graph's judgment of one
+// node, whole, in a small fixed shape. Every key is always present; a value
+// that does not exist yet is null. Embeds read this and nothing else.
+export interface ClaimCard {
+  id: string;
+  kind: "claim" | "quantity" | "question" | string;
+  text: string;
+  /** active | merged | deprecated | archived. */
+  state: string;
+  /** A claim's status; null when unassessed and for the other kinds. */
+  assessment_status: string | null;
+  /** How sure the Steward is of the status (or a question's standing), 0..1. */
+  assessment_confidence: number | null;
+  /** A question's standing; null for the other kinds and until judged. */
+  standing: string | null;
+  /** A quantity's current estimate and unit; null for the other kinds. */
+  estimate: QuantityEstimate | null;
+  unit: QuantityUnit | null;
+  /** How actively the claim is disputed, 0..1; reported beside the status. */
+  contestation: number | null;
+  assessed_at: string | null;
+  updated_at: string;
+  page_url: string;
+}
