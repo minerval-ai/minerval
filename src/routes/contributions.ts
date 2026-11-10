@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   createContributionBody,
   listContributionsParams,
@@ -6,6 +6,7 @@ import {
 } from "../schemas/governance.js";
 import { anyContributionTypeEnum } from "../schemas/common.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
+import { optionalAuthHook } from "../server/optional-auth.js";
 import {
   createContribution,
   getContributionById,
@@ -262,9 +263,9 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     // Reads stay open; credentials are read when presented, for `mine`.
-    preHandler: async (request, reply) => {
+    preHandler: optionalAuthHook(async (request: FastifyRequest, reply: FastifyReply) => {
       if (presentsCredentials(request)) await app.authenticate(request, reply);
-    },
+    }),
     handler: async (request, reply) => {
       const params = listContributionsParams.parse(request.query);
       const mine = params.mine === true;

@@ -5,6 +5,14 @@ import {
   unresolvableModelIdMessage,
 } from "./llm/providers/routing.js";
 
+/**
+ * Requests per minute one IP address may make without credentials. The one
+ * place the number is written: the OpenAPI description reads the config
+ * value this defaults, and tests/unit/server/public-read.test.ts fails if
+ * docs/architecture.md or docs/infrastructure.md state a different figure.
+ */
+export const ANONYMOUS_RATE_LIMIT_PER_MINUTE_DEFAULT = 300;
+
 const DEFAULT_DB_URL =
   "postgresql://episteme:episteme_dev@localhost:5432/episteme";
 
@@ -82,6 +90,22 @@ const configSchema = z.object({
 
   // CORS
   corsOrigins: z.string().default(""),
+
+  // Public reads (src/server/plugins/public-read.ts): how long a browser or
+  // the edge may reuse an anonymous GET, and how long it may serve the stale
+  // copy while it fetches a fresh one. Short, because the graph changes.
+  publicReadMaxAgeSeconds: z.coerce.number().int().min(0).default(60),
+  publicReadStaleWhileRevalidateSeconds: z.coerce.number().int().min(0).default(300),
+
+  // The per-IP limit on requests without credentials. Cloudflare enforces it
+  // (docs/infrastructure.md, "Caching and the anonymous rate limit"); this
+  // value is what the API tells callers the limit is, in the OpenAPI
+  // description. Change the Cloudflare rule and this together.
+  anonymousRateLimitPerMinute: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(ANONYMOUS_RATE_LIMIT_PER_MINUTE_DEFAULT),
 
   // Public web frontend base URL, used to build human-readable claim-page
   // links returned by the MCP server (#73) and to send OAuth users to the
@@ -1164,6 +1188,10 @@ export function loadConfig(): Config {
     apiKeys: process.env.API_KEYS,
     apiKeyContributors: process.env.API_KEYS,
     corsOrigins: process.env.CORS_ORIGINS,
+    publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
+    publicReadStaleWhileRevalidateSeconds:
+      process.env.PUBLIC_READ_STALE_WHILE_REVALIDATE_SECONDS,
+    anonymousRateLimitPerMinute: process.env.ANONYMOUS_RATE_LIMIT_PER_MINUTE,
     publicWebBaseUrl: process.env.PUBLIC_WEB_BASE_URL,
     publicApiBaseUrl: process.env.PUBLIC_API_BASE_URL,
     citationUrlBase: process.env.CITATION_URL_BASE,
