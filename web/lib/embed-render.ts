@@ -1,5 +1,5 @@
 import type { ClaimCard } from "./types";
-import { OWL_PATH } from "../app/Mark";
+import { OWL_PATH } from "./owl-mark";
 import {
   EMBED_HEIGHT_MESSAGE, cardJudgment, embedDate, escapeHtml, judgmentLine, judgmentSentence,
 } from "./embed";
