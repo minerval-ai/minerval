@@ -7,7 +7,7 @@ description: >-
   where it matters.
 metadata:
   minerval:
-    version: 5
+    version: 6
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
@@ -15,6 +15,7 @@ metadata:
       3: "an instance may only mention the claim (stance mentions), citing it or reporting the debate without taking a side; it is no vote in any count"
       4: The Contribution Reviewer and the Dispute Arbitrator may open a cited source with provenance_read_source, so a quote, a figure or a counter-source is checked against the text, not taken on faith.
       5: The researcher's section carries the mapping procedure it follows, so the researcher no longer reads the Steward's section.
+      6: A retraction or correction notice is sent to the Steward of every claim that asserts the document or rests on it through recorded provenance (trigger source_event), not only to lookouts.
 ---
 
 ## For every administrator
@@ -176,8 +177,9 @@ has been retracted, corrected, or superseded, say so in its reading and
 in the summary, and weigh it accordingly. The retraction watch follows the edges you record:
 a notice against a document reaches not only the claims that assert it but
 every claim whose sources draw on it, or assert a copy or another version
-of it, and the lookouts watching those claims see the path. That is one
-reason to record the edges.
+of it. Each of those claims' Stewards is sent the notice and the path
+(trigger `source_event`), and the lookouts watching for retractions see it
+too. That is one reason to record the edges.
 
 **Examining a document.** Some sources deserve more than a reading: the
 study the whole claim rests on, a report whose figure every later source

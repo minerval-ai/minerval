@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
  * The Extractor records claims with tool calls (record_claims, then
@@ -89,11 +89,22 @@ function toolResults(request: number): Array<Record<string, unknown>> {
   return last.filter((b) => b.type === "tool_result").map((b) => JSON.parse(b.content));
 }
 
+// The Extractor warns when a run ends before it finished. Captured rather
+// than printed: a warning written as the file's last test ends can still be
+// in flight when the worker closes, which vitest reports as an unhandled
+// teardown error and fails the run (seen in CI on #866).
+let warn: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   promptArgs.length = 0;
   streamMock.mockReset();
   createMock.mockReset();
   process.env.ANTHROPIC_API_KEY = "test-key";
+  warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  warn.mockRestore();
 });
 
 describe("the Extractor's recording", () => {
@@ -195,6 +206,7 @@ describe("the Extractor's recording", () => {
     respondWith(turn([["record_claims", { claims: [claim("A")] }]]), cut, cut, cut);
     const claims = await extractClaims({ content: "a very long paper" });
     expect(claims.map((c) => c.verbatim_text)).toEqual(["A"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("keeping the 1 claims recorded"));
   });
 
   it("fails, rather than report no claims, when cut off with nothing recorded", async () => {
@@ -283,5 +295,6 @@ describe("the Extractor's budget", () => {
     const claims = await underBudget(100, 1_000, () => extractClaims({ content: "doc" }));
     expect(claims.map((c) => c.verbatim_text)).toEqual(["A"]);
     expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("budget spent"));
   });
 });

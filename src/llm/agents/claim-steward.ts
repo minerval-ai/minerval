@@ -66,13 +66,12 @@ import { createResearchTools } from "../tools/research-tools.js";
 import { randomUUID } from "node:crypto";
 import { runBudgetLeft } from "../run-funding.js";
 import {
-  renderResearchSessionArrivals,
   resumeMessages,
   suspendSession,
-  takeLiveReplies,
   takeReadySession,
 } from "../../services/session-service.js";
 import { originalPayer } from "../../services/commission-service.js";
+import { executeSessionTool, getSessionToolDefinitions, takeArrivals } from "../tools/session-tools.js";
 import { getQuestionStewardSystemPromptBlocks } from "../prompts/question-steward.js";
 import {
   executeKindTool,
@@ -599,6 +598,7 @@ async function runClaimStewardImpl(input: {
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
     ...getSpendToolDefinitions(),
+    ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
@@ -734,7 +734,7 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
       transcript = t;
     },
     // What it asked for that comes back while it is still working.
-    pendingInput: async () => renderResearchSessionArrivals(await takeLiveReplies(session.id).catch(() => [])),
+    pendingInput: async () => takeArrivals(session.id).catch(() => null),
     tools,
     system,
     model,
@@ -790,6 +790,8 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
     const inboxOutput = await executeInboxTool(name, toolInput, { nodeId: input.claimId, labels: inbox.labels });
     if (inboxOutput !== null) return inboxOutput;
+    const sessionOutput = await executeSessionTool(name, toolInput);
+    if (sessionOutput !== null) return sessionOutput;
     const spendOutput = await executeSpendTool(name, toolInput);
     if (spendOutput !== null) return spendOutput;
     const sqlOutput = await executeSqlTool(name, toolInput);

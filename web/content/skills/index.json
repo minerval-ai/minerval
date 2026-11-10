@@ -565,7 +565,7 @@
       "name": "provenance",
       "displayName": "Provenance",
       "description": "How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.",
-      "version": 5,
+      "version": 6,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -1072,7 +1072,7 @@
           }
         }
       ],
-      "bodyChars": 21172
+      "bodyChars": 21262
     },
     {
       "name": "search",

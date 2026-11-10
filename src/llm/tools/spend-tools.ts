@@ -15,6 +15,8 @@ import { commissionNodePass } from "../../services/commission-service.js";
 import { awaitDecision, filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { loadConfig } from "../../config.js";
+import { rawQuery } from "../../db/client.js";
+import { registerAwait } from "../../services/session-service.js";
 import { commissionResearch } from "../../services/research-commission-service.js";
 import type { ResearchModelTier } from "../../services/research-run-service.js";
 
@@ -103,8 +105,8 @@ export function getSpendToolDefinitions(): Tool[] {
     {
       name: PETITION_MANDATE,
       description:
-        "Ask the mandate paying for this run for more money, and get its answer " +
-        "now. The petition goes to that mandate with the chain of runs that led " +
+        "Ask the mandate paying for this run for more money. The petition goes " +
+        "to that mandate with the chain of runs that led " +
         "to this one; you are not told which mandate it is, since your work " +
         "serves the graph, not its funder. Use it when doing the work properly " +
         "needs more than you have, and say so concretely: what you would do " +
@@ -112,7 +114,11 @@ export function getSpendToolDefinitions(): Tool[] {
         "conclude if the answer is no. A program officer reads your petition " +
         "with the mandate's policy, its recent decisions and how this run came " +
         "to be funded, and answers in seconds; what is beyond the officer goes " +
-        "to the mandate's Grantmaker, which takes a minute or two. Asking costs " +
+        "to the mandate's Grantmaker, which takes a minute or two. Asking " +
+        "doesn't stop you: carry on, and the decision appears in a later tool " +
+        "result, a grant raising your budget then; with nothing else to do, " +
+        "wait_for_answers waits for it briefly, and past that your session " +
+        "pauses and resumes with it. Asking costs " +
         "you nothing: the mandate pays for its own decision. Its answer is a " +
         "judgment about money, never about your conclusion, and no answer " +
         "obliges you to conclude anything.",
@@ -138,7 +144,13 @@ export function getSpendToolDefinitions(): Tool[] {
           },
           why: { type: "string", description: "Why your current budget can't cover it, and why it matters for this work." },
           if_refused: { type: "string", description: "What you will conclude or record if the answer is no." },
-          wait: { type: "boolean", description: "true (the default for more_budget) to wait for the answer in this run; false to send it and carry on." },
+          wait: {
+            type: "boolean",
+            description:
+              "true (the default for more_budget) to have the decision come back to you: in a run that can " +
+              "pause, it arrives in a later tool result while you carry on; otherwise this call waits for it. " +
+              "false to send it and carry on without the answer.",
+          },
         },
         required: ["kind", "owls", "plan"],
       },
@@ -244,6 +256,10 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
       });
     }
     const wait = input.wait === undefined ? kind === "more_budget" : input.wait === true;
+    // In a session (a Steward's run), a petition never blocks: the decision
+    // returns into the session, shown in the next tool result, or resuming it
+    // if it paused (session-service.ts). Without one, the run waits here.
+    const inSession = Boolean(ctx.session) && kind === "more_budget" && wait;
     const petitionId = await filePetition({
       grantId,
       kind,
@@ -257,6 +273,22 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
       spentMicroUsd: ctx.passBudget?.meter.billedMicroUsd,
       waiting: wait,
     });
+    if (inSession) {
+      const sessionId = await registerAwait("petition", petitionId);
+      if (sessionId) {
+        await rawQuery(`UPDATE petitions SET reply_to_session = $2 WHERE id = $1`, [petitionId, sessionId]);
+        workSoon(grantId);
+        return JSON.stringify({
+          success: true,
+          petition_id: petitionId,
+          message:
+            "Sent to the mandate paying for this run. Carry on with what you can do: the decision appears in your " +
+            "next tool result, and a grant raises your budget then. If you have nothing else to do until it comes, " +
+            "call wait_for_answers. If it still hasn't come, end your turn: your session pauses and resumes with the " +
+            "decision, and a grant decided while you are paused funds the pass that resumes you.",
+        });
+      }
+    }
     if (!wait) {
       workSoon(grantId);
       return JSON.stringify({
@@ -334,7 +366,9 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   }
   const ctx = getUsageContext();
   const nodeId = ctx.session?.nodeId ?? ctx.claimId ?? null;
-  if (!nodeId) {
+  // With a session the report returns into it; without one it goes to the
+  // node's inbox, so a run with neither has nowhere to receive it.
+  if (!nodeId && !ctx.session) {
     return JSON.stringify({
       success: false,
       message:
@@ -355,7 +389,8 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
     budgetMicroUsd: budget,
     tier,
     requestedBy: ctx.agent === "steward" || !ctx.agent ? "claim_steward" : ctx.agent,
-    wait: wantsWait,
+    // A run with no node to report to always waits: its session is where the report goes.
+    wait: wantsWait || !nodeId,
     followUpOf: typeof input.follow_up_of === "string" && input.follow_up_of.trim() ? input.follow_up_of.trim() : null,
     examine: examineSourceId ? { sourceId: examineSourceId, facets: input.facets } : null,
   });

@@ -34,6 +34,7 @@
  */
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { executeSessionTool, getSessionToolDefinitions, openSession, type AgentSession, type SessionResume } from "../tools/session-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -91,9 +92,21 @@ const MAX_ITERATIONS = RUN_TURN_GUARD;
 const PAGE = 15;
 
 export function runConsistencyChecker(
-  input: Parameters<typeof runConsistencyCheckerImpl>[0]
+  input: Parameters<typeof runConsistencyCheckerImpl>[0],
+  /** A paused session to continue (engine-executor.ts, runResumeAction). */
+  resume?: SessionResume
 ): ReturnType<typeof runConsistencyCheckerImpl> {
-  return withAgent("consistency_checker", () => runConsistencyCheckerImpl(input));
+  // The run belongs to a session (session-service.ts): what it asks for and
+  // waits on comes back into it, and it pauses at the end when answers are
+  // outstanding, keeping its input to be rebuilt when it resumes.
+  return withAgent("consistency_checker", () => {
+    const sess = openSession("consistency_checker", null, input, resume);
+    return sess.run(async () => {
+      const result = await runConsistencyCheckerImpl(input, sess);
+      await sess.close(input.model ?? "");
+      return result;
+    });
+  });
 }
 
 async function runConsistencyCheckerImpl(input: {
@@ -120,7 +133,7 @@ async function runConsistencyCheckerImpl(input: {
    * fresh sweep flag?) that leaves the graph as it found it.
    */
   dryRun?: boolean;
-}): Promise<ConsistencyCheckerResult> {
+}, sess: AgentSession): Promise<ConsistencyCheckerResult> {
   const config = loadConfig();
   const model = input.model ?? config.consistencyModel;
   const system = getConsistencyCheckerSystemPromptBlocks();
@@ -144,6 +157,7 @@ async function runConsistencyCheckerImpl(input: {
     ...skillLoader.definitions,
     ...getGraphReadToolDefinitions(),
     ...getSpendToolDefinitions(),
+    ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     {
       name: "list_partition_claims",
@@ -324,7 +338,8 @@ async function runConsistencyCheckerImpl(input: {
   let closed = false;
 
   const result = await toolUseLoop({
-    initialMessages: [{ role: "user", content: briefing }],
+    initialMessages: sess.initialMessages([{ role: "user", content: briefing }]),
+    ...sess.loop,
     tools,
     system,
     model,
@@ -355,6 +370,8 @@ async function runConsistencyCheckerImpl(input: {
       if (loaded !== null) return loaded;
       const graphRead = await executeGraphReadTool(name, toolInput);
       if (graphRead !== null) return graphRead;
+      const sessionOut = await executeSessionTool(name, toolInput);
+      if (sessionOut !== null) return sessionOut;
       const spend = await executeSpendTool(name, toolInput);
       if (spend !== null) return spend;
       const sql = await executeSqlTool(name, toolInput);

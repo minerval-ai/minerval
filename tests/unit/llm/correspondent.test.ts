@@ -47,6 +47,7 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
   runBudget: () => null,
   budgetRefusal: () => null,
   withAgent: (_a: string, fn: () => unknown) => fn(),
+  runWithUsageContext: (_c: unknown, fn: () => unknown) => fn(),
   withSkills: (_s: string[], fn: () => unknown) => fn(),
   getUsageContext: () => ({}),
 }));
@@ -183,6 +184,7 @@ describe("runCorrespondent", () => {
         "commission",
         "petition_mandate",
         "query_sql",
+        "wait_for_answers",
       ].sort()
     );
   });

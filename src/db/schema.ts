@@ -5207,6 +5207,9 @@ export const petitions = pgTable(
     reason: text("reason"),
     // A follow_up decision is commissioned once the petitioner's run has ended.
     followUpCommissionedAt: timestamp("follow_up_commissioned_at", { withTimezone: true }),
+    // The session that asked (agent_sessions): the decision returns into it,
+    // shown mid-run or resuming it if it paused (session-service.ts).
+    replyToSession: uuid("reply_to_session"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
   },
@@ -5318,10 +5321,14 @@ export const agentSessions = pgTable(
   {
     id: uuid("id").primaryKey(),
     role: text("role").notNull(),
-    nodeId: uuid("node_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
+    // The node a Steward's session is on; null for agents whose work is not
+    // one node's (the Consistency Checker, the Audit Agent, a Correspondent).
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("running"),
+    // What the agent's run was called with, to rebuild it on resumption
+    // (engine-executor.ts, runResumeAction). Stewards resume through a pass
+    // on their node instead and need none.
+    context: jsonb("context"),
     // The conversation so far, in the provider-neutral message form, made
     // portable at suspension (server-tool and thinking blocks become text or
     // are dropped).
@@ -5340,6 +5347,10 @@ export const agentSessions = pgTable(
     deadline: timestamp("deadline", { withTimezone: true }),
     resumedAt: timestamp("resumed_at", { withTimezone: true }),
     resumes: integer("resumes").notNull().default(0),
+    // Money granted to the session while it was paused (a petition decided
+    // after its run ended): [{grantId, microUsd}], each placed on the pass
+    // that resumes it, beside what the paused run had left.
+    extraFunding: jsonb("extra_funding").notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

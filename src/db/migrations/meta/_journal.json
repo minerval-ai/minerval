@@ -719,8 +719,22 @@
     {
       "idx": 102,
       "version": "7",
-      "when": 1794333733053,
-      "tag": "0102_document_reviews",
+      "when": 1794332131749,
+      "tag": "0102_petitions_on_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1794333606475,
+      "tag": "0103_sessions_for_all_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794335159743,
+      "tag": "0104_document_reviews",
       "breakpoints": true
     }
   ]

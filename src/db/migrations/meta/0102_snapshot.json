@@ -1,5 +1,5 @@
 {
-  "id": "2ac8e73f-8f26-49cc-ab23-1ef2dc40903d",
+  "id": "11796a3e-d57b-4b85-aef9-8130a4b345ab",
   "prevId": "b77a90c9-cfe8-465b-884b-4cf52233ba49",
   "version": "7",
   "dialect": "postgresql",
@@ -1482,6 +1482,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "extra_funding": {
+          "name": "extra_funding",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -8441,12 +8448,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8485,21 +8486,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_examinations_request": {
-          "name": "idx_examinations_request",
-          "columns": [
-            {
-              "expression": "request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -8528,19 +8514,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "examinations_request_id_requests_id_fk": {
-          "name": "examinations_request_id_requests_id_fk",
-          "tableFrom": "examinations",
-          "tableTo": "requests",
-          "columnsFrom": [
-            "request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8553,7 +8526,7 @@
         },
         "ck_examinations_trigger": {
           "name": "ck_examinations_trigger",
-          "value": "\"examinations\".\"trigger\" IN ('claim', 'request', 'mechanical', 'mandate')"
+          "value": "\"examinations\".\"trigger\" IN ('claim', 'mechanical', 'mandate')"
         }
       },
       "isRLSEnabled": false
@@ -12037,6 +12010,12 @@
         "follow_up_commissioned_at": {
           "name": "follow_up_commissioned_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply_to_session": {
+          "name": "reply_to_session",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
