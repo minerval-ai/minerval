@@ -6,6 +6,9 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  // Where relative metadata URLs (canonical links, preview images) resolve:
+  // the public site, unless a deployment names its own origin.
+  metadataBase: new URL(process.env.SITE_URL ?? "https://minerval.ai"),
   title: "Minerval · an open repository of claims",
   description:
     "A knowledge graph of claims, quantities, and questions, with transparent provenance, decomposition, and assessment.",

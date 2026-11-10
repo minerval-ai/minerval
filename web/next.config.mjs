@@ -11,6 +11,8 @@ const nextConfig = {
   // Ensure the vendored verbatim content ships in the serverless bundle.
   outputFileTracingIncludes: {
     "/docs/**": ["./content/**/*"],
+    // The fonts the link-preview cards are set in (lib/og/card.tsx).
+    "/{claims,findings}/**": ["./lib/og/fonts/*.woff"],
   },
   // The explainer pages moved from /about/* to /docs/* (#112); old URLs live on.
   async redirects() {
