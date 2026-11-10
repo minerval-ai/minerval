@@ -12,6 +12,11 @@
  *
  * A follow-up continues an earlier run: it opens with that run's notebook and
  * report, so the Researcher picks up where it stopped.
+ *
+ * A Steward may commission the run as an examination of a document in its
+ * node's map (#865), as delegate_research does inline: the examination is
+ * opened here, before any money moves, so a malformed one is refused at
+ * once, and the engine launches the Researcher on it.
  */
 import { rawQuery } from "../db/client.js";
 import { getUsageContext } from "../llm/usage-context.js";
@@ -26,6 +31,7 @@ import {
 } from "./research-run-service.js";
 import { placeCommission, type CommissionPayer } from "./commission-service.js";
 import { registerAwait } from "./session-service.js";
+import { ExaminationError, linkResearchRun, openExamination } from "./examination-service.js";
 
 export const RESEARCH_GROUP = (runId: string) => `research:${runId}`;
 
@@ -46,6 +52,8 @@ export async function commissionResearch(input: {
   wait: boolean;
   /** An earlier run this one continues. */
   followUpOf?: string | null;
+  /** Run it as an examination of this document in the node's map, checking these facets. */
+  examine?: { sourceId: string; facets: unknown } | null;
 }): Promise<ResearchCommissionResult> {
   const budget = Math.round(input.budgetMicroUsd);
   if (!(budget > 0)) return { ok: false, message: "A research commission needs a budget above zero." };
@@ -62,6 +70,36 @@ export async function commissionResearch(input: {
       `It ended ${prior.status}${prior.report ? `, reporting:\n\n${JSON.stringify(prior.report).slice(0, 12000)}` : ""}.\n\n` +
       `Its notebook is open below. The follow-up asks:\n\n${input.task}`
     : input.task;
+  // Validated before anything is recorded: the document must be in the
+  // node's map, and the facets well formed.
+  if (input.examine) {
+    if (!input.nodeId) return { ok: false, message: "An examination commissioned here serves a node: there is none in scope." };
+    if (input.requestedBy !== "claim_steward") {
+      return {
+        ok: false,
+        message:
+          "Only a Steward's research examines a document, for its node. To have a document reviewed for its own sake, file a request bearing on it.",
+      };
+    }
+  }
+  let examination: Awaited<ReturnType<typeof openExamination>> | null = null;
+  if (input.examine) {
+    try {
+      examination = await openExamination({
+        scope: "claim",
+        trigger: "claim",
+        claimId: input.nodeId,
+        grantId: null,
+        sourceId: input.examine.sourceId,
+        brief: input.task,
+        facets: input.examine.facets,
+        requestedBy: input.requestedBy,
+      });
+    } catch (err) {
+      if (err instanceof ExaminationError) return { ok: false, message: err.message };
+      throw err;
+    }
+  }
   const ctx = getUsageContext();
   const run = await openResearchRun({
     claimId: input.nodeId,
@@ -77,6 +115,7 @@ export async function commissionResearch(input: {
     ceilingMicroUsd: budget,
     notebook: prior ? carriedNotebook(prior) : null,
   });
+  if (examination) await linkResearchRun(examination.id, run.id);
   const [action] = await rawQuery<{ id: string }>(
     `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
      VALUES ('research', $1, 'standard', $2, $3, $4, $5)
@@ -95,6 +134,8 @@ export async function commissionResearch(input: {
   });
   if (!placed.ok) {
     await rawQuery(`UPDATE actions SET status = 'cancelled', updated_at = now() WHERE id = $1`, [action!.id]);
+    // Nothing was examined: the examination opened for it goes with it.
+    if (examination) await rawQuery(`DELETE FROM examinations WHERE id = $1`, [examination.id]).catch(() => null);
     await closeResearchRun(run.id, { status: "refused", report: null, spentMicroUsd: 0, error: placed.message }).catch(() => null);
     return { ok: false, message: placed.message };
   }

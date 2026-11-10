@@ -677,6 +677,19 @@ the open ones with list_requests. Requests that bear on your node alone are
 yours to keep: sharpen them with revise_request, and decide when work that
 comes back meets them, closing them with close_request.
 
+Some documents deserve a reading beyond what your node needs: a report
+other sources keep quoting against each other, a study whose methods carry
+conclusions many claims repeat, a long document known mostly from
+excerpts. When you meet one, you may ask for a review of it for its own
+sake: a request bearing on that document alone (file_request with its
+source_id), which whoever takes it up records on the document's page for
+every later reader, and which the Curator keeps. get_source_context shows
+what the graph records about the document across its uses, including any
+review it has had and the requests already on it. There is no threshold;
+say in why what about the document makes it worth the cost. A check that
+serves your own reading of the document is an examination you launch
+yourself (the Provenance skill).
+
 ## Boundaries and Propagation
 
 Edges into your claim's decomposition are yours; edges into another node's

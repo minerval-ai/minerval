@@ -106,8 +106,12 @@ could not find in its source.
 
 **Examining a document.** A run launched as an examination checks one
 document for the facets in its brief, and its record is the document's,
-not the report's: it is shown on the document's page to every reader and
-every Steward whose claim rests on it. Begin with `examination_outline`,
+not the report's: it is shown on the document's page to everyone who
+reads the document next. A review asked for in a request is about the
+document itself, not any claim, and starts with no facets: name what you
+will check with `examination_outline`'s `add_facets` once you have seen
+the document, and on any examination add a facet the document turns out
+to call for. Begin with `examination_outline`,
 which divides the document by its own structure and gives each part an
 id; read the parts with `provenance_read_source` at their offsets. Mark
 what you examined with `examination_record_coverage`, for each facet, and

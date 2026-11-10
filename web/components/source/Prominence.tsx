@@ -4,8 +4,10 @@ import { plural, SUPPORT_CLS, SUPPORT_WORD, when } from "./model";
 import s from "./source.module.css";
 
 // What the record shows about how much this document matters (#507): its
-// reach, where it stands in claims' stories, and what the Stewards found on
-// reading it. Figures as they are; no score is computed from them.
+// reach, where it stands in claims' stories, what the Stewards found on
+// reading it, and whether it has been reviewed as a whole (#865). Figures as
+// they are; no score is computed from them, and none of them asks for a
+// review: that is a request someone files.
 export function Prominence({ context }: { context: SourceContext | null | undefined }) {
   if (!context) return null;
   const { reach, structure: st, evidence: ev } = context.prominence;
@@ -34,6 +36,20 @@ export function Prominence({ context }: { context: SourceContext | null | undefi
     .sort((a, b) => b[1] - a[1]);
   const readings = bySupport.reduce((n, [, k]) => n + k, 0);
   const evV = readings ? `${plural(readings, "reading")} · ${ev.read_whole} read whole` : "Not yet read";
+
+  const rv = context.reviews;
+  const reviews = rv?.document_reviews ?? [];
+  const liveAsks = (rv?.requests ?? []).filter((r) => r.live);
+  const latest = reviews[reviews.length - 1];
+  const reviewV = reviews.length
+    ? reviews.length === 1 ? "Reviewed once" : `Reviewed ${reviews.length} times`
+    : liveAsks.length ? "Review asked for" : "Not reviewed";
+  const reviewS = [
+    latest && rv?.segments ? `latest covered ${latest.segments_covered} of ${rv.segments} parts, ${when(latest.created_at)}` : null,
+    latest && !rv?.segments ? `latest ${when(latest.created_at)}` : null,
+    liveAsks.length ? `${plural(liveAsks.length, "open request")}` : null,
+    rv?.claim_examinations ? `${plural(rv.claim_examinations, "examination")} for a claim` : null,
+  ].filter(Boolean).join(" · ");
 
   return (
     <div className={s.promWrap}>
@@ -69,6 +85,15 @@ export function Prominence({ context }: { context: SourceContext | null | undefi
             </span>
           )}
         </div>
+        {rv && (
+          <div>
+            <span className="sc">Reviews</span>
+            <span className={s.pv}>
+              {latest ? <a href={`#exam-${latest.examination_id}`}>{reviewV}</a> : reviewV}
+            </span>
+            {reviewS && <span className={s.ps}>{reviewS}</span>}
+          </div>
+        )}
       </div>
       {ev.notes.length > 0 && (
         <details className={s.flist}>

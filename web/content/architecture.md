@@ -1187,7 +1187,7 @@ deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
-`get_argument`, `get_source`, `get_source_examinations`, and on a request or scoping run
+`get_argument`, `get_source`, `get_source_examinations`, `get_source_context`, and on a request or scoping run
 `get_request` and `list_requests`, without who funded the work), the issue
 tools every agent carries (`raise_issue` and its companions), the
 Elicit search tools and the Pangram tools (`pangram_check_ai`,
@@ -1240,6 +1240,26 @@ whatever the request bears on. A scoping run does not do the work and
 records nothing. Each run on a request opens with the latest earlier run's
 notebook and report, so a programme carried out in stages begins each
 stage where the last stopped.
+
+**Document reviews (#865).** An examination of a document is claim-scoped
+when a Steward launches it on a document in its claim's map, inline
+(`delegate_research` with `examine_source_id`) or on its own (`commission`
+kind research with `examine_source_id`). A review of a document for its
+own sake is a request that bears on that document and on no node
+(`documentUnderReview`, `src/services/request-service.ts`): anyone may file
+one, the Curator keeps it, and a mandate funds it or not like any request.
+Nothing files or buys one automatically, and there is no candidacy
+threshold: whether a document deserves a review is the filer's judgment,
+made from what `get_source_context` records about it (lineage, prominence,
+the reviews it has had and the requests on it), and the Curator can read
+the documents the graph rests on, sorted by whichever figure it chooses,
+with `list_documents_for_review`. The full work on such a request opens a
+`scope = 'document'`, `trigger = 'request'` examination linked to the
+request (`examinations.request_id`), and every stage records onto that
+one examination. It starts with no facets; the researcher names them with
+`examination_outline`'s `add_facets` once it has seen the document. The
+findings go on the document's page; each claim's Steward cites them in its
+own reading or does not, and there is no source-level verdict.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both

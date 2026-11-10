@@ -41,6 +41,7 @@ import { orderClaimInstances } from "../../services/claim-instance-service.js";
 import { getSourceFacts } from "../../services/source-facts-service.js";
 import {
   ExaminationError,
+  addFacets,
   citeFindings,
   getExaminationOutline,
   listExaminations,
@@ -322,10 +323,11 @@ function examinationFor(ctx: SkillToolContext): string | null {
 const NO_EXAMINATION =
   "This run was not launched to examine a document; the examination tools record only on the examination a run carries out.";
 
-export const executeExaminationOutline: SkillToolExecutor = async (_input, ctx) =>
+export const executeExaminationOutline: SkillToolExecutor = async (input, ctx) =>
   guarded(async () => {
     const id = examinationFor(ctx);
     if (!id) return refuse(NO_EXAMINATION);
+    if (input.add_facets !== undefined) await addFacets(id, input.add_facets);
     const outline = await getExaminationOutline(id);
     return JSON.stringify({
       success: true,
@@ -333,7 +335,10 @@ export const executeExaminationOutline: SkillToolExecutor = async (_input, ctx) 
       note:
         outline.segments.length === 0
           ? "The document has no stored text yet. Open it with provenance_read_source (source_id above), which fetches and divides it, then call this again."
-          : "Read a segment's text with provenance_read_source at its char_start. Record coverage only for segments you examined, and anchor each finding to its passage.",
+          : (outline.facets.length === 0
+              ? "This examination checks no facets yet: once you have seen enough of the document to know what is worth checking, name the facets with add_facets. "
+              : "") +
+            "Read a segment's text with provenance_read_source at its char_start. Record coverage only for segments you examined, and anchor each finding to its passage.",
     });
   });
 

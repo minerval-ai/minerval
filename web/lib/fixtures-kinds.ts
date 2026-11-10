@@ -566,6 +566,54 @@ export const REQUESTS: RequestItem[] = [
   },
 ];
 
+// Two requests that ask for a review of one document for its own sake
+// (#865): one met, its findings on the document's page; one open and priced.
+REQUESTS.push(
+  {
+    id: "req-rs-review",
+    ask: "Review the registry study as a whole after its correction of 12 August 2026: what its data are, what it asserts beyond them, and what the corrected Table 3 changes.",
+    why: "Several claims and a 2023 meta-analysis draw on this study, and a correction replaced a row of the table its BMI result rests on. Each claim's Steward reads the part its claim touches; nobody has read the corrected paper as a whole, so a later reader cannot tell what the correction does and does not change.",
+    satisfied_by: "A record on the study's page of which parts were examined, with findings anchored to the passages they concern, including the corrected table against the original.",
+    addressed_to: null,
+    bears_on: [],
+    bears_on_sources: [{ id: "registry-study", title: "Night-shift work and incident type 2 diabetes in a national shift registry" }],
+    filed_by: { kind: "admin", label: "Claim Steward" },
+    keeper: { kind: "curator", label: "the Curator" },
+    state: "met",
+    state_note: "Met: the corrected table and the sentence resting on it were examined, and the review says plainly that the methods were not re-examined.",
+    filed_at: "2026-08-14T09:30:00Z",
+    budget_usd: 1.6,
+    work: [
+      {
+        by: "Researcher", outcome: "met", at: "2026-08-20T09:48:00Z", funded_by: "Occupational health mandate",
+        summary: "Examined the abstract, the results and the corrected Table 3 against the correction notice. The corrected row for a BMI of 30 or over no longer shows an association; the sentence in Results 3.4 resting on it is unchanged. Two findings are on the study's page.",
+      },
+    ],
+  },
+  {
+    id: "req-tt-review",
+    ask: "Review the four-day week report as a whole: what its survey measured, what it asserts beyond what it measured, and how the coverage that draws on it states its findings.",
+    why: "Twenty-six documents draw on the report, and eight of those uses state it more strongly than it states itself; the Stewards who read it found it asserts productivity gains it did not measure. A reader meeting any of those articles has no account of what the report itself shows.",
+    satisfied_by: "A record on the report's page of what was examined, with findings anchored to its passages on what the survey asked, what the report concludes from it, and where its uses depart from it.",
+    who_could: "Within the graph's Researcher's reach: the report and most of the coverage are public.",
+    addressed_to: null,
+    bears_on: [],
+    bears_on_sources: [{ id: "think-tank-report", title: "The Four-Day Week Dividend: Results from 61 Firms" }],
+    filed_by: { kind: "admin", label: "Curator" },
+    keeper: { kind: "curator", label: "the Curator" },
+    state: "open",
+    filed_at: "2026-10-02T15:00:00Z",
+    budget_usd: 6.4,
+    ledger: { action_id: "act-tt-review", variant: "full", status: "open", cost_usd: 6.4, backing_usd: 0 },
+    work: [
+      {
+        by: "Researcher", outcome: null, at: "2026-10-03T11:10:00Z", funded_by: null,
+        summary: "Scoped at about $6.40. The report is 41,000 characters in 17 parts; the survey instrument is in its appendix. Plan: read the methods, the survey and the conclusions closely, the case studies thinly, and compare the twelve most-read articles that draw on it with the passages they cite.",
+      },
+    ],
+  },
+);
+
 export function getRequest(id: string): RequestItem | null {
   return REQUESTS.find((r) => r.id === id) ?? null;
 }

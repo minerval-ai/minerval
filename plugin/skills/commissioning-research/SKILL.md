@@ -94,7 +94,12 @@ saves a wasted conversation.
   If the graph does not hold the question yet, the Grantmaker can
   propose it once the mandate is live, reviewed like anyone's proposal.
 - Funding open requests (work the graph has said would improve what it
-  knows), whatever they find.
+  knows), whatever they find. A request bearing on one document alone is
+  a review of that document for its own sake: what it says, whether its
+  methods carry its conclusions, how others have drawn on it, recorded on
+  its page. Nothing buys one automatically; whether a document is worth
+  one is your user's judgment and the mandate's, and `get_source_context`
+  shows what the graph records about it.
 - Formalizing a mathematical claim and funding proof attempts on it.
 - Checking a region's coherence: Consistency Checker sweeps of a topic
   (or of the claims no topic covers) that read its assessments against

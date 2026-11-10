@@ -30,12 +30,14 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
   // GET /sources/:source_id/context — the document across the whole graph
   // (#507): its lineage (what it draws on and what draws on it, by relation
   // and fidelity, on how many claims), its prominence (reach, where it stands
-  // in claims' stories, what Stewards found reading it), and a dated history
-  // of what has been done to and about it.
+  // in claims' stories, what Stewards found reading it), its reviews (the
+  // reviews of it for its own sake and what each covered, the examinations
+  // commissioned for a claim, the requests bearing on it, #865), and a dated
+  // history of what has been done to and about it.
   app.get<{ Params: { source_id: string } }>("/:source_id/context", {
     schema: {
       tags: ["sources"],
-      summary: "A source across the graph: lineage, prominence, and history",
+      summary: "A source across the graph: lineage, prominence, reviews and requests, and history",
       params: {
         type: "object",
         properties: { source_id: { type: "string", format: "uuid" } },

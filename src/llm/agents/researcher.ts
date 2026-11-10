@@ -455,6 +455,8 @@ export interface ResearcherInput {
   fullWork?: { tier: string; model: string; effort: string | null } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
+  /** For a scoping run on a request bearing on one document alone (#865): the document the full work reviews. */
+  documentReview?: { title: string; url: string | null; chars: number | null; segments: number } | null;
   /**
    * Wall-clock cap for the run. Defaults to RESEARCHER_MAX_WALL_MINUTES on a
    * delegated run, whose launcher waits on it, and to the longer
@@ -639,6 +641,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
       : null,
+    documentReview: input.documentReview ?? null,
     budgetUsd: ceiling / 1_000_000,
     model,
     estimate: null,

@@ -80,6 +80,22 @@ export function getSpendToolDefinitions(): Tool[] {
             description: "For research: true (the default) to have the report return into this session; false to send it to this node's inbox.",
           },
           follow_up_of: { type: "string", description: "For research: the id of an earlier research run this continues." },
+          examine_source_id: {
+            type: "string",
+            description:
+              "For research from a Steward: run it as an examination of one document in your node's map, by " +
+              "its source id. The Researcher records what it examined and what it found on the document's own " +
+              "passages, a record that sits on the document's page for whoever reads it next, as with " +
+              "delegate_research. A review of a document for its own sake, beyond what your node needs, is " +
+              "asked for as a request bearing on it (file_request with its source).",
+          },
+          facets: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", \"method\"). " +
+              "The Researcher may add one the document turns out to call for.",
+          },
         },
         required: ["budget_owls", "brief"],
       },
@@ -328,6 +344,10 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   const tierRaw = String(input.tier ?? "standard");
   const tier: ResearchModelTier = tierRaw === "strong" || tierRaw === "cheap" ? tierRaw : "standard";
   const wantsWait = input.wait !== false;
+  const examineSourceId = typeof input.examine_source_id === "string" ? input.examine_source_id.trim() : "";
+  if (!examineSourceId && input.facets !== undefined) {
+    return JSON.stringify({ success: false, message: "facets go with examine_source_id: name the document to examine." });
+  }
   const res = await commissionResearch({
     payer,
     nodeId,
@@ -337,11 +357,15 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
     requestedBy: ctx.agent === "steward" || !ctx.agent ? "claim_steward" : ctx.agent,
     wait: wantsWait,
     followUpOf: typeof input.follow_up_of === "string" && input.follow_up_of.trim() ? input.follow_up_of.trim() : null,
+    examine: examineSourceId ? { sourceId: examineSourceId, facets: input.facets } : null,
   });
   if (!res.ok) return JSON.stringify({ success: false, message: res.message });
   debitRunBudget(budget);
   const after = runBudgetLeft();
-  const spent = `with a budget of ${owls(budget)} owls from your budget` + (after !== null ? ` (you have ${owls(after)} left)` : "");
+  const spent =
+    `with a budget of ${owls(budget)} owls from your budget` +
+    (after !== null ? ` (you have ${owls(after)} left)` : "") +
+    (examineSourceId ? ", as an examination of the document: its findings go on the document's page and in provenance_get_map" : "");
   return JSON.stringify({
     success: true,
     research_run_id: res.runId,

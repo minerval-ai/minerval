@@ -870,7 +870,9 @@ export const examinations = pgTable(
     // 'document' (a review of the document for its own sake).
     scope: text("scope").notNull(),
     // EXAMINATION_TRIGGERS: who decided to spend on it. 'claim' (a Steward),
-    // 'mandate' (a Grantmaker), or 'mechanical'.
+    // 'request' (whoever funded a request bearing on the document, #865),
+    // 'mandate' (a Grantmaker, before #602 kept mandate research off the
+    // graph), or 'mechanical' (never written).
     trigger: text("trigger").notNull(),
     // The commissioning claim, for a claim-scoped examination. SET NULL: the
     // findings are about the document and outlive the claim.
@@ -883,6 +885,10 @@ export const examinations = pgTable(
     // What to check, as short labels ("data", "quotation", "method").
     facets: text("facets").array().notNull(),
     requestedBy: text("requested_by").notNull(),
+    // The request a document review was asked for in (#865): its runs take
+    // up that request, and every stage of it records onto this one
+    // examination. SET NULL: the findings are the document's and outlive it.
+    requestId: uuid("request_id").references((): AnyPgColumn => requests.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -890,8 +896,9 @@ export const examinations = pgTable(
   (table) => [
     index("idx_examinations_source").on(table.sourceId),
     index("idx_examinations_claim").on(table.claimId),
+    index("idx_examinations_request").on(table.requestId),
     check("ck_examinations_scope", sql`${table.scope} IN ('claim', 'document')`),
-    check("ck_examinations_trigger", sql`${table.trigger} IN ('claim', 'mechanical', 'mandate')`),
+    check("ck_examinations_trigger", sql`${table.trigger} IN ('claim', 'request', 'mechanical', 'mandate')`),
   ]
 );
 

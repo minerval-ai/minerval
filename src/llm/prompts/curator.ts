@@ -117,6 +117,24 @@ naming the other, merges a duplicate; set_request_targets records what it
 bears on as the graph comes to hold it (one node alone passes it to that
 Steward); close_request met or declined, with why, when work returns.
 
+A request that bears on one document alone asks for a review of that
+document for its own sake, and is yours to keep. Judge the work that comes
+back by what it examined and found, which is recorded on the document's
+page (get_source_context and the examination it names), and by whether
+it says plainly what it did not reach. You may ask for a review yourself
+where you see a document worth it: you see the graph's documents across
+claims, which no Steward does. list_documents_for_review lists the
+documents the graph rests on with what bears on that judgment (how many
+documents draw on each and how many of those uses depart from it, its
+copies, the claims it is in, whether its readings differ, how long it is,
+the reviews it has had), sorted by whichever figure you choose. None of
+them decides it. A document much drawn on whose uses agree with it may
+need no review; one that two sources quote against each other may need one
+whatever its count. Read its context first, file with file_request on its
+source_id, and say in why what about this document makes a whole reading
+worth its cost. This is work you may do, not a quota: most passes file
+none.
+
 ## Delegating research
 
 When an identity or structure call turns on what a literature does (whether

@@ -324,7 +324,10 @@ describe("toolset by model", () => {
     let names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.filter((n) => n.startsWith("examination_"))).toEqual([]);
 
+    // A review of the document for its own sake is a request bearing on it
+    // alone (#865), taken up like any request.
     const review = input({ claim: false });
+    review.run.requested_by = "request";
     review.examination = {
       id: "exam-1", source_id: "s1", source_title: "Registry study", source_url: "https://x.org/s",
       facets: ["data", "method"], scope: "document",
@@ -338,9 +341,37 @@ describe("toolset by model", () => {
     expect(names.filter((n) => n.startsWith("provenance_"))).toEqual(["provenance_read_source"]);
     expect(names).not.toContain("examination_note_finding");
     const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
-    expect(task).toContain('an examination of one document: "Registry study" (https://x.org/s), checking data, method');
-    expect(task).toContain("as a review of the document for its own sake");
+    expect(task).toContain(
+      'an examination of one document: "Registry study" (https://x.org/s), a review of the document for its own sake (When You Review a Document), checking so far data, method'
+    );
+    expect(task).toContain("It bears on one document and on no node, so it asks for a review of that document");
     expect(task).toContain("Begin with examination_outline");
+    expect(task).not.toContain("serves a mandate");
+  });
+
+  it("asks a document review opened with no facets to name them (#865)", async () => {
+    const review = input({ claim: false });
+    review.run.requested_by = "request";
+    review.examination = {
+      id: "exam-2", source_id: "s1", source_title: "Registry study", source_url: null,
+      facets: [], scope: "document",
+    };
+    await runResearcher(review);
+    const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+    expect(task).toContain("with no facets named yet: name what you will check with examination_outline's add_facets");
+  });
+
+  it("tells a scoping run on a document review what it will price (#865)", async () => {
+    const scope = input({ claim: false });
+    scope.run.requested_by = "request_scope";
+    scope.documentReview = { title: "Registry study", url: "https://x.org/s", chars: 41000, segments: 17 };
+    await runResearcher(scope);
+    const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+    expect(task).toContain('The request bears on one document alone, "Registry study" (https://x.org/s), so the full work is a review of it');
+    expect(task).toContain("41,000 characters of its text, divided into 17 parts");
+    // Scoping prices the work and examines nothing.
+    const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("examination_"))).toEqual([]);
   });
 
   it("names the launcher in the task message", async () => {

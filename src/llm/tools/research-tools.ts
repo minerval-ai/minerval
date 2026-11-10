@@ -254,13 +254,12 @@ export function getResearchToolDefinitions(
           ...(graphWrites ? { examine_source_id: {
             type: "string",
             description:
-              "Optional: launch the run as an examination of one document, by its source id. The " +
-              "researcher then records what it examined and what it found on the document's own " +
-              "passages, a record that outlives the report and that every Steward whose claim " +
-              "rests on the document can cite. " +
-              (input.claimScoped
-                ? "The document must be in your claim's map."
-                : "Without a claim_id it is a review of the document for its own sake."),
+              "Optional: launch the run as an examination of one document in your claim's map, by " +
+              "its source id. The researcher then records what it examined and what it found on the " +
+              "document's own passages, a record that outlives the report, sits on the document's " +
+              "page for whoever reads it next, and can be cited by every Steward whose claim rests " +
+              "on the document. A review of a document for its own sake, beyond what this claim " +
+              "needs, is asked for as a request bearing on it (file_request with its source).",
           },
           facets: {
             type: "array",
@@ -682,11 +681,18 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     let examination: ExaminationRow | null = null;
     const examineSourceId = str(input.examine_source_id);
     if (examineSourceId) {
+      // A review of the document for its own sake is a request bearing on it
+      // (#865); what a launcher examines inline serves its claim.
+      if (!claim) {
+        return refuse(
+          "An examination launched here serves a claim: name the claim. To have a document reviewed for its own sake, file a request bearing on it (file_request with its source)."
+        );
+      }
       try {
         examination = await openExamination({
-          scope: claim ? "claim" : "document",
-          trigger: options.requestedBy === "claim_steward" ? "claim" : "mandate",
-          claimId: claim?.id ?? null,
+          scope: "claim",
+          trigger: "claim",
+          claimId: claim.id,
           grantId: options.grantId ?? null,
           sourceId: examineSourceId,
           brief: task,

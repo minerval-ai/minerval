@@ -1477,8 +1477,12 @@ export interface ExaminationFinding {
 export interface Examination {
   id: string;
   scope: "claim" | "document";
-  trigger: "claim" | "mechanical" | "mandate";
+  // Who decided to spend on it: a Steward on its claim, whoever funded a
+  // request bearing on the document (#865), or, before #602, a mandate.
+  trigger: "claim" | "request" | "mechanical" | "mandate";
   claim: { id: string; text: string } | null;
+  /** The request a document review was asked for in; absent from an older API. */
+  request?: { id: string; ask: string; state: RequestState } | null;
   grant_id: string | null;
   source_id: string;
   brief: string;
@@ -1534,6 +1538,24 @@ export interface SourceContext {
       claims_citing_findings: number;
       notes: Array<{ claim: { id: string; text: string }; support: InstanceReading["support"]; note: string; read_at: string }>;
     };
+  };
+  /**
+   * What has been asked and done about the document as a whole (#865):
+   * reviews of it for its own sake, examinations commissioned for a claim,
+   * and the requests bearing on it. Absent from an older API.
+   */
+  reviews?: {
+    document_reviews: Array<{
+      examination_id: string;
+      created_at: string;
+      request: { id: string; ask: string; state: RequestState } | null;
+      facets: string[];
+      segments_covered: number;
+      findings: number;
+    }>;
+    claim_examinations: number;
+    segments: number;
+    requests: Array<{ id: string; ask: string; state: RequestState; filed_at: string; live: boolean }>;
   };
   history: Array<{
     at: string;
