@@ -846,19 +846,31 @@ paid for is answered by the General mandate. The chain of runs that led to
 the petitioner travels with it. The agent is never told which mandate it
 is: its work serves the graph, not its funder.
 
-**Deciding.** A petition the run waits on (the default for `more_budget`)
-starts a sitting at once; one that does not wait is decided in the
-background. A sitting takes the mandate's inbox lease
-(`grants.officer_lease_until`), pauses `OFFICER_BATCH_MS` (2 seconds) so
-petitions that arrive together are decided together, and runs a program
-officer, then the Grantmaker on whatever the officer escalated
-(src/llm/agents/program-officer.ts). The run waits up to
-`PETITION_WAIT_SECONDS` (180); past that the petition stays open, and a
+**Deciding.** Every petition starts a sitting at once. A sitting takes the
+mandate's inbox lease (`grants.officer_lease_until`), pauses
+`OFFICER_BATCH_MS` (2 seconds) so petitions that arrive together are decided
+together, and runs a program officer, then the Grantmaker on whatever the
+officer escalated (src/llm/agents/program-officer.ts).
+
+**Waiting, or not.** A petition from a run that can pause (a Steward's,
+which runs in a session) never blocks. The petition carries the session's id
+(`petitions.reply_to_session`) and the agent carries on; the decision
+returns into the session (docs below, "Sessions that pause and resume"),
+appearing in its next tool result. An agent with nothing else to do calls
+`wait_for_answers`, which holds it at most `SESSION_WAIT_FOR_ANSWERS_SECONDS`
+(60), since most petitions are decided in seconds and waiting holds the
+node's lock and a worker. Past that, it ends its turn and its session pauses
+until the decision arrives. A run that cannot pause (the Curator, the
+Consistency Checker, the Audit Agent, a Correspondent) waits in the call, up
+to `PETITION_WAIT_SECONDS` (180); past that the petition stays open, and a
 grant that comes later funds a follow-up pass.
 
-**Applying.** A grant of more budget is a commission from the deciding
-mandate on the running row, settled with the run like any money it held;
-the waiting run's ceiling rises when it reads the answer. A follow-up is
+**Applying.** A grant of more budget to a running run is a commission from
+the deciding mandate on the running row, settled with the run like any
+money it held; the run's ceiling rises when it reads the decision. A grant
+decided after the asking session paused is held on the session
+(`agent_sessions.extra_funding`) and placed, from the deciding mandate, on
+the pass that resumes it, beside what the paused run had left. A follow-up is
 commissioned once the petitioner's run has ended (`commissionFollowUps`,
 with `sweepFollowUps` on the scheduler for any the lanes' settle hooks
 missed). Asking costs the petitioner nothing: the mandate pays for its own

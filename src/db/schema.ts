@@ -5200,6 +5200,9 @@ export const petitions = pgTable(
     reason: text("reason"),
     // A follow_up decision is commissioned once the petitioner's run has ended.
     followUpCommissionedAt: timestamp("follow_up_commissioned_at", { withTimezone: true }),
+    // The session that asked (agent_sessions): the decision returns into it,
+    // shown mid-run or resuming it if it paused (session-service.ts).
+    replyToSession: uuid("reply_to_session"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
   },
@@ -5333,6 +5336,10 @@ export const agentSessions = pgTable(
     deadline: timestamp("deadline", { withTimezone: true }),
     resumedAt: timestamp("resumed_at", { withTimezone: true }),
     resumes: integer("resumes").notNull().default(0),
+    // Money granted to the session while it was paused (a petition decided
+    // after its run ended): [{grantId, microUsd}], each placed on the pass
+    // that resumes it, beside what the paused run had left.
+    extraFunding: jsonb("extra_funding").notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
