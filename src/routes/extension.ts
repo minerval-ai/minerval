@@ -43,10 +43,7 @@ import {
   shareIfPublic,
 } from "../services/shared-analysis-service.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
-import {
-  refundAgenticOp,
-  withAgenticCharge,
-} from "../server/plugins/quota.js";
+import { withAgenticCharge } from "../server/plugins/quota.js";
 import type { FastifyReply } from "fastify";
 
 function sendAnalysisState(reply: FastifyReply, state: AnalysisState) {
@@ -144,10 +141,10 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       );
       if (!run.ok) return app.sendQuotaDenial(reply, run.denied);
 
-      // A cache hit did no model work — return the charge.
-      if (run.value.state === "ready" && run.value.cached) {
-        await refundAgenticOp(request.auth, "extension_analysis");
-      }
+      // A cache hit did no model work, so the meter saw nothing and
+      // withAgenticCharge's settlement has already returned the whole cap.
+      // Refunding here as well credited the cap twice: each repeated
+      // request minted an owl.
 
       if (body.share) {
         // Detached: verifying the page is public outlives this response,

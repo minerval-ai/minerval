@@ -222,7 +222,8 @@ const PRIZE_FILING =
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "GET /health": "A load-balancer liveness probe, not an affordance.",
   "PATCH /claims/:claim_id":
-    "Writes an argument straight onto a claim without review. MCP's " +
+    "Direct service seeding only: writes an argument straight onto a " +
+    "claim without review, and refuses every other caller. MCP's " +
     "governed path is submit_contribution with contribution_type " +
     "'propose_argument', which goes through the Contribution Reviewer.",
 

@@ -136,7 +136,10 @@ describe("extension routes", () => {
     });
   });
 
-  it("POST /extension/analyze refunds the charge on a cache hit", async () => {
+  // A cache hit is metered at zero, so withAgenticCharge's settlement returns
+  // the whole cap. A second, explicit refund would credit it twice and mint
+  // owls on every repeated request.
+  it("POST /extension/analyze leaves a cache hit's refund to the meter settlement", async () => {
     mocks.startAnalysis.mockResolvedValue({
       state: "ready",
       analysis: ANALYSIS,
@@ -152,7 +155,7 @@ describe("extension routes", () => {
 
     expect(res.statusCode).toBe(200);
     expect(mocks.charges).toEqual(["extension_analysis"]);
-    expect(mocks.refunds).toEqual(["extension_analysis"]);
+    expect(mocks.refunds).toEqual([]);
   });
 
   it("POST /extension/analyze returns 202 + content_hash when the run outlasts the grace window (#93)", async () => {
