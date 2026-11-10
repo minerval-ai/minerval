@@ -7,6 +7,7 @@
  * acts through tools, no structured return value.
  */
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { executeSessionTool, getSessionToolDefinitions, openSession, type AgentSession, type SessionResume } from "../tools/session-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { getCuratorSystemPromptBlocks } from "../prompts/curator.js";
@@ -55,9 +56,21 @@ import { rawQuery } from "../../db/client.js";
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
 export function runCurator(
-  input: Parameters<typeof runCuratorImpl>[0]
+  input: Parameters<typeof runCuratorImpl>[0],
+  /** A paused session to continue (engine-executor.ts, runResumeAction). */
+  resume?: SessionResume
 ): ReturnType<typeof runCuratorImpl> {
-  return withAgent("curator", () => runCuratorImpl(input));
+  // The run belongs to a session (session-service.ts): what it asks for and
+  // waits on comes back into it, and it pauses at the end when answers are
+  // outstanding, keeping its input to be rebuilt when it resumes.
+  return withAgent("curator", () => {
+    const sess = openSession("curator", input.claimId ?? null, input, resume);
+    return sess.run(async () => {
+      const result = await runCuratorImpl(input, sess);
+      await sess.close(input.model ?? "");
+      return result;
+    });
+  });
 }
 
 async function runCuratorImpl(input: {
@@ -68,7 +81,7 @@ async function runCuratorImpl(input: {
   requestId?: string | null;
   context: string;
   model?: string;
-}): Promise<void> {
+}, sess: AgentSession): Promise<void> {
   const config = loadConfig();
   const model = input.model ?? config.curatorModel;
 
@@ -121,6 +134,7 @@ async function runCuratorImpl(input: {
     ...curatorTools,
     // Every agent with a budget can pay for other work and ask for more.
     ...getSpendToolDefinitions(),
+    ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     // Kinds and requests (§2, §7a, Part VIII): correcting a node's kind, and
     // keeping the requests that bear on several nodes or on none.
@@ -180,7 +194,8 @@ Proceed:
 ${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNote}`;
 
   await withSkills([], () => toolUseLoop({
-    initialMessages: [{ role: "user", content: userMessage }],
+    initialMessages: sess.initialMessages([{ role: "user", content: userMessage }]),
+    ...sess.loop,
     tools,
     system,
     model,
@@ -206,6 +221,8 @@ ${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNot
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);
       if (research !== null) return research;
+      const sessionOut = await executeSessionTool(name, toolInput);
+      if (sessionOut !== null) return sessionOut;
       const spend = await executeSpendTool(name, toolInput);
       if (spend !== null) return spend;
       const sqlOut = await executeSqlTool(name, toolInput);

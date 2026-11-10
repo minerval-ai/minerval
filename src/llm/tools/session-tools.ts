@@ -13,10 +13,14 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { getUsageContext } from "../usage-context.js";
-import { creditRunBudget } from "../run-funding.js";
+import { creditRunBudget, runBudgetLeft } from "../run-funding.js";
+import { runWithUsageContext } from "../usage-context.js";
+import { randomUUID } from "node:crypto";
+import { originalPayer } from "../../services/commission-service.js";
 import {
   outstanding,
   renderResearchSessionArrivals,
+  suspendSession,
   takeLiveReplies,
   type SessionRow,
 } from "../../services/session-service.js";
@@ -86,3 +90,48 @@ export async function executeSessionTool(name: string, _input: Record<string, un
       `the answers arrive.`,
   });
 }
+
+/** A paused session's conversation to continue, handed to an agent on resumption. */
+export interface SessionResume {
+  sessionId: string;
+  messages: Anthropic.MessageParam[];
+}
+
+/**
+ * The session an agent's run belongs to: a new one, or the paused one it
+ * resumes. The run is executed inside `run` with the session in its usage
+ * context; `loop` holds the hooks its tool loop takes (answers arriving
+ * mid-run, the transcript at the end); `close` pauses the session when the
+ * run ended waiting on answers, keeping `input` to rebuild the agent on
+ * resumption, or closes it.
+ */
+export function openSession(role: string, nodeId: string | null, input: unknown, resume?: SessionResume) {
+  const session = { id: resume?.sessionId ?? randomUUID(), role, nodeId };
+  let transcript: Anthropic.MessageParam[] | null = null;
+  return {
+    session,
+    initialMessages: (fresh: Anthropic.MessageParam[]) => resume?.messages ?? fresh,
+    run: <T>(fn: () => Promise<T>) => runWithUsageContext({ session }, fn),
+    loop: {
+      pendingInput: async () => takeArrivals(session.id).catch(() => null),
+      onEnd: (t: Anthropic.MessageParam[]) => {
+        transcript = t;
+      },
+    },
+    close: async (model?: string) => {
+      if (!transcript) return;
+      await suspendSession({
+        id: session.id,
+        transcript,
+        model: model ?? "",
+        budgetLeftMicroUsd: runBudgetLeft() ?? 0,
+        payer: await originalPayer().catch(() => null),
+        context: { input },
+      }).catch((err) =>
+        console.warn(`[session] pausing ${session.id} failed:`, err instanceof Error ? err.message : err)
+      );
+    },
+  };
+}
+
+export type AgentSession = ReturnType<typeof openSession>;

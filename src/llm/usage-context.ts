@@ -72,9 +72,10 @@ export interface UsageContext {
    * for and waits on (research it commissions, a question to another node's
    * Steward) is answered into this session, which pauses when the run ends
    * its turn with answers outstanding and resumes when they arrive. Set by
-   * the runs that can pause (the Stewards); absent, nothing waits.
+   * every agent that spends: the Stewards, the Curator, the Consistency
+   * Checker, the Audit Agent and Correspondents. Absent, nothing waits.
    */
-  session?: { id: string; role: string; nodeId: string };
+  session?: { id: string; role: string; nodeId: string | null };
   /**
    * What the enclosing pass may spend, as the lane that funds it set it
    * (withPassBudget): the allocations covering a ledger action, a buyer's

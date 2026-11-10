@@ -30,14 +30,27 @@ import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { executeSessionTool, getSessionToolDefinitions, openSession, type AgentSession, type SessionResume } from "../tools/session-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
 export function runAudit(
-  input: Parameters<typeof runAuditImpl>[0]
+  input: Parameters<typeof runAuditImpl>[0],
+  /** A paused session to continue (engine-executor.ts, runResumeAction). */
+  resume?: SessionResume
 ): ReturnType<typeof runAuditImpl> {
-  return withAgent("audit", () => runAuditImpl(input));
+  // The run belongs to a session (session-service.ts): what it asks for and
+  // waits on comes back into it, and it pauses at the end when answers are
+  // outstanding, keeping its input to be rebuilt when it resumes.
+  return withAgent("audit", () => {
+    const sess = openSession("audit", null, input, resume);
+    return sess.run(async () => {
+      const result = await runAuditImpl(input, sess);
+      await sess.close(input.model ?? "");
+      return result;
+    });
+  });
 }
 
 async function runAuditImpl(input: {
@@ -46,7 +59,7 @@ async function runAuditImpl(input: {
   // The audit_runs row this run executes (#180); findings attach to it.
   runId?: string;
   model?: string;
-}): Promise<void> {
+}, sess: AgentSession): Promise<void> {
   const config = loadConfig();
   const model = input.model ?? config.auditModel;
 
@@ -76,6 +89,7 @@ async function runAuditImpl(input: {
     ...getGovernanceToolDefinitions(),
     ...getAuditToolDefinitions(),
     ...getSpendToolDefinitions(),
+    ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     ...skillLoader.definitions,
     ...skillTools,
@@ -99,7 +113,8 @@ when the decisions under review hold up.${skillsNote}
 ${turnBudgetLine(AUDIT_MAX_TURNS, { canSpend: true })}`;
 
   await withSkills([], () => toolUseLoop({
-    initialMessages: [{ role: "user", content: userMessage }],
+    initialMessages: sess.initialMessages([{ role: "user", content: userMessage }]),
+    ...sess.loop,
     tools,
     system,
     model,
@@ -120,6 +135,8 @@ ${turnBudgetLine(AUDIT_MAX_TURNS, { canSpend: true })}`;
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);
       if (research !== null) return research;
+      const sessionOut = await executeSessionTool(name, toolInput);
+      if (sessionOut !== null) return sessionOut;
       const spend = await executeSpendTool(name, toolInput);
       if (spend !== null) return spend;
       const sql = await executeSqlTool(name, toolInput);

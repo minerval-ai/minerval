@@ -25,6 +25,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import { executeSessionTool, getSessionToolDefinitions, openSession, type AgentSession, type SessionResume } from "../tools/session-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
@@ -100,12 +101,24 @@ export interface CorrespondentRunResult {
 }
 
 export function runCorrespondent(
-  input: Parameters<typeof runCorrespondentImpl>[0]
+  input: Parameters<typeof runCorrespondentImpl>[0],
+  /** A paused session to continue (engine-executor.ts, runResumeAction). */
+  resume?: SessionResume
 ): ReturnType<typeof runCorrespondentImpl> {
-  return withAgent("correspondent", () => runCorrespondentImpl(input));
+  // The run belongs to a session (session-service.ts): what it asks for and
+  // waits on comes back into it, and it pauses at the end when answers are
+  // outstanding, keeping its input to be rebuilt when it resumes.
+  return withAgent("correspondent", () => {
+    const sess = openSession("correspondent", null, input, resume);
+    return sess.run(async () => {
+      const result = await runCorrespondentImpl(input, sess);
+      await sess.close(input.model ?? "");
+      return result;
+    });
+  });
 }
 
-async function runCorrespondentImpl(input: { correspondentId: string; model?: string }): Promise<CorrespondentRunResult> {
+async function runCorrespondentImpl(input: { correspondentId: string; model?: string }, sess: AgentSession): Promise<CorrespondentRunResult> {
   const config = loadConfig();
   const [c] = await rawQuery<
     CorrespondentRow & {
@@ -155,6 +168,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     ...reportTools.definitions,
     ...getGraphReadToolDefinitions(),
     ...getSpendToolDefinitions(),
+    ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     { name: changesDef.name, description: changesDef.description, input_schema: changesDef.input_schema },
     {
@@ -348,7 +362,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
 
   const result = await withSkills([], () =>
     toolUseLoop({
-      initialMessages: [{ role: "user", content: briefing + skillLoader.pointerNote }],
+      initialMessages: sess.initialMessages([{ role: "user", content: briefing + skillLoader.pointerNote }]),
+      ...sess.loop,
       tools: [...tools, ...skillLoader.definitions],
       system,
       model,
@@ -369,6 +384,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
         if (report !== null) return report;
         const graphRead = await executeGraphReadTool(name, toolInput);
         if (graphRead !== null) return graphRead;
+        const sessionOut = await executeSessionTool(name, toolInput);
+        if (sessionOut !== null) return sessionOut;
         const spend = await executeSpendTool(name, toolInput);
         if (spend !== null) return spend;
         const sql = await executeSqlTool(name, toolInput);
