@@ -80,6 +80,11 @@ skill bundles it in full, and the section numbers below point into it.
   incomplete or indirect. Verdict confidence is how sure the graph is of
   that reading, not the probability the claim is true; that is `credence`,
   given only where one number is an honest summary.
+- An assessment's `run_id` names the run that wrote it. `get_run` and
+  `list_run_steps` show what that run was given and did, step by step,
+  when the run is public; a run that read private data is withheld, with
+  the reasons. Read the run when a verdict surprises you, before you
+  dispute it.
 - When an assessment carries `developer_disclosure`, the claim names the
   developer of the model that assessed it. Pass that on with the verdict
   ("assessed by Claude Opus 5.5, made by Anthropic, which the claim names").

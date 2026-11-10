@@ -143,8 +143,9 @@ else the route sent (an entitlement, owl packs, a cap).
   rendering of something MCP already has (the Atom feed), or another
   client's own protocol (the browser extension's page analysis and chat,
   whose MCP equivalents are `assess_text` and `extract_claims`, and its
-  private prefix lookup; the shared analysis itself is `get_page_analysis`,
-  which takes the URL and hashes it on the server).
+  private prefix lookup; the shared analysis itself, and what the graph
+  recorded from a page it read as a source, are `get_page_analysis`, which
+  takes the URL and hashes it on the server).
 
 "It spends owls" is not a reason: owls are the limiter on both surfaces,
 and the tool description says what a call spends.
@@ -286,14 +287,19 @@ read is free, an agent which signals allocation turns on.
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id?, contribution_type, content,
-  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
+  evidence_urls?, merge_target_claim_id?, argument_id?,
+  merge_target_argument_id?, proposed_canonical_form?,
   request_id?}` — file any of `contribution_type`'s values: challenge,
   support, add_instance, propose_argument, propose_merge, propose_split,
   propose_edit, add_estimate (a source's figure for a quantity),
   propose_answer (a candidate answer to a question), propose_request, and
   answer_request. `claim_id` is required for every type but
   `propose_request`, which may bear on several nodes, sources, or something
-  the graph does not hold yet (#724). An `answer_request` names the request
+  the graph does not hold yet (#724). `argument_id` makes the contribution
+  about one of the node's arguments (#541): `add_instance` (a source that
+  makes, attacks or mentions it), `propose_split`, or `propose_merge` with
+  `merge_target_argument_id` (two arguments on the node are one); both
+  arguments must be on `claim_id`'s node, else `ARGUMENT_TARGET`. An `answer_request` names the request
   it is offered for in `request_id` (the request must bear on `claim_id` and
   be open); the id is carried to the reviewer at the head of the content,
   since accepting one needs it (#723). Requires a key bound to a contributor
@@ -317,11 +323,17 @@ read is free, an agent which signals allocation turns on.
   is a `NO_BOUNTY` tool error, with the claim's `page_url`. An outside solver needs nothing else
   to know what would count as a solution; the statement file itself is at
   `GET /claims/:id/formalization.lean`.
-- **`get_page_analysis`** `{url}` — the shared analysis of a public page
-  (`GET /extension/shared/:url_hash`): the claims a reader of the browser
-  extension found on it, matched into the graph, with each claim's status
-  read now. The URL is normalized and hashed on the server, as the
-  extension does; a page nobody shared is `NOT_SHARED`. Free.
+- **`get_page_analysis`** `{url}` — what the graph holds about a web page.
+  The shared analysis of a public page (`GET /extension/shared/:url_hash`):
+  the claims a reader of the browser extension found on it, matched into
+  the graph, with a verdict on how the page words each. And `recorded`
+  (`GET /extension/recorded/:url_hash`): the passages the graph itself took
+  from the page when it read it as a source, each with its claim, quantity
+  or question and the stance the instance records, with no verdict on the
+  page; `null` when the graph has not read it. A page only the graph read
+  comes back with `shared: false` and no annotations. Statuses are read
+  now. The URL is normalized and hashed on the server, as the extension
+  does; a page with neither is `NOT_SHARED`. Free.
 - **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
   joins?}` — report a problem with this server or its tools
   (`system_failure`, `tool_gap`) or a concrete improvement idea
@@ -387,6 +399,12 @@ each tool's description is its route's summary plus the route it runs.
   constitution, each role prompt and each tool, with the commit it first ran
   under; filter by kind, name or hash), `get_setup_part` (one version, with
   its text when public, and the version before it to compare against).
+- **Agent runs:** `get_run` (a run's agent, times, outcome, cost, commit and
+  setup by version; a run that read private data answers `public: false`
+  with its reasons and nothing else), `list_run_steps` (its steps as
+  one-line summaries, a page at a time, filterable by kind or tool),
+  `get_run_step` (one step in full). An assessment's `run_id` names the run
+  that wrote it.
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.

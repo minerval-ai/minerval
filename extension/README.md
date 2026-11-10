@@ -43,6 +43,10 @@ Conservative by default, progressively disclosing:
   hold get a faint grey dashed underline (turn it off in settings). Nothing
   has checked them: the graph has nothing to judge them against.
 
+- **Recorded by the graph**: on a page the graph has read as a source, the
+  passages it took from it get a thin blue underline, with no analysis run.
+  See [Pages the graph has read](#pages-the-graph-has-read).
+
 The popup's **Page** tab says where the page stands: not analyzed (and
 nothing sent), analyzing, or what was found, e.g. "14 claims found · 3 in the
 graph · 11 new". It lists both groups.
@@ -106,7 +110,9 @@ transcripts, and no claim enters the graph from them unless you propose it
 claim's wording is kept). Results are cached in
 server memory for about an hour so re-opening a page is instant; only a
 metering record (agent, model, token counts, cost) is kept. The one exception
-is [sharing](#shared-checks), for public pages only. The site's
+is [sharing](#shared-checks), for public pages only. The marks on
+[pages the graph has read](#pages-the-graph-has-read) come from the graph's
+own sources, not from anything a reader sent. The site's
 [privacy policy](https://minerval.ai/privacy) states this in full.
 
 ## Shared checks
@@ -129,8 +135,41 @@ another reader on <date>", and **Re-analyze** runs a fresh check.
 - **Lookups.** On each page the extension sends only the first four
   characters of a hash of the address, shared by thousands of addresses, with
   no API key. It fetches results only if the page's full hash is in the
-  answer, which happens only for public pages someone already analyzed. Turn
-  this off with **Show checks other readers already ran**.
+  answer, which happens only for public pages someone already analyzed (or
+  pages the graph holds as sources, below). Turn this off with **Show
+  what's already known about a page**.
+
+## Pages the graph has read
+
+Many pages are already in the graph as sources: someone submitted them, a
+grant's research ingested them, or a Steward found and cited them while
+assessing a claim. The graph keeps each passage it took from such a page,
+in the page's own words, attached to the claim, quantity or question the
+passage states. When you open one of those pages, the extension underlines
+those passages where they sit, with no click, no charge and no API key.
+
+- **What a mark says.** Hover for the claim, quantity or question, how the
+  page stands toward it (states it, argues against it, asks it, only refers
+  to it), and the graph's current status and summary, read when the page is
+  served. Click for the decomposition and evidence, and a link to the
+  source's page on minerval.ai, which lists everything the graph took from
+  it.
+- **What it doesn't say.** No analysis ran and nothing judged how the page
+  words anything, so these marks carry no verdict and never count toward
+  the toolbar badge. **Analyze page** still runs a full check; where it
+  judges a passage the graph also recorded, the analysis's mark replaces
+  the plain one.
+- **Which pages.** The page's address is matched the same way as for shared
+  checks (tracking parameters, `www.`, the fragment and a trailing slash
+  don't matter). A document the graph read at a different address, such as
+  a paper's PDF when you are on its abstract page, isn't recognized. A page
+  that has changed since the graph read it shows only the passages still
+  on it.
+- **Lookups.** These ride the same lookup as shared checks: a four-character
+  hash prefix, and the full hash only for a page the graph already holds.
+  Everything served is already public on the source's page. Turn the marks
+  off with **Underline passages the graph recorded from pages it has read**,
+  or the lookup itself with **Show what's already known about a page**.
 
 ## Metering
 

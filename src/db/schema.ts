@@ -743,7 +743,18 @@ export const sources = pgTable("sources", {
   // can still be read as it was.
   archivedUrl: text("archived_url"),
   factsCheckedAt: timestamp("facts_checked_at", { withTimezone: true }),
-}, (table) => [index("idx_sources_doi").on(table.doi)]);
+  // SHA-256 of the URL as a web page's identity (services/page-url.ts): the
+  // key the browser extension looks a page up by, so a reader of a page the
+  // graph holds as a source sees the passages recorded from it
+  // (services/recorded-page-service.ts). Not unique: two rows whose URLs
+  // differ only in what normalization drops are the same page. Set when the
+  // row is created and filled for older rows at startup; '' marks a URL that
+  // is not a web page, null one not yet looked at.
+  pageUrlHash: text("page_url_hash"),
+}, (table) => [
+  index("idx_sources_doi").on(table.doi),
+  index("idx_sources_page_url_hash").on(table.pageUrlHash),
+]);
 
 // ---------------------------------------------------------------------------
 // source_events (#507, phase 3)
@@ -1651,6 +1662,12 @@ export const agentRuns = pgTable(
     // The commit the code that ran was built from (config.gitSha); NULL for
     // runs before it was recorded and for local runs.
     commitSha: text("commit_sha"),
+    // Why the run's transcript is private (llm/run-visibility.ts): its
+    // agent's inputs are not public by construction, or it called a tool
+    // that reads private data or that no one has classified. Empty = public.
+    // A reason is only ever added while the run is live; nothing removes one
+    // except a release that names it (a grant conversation that has closed).
+    privateReasons: text("private_reasons").array().notNull().default(sql`'{}'::text[]`),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -3375,6 +3392,16 @@ export const contributions = pgTable(
     mergeTargetClaimId: uuid("merge_target_claim_id").references(
       () => claims.id
     ),
+    // A contribution about one of the node's arguments (#541): the argument
+    // an add_instance says a source makes, a propose_split would divide, or
+    // a propose_merge would join with merge_target_argument_id (both on the
+    // contribution's node). Null for a contribution about the node itself.
+    argumentId: uuid("argument_id").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
+    mergeTargetArgumentId: uuid("merge_target_argument_id").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
     proposedCanonicalForm: text("proposed_canonical_form"),
     // 'propose_source' intake (#157): the stored document awaiting review. A
     // source row is inert until extraction runs — it appears in no read path

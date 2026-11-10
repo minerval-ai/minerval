@@ -88,6 +88,7 @@ const mocks = vi.hoisted(() => ({
   listRequests: vi.fn(async () => ({ items: [] as unknown[], total: 0 })),
   getRequest: vi.fn(async () => null as unknown),
   getSharedAnalysis: vi.fn(async () => null as unknown),
+  getRecordedPage: vi.fn(async () => null as unknown),
   usageContexts: [] as unknown[],
 }));
 
@@ -180,6 +181,9 @@ vi.mock("../../../src/services/request-service.js", () => ({
 }));
 vi.mock("../../../src/services/shared-analysis-service.js", () => ({
   getSharedAnalysis: mocks.getSharedAnalysis,
+}));
+vi.mock("../../../src/services/recorded-page-service.js", () => ({
+  getRecordedPage: mocks.getRecordedPage,
 }));
 vi.mock("../../../src/services/api-key-service.js", () => ({
   resolveApiKey: mocks.resolveApiKey,
@@ -1228,10 +1232,24 @@ describe("MCP tools", () => {
       name: "get_page_analysis",
       arguments: { url: "http://www.example.org/post/?utm_source=x#top" },
     });
-    expect(parseText(result)).toEqual({ shared: true, annotations: [] });
+    expect(parseText(result)).toEqual({ shared: true, annotations: [], recorded: null });
     expect(mocks.getSharedAnalysis).toHaveBeenCalledWith(
       pageUrlHash(normalizePageUrl("https://example.org/post")!)
     );
+
+    // A page nobody analyzed but the graph read as a source: what it
+    // recorded, and no analysis standing in for one.
+    const recorded = { sources: [], passages: [{ verbatim_text: "A passage." }], total: 1 };
+    mocks.getRecordedPage.mockResolvedValueOnce(recorded);
+    const read = await client.callTool({
+      name: "get_page_analysis",
+      arguments: { url: "https://example.org/paper" },
+    });
+    expect(parseText(read)).toEqual({
+      url: "https://example.org/paper",
+      shared: false,
+      recorded,
+    });
 
     const missing = await client.callTool({
       name: "get_page_analysis",

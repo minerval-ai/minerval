@@ -63,6 +63,7 @@ import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
   formatContribution,
+  checkArgumentTarget,
   getContributionById,
   getReviewForContribution,
   withAnsweredRequest,
@@ -85,6 +86,7 @@ import {
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
+import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
 import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
 import {
@@ -148,6 +150,7 @@ function formatAssessment(
     reasoningTrace: string;
     assessedAt: Date;
     model?: string | null;
+    runId?: string | null;
   } | null
 ) {
   if (!a) return null;
@@ -164,6 +167,9 @@ function formatAssessment(
     assessed_at: a.assessedAt.toISOString(),
     // The assessor behind the verdict (#294); null for legacy rows.
     model: a.model ?? null,
+    // The run that wrote this verdict (GET /runs/:id); null when written
+    // outside a traced run or before runs were linked.
+    run_id: a.runId ?? null,
   };
 }
 
@@ -549,15 +555,18 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
   server.registerTool(
     "get_page_analysis",
     {
-      title: "Get a web page's shared analysis",
+      title: "Get what the graph holds about a web page",
       description:
-        "The analysis of a public web page that a reader of the Minerval " +
-        "browser extension chose to share: the claims the page makes, each " +
-        "matched into the graph with its stance and the claim's status read " +
-        "now. Pass the page's URL; it is normalized and hashed on the " +
-        "server. Only pages someone shared, and the server confirmed are " +
-        "public, have one: otherwise NOT_SHARED, and assess_text on the " +
-        "page's text is the way to check it. Free.",
+        "What the graph holds about a web page, by its URL (normalized and " +
+        "hashed on the server). Two things, either or both: the analysis a " +
+        "reader of the Minerval browser extension chose to share (the " +
+        "claims the page makes, each matched into the graph with its stance " +
+        "and a verdict on how the page words it), and `recorded`, the " +
+        "passages the graph itself took from the page when it read it as a " +
+        "source, each with its claim, quantity or question and no verdict " +
+        "on the page. Statuses are read now. A page with neither is " +
+        "NOT_SHARED, and assess_text on the page's text is the way to check " +
+        "it. Free.",
       inputSchema: {
         url: z.string().url().max(4000).describe("The page's address"),
       },
@@ -566,14 +575,20 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     async ({ url }) => {
       const normalized = normalizePageUrl(url);
       if (!normalized) return errorResult("NOT_A_PAGE", "Only an http or https page has a shared analysis");
-      const analysis = await getSharedAnalysis(pageUrlHash(normalized));
-      if (!analysis) {
+      const hash = pageUrlHash(normalized);
+      const [analysis, recorded] = await Promise.all([
+        getSharedAnalysis(hash),
+        getRecordedPage(hash),
+      ]);
+      if (!analysis && !recorded) {
         return errorResult(
           "NOT_SHARED",
-          "No shared analysis for this page; assess_text on its text checks it"
+          "No shared analysis of this page, and the graph has not read it as a source; assess_text on its text checks it"
         );
       }
-      return jsonResult(analysis);
+      // A page only the graph read has no analysis, which is not the same
+      // as an analysis that found nothing: it gets no annotations at all.
+      return jsonResult({ ...(analysis ?? { url: normalized, shared: false }), recorded });
     }
   );
 
@@ -823,7 +838,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             "or reasoning for it. add_instance: a source where it appears. " +
             "propose_argument: a named argument for or against it. " +
             "propose_merge (with merge_target_claim_id), propose_split, " +
-            "propose_edit (usually with proposed_canonical_form). On a " +
+            "propose_edit (usually with proposed_canonical_form). About one " +
+            "of the node's arguments, with argument_id: add_instance (a " +
+            "source that makes, attacks or mentions it), propose_split (it " +
+            "carries several lines of reasoning), propose_merge (with " +
+            "merge_target_argument_id: two arguments on the node are one). On a " +
             "quantity, add_estimate: a source's figure for it. On a question, " +
             "propose_answer: a candidate answer. On any node, propose_request: " +
             "work that would improve what the graph knows; answer_request: " +
@@ -836,6 +855,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .describe("The contribution itself, engaging what the node already records; cite ids, not pasted text"),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
         merge_target_claim_id: z.guid().optional(),
+        argument_id: z
+          .guid()
+          .optional()
+          .describe(
+            "One of the node's arguments (get_claim with include arguments lists them; get_argument opens one), " +
+              "when the contribution is about it rather than the node."
+          ),
+        merge_target_argument_id: z
+          .guid()
+          .optional()
+          .describe("propose_merge of two arguments on the node: the other argument."),
         proposed_canonical_form: z.string().max(2000).optional(),
         request_id: z
           .guid()
@@ -875,6 +905,15 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         content: input.content,
       });
       if (!answered.ok) return errorResult(answered.code, answered.message);
+
+      const argumentTarget = await checkArgumentTarget({
+        type: input.contribution_type,
+        claimId: input.claim_id ?? null,
+        argumentId: input.argument_id,
+        mergeTargetArgumentId: input.merge_target_argument_id,
+        mergeTargetClaimId: input.merge_target_claim_id,
+      });
+      if (!argumentTarget.ok) return errorResult("ARGUMENT_TARGET", argumentTarget.message);
 
       const contributor = await getOrCreateContributor({
         externalId,
@@ -918,6 +957,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         content: answered.content,
         evidenceUrls: input.evidence_urls,
         mergeTargetClaimId: input.merge_target_claim_id,
+        argumentId: argumentTarget.argumentId,
+        mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
         proposedCanonicalForm: input.proposed_canonical_form,
       });
       await enqueueContribution({ contributionId: contribution.id });

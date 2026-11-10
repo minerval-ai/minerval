@@ -1,0 +1,4 @@
+ALTER TABLE "contributions" ADD COLUMN "argument_id" uuid;--> statement-breakpoint
+ALTER TABLE "contributions" ADD COLUMN "merge_target_argument_id" uuid;--> statement-breakpoint
+ALTER TABLE "contributions" ADD CONSTRAINT "contributions_argument_id_arguments_id_fk" FOREIGN KEY ("argument_id") REFERENCES "public"."arguments"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "contributions" ADD CONSTRAINT "contributions_merge_target_argument_id_arguments_id_fk" FOREIGN KEY ("merge_target_argument_id") REFERENCES "public"."arguments"("id") ON DELETE set null ON UPDATE no action;

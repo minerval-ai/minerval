@@ -33,7 +33,8 @@ import {
 } from "./models.js";
 import { getUsageContext, runBudget } from "./usage-context.js";
 import { spendLine } from "./budget-line.js";
-import { recordAgentStep } from "../services/trace-service.js";
+import { markRunPrivate, recordAgentStep, type AgentTrace } from "../services/trace-service.js";
+import { toolPrivateReason } from "./run-visibility.js";
 import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
@@ -95,6 +96,17 @@ export async function complete(options: {
     temperature: options.temperature,
   });
   return result;
+}
+
+/**
+ * A run that executes a tool whose output can carry private data, or a tool
+ * nobody has classified, keeps its transcript private (run-visibility.ts).
+ */
+function markPrivateTools(trace: AgentTrace, executed: ReadonlyArray<{ name: string }>): void {
+  for (const t of executed) {
+    const reason = toolPrivateReason(t.name);
+    if (reason) markRunPrivate(trace, reason);
+  }
 }
 
 /**
@@ -690,6 +702,7 @@ export async function toolUseLoop(options: {
     }
     if (trace && executedTools.length > 0) {
       recordAgentStep(trace, "tool_results", executedTools);
+      markPrivateTools(trace, executedTools);
     }
 
     // Tell the agent where it stands after every turn (#474), and, once the
@@ -985,6 +998,7 @@ export async function longRunToolLoop(options: {
     }
     if (trace && executedTools.length > 0) {
       recordAgentStep(trace, "tool_results", executedTools);
+      markPrivateTools(trace, executedTools);
     }
 
     const userContent: Array<ToolResultBlockParam | { type: "text"; text: string }> = [

@@ -136,6 +136,8 @@ export interface Assessment {
   // was recorded — render the date alone, no dangling separator. Optional
   // while API deploys race the frontend.
   model?: string | null;
+  // The agent run that wrote this verdict (/runs/:id); null when unlinked.
+  run_id?: string | null;
   // Funding disclosure (§19): present when this assessment was paid work —
   // a user's assessment order or a named grant. Stamped mechanically by the
   // API; absent for ordinary system work.
@@ -1560,4 +1562,133 @@ export interface SetupPart {
 export interface SetupPartDetail extends SetupPart {
   content: string | null;
   previous_version: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// The argument page (#541): GET /arguments/:id with every section, the same
+// view get_argument serves to agents and MCP.
+// ---------------------------------------------------------------------------
+
+export interface ArgumentEvaluationEntry {
+  verdict: string;
+  decisive: boolean;
+  content: string;
+  /** Made under an assessment or estimate of the conclusion that is no longer current. */
+  stale: boolean;
+  assessment_id: string | null;
+  estimate_id: string | null;
+  created_at: string | null;
+}
+
+export interface ArgumentPremise {
+  id: string;
+  text: string;
+  kind?: string;
+  relation: string | null;
+  /** Grouped under the argument now; false for a retired argument's premises, read from its written form. */
+  grouped: boolean;
+  assessment_status: string | null;
+  assessment_confidence: number | null;
+  assessment_credence: number | null;
+  estimate?: unknown;
+  page_url: string;
+}
+
+export interface ArgumentInstanceItem {
+  id: string;
+  source: { id: string; url: string | null; title: string | null };
+  verbatim_text: string;
+  context: string | null;
+  /** advances | criticizes | mentions */
+  stance: string;
+  /** full | premise_unstated | strawman, or null */
+  reading: string | null;
+  stated_shows?: ValueShown | null;
+  speaker: string | null;
+  publication: string | null;
+  source_date: string | null;
+  link: string | null;
+  recorded_by: string;
+  recorded_at: string | null;
+}
+
+export interface ArgumentPage {
+  argument: {
+    id: string;
+    page_url?: string;
+    conclusion: { id: string; text?: string; kind?: string; page_url?: string };
+    name: string | null;
+    stance: string;
+    shows?: ValueShown | null;
+    written_form: string;
+    has_written_form: boolean;
+    created_at: string | null;
+    retired: { at: string | null; reason: string | null } | null;
+    merged_into: string | null;
+  };
+  evaluation: ArgumentEvaluationEntry | null;
+  evaluation_history: ArgumentEvaluationEntry[];
+  premises: ArgumentPremise[];
+  instances: ArgumentInstanceItem[];
+  instances_total: number;
+}
+
+// An agent run (GET /runs/:id): public in full, or withheld with reasons.
+export interface RunSetupPart {
+  kind: string;
+  name: string | null;
+  hash: string;
+  version: number | null;
+}
+
+export interface RunSummary {
+  id: string;
+  agent: string;
+  public: boolean;
+  private_reasons: string[];
+  claim_id: string | null;
+  started_at: string;
+  finished_at: string | null;
+  outcome: string | null;
+  error: string | null;
+  steps_counted: number;
+  steps_recorded: number;
+  skills: string[] | null;
+  wrote_to_graph: boolean;
+  commit: string | null;
+  commit_url: string | null;
+  model_calls: number;
+  cost_usd: number;
+  setup: {
+    commit: string | null;
+    model: string;
+    effort: string | null;
+    maxTokens: number | null;
+    temperature: number | null;
+    parts: RunSetupPart[];
+  } | null;
+}
+
+export interface WithheldRun {
+  id: string;
+  agent: string;
+  withheld: true;
+  public: false;
+  private_reasons: string[];
+}
+
+export interface RunStepSummary {
+  seq: number;
+  kind: string;
+  created_at: string;
+  summary: string;
+  chars: number;
+  tools: string[];
+}
+
+export interface RunStep {
+  seq: number;
+  kind: string;
+  created_at: string;
+  content: unknown;
 }

@@ -24,6 +24,7 @@ vi.mock("../../../src/llm/providers/index.js", () => ({
 
 vi.mock("../../../src/services/trace-service.js", () => ({
   recordAgentStep: mocks.recordAgentStep,
+  markRunPrivate: vi.fn(),
   startAgentRun: vi.fn(() => null),
   finishAgentRun: vi.fn(),
 }));

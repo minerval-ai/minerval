@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  ArgumentPage,
   AttemptStats,
   AttemptSummary,
   ClaimCitationPayload,
@@ -25,6 +26,10 @@ import type {
   SourceContext,
   SetupPart,
   SetupPartDetail,
+  RunSummary,
+  WithheldRun,
+  RunStepSummary,
+  RunStep,
 } from "./types";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
@@ -179,6 +184,22 @@ export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
     apiGet<SourceContext>(`/sources/${seg}/context`).catch(() => null),
   ]);
   return { facts, document, examinations, context };
+}
+
+// An argument's page (#541): the view get_argument serves, with its
+// evaluation history, premises and instances. Null when no argument has
+// this id.
+export const ARGUMENT_PAGE_INSTANCES = 100;
+export async function fetchArgumentPage(id: string): Promise<ArgumentPage | null> {
+  try {
+    const seg = pathSegment(id);
+    return await apiGet<ArgumentPage>(
+      `/arguments/${seg}?include=evaluation&include=premises&include=instances&instances_limit=${ARGUMENT_PAGE_INSTANCES}`
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 // The unified per-claim history (#175): assessments, contributions, decisions,
@@ -536,6 +557,43 @@ export async function fetchSetupPart(
     return await apiGet<SetupPartDetail>(
       `/setup/parts/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/${version}`,
     );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+// Agent runs (#553). A 404 (no such run, or an API that predates the
+// route) reads as null.
+export async function fetchRun(id: string): Promise<RunSummary | WithheldRun | null> {
+  try {
+    return await apiGet<RunSummary | WithheldRun>(`/runs/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export async function fetchRunSteps(
+  id: string,
+  after?: number,
+): Promise<{ steps: RunStepSummary[]; next_after: number | null } | null> {
+  const q = after != null ? `?after=${after}&limit=200` : "?limit=200";
+  try {
+    const r = await apiGet<{ steps: RunStepSummary[]; next_after: number | null } | WithheldRun>(
+      `/runs/${encodeURIComponent(id)}/steps${q}`,
+    );
+    return "steps" in r ? r : null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export async function fetchRunStep(id: string, seq: number): Promise<RunStep | null> {
+  try {
+    const r = await apiGet<RunStep | WithheldRun>(`/runs/${encodeURIComponent(id)}/steps/${seq}`);
+    return "content" in r ? r : null;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
     throw err;

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   whenAnalysisSettles: vi.fn(),
   shareIfPublic: vi.fn(),
   listSharedHashes: vi.fn(),
+  listRecordedHashes: vi.fn(async () => [] as string[]),
+  getRecordedPage: vi.fn(async () => null as unknown),
   getSharedAnalysis: vi.fn(),
   usageContexts: [] as unknown[],
   charges: [] as string[],
@@ -26,6 +28,11 @@ vi.mock("../../../src/services/shared-analysis-service.js", () => ({
   shareIfPublic: mocks.shareIfPublic,
   listSharedHashes: mocks.listSharedHashes,
   getSharedAnalysis: mocks.getSharedAnalysis,
+}));
+
+vi.mock("../../../src/services/recorded-page-service.js", () => ({
+  listRecordedHashes: mocks.listRecordedHashes,
+  getRecordedPage: mocks.getRecordedPage,
 }));
 
 // Capture the ambient usage context the route establishes for metering (#70).
@@ -83,6 +90,7 @@ async function buildTestApp() {
 }
 
 const HASH = "a".repeat(64);
+const RECORDED_HASH = `aaaa${"b".repeat(60)}`;
 
 const ANALYSIS = {
   url: "https://example.com/a",
@@ -216,11 +224,13 @@ describe("extension routes", () => {
 
   it("GET /extension/shared lists a prefix bucket without authenticating", async () => {
     mocks.listSharedHashes.mockResolvedValue([HASH]);
+    mocks.listRecordedHashes.mockResolvedValue([RECORDED_HASH]);
     const { app, gates } = await buildTestApp();
 
     const res = await app.inject({ method: "GET", url: "/extension/shared?prefix=aaaa" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ hashes: [HASH] });
+    // Shared analyses, and apart from them the pages the graph read.
+    expect(res.json()).toEqual({ hashes: [HASH], recorded: [RECORDED_HASH] });
     expect(gates.authenticate).toBe(0);
 
     const bad = await app.inject({ method: "GET", url: "/extension/shared?prefix=aaaaaa" });
@@ -237,6 +247,25 @@ describe("extension routes", () => {
     expect(hit.json()).toMatchObject({ shared: true, url: ANALYSIS.url });
     const miss = await app.inject({ method: "GET", url: `/extension/shared/${HASH}` });
     expect(miss.statusCode).toBe(404);
+    expect(gates.authenticate).toBe(0);
+  });
+
+  it("GET /extension/recorded/:hash serves what the graph recorded, keyless, 404 when nothing", async () => {
+    const page = {
+      sources: [{ id: "s1", title: "A paper", url: "https://minerval.ai/sources/s1", retrieved_at: "2026-07-22T00:00:00.000Z" }],
+      passages: [{ verbatim_text: "A passage.", stance: "affirms", instance_id: "i1", source_id: "s1", claim: { id: "c1" } }],
+      total: 1,
+    };
+    mocks.getRecordedPage.mockResolvedValueOnce(page);
+    mocks.getRecordedPage.mockResolvedValueOnce(null);
+    const { app, gates } = await buildTestApp();
+
+    const hit = await app.inject({ method: "GET", url: `/extension/recorded/${RECORDED_HASH}` });
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json()).toEqual(page);
+    const miss = await app.inject({ method: "GET", url: `/extension/recorded/${RECORDED_HASH}` });
+    expect(miss.statusCode).toBe(404);
+    expect(miss.json().code).toBe("NOT_RECORDED");
     expect(gates.authenticate).toBe(0);
   });
 

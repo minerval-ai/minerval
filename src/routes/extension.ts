@@ -21,6 +21,13 @@
  * GET /extension/shared endpoints read it. They are free and need no key: a
  * lookup sends only a short hash prefix, and identifying the reader would
  * undo the point of sending so little.
+ *
+ * Pages the graph read: the same prefix lookup also lists the pages the
+ * graph holds as sources, and GET /extension/recorded/:url_hash serves the
+ * passages it recorded from one (services/recorded-page-service.ts), so a
+ * reader of a page the graph ingested sees them without anyone analyzing
+ * it. Free and keyless for the same reason, and all of it is already public
+ * on the source's page.
  */
 import type { FastifyInstance } from "fastify";
 import {
@@ -42,6 +49,7 @@ import {
   listSharedHashes,
   shareIfPublic,
 } from "../services/shared-analysis-service.js";
+import { getRecordedPage, listRecordedHashes } from "../services/recorded-page-service.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
 import {
   refundAgenticOp,
@@ -189,14 +197,16 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /extension/shared?prefix=abcd — every shared page's URL hash in a
-  // prefix bucket. The client checks for its own page's full hash locally.
+  // prefix bucket, and every page the graph holds as a source in it. The
+  // client checks for its own page's full hash locally.
   app.get("/shared", {
     schema: {
       tags: ["extension"],
       summary:
-        "List the URL hashes of shared page analyses that start with a " +
-        "4-hex-character prefix (private lookup: send the prefix of your " +
-        "page's hash, match locally)",
+        "List the URL hashes of shared page analyses, and of pages the " +
+        "graph holds passages from, that start with a 4-hex-character " +
+        "prefix (private lookup: send the prefix of your page's hash, " +
+        "match locally)",
       querystring: {
         type: "object",
         required: ["prefix"],
@@ -205,13 +215,20 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       response: {
         200: {
           type: "object",
-          properties: { hashes: { type: "array", items: { type: "string" } } },
+          properties: {
+            hashes: { type: "array", items: { type: "string" } },
+            recorded: { type: "array", items: { type: "string" } },
+          },
         },
       },
     },
     handler: async (request, reply) => {
       const { prefix } = sharedPrefixQuery.parse(request.query);
-      return reply.send({ hashes: await listSharedHashes(prefix) });
+      const [hashes, recorded] = await Promise.all([
+        listSharedHashes(prefix),
+        listRecordedHashes(prefix),
+      ]);
+      return reply.send({ hashes, recorded });
     },
   });
 
@@ -237,6 +254,33 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       return reply.send(analysis);
+    },
+  });
+
+  // GET /extension/recorded/:url_hash — what the graph itself recorded from
+  // a page it holds as a source, node states live.
+  app.get<{ Params: { url_hash: string } }>("/recorded/:url_hash", {
+    schema: {
+      tags: ["extension"],
+      summary:
+        "The passages the graph recorded from a web page it holds as a " +
+        "source, by the SHA-256 of the page's normalized URL, each with " +
+        "its claim, quantity or question as the graph holds it now",
+      params: {
+        type: "object",
+        properties: { url_hash: { type: "string", pattern: "^[0-9a-f]{64}$" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const { url_hash } = sharedHashParams.parse(request.params);
+      const page = await getRecordedPage(url_hash);
+      if (!page) {
+        return reply.code(404).send({
+          error: "The graph holds nothing recorded from this page",
+          code: "NOT_RECORDED",
+        });
+      }
+      return reply.send(page);
     },
   });
 
