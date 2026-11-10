@@ -31,7 +31,6 @@ import {
   checkedKindSql,
   formalizationNamespace,
   getClaimFormalizationRecord,
-  leanCheckEvidenceUrl,
   normalizeStatementSource,
   statementDocstring,
 } from "../../../src/services/formalization-service.js";
@@ -148,17 +147,14 @@ def Statement : Prop := ∀ n : ℕ, IsGood (n + 1)`);
 });
 
 describe("the check reference and the SQL fragments", () => {
-  it("an argument cites a check by an evidence URL under /lean-checks/", () => {
-    expect(leanCheckEvidenceUrl("abc")).toBe("/lean-checks/abc");
-  });
-
   it("the machine-checked kind needs a published statement, an accepted verdict in an evidence mode, and a citing argument", () => {
     const sql = checkedKindSql("c.id");
     expect(sql).toContain("cf.status = 'published'");
     expect(sql).toContain("lc.verdict = 'accepted'");
     expect(sql).toContain("lc.mode IN ('prize', 'attempt', 'steward')");
-    expect(sql).toContain("unnest(ar.evidence_urls)");
-    expect(sql).toContain("/lean-checks/");
+    expect(sql).toContain("ar.lean_check_id = lc.id");
+    // The check is a column now (#541), not a URL parsed out of evidence_urls.
+    expect(sql).not.toContain("/lean-checks/");
   });
 
   it("names the three allowed axioms", () => {

@@ -194,7 +194,6 @@ export interface ArgumentItem {
   name?: string | null;
   stance: Stance;
   content: string;
-  evidence_urls: string[];
   created_by: string;
   created_at: string;
   // Steward evaluation of the inference (issue #173); null until judged.

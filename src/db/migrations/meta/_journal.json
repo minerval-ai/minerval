@@ -733,8 +733,22 @@
     {
       "idx": 104,
       "version": "7",
-      "when": 1794335159743,
-      "tag": "0104_document_reviews",
+      "when": 1794343284832,
+      "tag": "0104_argument_lean_check_and_evidence_backlog",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794343286490,
+      "tag": "0105_drop_argument_evidence_urls",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1794347735456,
+      "tag": "0106_document_reviews",
       "breakpoints": true
     }
   ]

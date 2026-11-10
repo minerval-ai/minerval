@@ -211,7 +211,8 @@ subclaim belongs to which line of reasoning. An argument has a `stance` (`for`
 or `against`: its conclusion is the claim or the claim's denial; older rows may
 carry `neutral`, which Stewards no longer record), an optional `name` and
 `description` (a short label),
-its `content` (the written form, below), any `evidence_urls`, and provenance.
+its `content` (the written form, below), its Lean check where it is machine-checked (`lean_check_id`), and provenance:
+the places sources make it are its instances (`argument_instances`, #541).
 
 **The written form.** A name is not an argument: the grouping records *which*
 subclaims belong together, but not *how* they combine to bear on the parent

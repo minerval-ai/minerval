@@ -337,7 +337,6 @@ export function shapeAttemptStats(
   };
 }
 
-const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /**
  * The statement: every attempt (the shaping separates live from closed),
@@ -361,9 +360,8 @@ export async function loadAttemptStatRows(
                              AND a.status IN ('verified', 'contradicted')
                              AND a.assessed_at < pa.finished_at)
                   OR EXISTS (SELECT 1
-                               FROM arguments ar, unnest(ar.evidence_urls) u
-                               JOIN lean_checks lc
-                                 ON lc.id::text = substring(lower(u) from '/lean-checks/(${UUID_PATTERN})(?:/|$)')
+                               FROM arguments ar
+                               JOIN lean_checks lc ON lc.id = ar.lean_check_id
                                JOIN claim_formalizations cf ON cf.id = lc.formalization_id
                               WHERE ar.claim_id = pa.claim_id
                                 AND ar.created_at < pa.finished_at

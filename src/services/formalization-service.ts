@@ -526,21 +526,9 @@ export async function getClaimFormalizationRecord(
 // The machine-checked badge and the per-claim SQL fragments
 // ---------------------------------------------------------------------------
 
-/**
- * How an argument cites a check: an `arguments.evidence_urls` entry whose
- * path is `/lean-checks/<id>` (relative, or under any host). The arguments
- * table carries no metadata column, so the URL is the reference.
- */
-export function leanCheckEvidenceUrl(leanCheckId: string): string {
-  return `/lean-checks/${leanCheckId}`;
-}
-
-const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-
-/** SQL: the lean_checks id an evidence URL `u` names, as text (NULL when none). */
-const EVIDENCE_CHECK_ID_SQL = (u: string) =>
-  `substring(lower(${u}) from '/lean-checks/(${UUID_PATTERN})(?:/|$)')`;
-
+// An argument cites a check in arguments.lean_check_id (#541). It was a
+// `/lean-checks/<id>` entry in the old evidence_urls column, parsed here,
+// until that column was split into the check and the sources it mixed.
 const VERDICT_MODES_SQL = VERDICT_MODES.map((m) => `'${m}'`).join(", ");
 
 /**
@@ -555,9 +543,9 @@ export function checkedKindSql(claimRef: string): string {
                ON cf.id = lc.formalization_id AND cf.claim_id = ${claimRef}
               AND cf.status = 'published'
             WHERE lc.verdict = 'accepted' AND lc.mode IN (${VERDICT_MODES_SQL})
-              AND EXISTS (SELECT 1 FROM arguments ar, unnest(ar.evidence_urls) u
+              AND EXISTS (SELECT 1 FROM arguments ar
                            WHERE ar.claim_id = ${claimRef}
-                             AND ${EVIDENCE_CHECK_ID_SQL("u")} = lc.id::text)
+                             AND ar.lean_check_id = lc.id)
             ORDER BY COALESCE(lc.finished_at, lc.created_at) DESC
             LIMIT 1)`;
 }
@@ -574,12 +562,11 @@ export function argumentLeanCheckLateralSql(argAlias: string): string {
                   lc.pin_id AS lean_check_pin_id,
                   lc.submission_sha256 AS lean_check_sha256,
                   lc.submitted_by AS lean_check_submitted_by
-             FROM unnest(${argAlias}.evidence_urls) AS u
-             JOIN lean_checks lc ON lc.id::text = ${EVIDENCE_CHECK_ID_SQL("u")}
+             FROM lean_checks lc
              JOIN claim_formalizations cf
                ON cf.id = lc.formalization_id AND cf.claim_id = ${argAlias}.claim_id
-            WHERE lc.verdict = 'accepted' AND lc.mode IN (${VERDICT_MODES_SQL})
-            ORDER BY COALESCE(lc.finished_at, lc.created_at) DESC
+            WHERE lc.id = ${argAlias}.lean_check_id
+              AND lc.verdict = 'accepted' AND lc.mode IN (${VERDICT_MODES_SQL})
             LIMIT 1)`;
 }
 
@@ -654,9 +641,8 @@ export async function getVerificationSummary(
        JOIN claim_formalizations cf
          ON cf.id = lc.formalization_id AND cf.claim_id = $1 AND cf.status = 'published'
       WHERE lc.verdict = 'accepted' AND lc.mode IN (${VERDICT_MODES_SQL})
-        AND EXISTS (SELECT 1 FROM arguments ar, unnest(ar.evidence_urls) u
-                     WHERE ar.claim_id = $1
-                       AND ${EVIDENCE_CHECK_ID_SQL("u")} = lc.id::text)
+        AND EXISTS (SELECT 1 FROM arguments ar
+                     WHERE ar.claim_id = $1 AND ar.lean_check_id = lc.id)
       ORDER BY COALESCE(lc.finished_at, lc.created_at) DESC
       LIMIT 1`,
     [claimId]
@@ -693,8 +679,7 @@ export async function leanChecksByArgument(
             ar.id AS argument_id, lc.id, lc.kind, lc.verdict, lc.finished_at,
             lc.created_at, lc.pin_id, lc.submission_sha256, lc.submitted_by
        FROM arguments ar
-       CROSS JOIN LATERAL unnest(ar.evidence_urls) AS u
-       JOIN lean_checks lc ON lc.id::text = ${EVIDENCE_CHECK_ID_SQL("u")}
+       JOIN lean_checks lc ON lc.id = ar.lean_check_id
        JOIN claim_formalizations cf
          ON cf.id = lc.formalization_id AND cf.claim_id = ar.claim_id
       WHERE ar.claim_id = $1

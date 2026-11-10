@@ -1,5 +1,5 @@
 {
-  "id": "d8ee9185-cfb7-40d7-8aef-2740c630798e",
+  "id": "fcfd7bfb-27f4-4a78-a135-a00c90f46e08",
   "prevId": "039c2b9e-fc74-434d-9215-5b6c2eaa454f",
   "version": "7",
   "dialect": "postgresql",
@@ -2310,6 +2310,87 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.argument_evidence_backlog": {
+      "name": "argument_evidence_backlog",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "argument_id": {
+          "name": "argument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_argument_evidence_backlog_url": {
+          "name": "idx_argument_evidence_backlog_url",
+          "columns": [
+            {
+              "expression": "argument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "argument_evidence_backlog_argument_id_arguments_id_fk": {
+          "name": "argument_evidence_backlog_argument_id_arguments_id_fk",
+          "tableFrom": "argument_evidence_backlog",
+          "tableTo": "arguments",
+          "columnsFrom": [
+            "argument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.argument_instances": {
       "name": "argument_instances",
       "schema": "",
@@ -2680,6 +2761,12 @@
           "notNull": true,
           "default": "'{}'"
         },
+        "lean_check_id": {
+          "name": "lean_check_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -2741,6 +2828,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "arguments_lean_check_id_lean_checks_id_fk": {
+          "name": "arguments_lean_check_id_lean_checks_id_fk",
+          "tableFrom": "arguments",
+          "tableTo": "lean_checks",
+          "columnsFrom": [
+            "lean_check_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "arguments_merged_into_arguments_id_fk": {
@@ -8454,12 +8554,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8498,21 +8592,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_examinations_request": {
-          "name": "idx_examinations_request",
-          "columns": [
-            {
-              "expression": "request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -8541,19 +8620,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "examinations_request_id_requests_id_fk": {
-          "name": "examinations_request_id_requests_id_fk",
-          "tableFrom": "examinations",
-          "tableTo": "requests",
-          "columnsFrom": [
-            "request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8566,7 +8632,7 @@
         },
         "ck_examinations_trigger": {
           "name": "ck_examinations_trigger",
-          "value": "\"examinations\".\"trigger\" IN ('claim', 'request', 'mechanical', 'mandate')"
+          "value": "\"examinations\".\"trigger\" IN ('claim', 'mechanical', 'mandate')"
         }
       },
       "isRLSEnabled": false

@@ -161,9 +161,9 @@ export const FLU_DEATHS: ClaimDetail = {
   // A quantity has no verdict; the record behind its estimate is quantity.assessed.
   assessment: null,
   arguments: [
-    { id: A_EXTRAP.id, name: A_EXTRAP.name, stance: "neutral", content: A_EXTRAP.content, evidence_urls: [SPREEUWENBERG.url], created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_EXTRAP.evaluation, shows: A_EXTRAP.shows },
-    { id: A_COMPILE.id, name: A_COMPILE.name, stance: "neutral", content: A_COMPILE.content, evidence_urls: [JOHNSON_MUELLER.url], created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_COMPILE.evaluation, shows: A_COMPILE.shows },
-    { id: A_LIMITS.id, name: A_LIMITS.name, stance: "neutral", content: A_LIMITS.content, evidence_urls: [], created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_LIMITS.evaluation, shows: A_LIMITS.shows },
+    { id: A_EXTRAP.id, name: A_EXTRAP.name, stance: "neutral", content: A_EXTRAP.content, created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_EXTRAP.evaluation, shows: A_EXTRAP.shows },
+    { id: A_COMPILE.id, name: A_COMPILE.name, stance: "neutral", content: A_COMPILE.content, created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_COMPILE.evaluation, shows: A_COMPILE.shows },
+    { id: A_LIMITS.id, name: A_LIMITS.name, stance: "neutral", content: A_LIMITS.content, created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_LIMITS.evaluation, shows: A_LIMITS.shows },
   ],
   quantity: {
     assessed: { summary: FLU_ASSESSMENT_SUMMARY, work: FLU_WORK, model: "claude-opus-5-5", assessed_at: ASSESSED },
