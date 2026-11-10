@@ -26,6 +26,8 @@ describe("formatAssessment", () => {
       subclaim_summary: { a: 1 },
       assessed_at: "2026-01-01T00:00:00.000Z",
       model: "claude-opus-5-5",
+      // The run that wrote it (#553); null here, as base names none.
+      run_id: null,
     });
   });
 

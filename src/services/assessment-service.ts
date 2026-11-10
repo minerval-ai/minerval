@@ -58,6 +58,7 @@ export function formatAssessmentHistoryRow(a: {
   triggerContext: string | null;
   assessedAt: Date;
   model?: string | null;
+  runId?: string | null;
 }) {
   return {
     id: a.id,
@@ -73,6 +74,9 @@ export function formatAssessmentHistoryRow(a: {
     trigger_context: a.triggerContext,
     assessed_at: a.assessedAt.toISOString(),
     model: a.model ?? null,
+    // The run that wrote this verdict (GET /runs/:id); null when written
+    // outside a traced run or before runs were linked.
+    run_id: a.runId ?? null,
   };
 }
 

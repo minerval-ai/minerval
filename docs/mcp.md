@@ -387,6 +387,12 @@ each tool's description is its route's summary plus the route it runs.
   constitution, each role prompt and each tool, with the commit it first ran
   under; filter by kind, name or hash), `get_setup_part` (one version, with
   its text when public, and the version before it to compare against).
+- **Agent runs:** `get_run` (a run's agent, times, outcome, cost, commit and
+  setup by version; a run that read private data answers `public: false`
+  with its reasons and nothing else), `list_run_steps` (its steps as
+  one-line summaries, a page at a time, filterable by kind or tool),
+  `get_run_step` (one step in full). An assessment's `run_id` names the run
+  that wrote it.
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.
