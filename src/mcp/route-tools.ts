@@ -207,6 +207,8 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   // The URL hash is the only thing in the way: the native tool takes the
   // page's URL and hashes it on the server (#752).
   "GET /extension/shared/:url_hash": ["get_page_analysis"],
+  // The same tool answers with what the graph recorded from the page.
+  "GET /extension/recorded/:url_hash": ["get_page_analysis"],
 };
 
 const SERVICE_ONLY =

@@ -94,14 +94,16 @@ export default function Privacy() {
         likewise sent only when you send them.
       </p>
       <p>
-        To show you checks other readers already ran, the extension does send
-        something on each page you open (unless you turn this off in its
-        settings): the first four characters of a hash of the page&rsquo;s
-        address, a value shared by thousands of addresses, with no API key or
-        other identifier. Our server answers with the hashes of every shared
-        page in that group, and the extension asks for a page&rsquo;s results
-        only if its own hash is among them, which can happen only for a
-        public page someone has already analyzed.
+        To show you what is already known about a page (a check another
+        reader ran, or the passages the graph recorded from a page it read
+        as a source), the extension does send something on each page you
+        open (unless you turn this off in its settings): the first four
+        characters of a hash of the page&rsquo;s address, a value shared by
+        thousands of addresses, with no API key or other identifier. Our
+        server answers with the hashes of every such page in that group,
+        and the extension asks for a page&rsquo;s results only if its own
+        hash is among them, which can happen only for a public page someone
+        has already analyzed or one the graph already holds as a source.
       </p>
       <p>
         Sent page text is used for exactly one purpose: extracting the claims

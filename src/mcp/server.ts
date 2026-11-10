@@ -86,6 +86,7 @@ import {
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
+import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
 import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
 import {
@@ -554,15 +555,18 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
   server.registerTool(
     "get_page_analysis",
     {
-      title: "Get a web page's shared analysis",
+      title: "Get what the graph holds about a web page",
       description:
-        "The analysis of a public web page that a reader of the Minerval " +
-        "browser extension chose to share: the claims the page makes, each " +
-        "matched into the graph with its stance and the claim's status read " +
-        "now. Pass the page's URL; it is normalized and hashed on the " +
-        "server. Only pages someone shared, and the server confirmed are " +
-        "public, have one: otherwise NOT_SHARED, and assess_text on the " +
-        "page's text is the way to check it. Free.",
+        "What the graph holds about a web page, by its URL (normalized and " +
+        "hashed on the server). Two things, either or both: the analysis a " +
+        "reader of the Minerval browser extension chose to share (the " +
+        "claims the page makes, each matched into the graph with its stance " +
+        "and a verdict on how the page words it), and `recorded`, the " +
+        "passages the graph itself took from the page when it read it as a " +
+        "source, each with its claim, quantity or question and no verdict " +
+        "on the page. Statuses are read now. A page with neither is " +
+        "NOT_SHARED, and assess_text on the page's text is the way to check " +
+        "it. Free.",
       inputSchema: {
         url: z.string().url().max(4000).describe("The page's address"),
       },
@@ -571,14 +575,20 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     async ({ url }) => {
       const normalized = normalizePageUrl(url);
       if (!normalized) return errorResult("NOT_A_PAGE", "Only an http or https page has a shared analysis");
-      const analysis = await getSharedAnalysis(pageUrlHash(normalized));
-      if (!analysis) {
+      const hash = pageUrlHash(normalized);
+      const [analysis, recorded] = await Promise.all([
+        getSharedAnalysis(hash),
+        getRecordedPage(hash),
+      ]);
+      if (!analysis && !recorded) {
         return errorResult(
           "NOT_SHARED",
-          "No shared analysis for this page; assess_text on its text checks it"
+          "No shared analysis of this page, and the graph has not read it as a source; assess_text on its text checks it"
         );
       }
-      return jsonResult(analysis);
+      // A page only the graph read has no analysis, which is not the same
+      // as an analysis that found nothing: it gets no annotations at all.
+      return jsonResult({ ...(analysis ?? { url: normalized, shared: false }), recorded });
     }
   );
 

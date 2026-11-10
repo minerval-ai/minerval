@@ -55,9 +55,12 @@ are effectively pinned to the account that creates them.
   Checks are shared for public pages: when someone analyzes a news article
   or a blog post, the next reader sees the results straight away. Minerval
   keeps an analysis only after confirming, signed out, that the page is
-  public, never for inboxes, logged-in pages or drafts. To find shared
-  checks, the extension sends only a short prefix of a hash of the address,
-  shared by thousands of addresses.
+  public, never for inboxes, logged-in pages or drafts. And on a page the
+  graph itself has read as a source (a paper or post its research cited),
+  the passages it recorded are underlined, each with the claim, quantity or
+  question it states, with no analysis needed. To find either, the
+  extension sends only a short prefix of a hash of the address, shared by
+  thousands of addresses.
 
   SETUP
 
@@ -107,8 +110,9 @@ are effectively pinned to the account that creates them.
   - ☑ **Website content** — text, title, and URL of a page, sent to the
     Minerval API only when the user requests analysis of that page. For
     public pages the user agrees to share, the URL and the claims found are
-    kept so other readers see them. Lookups for shared checks send only a
-    4-character hash prefix, no URL.
+    kept so other readers see them. Lookups for shared checks, and for
+    pages the graph already holds as sources, send only a 4-character hash
+    prefix, no URL.
   - Leave everything else unchecked (no location, history, activity,
     personal communications, financial, or health data).
   - Certify all three attestations: data is not sold; not used or

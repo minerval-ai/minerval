@@ -18,6 +18,7 @@ import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
 import { startLookoutTriggers } from "./workers/lookout-triggers.js";
 import { startCorrespondentTriggers } from "./workers/correspondent-triggers.js";
 import { startGithubIssueSync } from "./workers/github-issue-sync.js";
+import { fillSourcePageHashes } from "./services/source-service.js";
 import { startReportEmbeddingBackfill } from "./workers/report-embedding-backfill.js";
 import { startSourceBackfill } from "./workers/source-backfill.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
@@ -146,6 +147,13 @@ async function main() {
   // search_issues can see it. The update lands only where the embedding
   // is still null, so every task may run it.
   pollers.push(startReportEmbeddingBackfill({ logger }));
+
+  // Sources from before sources.page_url_hash existed get their hash, so the
+  // browser extension can find the pages the graph already read. Detached:
+  // nothing waits on it, and a failure only leaves those pages unfound.
+  void fillSourcePageHashes()
+    .then((n) => n > 0 && app.log.info(`Filled page hashes for ${n} sources`))
+    .catch((err) => app.log.error({ err }, "filling source page hashes failed"));
 
   // The source backfill (#507) fills the facts and segments of sources
   // stored before either existed, in one pass. Each tick claims its batch

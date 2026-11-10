@@ -5,6 +5,8 @@ import type {
   ChatResponse,
   Entitlement,
   PageAnalysis,
+  PageLookup,
+  RecordedPage,
   Submission,
   SubmissionProgress,
 } from "./types";
@@ -258,7 +260,10 @@ export async function getEntitlement(): Promise<Entitlement> {
 
 // Prefix bucket → the full hashes in it, briefly, so browsing a site doesn't
 // re-ask for the same bucket on every page.
-const bucketCache = new Map<string, { hashes: Set<string>; expires: number }>();
+const bucketCache = new Map<
+  string,
+  { hashes: Set<string>; recorded: Set<string>; expires: number }
+>();
 const BUCKET_TTL_MS = 10 * 60 * 1000;
 
 async function publicGet(path: string): Promise<Response> {
@@ -270,23 +275,38 @@ async function publicGet(path: string): Promise<Response> {
 }
 
 /**
- * Another reader's analysis of this page, or null. Private by construction:
- * only the hash's first few characters leave the browser unless the page is
- * in the shared cache, which holds public pages only.
+ * What is already known about this page: another reader's analysis of it,
+ * and the passages the graph recorded if it read the page as a source.
+ * Private by construction: only the hash's first few characters leave the
+ * browser unless the page is in the shared cache or the graph's sources,
+ * both of which hold public pages only.
  */
-export async function lookupSharedAnalysis(urlHash: string): Promise<PageAnalysis | null> {
+export async function lookupPage(urlHash: string): Promise<PageLookup> {
   const prefix = urlHash.slice(0, PAGE_HASH_PREFIX_CHARS);
   let bucket = bucketCache.get(prefix);
   if (!bucket || bucket.expires < Date.now()) {
     const res = await publicGet(`/extension/shared?prefix=${prefix}`);
-    if (!res.ok) return null;
-    const { hashes } = (await res.json()) as { hashes: string[] };
-    bucket = { hashes: new Set(hashes), expires: Date.now() + BUCKET_TTL_MS };
+    if (!res.ok) return { analysis: null, recorded: null };
+    const { hashes, recorded } = (await res.json()) as {
+      hashes: string[];
+      // Absent from an API older than this lookup.
+      recorded?: string[];
+    };
+    bucket = {
+      hashes: new Set(hashes),
+      recorded: new Set(recorded ?? []),
+      expires: Date.now() + BUCKET_TTL_MS,
+    };
     bucketCache.set(prefix, bucket);
   }
-  if (!bucket.hashes.has(urlHash)) return null;
 
-  const res = await publicGet(`/extension/shared/${urlHash}`);
-  if (!res.ok) return null;
-  return (await res.json()) as PageAnalysis;
+  const get = async <T>(path: string): Promise<T | null> => {
+    const res = await publicGet(path);
+    return res.ok ? ((await res.json()) as T) : null;
+  };
+  const [analysis, recorded] = await Promise.all([
+    bucket.hashes.has(urlHash) ? get<PageAnalysis>(`/extension/shared/${urlHash}`) : null,
+    bucket.recorded.has(urlHash) ? get<RecordedPage>(`/extension/recorded/${urlHash}`) : null,
+  ]);
+  return { analysis, recorded };
 }

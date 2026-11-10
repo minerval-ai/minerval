@@ -200,7 +200,13 @@ export function getChatContextPrompt(input: {
   const claimsBlock =
     input.pageClaims.length > 0
       ? `Claims already extracted from this page and matched to the graph:
-${JSON.stringify(input.pageClaims, null, 2)}`
+${JSON.stringify(input.pageClaims, null, 2)}${
+          input.pageClaims.some((c) => c.verdict === "recorded")
+            ? `
+
+A claim whose verdict is "recorded" was not judged against this page: the graph read this page as a source and holds that passage as an instance of the claim. Its status is the graph's assessment of the claim, not of how the page words it.`
+            : ""
+        }`
       : "The page has not been analyzed yet (no extracted claims available).";
 
   return `The page the user is reading:

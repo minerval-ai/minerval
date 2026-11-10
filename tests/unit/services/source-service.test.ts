@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { pageUrlHash } from "../../../src/services/page-url.js";
 
 /**
  * A source row can exist with no content before anyone submits the document
@@ -81,7 +82,15 @@ describe("getOrCreateSource", () => {
 
   it("creates the row when none exists", async () => {
     const row = await getOrCreateSource({ url: "u", title: "T", content: "c" });
-    expect(state.inserts).toEqual([{ url: "u", title: "T", rawContent: "c" }]);
+    // "u" is no web page, so its page hash is the empty marker.
+    expect(state.inserts).toEqual([{ url: "u", title: "T", rawContent: "c", pageUrlHash: "" }]);
     expect(row.id).toBe("new");
+  });
+
+  it("gives a new web page's row the hash the extension looks it up by", async () => {
+    await getOrCreateSource({ url: "http://www.example.org/post/?utm_source=x#top" });
+    expect(state.inserts[0]).toMatchObject({
+      pageUrlHash: pageUrlHash("https://example.org/post"),
+    });
   });
 });

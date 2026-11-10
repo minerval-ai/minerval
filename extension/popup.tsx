@@ -164,13 +164,17 @@ function PageStatus({ settings, hook }: { settings: Settings; hook: PageHook }) 
     );
   }
   if (!page.analyzed) {
+    const recorded = page.recorded.length;
     return (
       <div className="page-status">
         <span className={error ? "error" : "muted"}>
           {error ??
-            (settings.sharedLookups && !page.isDraft
-              ? "Not analyzed yet, and no other reader has shared a check of this page."
-              : "Not analyzed yet. Nothing from this page has been sent.")}
+            (recorded > 0
+              ? `The graph has read this page as a source: ${recorded} passage` +
+                `${recorded === 1 ? "" : "s"} recorded from it. No analysis of the page has run.`
+              : settings.sharedLookups && !page.isDraft
+                ? "Not analyzed yet, and no other reader has shared a check of this page."
+                : "Not analyzed yet. Nothing from this page has been sent.")}
         </span>
         <button onClick={() => void analyze()}>
           {error ? "Try again" : "Analyze page"}
@@ -204,6 +208,57 @@ function PageStatus({ settings, hook }: { settings: Settings; hook: PageHook }) 
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * The passages the graph recorded from this page when it read it as a
+ * source, each with the claim, quantity or question it states. Shown
+ * whether or not the page was analyzed: these need no analysis.
+ */
+function RecordedSection({ page }: { page: PageState }) {
+  if (page.recorded.length === 0) return null;
+  const source = page.recordedSources[0];
+  return (
+    <section>
+      <h3>Recorded by the graph ({page.recorded.length})</h3>
+      <p className="muted">
+        The graph read this page as a source and took these passages from
+        it. Each shows what the graph holds now; nothing here judges how the
+        page words it.{" "}
+        {source && (
+          <a href={source.url} target="_blank" rel="noopener noreferrer">
+            The source's page
+          </a>
+        )}
+      </p>
+      <ul>
+        {page.recorded.map((a) => {
+          const claim = a.claim!;
+          const isClaim = !claim.kind || claim.kind === "claim";
+          return (
+            <li key={`${claim.id}:${a.verbatim_text}`} className="claim-row">
+              <span className={`badge s-${isClaim ? claim.status : "unknown"}`}>
+                {isClaim ? claim.status : claim.kind}
+              </span>
+              <div>
+                <a href={claim.url} target="_blank" rel="noopener noreferrer">
+                  {claim.canonical_form}
+                </a>
+                <div className="muted">
+                  <a href="#" onClick={(e) => {
+                    e.preventDefault();
+                    void sendToTab({ type: "reveal-claim", verbatimText: a.verbatim_text });
+                  }}>
+                    show on the page
+                  </a>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -321,6 +376,9 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
           here, and you can propose them for the graph. If the page is public,
           the next reader sees the results without re-running them.
         </p>
+        <div className="claims">
+          {page && <RecordedSection page={page} />}
+        </div>
       </div>
     );
   }
@@ -462,6 +520,8 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
             </ul>
           </section>
         )}
+
+        <RecordedSection page={page} />
       </div>
     </div>
   );
@@ -505,7 +565,8 @@ function chatContext(page: PageState | null): ChatPageContext {
   return {
     url: page?.url ?? null,
     title: page?.title ?? null,
-    claims: (page?.annotations ?? []).slice(0, 50).map((a) => ({
+    // What the analysis found, then what the graph recorded from the page.
+    claims: [...(page?.annotations ?? []), ...(page?.recorded ?? [])].slice(0, 50).map((a) => ({
       verbatim_text: a.verbatim_text.slice(0, 2000),
       verdict: a.verdict,
       claim_id: a.claim?.id ?? null,
@@ -703,12 +764,24 @@ function SettingsPane({
           checked={settings.sharedLookups}
           onChange={(e) => void update({ sharedLookups: e.target.checked })}
         />
-        Show checks other readers already ran
+        Show what's already known about a page
       </label>
       <p className="muted">
-        On each page, sends only a short prefix of a hash of its address, shared
-        by thousands of addresses, and fetches results only if this page has some.
+        A check another reader shared, and the passages the graph recorded if
+        it read the page as a source. On each page, sends only a short prefix
+        of a hash of its address, shared by thousands of addresses, and fetches
+        results only if this page has some.
       </p>
+
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={settings.sharedLookups && settings.showRecorded}
+          disabled={!settings.sharedLookups}
+          onChange={(e) => void update({ showRecorded: e.target.checked })}
+        />
+        Underline passages the graph recorded from pages it has read
+      </label>
 
       <label className="row">
         <input

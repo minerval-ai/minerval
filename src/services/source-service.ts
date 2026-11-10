@@ -1,4 +1,6 @@
 import { eq } from "drizzle-orm";
+import { rawQuery } from "../db/client.js";
+import { normalizePageUrl, pageUrlHash } from "./page-url.js";
 import { getDb } from "../db/client.js";
 import { sources } from "../db/schema.js";
 import { createJob, type JobAttribution } from "./job-service.js";
@@ -48,9 +50,42 @@ export async function getOrCreateSource(input: {
       url: input.url,
       title: input.title ?? input.url,
       rawContent: input.content,
+      pageUrlHash: pageHashOf(input.url),
     })
     .returning();
   return source!;
+}
+
+/** A source URL's page hash (sources.page_url_hash); '' when it is not a web page. */
+export function pageHashOf(url: string): string {
+  const normalized = normalizePageUrl(url);
+  return normalized ? pageUrlHash(normalized) : "";
+}
+
+/**
+ * Give a page hash to every source that has a URL and no hash yet: the rows
+ * from before the column existed, and any written by a path that does not
+ * set it. Run at startup. The update lands only where the hash is still
+ * null, so every task may run it.
+ */
+export async function fillSourcePageHashes(batch = 500): Promise<number> {
+  let filled = 0;
+  for (;;) {
+    const rows = await rawQuery<{ id: string; url: string }>(
+      `SELECT id, url FROM sources
+        WHERE url IS NOT NULL AND page_url_hash IS NULL
+        ORDER BY id LIMIT $1`,
+      [batch]
+    );
+    if (rows.length === 0) return filled;
+    await rawQuery(
+      `UPDATE sources s SET page_url_hash = v.hash
+         FROM unnest($1::uuid[], $2::text[]) AS v(id, hash)
+        WHERE s.id = v.id AND s.page_url_hash IS NULL`,
+      [rows.map((r) => r.id), rows.map((r) => pageHashOf(r.url))]
+    );
+    filled += rows.length;
+  }
 }
 
 export async function submitSource(

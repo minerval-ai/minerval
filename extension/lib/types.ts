@@ -6,7 +6,13 @@ export type Verdict =
   | "oversimplified"
   | "noteworthy"
   | "fine"
-  | "unknown";
+  | "unknown"
+  /**
+   * Not a judgment of the page: the graph read this page as a source and
+   * holds the passage as an instance of the node (see RecordedPage). Set by
+   * the extension, never by an analysis.
+   */
+  | "recorded";
 
 export interface AnnotationClaim {
   id: string;
@@ -15,6 +21,35 @@ export interface AnnotationClaim {
   status_confidence: number;
   subclaim_count: number;
   url: string;
+  /** claim, quantity or question. Present on passages the graph recorded. */
+  kind?: string;
+  /** The graph's reader-facing summary of the node, on recorded passages. */
+  summary?: string | null;
+}
+
+/**
+ * What the graph recorded from this page when it read it as a source
+ * (GET /extension/recorded/:url_hash): each passage it took, with the claim,
+ * quantity or question the passage states as the graph holds it now. No
+ * analysis ran and nothing judged the page's wording.
+ */
+export interface RecordedPage {
+  sources: Array<{ id: string; title: string; url: string; retrieved_at: string }>;
+  passages: Array<{
+    verbatim_text: string;
+    stance: string;
+    instance_id: string;
+    source_id: string;
+    claim: AnnotationClaim & { kind: string; summary: string | null };
+  }>;
+  /** Passages the graph holds from the page; more than `passages` when capped. */
+  total: number;
+}
+
+/** What a page lookup found: another reader's analysis, the graph's own record, or neither. */
+export interface PageLookup {
+  analysis: PageAnalysis | null;
+  recorded: RecordedPage | null;
 }
 
 export interface PageAnnotation {
@@ -24,7 +59,13 @@ export interface PageAnnotation {
   verdict: Verdict;
   why: string;
   confidence: number;
-  stance: "affirms" | "denies";
+  /**
+   * affirms or denies from an analysis; a recorded passage carries whatever
+   * its instance records (also poses, mentions, states, asks, answers).
+   */
+  stance: string;
+  /** The graph's page for the source this recorded passage came from. */
+  source_url?: string;
   /** How the claim would be worded if added (unmatched claims only). */
   proposed_canonical_form?: string | null;
   claim: AnnotationClaim | null;
@@ -92,10 +133,16 @@ export interface Settings {
    */
   showNewClaims: boolean;
   /**
-   * Check whether another reader already analyzed the page you're on. Sends
-   * only a short prefix of the page address's hash.
+   * Check whether another reader already analyzed the page you're on, or
+   * the graph itself read it. Sends only a short prefix of the page
+   * address's hash.
    */
   sharedLookups: boolean;
+  /**
+   * Mark the passages the graph recorded from a page it read as a source.
+   * They arrive through the same lookup, so this is off whenever that is.
+   */
+  showRecorded: boolean;
   /**
    * Offer your analyses to other readers. The server keeps one only if it
    * can confirm the page is public; drafts you're editing are never offered.
@@ -123,6 +170,7 @@ export const DEFAULT_SETTINGS: Settings = {
   siteOverrides: {},
   showNewClaims: true,
   sharedLookups: true,
+  showRecorded: true,
   shareAnalyses: true,
 };
 
@@ -234,6 +282,14 @@ export interface PageState {
   /** When the shown analysis ran, and whether it was another reader's. */
   analyzedAt: string | null;
   shared: boolean;
+  /**
+   * Passages the graph recorded from this page as a source, as annotations
+   * with verdict "recorded"; empty when it holds none. Independent of
+   * `analyzed`: no analysis is needed for these.
+   */
+  recorded: PageAnnotation[];
+  /** The graph's pages for the source(s) this page is. */
+  recordedSources: Array<{ title: string; url: string }>;
   /** The page looks like a draft being edited: never shared. */
   isDraft: boolean;
   /** Whether analyzing this page will offer the result for sharing. */
