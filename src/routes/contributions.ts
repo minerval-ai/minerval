@@ -13,6 +13,7 @@ import {
   getReviewForContribution,
   formatContribution,
   withAnsweredRequest,
+  checkArgumentTarget,
 } from "../services/contribution-service.js";
 import { getClaimById } from "../services/claim-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
@@ -41,6 +42,17 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
           content: { type: "string" },
           evidence_urls: { type: "array", items: { type: "string" } },
           merge_target_claim_id: { type: "string", format: "uuid" },
+          argument_id: {
+            type: "string",
+            format: "uuid",
+            description:
+              "One of the node's arguments, when the contribution is about it: with add_instance (a source that makes, attacks or mentions the argument), propose_split, or propose_merge (with merge_target_argument_id).",
+          },
+          merge_target_argument_id: {
+            type: "string",
+            format: "uuid",
+            description: "propose_merge of two arguments on the node: the other argument.",
+          },
           proposed_canonical_form: { type: "string" },
           request_id: {
             type: "string",
@@ -162,6 +174,19 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      const argumentTarget = await checkArgumentTarget({
+        type: body.contribution_type,
+        claimId: body.claim_id ?? null,
+        argumentId: body.argument_id,
+        mergeTargetArgumentId: body.merge_target_argument_id,
+        mergeTargetClaimId: body.merge_target_claim_id,
+      });
+      if (!argumentTarget.ok) {
+        return reply.code(422).send({
+          error: { code: "ARGUMENT_TARGET", message: argumentTarget.message },
+        });
+      }
+
       // Shared gate (#71/#157): identity, suspension, standing, rate limit.
       const contributor = await gateContributor(request, reply, {
         displayName: body.contributor_display_name,
@@ -176,6 +201,8 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         content: answered.content,
         evidenceUrls: body.evidence_urls,
         mergeTargetClaimId: body.merge_target_claim_id,
+        argumentId: argumentTarget.argumentId,
+        mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
         proposedCanonicalForm: body.proposed_canonical_form,
       });
 

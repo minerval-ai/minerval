@@ -106,7 +106,9 @@ export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
     "Submit only what you established, with its evidence, and only what bears on the node you name; " +
     "everything else belongs in your report. Structure has its own types: two nodes that are one " +
     "(propose_merge, naming the other in merge_target_claim_id), one node that is two (propose_split), " +
-    "a better canonical wording (propose_edit, with proposed_text). Filed so, an accepted merge or " +
+    "a better canonical wording (propose_edit, with proposed_text). The same holds for a node's arguments, " +
+    "named with argument_id: two that are one inference (propose_merge, with merge_target_argument_id), " +
+    "one that is two (propose_split), and a source that makes or attacks one (add_instance). Filed so, an accepted merge or " +
     "split case is carried to the Curator, which adjudicates them; filed as a challenge, it is not.",
   input_schema: {
     type: "object",
@@ -116,6 +118,17 @@ export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
       merge_target_claim_id: {
         type: "string",
         description: "propose_merge only: the other node, which claim_id's node duplicates.",
+      },
+      argument_id: {
+        type: "string",
+        description:
+          "One of the node's arguments, when the contribution is about it: add_instance (a source that makes, " +
+          "attacks or mentions the argument), propose_split (it carries several lines of reasoning), or " +
+          "propose_merge with merge_target_argument_id (two arguments on the node are one).",
+      },
+      merge_target_argument_id: {
+        type: "string",
+        description: "propose_merge of two arguments on the node: the other argument.",
       },
       proposed_text: {
         type: "string",

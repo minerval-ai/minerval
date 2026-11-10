@@ -599,7 +599,9 @@ Anyone can contribute — but the graph is a governed space: open to
 *suggestions*, never to direct writes. A **contribution** targets a claim with
 a type (`challenge`, `support`, `propose_merge`, `propose_split`,
 `propose_edit`, `add_instance`, or `propose_argument`) plus content and
-evidence. Contributions flow through review (`contribution_reviews`), can be
+evidence. An `add_instance`, `propose_merge` or `propose_split` may instead
+be about one of the claim's arguments, named with `argument_id` (#541).
+Contributions flow through review (`contribution_reviews`), can be
 appealed (`appeals`), and escalated to arbitration (`arbitration_results`).
 
 Two **intake** types extend the same machinery to brand-new content:
