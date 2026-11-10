@@ -74,6 +74,10 @@ interface HandoffRow {
   contribution_type: string;
   claim_id: string | null;
   merge_target_claim_id: string | null;
+  argument_id: string | null;
+  merge_target_argument_id: string | null;
+  argument_name: string | null;
+  merge_target_argument_name: string | null;
   content: string;
   evidence_urls: string[] | null;
   proposed_canonical_form: string | null;
@@ -91,10 +95,14 @@ export async function buildHandoff(
 ): Promise<{ claimId: string; context: string } | { error: string }> {
   const [c] = await rawQuery<HandoffRow>(
     `SELECT c.id, c.contribution_type, c.claim_id, c.merge_target_claim_id,
+            c.argument_id, c.merge_target_argument_id,
+            arg.name AS argument_name, mta.name AS merge_target_argument_name,
             c.content, c.evidence_urls, c.proposed_canonical_form, c.review_status,
             mt.text AS merge_target_text
        FROM contributions c
        LEFT JOIN claims mt ON mt.id = c.merge_target_claim_id
+       LEFT JOIN arguments arg ON arg.id = c.argument_id
+       LEFT JOIN arguments mta ON mta.id = c.merge_target_argument_id
       WHERE c.id::text = $1`,
     [input.contributionId]
   );
@@ -174,11 +182,56 @@ export async function buildHandoff(
     ...(c.merge_target_claim_id
       ? [`Proposed merge with ${c.merge_target_claim_id}: "${c.merge_target_text ?? ""}"`]
       : []),
+    ...argumentLines(c),
     ...((c.evidence_urls ?? []).length > 0 ? [`Evidence: ${(c.evidence_urls ?? []).join(" ")}`] : []),
     `Content as filed:\n${content}`,
     ...(input.note?.trim() ? [`Note: ${input.note.trim()}`] : []),
   ];
   return { claimId, context: lines.join("\n") };
+}
+
+/**
+ * What the Steward is told when the contribution is about one of its
+ * node's arguments (#541), and what an accepted propose_argument asks of
+ * it beyond adding the argument. Instances are the Steward's to record;
+ * merges and splits of arguments are the Curator's (§5).
+ */
+function argumentLines(c: HandoffRow): string[] {
+  const named = (id: string, name: string | null) => `argument ${id}${name ? ` ("${name}")` : ""}`;
+  if (c.argument_id) {
+    const about = named(c.argument_id, c.argument_name);
+    if (c.contribution_type === "add_instance") {
+      return [
+        `About ${about}: a source said to make, attack or mention it. If you read the source and it does, ` +
+          `record it with record_argument_instance, with how well the passage states the argument. If it rests ` +
+          `on a different premise it makes a different argument (§7). An instance is provenance: it does not ` +
+          `change the argument's written form or rating.`,
+      ];
+    }
+    if (c.contribution_type === "propose_merge" && c.merge_target_argument_id) {
+      return [
+        `Proposed merge of ${about} with ${named(c.merge_target_argument_id, c.merge_target_argument_name)}, as ` +
+          `one inference to the same conclusion. Merging arguments is the Curator's (§5): if the case has ` +
+          `merit, take it there with escalate_to_curator, naming both arguments.`,
+      ];
+    }
+    if (c.contribution_type === "propose_split") {
+      return [
+        `Proposed split of ${about}, as several lines of reasoning. Splitting an argument is the Curator's ` +
+          `(§5): if the case has merit, take it there with escalate_to_curator, naming the argument and the ` +
+          `lines the contribution distinguishes.`,
+      ];
+    }
+    return [`About ${about}.`];
+  }
+  if (c.contribution_type === "propose_argument") {
+    return [
+      "If you add this argument and a source in the evidence makes it, record that source on the argument " +
+        "with record_argument_instance. Whether the argument belongs on the page is §7's test, not the " +
+        "contributor's or the source's standing.",
+    ];
+  }
+  return [];
 }
 
 export async function executeNotifyClaimSteward(

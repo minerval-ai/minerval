@@ -449,6 +449,12 @@ async function getContributionDetails(
       submitted_at: contribution.submittedAt.toISOString(),
       proposed_canonical_form: contribution.proposedCanonicalForm,
       merge_target_claim_id: contribution.mergeTargetClaimId,
+      // One of the node's arguments, when the contribution is about it
+      // (#541); get_argument opens it.
+      ...(contribution.argumentId ? { argument_id: contribution.argumentId } : {}),
+      ...(contribution.mergeTargetArgumentId
+        ? { merge_target_argument_id: contribution.mergeTargetArgumentId }
+        : {}),
       // Why the reviewer escalated — present even when the reviewer skipped
       // record_review_decision, so an escalation never arrives reasonless.
       escalation_reason: contribution.escalationReason,

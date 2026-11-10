@@ -1,5 +1,5 @@
 {
-  "id": "9bde5d62-b6c8-4ed8-9c92-9a1df5ec78f0",
+  "id": "8d662903-937a-4c1e-8cf7-d49d59e4e590",
   "prevId": "7fcab3a6-e20e-45ac-9950-37a00f95ca76",
   "version": "7",
   "dialect": "postgresql",
@@ -6806,6 +6806,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "argument_id": {
+          "name": "argument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merge_target_argument_id": {
+          "name": "merge_target_argument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "proposed_canonical_form": {
           "name": "proposed_canonical_form",
           "type": "text",
@@ -6971,6 +6983,32 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contributions_argument_id_arguments_id_fk": {
+          "name": "contributions_argument_id_arguments_id_fk",
+          "tableFrom": "contributions",
+          "tableTo": "arguments",
+          "columnsFrom": [
+            "argument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "contributions_merge_target_argument_id_arguments_id_fk": {
+          "name": "contributions_merge_target_argument_id_arguments_id_fk",
+          "tableFrom": "contributions",
+          "tableTo": "arguments",
+          "columnsFrom": [
+            "merge_target_argument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "contributions_source_id_sources_id_fk": {
@@ -15687,12 +15725,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "page_url_hash": {
-          "name": "page_url_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -15701,21 +15733,6 @@
           "columns": [
             {
               "expression": "doi",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_sources_page_url_hash": {
-          "name": "idx_sources_page_url_hash",
-          "columns": [
-            {
-              "expression": "page_url_hash",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

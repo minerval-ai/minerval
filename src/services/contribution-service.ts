@@ -103,6 +103,14 @@ export async function submitMandateContribution(input: {
   if (!node) return { success: false, message: `No active node ${claimId}.` };
   const structural = await checkStructuralProposal(type, claimId, input.input);
   if (!structural.ok) return { success: false, message: structural.message };
+  const argumentTarget = await checkArgumentTarget({
+    type,
+    claimId: claimId || null,
+    argumentId: text(input.input.argument_id),
+    mergeTargetArgumentId: text(input.input.merge_target_argument_id),
+    mergeTargetClaimId: text(input.input.merge_target_claim_id),
+  });
+  if (!argumentTarget.ok) return { success: false, message: argumentTarget.message };
   const urls = Array.isArray(input.input.evidence_urls)
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
     : [];
@@ -132,8 +140,8 @@ export async function submitMandateContribution(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
          (claim_id, contributor_id, contribution_type, content, evidence_urls, grant_id, funded_by_job_id, research_run_id,
-          merge_target_claim_id, proposed_canonical_form)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+          merge_target_claim_id, proposed_canonical_form, argument_id, merge_target_argument_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [
         claimId,
         grant.funder_user_id,
@@ -145,6 +153,8 @@ export async function submitMandateContribution(input: {
         input.researchRunId,
         structural.mergeTarget,
         structural.proposedText,
+        argumentTarget.argumentId,
+        argumentTarget.mergeTargetArgumentId,
       ]
     );
     const after = { ...budget, committedMicroUsd: budget.committedMicroUsd + estimate, submitted: budget.submitted + 1 };
@@ -193,9 +203,91 @@ export const CURATION_CONTRIBUTION_TYPES = ["propose_merge", "propose_split", "p
  */
 export const RESEARCH_CONTRIBUTION_TYPES = [...MANDATE_CONTRIBUTION_TYPES, ...CURATION_CONTRIBUTION_TYPES] as const;
 
+/** The contribution types that may name one of the node's arguments (#541). */
+export const ARGUMENT_CONTRIBUTION_TYPES = ["add_instance", "propose_merge", "propose_split"] as const;
+
+export type ArgumentTarget =
+  | { ok: true; argumentId: string | null; mergeTargetArgumentId: string | null }
+  | { ok: false; message: string };
+
+/**
+ * A contribution about one of a node's arguments (#541), checked the same
+ * way at every door (REST, MCP, a mandate's Grantmaker, its research):
+ * add_instance says where a source makes, attacks or mentions the argument;
+ * propose_split that it carries several lines of reasoning; propose_merge,
+ * with merge_target_argument_id, that two arguments on the node are one.
+ * The argument must be on the contribution's node, since the conclusion is
+ * part of an argument's identity (§7). With no argument named the
+ * contribution is about the node itself, as before.
+ */
+export async function checkArgumentTarget(input: {
+  type: string;
+  claimId: string | null;
+  argumentId?: string | null;
+  mergeTargetArgumentId?: string | null;
+  mergeTargetClaimId?: string | null;
+}): Promise<ArgumentTarget> {
+  const argumentId = input.argumentId?.trim() || null;
+  const mergeTargetArgumentId = input.mergeTargetArgumentId?.trim() || null;
+  if (!argumentId && !mergeTargetArgumentId) return { ok: true, argumentId: null, mergeTargetArgumentId: null };
+  if (!(ARGUMENT_CONTRIBUTION_TYPES as readonly string[]).includes(input.type)) {
+    return {
+      ok: false,
+      message: `argument_id goes with ${ARGUMENT_CONTRIBUTION_TYPES.join(", ")}; a ${input.type} is about the node.`,
+    };
+  }
+  if (!argumentId) return { ok: false, message: "merge_target_argument_id needs argument_id: the argument it would be merged with." };
+  if (!input.claimId) return { ok: false, message: "argument_id needs claim_id: the node the argument is on." };
+  if (mergeTargetArgumentId && input.type !== "propose_merge") {
+    return { ok: false, message: "merge_target_argument_id goes with propose_merge." };
+  }
+  if (input.type === "propose_merge") {
+    if (input.mergeTargetClaimId) {
+      return {
+        ok: false,
+        message:
+          "A propose_merge joins two nodes (merge_target_claim_id) or two arguments on one node " +
+          "(argument_id and merge_target_argument_id), not both.",
+      };
+    }
+    if (!mergeTargetArgumentId || mergeTargetArgumentId === argumentId) {
+      return { ok: false, message: "To propose merging arguments, name both: argument_id and a different merge_target_argument_id." };
+    }
+  }
+  const ids = [argumentId, ...(mergeTargetArgumentId ? [mergeTargetArgumentId] : [])];
+  const rows = await rawQuery<{ id: string; claim_id: string; stance: string; merged_into: string | null }>(
+    `SELECT id, claim_id, stance, merged_into FROM arguments WHERE id::text = ANY($1::text[])`,
+    [ids]
+  );
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) return { ok: false, message: `No argument ${id}.` };
+    if (row.claim_id !== input.claimId) {
+      return {
+        ok: false,
+        message:
+          `Argument ${id} is on node ${row.claim_id}, not ${input.claimId}. An argument's conclusion is part of ` +
+          `its identity (§7): contribute on the node it is on.`,
+      };
+    }
+    if (row.merged_into) {
+      return { ok: false, message: `Argument ${id} was merged into ${row.merged_into}; name that argument.` };
+    }
+  }
+  if (mergeTargetArgumentId && byId.get(argumentId)!.stance !== byId.get(mergeTargetArgumentId)!.stance) {
+    return {
+      ok: false,
+      message: "Those arguments are on opposite sides of the node, so they reach different conclusions and are different arguments (§7).",
+    };
+  }
+  return { ok: true, argumentId, mergeTargetArgumentId };
+}
+
 /**
  * The fields a structural proposal needs beyond its node: for a merge, the
- * other active node it duplicates; for an edit, the wording proposed.
+ * other active node it duplicates (or, for a merge of two of the node's
+ * arguments, checkArgumentTarget's pair); for an edit, the wording proposed.
  */
 async function checkStructuralProposal(
   type: string,
@@ -203,6 +295,10 @@ async function checkStructuralProposal(
   input: Record<string, unknown>
 ): Promise<{ ok: true; mergeTarget: string | null; proposedText: string | null } | { ok: false; message: string }> {
   const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  if (type === "propose_merge" && text(input.argument_id)) {
+    // Two arguments on this node: checkArgumentTarget holds the rules.
+    return { ok: true, mergeTarget: null, proposedText: null };
+  }
   if (type === "propose_merge") {
     const mergeTarget = text(input.merge_target_claim_id);
     const [other] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [mergeTarget]);
@@ -268,6 +364,14 @@ export async function submitGrantContribution(input: {
   }
   const structural = await checkStructuralProposal(type, claimId, input.input);
   if (!structural.ok) return { success: false, message: structural.message };
+  const argumentTarget = await checkArgumentTarget({
+    type,
+    claimId: claimId || null,
+    argumentId: text(input.input.argument_id),
+    mergeTargetArgumentId: text(input.input.merge_target_argument_id),
+    mergeTargetClaimId: text(input.input.merge_target_claim_id),
+  });
+  if (!argumentTarget.ok) return { success: false, message: argumentTarget.message };
   const urls = Array.isArray(input.input.evidence_urls)
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
     : [];
@@ -306,8 +410,8 @@ export async function submitGrantContribution(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
          (claim_id, contributor_id, contribution_type, content, proposed_canonical_form,
-          evidence_urls, grant_id, funded_by_job_id, merge_target_claim_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          evidence_urls, grant_id, funded_by_job_id, merge_target_claim_id, argument_id, merge_target_argument_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
       [
         intake || unanchoredRequest ? null : claimId,
         grant.funder_user_id,
@@ -318,6 +422,8 @@ export async function submitGrantContribution(input: {
         input.grantId,
         grant.budget_job_id,
         structural.mergeTarget,
+        argumentTarget.argumentId,
+        argumentTarget.mergeTargetArgumentId,
       ]
     );
     return { success: true as const, id: row!.id, left: left - estimate };
@@ -345,6 +451,9 @@ export async function createContribution(input: {
   content: string;
   evidenceUrls?: string[];
   mergeTargetClaimId?: string;
+  /** One of the node's arguments the contribution is about (#541), checked by checkArgumentTarget. */
+  argumentId?: string | null;
+  mergeTargetArgumentId?: string | null;
   proposedCanonicalForm?: string;
   /** Submitted by research a mandate funds (Part VIII): the mandate, and the job its review is metered to. */
   grantId?: string | null;
@@ -358,6 +467,8 @@ export async function createContribution(input: {
     content: input.content,
     evidenceUrls: input.evidenceUrls ?? [],
     mergeTargetClaimId: input.mergeTargetClaimId ?? null,
+    argumentId: input.argumentId ?? null,
+    mergeTargetArgumentId: input.mergeTargetArgumentId ?? null,
     proposedCanonicalForm: input.proposedCanonicalForm ?? null,
     grantId: input.grantId ?? null,
     fundedByJobId: input.fundedByJobId ?? null,
@@ -563,6 +674,8 @@ export function formatContribution(c: {
   submittedAt: Date;
   reviewStatus: string;
   mergeTargetClaimId: string | null;
+  argumentId?: string | null;
+  mergeTargetArgumentId?: string | null;
   proposedCanonicalForm: string | null;
   grantId?: string | null;
 }) {
@@ -577,6 +690,9 @@ export function formatContribution(c: {
     submitted_at: c.submittedAt.toISOString(),
     review_status: c.reviewStatus,
     merge_target_claim_id: c.mergeTargetClaimId,
+    // One of the node's arguments, when the contribution is about it (#541).
+    argument_id: c.argumentId ?? null,
+    merge_target_argument_id: c.mergeTargetArgumentId ?? null,
     proposed_canonical_form: c.proposedCanonicalForm,
     // The node's page on the public site: the claim contributed to, or, for
     // an accepted proposal, the claim, question or quantity it became (which

@@ -63,6 +63,7 @@ import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
   formatContribution,
+  checkArgumentTarget,
   getContributionById,
   getReviewForContribution,
   withAnsweredRequest,
@@ -149,6 +150,7 @@ function formatAssessment(
     reasoningTrace: string;
     assessedAt: Date;
     model?: string | null;
+    runId?: string | null;
   } | null
 ) {
   if (!a) return null;
@@ -165,6 +167,9 @@ function formatAssessment(
     assessed_at: a.assessedAt.toISOString(),
     // The assessor behind the verdict (#294); null for legacy rows.
     model: a.model ?? null,
+    // The run that wrote this verdict (GET /runs/:id); null when written
+    // outside a traced run or before runs were linked.
+    run_id: a.runId ?? null,
   };
 }
 
@@ -833,7 +838,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             "or reasoning for it. add_instance: a source where it appears. " +
             "propose_argument: a named argument for or against it. " +
             "propose_merge (with merge_target_claim_id), propose_split, " +
-            "propose_edit (usually with proposed_canonical_form). On a " +
+            "propose_edit (usually with proposed_canonical_form). About one " +
+            "of the node's arguments, with argument_id: add_instance (a " +
+            "source that makes, attacks or mentions it), propose_split (it " +
+            "carries several lines of reasoning), propose_merge (with " +
+            "merge_target_argument_id: two arguments on the node are one). On a " +
             "quantity, add_estimate: a source's figure for it. On a question, " +
             "propose_answer: a candidate answer. On any node, propose_request: " +
             "work that would improve what the graph knows; answer_request: " +
@@ -846,6 +855,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .describe("The contribution itself, engaging what the node already records; cite ids, not pasted text"),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
         merge_target_claim_id: z.guid().optional(),
+        argument_id: z
+          .guid()
+          .optional()
+          .describe(
+            "One of the node's arguments (get_claim with include arguments lists them; get_argument opens one), " +
+              "when the contribution is about it rather than the node."
+          ),
+        merge_target_argument_id: z
+          .guid()
+          .optional()
+          .describe("propose_merge of two arguments on the node: the other argument."),
         proposed_canonical_form: z.string().max(2000).optional(),
         request_id: z
           .guid()
@@ -885,6 +905,15 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         content: input.content,
       });
       if (!answered.ok) return errorResult(answered.code, answered.message);
+
+      const argumentTarget = await checkArgumentTarget({
+        type: input.contribution_type,
+        claimId: input.claim_id ?? null,
+        argumentId: input.argument_id,
+        mergeTargetArgumentId: input.merge_target_argument_id,
+        mergeTargetClaimId: input.merge_target_claim_id,
+      });
+      if (!argumentTarget.ok) return errorResult("ARGUMENT_TARGET", argumentTarget.message);
 
       const contributor = await getOrCreateContributor({
         externalId,
@@ -928,6 +957,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         content: answered.content,
         evidenceUrls: input.evidence_urls,
         mergeTargetClaimId: input.merge_target_claim_id,
+        argumentId: argumentTarget.argumentId,
+        mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
         proposedCanonicalForm: input.proposed_canonical_form,
       });
       await enqueueContribution({ contributionId: contribution.id });

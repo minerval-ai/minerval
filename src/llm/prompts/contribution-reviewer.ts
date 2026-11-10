@@ -98,6 +98,15 @@ process, and what changes on the page stays the owning admins' judgment.
 - **propose_argument**: a coherent line of reasoning bearing on the
   claim's truth (§7), with relevant, connected subclaims, not duplicating
   an existing argument without new structure.
+- **On one of the node's arguments** (the contribution's argument_id;
+  get_argument opens it). An add_instance says a source makes, attacks or
+  mentions that argument: the passage must be accurate, and it must be that
+  argument, the same conclusion through the same inference (§7), not a
+  different one on the same topic. A propose_merge of two arguments must
+  show they are one inference, so that whatever would break one would break
+  the other; a propose_split must show separate lines of reasoning, each of
+  which could succeed or fail without the others. How many sources make an
+  argument, or who made it first, is no part of any of these cases.
 - **add_estimate**: the source must state the figure as recorded, for this
   quantity as defined. A reading from an instrument is admitted as evidence
   in the quantity's provenance, with what it actually measured, not as the
@@ -124,8 +133,8 @@ process, and what changes on the page stays the owning admins' judgment.
 
 Accepting a structural proposal (merge, split, edit, argument) admits the
 case for it, not the change itself. The claim's Steward applies edits and
-arguments within its own page and takes merge and split cases to the
-Curator, who adjudicates them (§5, Part VIII).
+arguments within its own page and takes merge and split cases, of nodes
+or of arguments, to the Curator, who adjudicates them (§5, Part VIII).
 
 ## Intake: proposed new content
 

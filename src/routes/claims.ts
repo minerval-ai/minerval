@@ -179,6 +179,8 @@ export const assessmentSchema = {
     // Raw API id of the model that produced the assessment (#294); null for
     // rows written before the column existed.
     model: { type: "string", nullable: true },
+    // The run that wrote the verdict (GET /runs/:id).
+    run_id: { type: "string", nullable: true },
     // Developer disclosure (#534): present when the claim names the
     // developer of the model that assessed it; absent otherwise.
     developer_disclosure: {
@@ -1534,6 +1536,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     trigger_context: { type: "string", nullable: true },
                     assessed_at: { type: "string", format: "date-time" },
                     model: { type: "string", nullable: true },
+                    run_id: { type: "string", nullable: true },
                   },
                 },
               },
@@ -1849,7 +1852,7 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
   };
 }
 
-export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null }) {
+export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null }) {
   return {
     id: a.id,
     status: a.status,
@@ -1867,6 +1870,9 @@ export function formatAssessment(a: { id: string; status: string; confidence: nu
     assessed_at: a.assessedAt.toISOString(),
     // The assessor behind the verdict (#294); null for legacy rows.
     model: a.model ?? null,
+    // The run that wrote this verdict (GET /runs/:id); null when written
+    // outside a traced run or before runs were linked.
+    run_id: a.runId ?? null,
   };
 }
 

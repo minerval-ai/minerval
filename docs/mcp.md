@@ -287,14 +287,19 @@ read is free, an agent which signals allocation turns on.
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id?, contribution_type, content,
-  evidence_urls?, merge_target_claim_id?, proposed_canonical_form?,
+  evidence_urls?, merge_target_claim_id?, argument_id?,
+  merge_target_argument_id?, proposed_canonical_form?,
   request_id?}` — file any of `contribution_type`'s values: challenge,
   support, add_instance, propose_argument, propose_merge, propose_split,
   propose_edit, add_estimate (a source's figure for a quantity),
   propose_answer (a candidate answer to a question), propose_request, and
   answer_request. `claim_id` is required for every type but
   `propose_request`, which may bear on several nodes, sources, or something
-  the graph does not hold yet (#724). An `answer_request` names the request
+  the graph does not hold yet (#724). `argument_id` makes the contribution
+  about one of the node's arguments (#541): `add_instance` (a source that
+  makes, attacks or mentions it), `propose_split`, or `propose_merge` with
+  `merge_target_argument_id` (two arguments on the node are one); both
+  arguments must be on `claim_id`'s node, else `ARGUMENT_TARGET`. An `answer_request` names the request
   it is offered for in `request_id` (the request must bear on `claim_id` and
   be open); the id is carried to the reviewer at the head of the content,
   since accepting one needs it (#723). Requires a key bound to a contributor
@@ -394,6 +399,12 @@ each tool's description is its route's summary plus the route it runs.
   constitution, each role prompt and each tool, with the commit it first ran
   under; filter by kind, name or hash), `get_setup_part` (one version, with
   its text when public, and the version before it to compare against).
+- **Agent runs:** `get_run` (a run's agent, times, outcome, cost, commit and
+  setup by version; a run that read private data answers `public: false`
+  with its reasons and nothing else), `list_run_steps` (its steps as
+  one-line summaries, a page at a time, filterable by kind or tool),
+  `get_run_step` (one step in full). An assessment's `run_id` names the run
+  that wrote it.
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.
