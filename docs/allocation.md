@@ -183,7 +183,10 @@ event-only), or by an **input event** queued for it — the daily
 carries the Retraction Watch database, for every retraction, correction,
 and expression of concern since the last poll, joins the DOIs against the
 graph's sources, and queues an event on every lookout that watches for
-retractions), the **graph feed** (`graph`: the change stream has entries
+retractions; the same poll records each notice on the source and, the
+first time it does, sends a `source_event` message to the Steward of every
+active node that asserts the source or rests on it through recorded
+provenance, whether or not a lookout watches), the **graph feed** (`graph`: the change stream has entries
 in its territory it has not read; workers/lookout-triggers.ts
 `graphFeedTick`), or a **poke** from the Grantmaker or the funder. The set
 is open: any poller that can say "this happened to this source" is a

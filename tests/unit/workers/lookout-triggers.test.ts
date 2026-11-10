@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
  * The retraction poll (workers/lookout-triggers.ts): records a source
- * event for every notice matching a source, and wakes lookouts only when
- * one watches for retractions; honours its cadence through a
+ * event for every notice matching a source, tells the Steward of every
+ * node asserting or resting on it the first time a notice is recorded, and
+ * wakes lookouts only when one watches for retractions; honours its cadence through a
  * persisted high-water mark; joins Crossref notices to the graph's sources
  * and queues one event per matched source on every subscribed lookout;
  * never re-queues a notice a lookout already holds; advances the mark to
@@ -25,6 +26,9 @@ const { state, queries } = vi.hoisted(() => ({
     dupPending: 0,
     fanout: [] as Array<Record<string, unknown>>,
     sourceEvents: [] as Array<Record<string, unknown>>,
+    recorded: true,
+    stewards: [] as Array<Record<string, unknown>>,
+    stewardFails: [] as string[],
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -56,13 +60,20 @@ vi.mock("../../../src/services/source-facts-service.js", () => ({
   eventKindForCrossref: (t: string) => (t === "expression_of_concern" ? "expression_of_concern" : t),
   recordSourceEvent: vi.fn(async (input: Record<string, unknown>) => {
     state.sourceEvents.push(input);
-    return { recorded: true };
+    return { recorded: state.recorded };
   }),
 }));
 vi.mock("../../../src/services/lookout-service.js", () => ({
   queueLookoutEventsByTrigger: vi.fn(async (input: Record<string, unknown>) => {
     state.fanout.push(input);
     return { queued: 2 };
+  }),
+}));
+
+vi.mock("../../../src/services/queue-service.js", () => ({
+  enqueueSteward: vi.fn(async (input: Record<string, unknown>) => {
+    if (state.stewardFails.includes(input.claimId as string)) throw new Error("db down");
+    state.stewards.push(input);
   }),
 }));
 
@@ -84,17 +95,20 @@ beforeEach(() => {
   state.dupPending = 0;
   state.fanout = [];
   state.sourceEvents = [];
+  state.recorded = true;
+  state.stewards = [];
+  state.stewardFails = [];
 });
 
 describe("retractionPollTick", () => {
-  it("records what happened to a matched source even when no lookout watches, and wakes nobody", async () => {
+  it("records what happened to a matched source even when no lookout watches, and tells its Stewards but wakes no lookout", async () => {
     state.subscribed = 0;
     state.notices = [
       { notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "correction", title: "Correction to X", updated: "2026-09-10T00:00:00Z", source: "publisher" },
     ];
     state.matches = [{ doi: "10.1/paper", source_id: "s-1", url: "u", title: "Paper", claim_ids: ["c-1"] }];
     const r = await retractionPollTick({ now: NOW });
-    expect(r).toMatchObject({ skipped: false, sourceEvents: 1, eventsQueued: 0 });
+    expect(r).toMatchObject({ skipped: false, sourceEvents: 1, stewardsTold: 1, eventsQueued: 0 });
     expect(state.sourceEvents).toEqual([
       {
         sourceId: "s-1", kind: "correction", occurredAt: "2026-09-10T00:00:00Z",
@@ -121,7 +135,7 @@ describe("retractionPollTick", () => {
       { doi: "10.1/paper", source_id: "s-2", url: "https://x.org/10.1/paper", title: "Mirror", claim_ids: [] },
     ];
     const r = await retractionPollTick({ now: NOW });
-    expect(r).toEqual({ skipped: false, notices: 2, complete: true, matchedSources: 2, sourceEvents: 2, eventsQueued: 2 });
+    expect(r).toEqual({ skipped: false, notices: 2, complete: true, matchedSources: 2, sourceEvents: 2, stewardsTold: 2, eventsQueued: 2 });
     // The orphan mirror (no claims resting on it) wakes nobody.
     expect(state.fanout).toHaveLength(1);
     expect(state.fanout[0]).toMatchObject({
@@ -207,5 +221,54 @@ describe("retractionPollTick", () => {
     const r = await retractionPollTick({ now: NOW });
     expect(r.eventsQueued).toBe(0);
     expect(state.fanout).toHaveLength(0);
+  });
+  it("tells each node's Steward once per notice, naming every path by which the notice reaches it (#507)", async () => {
+    state.subscribed = 0;
+    state.notices = [
+      { notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "expression_of_concern", title: "EoC: X", updated: "2026-09-10T00:00:00Z", source: "publisher" },
+    ];
+    state.matches = [
+      { doi: "10.1/paper", source_id: "s-1", url: "https://doi.org/10.1/paper", title: "Paper", claim_ids: ["c-1"] },
+      { doi: "10.1/paper", source_id: "s-2", url: "https://mirror.org/10.1/paper", title: "Mirror", claim_ids: ["c-1"] },
+    ];
+    state.resting = [
+      { source_id: "s-1", claim_id: "c-9", via: "draws_on", through_source_id: "s-7", through_source_title: "News", relation_type: "repeats" },
+      { source_id: "s-1", claim_id: "c-8", via: "copy_or_version", through_source_id: "s-3", through_source_title: "Preprint", relation_type: null },
+    ];
+    const r = await retractionPollTick({ now: NOW });
+    // Resting claims are looked up for the Stewards even with no lookout watching.
+    expect(r.stewardsTold).toBe(3);
+    expect(state.stewards.map((m) => m.claimId)).toEqual(["c-1", "c-9", "c-8"]);
+    expect(state.stewards.every((m) => m.trigger === "source_event")).toBe(true);
+    const c1 = state.stewards[0]!.context as string;
+    expect(c1).toContain("expression of concern notice");
+    expect(c1).toContain("dated 2026-09-10");
+    expect(c1).toContain("https://doi.org/10.1/notice");
+    // Both of c-1's sources are named in its one message.
+    expect(c1).toContain('"Paper" (https://doi.org/10.1/paper) is one of this node\'s sources.');
+    expect(c1).toContain('"Mirror" (https://mirror.org/10.1/paper) is one of this node\'s sources.');
+    expect(state.stewards[1]!.context).toContain('"News", one of this node\'s sources, draws on "Paper" (https://doi.org/10.1/paper) (recorded as repeats).');
+    expect(state.stewards[2]!.context).toContain('"Preprint", one of this node\'s sources, is a copy or another version of "Paper"');
+    expect(state.fanout).toHaveLength(0);
+  });
+
+  it("tells nobody about a notice already recorded, so the overlap window and a re-run never repeat a message", async () => {
+    state.notices = [{ notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "retraction", title: null, updated: null, source: null }];
+    state.matches = [{ doi: "10.1/paper", source_id: "s-1", url: "u", title: "t", claim_ids: ["c-1"] }];
+    state.recorded = false;
+    const r = await retractionPollTick({ now: NOW });
+    expect(r.stewardsTold).toBe(0);
+    expect(state.stewards).toHaveLength(0);
+  });
+
+  it("keeps telling the rest when one message cannot be sent", async () => {
+    state.notices = [{ notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "retraction", title: null, updated: null, source: null }];
+    state.matches = [{ doi: "10.1/paper", source_id: "s-1", url: "u", title: "t", claim_ids: ["c-1", "c-2"] }];
+    state.stewardFails = ["c-1"];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await retractionPollTick({ now: NOW });
+    warn.mockRestore();
+    expect(r.stewardsTold).toBe(1);
+    expect(state.stewards.map((m) => m.claimId)).toEqual(["c-2"]);
   });
 });

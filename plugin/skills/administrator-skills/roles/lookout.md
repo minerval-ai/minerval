@@ -37,7 +37,9 @@ often they are real:
   expression of concern. A retracted source under a claim's assessment is
   the clearest case there is. A retraction event names the claims that
   assert the source and the claims that rest on it through recorded
-  provenance; the second kind matters as much as the first.
+  provenance; the second kind matters as much as the first. Each of those
+  claims' Stewards has already been sent the notice, but a message pays
+  for nothing: whether a pass is worth funding now is yours to judge.
 - A new result, dataset, replication, or failed replication that bears on
   a claim in scope: a preprint, a paper, a report, a well-sourced post.
 - A dependency moved: a claim in scope rests on another whose assessment
