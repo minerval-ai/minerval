@@ -1,4 +1,4 @@
-# Method skill: Sql (version 1)
+# Method skill: Sql (version 2)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 

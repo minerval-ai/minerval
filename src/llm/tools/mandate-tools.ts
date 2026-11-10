@@ -13,8 +13,6 @@
  * live here are one implementation in every mode, so the planner sees the
  * world the reviewer sees.
  *
- *  - survey_scope: the graph's allocation signals over a subtree and/or a
- *    keyword slice (services/scope-survey-service.ts);
  *  - read_page: one public page, read in windows to its end if it matters,
  *    for when a search snippet cannot tell you whether a source matters;
  *  - update_workspace: the mandate's durable working memory
@@ -22,13 +20,14 @@
  *
  * Follows the null-delegate convention of graph-read-tools: `execute`
  * returns null for a tool that is not its own, so an agent wires it with
- * one spread and one early return. Web search is not here because it is
- * already one implementation for every agent (web-search-tool.ts).
+ * one spread and one early return. Web search and query_sql are not here
+ * because each is already one implementation for every agent
+ * (web-search-tool.ts, sql-tools.ts); the scope survey this toolbox once
+ * carried is a query_sql query now (skills/sql).
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { rawQuery } from "../../db/client.js";
-import { surveyScope } from "../../services/scope-survey-service.js";
 import {
   READ_PAGE_TOOL_NAME,
   getReadPageToolDefinition,
@@ -38,7 +37,6 @@ import { stewardTierCostEstimates } from "../../services/cost-estimate-service.j
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
 
 export { READ_PAGE_TOOL_NAME };
-export const SURVEY_SCOPE_TOOL_NAME = "survey_scope";
 export const UPDATE_WORKSPACE_TOOL_NAME = "update_workspace";
 
 export interface MandateTools {
@@ -54,37 +52,6 @@ export interface MandateToolOptions {
    * mandate yet).
    */
   grantId?: string | null;
-  /**
-   * The mandate's declared scope hints (`grants.scope_claim_id` /
-   * `scope_query`), used as the survey's default when a call names
-   * neither a subtree nor a query. Search aids, never the scope itself.
-   */
-  scopeClaimId?: string | null;
-  scopeQuery?: string | null;
-  /** Survey rows per page; default 40. */
-  surveyLimit?: number;
-}
-
-export function getSurveyScopeToolDefinition(): Tool {
-  return {
-    name: SURVEY_SCOPE_TOOL_NAME,
-    description:
-      "Survey a scope (a claim's subtree and/or a keyword query) with the " +
-      "allocation signals: importance, contestation, assessment state and " +
-      "age, expected gain from another pass, deferred subclaims; most " +
-      "valuable first. A search aid, not the scope: the mandate's scope is " +
-      "its words. A page at a time; when next_offset is set there is more, " +
-      "so pass it as offset.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        claim_id: { type: "string", description: "Subtree root (optional)." },
-        query: { type: "string", description: "Keyword slice (optional)." },
-        offset: { type: "number" },
-      },
-      required: [],
-    },
-  };
 }
 
 export function getUpdateWorkspaceToolDefinition(): Tool {
@@ -213,7 +180,6 @@ export async function updateGrantWorkspace(
 
 export function createMandateTools(options: MandateToolOptions = {}): MandateTools {
   const definitions: Tool[] = [
-    getSurveyScopeToolDefinition(),
     getReadPageToolDefinition(),
   ];
   if (options.grantId) definitions.push(getUpdateWorkspaceToolDefinition());
@@ -221,33 +187,6 @@ export function createMandateTools(options: MandateToolOptions = {}): MandateToo
   return {
     definitions,
     async execute(name, toolInput) {
-      if (name === SURVEY_SCOPE_TOOL_NAME) {
-        const claimId =
-          typeof toolInput.claim_id === "string" && toolInput.claim_id
-            ? toolInput.claim_id
-            : null;
-        const query =
-          typeof toolInput.query === "string" && toolInput.query
-            ? toolInput.query
-            : null;
-        // A call naming nothing surveys the mandate's declared hints; a
-        // call naming a subtree or a query surveys exactly that.
-        const useDefaults = !claimId && !query;
-        const offset = Math.max(0, Number(toolInput.offset ?? 0) || 0);
-        const limit = options.surveyLimit ?? 40;
-        const rows = await surveyScope({
-          scopeClaimId: useDefaults ? (options.scopeClaimId ?? null) : claimId,
-          scopeQuery: useDefaults ? (options.scopeQuery ?? null) : query,
-          offset,
-          limit,
-        });
-        // A full page may have more behind it; say where it continues (#689).
-        return JSON.stringify({
-          count: rows.length,
-          next_offset: rows.length === limit ? offset + rows.length : null,
-          claims: rows,
-        });
-      }
       if (name === READ_PAGE_TOOL_NAME) return executeReadPage(name, toolInput);
       if (name === UPDATE_WORKSPACE_TOOL_NAME && options.grantId) {
         const mode =

@@ -894,7 +894,8 @@ export async function ensureFormalizeAction(
  * Whether a reason is good enough is the Grantmaker's judgment, stated in
  * the item's public rationale and open to audit, not a test of its length
  * (#763): the skill tells it to say what changed since the last attempt,
- * and inspect_ledger shows the Audit Agent the item and its rationale. What
+ * and the Audit Agent reads the item and its rationale (plan_items in
+ * query_sql). What
  * bounds repeated attempts on one claim is money: the per-claim lifetime
  * cap and the Grantmaker's valuation.
  */

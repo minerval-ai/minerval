@@ -246,14 +246,10 @@ async function runLookoutImpl(input: {
 
   // Contributions through the Reviewer, paid from the mandate's escrow (§19).
   const contributionTools = createGrantContributionTools(lookout.grant_id);
-  // survey_scope and read_page are the mandate toolbox's, one implementation
-  // in every mode (#691). No grantId: the lookout's workspace is its own,
-  // not the mandate's, and is written by its own tool below.
-  const mandateTools = createMandateTools({
-    surveyLimit: 25,
-    scopeClaimId: lookout.scope_claim_id,
-    scopeQuery: lookout.scope_query,
-  });
+  // read_page is the mandate toolbox's, one implementation in every mode
+  // (#691). No grantId: the lookout's workspace is its own, not the
+  // mandate's, and is written by its own tool below.
+  const mandateTools = createMandateTools();
 
   // Queued inputs in full, up to EVENTS_FULL_CHARS; the rest one line each.
   const shownInFull: string[] = [];

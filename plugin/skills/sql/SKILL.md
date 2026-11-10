@@ -52,6 +52,14 @@ unknown.
 - `mandate_decisions`: every commission, grant, refusal, decline and note
   a mandate's agents made. decision_id, mandate_id, decided_by, item_kind,
   decision, target, owls, reason, petition_id, action_id, created_at
+- `plan_items`: each item of a mandate's plan, as its page shows it, with
+  the standing the plan materializer last wrote on it. mandate_id,
+  item_index, plan_cursor (items before it have been taken up), action,
+  node_id, url, partition, variant, focus, rationale, ledger_status,
+  ledger_reason, action_id (the ledger row it names), exclusion_group,
+  ledger_checked_at. Join action_id to `ledger` to check a plan against
+  what ran: a named row that is missing, or whose status disagrees with
+  ledger_status, is a plan out of step with its ledger.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at

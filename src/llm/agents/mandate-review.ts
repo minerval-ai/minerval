@@ -9,7 +9,7 @@
  * designed the mandate, now reviewing it the way any person entrusted with
  * a budget and a mission would —
  *
- *  - survey its territory: the graph (search, scope survey) AND the open
+ *  - survey its territory: the graph (search, query_sql) AND the open
  *    web (web_search) — finding the right sources is the agent's job, not
  *    a human's;
  *  - read back what its money did (mandate-reflection-service.ts) and
@@ -194,7 +194,7 @@ async function runMandateReviewImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model, mandate: true });
-  const mandateTools = createMandateTools({ grantId: grant.id, surveyLimit: 25 });
+  const mandateTools = createMandateTools({ grantId: grant.id });
   // Contributions through the Reviewer, paid from the escrow (§19).
   const contributionTools = createGrantContributionTools(grant.id);
   // The delegation channel (#298, #683): the same instrument and the same
@@ -211,7 +211,7 @@ async function runMandateReviewImpl(input: {
     // not answerable from keyword hits and scalars — it needs the claim's
     // reasoning, what it rests on, and what rests on it.
     ...getGraphReadToolDefinitions(),
-    // The mandate toolbox (#333): survey_scope, read_page,
+    // The mandate toolbox (#333): read_page,
     // update_workspace — one implementation shared with the planning pass
     // and the granting conversation.
     ...mandateTools.definitions,

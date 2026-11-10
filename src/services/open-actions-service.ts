@@ -62,8 +62,6 @@ function nodesIn(tool: string, payload: Json): Json[] {
   switch (tool) {
     case "search_claims":
       return list(payload.results);
-    case "survey_scope":
-      return list(payload.claims);
     case "get_claim": {
       const nodes: Json[] = [];
       if (payload.claim && typeof payload.claim === "object") nodes.push(payload.claim as Json);

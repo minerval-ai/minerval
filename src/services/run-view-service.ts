@@ -73,7 +73,7 @@ export interface WithheldRun {
   agent: string;
   withheld: true;
   public: false;
-  /** Why the run is not public: e.g. "agent:grantmaker", "tool:inspect_ledger". */
+  /** Why the run is not public: e.g. "agent:grantmaker", "tool:grant_overview". */
   private_reasons: string[];
 }
 

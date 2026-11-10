@@ -80,7 +80,6 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
     state.mandateCalls.push(JSON.stringify(opts));
     return {
       definitions: [
-        { name: "survey_scope" },
         { name: "read_page" },
         { name: "update_workspace" },
       ],
@@ -186,8 +185,6 @@ describe("runGrantor", () => {
     expect(b).toContain("search aids");
     expect(b).toContain("Map so far: three reviews found.");
     expect(b).toContain('the funder named it "Nutrition literature ingestion"');
-    expect(state.mandateCalls[0]).toContain(`"scopeClaimId":"${CLAIM}"`);
-    expect(state.mandateCalls[0]).toContain('"scopeQuery":"dietary fat"');
   });
 
   it("carries the review agent's toolset: web search first, then the channels, the graph, the toolbox, submit_plan", async () => {
@@ -198,7 +195,8 @@ describe("runGrantor", () => {
       "raise_issue",
       "note_finding",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
-      "survey_scope", "read_page", "update_workspace",
+      "query_sql",
+      "read_page", "update_workspace",
       "list_requests",
       "submit_plan",
       "cost_sheet",

@@ -49,6 +49,7 @@ export const SQL_VIEWS = [
   "messages",
   "mandates",
   "mandate_decisions",
+  "plan_items",
   "petitions",
   "contributions",
   "requests",

@@ -729,6 +729,20 @@
       "when": 1794333606475,
       "tag": "0103_sessions_for_all_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794334517840,
+      "tag": "0104_drop_retired_lookout_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794334887010,
+      "tag": "0105_public_plan_items",
+      "breakpoints": true
     }
   ]
 }

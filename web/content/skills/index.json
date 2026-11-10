@@ -64,7 +64,7 @@
       "name": "costing",
       "displayName": "Costing",
       "description": "How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.",
-      "version": 4,
+      "version": 5,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -162,7 +162,7 @@
           }
         }
       ],
-      "bodyChars": 8823
+      "bodyChars": 8851
     },
     {
       "name": "mathematics",
@@ -1149,7 +1149,7 @@
       "name": "sql",
       "displayName": "Sql",
       "description": "How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.",
-      "version": 1,
+      "version": 2,
       "sinceEpoch": "2026-11-responsive-funding",
       "kind": "method",
       "domains": [],
@@ -1222,7 +1222,7 @@
         }
       ],
       "tools": [],
-      "bodyChars": 4865
+      "bodyChars": 6003
     }
   ]
 }

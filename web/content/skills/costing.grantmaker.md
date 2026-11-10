@@ -1,4 +1,4 @@
-# Method skill: Costing (version 4)
+# Method skill: Costing (version 5)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -79,8 +79,8 @@ work:
 - **assess and reassess**: one Steward pass each, on the standard or the
   strong tier.
 - **deepen**: one pass on the node. The children it releases get open
-  rows of their own, each a pass when you fund it; get_decomposition and
-  survey_scope show how many are waiting. Price the first level from
+  rows of their own, each a pass when you fund it; get_decomposition shows
+  how many are waiting, and query_sql counts them across a subtree. Price the first level from
   that, and keep room for the levels after it, since nobody knows the
   size of the tree in advance.
 - **ingest**: one ingestion per source. The claims it brings in arrive

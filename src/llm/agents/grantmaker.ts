@@ -484,7 +484,7 @@ async function runGrantmakerTurnImpl(input: {
   // says "ingest the best writing on X" is asking the Grantmaker to go and
   // find it, in the conversation as much as on a review pass.
   const webSearch = createWebSearch(model);
-  // The mandate toolbox (#333): survey_scope, read_page,
+  // The mandate toolbox (#333): read_page,
   // and — once a mandate is live — its workspace, one implementation
   // shared with the planning and review passes.
   const mandateTools = createMandateTools({ grantId: input.grantId ?? null });

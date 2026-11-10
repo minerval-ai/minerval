@@ -5,7 +5,7 @@ administrators' prompts in `src/llm/prompts/`. Do not edit by hand.
 
 ## Skills
 
-### Costing (`skills/costing.md`, version 4, method skill)
+### Costing (`skills/costing.md`, version 5, method skill)
 
 How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.
 
@@ -29,7 +29,7 @@ How to search for evidence on a claim or question so that what the search did no
 
 Sections: For every administrator.
 
-### Sql (`skills/sql.md`, version 1, method skill)
+### Sql (`skills/sql.md`, version 2, method skill)
 
 How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.
 

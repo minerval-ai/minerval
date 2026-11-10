@@ -62,7 +62,6 @@ export const LOOKOUT_BOUNDS = {
   briefChars: { min: 40, max: 20_000 },
   /** 0 = event-only; at most monthly. */
   heartbeatHours: { min: 0, max: 24 * 30 },
-  maxValue: { min: 0, max: 10 },
   workspaceChars: 50_000,
   noteChars: 2_000,
   rationaleChars: 2_000,
@@ -77,8 +76,6 @@ export interface LookoutRow {
   heartbeat_hours: number;
   triggers: LookoutTriggerKind[];
   model: string | null;
-  /** Retired: valuations are no longer written. */
-  max_value: number;
   /** The most it may commission alone for one item, from the mandate's money. */
   commission_limit_micro_usd: number;
   /** The graph feed's territory and how far it has read the change stream. */
@@ -98,7 +95,7 @@ export interface LookoutRow {
 
 const LOOKOUT_SELECT = `
   SELECT id, grant_id, title, brief, status, heartbeat_hours, triggers, model,
-         max_value, commission_limit_micro_usd, territory_claim_ids, territory_tag_ids,
+         commission_limit_micro_usd, territory_claim_ids, territory_tag_ids,
          changes_cursor, workspace, last_note, last_run_at,
          next_due_at, runs, flags, created_by, created_at, updated_at
     FROM lookouts`;
@@ -219,9 +216,9 @@ export async function createLookout(input: {
   }
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookouts
-       (grant_id, title, brief, heartbeat_hours, triggers, model, max_value, created_by,
+       (grant_id, title, brief, heartbeat_hours, triggers, model, created_by,
         commission_limit_micro_usd, territory_claim_ids, territory_tag_ids)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, $7, $8, $9::uuid[], $10::uuid[])
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[])
      RETURNING id`,
     [
       input.grantId,
