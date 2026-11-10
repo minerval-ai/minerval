@@ -11,6 +11,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { amendObjective, withdrawFromMandate } from "../../src/services/mandate-terms-service.js";
 import { getMandateAllocationView } from "../../src/services/mandate-service.js";
 import { commissionAction } from "../../src/services/commission-service.js";
+import { cancelGrant } from "../../src/services/grant-service.js";
 import { OWL, owlBalance, seedAction, seedClaim, seedGrantWithJob, seedUser, jobBudget } from "./helpers.js";
 
 async function mandateWithTerms(funderId: string, budget: number) {
@@ -92,6 +93,32 @@ describe("withdrawFromMandate", () => {
     expect(await jobBudget(m.jobId)).toBe(4 * OWL);
     // Nothing uncommitted is left to take.
     expect(await withdrawFromMandate({ grantId: m.grantId, funder: { userId: funder } })).toMatchObject({ ok: false });
+  });
+
+  it("refuses a withdrawal once the mandate has settled, so a share is never paid twice", async () => {
+    const funder = await seedUser("withdraw-settled");
+    const m = await mandateWithTerms(funder, 10 * OWL);
+    await rawQuery(
+      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id) VALUES ($1, $2, 'escrow_hold', $3)`,
+      [funder, -10 * OWL, m.jobId]
+    );
+    expect(await cancelGrant({ grantId: m.grantId, funderUserId: funder })).toMatchObject({ ok: true });
+    const settled = await owlBalance(funder);
+    expect(await withdrawFromMandate({ grantId: m.grantId, funder: { userId: funder } })).toMatchObject({ ok: false });
+    expect(await owlBalance(funder)).toBe(settled);
+
+    // A mandate that completed is settled the same way.
+    const done = await mandateWithTerms(await seedUser("withdraw-completed"), 10 * OWL);
+    await rawQuery(`UPDATE budget_jobs SET status = 'completed' WHERE id = $1`, [done.jobId]);
+    await rawQuery(`UPDATE grants SET status = 'completed' WHERE id = $1`, [done.grantId]);
+    const source = await seedGrantWithJob({ funderId: await seedUser("withdraw-completed-src"), budgetMicroUsd: 20 * OWL });
+    await rawQuery(
+      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd) VALUES ($1, $2, $3)`,
+      [source.grantId, done.grantId, 4 * OWL]
+    );
+    expect(await withdrawFromMandate({ grantId: done.grantId, funder: { grantId: source.grantId } })).toMatchObject({ ok: false });
+    const [r] = await rawQuery<{ amount: string }>(`SELECT amount_micro_usd AS amount FROM regrants WHERE to_grant_id = $1`, [done.grantId]);
+    expect(Number(r!.amount)).toBe(4 * OWL);
   });
 
   it("takes a regranting mandate's share back to its escrow, whole or in part", async () => {

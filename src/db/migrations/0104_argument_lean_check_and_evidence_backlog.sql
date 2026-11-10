@@ -9,7 +9,8 @@ CREATE TABLE "argument_evidence_backlog" (
 ALTER TABLE "arguments" ADD COLUMN "lean_check_id" uuid;--> statement-breakpoint
 ALTER TABLE "argument_evidence_backlog" ADD CONSTRAINT "argument_evidence_backlog_argument_id_arguments_id_fk" FOREIGN KEY ("argument_id") REFERENCES "public"."arguments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_argument_evidence_backlog_url" ON "argument_evidence_backlog" USING btree ("argument_id","url");--> statement-breakpoint
-ALTER TABLE "arguments" ADD CONSTRAINT "arguments_lean_check_id_lean_checks_id_fk" FOREIGN KEY ("lean_check_id") REFERENCES "public"."lean_checks"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "arguments" ADD CONSTRAINT "arguments_lean_check_id_lean_checks_id_fk" FOREIGN KEY ("lean_check_id") REFERENCES "public"."lean_checks"("id") ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
 -- An argument's Lean check, from the /lean-checks/<id> entry its
 -- evidence_urls carried: the accepted check, newest first, as the badge
 -- read it.

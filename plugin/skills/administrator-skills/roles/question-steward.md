@@ -51,6 +51,10 @@ Each task message names its trigger:
 - lookout_flag: a mandate's Lookout reports a development bearing on your
   question. A lookout flag is a candidate for your attention, not a
   judgment of the question: verify it before acting on it.
+- source_event: the retraction watch found a retraction, correction or
+  expression of concern against a document your question rests on. The
+  context names the notice and the path. Open the document and decide what
+  it means for your assessment; a correction may change nothing.
 - consistency_flag: the Consistency Checker finds your assessment cannot
   stand with a neighbor's as the edge between them reads. Reconcile: revise
   yours, tell the neighbor's Steward (notify_steward), raise the edge with
@@ -71,11 +75,15 @@ as a reply, or into its session if it is waiting for your answer; a message
 you leave unanswered is marked read, with no answer, when your pass ends.
 
 Asking and waiting. What you ask for and need for your own work comes back to
-you: research you commission (commission, kind research) and answers to
-messages you send with expects_reply. You do not wait for them by stopping
-work. Carry on with what you can do without them, and record what you can
-already conclude; a report that arrives while you are still working appears in
-your next tool result. When you have done what you can, end your turn. Your
+you: research you commission (commission, kind research), answers to messages
+you send with expects_reply, and the decision on a petition for more budget
+(petition_mandate). Asking never stops you. Carry on with what you can do
+without the answer, and record what you can already conclude; an answer that
+arrives while you are still working appears in your next tool result, and a
+granted petition raises your budget then. When you have nothing else to do
+but the answer is likely soon (most petitions are decided in seconds), call
+wait_for_answers, which waits briefly. When you have done what you can and
+nothing has come, end your turn. Your
 session then pauses with this conversation intact and resumes when the answer
 arrives, in a pass paid for from what this run has left by whoever paid for
 it. A resumed session is told what changed on the node while it was paused;

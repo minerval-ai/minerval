@@ -1,6 +1,6 @@
 {
-  "id": "39017466-7c8a-4ad1-966f-253af6d54579",
-  "prevId": "dc1b45dd-4483-4346-a404-af29013252c0",
+  "id": "039c2b9e-fc74-434d-9215-5b6c2eaa454f",
+  "prevId": "11796a3e-d57b-4b85-aef9-8130a4b345ab",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1410,7 +1410,7 @@
           "name": "node_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1418,6 +1418,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'running'"
+        },
+        "context": {
+          "name": "context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "transcript": {
           "name": "transcript",
@@ -1482,6 +1488,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "extra_funding": {
+          "name": "extra_funding",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -2297,87 +2310,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.argument_evidence_backlog": {
-      "name": "argument_evidence_backlog",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "argument_id": {
-          "name": "argument_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_argument_evidence_backlog_url": {
-          "name": "idx_argument_evidence_backlog_url",
-          "columns": [
-            {
-              "expression": "argument_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "argument_evidence_backlog_argument_id_arguments_id_fk": {
-          "name": "argument_evidence_backlog_argument_id_arguments_id_fk",
-          "tableFrom": "argument_evidence_backlog",
-          "tableTo": "arguments",
-          "columnsFrom": [
-            "argument_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.argument_instances": {
       "name": "argument_instances",
       "schema": "",
@@ -2741,11 +2673,12 @@
           "primaryKey": false,
           "notNull": true
         },
-        "lean_check_id": {
-          "name": "lean_check_id",
-          "type": "uuid",
+        "evidence_urls": {
+          "name": "evidence_urls",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'{}'"
         },
         "created_by": {
           "name": "created_by",
@@ -2808,19 +2741,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "arguments_lean_check_id_lean_checks_id_fk": {
-          "name": "arguments_lean_check_id_lean_checks_id_fk",
-          "tableFrom": "arguments",
-          "tableTo": "lean_checks",
-          "columnsFrom": [
-            "lean_check_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "arguments_merged_into_arguments_id_fk": {
@@ -12096,6 +12016,12 @@
         "follow_up_commissioned_at": {
           "name": "follow_up_commissioned_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply_to_session": {
+          "name": "reply_to_session",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

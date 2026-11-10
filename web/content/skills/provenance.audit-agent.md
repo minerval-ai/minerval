@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 5)
+# Method skill: Provenance (version 6)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -161,8 +161,9 @@ has been retracted, corrected, or superseded, say so in its reading and
 in the summary, and weigh it accordingly. The retraction watch follows the edges you record:
 a notice against a document reaches not only the claims that assert it but
 every claim whose sources draw on it, or assert a copy or another version
-of it, and the lookouts watching those claims see the path. That is one
-reason to record the edges.
+of it. Each of those claims' Stewards is sent the notice and the path
+(trigger `source_event`), and the lookouts watching for retractions see it
+too. That is one reason to record the edges.
 
 **Examining a document.** Some sources deserve more than a reading: the
 study the whole claim rests on, a report whose figure every later source

@@ -41,6 +41,11 @@ import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
 export { allocationDayUseSql } from "./day-use.js";
 
 export type ActionKind =
+  // A paused agent session resumed (session-service.ts): group
+  // `resume:<session id>:<n>`, target_ref the session. The Curator, the
+  // Consistency Checker, the Audit Agent and Correspondents resume through
+  // it; a Steward resumes through a pass on its node.
+  | "resume"
   // Research an agent commissioned from its own budget (commission kind
   // research, research-commission-service.ts): group `research:<run id>`,
   // target_ref the research run. Its report returns to the agent's session.

@@ -298,7 +298,7 @@ Importance is recorded as a per-claim value (0..1) that the steward sets and rev
 
 Importance says how much a claim is worth getting right; it does not by itself say when the system should spend its next unit of attention. Attention is spent through one mechanism, the same for every funder. Every piece of work on the graph is an agent's run, and a run happens when someone **commissions** it: decides the work is worth doing, sets the budget it should have to be done properly, and pays that budget whole. The run starts at once; its agent is told its budget and works to it; what it does not spend goes back to whoever paid. Cost is measured in dollars; one owl of spend covers one dollar of cost, whatever an owl sold for. The **ledger** records every piece of work the system could do (assess this claim, ingest that source, curate that region, audit that decision), who commissioned it, with what budget, what it spent and what came of it, and nothing else anywhere decides what runs. The ledger holds no formula and no valuation: whether work is worth its cost is a judgment, and judgments are made by agents and people who can be asked why.
 
-Budgets are set at the high end of what work of that kind costs, so that a run has what it needs to finish the job and most runs finish well inside it. When the work turns out to need more, its agent **petitions** the mandate paying for the run, in the run, and says what it would do with the money, why its budget cannot cover it, and what it will conclude if the answer is no. The answer is a judgment about money, never about the conclusion, and no answer obliges an agent to conclude anything. Any agent with a budget may also commission another agent's run from it. A petition is routed along the chain of runs that led to the one asking, to the mandate whose money is behind it; the agent asking is never told which mandate that is, since its work serves the graph and not its funder.
+Budgets are set at the high end of what work of that kind costs, so that a run has what it needs to finish the job and most runs finish well inside it. When the work turns out to need more, its agent **petitions** the mandate paying for the run, without stopping its work, and says what it would do with the money, why its budget cannot cover it, and what it will conclude if the answer is no. The answer is a judgment about money, never about the conclusion, and no answer obliges an agent to conclude anything. Any agent with a budget may also commission another agent's run from it. A petition is routed along the chain of runs that led to the one asking, to the mandate whose money is behind it; the agent asking is never told which mandate that is, since its work serves the graph and not its funder.
 
 The judgment of what to pay for is each mandate's own, and it is an agent's judgment, not a filter's. A mandate's scope is defined in words, its mission, and which work falls under it is a call its Grantmaker makes with the discretion of any person entrusted with a budget and a mission. The Grantmaker writes the mandate's **operating policy** in prose: its mission in working terms, what comes first, how to budget each kind of work, how to answer petitions, and what to send to the Grantmaker. **Program officers**, on a cheaper model, work the mandate's inbox under it: petitions from the runs its money pays for, what its lookouts raise, and the work the system puts in front of it. Each officer decides up to a limit the policy states with its reason, and sends the rest to the Grantmaker, who decides it as the policy would and, where the policy did not settle it, changes the policy so the next one is settled. Every decision is logged with its reason. The graph's own work runs through the same machinery, not a privileged lane: Minerval maintains a standing General mandate whose budget is the dollars the platform allocates to expanding and maintaining the graph and whose scope genuinely is everything, and a Governance mandate that pays for the audits of the graph's decisions and never an audit of itself. Work no one commissions remains on the ledger, open and visible with its age; that is an acceptable steady state, and there is no queue in the waiting-your-turn sense.
 
@@ -516,6 +516,12 @@ Each task message names its trigger:
   source, a new result, a moved dependency) and asks for a fresh look. The
   context says what it saw. A lookout flag is a candidate for your
   attention, not a judgment of the claim: verify it before acting on it.
+- source_event: the retraction watch found a retraction, correction or
+  expression of concern against a document your claim rests on: a source
+  that states it, or one your recorded provenance draws on or copies. The
+  context names the notice and the path. Open the document, say in its
+  reading what happened, and decide what it means for the assessment; a
+  correction may change nothing.
 - consistency_flag: the Consistency Checker finds your assessment cannot
   stand together with a neighbor's as the edge between them reads (a
   conclusion above a premise it requires, both sides of a contradiction
@@ -555,11 +561,15 @@ as a reply, or into its session if it is waiting for your answer; a message
 you leave unanswered is marked read, with no answer, when your pass ends.
 
 Asking and waiting. What you ask for and need for your own work comes back to
-you: research you commission (commission, kind research) and answers to
-messages you send with expects_reply. You do not wait for them by stopping
-work. Carry on with what you can do without them, and record what you can
-already conclude; a report that arrives while you are still working appears in
-your next tool result. When you have done what you can, end your turn. Your
+you: research you commission (commission, kind research), answers to messages
+you send with expects_reply, and the decision on a petition for more budget
+(petition_mandate). Asking never stops you. Carry on with what you can do
+without the answer, and record what you can already conclude; an answer that
+arrives while you are still working appears in your next tool result, and a
+granted petition raises your budget then. When you have nothing else to do
+but the answer is likely soon (most petitions are decided in seconds), call
+wait_for_answers, which waits briefly. When you have done what you can and
+nothing has come, end your turn. Your
 session then pauses with this conversation intact and resumes when the answer
 arrives, in a pass paid for from what this run has left by whoever paid for
 it. A resumed session is told what changed on the node while it was paused;

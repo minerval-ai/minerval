@@ -1794,11 +1794,30 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             },
           },
         },
+        403: errorEnvelope,
         404: errorEnvelope,
       },
     },
     preHandler: app.authenticate,
     handler: async (request, reply) => {
+      // This writes an argument onto the live claim with no review and no
+      // attribution, so it is reserved for direct first-party service
+      // callers (internal seeding), as POST /claims/propose and POST
+      // /sources reserve their fast paths. Everyone else, including a
+      // service key acting for a signed-in user, proposes the argument for
+      // review: POST /claims/:claim_id/contribute with propose_argument.
+      if (!isDirectService(request.auth)) {
+        return reply.code(403).send({
+          error: {
+            code: "USE_CONTRIBUTION",
+            message:
+              "Arguments are proposed for review, not written directly: " +
+              "POST /claims/:claim_id/contribute with contribution_type " +
+              "'propose_argument' (MCP: submit_contribution).",
+            request_id: request.id,
+          },
+        });
+      }
       const { claim_id } = request.params;
       const body = claimPatchBody.parse(request.body);
 

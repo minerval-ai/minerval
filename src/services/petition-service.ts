@@ -59,6 +59,8 @@ export interface PetitionRow {
   reason: string | null;
   created_at: string;
   decided_at: string | null;
+  /** The session the decision returns into, when the petitioner waits in one. */
+  reply_to_session?: string | null;
 }
 
 /** The chain of runs that led to `actionId`, root first. */
@@ -130,6 +132,8 @@ export async function filePetition(input: {
   requesterNodeId?: string | null;
   spentMicroUsd?: number;
   waiting: boolean;
+  /** The session the decision returns into (session-service.ts). */
+  replyToSession?: string | null;
 }): Promise<string> {
   const chain = input.requesterActionId ? await runChain(input.requesterActionId) : [];
   if (chain.length > 0 && input.spentMicroUsd != null) {
@@ -138,8 +142,8 @@ export async function filePetition(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO petitions
        (grant_id, kind, asked_micro_usd, plan, why, if_refused, requester_agent,
-        requester_action_id, requester_node_id, chain, waiting)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
+        requester_action_id, requester_node_id, chain, waiting, reply_to_session)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
      RETURNING id`,
     [
       input.grantId,
@@ -153,6 +157,7 @@ export async function filePetition(input: {
       input.requesterNodeId ?? null,
       JSON.stringify(chain),
       input.waiting,
+      input.replyToSession ?? null,
     ]
   );
   return row!.id;
@@ -186,7 +191,13 @@ export async function decidePetition(input: {
   }
   const reason = input.reason.trim();
   if (!reason) return { ok: false, message: "reason is required: the petitioner and the public record read it." };
+  // A petitioner whose session paused to wait (session-service.ts): its run
+  // has ended, so a grant funds the pass that resumes it instead of the row.
+  const { sessionStatus, deliverReply } = await import("./session-service.js");
+  const asker = await sessionStatus(p.reply_to_session ?? null);
+  const askerPaused = asker === "waiting" || asker === "ready";
   let granted = 0;
+  let placedOnRun = false;
   let status: PetitionStatus;
   if (input.decision === "refuse") {
     status = "refused";
@@ -200,7 +211,9 @@ export async function decidePetition(input: {
     } else {
       status = "granted";
       if (p.kind === "follow_up") status = "follow_up";
-      if (status === "granted" && p.requester_action_id) {
+      if (status === "granted" && askerPaused) {
+        // Placed on the resuming pass when the session resumes.
+      } else if (status === "granted" && p.requester_action_id) {
         const [row] = await rawQuery<{ exclusion_group: string; claim_id: string | null; status: string }>(
           `SELECT exclusion_group, claim_id, status FROM actions WHERE id = $1`,
           [p.requester_action_id]
@@ -217,6 +230,7 @@ export async function decidePetition(input: {
             reason,
           });
           if (!placed.ok) return { ok: false, message: `The grant could not be placed: ${placed.message}` };
+          placedOnRun = true;
         } else {
           // The run has ended: what it asked for can only be a follow-up now.
           status = "follow_up";
@@ -236,6 +250,37 @@ export async function decidePetition(input: {
      VALUES ($1, $2, 'petition', $3, $4, $5, $6, $7, $8)`,
     [p.grant_id, input.decidedBy, status, p.requester_node_id, granted || null, reason, p.id, p.requester_action_id]
   );
+  // The decision returns into the session that asked: shown to its run if it
+  // is still working (a grant raising its ceiling then), or resuming it if
+  // it paused (a grant funding that pass).
+  if (p.reply_to_session) {
+    const who = input.decidedBy === "grantmaker" ? "Grantmaker" : "program officer";
+    const owl = (m: number) => microUsdToOwls(m);
+    const text =
+      status === "refused"
+        ? `Refused by the mandate's ${who}. Reason: ${reason}. Work with the budget you have and record what you ` +
+          `could and couldn't establish. The refusal is about money, not your conclusion.`
+        : status === "granted"
+          ? `Granted by the mandate's ${who}: ${owl(granted)} of ${owl(Number(p.asked_micro_usd))} owls. Reason: ${reason}. ` +
+            (askerPaused ? `It is added to the budget of the pass that resumes you.` : `Your budget is raised by ${owl(granted)} owls.`)
+          : `The mandate's ${who} funded a follow-up pass of ${owl(granted)} owls with your plan as its brief, ` +
+            `to run after this one. Reason: ${reason}. Record what you have now; the follow-up starts from it.`;
+    const routed = await deliverReply({
+      sessionId: p.reply_to_session,
+      kind: "petition",
+      ref: p.id,
+      text,
+      fallback: null,
+      creditMicroUsd: placedOnRun && asker === "running" ? granted : undefined,
+      grant: status === "granted" && askerPaused ? { grantId: p.grant_id, microUsd: granted } : null,
+    });
+    if (routed !== "session" && status === "granted" && askerPaused) {
+      // The session went away between looking and delivering: the money
+      // becomes a follow-up pass instead.
+      status = "follow_up";
+      await rawQuery(`UPDATE petitions SET status = 'follow_up' WHERE id = $1`, [p.id]);
+    }
+  }
   if (status === "follow_up" && p.requester_action_id) {
     await commissionFollowUps(p.requester_action_id);
   } else if (status === "follow_up" && !p.requester_action_id) {

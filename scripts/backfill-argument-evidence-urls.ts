@@ -1,5 +1,5 @@
 /**
- * Backfill for #541: migration 0102 moved the source URLs out of the old
+ * Backfill for #541: migration 0104 moved the source URLs out of the old
  * arguments.evidence_urls column into argument_evidence_backlog (Lean check
  * references became arguments.lean_check_id). This sends each argument's
  * URLs to its claim's Steward, to read the sources and record an instance

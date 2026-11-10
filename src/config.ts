@@ -212,6 +212,11 @@ const configSchema = z.object({
   // resumed: its answers go to the node's inbox and the next pass starts
   // fresh, since replaying it would cost more than reading the answers anew.
   sessionMaxTranscriptChars: z.coerce.number().int().positive().default(400_000),
+  // How long wait_for_answers holds a run that has nothing else to do while
+  // an answer is outstanding (a petition, research, a reply). Waiting holds
+  // the node's lock and a worker, so it is short; past it, the run ends its
+  // turn and its session pauses instead (session-service.ts).
+  sessionWaitForAnswersSeconds: z.coerce.number().int().positive().default(60),
   // How long an officer waits after taking a mandate's inbox, so petitions
   // that arrive together are decided together.
   officerBatchMs: z.coerce.number().int().min(0).default(2000),
@@ -1322,6 +1327,7 @@ export function loadConfig(): Config {
     petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
     sessionWaitHours: process.env.SESSION_WAIT_HOURS,
     sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
+    sessionWaitForAnswersSeconds: process.env.SESSION_WAIT_FOR_ANSWERS_SECONDS,
     officerBatchMs: process.env.OFFICER_BATCH_MS,
     defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
     officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,

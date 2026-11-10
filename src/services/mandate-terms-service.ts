@@ -116,12 +116,30 @@ export async function withdrawFromMandate(input: {
 }): Promise<WithdrawResult> {
   return withTransaction(async (tx) => {
     await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended('mandate-allocator:' || $1, 0))`, [input.grantId]);
-    const [g] = await tx.query<{ budget_job_id: string; escrow: number }>(
-      `SELECT g.budget_job_id, j.budget_micro_usd AS escrow
-         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
+    // Lock the escrow row: settlement (cancelGrant, cancelBudgetJob) writes
+    // it before reading the budget it refunds, so it waits for this
+    // withdrawal and then refunds what is left, never the pre-withdrawal sum.
+    const [g] = await tx.query<{ budget_job_id: string; escrow: number; grant_status: string; job_status: string }>(
+      `SELECT g.budget_job_id, g.status AS grant_status,
+              j.budget_micro_usd AS escrow, j.status AS job_status
+         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1
+          FOR UPDATE OF j`,
       [input.grantId]
     );
     if (!g) return { ok: false, message: "No such mandate." } as const;
+    // Only a live escrow holds money to take back. A settled mandate
+    // (cancelled, completed, failed) has already returned every funder's
+    // unspent share (refundUnspentBudget), but its budget and escrow_hold
+    // rows still read as held, so withdrawing from it paid the share twice.
+    if (
+      !["planning", "pending_approval", "active"].includes(g.grant_status) ||
+      !["running", "paused_budget"].includes(g.job_status)
+    ) {
+      return {
+        ok: false,
+        message: `The mandate is ${g.grant_status === "active" ? g.job_status : g.grant_status}; its unspent money has already been returned to its funders.`,
+      } as const;
+    }
     const people = await tx.query<{ user_id: string; held: number }>(
       `SELECT user_id, -SUM(amount_micro_usd)::bigint AS held FROM owl_ledger
         WHERE job_id = $1 AND reason = 'escrow_hold' GROUP BY user_id`,
