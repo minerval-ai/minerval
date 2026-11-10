@@ -327,7 +327,6 @@ export async function getClaimView(
             // False while content is still the creation-time label: the
             // Steward owes this argument a write_argument call (#129, #747).
             has_written_form: hasWrittenForm(a),
-            evidence_urls: a.evidenceUrls,
             // The Steward's current judgment of the inference (#173); null
             // when never evaluated. `stale` means it was derived under an
             // assessment that is no longer current.

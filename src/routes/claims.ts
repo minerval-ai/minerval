@@ -1,3 +1,4 @@
+import { attachArgumentEvidence, sendArgumentEvidenceBacklog } from "../services/argument-evidence-service.js";
 import type { FastifyInstance } from "fastify";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../db/client.js";
@@ -647,7 +648,6 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             description: a.description,
             stance: a.stance,
             content: a.content,
-            evidence_urls: a.evidenceUrls,
             created_by: a.createdBy,
             created_at: a.createdAt.toISOString(),
             verdict: evalByArgument.get(a.id)?.verdict ?? null,
@@ -1763,7 +1763,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               stance: { type: "string", enum: ["for", "against"] },
               content: { type: "string", minLength: 1, maxLength: 5000 },
-              evidence_urls: { type: "array", items: { type: "string", format: "uri" } },
+              evidence_urls: {
+                type: "array",
+                items: { type: "string", format: "uri" },
+                description:
+                  "A Lean check (/lean-checks/<id>) makes the argument machine-checked. Any other URL is " +
+                  "sent to the claim's Steward to read and, where the source makes, attacks or mentions " +
+                  "the argument, record as an instance (#541).",
+              },
             },
           },
         },
@@ -1779,7 +1786,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                 claim_id: { type: "string", format: "uuid" },
                 stance: { type: "string" },
                 content: { type: "string" },
-                evidence_urls: { type: "array", items: { type: "string" } },
+                lean_check_id: { type: "string", format: "uuid", nullable: true },
+                evidence_sent_to_steward: { type: "array", items: { type: "string" } },
                 created_by: { type: "string" },
                 created_at: { type: "string", format: "date-time" },
               },
@@ -1809,8 +1817,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         claimId: claim_id,
         stance: body.argument.stance,
         content: body.argument.content,
-        evidenceUrls: body.argument.evidence_urls,
       });
+      const evidence = await attachArgumentEvidence(argument.id, body.argument.evidence_urls ?? []);
+      if (evidence.queued.length > 0) await sendArgumentEvidenceBacklog({ argumentId: argument.id });
 
       return reply.send({
         argument: {
@@ -1818,7 +1827,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           claim_id: argument.claimId,
           stance: argument.stance,
           content: argument.content,
-          evidence_urls: argument.evidenceUrls,
+          lean_check_id: evidence.leanCheckId,
+          evidence_sent_to_steward: evidence.queued,
           created_by: argument.createdBy,
           created_at: argument.createdAt.toISOString(),
         },

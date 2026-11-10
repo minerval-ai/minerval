@@ -29,8 +29,8 @@ const FK_VIOLATION = "23503";
 
 async function seedArgument(claimId: string, name: string): Promise<string> {
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO arguments (claim_id, name, stance, content, evidence_urls, created_by)
-     VALUES ($1, $2, 'for', $2, '{}', 'dbtest') RETURNING id`,
+    `INSERT INTO arguments (claim_id, name, stance, content, created_by)
+     VALUES ($1, $2, 'for', $2, 'dbtest') RETURNING id`,
     [claimId, name]
   );
   return rows[0]!.id;

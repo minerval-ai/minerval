@@ -6,7 +6,8 @@ export const argumentResponse = z.object({
   claim_id: uuidSchema,
   stance: stanceEnum,
   content: z.string(),
-  evidence_urls: z.array(z.string()),
+  lean_check_id: uuidSchema.nullable(),
+  evidence_sent_to_steward: z.array(z.string()),
   created_by: z.string(),
   created_at: z.string(),
 });

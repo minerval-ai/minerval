@@ -77,6 +77,10 @@ Each task message names its trigger:
   evaluation, or its evaluation was retired when the rating scale changed.
   Rate it, and say which premises it lives or dies on, as Arguments below
   describes.
+- argument_evidence_backfill: sources were attached to one of your
+  arguments with no passage or stance. Read each, and record an instance
+  with record_argument_instance where it makes, attacks or mentions the
+  argument; record nothing where it does not.
 
 The formalization, prize and solver-attempt triggers (formalize,
 formalization_review, prize_claim, prize_window_closed, prize_claim_voided,

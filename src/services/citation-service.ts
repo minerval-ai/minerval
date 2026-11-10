@@ -80,7 +80,8 @@ export interface EvidenceRecord {
     name: string | null;
     stance: string;
     content: string;
-    evidence_urls: string[];
+    /** The accepted Lean check that makes it machine-checked, when it is (#541). */
+    lean_check_id: string | null;
     /** How far the conclusion follows if the premises hold (#540). */
     verdict: string | null;
     /** Decisive as its premises now stand (§7); null until evaluated. */
@@ -371,7 +372,7 @@ export async function assembleEvidenceRecord(
       name: a.name,
       stance: a.stance,
       content: a.content,
-      evidence_urls: a.evidenceUrls,
+      lean_check_id: a.leanCheckId,
       verdict: evalByArgument.get(a.id)?.verdict ?? null,
       decisive: evalByArgument.get(a.id)?.decisive ?? null,
       evaluation: evalByArgument.get(a.id)?.content ?? null,
