@@ -84,7 +84,8 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
 import { renderResearchReport } from "../services/research-commission-service.js";
-import { deliverReply } from "../services/session-service.js";
+import { deliverReply, resumeMessages, takeSessionForResume } from "../services/session-service.js";
+import { runConsistencyChecker } from "../llm/agents/consistency-checker.js";
 import {
   carriedNotebook,
   closeResearchRun,
@@ -165,6 +166,7 @@ export async function processNextEngineAction(
     loadConfig().researcherEnabled && !(await readResearcherPaused().catch(() => true));
   const action =
     (await nextRunnableAction([
+      "resume",
       "grant_planning",
       "mandate_review",
       "lookout_run",
@@ -187,6 +189,7 @@ export async function processNextEngineAction(
   if (action.kind === "audit") return runAuditAction(action);
   if (action.kind === "request") return runRequestAction(action);
   if (action.kind === "research") return runResearchAction(action);
+  if (action.kind === "resume") return runResumeAction(action);
   return runGrantAgentAction(action, opts);
 }
 
@@ -508,6 +511,83 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
  * funder. A request closed while its row waited is cancelled, its money
  * returned.
  */
+/**
+ * resume: a paused session of the Curator, the Consistency Checker, the Audit
+ * Agent or a Correspondent got back what it waited for (session-service.ts).
+ * The agent is rebuilt from the input its run was called with, and continues
+ * the conversation it left with the answers appended, under the budget this
+ * row was commissioned with. It may pause again.
+ */
+async function runResumeAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const taken = action.target_ref ? await takeSessionForResume(action.target_ref) : null;
+  if (!taken) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const { session, replies } = taken;
+  const funder = await funderContext(action);
+  const messages = await resumeMessages(session, replies, {});
+  const resume = { sessionId: session.id, messages };
+  const input = (session.context?.input ?? {}) as never;
+  let billedMicroUsd = 0;
+  let failure: unknown = null;
+  try {
+    const metered = await runWithUsageContext(
+      { userId: funder.userId, jobId: funder.jobId, ...(session.node_id ? { claimId: session.node_id } : {}) },
+      () =>
+        withPassBudget(actionBudget(action, "the budget resuming this paused session"), async () => {
+          switch (session.role) {
+            case "curator":
+              await runCurator(input, resume);
+              return;
+            case "audit":
+              await runAudit(input, resume);
+              return;
+            case "consistency_checker":
+              await runConsistencyChecker(input, resume);
+              return;
+            case "correspondent": {
+              const run = await runCorrespondent(input, resume);
+              const correspondentId = (session.context?.input as { correspondentId?: string } | undefined)?.correspondentId;
+              if (correspondentId) {
+                await recordCorrespondentRun({ correspondentId, note: run.note, cursorTo: null }).catch(() => {});
+              }
+              return;
+            }
+            default:
+              throw new Error(`No resumption for a ${session.role} session.`);
+          }
+        })
+    );
+    billedMicroUsd = metered.billedMicroUsd;
+  } catch (err) {
+    failure = err;
+  }
+  if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
+    // Nothing ran: the session is ready again, and the row waits.
+    await rawQuery(`UPDATE agent_sessions SET status = 'ready', updated_at = now() WHERE id = $1 AND status = 'running'`, [session.id]);
+    await releaseAction(action.id).catch(() => {});
+    return {
+      status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
+      actionId: action.id,
+      kind: "resume",
+      grantId: funder.grantId,
+      error: failure instanceof Error ? failure.message : String(failure),
+    };
+  }
+  await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
+    console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
+  );
+  return {
+    status: "processed",
+    ok: !failure,
+    actionId: action.id,
+    kind: "resume",
+    grantId: funder.grantId,
+    ...(failure ? { error: failure instanceof Error ? failure.message : String(failure) } : {}),
+  };
+}
+
 async function runResearchAction(action: RunnableAction): Promise<EngineProcessResult> {
   const runId = action.target_ref ?? "";
   const run = runId ? await getResearchRun(runId) : null;

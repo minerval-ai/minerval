@@ -39,6 +39,7 @@ vi.mock("../../../src/config.js", () => ({
 vi.mock("../../../src/llm/usage-context.js", () => ({
   budgetRefusal: () => null,
   withAgent: (_a: string, fn: () => unknown) => fn(),
+  runWithUsageContext: (_c: unknown, fn: () => unknown) => fn(),
   getUsageContext: () => ({ runId: "run-1" }),
   runBudget: () => null,
 }));

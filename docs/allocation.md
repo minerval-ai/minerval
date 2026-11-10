@@ -855,18 +855,19 @@ mandate's inbox lease (`grants.officer_lease_until`), pauses
 together, and runs a program officer, then the Grantmaker on whatever the
 officer escalated (src/llm/agents/program-officer.ts).
 
-**Waiting, or not.** A petition from a run that can pause (a Steward's,
-which runs in a session) never blocks. The petition carries the session's id
+**Waiting, or not.** A petition never blocks the run that asks. Every agent
+that spends (the Stewards, the Curator, the Consistency Checker, the Audit
+Agent, Correspondents) runs in a session, and the petition carries its id
 (`petitions.reply_to_session`) and the agent carries on; the decision
 returns into the session (docs below, "Sessions that pause and resume"),
 appearing in its next tool result. An agent with nothing else to do calls
 `wait_for_answers`, which holds it at most `SESSION_WAIT_FOR_ANSWERS_SECONDS`
 (60), since most petitions are decided in seconds and waiting holds the
 node's lock and a worker. Past that, it ends its turn and its session pauses
-until the decision arrives. A run that cannot pause (the Curator, the
-Consistency Checker, the Audit Agent, a Correspondent) waits in the call, up
-to `PETITION_WAIT_SECONDS` (180); past that the petition stays open, and a
-grant that comes later funds a follow-up pass.
+until the decision arrives. A run with no session (none today, but the path
+remains) waits in the call, up to `PETITION_WAIT_SECONDS` (180); past that
+the petition stays open, and a grant that comes later funds a follow-up
+pass.
 
 **Applying.** A grant of more budget to a running run is a commission from
 the deciding mandate on the running row, settled with the run like any
@@ -995,9 +996,17 @@ node's inbox. `follow_up_of` continues an earlier run with its notebook and
 report. `delegate_research` remains for a short check the agent cannot
 conclude without, run inside its turn.
 
-Stewards (of claims, quantities and questions) can pause today; their
-sessions are keyed by node. Other agents commission research too, but
-without a node to report back to they use `delegate_research`.
+Every agent that spends runs in a session. A Steward's session is on its
+node and resumes through a pass on that node. The Curator, the Consistency
+Checker, the Audit Agent and Correspondents resume through a `resume` row on
+the ledger (group `resume:<session id>:<n>`), commissioned the same way: the
+engine executor rebuilds the agent from the input its run was called with
+(`agent_sessions.context`) and continues its conversation. A session with
+no node (the Checker's, the Audit Agent's, a Correspondent's) always waits
+for research it commissions, since it has no inbox to receive it, and is
+told on resuming that the graph may have moved while it was paused. A ready
+session whose payer could not fund its resumption at once is tried again
+by the scheduler's sweep.
 
 ## Reading the graph with SQL
 

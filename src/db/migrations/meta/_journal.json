@@ -722,6 +722,13 @@
       "when": 1794332131749,
       "tag": "0102_petitions_on_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1794333606475,
+      "tag": "0103_sessions_for_all_agents",
+      "breakpoints": true
     }
   ]
 }

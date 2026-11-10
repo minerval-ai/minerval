@@ -5314,10 +5314,14 @@ export const agentSessions = pgTable(
   {
     id: uuid("id").primaryKey(),
     role: text("role").notNull(),
-    nodeId: uuid("node_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
+    // The node a Steward's session is on; null for agents whose work is not
+    // one node's (the Consistency Checker, the Audit Agent, a Correspondent).
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("running"),
+    // What the agent's run was called with, to rebuild it on resumption
+    // (engine-executor.ts, runResumeAction). Stewards resume through a pass
+    // on their node instead and need none.
+    context: jsonb("context"),
     // The conversation so far, in the provider-neutral message form, made
     // portable at suspension (server-tool and thinking blocks become text or
     // are dropped).

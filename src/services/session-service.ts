@@ -52,7 +52,10 @@ export interface SessionReply {
 export interface SessionRow {
   id: string;
   role: string;
-  node_id: string;
+  /** The node a Steward's session is on; null for other agents' sessions. */
+  node_id: string | null;
+  /** What the agent's run was called with, to rebuild it on resumption (non-Steward roles). */
+  context: { input?: unknown } | null;
   status: "running" | "waiting" | "ready" | "expired" | "closed";
   transcript: MessageParam[] | null;
   model: string | null;
@@ -66,7 +69,7 @@ export interface SessionRow {
   extra_funding: Array<{ grantId: string; microUsd: number }>;
 }
 
-const COLUMNS = `id, role, node_id, status, transcript, model, awaiting, replies, payer,
+const COLUMNS = `id, role, node_id, context, status, transcript, model, awaiting, replies, payer,
   budget_left_micro_usd::bigint AS budget_left_micro_usd, suspended_at::text AS suspended_at,
   deadline::text AS deadline, resumes, extra_funding`;
 
@@ -251,6 +254,8 @@ export async function suspendSession(input: {
   model: string;
   budgetLeftMicroUsd: number;
   payer: CommissionPayer | null;
+  /** What the run was called with, kept to rebuild it on resumption (non-Steward roles). */
+  context?: { input: unknown } | null;
 }): Promise<SessionRow["status"] | null> {
   const config = loadConfig();
   const payer =
@@ -266,7 +271,8 @@ export async function suspendSession(input: {
       `UPDATE agent_sessions
           SET status = $2, transcript = $3::jsonb, model = $4, payer = $5::jsonb,
               budget_left_micro_usd = $6, suspended_at = now(),
-              deadline = now() + make_interval(secs => $7), updated_at = now()
+              deadline = now() + make_interval(secs => $7),
+              context = COALESCE($8::jsonb, context), updated_at = now()
         WHERE id = $1
         RETURNING ${COLUMNS}`,
       [
@@ -277,6 +283,7 @@ export async function suspendSession(input: {
         payer ? JSON.stringify(payer) : null,
         Math.max(0, Math.round(input.budgetLeftMicroUsd)),
         Math.round(config.sessionWaitHours * 3600),
+        input.context ? JSON.stringify(input.context) : null,
       ]
     );
     if (next === "ready") resume = row ?? null;
@@ -312,10 +319,14 @@ async function commissionResumption(s: SessionRow): Promise<void> {
       ? { payer: { kind: "grant", grantId: extras[0]!.grantId } as CommissionPayer, budget: Number(extras[0]!.microUsd), rest: extras.slice(1) }
       : null;
   if (!first) return;
+  if (!s.node_id || s.role !== "steward") {
+    await commissionResumeRow(s, first);
+    return;
+  }
   try {
     const res = await commissionNodePass({
       payer: first.payer,
-      claimId: s.node_id,
+      claimId: s.node_id!,
       budgetMicroUsd: first.budget,
       brief: "A paused session on this node got back what it asked for; this pass resumes it.",
       reason: "Resuming a paused session with the answer it waited for.",
@@ -325,7 +336,7 @@ async function commissionResumption(s: SessionRow): Promise<void> {
     if (!res.ok) return;
     for (const e of first.rest) {
       await placeCommission({
-        group: ASSESS_GROUP(s.node_id),
+        group: ASSESS_GROUP(s.node_id!),
         actionId: res.actionId,
         claimId: s.node_id,
         payer: { kind: "grant", grantId: e.grantId },
@@ -338,6 +349,110 @@ async function commissionResumption(s: SessionRow): Promise<void> {
     await rawQuery(`UPDATE agent_sessions SET extra_funding = '[]'::jsonb WHERE id = $1`, [s.id]);
   } catch (err) {
     console.warn(`[session] resuming ${s.id} failed:`, err instanceof Error ? err.message : err);
+  }
+}
+
+export const RESUME_GROUP = (sessionId: string, n: number) => `resume:${sessionId}:${n}`;
+
+/**
+ * An agent whose work is not one node's (the Curator, the Consistency
+ * Checker, the Audit Agent, a Correspondent) resumes through a `resume` row
+ * on the ledger naming its session, commissioned like the Steward's pass;
+ * the engine executor rebuilds the agent from the input it was called with
+ * and continues its conversation (runResumeAction).
+ */
+async function commissionResumeRow(
+  s: SessionRow,
+  first: { payer: CommissionPayer; budget: number; rest: Array<{ grantId: string; microUsd: number }> }
+): Promise<void> {
+  const { placeCommission } = await import("./commission-service.js");
+  try {
+    const group = RESUME_GROUP(s.id, Number(s.resumes ?? 0) + 1);
+    const total = first.budget + first.rest.reduce((t, e) => t + Number(e.microUsd), 0);
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
+       VALUES ('resume', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO NOTHING
+       RETURNING id`,
+      [group, s.node_id, s.id, `Resume a paused ${s.role.replace(/_/g, " ")} session`, total]
+    );
+    if (!row) return; // Already commissioned.
+    const placed = await placeCommission({
+      group,
+      actionId: row.id,
+      claimId: s.node_id,
+      payer: first.payer,
+      budget: first.budget,
+      commissionedBy: "session_resume",
+      brief: null,
+      reason: "Resuming a paused session with the answer it waited for.",
+    });
+    if (!placed.ok) {
+      // The payer can't now: the row is withdrawn and the session stays
+      // ready, to be resumed by the sweep's next attempt or to expire.
+      await rawQuery(`UPDATE actions SET status = 'cancelled', updated_at = now() WHERE id = $1`, [row.id]);
+      return;
+    }
+    for (const e of first.rest) {
+      await placeCommission({
+        group,
+        actionId: row.id,
+        claimId: s.node_id,
+        payer: { kind: "grant", grantId: e.grantId },
+        budget: Math.round(Number(e.microUsd)),
+        commissionedBy: "petition",
+        brief: null,
+        reason: "Granted on a petition while the session was paused.",
+      });
+    }
+    await rawQuery(`UPDATE agent_sessions SET extra_funding = '[]'::jsonb WHERE id = $1`, [s.id]);
+  } catch (err) {
+    console.warn(`[session] resuming ${s.id} failed:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * The session a `resume` row names, taken for that run (running again, its
+ * answers marked shown). Null when it is no longer ready, or when its
+ * transcript is too long to resume (it closes; its answers stay on record
+ * where they came from, and on its node's inbox when it has one).
+ */
+export async function takeSessionForResume(sessionId: string): Promise<{ session: SessionRow; replies: SessionReply[] } | null> {
+  const config = loadConfig();
+  const taken = await withTransaction(async (tx) => {
+    const [s] = await tx.query<SessionRow>(
+      `SELECT ${COLUMNS} FROM agent_sessions WHERE id = $1 AND status = 'ready' FOR UPDATE`,
+      [sessionId]
+    );
+    if (!s) return null;
+    const replies = s.replies.filter((r) => !r.delivered);
+    const tooLong = JSON.stringify(s.transcript ?? []).length > config.sessionMaxTranscriptChars || !s.transcript || !s.context;
+    await tx.query(
+      `UPDATE agent_sessions
+          SET status = $2, replies = $3::jsonb, resumed_at = now(), resumes = resumes + 1, updated_at = now()
+        WHERE id = $1`,
+      [s.id, tooLong ? "closed" : "running", JSON.stringify(s.replies.map((r) => ({ ...r, delivered: true })))]
+    );
+    return { session: s, replies, tooLong };
+  });
+  if (!taken) return null;
+  if (taken.tooLong) {
+    await sendRepliesToInbox(taken.session.node_id, taken.replies);
+    return null;
+  }
+  return { session: taken.session, replies: taken.replies };
+}
+
+/** Answers that could not reach their session, to its node's inbox when it has one. */
+async function sendRepliesToInbox(nodeId: string | null, replies: SessionReply[]): Promise<void> {
+  if (!nodeId) return;
+  for (const r of replies) {
+    await postMessage({
+      nodeId,
+      trigger: r.kind === "research" ? "research_report" : "message_reply",
+      body: r.text,
+      sender: r.kind === "research" ? { kind: "researcher", ref: r.ref } : { kind: "system" },
+    }).catch(() => null);
   }
 }
 
@@ -370,14 +485,7 @@ export async function takeReadySession(nodeId: string, role: string): Promise<{ 
   });
   if (!taken) return null;
   if (taken.tooLong) {
-    for (const r of taken.replies) {
-      await postMessage({
-        nodeId,
-        trigger: r.kind === "research" ? "research_report" : "message_reply",
-        body: r.text,
-        sender: r.kind === "research" ? { kind: "researcher", ref: r.ref } : { kind: "system" },
-      });
-    }
+    await sendRepliesToInbox(nodeId, taken.replies);
     return null;
   }
   return { session: taken.session, replies: taken.replies };
@@ -393,14 +501,18 @@ export async function resumeMessages(
   extra: { newMessages?: string; budgetLine?: string }
 ): Promise<MessageParam[]> {
   const transcript = [...(s.transcript ?? [])];
-  const [changed] = await rawQuery<{ assessed_at: string | null; status: string | null; passes: number }>(
+  const [changed] = !s.node_id
+    ? [null]
+    : await rawQuery<{ assessed_at: string | null; status: string | null; passes: number }>(
     `SELECT (SELECT MAX(assessed_at)::text FROM assessments WHERE claim_id = $1 AND assessed_at > $2::timestamptz) AS assessed_at,
             (SELECT status FROM assessments WHERE claim_id = $1 AND is_current = true LIMIT 1) AS status,
             (SELECT count(*)::int FROM agent_runs WHERE claim_id = $1 AND agent = 'steward' AND started_at > $2::timestamptz) AS passes`,
     [s.node_id, s.suspended_at ?? new Date().toISOString()]
   ).catch(() => [{ assessed_at: null, status: null, passes: 0 }]);
   const since = (s.suspended_at ?? "").slice(0, 16).replace("T", " ");
-  const changes = changed?.assessed_at
+  const changes = !s.node_id
+    ? `You were paused since ${since} UTC; the graph may have moved meanwhile, so read again what you rely on before you record anything.`
+    : changed?.assessed_at
     ? `While you were paused (since ${since} UTC), another pass on this node recorded a new assessment` +
       `${changed.status ? ` (now ${changed.status})` : ""}. Read the node again before you record anything, and reconcile with it.`
     : `Nothing on this node's assessment changed while you were paused (since ${since} UTC).`;
@@ -437,6 +549,17 @@ export async function resumeMessages(
  * its deadline expires. Answers either held unshown go to the node's inbox.
  */
 export async function sweepSessions(): Promise<number> {
+  // A ready session whose resumption the payer could not fund when its answer
+  // came (its day was spent) is tried again; a Steward's is resumed by its
+  // node's next pass instead.
+  const stalled = await rawQuery<SessionRow>(
+    `SELECT ${COLUMNS} FROM agent_sessions s
+      WHERE s.status = 'ready' AND s.role <> 'steward'
+        AND NOT EXISTS (SELECT 1 FROM actions a
+                         WHERE a.kind = 'resume' AND a.target_ref = s.id::text AND a.status IN ('open', 'running'))
+      LIMIT 50`
+  );
+  for (const s of stalled) await commissionResumption(s);
   const rows = await rawQuery<SessionRow>(
     `UPDATE agent_sessions
         SET status = CASE WHEN status = 'running' THEN 'closed' ELSE 'expired' END, updated_at = now()
@@ -445,14 +568,7 @@ export async function sweepSessions(): Promise<number> {
       RETURNING ${COLUMNS}`
   );
   for (const s of rows) {
-    for (const r of s.replies.filter((x) => !x.delivered)) {
-      await postMessage({
-        nodeId: s.node_id,
-        trigger: r.kind === "research" ? "research_report" : "message_reply",
-        body: r.text,
-        sender: r.kind === "research" ? { kind: "researcher", ref: r.ref } : { kind: "system" },
-      }).catch(() => null);
-    }
+    await sendRepliesToInbox(s.node_id, s.replies.filter((x) => !x.delivered));
   }
   return rows.length;
 }

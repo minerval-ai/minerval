@@ -98,12 +98,11 @@ export function getSpendToolDefinitions(): Tool[] {
         "conclude if the answer is no. A program officer reads your petition " +
         "with the mandate's policy, its recent decisions and how this run came " +
         "to be funded, and answers in seconds; what is beyond the officer goes " +
-        "to the mandate's Grantmaker, which takes a minute or two. In a run that " +
-        "can pause (a Steward's), asking doesn't stop you: carry on, and the " +
-        "decision appears in a later tool result, a grant raising your budget " +
-        "then; with nothing else to do, wait_for_answers waits for it briefly, " +
-        "and past that your session pauses and resumes with it. Elsewhere this " +
-        "call waits for the decision. Asking costs " +
+        "to the mandate's Grantmaker, which takes a minute or two. Asking " +
+        "doesn't stop you: carry on, and the decision appears in a later tool " +
+        "result, a grant raising your budget then; with nothing else to do, " +
+        "wait_for_answers waits for it briefly, and past that your session " +
+        "pauses and resumes with it. Asking costs " +
         "you nothing: the mandate pays for its own decision. Its answer is a " +
         "judgment about money, never about your conclusion, and no answer " +
         "obliges you to conclude anything.",
@@ -351,7 +350,9 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   }
   const ctx = getUsageContext();
   const nodeId = ctx.session?.nodeId ?? ctx.claimId ?? null;
-  if (!nodeId) {
+  // With a session the report returns into it; without one it goes to the
+  // node's inbox, so a run with neither has nowhere to receive it.
+  if (!nodeId && !ctx.session) {
     return JSON.stringify({
       success: false,
       message:
@@ -368,7 +369,8 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
     budgetMicroUsd: budget,
     tier,
     requestedBy: ctx.agent === "steward" || !ctx.agent ? "claim_steward" : ctx.agent,
-    wait: wantsWait,
+    // A run with no node to report to always waits: its session is where the report goes.
+    wait: wantsWait || !nodeId,
     followUpOf: typeof input.follow_up_of === "string" && input.follow_up_of.trim() ? input.follow_up_of.trim() : null,
   });
   if (!res.ok) return JSON.stringify({ success: false, message: res.message });
