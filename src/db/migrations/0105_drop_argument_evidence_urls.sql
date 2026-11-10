@@ -1,0 +1,1 @@
+ALTER TABLE "arguments" DROP COLUMN "evidence_urls";

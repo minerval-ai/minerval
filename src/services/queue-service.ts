@@ -126,7 +126,11 @@ export interface StewardMessage {
     | "argument_written_form_backfill"
     // One-shot backfill (issue #173): named arguments predating
     // evaluate_argument lack an evaluation — evaluate each.
-    | "argument_evaluation_backfill";
+    | "argument_evaluation_backfill"
+    // One-shot backfill (#541): sources attached to one of the node's
+    // arguments with no passage or stance (the old evidence_urls). Read
+    // each and record an instance where it makes, attacks or mentions it.
+    | "argument_evidence_backfill";
   /** The message itself, kept whole in the node's inbox. */
   context: string;
   /** Who is writing; defaults to what the trigger implies (inbox-service.ts). */

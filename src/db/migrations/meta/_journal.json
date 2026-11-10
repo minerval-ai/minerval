@@ -729,6 +729,20 @@
       "when": 1794333606475,
       "tag": "0103_sessions_for_all_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794343284832,
+      "tag": "0104_argument_lean_check_and_evidence_backlog",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794343286490,
+      "tag": "0105_drop_argument_evidence_urls",
+      "breakpoints": true
     }
   ]
 }
