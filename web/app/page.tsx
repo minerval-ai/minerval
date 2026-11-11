@@ -23,10 +23,12 @@ import styles from "@/components/home/home.module.css";
 // FLAGSHIP_CLAIM_ID repoints it without a code change (if the claim's state
 // degrades, or a better flagship emerges); loadClaim still degrades to the
 // fixture if the live fetch fails.
-// It was the eggs/cardiovascular claim (585e0bd0-…); it is now the deepest
-// AI-safety cluster the graph holds, with the instrumental power-seeking and
-// alignment-faking subtrees beneath it.
-const LIVE_FLAGSHIP_ID = "5477338c-4f5c-4049-a959-efbf3f23a988"; // goal misgeneralization → catastrophic risk
+// It was the eggs/cardiovascular claim (585e0bd0-…), then goal
+// misgeneralization (5477338c-…). It is now scalable oversight: the largest
+// assessed AI-safety region (about 150 nodes, 100 assessed, nine assessed
+// direct subclaims), doubtful and contested, with the case for and against
+// both worked from primary sources.
+const LIVE_FLAGSHIP_ID = "dc02e01f-ce69-4dbe-ba36-ed0e2e90d071"; // scalable oversight → reliable control of superintelligence
 const FLAGSHIP =
   process.env.FLAGSHIP_CLAIM_ID ?? (apiConfigured() ? LIVE_FLAGSHIP_ID : FLAGSHIP_ID);
 

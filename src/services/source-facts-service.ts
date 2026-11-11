@@ -21,7 +21,12 @@ import { rawQuery } from "../db/client.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
-import { SOURCE_EVENT_KINDS, type SourceEventKind } from "../schemas/common.js";
+import {
+  GENERIC_SOURCE_KINDS,
+  SOURCE_EVENT_KINDS,
+  type SourceEventKind,
+  type SourceKind,
+} from "../schemas/common.js";
 import { listCurrentSourceInterests, type SourceInterestView } from "./source-interest-service.js";
 import { tellStewardsOfNoticesOn, type SourceNotice } from "./source-notice-service.js";
 
@@ -33,14 +38,11 @@ export interface PageFacts {
   doi: string | null;
 }
 
-/** Kinds no more specific than "we fetched it": a fact may replace these. */
-const GENERIC_KINDS = new Set(["unknown", "webpage"]);
-
 /**
  * Crossref work types onto the graph's source kinds. Only the types whose
  * kind a reader would want named; anything else leaves the kind alone.
  */
-const CROSSREF_KINDS: Record<string, string> = {
+const CROSSREF_KINDS: Record<string, SourceKind> = {
   "journal-article": "journal_article",
   "posted-content": "preprint",
   "proceedings-article": "conference_paper",
@@ -279,7 +281,7 @@ export async function refreshSourceFacts(
   if (!row.published_date && next.published_date) filled.push("published_date");
   if (!row.doi && next.doi) filled.push("doi");
   if (!row.archived_url && next.archived_url) filled.push("archived_url");
-  if (GENERIC_KINDS.has(row.source_type) && next.source_type) filled.push("source_type");
+  if (GENERIC_SOURCE_KINDS.has(row.source_type) && next.source_type) filled.push("source_type");
   // A title is replaced only where none was ever given: the row's title is
   // its URL, the placeholder getOrCreateSource writes.
   const placeholderTitle = !row.title || row.title === row.url;

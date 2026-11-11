@@ -1,5 +1,5 @@
 {
-  "id": "65106fbf-023c-452b-a217-bf39ae0521f0",
+  "id": "03a4524c-cb0f-4ae2-a619-d7bdf40e364f",
   "prevId": "86d8bef2-d807-4ab3-9144-29614bbd3076",
   "version": "7",
   "dialect": "postgresql",
@@ -360,13 +360,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -468,19 +461,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "actions_sensitivity_label_labels_name_fk": {
-          "name": "actions_sensitivity_label_labels_name_fk",
-          "tableFrom": "actions",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1556,13 +1536,6 @@
           "notNull": true,
           "default": "'{}'::text[]"
         },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1613,19 +1586,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_sessions_sensitivity_label_labels_name_fk": {
-          "name": "agent_sessions_sensitivity_label_labels_name_fk",
-          "tableFrom": "agent_sessions",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -2070,13 +2030,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
         }
       },
       "indexes": {
@@ -2147,19 +2100,6 @@
           ],
           "columnsTo": [
             "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "appeals_sensitivity_label_labels_name_fk": {
-          "name": "appeals_sensitivity_label_labels_name_fk",
-          "tableFrom": "appeals",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -3064,13 +3004,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3218,19 +3151,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "assessment_orders_sensitivity_label_labels_name_fk": {
-          "name": "assessment_orders_sensitivity_label_labels_name_fk",
-          "tableFrom": "assessment_orders",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -3719,13 +3639,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3788,19 +3701,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "assistant_held_actions_sensitivity_label_labels_name_fk": {
-          "name": "assistant_held_actions_sensitivity_label_labels_name_fk",
-          "tableFrom": "assistant_held_actions",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4956,13 +4856,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5048,19 +4941,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "budget_jobs_sensitivity_label_labels_name_fk": {
-          "name": "budget_jobs_sensitivity_label_labels_name_fk",
-          "tableFrom": "budget_jobs",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -7661,13 +7541,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
         }
       },
       "indexes": {
@@ -7862,19 +7735,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "contributions_sensitivity_label_labels_name_fk": {
-          "name": "contributions_sensitivity_label_labels_name_fk",
-          "tableFrom": "contributions",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9940,13 +9800,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -10003,19 +9856,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "jobs_sensitivity_label_labels_name_fk": {
-          "name": "jobs_sensitivity_label_labels_name_fk",
-          "tableFrom": "jobs",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -17077,7 +16917,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_sources_source_type": {
+          "name": "ck_sources_source_type",
+          "value": "\"sources\".\"source_type\" IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.taggings": {

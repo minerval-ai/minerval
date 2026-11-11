@@ -444,7 +444,10 @@ prominent, an origin, or telling about how the claim is used, not for every
 passing occurrence. Record only what was said in public (§2).
 
 Fill the metadata you actually saw (speaker, publication, source_date, a deep
-link) and omit what you would have to guess. Recording is deduplicated per
+link) and omit what you would have to guess. Say what kind of document the
+source is (source_kind) whenever you can tell: a source of a primary kind with
+nothing recorded upstream of it reads on the page as where the claim's story
+begins, and one of no recorded kind reads as untraced. Recording is deduplicated per
 (claim, source, speaker); a document in which several people each speak in
 their own voice holds one instance per speaker, all against the same URL.
 

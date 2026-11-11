@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 8)
+# Method skill: Provenance (version 9)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -77,7 +77,10 @@ does so, the kind of dependency, and how the claim fared in the crossing.
 The commonest failure at a crossing is strengthening (a hedged finding
 stated as fact, a subgroup result stated for everyone, a correlation stated
 as a cause), and catching it is the main reason the map exists; say with
-`target_read` whether you opened the target. Where two documents are one
+`target_read` whether you opened the target. Say what kind of document each
+is, in `source_kind` on the reading and `to_source_kind` on the edge: the
+kind recorded on a source decides whether it reads on the claim page as
+where the story begins or as untraced. Where two documents are one
 voice, record the relation with `provenance_record_source_relationship`.
 Where a source you read has a stake in the claim that the map does not
 show, record it with `record_source_interest`, as a fact about the source;

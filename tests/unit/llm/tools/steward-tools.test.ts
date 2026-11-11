@@ -73,6 +73,7 @@ vi.mock("../../../../src/services/source-service.js", () => ({
     url: input.url,
     title: input.title ?? input.url,
   })),
+  recordSourceKind: vi.fn(async (_id: string, kind: string) => ({ source_kind: kind })),
 }));
 
 import { executeStewardTool, getStewardToolDefinitions } from "../../../../src/llm/tools/steward-tools.js";
@@ -284,6 +285,60 @@ describe("steward record_claim_instance", () => {
   /** Existence check passes; dedup check falls through to the default [] mock. */
   const claimExists = () =>
     vi.mocked(rawQuery).mockResolvedValueOnce([{ id: CLAIM }]);
+
+  it("records the kind of document the Steward says the source is, and reports what the kind now is", async () => {
+    claimExists();
+    const { recordSourceKind } = await import("../../../../src/services/source-service.js");
+    vi.mocked(recordSourceKind).mockResolvedValueOnce({
+      source_kind: "journal_article",
+      source_kind_note: 'This source is already recorded as "journal_article", so "preprint" was not taken.',
+    });
+    const out = JSON.parse(
+      await executeStewardTool("record_claim_instance", {
+        claim_id: CLAIM,
+        url: "https://example.org/paper",
+        verbatim_text: "Rotating night work was associated with higher risk.",
+        stance: "affirms",
+        source_kind: "preprint",
+      })
+    );
+    expect(out.success).toBe(true);
+    expect(vi.mocked(recordSourceKind)).toHaveBeenCalledWith(SOURCE_ID, "preprint");
+    // The agent is told its kind was not taken, not left to assume it was.
+    expect(out.source_kind).toBe("journal_article");
+    expect(out.source_kind_note).toMatch(/was not taken/);
+  });
+
+  it("refuses a source_kind off the list before writing anything, and records none when none is stated", async () => {
+    const { getOrCreateSource, recordSourceKind } = await import("../../../../src/services/source-service.js");
+    claimExists();
+    const refused = JSON.parse(
+      await executeStewardTool("record_claim_instance", {
+        claim_id: CLAIM,
+        url: "https://example.org/paper",
+        verbatim_text: "Rotating night work was associated with higher risk.",
+        stance: "affirms",
+        source_kind: "peer_reviewed",
+      })
+    );
+    expect(refused.success).toBe(false);
+    expect(refused.message).toMatch(/source_kind must be one of/);
+    expect(vi.mocked(getOrCreateSource)).not.toHaveBeenCalled();
+    expect(insertedValues).toHaveLength(0);
+
+    claimExists();
+    const plain = JSON.parse(
+      await executeStewardTool("record_claim_instance", {
+        claim_id: CLAIM,
+        url: "https://example.org/paper",
+        verbatim_text: "Rotating night work was associated with higher risk.",
+        stance: "affirms",
+      })
+    );
+    expect(plain.success).toBe(true);
+    expect(plain.source_kind).toBeUndefined();
+    expect(vi.mocked(recordSourceKind)).not.toHaveBeenCalled();
+  });
 
   it("records a steward-encountered instance with provenance and metadata (#278)", async () => {
     claimExists();

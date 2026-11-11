@@ -17,7 +17,7 @@ How the constitution applies to propositions of mathematics: proofs as arguments
 
 Sections: For every administrator; For the Claim Steward; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the Audit Agent; For the Curator; For the Matcher; For the Extractor; For the researcher; Standards for judging; Failure modes.
 
-### Provenance (`skills/provenance.md`, version 8, method skill)
+### Provenance (`skills/provenance.md`, version 9, method skill)
 
 How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.
 
