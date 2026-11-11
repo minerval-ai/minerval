@@ -21,7 +21,6 @@ import {
   findLeanCheck,
   getFormalizationSummary,
   getVerificationSummary,
-  leanCheckEvidenceUrl,
   leanChecksByArgument,
   listFormalizations,
   nextFormalizationVersion,
@@ -360,19 +359,19 @@ describe("the machine-checked badge", () => {
       submittedBy: "claim_steward",
     });
     await rawQuery(
-      `INSERT INTO arguments (claim_id, stance, content, evidence_urls, created_by)
-       VALUES ($1, 'for', 'A failed attempt', ARRAY[$2::text], 'claim_steward')`,
-      [claimId, leanCheckEvidenceUrl(rejected.id)]
+      `INSERT INTO arguments (claim_id, stance, content, lean_check_id, created_by)
+       VALUES ($1, 'for', 'A failed attempt', $2, 'claim_steward')`,
+      [claimId, rejected.id]
     );
     expect(await getVerificationSummary(claimId)).toBeNull();
 
-    // An argument citing the accepted check, by an absolute URL: the badge.
+    // An argument citing the accepted check: the badge.
     const [argument] = await rawQuery<{ id: string }>(
-      `INSERT INTO arguments (claim_id, name, stance, content, evidence_urls, created_by)
+      `INSERT INTO arguments (claim_id, name, stance, content, lean_check_id, created_by)
        VALUES ($1, 'Proof by strong induction (machine-checked)', 'for', 'The proof checks.',
-               ARRAY[$2::text, 'https://example.org/paper'], 'claim_steward')
+               $2, 'claim_steward')
        RETURNING id`,
-      [claimId, `https://api.minerval.ai${leanCheckEvidenceUrl(check.id)}`]
+      [claimId, check.id]
     );
     const badge = await getVerificationSummary(claimId);
     expect(badge).toEqual({

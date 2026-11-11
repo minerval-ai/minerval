@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 26326,
-    "fullChars": 119323,
+    "roleChars": 27407,
+    "fullChars": 120404,
     "skills": [
       {
         "name": "costing",
@@ -151,8 +151,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17014,
-    "fullChars": 110011,
+    "roleChars": 17837,
+    "fullChars": 110834,
     "skills": []
   },
   {
@@ -164,8 +164,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 9750,
-    "fullChars": 102747,
+    "roleChars": 10908,
+    "fullChars": 103905,
     "skills": [
       {
         "name": "costing",
@@ -553,8 +553,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
     "model": "Chosen per launch: Claude Fable 5.2 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 12616,
-    "fullChars": 105613,
+    "roleChars": 14039,
+    "fullChars": 107036,
     "skills": [
       {
         "name": "costing",

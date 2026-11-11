@@ -96,6 +96,13 @@ import {
   readResearcherPaused,
 } from "../services/research-run-service.js";
 import {
+  examinationForRequest,
+  getExaminationRow,
+  linkResearchRun,
+  type ExaminationRow,
+} from "../services/examination-service.js";
+import {
+  documentUnderReview,
   getRequest,
   notifyRequestKeeper,
   recordWork,
@@ -604,6 +611,9 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
       ).catch(() => [])
     : [];
   const claim = node ? { id: node.id, text: node.text, domains: node.domains ?? [], kind: node.kind ?? "claim" } : null;
+  // A Steward may commission research as an examination of a document in
+  // its claim's map (#865), opened when it was commissioned.
+  const examination = run.examination_id ? await getExaminationRow(run.examination_id).catch(() => null) : null;
 
   let billedMicroUsd = 0;
   let result: Awaited<ReturnType<typeof runResearcher>> | null = null;
@@ -631,6 +641,7 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
                 job_id: run.job_id,
               },
               claim,
+              examination: researcherExamination(examination),
             })
         )
     );
@@ -698,6 +709,13 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
   };
 }
 
+/** An examination as the Researcher is launched on it. */
+function researcherExamination(x: ExaminationRow | null) {
+  return x
+    ? { id: x.id, source_id: x.source_id, source_title: x.source_title, source_url: x.source_url, facets: x.facets, scope: x.scope }
+    : null;
+}
+
 async function runRequestAction(action: RunnableAction): Promise<EngineProcessResult> {
   const requestId = action.target_ref ?? "";
   const request = requestId ? await getRequest(requestId) : null;
@@ -743,6 +761,37 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     requestId,
     notebook: prior ? carriedNotebook(prior) : null,
   });
+  // A request bearing on one document alone asks for a review of it
+  // (#865): the full work examines the document, every stage onto the same
+  // examination, so what it covers and finds goes on the document's page.
+  // Scoping only prices the work, and examines nothing.
+  const underReview = documentUnderReview(request);
+  const reviewed = scoping ? null : underReview;
+  // A scoping run prices the review from how long the document is.
+  const documentReview =
+    scoping && underReview
+      ? await rawQuery<{ chars: number | null; segments: string }>(
+          `SELECT CASE WHEN raw_content IS NULL OR raw_content = '' THEN NULL ELSE length(raw_content) END AS chars,
+                  (SELECT COUNT(*) FROM source_segments WHERE source_id = $1) AS segments
+             FROM sources WHERE id = $1`,
+          [underReview.id]
+        )
+          .then(([r]) => ({
+            title: underReview.title,
+            url: underReview.url,
+            chars: r?.chars == null ? null : Number(r.chars),
+            segments: Number(r?.segments ?? 0),
+          }))
+          .catch(() => null)
+      : null;
+  let examination: ExaminationRow | null = null;
+  if (reviewed) {
+    examination = await examinationForRequest({ requestId, sourceId: reviewed.id, brief: run.task }).catch((err) => {
+      console.error(`[engine] opening the review of ${reviewed.id} for request ${requestId} failed: ${err instanceof Error ? err.message : err}`);
+      return null;
+    });
+    if (examination) await linkResearchRun(examination.id, run.id);
+  }
   await recordWork({
     requestId,
     byLabel: "Researcher",
@@ -779,6 +828,8 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
             requestNodes,
             priorRun: prior ? { id: prior.id, status: prior.status, requestedBy: prior.requested_by } : null,
             fullWork: scoping ? fullWork : null,
+            examination: researcherExamination(examination),
+            documentReview,
           })
         )
     );

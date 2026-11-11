@@ -521,7 +521,13 @@ export const arguments_ = pgTable(
     // propositions, which carry a stance instead.
     shows: jsonb("shows"),
     content: text("content").notNull(),
-    evidenceUrls: text("evidence_urls").array().notNull().default([]),
+    // The accepted Lean check that makes this a machine-checked argument
+    // (docs/mathematics.md §2.3), when it is one. It replaced a
+    // /lean-checks/<id> entry in the old evidence_urls column (#541); the
+    // badge, the claim record and the attempt stats read it.
+    leanCheckId: uuid("lean_check_id").references((): AnyPgColumn => leanChecks.id, {
+      onDelete: "set null",
+    }),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -543,6 +549,32 @@ export const arguments_ = pgTable(
     }),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
+);
+
+// ---------------------------------------------------------------------------
+// argument_evidence_backlog (#541)
+// ---------------------------------------------------------------------------
+// Source URLs that were attached to an argument without a passage or a
+// stance: the old arguments.evidence_urls column, and URLs PATCH
+// /claims/:id is still given. A URL is not an instance (§4 asks for the
+// passage and how it stands), so each is sent to the claim's Steward, who
+// reads the source and records an instance if it makes, attacks or
+// mentions the argument. sent_at marks the message; the row stays as the
+// record of what was attached.
+export const argumentEvidenceBacklog = pgTable(
+  "argument_evidence_backlog",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    argumentId: uuid("argument_id")
+      .notNull()
+      .references((): AnyPgColumn => arguments_.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_argument_evidence_backlog_url").on(table.argumentId, table.url)]
 );
 
 // ---------------------------------------------------------------------------
@@ -870,7 +902,9 @@ export const examinations = pgTable(
     // 'document' (a review of the document for its own sake).
     scope: text("scope").notNull(),
     // EXAMINATION_TRIGGERS: who decided to spend on it. 'claim' (a Steward),
-    // 'mandate' (a Grantmaker), or 'mechanical'.
+    // 'request' (whoever funded a request bearing on the document, #865),
+    // 'mandate' (a Grantmaker, before #602 kept mandate research off the
+    // graph), or 'mechanical' (never written).
     trigger: text("trigger").notNull(),
     // The commissioning claim, for a claim-scoped examination. SET NULL: the
     // findings are about the document and outlive the claim.
@@ -883,6 +917,10 @@ export const examinations = pgTable(
     // What to check, as short labels ("data", "quotation", "method").
     facets: text("facets").array().notNull(),
     requestedBy: text("requested_by").notNull(),
+    // The request a document review was asked for in (#865): its runs take
+    // up that request, and every stage of it records onto this one
+    // examination. SET NULL: the findings are the document's and outlive it.
+    requestId: uuid("request_id").references((): AnyPgColumn => requests.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -890,8 +928,9 @@ export const examinations = pgTable(
   (table) => [
     index("idx_examinations_source").on(table.sourceId),
     index("idx_examinations_claim").on(table.claimId),
+    index("idx_examinations_request").on(table.requestId),
     check("ck_examinations_scope", sql`${table.scope} IN ('claim', 'document')`),
-    check("ck_examinations_trigger", sql`${table.trigger} IN ('claim', 'mechanical', 'mandate')`),
+    check("ck_examinations_trigger", sql`${table.trigger} IN ('claim', 'request', 'mechanical', 'mandate')`),
   ]
 );
 

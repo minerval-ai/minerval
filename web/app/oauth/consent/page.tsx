@@ -7,6 +7,7 @@ import {
   type OAuthRequestView,
 } from "../../../lib/account-api";
 import { approveConsentAction, denyConsentAction } from "./actions";
+import { PageHead } from "../../../components/PageHead";
 
 export const metadata: Metadata = { title: "Authorize access · Minerval" };
 export const dynamic = "force-dynamic";
@@ -107,8 +108,7 @@ export default async function ConsentPage({
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="col">
-      <p className="claim-eyebrow">authorize</p>
-      <h1>Connect an application</h1>
+      <PageHead title="Connect an application" />
       {children}
     </div>
   );

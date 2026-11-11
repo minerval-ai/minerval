@@ -194,7 +194,6 @@ export interface ArgumentItem {
   name?: string | null;
   stance: Stance;
   content: string;
-  evidence_urls: string[];
   created_by: string;
   created_at: string;
   // Steward evaluation of the inference (issue #173); null until judged.
@@ -1477,8 +1476,12 @@ export interface ExaminationFinding {
 export interface Examination {
   id: string;
   scope: "claim" | "document";
-  trigger: "claim" | "mechanical" | "mandate";
+  // Who decided to spend on it: a Steward on its claim, whoever funded a
+  // request bearing on the document (#865), or, before #602, a mandate.
+  trigger: "claim" | "request" | "mechanical" | "mandate";
   claim: { id: string; text: string } | null;
+  /** The request a document review was asked for in; absent from an older API. */
+  request?: { id: string; ask: string; state: RequestState } | null;
   grant_id: string | null;
   source_id: string;
   brief: string;
@@ -1534,6 +1537,24 @@ export interface SourceContext {
       claims_citing_findings: number;
       notes: Array<{ claim: { id: string; text: string }; support: InstanceReading["support"]; note: string; read_at: string }>;
     };
+  };
+  /**
+   * What has been asked and done about the document as a whole (#865):
+   * reviews of it for its own sake, examinations commissioned for a claim,
+   * and the requests bearing on it. Absent from an older API.
+   */
+  reviews?: {
+    document_reviews: Array<{
+      examination_id: string;
+      created_at: string;
+      request: { id: string; ask: string; state: RequestState } | null;
+      facets: string[];
+      segments_covered: number;
+      findings: number;
+    }>;
+    claim_examinations: number;
+    segments: number;
+    requests: Array<{ id: string; ask: string; state: RequestState; filed_at: string; live: boolean }>;
   };
   history: Array<{
     at: string;
@@ -1691,4 +1712,29 @@ export interface RunStep {
   kind: string;
   created_at: string;
   content: unknown;
+}
+
+// The claim card (GET /claims/:claim_id/card): the graph's judgment of one
+// node, whole, in a small fixed shape. Every key is always present; a value
+// that does not exist yet is null. Embeds read this and nothing else.
+export interface ClaimCard {
+  id: string;
+  kind: "claim" | "quantity" | "question" | string;
+  text: string;
+  /** active | merged | deprecated | archived. */
+  state: string;
+  /** A claim's status; null when unassessed and for the other kinds. */
+  assessment_status: string | null;
+  /** How sure the Steward is of the status (or a question's standing), 0..1. */
+  assessment_confidence: number | null;
+  /** A question's standing; null for the other kinds and until judged. */
+  standing: string | null;
+  /** A quantity's current estimate and unit; null for the other kinds. */
+  estimate: QuantityEstimate | null;
+  unit: QuantityUnit | null;
+  /** How actively the claim is disputed, 0..1; reported beside the status. */
+  contestation: number | null;
+  assessed_at: string | null;
+  updated_at: string;
+  page_url: string;
 }

@@ -503,8 +503,12 @@ export type SourceSegmentKind = (typeof SOURCE_SEGMENT_KINDS)[number];
 
 /** What an examination is for (#507): a claim's assessment, or the document itself. */
 export const EXAMINATION_SCOPES = ["claim", "document"] as const;
-/** Who decided to spend on an examination. */
-export const EXAMINATION_TRIGGERS = ["claim", "mechanical", "mandate"] as const;
+/**
+ * Who decided to spend on an examination: a Steward on its claim, whoever
+ * funded a request bearing on the document (#865), or, before #602, a
+ * mandate. `mechanical` has never been written.
+ */
+export const EXAMINATION_TRIGGERS = ["claim", "request", "mechanical", "mandate"] as const;
 
 /** Symmetric source relations, stored with the lexicographically smaller id as parent. */
 export const SYMMETRIC_SOURCE_RELATIONS = new Set<string>(["shares_authorship"]);

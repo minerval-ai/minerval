@@ -146,25 +146,6 @@
   margin: 0.35rem 0 0;
 }
 
-/* header block above the timeline */
-.head {
-  margin-bottom: 0.4rem;
-}
-.title {
-  font-family: var(--serif);
-  font-size: 1.45rem;
-  line-height: 1.35;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  margin: 0.5rem 0 0.6rem;
-}
-.title a { color: var(--ink); }
-.title a:hover { color: var(--link); text-decoration: none; }
-.headMeta {
-  font-family: var(--sans);
-  font-size: 0.74rem;
-  color: var(--muted);
-}
 .windowNote {
   font-family: var(--sans);
   font-size: 0.72rem;

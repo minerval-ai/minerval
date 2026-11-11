@@ -39,6 +39,23 @@ skill bundles it in full, and the section numbers below point into it.
   record and its counts; ask for what else you need with `include`
   (`arguments`, `provenance`, `dependents`, `related`, `findings`, …). It is
   the same tool the graph's own agents read nodes with.
+- **Only where a claim stands**: `get_claim_card`, or `get_claim_cards` for
+  up to 100 claims in one call. A card is the judgment whole and nothing
+  else: the claim's text, kind and state, its status with its confidence (a
+  question's `standing`, a quantity's `estimate` and `unit`), its
+  `contestation`, when it was last assessed and last changed, and its
+  `page_url`. Prefer it to `get_claim` when you will report or cite the
+  verdict and do not need the reasoning, and for a list of claims you
+  already hold ids for. An unassessed claim comes back with null judgment
+  fields, which is the graph being silent, not an error; ids the graph does
+  not hold come back in `not_found`. Free.
+- **Less of any read**: the tools generated from the REST API's read routes
+  (`list_claims`, `cite_claim`, `get_assessment_history`, the cards and the
+  rest) take `fields`, a comma-separated list of dotted paths such as
+  `results.id,results.text,results.assessment_status,results.assessment_confidence`,
+  and return only those. Use it to keep a large read out of your context. Trim what you
+  carry, never what you report: if you will report a status, keep its
+  confidence and the claim's `contestation` in the paths you ask for.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
 - **What changed since you last looked**: `list_graph_changes`, narrowed with
@@ -104,6 +121,11 @@ skill bundles it in full, and the section numbers below point into it.
   actively a claim is disputed is its `contestation` (0..1), reported
   separately. A highly contested claim can be `verified`; an uncontested
   one can be `inconclusive`.
+- **A status travels with its confidence and its contestation.** A card
+  (`get_claim_card`) carries all three for that reason. Asking a tool for
+  fewer `fields` is a way to read less, not a way to say less: a status
+  reported without the confidence and contestation that go with it has been
+  rounded.
 - **`inconclusive` and `doubtful` are findings, not failures.**
   `inconclusive` means the evidence was examined and does not come down on
   either side. Don't round it up to "probably true" or down to "unproven,
@@ -173,6 +195,13 @@ support matters:
   even when it was right when written; the assessment's date and the
   claim's history (`get_assessment_history`) tell you when the graph last
   looked.
+- A document the support rests on has a page of its own.
+  `get_source_examinations` gives what examinations of it covered and
+  found, passage by passage, including reviews of the whole document for
+  its own sake; `get_source_context` shows how it has been copied and drawn
+  on, and where those uses depart from what it says. A finding is the
+  examination's statement about the document, not a verdict on it or on
+  the claim: report it as such, with what was not examined.
 - A source can overstate its evidence for a claim that is true, and
   faithfully report evidence for one that is false. Whether a source bears
   its assertion is a different judgment from whether the claim holds.
@@ -198,6 +227,11 @@ support matters:
   - **Missing evidence or a source the graph hasn't read**:
     `submit_source`, or `submit_contribution` with `support` or
     `challenge` and the evidence URLs.
+  - **A document that deserves a reading of its own**: a request bearing
+    on that document alone (`submit_contribution` proposing a request
+    that bears on its source) asks for a review of it, recorded on its page for
+    every later reader. Whether one is worth it is a judgment about the
+    document; say why in the request.
   - **A verdict you think is wrong**: `submit_contribution` with a
     `challenge` that engages the claim's recorded reasoning. Substance
     wins, not tone or volume; the reviewer answers either way (§13, §14).

@@ -71,8 +71,8 @@ describe("subclaim creation is atomic with its edge", () => {
   it("commits claim, edge, and membership together on success", async () => {
     const parent = await seedClaim("parent");
     const [arg] = await rawQuery<{ id: string }>(
-      `INSERT INTO arguments (claim_id, name, stance, content, evidence_urls, created_by)
-       VALUES ($1, 'A', 'for', 'A', '{}', 'dbtest') RETURNING id`,
+      `INSERT INTO arguments (claim_id, name, stance, content, created_by)
+       VALUES ($1, 'A', 'for', 'A', 'dbtest') RETURNING id`,
       [parent]
     );
     const childId = await withTransaction(async (tx) => {

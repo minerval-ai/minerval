@@ -53,7 +53,6 @@ export async function addArgument(input: {
   content: string;
   name?: string;
   description?: string;
-  evidenceUrls?: string[];
   createdBy?: string;
 }) {
   const db = getDb();
@@ -65,7 +64,6 @@ export async function addArgument(input: {
       content: input.content,
       name: input.name ?? null,
       description: input.description ?? null,
-      evidenceUrls: input.evidenceUrls ?? [],
       createdBy: input.createdBy ?? "user",
     })
     .returning();

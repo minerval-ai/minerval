@@ -17,6 +17,7 @@
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { isDirectService, presentsCredentials } from "../server/plugins/auth.js";
+import { optionalAuthHook } from "../server/optional-auth.js";
 import { loadAttemptExtras } from "../services/attempt-extras.js";
 import { cancelAttempt, getAttempt, getAttemptPublic } from "../services/attempt-service.js";
 import { ATTEMPT_STATS_TTL_MS, getAttemptStats } from "../services/attempt-stats-service.js";
@@ -26,11 +27,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function attemptsRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
   // reads stay open.
-  const optionalAuth = async (request: FastifyRequest, reply: FastifyReply) => {
+  const optionalAuth = optionalAuthHook(async (request: FastifyRequest, reply: FastifyReply) => {
     if (presentsCredentials(request)) {
       await app.authenticate(request, reply);
     }
-  };
+  });
 
   app.get<{ Params: { id: string } }>("/claims/:id/attempts", {
     schema: {

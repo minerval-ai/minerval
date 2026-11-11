@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchContributorProfile } from "../../../lib/api";
 import { OwlMark } from "../../../components/OwlMark";
+import { PageHead } from "@/components/PageHead";
 
 export const revalidate = 60;
 
@@ -41,7 +42,7 @@ export default async function ContributorPage({
   if (!apiConfigured()) {
     return (
       <div className="col">
-        <h1>Contributor</h1>
+        <PageHead title="Contributor" />
         <p>
           The frontend is not connected to a Minerval API (set{" "}
           <code>MINERVAL_API_URL</code>), so contributor data is unavailable.
@@ -57,12 +58,17 @@ export default async function ContributorPage({
 
   return (
     <div className="col">
-      <p className="claim-eyebrow">contributor</p>
-      <h1>{c.display_name}</h1>
-      <p className="account-meta">
-        member since {c.member_since.slice(0, 10)} · {c.trust_level}
-        {c.is_suspended ? " · suspended" : ""}
-      </p>
+      <PageHead
+        back={{ href: "/contributors", label: "contributors" }}
+        kicker="Contributor"
+        title={c.display_name}
+        meta={
+          <>
+            member since {c.member_since.slice(0, 10)} · {c.trust_level}
+            {c.is_suspended ? " · suspended" : ""}
+          </>
+        }
+      />
 
       <section>
         <h2>Standing</h2>

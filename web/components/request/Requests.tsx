@@ -4,6 +4,7 @@ import { DEFINED_IN, REQUEST_OUTCOME, REQUEST_STATE } from "@/lib/ontology";
 import { Term } from "@/components/Term";
 import { RequestFunding } from "./RequestFunding";
 import styles from "./request.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // Requests (Part VIII, Requests): something someone could do that would
 // improve what the graph knows. Shown in a node's right margin, on a page of
@@ -64,15 +65,18 @@ export function RequestsRail({ requests }: { requests: RequestItem[] }) {
 export function RequestView({ r }: { r: RequestItem }) {
   return (
     <article className="col">
-      <p className="sc" style={{ marginBottom: "1.2rem" }}>
-        <Link href="/requests">← requests</Link>
-      </p>
-      <div className="claim-eyebrow">
-        <span className="sc">Request</span>
-        <RequestState r={r} />
-        {r.addressed_to && <span className={styles.addressed}>addressed to {r.addressed_to}</span>}
-      </div>
-      <h1 className={styles.ask}>{r.ask}</h1>
+      <PageHead
+        back={{ href: "/requests", label: "requests" }}
+        kicker="Request"
+        tags={
+          <>
+            <RequestState r={r} />
+            {r.addressed_to && <span className={styles.addressed}>addressed to {r.addressed_to}</span>}
+          </>
+        }
+        variant="statement"
+        title={r.ask}
+      />
       {r.state_note && <p className={styles.stateNote}>{r.state_note}</p>}
 
       <dl className={styles.facts}>
@@ -114,6 +118,11 @@ export function RequestView({ r }: { r: RequestItem }) {
         <dd>
           {r.keeper.label.charAt(0).toUpperCase() + r.keeper.label.slice(1)}, who decides when it has been met
           {r.bears_on.length > 0 && <>; the Steward of each page it bears on weighs what the work finds for that page</>}.
+          {r.bears_on.length === 0 && r.bears_on_sources?.length === 1 && (
+            <> It bears on one document alone, so it asks for a review of that document for its own sake: what the work
+            examines and finds is recorded on <Link href={`/sources/${r.bears_on_sources[0]!.id}`}>the document&rsquo;s page</Link>,
+            for whoever reads it next.</>
+          )}
         </dd>
         <dt>Filed</dt>
         <dd>by {r.filed_by.label} ({r.filed_by.kind === "admin" ? "an agent of the graph" : r.filed_by.kind === "mandate" ? "a mandate, through the Contribution Reviewer" : "a contributor, through the Contribution Reviewer"}) · {fmtDate(r.filed_at)}</dd>
@@ -174,13 +183,17 @@ export function RequestIndex({ requests, q = "" }: { requests: RequestItem[]; q?
   ];
   return (
     <article className="col">
-      <h1>Requests</h1>
-      <p className={styles.lede}>
-        Things someone could do that would improve what the graph knows: a measurement, a
-        dataset, a replication, an evaluation built to a specification, access to evidence, or a
-        programme of research. Each says why it matters and what would satisfy it. A request asks
-        for what would decide the matter either way, not for a particular result.
-      </p>
+      <PageHead
+        title="Requests"
+        lede={
+          <>
+            Things someone could do that would improve what the graph knows: a measurement, a
+            dataset, a replication, an evaluation built to a specification, access to evidence, or a
+            programme of research. Each says why it matters and what would satisfy it. A request asks
+            for what would decide the matter either way, not for a particular result.
+          </>
+        }
+      />
       <form role="search" action="/requests" className={styles.search}>
         <input
           className="claims-search"

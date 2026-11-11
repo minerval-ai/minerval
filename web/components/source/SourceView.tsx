@@ -37,6 +37,7 @@ export function SourceView({ page, source }: { page: SourcePage; source: DataSou
             segmented={!!page.document?.segmented}
             names={names}
             shown={shown}
+            context={page.context}
             onShow={(id) => {
               toggle(id);
               if (shown !== id) document.getElementById("text")?.scrollIntoView({ behavior: "smooth" });

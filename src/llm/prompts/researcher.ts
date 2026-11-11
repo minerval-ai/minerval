@@ -189,6 +189,30 @@ ask for it and funders can see the price. Where the work shows that
 something further is needed, file it as a request of its own with
 file_request, saying what this work found that makes it worth doing.
 
+## When You Review a Document
+
+A request that bears on one document and on no node asks for a review of
+that document for its own sake. Your subject is the document, not any
+claim that rests on it: what it says and in whose voice, whether its
+methods and evidence carry its conclusions, where a passage read alone
+would mislead about the whole, and how others have copied it and drawn on
+it (get_source_context shows its lineage, and get_source_examinations what
+earlier examinations of it covered and found). What the review is worth
+is what a later reader of the document, whatever brings them to it, learns
+from what you record on its page.
+
+The request is the brief, and it names no facets: once you have seen
+enough of the document to know what is worth checking, name them with
+examination_outline's add_facets, and add one later if the document calls
+for it. Read the parts the review turns on closely rather than every part
+thinly, and mark as covered only what you examined: a review that says
+plainly what it did not reach is more useful than one that seems to have
+read everything. Each finding is about the document, anchored to its
+passage, and never a verdict on the document or on a claim; what a
+finding means for a claim is that claim's Steward's to say. Where the
+review continues an earlier stage, build on the coverage and findings
+already recorded on the examination, which examination_outline shows.
+
 ## When You Scope a Request
 
 A request filed without a budget is scoped before anyone is asked to pay
@@ -278,6 +302,11 @@ export interface ResearcherTaskInput {
   fullWork?: { tier: string; model: string; effort: string | null } | null;
   /** The document this run examines, when launched as an examination (#507). */
   examination?: { sourceTitle: string; sourceUrl: string | null; facets: string[]; scope: string } | null;
+  /**
+   * For a scoping run on a request that bears on one document alone (#865):
+   * the document the full work will review, and how long its stored text is.
+   */
+  documentReview?: { title: string; url: string | null; chars: number | null; segments: number } | null;
   budgetUsd: number;
   /** The model the run is on, named in the budget guide. */
   model: string;
@@ -319,6 +348,12 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
     ? "This run scopes a request, and the section When You Scope a Request applies. It records nothing on the graph and does not do the work: your report's plan and budget_quote_usd are recorded on the request, and the quote becomes its budget. The brief above is the request as filed; get_request reads it with the work already done on it." +
       (input.fullWork
         ? ` The full work will run on the ${input.fullWork.tier} tier (${input.fullWork.model}${input.fullWork.effort ? `, ${input.fullWork.effort} effort` : ""}), whatever the work, so price it on that tier's line of cost_sheet.`
+        : "") +
+      (input.documentReview
+        ? ` The request bears on one document alone, "${input.documentReview.title}"${input.documentReview.url ? ` (${input.documentReview.url})` : ""}, so the full work is a review of it, recorded on its page (When You Review a Document). ` +
+          (input.documentReview.chars
+            ? `The graph holds ${input.documentReview.chars.toLocaleString("en-US")} characters of its text${input.documentReview.segments ? `, divided into ${input.documentReview.segments} parts` : ""}; price reading what the review needs of it closely, not every part alike.`
+            : "The graph holds no copy of its text yet; find out how long it is and whether it can be read before you price it.")
         : "")
     : input.requestedBy === "grantmaker"
     ? "This investigation serves a mandate. Research a mandate funds writes nothing to the graph, so the provenance and examination tools are not in your toolset: what you find goes back in your report, and reaches the graph the way anyone's findings do." +
@@ -335,9 +370,13 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
   const examinationLine = input.examination
     ? `\n\nThis run is an examination of one document: "${input.examination.sourceTitle}"` +
       (input.examination.sourceUrl ? ` (${input.examination.sourceUrl})` : "") +
-      `, checking ${input.examination.facets.join(", ")}` +
-      (input.examination.scope === "document" ? ", as a review of the document for its own sake rather than for one claim" : "") +
-      ". Its record outlives this report: what you mark as examined and what you find, anchored to passages, is shown on the document's page to every reader and to every Steward whose claim rests on it. Begin with examination_outline."
+      (input.examination.scope === "document"
+        ? ", a review of the document for its own sake (When You Review a Document)" +
+          (input.examination.facets.length
+            ? `, checking so far ${input.examination.facets.join(", ")}`
+            : ", with no facets named yet: name what you will check with examination_outline's add_facets")
+        : `, checking ${input.examination.facets.join(", ")}`) +
+      ". Its record outlives this report: what you mark as examined and what you find, anchored to passages, is shown on the document's page to everyone who reads it next. Begin with examination_outline."
     : "";
   const sandboxLine = input.sandbox
     ? "The code-execution sandbox is available: Python with the usual scientific libraries, and no network, so bring data into it by writing it into your code."
@@ -386,6 +425,12 @@ function requestRunLine(input: ResearcherTaskInput, has: (n: string) => boolean)
     return (
       `${opening} It bears on several nodes: ${input.requestNodes!.map((n) => `the ${n.kind} "${n.text}" (${n.id})`).join("; ")}. ` +
       "You may record what you read on any of them with the provenance tools, each call naming its node in claim_id, by the Provenance skill's rules; you record no verdict."
+    );
+  }
+  if (input.examination?.scope === "document") {
+    return (
+      `${opening} It bears on one document and on no node, so it asks for a review of that document, and the provenance tools that record on a node are not in your toolset; ` +
+      "provenance_read_source is, for reading it, and the examination tools, for recording what you examine and find on its page."
     );
   }
   return (

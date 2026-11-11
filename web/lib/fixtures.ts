@@ -106,7 +106,6 @@ const FLAGSHIP: ClaimDetail = {
       name: "Direct measurement",
       stance: "for",
       content: ARG_DIRECT_WRITTEN,
-      evidence_urls: ["https://www.bls.gov/news.release/archives/cpi_01122023.htm"],
       created_by: "claim_steward",
       created_at: "2024-11-02T14:25:00Z",
       // Steward evaluation (issue #173), maintained with the assessment.
@@ -913,7 +912,6 @@ const LEGENDRE: ClaimDetail = {
       name: "Partial results",
       stance: "for",
       content: ARG_PARTIAL_WRITTEN,
-      evidence_urls: ["https://arxiv.org/abs/1309.6122"],
       created_by: "claim_steward",
       created_at: "2026-01-14T10:30:00Z",
       verdict: "likely",
@@ -1102,7 +1100,6 @@ const BERTRAND: ClaimDetail = {
       name: "Chebyshev's bound (machine-checked)",
       stance: "for",
       content: ARG_CHEBYSHEV_WRITTEN,
-      evidence_urls: [],
       created_by: "claim_steward",
       created_at: "2026-02-11T09:00:00Z",
       verdict: "certain",

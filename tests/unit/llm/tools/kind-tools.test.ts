@@ -47,6 +47,21 @@ describe("kind tool definitions", () => {
     expect(getRequestToolDefinitions("curator").map((t) => t.name)).toContain("set_request_targets");
   });
 
+  it("let every agent that files a request read a document's context, and list documents for the Curator alone (#865)", () => {
+    for (const role of ["claim_steward", "question_steward", "curator", "researcher"] as const) {
+      const names = getRequestToolDefinitions(role).map((t) => t.name);
+      expect(names).toContain("get_source_context");
+      expect(names.includes("list_documents_for_review")).toBe(role === "curator");
+      const file = getRequestToolDefinitions(role).find((t) => t.name === "file_request")!;
+      expect(Object.keys((file.input_schema as { properties: object }).properties)).toContain("source_ids");
+      expect(file.description).toContain("asks for a review of that document for its own sake");
+    }
+    // A judgment, not a threshold: nothing in the descriptions sets a count.
+    const curator = getRequestToolDefinitions("curator").find((t) => t.name === "list_documents_for_review")!;
+    expect(curator.description).toContain("none decides it");
+    expect(curator.description).toContain("it files nothing");
+  });
+
   it("require a request outcome of a run that takes up a request", () => {
     expect(REQUEST_REPORT_TOOL.input_schema.required).toContain("request_outcome");
     expect(REQUEST_REPORT_TOOL.name).toBe("report");

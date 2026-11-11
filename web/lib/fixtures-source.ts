@@ -170,6 +170,7 @@ function registryStudy(): SourcePage {
       scope: "claim",
       trigger: "claim",
       claim: { id: NIGHT.id, text: NIGHT.text },
+      request: null,
       grant_id: null,
       source_id: id,
       brief: "Establish whether this study's data are independent of the 2016 cohort study, what its design can show, and whether its tables can be recomputed.",
@@ -213,13 +214,14 @@ function registryStudy(): SourcePage {
     {
       id: "ex-rs-doc",
       scope: "document",
-      trigger: "mandate",
+      trigger: "request",
       claim: null,
-      grant_id: "grant-occupational-health",
+      request: { id: "req-rs-review", ask: "Review the registry study as a whole after its correction of 12 August 2026: what its data are, what it asserts beyond them, and what the corrected Table 3 changes.", state: "met" },
+      grant_id: null,
       source_id: id,
-      brief: "Review the paper for the occupational-health mandate: what its data are, what it asserts beyond them, and whether the correction of 12 August 2026 changes what Results 3.4 says.",
+      brief: "Request req-rs-review\nAsks for: Review the registry study as a whole after its correction of 12 August 2026: what its data are, what it asserts beyond them, and what the corrected Table 3 changes.",
       facets: ["assertions", "tables"],
-      requested_by: "grantmaker",
+      requested_by: "request",
       created_at: "2026-08-20T09:00:00Z",
       runs: [{ id: "run-rs-2", status: "completed", model: "claude-opus-5-5", spent_usd: 1.1, finished_at: "2026-08-20T09:48:00Z" }],
       coverage: [
@@ -453,11 +455,23 @@ function registryContext(): SourceContext {
         ],
       },
     },
+    reviews: {
+      document_reviews: [
+        { examination_id: "ex-rs-doc", created_at: "2026-08-20T09:00:00Z",
+          request: { id: "req-rs-review", ask: "Review the registry study as a whole after its correction of 12 August 2026: what its data are, what it asserts beyond them, and what the corrected Table 3 changes.", state: "met" },
+          facets: ["assertions", "tables"], segments_covered: 3, findings: 3 },
+      ],
+      claim_examinations: 1,
+      segments: 38,
+      requests: [
+        { id: "req-rs-review", ask: "Review the registry study as a whole after its correction of 12 August 2026: what its data are, what it asserts beyond them, and what the corrected Table 3 changes.", state: "met", filed_at: "2026-08-14T09:30:00Z", live: false },
+      ],
+    },
     history: [
       { at: "2026-09-30T04:00:00Z", kind: "watch", by: "correction_watcher", text: "Watched by DOI; 1 notice on record", claim: null },
       { at: "2026-08-22T14:05:00Z", kind: "audit_note", by: "audit_agent", text: "Note on a finding: In the corrected Table 3, the hazard ratio for night workers with a BMI of 30 or over moves…", claim: null },
       { at: "2026-08-20T09:46:00Z", kind: "finding", by: "researcher", text: "3 findings recorded", claim: null },
-      { at: "2026-08-20T09:00:00Z", kind: "examination", by: "grantmaker", text: "Document review · assertions, tables · $1.10", claim: null },
+      { at: "2026-08-20T09:00:00Z", kind: "examination", by: "request", text: "Document review · assertions, tables · $1.10", claim: null },
       { at: "2026-08-14T09:00:00Z", kind: "reading", by: "claim_steward", text: "unclear, read whole", claim: { id: BMI.id, text: BMI.text } },
       { at: "2026-08-13T06:00:00Z", kind: "event", by: "correction_watcher", text: "correction: Table 3 replaced: the row for a body mass index of 30 or over was recomputed.", claim: null },
       { at: "2026-08-13T06:00:00Z", kind: "facts", by: "facts_fetcher", text: "Facts looked up", claim: null },
@@ -516,6 +530,14 @@ function thinkTankContext(): SourceContext {
         ],
       },
     },
+    reviews: {
+      document_reviews: [],
+      claim_examinations: 0,
+      segments: 17,
+      requests: [
+        { id: "req-tt-review", ask: "Review the four-day week report as a whole: what its survey measured, what it asserts beyond what it measured, and how the coverage that draws on it states its findings.", state: "open", filed_at: "2026-10-02T15:00:00Z", live: true },
+      ],
+    },
     history: [
       { at: "2026-09-30T06:00:00Z", kind: "facts", by: "facts_fetcher", text: "Facts looked up", claim: null },
       { at: "2025-02-10T10:00:00Z", kind: "reading", by: "claim_steward", text: "asserts without evidence, read whole", claim: { id: PRODUCTIVITY.id, text: PRODUCTIVITY.text } },
@@ -542,6 +564,7 @@ function councilContext(): SourceContext {
         notes: [{ claim: { id: "half-new-jobs-part-time", text: "Half of all new jobs created in the city since 2020 are part-time." }, support: "unclear", note: "Judged from the extracted passage alone; the transcript was not stored.", read_at: "2025-01-12T10:00:00Z" }],
       },
     },
+    reviews: { document_reviews: [], claim_examinations: 0, segments: 0, requests: [] },
     history: [
       { at: "2025-01-12T10:00:00Z", kind: "reading", by: "claim_steward", text: "unclear, from the excerpt", claim: { id: "half-new-jobs-part-time", text: "Half of all new jobs created in the city since 2020 are part-time." } },
       { at: "2024-05-24T09:00:00Z", kind: "retrieved", by: "graph", text: "Entered the graph; no copy stored", claim: null },

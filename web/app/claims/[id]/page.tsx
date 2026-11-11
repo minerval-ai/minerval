@@ -1,6 +1,36 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { loadClaim } from "@/lib/data";
+import { claimPreview, describePreview, truncateText } from "@/lib/preview";
 import { ClaimMargins } from "@/components/claim/ClaimMargins";
+import { PageHead } from "@/components/PageHead";
+
+// What a pasted link to this page unfurls into: the claim as the title, and
+// the graph's judgment of it, whole, as the description (lib/preview.ts). The
+// card image is drawn by ./opengraph-image.tsx, which Next attaches to both
+// the Open Graph and the Twitter tags. loadClaim is memoized per render, so
+// this and the page read the claim once.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const { detail } = await loadClaim(id);
+  if (!detail) return { title: "Claim not found · Minerval" };
+  const preview = claimPreview(detail);
+  const description = describePreview(preview);
+  const url = `/claims/${detail.claim.id}`;
+  // Social titles run longer than a tab title before a platform cuts them.
+  const socialTitle = truncateText(preview.text, 200);
+  return {
+    title: `${truncateText(preview.text, 80)} · Minerval`,
+    description,
+    alternates: { canonical: url },
+    openGraph: { type: "article", siteName: "Minerval", url, title: socialTitle, description },
+    twitter: { card: "summary_large_image", title: socialTitle, description },
+  };
+}
 
 export default async function ClaimPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,8 +41,7 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
     // explanation instead of internal vocabulary (#195).
     return (
       <div className="col">
-        <p className="sc"><Link href="/claims">← claims</Link></p>
-        <h1 className="claim-hero">Claim not found.</h1>
+        <PageHead back={{ href: "/claims", label: "claims" }} title="Claim not found." />
         {source === "fixture" ? (
           <>
             <p style={{ color: "var(--muted)" }}>

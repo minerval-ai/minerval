@@ -2,11 +2,22 @@
  * Examinations of a document (#507, phase 5): in-depth checks recorded as
  * records of their own, scoped, attributed, and anchored to passages.
  *
- * An examination is opened when an administrator launches the researcher
- * on a document (delegate_research with examine_source_id): a Steward
- * while assessing its claim, or a Grantmaker reviewing the document for a
- * mandate. The researcher records what it examined (coverage, by segment
- * and facet) and what it found (findings, each on a passage). Nothing here
+ * Two kinds, opened two ways:
+ *
+ * - Claim-scoped: a Steward launches the researcher on a document in its
+ *   claim's map while assessing the claim, inline (delegate_research with
+ *   examine_source_id) or on its own (commission kind research with
+ *   examine_source_id).
+ * - Document-scoped (#865): a review of the document for its own sake,
+ *   asked for as a request bearing on that document alone. Anyone may file
+ *   one, and whether it is worth doing is the filer's judgment and then a
+ *   funder's; nothing files or buys one automatically. The run that takes
+ *   the request up examines the document, and every stage of the request
+ *   records onto the same examination.
+ *
+ * The researcher records what it examined (coverage, by segment and facet)
+ * and what it found (findings, each on a passage). The findings are the
+ * document's: they sit on its page for whoever reads it next. Nothing here
  * rules on a finding or on the source. A claim's Steward cites the findings
  * its reading relies on; the Audit agent may annotate a finding about the
  * document. The rest is a reader's.
@@ -47,7 +58,7 @@ function text(value: unknown, field: string, max: number): string {
  * "method", "attribution". Free labels rather than a fixed list, because
  * what is worth checking differs by kind of document.
  */
-export function normalizeFacets(value: unknown): string[] {
+export function normalizeFacets(value: unknown, opts: { allowNone?: boolean } = {}): string[] {
   const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
   const facets = [
     ...new Set(
@@ -57,6 +68,7 @@ export function normalizeFacets(value: unknown): string[] {
     ),
   ];
   if (facets.length === 0) {
+    if (opts.allowNone) return [];
     throw new ExaminationError('facets is required: what to check, as short labels such as "data", "quotation", "method".');
   }
   for (const f of facets) {
@@ -79,13 +91,17 @@ export interface ExaminationRow {
   brief: string;
   facets: string[];
   requested_by: string;
+  request_id: string | null;
   created_at: string;
 }
 
 /**
  * Open an examination of a document. A claim-scoped one must examine a
  * document in that claim's map (an instance's source, or one an edge draws
- * on): a Steward commissions work on what its claim rests on.
+ * on): a Steward commissions work on what its claim rests on. A document
+ * review opened for a request may start without facets: the request is the
+ * brief, and the researcher names what it checks (addFacets) once it has
+ * seen the document.
  */
 export async function openExamination(input: {
   scope: string;
@@ -96,6 +112,7 @@ export async function openExamination(input: {
   brief: string;
   facets: unknown;
   requestedBy: string;
+  requestId?: string | null;
 }): Promise<ExaminationRow> {
   if (!(EXAMINATION_SCOPES as readonly string[]).includes(input.scope)) {
     throw new ExaminationError(`scope must be one of ${EXAMINATION_SCOPES.join(", ")}.`);
@@ -104,7 +121,8 @@ export async function openExamination(input: {
     throw new ExaminationError(`trigger must be one of ${EXAMINATION_TRIGGERS.join(", ")}.`);
   }
   const sourceId = uuid(input.sourceId, "examine_source_id");
-  const facets = normalizeFacets(input.facets);
+  const requestId = input.requestId ?? null;
+  const facets = normalizeFacets(input.facets, { allowNone: !!requestId });
   const brief = text(input.brief, "brief", 20_000);
   const [source] = await rawQuery<{ id: string; title: string; url: string | null }>(
     `SELECT id, title, url FROM sources WHERE id = $1`,
@@ -129,9 +147,9 @@ export async function openExamination(input: {
     }
   }
   const rows = await rawQuery<{ id: string; created_at: Date }>(
-    `INSERT INTO examinations (scope, trigger, claim_id, grant_id, source_id, brief, facets, requested_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
-    [input.scope, input.trigger, input.claimId, input.grantId, sourceId, brief, facets, input.requestedBy]
+    `INSERT INTO examinations (scope, trigger, claim_id, grant_id, source_id, brief, facets, requested_by, request_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at`,
+    [input.scope, input.trigger, input.claimId, input.grantId, sourceId, brief, facets, input.requestedBy, requestId]
   );
   return {
     id: rows[0]!.id,
@@ -145,8 +163,102 @@ export async function openExamination(input: {
     brief,
     facets,
     requested_by: input.requestedBy,
+    request_id: requestId,
     created_at: new Date(rows[0]!.created_at).toISOString(),
   };
+}
+
+/**
+ * The document review a request asked for (#865): the examination its
+ * earlier stages opened on the document, or a new one. A request is worked
+ * in stages, each run opening with the last one's notebook; they record
+ * onto one examination, so its coverage and findings accumulate as one
+ * review of the document rather than one per stage.
+ */
+export async function examinationForRequest(input: {
+  requestId: string;
+  sourceId: string;
+  brief: string;
+}): Promise<ExaminationRow> {
+  const [found] = await rawQuery<{ id: string }>(
+    `SELECT id FROM examinations
+      WHERE request_id = $1 AND source_id = $2 AND scope = 'document'
+      ORDER BY created_at LIMIT 1`,
+    [input.requestId, input.sourceId]
+  );
+  const existing = found ? await getExaminationRow(found.id) : null;
+  if (existing) return existing;
+  return openExamination({
+    scope: "document",
+    trigger: "request",
+    claimId: null,
+    grantId: null,
+    sourceId: input.sourceId,
+    brief: input.brief,
+    facets: [],
+    requestedBy: "request",
+    requestId: input.requestId,
+  });
+}
+
+/** One examination as the researcher is launched on it, or null. */
+export async function getExaminationRow(id: string): Promise<ExaminationRow | null> {
+  if (!UUID_RE.test(id)) return null;
+  const [row] = await rawQuery<{
+    id: string;
+    scope: string;
+    trigger: string;
+    claim_id: string | null;
+    grant_id: string | null;
+    source_id: string;
+    title: string;
+    url: string | null;
+    brief: string;
+    facets: string[];
+    requested_by: string;
+    request_id: string | null;
+    created_at: Date;
+  }>(
+    `SELECT x.id, x.scope, x.trigger, x.claim_id, x.grant_id, x.source_id, s.title, s.url, x.brief,
+            x.facets, x.requested_by, x.request_id, x.created_at
+       FROM examinations x JOIN sources s ON s.id = x.source_id
+      WHERE x.id = $1`,
+    [id]
+  );
+  if (!row) return null;
+  return {
+    id: row.id,
+    scope: row.scope,
+    trigger: row.trigger,
+    claim_id: row.claim_id,
+    grant_id: row.grant_id,
+    source_id: row.source_id,
+    source_title: row.title,
+    source_url: row.url,
+    brief: row.brief,
+    facets: row.facets,
+    requested_by: row.requested_by,
+    request_id: row.request_id,
+    created_at: new Date(row.created_at).toISOString(),
+  };
+}
+
+/**
+ * Add facets to an examination: what the researcher, having seen the
+ * document, finds worth checking beyond what it was asked. The brief names
+ * the facets it starts with; the document may call for others. Idempotent.
+ */
+export async function addFacets(examinationId: string, value: unknown): Promise<string[]> {
+  const exam = await examination(examinationId);
+  const added = normalizeFacets(value);
+  const facets = [...new Set([...exam.facets, ...added])];
+  if (facets.length > 20) {
+    throw new ExaminationError(`An examination checks at most 20 facets; this one would check ${facets.length}.`);
+  }
+  if (facets.length !== exam.facets.length) {
+    await rawQuery(`UPDATE examinations SET facets = $2 WHERE id = $1`, [examinationId, facets]);
+  }
+  return facets;
 }
 
 export async function linkResearchRun(examinationId: string, researchRunId: string): Promise<void> {
@@ -165,7 +277,12 @@ async function examination(id: string): Promise<{ id: string; source_id: string;
 function facetOf(exam: { facets: string[] }, value: unknown): string {
   const f = typeof value === "string" ? value.trim().toLowerCase().replace(/\s+/g, "_") : "";
   if (!exam.facets.includes(f)) {
-    throw new ExaminationError(`facet must be one this examination checks: ${exam.facets.join(", ")} (got "${f}").`);
+    throw new ExaminationError(
+      exam.facets.length === 0
+        ? `This examination checks no facets yet: name the ones you will check with examination_outline (add_facets) first.`
+        : `facet must be one this examination checks: ${exam.facets.join(", ")} (got "${f}"). ` +
+            "To check another, add it with examination_outline (add_facets)."
+    );
   }
   return f;
 }
@@ -394,6 +511,8 @@ export interface ExaminationView {
   scope: string;
   trigger: string;
   claim: { id: string; text: string } | null;
+  /** The request a document review was asked for in, and where it stands. */
+  request: { id: string; ask: string; state: string } | null;
   grant_id: string | null;
   source_id: string;
   brief: string;
@@ -415,6 +534,9 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
     trigger: string;
     claim_id: string | null;
     claim_text: string | null;
+    request_id: string | null;
+    request_ask: string | null;
+    request_state: string | null;
     grant_id: string | null;
     source_id: string;
     brief: string;
@@ -422,9 +544,11 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
     requested_by: string;
     created_at: Date;
   }>(
-    `SELECT x.id, x.scope, x.trigger, x.claim_id, c.text AS claim_text, x.grant_id, x.source_id,
+    `SELECT x.id, x.scope, x.trigger, x.claim_id, c.text AS claim_text, x.request_id,
+            q.ask AS request_ask, q.state AS request_state, x.grant_id, x.source_id,
             x.brief, x.facets, x.requested_by, x.created_at
        FROM examinations x LEFT JOIN claims c ON c.id = x.claim_id
+       LEFT JOIN requests q ON q.id = x.request_id
       WHERE x.source_id = ANY($1::uuid[])
       ORDER BY x.created_at`,
     [ids]
@@ -480,6 +604,10 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
     scope: e.scope,
     trigger: e.trigger,
     claim: e.claim_id && e.claim_text ? { id: e.claim_id, text: e.claim_text } : null,
+    request:
+      e.request_id && e.request_ask
+        ? { id: e.request_id, ask: e.request_ask, state: e.request_state ?? "open" }
+        : null,
     grant_id: e.grant_id,
     source_id: e.source_id,
     brief: e.brief,

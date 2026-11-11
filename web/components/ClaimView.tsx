@@ -16,6 +16,7 @@ import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
+import { EmbedClaim } from "./claim/EmbedClaim";
 import { OrderAssessment } from "./claim/OrderAssessment";
 import { FundDecomposition } from "./claim/FundDecomposition";
 import { FormalStatement } from "./claim/FormalStatement";
@@ -28,6 +29,7 @@ import { ProvenanceMap } from "./claim/ProvenanceMap";
 import {
   QuantityHead, QuantityEstimates, QuantityReadings, QuantityCuts, ThresholdPanel,
 } from "./quantity/QuantitySections";
+import { PageHead } from "@/components/PageHead";
 
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
@@ -75,7 +77,7 @@ function fmtDate(iso: string) {
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function ClaimView({ detail }: { detail: ClaimDetail }) {
+export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fixture?: boolean }) {
   const { claim, tree, instances, trajectory, record } = detail;
   const { voices, mentions } = splitInstances(instances ?? []);
   // Mathematics (docs/mathematics.md §8.3): the formal statement, the derived
@@ -123,36 +125,47 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
 
   return (
     <article className="col">
-      {/* eyebrow: type + state */}
-      <div className="claim-eyebrow">
-        <span className="sc">{isQuantity ? "Quantity" : "Claim"}</span>
-        {claimType ? (
-          <Term gloss={claimType.gloss} href={DEFINED_IN.claimType} className="tag kind">
-            {claimType.label}
-          </Term>
-        ) : (
-          <span className="tag kind">{claim.claim_type?.replace(/_/g, " ")}</span>
-        )}
-        {claim.state !== "active" && <span className="tag">{claim.state.replace(/_/g, " ")}</span>}
-        {typeof claim.importance === "number" && (
-          <span style={{ marginLeft: "auto" }}>
-            <Importance value={claim.importance} />
-          </span>
-        )}
-      </div>
-
-      {/* topic tags (#272): what the claim is about, each opening the
-          filtered list; provenance on hover. Below the eyebrow so the
-          type/state/importance row stays the one it has always been. */}
-      {detail.tags && detail.tags.length > 0 && (
-        <div className="claim-topics">
-          <span className="sc">Topics</span>
-          <TopicChips tags={detail.tags} withProvenance />
-        </div>
-      )}
-
-      {/* hero: the canonical claim */}
-      <h1 className="claim-hero">{claim.text}</h1>
+      <PageHead
+        back={{ href: "/claims", label: "claims" }}
+        // kicker: type + state
+        kicker={isQuantity ? "Quantity" : "Claim"}
+        tags={
+          <>
+            {claimType ? (
+              <Term gloss={claimType.gloss} href={DEFINED_IN.claimType} className="tag kind">
+                {claimType.label}
+              </Term>
+            ) : (
+              <span className="tag kind">{claim.claim_type?.replace(/_/g, " ")}</span>
+            )}
+            {claim.state !== "active" && <span className="tag">{claim.state.replace(/_/g, " ")}</span>}
+            {fixture && (
+              <span className="tag" title="The API is not connected; showing a design fixture.">
+                fixture data
+              </span>
+            )}
+            {typeof claim.importance === "number" && (
+              <span style={{ marginLeft: "auto" }}>
+                <Importance value={claim.importance} />
+              </span>
+            )}
+          </>
+        }
+        // topic tags (#272): what the claim is about, each opening the
+        // filtered list; provenance on hover. Below the kicker so the
+        // type/state/importance row stays the one it has always been.
+        beforeTitle={
+          detail.tags && detail.tags.length > 0 && (
+            <div className="claim-topics">
+              <span className="sc">Topics</span>
+              <TopicChips tags={detail.tags} withProvenance />
+            </div>
+          )
+        }
+        variant="statement"
+        // the canonical claim
+        title={claim.text}
+      />
 
       {/* A quantity's definition and the graph's estimate lead its page, where
           a claim's status would (§3, §10). */}
@@ -459,6 +472,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           citation pinned to the current assessment version, plus the evidence
           record for carrying the page's provenance out of the graph. */}
       <CiteClaim claimId={claim.id} />
+      {/* its neighbour on the way out: the claim shown on another site,
+          with the judgment whole */}
+      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no

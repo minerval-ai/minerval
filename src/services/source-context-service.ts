@@ -12,6 +12,11 @@
  *   which of them cite examinations of it). Numbers are given as they are:
  *   inputs to a reader's judgment and the Stewards', never a verdict, and
  *   nothing here moves any claim's status.
+ * - Reviews: what has been asked and done about the document as a whole
+ *   (#865): the reviews of it for its own sake, with what each covered, the
+ *   examinations commissioned for a claim, and the requests bearing on it.
+ *   What an agent weighs, with the rest of this, in deciding whether a
+ *   review is worth asking for; there is no threshold.
  * - History: a dated log of what has been done to and about the document.
  */
 import { rawQuery } from "../db/client.js";
@@ -94,9 +99,30 @@ export interface SourceHistoryEntry {
   claim: { id: string; text: string } | null;
 }
 
+export interface SourceReviews {
+  /** Reviews of the document for its own sake, oldest first. */
+  document_reviews: Array<{
+    examination_id: string;
+    created_at: string;
+    /** The request it was asked for in, where one was. */
+    request: { id: string; ask: string; state: string } | null;
+    facets: string[];
+    /** Segments examined for at least one facet. */
+    segments_covered: number;
+    findings: number;
+  }>;
+  /** Examinations commissioned while assessing a claim. */
+  claim_examinations: number;
+  /** The parts the document is divided into, for reading coverage against; 0 when undivided. */
+  segments: number;
+  /** Requests bearing on the document, live first, then newest. */
+  requests: Array<{ id: string; ask: string; state: string; filed_at: string; live: boolean }>;
+}
+
 export interface SourceContext {
   lineage: SourceLineage;
   prominence: SourceProminence;
+  reviews: SourceReviews;
   history: SourceHistoryEntry[];
 }
 
@@ -389,7 +415,7 @@ export async function getSourceHistory(sourceId: string): Promise<SourceHistoryE
   for (const x of exams) {
     const spent = x.spent ? ` · $${(Number(x.spent) / 1_000_000).toFixed(2)}` : "";
     push(x.created_at, "examination", x.requested_by,
-      `${x.scope === "document" ? "Document review" : "Examination commissioned"} · ${x.facets.join(", ")}${spent}`,
+      `${x.scope === "document" ? "Document review" : "Examination commissioned"}${x.facets.length ? ` · ${x.facets.join(", ")}` : ""}${spent}`,
       x.claim_id && x.claim_text ? { id: x.claim_id, text: x.claim_text } : null);
     const f = findingsByExam.get(x.id);
     if (f) push(f.at, "finding", f.created_by, `${f.n} finding${Number(f.n) === 1 ? "" : "s"} recorded`);
@@ -403,15 +429,220 @@ export async function getSourceHistory(sourceId: string): Promise<SourceHistoryE
   return out.slice(0, HISTORY_LIMIT);
 }
 
-/** Lineage, prominence, and history together, for the source page. Null when the source does not exist. */
+const REVIEW_REQUESTS = 20;
+const LIVE_STATES = ["open", "addressed", "in_progress"];
+
+/** What has been asked and done about the document as a whole (#865). */
+export async function getSourceReviews(sourceId: string): Promise<SourceReviews> {
+  const [reviews, claimExams, segments, requests] = await Promise.all([
+    rawQuery<{
+      id: string;
+      created_at: Date;
+      request_id: string | null;
+      ask: string | null;
+      state: string | null;
+      facets: string[];
+      covered: string;
+      findings: string;
+    }>(
+      `SELECT x.id, x.created_at, x.request_id, q.ask, q.state, x.facets,
+              (SELECT COUNT(DISTINCT segment_id) FROM examination_coverage WHERE examination_id = x.id) AS covered,
+              (SELECT COUNT(*) FROM examination_findings WHERE examination_id = x.id) AS findings
+         FROM examinations x LEFT JOIN requests q ON q.id = x.request_id
+        WHERE x.source_id = $1 AND x.scope = 'document'
+        ORDER BY x.created_at`,
+      [sourceId]
+    ),
+    rawQuery<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM examinations WHERE source_id = $1 AND scope = 'claim'`,
+      [sourceId]
+    ),
+    rawQuery<{ n: string }>(`SELECT COUNT(*) AS n FROM source_segments WHERE source_id = $1`, [sourceId]),
+    rawQuery<{ id: string; ask: string; state: string; created_at: Date }>(
+      `SELECT r.id, r.ask, r.state, r.created_at
+         FROM requests r
+        WHERE EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.source_id = $1)
+        ORDER BY (r.state = ANY($2::text[])) DESC, r.created_at DESC
+        LIMIT $3`,
+      [sourceId, LIVE_STATES, REVIEW_REQUESTS]
+    ),
+  ]);
+  return {
+    document_reviews: reviews.map((r) => ({
+      examination_id: r.id,
+      created_at: iso(r.created_at),
+      request: r.request_id && r.ask ? { id: r.request_id, ask: r.ask, state: r.state ?? "open" } : null,
+      facets: r.facets,
+      segments_covered: Number(r.covered),
+      findings: Number(r.findings),
+    })),
+    claim_examinations: Number(claimExams[0]?.n ?? 0),
+    segments: Number(segments[0]?.n ?? 0),
+    requests: requests.map((r) => ({
+      id: r.id,
+      ask: r.ask,
+      state: r.state,
+      filed_at: iso(r.created_at),
+      live: LIVE_STATES.includes(r.state),
+    })),
+  };
+}
+
+/** Lineage, prominence, reviews, and history together, for the source page. Null when the source does not exist. */
 export async function getSourceContext(sourceId: string): Promise<SourceContext | null> {
   if (!UUID_RE.test(sourceId)) return null;
   const [exists] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE id = $1`, [sourceId]);
   if (!exists) return null;
-  const [lineage, prominence, history] = await Promise.all([
+  const [lineage, prominence, reviews, history] = await Promise.all([
     getSourceLineage(sourceId),
     getSourceProminence(sourceId),
+    getSourceReviews(sourceId),
     getSourceHistory(sourceId),
   ]);
-  return { lineage, prominence, history };
+  return { lineage, prominence, reviews, history };
+}
+
+/** The orders listDocumentsForReview offers: each a different reason a document may matter. */
+export const DOCUMENT_REVIEW_ORDERS = ["drawn_on", "divergent_uses", "copies", "claims", "readings"] as const;
+export type DocumentReviewOrder = (typeof DOCUMENT_REVIEW_ORDERS)[number];
+
+export interface DocumentForReview {
+  source: { id: string; title: string; url: string | null; source_type: string };
+  /** Characters of stored text; null when the graph holds no copy. */
+  chars: number | null;
+  /** Distinct documents recorded as drawing on it. */
+  drawn_on_by: number;
+  /** Uses of it that strengthen, weaken, distort or misattribute what it says. */
+  divergent_uses: number;
+  /** Republished copies made directly from it. */
+  copies: number;
+  /** Active claims whose map it is in. */
+  claims: number;
+  readings: number;
+  /** Distinct findings the readings reached (supports, overstates, ...): above one, they differ. */
+  reading_kinds: number;
+  read_whole: number;
+  /** Reviews of it for its own sake so far, and when the latest was opened. */
+  reviews: number;
+  latest_review_at: string | null;
+  /** A live request bearing on it, to join rather than file another. */
+  live_request_id: string | null;
+}
+
+const ORDER_SQL: Record<DocumentReviewOrder, string> = {
+  drawn_on: "drawn_on_by DESC, divergent_uses DESC, claims DESC",
+  divergent_uses: "divergent_uses DESC, drawn_on_by DESC, claims DESC",
+  copies: "copies DESC, drawn_on_by DESC, claims DESC",
+  claims: "claims DESC, drawn_on_by DESC, copies DESC",
+  readings: "reading_kinds DESC, readings DESC, claims DESC",
+};
+
+/**
+ * Documents the graph uses, with the figures a reader would weigh in
+ * deciding whether one deserves a review for its own sake (#865), ordered by
+ * whichever the caller chooses. Information for the Curator's judgment, not a
+ * queue: nothing here files a request or ranks a document as needing one.
+ * Only documents something in the graph rests on are listed.
+ */
+export async function listDocumentsForReview(opts: {
+  order?: DocumentReviewOrder;
+  unreviewed?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<{ documents: DocumentForReview[] }> {
+  const order = ORDER_SQL[opts.order ?? "drawn_on"] ?? ORDER_SQL.drawn_on;
+  const limit = Math.min(50, Math.max(1, Math.floor(opts.limit ?? 20)));
+  const offset = Math.max(0, Math.floor(opts.offset ?? 0));
+  const rows = await rawQuery<{
+    id: string;
+    title: string;
+    url: string | null;
+    source_type: string;
+    chars: number | null;
+    drawn_on_by: number;
+    divergent_uses: number;
+    copies: number;
+    claims: number;
+    readings: number;
+    reading_kinds: number;
+    read_whole: number;
+    reviews: number;
+    latest_review_at: Date | null;
+    live_request_id: string | null;
+  }>(
+    `WITH live_instances AS (
+       SELECT ci.id, ci.source_id, ci.claim_id FROM claim_instances ci
+         JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
+        WHERE ci.detached_at IS NULL
+     ),
+     in_map AS (
+       SELECT source_id, claim_id FROM live_instances
+       UNION
+       SELECT e.to_source_id, li.claim_id FROM claim_provenance_edges e JOIN live_instances li ON li.id = e.from_instance_id
+     ),
+     claims_n AS (SELECT source_id, COUNT(DISTINCT claim_id)::int AS n FROM in_map GROUP BY source_id),
+     drawn AS (
+       SELECT e.to_source_id AS source_id, COUNT(DISTINCT li.source_id)::int AS n,
+              COUNT(*) FILTER (WHERE e.fidelity = ANY($1::text[]))::int AS divergent
+         FROM claim_provenance_edges e JOIN live_instances li ON li.id = e.from_instance_id
+        GROUP BY e.to_source_id
+     ),
+     copies AS (
+       SELECT parent_source_id AS source_id, COUNT(*)::int AS n FROM source_relationships
+        WHERE relation_type = 'republishes' GROUP BY parent_source_id
+     ),
+     readings AS (
+       SELECT li.source_id, COUNT(*)::int AS n, COUNT(DISTINCT r.support)::int AS kinds,
+              COUNT(*) FILTER (WHERE r.source_read)::int AS whole
+         FROM claim_instance_readings r JOIN live_instances li ON li.id = r.instance_id
+        GROUP BY li.source_id
+     ),
+     reviews AS (
+       SELECT source_id, COUNT(*)::int AS n, MAX(created_at) AS latest FROM examinations
+        WHERE scope = 'document' GROUP BY source_id
+     ),
+     live AS (
+       SELECT t.source_id, (array_agg(q.id ORDER BY q.created_at DESC))[1] AS id
+         FROM request_targets t JOIN requests q ON q.id = t.request_id
+        WHERE t.source_id IS NOT NULL AND q.state IN ('open', 'addressed', 'in_progress')
+        GROUP BY t.source_id
+     ),
+     docs AS (
+       SELECT s.id, s.title, s.url, s.source_type,
+              CASE WHEN s.raw_content IS NULL OR s.raw_content = '' THEN NULL ELSE length(s.raw_content) END AS chars,
+              COALESCE(d.n, 0) AS drawn_on_by, COALESCE(d.divergent, 0) AS divergent_uses,
+              COALESCE(cp.n, 0) AS copies, COALESCE(cn.n, 0) AS claims,
+              COALESCE(rd.n, 0) AS readings, COALESCE(rd.kinds, 0) AS reading_kinds, COALESCE(rd.whole, 0) AS read_whole,
+              COALESCE(rv.n, 0) AS reviews, rv.latest AS latest_review_at, lv.id AS live_request_id
+         FROM sources s
+         LEFT JOIN claims_n cn ON cn.source_id = s.id
+         LEFT JOIN drawn d ON d.source_id = s.id
+         LEFT JOIN copies cp ON cp.source_id = s.id
+         LEFT JOIN readings rd ON rd.source_id = s.id
+         LEFT JOIN reviews rv ON rv.source_id = s.id
+         LEFT JOIN live lv ON lv.source_id = s.id
+        WHERE cn.n IS NOT NULL OR d.n IS NOT NULL OR cp.n IS NOT NULL
+     )
+     SELECT * FROM docs
+      ${opts.unreviewed ? "WHERE reviews = 0" : ""}
+      ORDER BY ${order}, id
+      LIMIT $2 OFFSET $3`,
+    [[...DIVERGENT], limit, offset]
+  );
+  return {
+    documents: rows.map((r) => ({
+      source: { id: r.id, title: r.title, url: r.url, source_type: r.source_type },
+      chars: r.chars === null ? null : Number(r.chars),
+      drawn_on_by: r.drawn_on_by,
+      divergent_uses: r.divergent_uses,
+      copies: r.copies,
+      claims: r.claims,
+      readings: r.readings,
+      reading_kinds: r.reading_kinds,
+      read_whole: r.read_whole,
+      reviews: r.reviews,
+      latest_review_at: r.latest_review_at ? iso(r.latest_review_at) : null,
+      live_request_id: r.live_request_id,
+    })),
+  };
 }

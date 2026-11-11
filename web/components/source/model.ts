@@ -185,6 +185,7 @@ export const EVENT_WORD: Record<SourceEventKind, string> = {
 const AGENT_NAMES: Record<string, string> = {
   claim_steward: "a claim's Steward",
   grantmaker: "the Grantmaker",
+  request: "a request",
   researcher: "Researcher",
   audit_agent: "Audit agent",
   correction_watcher: "Correction watcher",

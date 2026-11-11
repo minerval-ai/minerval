@@ -1,3 +1,4 @@
+import { attachArgumentEvidence, sendArgumentEvidenceBacklog } from "../services/argument-evidence-service.js";
 import type { FastifyInstance } from "fastify";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../db/client.js";
@@ -44,8 +45,9 @@ import { getFundingLabelForJob } from "../services/grant-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
 import { emptyClaimExtras, loadClaimExtras } from "../services/claim-extras-service.js";
 import { leanChecksByArgument } from "../services/formalization-service.js";
-import { claimTypeEnum } from "../schemas/common.js";
+import { claimTypeEnum, uuidSchema } from "../schemas/common.js";
 import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../services/tag-service.js";
+import { CLAIM_CARDS_MAX_IDS, getClaimCard, getClaimCards } from "../services/claim-card-service.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -219,6 +221,113 @@ const errorEnvelope = {
   },
 } as const;
 
+// The claim card (src/services/claim-card-service.ts): the judgment whole,
+// in a small fixed shape. Every key is always present; null means "none
+// yet" (or "not this kind"), never an error.
+export const claimCardSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string", format: "uuid" },
+    kind: { type: "string", enum: [...NODE_KINDS] },
+    text: { type: "string" },
+    state: { type: "string" },
+    assessment_status: {
+      type: "string",
+      nullable: true,
+      description:
+        "A claim's current status; null when it has not been assessed, and for a quantity or question.",
+    },
+    assessment_confidence: {
+      type: "number",
+      nullable: true,
+      description:
+        "How sure the Steward is of the status (for a question, of the standing), 0..1. Not the probability that the claim is true.",
+    },
+    standing: {
+      type: "string",
+      nullable: true,
+      description: "A question's current standing; null for other kinds and until judged.",
+    },
+    estimate: {
+      ...looseObject,
+      description: "A quantity's current estimate; null for other kinds and until estimated.",
+    },
+    unit: { ...looseObject, description: "A quantity's unit; null for other kinds." },
+    contestation: {
+      type: "number",
+      nullable: true,
+      description:
+        "How actively the claim is disputed or consulted, 0..1; null until judged. Reported beside the status, never folded into it.",
+    },
+    assessed_at: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+      description: "When the current judgment was made; null when there is none.",
+    },
+    updated_at: {
+      type: "string",
+      format: "date-time",
+      description: "When the node itself last changed.",
+    },
+    page_url: { type: "string", description: "The node's public page." },
+  },
+  required: [
+    "id",
+    "kind",
+    "text",
+    "state",
+    "assessment_status",
+    "assessment_confidence",
+    "standing",
+    "estimate",
+    "unit",
+    "contestation",
+    "assessed_at",
+    "updated_at",
+    "page_url",
+  ],
+} as const;
+
+const CARD_NOTE =
+  "A card is the graph's judgment whole and nothing else: the node's text, " +
+  "kind and state, its status with the confidence that goes with it (a " +
+  "question's `standing`, a quantity's `estimate` and `unit`), its " +
+  "`contestation`, when it was last assessed and last changed, and its " +
+  "`page_url`. Every key is always present. An unassessed node is not an " +
+  "error: its judgment fields are null.";
+
+/**
+ * Parse `ids=<uuid>,<uuid>,...`: distinct ids in the order first given.
+ * Returns a message instead when the list is malformed or over the cap.
+ */
+function parseCardIds(raw: unknown): { ids: string[] } | { error: string } {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return { error: "ids is required: a comma-separated list of claim ids" };
+  }
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const part of raw.split(",")) {
+    const id = part.trim().toLowerCase();
+    if (!uuidSchema.safeParse(id).success) {
+      return {
+        error: `ids must be a comma-separated list of claim ids; "${part.trim()}" is not one`,
+      };
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (ids.length > CLAIM_CARDS_MAX_IDS) {
+    return {
+      error:
+        `ids names ${ids.length} claims; one request takes at most ` +
+        `${CLAIM_CARDS_MAX_IDS}. Ask for the rest in another request.`,
+    };
+  }
+  return { ids };
+}
+
 export async function claimRoutes(app: FastifyInstance): Promise<void> {
   // GET /claims — list claims for browsing, most-recently-updated first
   app.get<{ Querystring: Record<string, string> }>(
@@ -356,6 +465,115 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         });
 
         return reply.send({ results: await attachClaimTags(results), total });
+      },
+    }
+  );
+
+  // GET /claims/cards — many cards in one request and one query. Declared
+  // before /:claim_id for the reader; the router prefers a static segment
+  // to a parameter whatever the order.
+  app.get<{ Querystring: { ids?: string } }>(
+    "/cards",
+    {
+      schema: {
+        tags: ["claims"],
+        summary: "Get the cards of several claims at once",
+        description:
+          CARD_NOTE +
+          ` Takes up to ${CLAIM_CARDS_MAX_IDS} ids and answers with their ` +
+          "cards in the order asked (a repeated id once). An id the graph " +
+          "does not hold is listed in `not_found` rather than dropped. " +
+          "Prefer this to one get_claim per claim when you need where " +
+          "several claims stand, not their reasoning.",
+        querystring: {
+          type: "object",
+          properties: {
+            ids: {
+              type: "string",
+              minLength: 1,
+              // CLAIM_CARDS_MAX_IDS ids of 36 characters, with a comma and
+              // room for a space between each.
+              maxLength: CLAIM_CARDS_MAX_IDS * 38,
+              description:
+                "Claim ids, comma-separated: `ids=<uuid>,<uuid>`. At most " +
+                `${CLAIM_CARDS_MAX_IDS} per request (one bounded query, and ` +
+                "the list travels in a URL); read a longer list in several requests.",
+            },
+          },
+          required: ["ids"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              cards: { type: "array", items: claimCardSchema },
+              not_found: {
+                type: "array",
+                items: { type: "string", format: "uuid" },
+                description:
+                  "The ids asked for that the graph does not hold, in the order asked.",
+              },
+            },
+            required: ["cards", "not_found"],
+          },
+          400: errorEnvelope,
+        },
+      },
+      handler: async (request, reply) => {
+        const parsed = parseCardIds(request.query.ids);
+        if ("error" in parsed) {
+          return reply.code(400).send({
+            error: {
+              code: "VALIDATION_ERROR",
+              message: parsed.error,
+              request_id: request.id,
+            },
+          });
+        }
+        const found = await getClaimCards(parsed.ids);
+        return reply.send({
+          cards: parsed.ids.flatMap((id) => found.get(id) ?? []),
+          not_found: parsed.ids.filter((id) => !found.has(id)),
+        });
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/card — one claim's card.
+  app.get<{ Params: { claim_id: string } }>(
+    "/:claim_id/card",
+    {
+      schema: {
+        tags: ["claims"],
+        summary: "Get a claim's card: its judgment in one small shape",
+        description:
+          CARD_NOTE +
+          " Prefer this to get_claim when you need where a claim stands " +
+          "(to report, cite or embed it) and not the reasoning, arguments " +
+          "or sources behind it.",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+        response: {
+          200: claimCardSchema,
+          404: errorEnvelope,
+        },
+      },
+      handler: async (request, reply) => {
+        const card = await getClaimCard(request.params.claim_id.toLowerCase());
+        if (!card) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "Claim not found",
+              request_id: request.id,
+            },
+          });
+        }
+        return reply.send(card);
       },
     }
   );
@@ -647,7 +865,6 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             description: a.description,
             stance: a.stance,
             content: a.content,
-            evidence_urls: a.evidenceUrls,
             created_by: a.createdBy,
             created_at: a.createdAt.toISOString(),
             verdict: evalByArgument.get(a.id)?.verdict ?? null,
@@ -1763,7 +1980,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               stance: { type: "string", enum: ["for", "against"] },
               content: { type: "string", minLength: 1, maxLength: 5000 },
-              evidence_urls: { type: "array", items: { type: "string", format: "uri" } },
+              evidence_urls: {
+                type: "array",
+                items: { type: "string", format: "uri" },
+                description:
+                  "A Lean check (/lean-checks/<id>) makes the argument machine-checked. Any other URL is " +
+                  "sent to the claim's Steward to read and, where the source makes, attacks or mentions " +
+                  "the argument, record as an instance (#541).",
+              },
             },
           },
         },
@@ -1779,18 +2003,38 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                 claim_id: { type: "string", format: "uuid" },
                 stance: { type: "string" },
                 content: { type: "string" },
-                evidence_urls: { type: "array", items: { type: "string" } },
+                lean_check_id: { type: "string", format: "uuid", nullable: true },
+                evidence_sent_to_steward: { type: "array", items: { type: "string" } },
                 created_by: { type: "string" },
                 created_at: { type: "string", format: "date-time" },
               },
             },
           },
         },
+        403: errorEnvelope,
         404: errorEnvelope,
       },
     },
     preHandler: app.authenticate,
     handler: async (request, reply) => {
+      // This writes an argument onto the live claim with no review and no
+      // attribution, so it is reserved for direct first-party service
+      // callers (internal seeding), as POST /claims/propose and POST
+      // /sources reserve their fast paths. Everyone else, including a
+      // service key acting for a signed-in user, proposes the argument for
+      // review: POST /claims/:claim_id/contribute with propose_argument.
+      if (!isDirectService(request.auth)) {
+        return reply.code(403).send({
+          error: {
+            code: "USE_CONTRIBUTION",
+            message:
+              "Arguments are proposed for review, not written directly: " +
+              "POST /claims/:claim_id/contribute with contribution_type " +
+              "'propose_argument' (MCP: submit_contribution).",
+            request_id: request.id,
+          },
+        });
+      }
       const { claim_id } = request.params;
       const body = claimPatchBody.parse(request.body);
 
@@ -1809,8 +2053,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         claimId: claim_id,
         stance: body.argument.stance,
         content: body.argument.content,
-        evidenceUrls: body.argument.evidence_urls,
       });
+      const evidence = await attachArgumentEvidence(argument.id, body.argument.evidence_urls ?? []);
+      if (evidence.queued.length > 0) await sendArgumentEvidenceBacklog({ argumentId: argument.id });
 
       return reply.send({
         argument: {
@@ -1818,7 +2063,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           claim_id: argument.claimId,
           stance: argument.stance,
           content: argument.content,
-          evidence_urls: argument.evidenceUrls,
+          lean_check_id: evidence.leanCheckId,
+          evidence_sent_to_steward: evidence.queued,
           created_by: argument.createdBy,
           created_at: argument.createdAt.toISOString(),
         },

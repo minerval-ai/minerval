@@ -47,6 +47,13 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
+        // This route is polled. A job still running must be read fresh each
+        // time, so it opts out of the public-read cache policy; a finished
+        // one no longer changes and takes the default.
+        if (job.status !== "complete" && job.status !== "failed") {
+          reply.header("cache-control", "no-store");
+        }
+
         return reply.send({
           id: job.id,
           type: job.type,

@@ -20,12 +20,14 @@ const mocks = vi.hoisted(() => ({
     entryId: "charge-1",
   })),
   attachChargeContribution: vi.fn(async () => {}),
+  getClaimById: vi.fn(),
+  addArgument: vi.fn(),
 }));
 
 // The claims route module pulls in the whole read stack; stub every service
 // import so registering the routes needs no database.
 vi.mock("../../../src/services/claim-service.js", () => ({
-  getClaimById: vi.fn(),
+  getClaimById: mocks.getClaimById,
   listClaims: vi.fn(),
   proposeClaim: mocks.proposeClaim,
 }));
@@ -43,7 +45,7 @@ vi.mock("../../../src/services/tree-service.js", () => ({
   listClaimDependents: vi.fn(),
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
-  addArgument: vi.fn(),
+  addArgument: mocks.addArgument,
   getArgumentsForClaim: vi.fn(),
 }));
 vi.mock("../../../src/services/source-service.js", () => ({
@@ -320,6 +322,43 @@ describe("write-surface governance (#157)", () => {
       expect(res.json().status).toBe("pending_review");
       expect(mocks.submitSource).not.toHaveBeenCalled();      expect(mocks.gateContributor).toHaveBeenCalledWith(
         expect.anything(), expect.anything(), { priced: true });
+    });
+  });
+
+  // PATCH /claims/:claim_id writes an argument onto the live claim with no
+  // review or attribution: only direct service seeding may use it.
+  describe("PATCH /claims/:claim_id", () => {
+    const CLAIM_ID = "11111111-1111-1111-1111-111111111111";
+    const payload = { argument: { stance: "for", content: "Because." } };
+
+    beforeEach(() => {
+      mocks.addArgument.mockReset().mockResolvedValue({
+        id: "22222222-2222-2222-2222-222222222222",
+        claimId: CLAIM_ID,
+        stance: "for",
+        content: "Because.",
+        evidenceUrls: [],
+        createdBy: "service",
+        createdAt: new Date("2026-07-16T00:00:00.000Z"),
+      });
+      mocks.getClaimById.mockReset().mockResolvedValue({ id: CLAIM_ID });
+    });
+
+    for (const [who, auth] of [["a user API key", userAuth], ["a web-BFF session", sessionAuth]] as const) {
+      it(`refuses ${who} and points it at the reviewed path, writing nothing`, async () => {
+        const app = await buildTestApp(auth);
+        const res = await app.inject({ method: "PATCH", url: `/claims/${CLAIM_ID}`, payload });
+        expect(res.statusCode).toBe(403);
+        expect(res.json().error.code).toBe("USE_CONTRIBUTION");
+        expect(mocks.addArgument).not.toHaveBeenCalled();
+      });
+    }
+
+    it("still lets direct service seeding write the argument", async () => {
+      const app = await buildTestApp(serviceAuth);
+      const res = await app.inject({ method: "PATCH", url: `/claims/${CLAIM_ID}`, payload });
+      expect(res.statusCode).toBe(200);
+      expect(mocks.addArgument).toHaveBeenCalledTimes(1);
     });
   });
 });

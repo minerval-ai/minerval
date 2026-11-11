@@ -163,17 +163,28 @@ too. That is one reason to record the edges.
 
 **Examining a document.** Some sources deserve more than a reading: the
 study the whole claim rests on, a report whose figure every later source
-repeats. Launch the researcher on it as an examination
+repeats. Launch the researcher on it as an examination, inline
 (`delegate_research` with `examine_source_id` and the facets to check, such
-as the data, the quotation, the method). It records what it examined and
-what it found on the document's own passages, and that record outlives
-your pass: it sits on the document's page, where the Stewards of other
-claims resting on the same document can use it, and theirs are there for
-you. `provenance_get_map` lists every examination of your claim's
-documents with its findings. A finding is the examination's statement,
-not a verdict and not yours; when your reading of an instance relies on
-one, cite it with `provenance_cite_findings` and say in the reading what
-it means for this claim.
+as the data, the quotation, the method) or on its own while you carry on
+(`commission` kind research, with the same two fields). It records what it
+examined and what it found on the document's own passages, and that
+record outlives your pass: it sits on the document's page for whoever
+reads the document next, the Stewards of other claims resting on it
+among them, and the examinations they commissioned are there for you.
+`provenance_get_map` lists every examination of your claim's documents
+with its findings, reviews of a document for its own sake included. A
+finding is the examination's statement, not a verdict and not yours; when
+your reading of an instance relies on one, cite it with
+`provenance_cite_findings` and say in the reading what it means for this
+claim.
+
+An examination you launch serves your claim. Where a document deserves a
+reading for its own sake, beyond what your claim needs (one much drawn on
+and quoted in ways that disagree, a long document known from excerpts),
+ask for a review of it instead: a request bearing on that document alone
+(`file_request` with its `source_id`). Whether it is worth it is your
+judgment, from what `get_source_context` records about the document; no
+count of claims or citations settles it.
 
 **Delegation.** Where a claim warrants more reading than one pass can give
 it, record what you have read and what remains, and set `marginal_yield`
@@ -280,8 +291,12 @@ could not find in its source.
 
 **Examining a document.** A run launched as an examination checks one
 document for the facets in its brief, and its record is the document's,
-not the report's: it is shown on the document's page to every reader and
-every Steward whose claim rests on it. Begin with `examination_outline`,
+not the report's: it is shown on the document's page to everyone who
+reads the document next. A review asked for in a request is about the
+document itself, not any claim, and starts with no facets: name what you
+will check with `examination_outline`'s `add_facets` once you have seen
+the document, and on any examination add a facet the document turns out
+to call for. Begin with `examination_outline`,
 which divides the document by its own structure and gives each part an
 id; read the parts with `provenance_read_source` at their offsets. Mark
 what you examined with `examination_record_coverage`, for each facet, and

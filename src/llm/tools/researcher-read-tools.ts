@@ -4,8 +4,8 @@
  * requests. The prompt tells the researcher not to spend budget
  * re-establishing what the graph records; these are how it finds out. All
  * read-only and free beyond their tokens, the same reads outside callers
- * have over MCP (get_source, get_source_examinations, get_request,
- * list_requests).
+ * have over MCP (get_source, get_source_examinations, get_source_context,
+ * get_request, list_requests).
  *
  * Who funded a request is left out, as list_requests leaves it out for the
  * agents that judge requests: the researcher works a request without being
@@ -50,6 +50,7 @@ const SOURCE_TOOLS: Tool[] = [
       additionalProperties: false,
     },
   },
+  getRequestToolDefinitions("researcher").find((t) => t.name === "get_source_context")!,
 ];
 
 const GET_REQUEST_TOOL: Tool = {
@@ -108,7 +109,8 @@ export function createResearcherReadTools(options: { requests: boolean }): Resea
         request: { ...rest, work: work.map(({ funded_by: _funded, ...w }) => w) },
       });
     }
-    // list_requests: the kind tools' executor, which already leaves funders out.
+    // list_requests and get_source_context: the kind tools' executor, which
+    // already leaves funders out.
     return (await executeKindTool(name, input, { role: "researcher" }))!;
   };
 

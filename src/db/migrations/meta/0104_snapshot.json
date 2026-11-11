@@ -1,5 +1,5 @@
 {
-  "id": "06972054-0bce-4088-9c89-4356b5a10972",
+  "id": "fcfd7bfb-27f4-4a78-a135-a00c90f46e08",
   "prevId": "039c2b9e-fc74-434d-9215-5b6c2eaa454f",
   "version": "7",
   "dialect": "postgresql",
@@ -2310,6 +2310,87 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.argument_evidence_backlog": {
+      "name": "argument_evidence_backlog",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "argument_id": {
+          "name": "argument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_argument_evidence_backlog_url": {
+          "name": "idx_argument_evidence_backlog_url",
+          "columns": [
+            {
+              "expression": "argument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "argument_evidence_backlog_argument_id_arguments_id_fk": {
+          "name": "argument_evidence_backlog_argument_id_arguments_id_fk",
+          "tableFrom": "argument_evidence_backlog",
+          "tableTo": "arguments",
+          "columnsFrom": [
+            "argument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.argument_instances": {
       "name": "argument_instances",
       "schema": "",
@@ -2680,6 +2761,12 @@
           "notNull": true,
           "default": "'{}'"
         },
+        "lean_check_id": {
+          "name": "lean_check_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -2741,6 +2828,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "arguments_lean_check_id_lean_checks_id_fk": {
+          "name": "arguments_lean_check_id_lean_checks_id_fk",
+          "tableFrom": "arguments",
+          "tableTo": "lean_checks",
+          "columnsFrom": [
+            "lean_check_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "arguments_merged_into_arguments_id_fk": {
@@ -10010,6 +10110,13 @@
           "notNull": true,
           "default": 14
         },
+        "daily_ingest_cap": {
+          "name": "daily_ingest_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
         "ingest_focus": {
           "name": "ingest_focus",
           "type": "text",
@@ -10389,6 +10496,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "max_value": {
+          "name": "max_value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 6
+        },
         "commission_limit_micro_usd": {
           "name": "commission_limit_micro_usd",
           "type": "bigint",
@@ -10415,6 +10529,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "max_ingests_per_run": {
+          "name": "max_ingests_per_run",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 3
         },
         "workspace": {
           "name": "workspace",
@@ -10537,6 +10658,10 @@
         "ck_lookouts_status": {
           "name": "ck_lookouts_status",
           "value": "\"lookouts\".\"status\" IN ('active', 'paused', 'retired')"
+        },
+        "ck_lookouts_max_value": {
+          "name": "ck_lookouts_max_value",
+          "value": "\"lookouts\".\"max_value\" >= 0 AND \"lookouts\".\"max_value\" <= 10"
         },
         "ck_lookouts_heartbeat": {
           "name": "ck_lookouts_heartbeat",

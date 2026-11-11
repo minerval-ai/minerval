@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { apiConfigured, fetchSetupParts } from "@/lib/api";
 import type { SetupPart } from "@/lib/types";
+import { PageHead } from "@/components/PageHead";
 
 // Every version of every part of the setups agent runs have run under
 // (#552 groundwork): the constitution, each role prompt, each tool. A
@@ -45,17 +46,19 @@ export default async function SetupPage() {
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: "1rem" }}>
-        <Link href="/docs">← docs</Link>
-      </p>
-      <h1>Setup versions</h1>
-      <p className="lede" style={{ fontSize: "1.05rem" }}>
-        Every agent run records the setup it ran under: the constitution, its role prompt,
-        its tools and its model settings. Each distinct text gets a version number the first
-        time it runs, and the number never changes. The constitution and the role prompts are
-        shown in full, with their source at the commit they first ran under. Tools are
-        listed by version; their text will be published with the run viewer.
-      </p>
+      <PageHead
+        back={{ href: "/docs", label: "docs" }}
+        title="Setup versions"
+        lede={
+          <>
+            Every agent run records the setup it ran under: the constitution, its role prompt,
+            its tools and its model settings. Each distinct text gets a version number the first
+            time it runs, and the number never changes. The constitution and the role prompts are
+            shown in full, with their source at the commit they first ran under. Tools are
+            listed by version; their text will be published with the run viewer.
+          </>
+        }
+      />
 
       {parts.length === 0 ? (
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)" }}>

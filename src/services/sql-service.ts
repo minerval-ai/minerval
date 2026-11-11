@@ -138,6 +138,47 @@ function walk(node: unknown, visit: (key: string, value: Record<string, unknown>
   }
 }
 
+/**
+ * Call `visit` on every relation a query reads, with the CTE names visible
+ * at that point. Postgres resolves an unqualified name to a CTE only where
+ * the WITH clause is in scope: the query it is attached to (set operations
+ * included), later CTEs of the same list, and a CTE's own body only under
+ * RECURSIVE. Anywhere else the same name falls through to pg_catalog,
+ * which is always searched. A name declared in one subquery must not
+ * excuse the same name in another.
+ */
+function scanRelations(
+  node: unknown,
+  scope: ReadonlySet<string>,
+  visit: (rangeVar: Record<string, unknown>, scope: ReadonlySet<string>) => void
+): void {
+  if (Array.isArray(node)) {
+    for (const n of node) scanRelations(n, scope, visit);
+    return;
+  }
+  if (!node || typeof node !== "object") return;
+  const obj = node as Record<string, unknown>;
+  const withClause = obj.withClause as { ctes?: unknown[]; recursive?: boolean } | undefined;
+  let inner = scope;
+  if (withClause && Array.isArray(withClause.ctes)) {
+    const ctes = withClause.ctes
+      .map((c) => (c as { CommonTableExpr?: Record<string, unknown> }).CommonTableExpr)
+      .filter((c): c is Record<string, unknown> => !!c);
+    const declared = ctes.map((c) => String(c.ctename ?? "").toLowerCase());
+    ctes.forEach((cte, i) => {
+      const visible = new Set(scope);
+      for (const n of withClause.recursive ? declared : declared.slice(0, i)) visible.add(n);
+      scanRelations(cte.ctequery, visible, visit);
+    });
+    inner = new Set([...scope, ...declared]);
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === "withClause") continue;
+    if (key === "RangeVar" && value && typeof value === "object") visit(value as Record<string, unknown>, inner);
+    scanRelations(value, inner, visit);
+  }
+}
+
 function names(list: unknown): string[] {
   return Array.isArray(list)
     ? list.map((n) => ((n as { String?: { sval?: string } }).String?.sval ?? "").toLowerCase())
@@ -160,12 +201,13 @@ export async function checkQuery(sql: string): Promise<void> {
   if (stmts.length !== 1 || !stmts[0]!.stmt.SelectStmt) {
     throw new SqlRefusal("NOT_A_QUERY", "Only a single SELECT (or WITH … SELECT) runs here. Nothing was run.");
   }
-  const ctes = new Set<string>();
-  walk(stmts[0]!.stmt, (key, value) => {
-    if (key === "CommonTableExpr" && typeof value.ctename === "string") ctes.add(value.ctename.toLowerCase());
-  });
   const problems: string[] = [];
   walk(stmts[0]!.stmt, (key, value) => {
+    // Defence in depth: a CTE can't take a catalog name, so even a scoping
+    // mistake below could never let a pg_ relation through.
+    if (key === "CommonTableExpr" && String(value.ctename ?? "").toLowerCase().startsWith("pg_")) {
+      problems.push(`a WITH name can't begin with pg_ (${String(value.ctename)})`);
+    }
     if (key === "InsertStmt" || key === "UpdateStmt" || key === "DeleteStmt" || key === "MergeStmt") {
       problems.push("statements that write (even inside WITH) aren't allowed");
     }
@@ -181,12 +223,12 @@ export async function checkQuery(sql: string): Promise<void> {
         problems.push(`the function ${fn.join(".")} isn't available here`);
       }
     }
-    if (key === "RangeVar") {
-      const rel = String(value.relname ?? "").toLowerCase();
-      const schema = value.schemaname ? String(value.schemaname).toLowerCase() : null;
-      const ok = schema ? schema === "public_read" && (SQL_VIEWS as readonly string[]).includes(rel) : (SQL_VIEWS as readonly string[]).includes(rel) || ctes.has(rel);
-      if (!ok) problems.push(`${schema ? `${schema}.` : ""}${rel} isn't one of the views (the sql skill lists them)`);
-    }
+  });
+  scanRelations(stmts[0]!.stmt, new Set(), (value, ctes) => {
+    const rel = String(value.relname ?? "").toLowerCase();
+    const schema = value.schemaname ? String(value.schemaname).toLowerCase() : null;
+    const ok = schema ? schema === "public_read" && (SQL_VIEWS as readonly string[]).includes(rel) : (SQL_VIEWS as readonly string[]).includes(rel) || ctes.has(rel);
+    if (!ok) problems.push(`${schema ? `${schema}.` : ""}${rel} isn't one of the views (the sql skill lists them)`);
   });
   if (problems.length > 0) {
     throw new SqlRefusal("NOT_ALLOWED", `Nothing was run: ${[...new Set(problems)].join("; ")}.`);

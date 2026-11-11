@@ -10,6 +10,7 @@ import { claimTypeMeta, DEFINED_IN } from "@/lib/ontology";
 import { StatusBadge, Unassessed } from "@/components/Assessment";
 import { MachineChecked } from "@/components/claim/MachineChecked";
 import { Term } from "@/components/Term";
+import { PageHead } from "@/components/PageHead";
 
 // The prize listing (docs/mathematics.md §8.3, §11.1): every open bounty
 // across the graph, largest first, from GET /prizes. A browse surface, not a
@@ -29,16 +30,19 @@ export default async function PrizesPage() {
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Prizes</p>
-      <h1>Open prizes</h1>
-      <p className="lede" style={{ fontSize: "1.05rem" }}>
-        Each prize is offered for a Lean 4 proof or disproof of one claim&rsquo;s
-        published formal statement, checked by a machine against Mathlib at a
-        pinned revision and reviewed by the claim&rsquo;s steward for whether the
-        statement proved is the statement posted. Offering a prize does not
-        change how a claim is assessed or how important the graph judges it to
-        be; it says only that someone would like the question settled.
-      </p>
+      <PageHead
+        title="Open prizes"
+        lede={
+          <>
+            Each prize is offered for a Lean 4 proof or disproof of one claim&rsquo;s
+            published formal statement, checked by a machine against Mathlib at a
+            pinned revision and reviewed by the claim&rsquo;s steward for whether the
+            statement proved is the statement posted. Offering a prize does not
+            change how a claim is assessed or how important the graph judges it to
+            be; it says only that someone would like the question settled.
+          </>
+        }
+      />
       <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-1rem" }}>
         {PRIZE_PAYMENT_SENTENCE}{" "}
         <Link href="/prizes/rules">The rules →</Link>

@@ -733,15 +733,36 @@
     {
       "idx": 104,
       "version": "7",
-      "when": 1794334517840,
-      "tag": "0104_drop_retired_lookout_columns",
+      "when": 1794343284832,
+      "tag": "0104_argument_lean_check_and_evidence_backlog",
       "breakpoints": true
     },
     {
       "idx": 105,
       "version": "7",
-      "when": 1794334887010,
-      "tag": "0105_public_plan_items",
+      "when": 1794343286490,
+      "tag": "0105_drop_argument_evidence_urls",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1794347735456,
+      "tag": "0106_document_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1794365395493,
+      "tag": "0107_drop_retired_lookout_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1794365396920,
+      "tag": "0108_public_plan_items",
       "breakpoints": true
     }
   ]

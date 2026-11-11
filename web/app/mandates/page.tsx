@@ -6,6 +6,7 @@ import {
   type MandateSummaryView,
 } from "../../lib/account-api";
 import { OwlMark } from "../../components/OwlMark";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = {
   title: "Mandates · Minerval",
@@ -77,7 +78,7 @@ export default async function MandatesPage() {
   if (!accountApiConfigured()) {
     return (
       <div className="col">
-        <h1>Mandates</h1>
+        <PageHead title="Mandates" />
         <p>The frontend is not connected to a Minerval API.</p>
       </div>
     );
@@ -94,19 +95,22 @@ export default async function MandatesPage() {
 
   return (
     <div className="col-wide account">
-      <p className="claim-eyebrow">directing the graph&rsquo;s attention</p>
-      <h1>Mandates</h1>
-      <p style={{ maxWidth: "44rem" }}>
-        A mandate is a funded program of work on the graph: claims to assess,
-        subtrees to deepen, sources to bring in, areas to keep fresh. Each is
-        stewarded by its own Grantmaker agent, which reviews its territory,
-        grows its plan, posts cheap lookouts to keep watch between its
-        passes, and can put budget behind peer mandates; its funder steers
-        it in conversation. And each is public: anyone can put owls
-        behind a mandate they want to see go further. Unspent budgets return
-        to everyone who funded them, and funding buys scheduling only, never
-        conclusions.
-      </p>
+      <PageHead
+        title="Mandates"
+        lede={
+          <>
+            A mandate is a funded program of work on the graph: claims to assess,
+            subtrees to deepen, sources to bring in, areas to keep fresh. Each is
+            stewarded by its own Grantmaker agent, which reviews its territory,
+            grows its plan, posts cheap lookouts to keep watch between its
+            passes, and can put budget behind peer mandates; its funder steers
+            it in conversation. And each is public: anyone can put owls
+            behind a mandate they want to see go further. Unspent budgets return
+            to everyone who funded them, and funding buys scheduling only, never
+            conclusions.
+          </>
+        }
+      />
       <p className="order-line">
         <Link href="/account/grants/new">start your own mandate →</Link>
       </p>

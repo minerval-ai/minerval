@@ -223,7 +223,6 @@ export const claimDetailResponse = z.object({
         id: uuidSchema,
         stance: stanceEnum,
         content: z.string(),
-        evidence_urls: z.array(z.string()),
         created_by: z.string(),
         created_at: z.string(),
         // Steward evaluation of the inference (issues #173, #540): how far

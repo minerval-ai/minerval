@@ -211,7 +211,8 @@ subclaim belongs to which line of reasoning. An argument has a `stance` (`for`
 or `against`: its conclusion is the claim or the claim's denial; older rows may
 carry `neutral`, which Stewards no longer record), an optional `name` and
 `description` (a short label),
-its `content` (the written form, below), any `evidence_urls`, and provenance.
+its `content` (the written form, below), its Lean check where it is machine-checked (`lean_check_id`), and provenance:
+the places sources make it are its instances (`argument_instances`, #541).
 
 **The written form.** A name is not an argument: the grouping records *which*
 subclaims belong together, but not *how* they combine to bear on the parent
@@ -1186,7 +1187,7 @@ deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
-`get_argument`, `get_source`, `get_source_examinations`, and on a request or scoping run
+`get_argument`, `get_source`, `get_source_examinations`, `get_source_context`, and on a request or scoping run
 `get_request` and `list_requests`, without who funded the work), the issue
 tools every agent carries (`raise_issue` and its companions), the
 Elicit search tools and the Pangram tools (`pangram_check_ai`,
@@ -1239,6 +1240,26 @@ whatever the request bears on. A scoping run does not do the work and
 records nothing. Each run on a request opens with the latest earlier run's
 notebook and report, so a programme carried out in stages begins each
 stage where the last stopped.
+
+**Document reviews (#865).** An examination of a document is claim-scoped
+when a Steward launches it on a document in its claim's map, inline
+(`delegate_research` with `examine_source_id`) or on its own (`commission`
+kind research with `examine_source_id`). A review of a document for its
+own sake is a request that bears on that document and on no node
+(`documentUnderReview`, `src/services/request-service.ts`): anyone may file
+one, the Curator keeps it, and a mandate funds it or not like any request.
+Nothing files or buys one automatically, and there is no candidacy
+threshold: whether a document deserves a review is the filer's judgment,
+made from what `get_source_context` records about it (lineage, prominence,
+the reviews it has had and the requests on it), and the Curator can read
+the documents the graph rests on, sorted by whichever figure it chooses,
+with `list_documents_for_review`. The full work on such a request opens a
+`scope = 'document'`, `trigger = 'request'` examination linked to the
+request (`examinations.request_id`), and every stage records onto that
+one examination. It starts with no facets; the researcher names them with
+`examination_outline`'s `add_facets` once it has seen the document. The
+findings go on the document's page; each claim's Steward cites them in its
+own reading or does not, and there is no source-level verdict.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both
@@ -1708,11 +1729,99 @@ contributions (HTTP 202) for the Contribution Reviewer, and only direct
 service callers — internal seeding — keep the immediate path. Interactive OpenAPI documentation is served at `/docs` on the
 API host.
 
+The public reads are open to browsers anywhere, not only to this site: they
+answer `access-control-allow-origin: *`, so another site can embed claim data
+by calling the API from the page. A read asked without credentials may be
+reused for a short time (`cache-control: public, max-age=60,
+stale-while-revalidate=300`) and carries an `ETag`, so an anonymous reader can
+be about a minute behind the graph; a request that presents a key is never
+cached and is always answered fresh.
+
+Requests without credentials are limited to 300 requests per minute per IP
+address, and past that the answer is a 429 that restates the limit. Everything
+else here is bounded by an account's budget; an anonymous caller has no account
+or budget to bound it, so a count per address is the only measure there is.
+Requests that present a key are not subject to this limit.
+
+**The claim card.** `GET /claims/:claim_id/card` answers with the graph's
+judgment of one node, whole, in a small fixed shape for a site that embeds
+a claim or an agent that reports where one stands: `id`, `kind`, `text`,
+`state`, `assessment_status`, `assessment_confidence` (how sure the Steward
+is of the status, or of a question's standing; not the probability that the
+claim is true), `standing` (a question's), `estimate` and `unit` (a
+quantity's), `contestation`, `assessed_at`, `updated_at` and `page_url`.
+Every key is always present. An unassessed node is not an error: its
+judgment fields are null. The card leaves out the reasoning, arguments,
+sources and tree, which `GET /claims/:claim_id` serves; it does not leave
+out any part of the judgment, because a status is reported with its
+confidence and the claim's contestation beside it.
+
+`GET /claims/cards?ids=<uuid>,<uuid>,...` reads up to 100 cards in one
+request and one query. It answers `{cards, not_found}`: the cards in the
+order asked (a repeated id once), and the ids the graph does not hold named
+in `not_found` rather than dropped. More than 100 ids, or an id that is not
+a uuid, is a 400.
+
+**Partial responses.** Every GET route that answers with a JSON object
+takes `fields`, a comma-separated list of dotted paths, and prunes its
+response to them: `GET /claims/:id?fields=claim.text,assessment.status,assessment.confidence`.
+A path selects the value at it, whole. A path through a list applies to
+each item (`fields=results.id,results.text`), and items keep their
+positions. A path that matches nothing is left out, and a null on the way
+is kept as null, so `assessment.status` on an unassessed claim answers
+`{"assessment": null}`. Without `fields` the response is unchanged.
+Malformed input (an empty path, a character outside letters, digits, `_`
+and `-`, the parameter given twice, more than 2,000 characters) is a 400 in
+the usual error envelope. It is one mechanism
+(`src/server/plugins/partial-response.ts`), not something each route
+implements: the paths select from what the route's response schema serves,
+and pruning happens before the body is serialized, so anything computed
+from the response bytes sees the pruned body. It does not apply to other
+methods, to error responses, or to responses that are not JSON objects
+(BibTeX and CSL citations, the nanopublication, s(CASP) and MIRA exports,
+Lean source, Atom feeds, attachments). Trimming a response is the caller's
+choice of what to carry, not of what to report: a caller that will report a
+status should keep the confidence and contestation that go with it.
+
 ### The web app
 
 This site, a Next.js app at `minerval.ai`. It talks to the API server-side
 with a service key, forwarding the signed-in user's identity through an
 acting-user header, so browser traffic never carries API credentials.
+
+### Embeds
+
+A claim can be shown on another site with the graph's judgment of it. The
+web app serves every form of embed, each from one read of the claim card,
+so each reports the judgment whole: a claim's status with its verdict
+confidence, a question's standing with its confidence, or a quantity's
+estimate; dispute beside it when the claim's contestation reaches the
+thresholds the claim page uses; an unassessed node as unassessed. Every
+embed links to the claim's page and is dated, because embeds are cached and
+screenshotted.
+
+- **The card page**, `/embed/claims/<id>`: the card alone, with none of the
+  site's navigation, as one self-contained document that fetches nothing. It
+  follows the viewer's colour scheme unless `?theme=light` or `?theme=dark`
+  is given, fits widths from about 280px, says "as of" the date it was
+  served, and is marked `noindex`. It tells a framing page its height with a
+  `minerval:embed:height` message (`{type, id, height}`). `/embed/*` is the
+  only part of the site that declares it may be framed from any origin.
+- **The script embed**, `/embed.js`: a small dependency-free script that
+  replaces each `<blockquote class="minerval-claim" data-claim-id="<id>">`
+  holding a link to the claim's page with an iframe of the card page, and
+  keeps the iframe as tall as the card. `data-theme` passes through. Where
+  the script does not run, the quotation and its link remain.
+- **oEmbed**, `/oembed?url=<claim page URL>&format=json`: a `rich` response
+  whose `html` is the iframe, with `maxwidth` and `maxheight` honoured. A URL
+  that is not a claim page, or a claim the graph does not hold, is a 404;
+  `format=xml` is a 501.
+- **The badge**, `/embed/claims/<id>/badge.svg`: the judgment in one line as
+  a self-contained SVG for a README, e.g. `minerval | supported · 0.80 ·
+  disputed`, in the site's status colours, cached for ten minutes.
+
+A claim's page offers the three snippets under "Embed this claim", beside
+"Cite this claim".
 
 ### The browser extension
 
