@@ -66,10 +66,11 @@ in general. For a specific question, go to the section:
 | Why a claim has subclaims; what a decomposition shows | §6 |
 | Arguments for and against; machine-checked proofs | §7 |
 | Questions and their standing (answered, leaning, open, ill-posed) | §7a |
-| How a claim is assessed; consensus versus evidence | §9 |
+| How a claim is assessed; consensus versus evidence; a source's interest | §9 |
 | The statuses, verdict confidence, credence, estimates for quantities | §10 |
 | Why every verdict carries its reasoning | §11 |
 | How contributions are judged; good faith; bad-faith findings | §13, §14 |
+| An organization's stated view on a claim, as an instance | §4 |
 | Manipulation and why openness is the defense | §15 |
 | Political neutrality; representing disagreement | §17, §18 |
 | Importance, contestation, and what paid attention buys | §19 |

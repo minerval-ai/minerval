@@ -211,7 +211,8 @@ export async function getClaimById(claimId: string) {
  * a reader sees them: the Steward's ranks, then the provenance story's
  * order, then the date of the statement. Each carries its stance, so a
  * reader can tell the sources that take a side from those that pose the
- * claim or only mention it.
+ * claim or only mention it, and the interest recorded for its source on
+ * this claim (§9), null where none is.
  */
 export async function getClaimInstances(claimId: string) {
   const rows = await listOrderedClaimInstances(claimId);
@@ -224,6 +225,7 @@ export async function getClaimInstances(claimId: string) {
     confidence: r.confidence,
     source_title: r.source_title,
     source_url: r.source_url,
+    source_interest: r.source_interest,
   }));
 }
 

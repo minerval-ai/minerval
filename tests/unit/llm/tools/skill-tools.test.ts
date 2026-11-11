@@ -48,6 +48,7 @@ describe("skill tool registry", () => {
       "provenance_record_source_relationship",
       "provenance_write_map",
       "publish_formalization",
+      "record_source_interest",
     ]);
     expect(isSkillTool("lean_search")).toBe(true);
     expect(isSkillTool("provenance_get_map")).toBe(true);

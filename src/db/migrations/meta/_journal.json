@@ -841,6 +841,13 @@
       "when": 1794422362522,
       "tag": "0119_session_private_reasons",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1794423133370,
+      "tag": "0120_source_interests",
+      "breakpoints": true
     }
   ]
 }
