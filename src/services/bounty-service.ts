@@ -1406,7 +1406,7 @@ export async function listOpenBounties(opts: {
             ${checkedKindSql("c.id")} AS checked
        FROM bounties b
        JOIN claims c ON c.id = b.claim_id
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE b.status IN ('open', 'claim_pending')
       ORDER BY b.amount_micro_usd DESC, b.opened_at ASC
       LIMIT $1 OFFSET $2`,

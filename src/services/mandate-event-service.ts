@@ -58,9 +58,9 @@ const CHILDREN_SQL = (node: string) => `jsonb_build_object(
      'children_unassessed', (SELECT COUNT(*) FROM claim_relationships cr
                                JOIN claims ch ON ch.id = cr.child_claim_id AND ch.state = 'active'
                               WHERE cr.parent_claim_id = ${node}.claim_id
-                                AND NOT EXISTS (SELECT 1 FROM assessments x WHERE x.claim_id = ch.id AND x.is_current)
-                                AND NOT EXISTS (SELECT 1 FROM quantity_estimates q WHERE q.claim_id = ch.id AND q.is_current)
-                                AND NOT EXISTS (SELECT 1 FROM question_assessments qa WHERE qa.claim_id = ch.id AND qa.is_current)),
+                                AND NOT EXISTS (SELECT 1 FROM assessments_in_force x WHERE x.claim_id = ch.id)
+                                AND NOT EXISTS (SELECT 1 FROM quantity_estimates_in_force q WHERE q.claim_id = ch.id)
+                                AND NOT EXISTS (SELECT 1 FROM question_assessments_in_force qa WHERE qa.claim_id = ch.id)),
      'children_deferred', (SELECT COUNT(*) FROM claim_relationships cr
                              JOIN claims ch ON ch.id = cr.child_claim_id AND ch.state = 'active'
                             WHERE cr.parent_claim_id = ${node}.claim_id AND ch.steward_state = 'deferred'))`;
@@ -94,11 +94,11 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
                                    'outcome', x.outcome) || ${CHILDREN_SQL("x")}
            FROM grants g
            JOIN (
-             SELECT id, claim_id, funded_by_job_id, assessed_at, status AS outcome FROM assessments WHERE is_current
+             SELECT id, claim_id, funded_by_job_id, assessed_at, status AS outcome FROM assessments_in_force
              UNION ALL
-             SELECT id, claim_id, funded_by_job_id, assessed_at, LEFT(summary, 160) FROM quantity_estimates WHERE is_current
+             SELECT id, claim_id, funded_by_job_id, assessed_at, LEFT(summary, 160) FROM quantity_estimates_in_force
              UNION ALL
-             SELECT id, claim_id, funded_by_job_id, assessed_at, standing FROM question_assessments WHERE is_current
+             SELECT id, claim_id, funded_by_job_id, assessed_at, standing FROM question_assessments_in_force
            ) x ON x.assessed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND x.assessed_at <= $3
            JOIN claims c ON c.id = x.claim_id
           WHERE g.id = $1 AND ${INTEREST_SQL("x")}

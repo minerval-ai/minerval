@@ -134,7 +134,7 @@ export async function allocationSchedulerTick(
               FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at)) / 86400)::int
                 AS days_old
          FROM claims c
-         JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+         JOIN assessments_in_force a ON a.claim_id = c.id
         WHERE c.state = 'active'
           AND c.steward_state = 'done'
           AND a.assessed_at < now() - make_interval(days =>

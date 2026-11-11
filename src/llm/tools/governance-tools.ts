@@ -646,7 +646,7 @@ async function getClaimDependents(claimId: string) {
             a.status, a.confidence, a.claim_credence AS credence
        FROM quantity_cuts qc
        JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE qc.quantity_id = $1
       ORDER BY c.importance DESC, c.id`,
     [claimId]

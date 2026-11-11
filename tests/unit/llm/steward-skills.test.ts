@@ -374,7 +374,7 @@ describe("Steward pass task by trigger", () => {
     const { rawQuery } = await import("../../../src/db/client.js");
     const mocked = vi.mocked(rawQuery);
     mocked.mockImplementation((async (sql: string) =>
-      opts.current && /is_current = true/.test(sql) ? [{ one: 1 }] : []) as never);
+      opts.current && /_in_force\b/.test(sql) ? [{ one: 1 }] : []) as never);
     try {
       mocks.claim = { id: CLAIM_ID, importance: 0.5, domains: opts.domains ?? [] };
       await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, () =>

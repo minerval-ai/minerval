@@ -505,14 +505,14 @@ async function kindJudgmentFields(
 ): Promise<Record<string, number | null>> {
   if (kind === "quantity") {
     const [row] = await rawQuery<{ marginal_yield: number | null }>(
-      `SELECT marginal_yield FROM quantity_estimates WHERE claim_id = $1 AND is_current = true`,
+      `SELECT marginal_yield FROM quantity_estimates_in_force WHERE claim_id = $1`,
       [claimId]
     ).catch(() => []);
     return { marginal_yield: row?.marginal_yield ?? null };
   }
   if (kind === "question") {
     const [row] = await rawQuery<{ confidence: number | null; marginal_yield: number | null }>(
-      `SELECT confidence, marginal_yield FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+      `SELECT confidence, marginal_yield FROM question_assessments_in_force WHERE claim_id = $1`,
       [claimId]
     ).catch(() => []);
     return { confidence: row?.confidence ?? null, marginal_yield: row?.marginal_yield ?? null };
@@ -552,9 +552,9 @@ async function listDirectSubclaims(claimId: string) {
             c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.child_claim_id
-     LEFT JOIN assessments a ON a.claim_id = cr.child_claim_id AND a.is_current = true
-     LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
-     LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
+     LEFT JOIN assessments_in_force a ON a.claim_id = cr.child_claim_id
+     LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
+     LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
      LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
      LEFT JOIN arguments arg ON arg.id = am.argument_id
      WHERE cr.parent_claim_id = $1

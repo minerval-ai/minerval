@@ -219,8 +219,8 @@ export async function getMandatePipeline(
        LEFT JOIN jobs j ON j.id = gs.job_id
        LEFT JOIN claim_instances ci ON ci.source_id = gs.source_id AND ci.detached_at IS NULL
        LEFT JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
-       LEFT JOIN assessments a
-         ON a.claim_id = ci.claim_id AND a.is_current = true
+       LEFT JOIN assessments_in_force a
+         ON a.claim_id = ci.claim_id
       WHERE gs.grant_id = $1
       GROUP BY gs.source_id, gs.url, s.title, gs.created_at, j.status
       ORDER BY gs.created_at ASC`,

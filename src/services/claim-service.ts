@@ -2,11 +2,11 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm
 import { getDb } from "../db/client.js";
 import {
   claims,
-  assessments,
+  assessmentsInForce,
   bounties,
   quantityDefinitions,
-  quantityEstimates,
-  questionAssessments,
+  quantityEstimatesInForce,
+  questionAssessmentsInForce,
   type NewClaim,
 } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -116,8 +116,8 @@ export async function listClaims(opts: {
   const filters = [isNull(claims.mergedInto)];
   filters.push(eq(claims.state, opts.state ?? "active"));
   // Same predicate as search's ASSESSED_SQL: each kind by its own table.
-  const hasVerdict = sql`(CASE ${claims.kind} WHEN 'question' THEN ${questionAssessments.id} IS NOT NULL
-    WHEN 'quantity' THEN ${quantityEstimates.id} IS NOT NULL ELSE ${assessments.status} IS NOT NULL END)`;
+  const hasVerdict = sql`(CASE ${claims.kind} WHEN 'question' THEN ${questionAssessmentsInForce.id} IS NOT NULL
+    WHEN 'quantity' THEN ${quantityEstimatesInForce.id} IS NOT NULL ELSE ${assessmentsInForce.status} IS NOT NULL END)`;
   if (opts.assessed === "assessed") filters.push(hasVerdict);
   else if (opts.assessed === "unassessed") filters.push(sql`NOT ${hasVerdict}`);
   if (opts.minImportance && opts.minImportance > 0) {
@@ -152,34 +152,25 @@ export async function listClaims(opts: {
       state: claims.state,
       importance: claims.importance,
       updated_at: claims.updatedAt,
-      standing: questionAssessments.standing,
-      estimate: quantityEstimates.estimate,
+      standing: questionAssessmentsInForce.standing,
+      estimate: quantityEstimatesInForce.estimate,
       unit: quantityDefinitions.unit,
-      assessment_status: assessments.status,
-      assessment_confidence: assessments.confidence,
+      assessment_status: assessmentsInForce.status,
+      assessment_confidence: assessmentsInForce.confidence,
       prize_micro_usd: bounties.amountMicroUsd,
       checked: sql<string | null>`${sql.raw(checkedKindSql(`"claims"."id"`))}`,
     })
     .from(claims)
-    .leftJoin(
-      assessments,
-      and(eq(assessments.claimId, claims.id), eq(assessments.isCurrent, true))
-    )
+    .leftJoin(assessmentsInForce, eq(assessmentsInForce.claimId, claims.id))
     // The live bounty, at most one per claim by the partial unique index.
     .leftJoin(
       bounties,
       and(eq(bounties.claimId, claims.id), inArray(bounties.status, [...LIVE_BOUNTY_STATUSES]))
     )
     // The kinds' verdicts, at most one current row each by partial unique index.
-    .leftJoin(
-      quantityEstimates,
-      and(eq(quantityEstimates.claimId, claims.id), eq(quantityEstimates.isCurrent, true))
-    )
+    .leftJoin(quantityEstimatesInForce, eq(quantityEstimatesInForce.claimId, claims.id))
     .leftJoin(quantityDefinitions, eq(quantityDefinitions.claimId, claims.id))
-    .leftJoin(
-      questionAssessments,
-      and(eq(questionAssessments.claimId, claims.id), eq(questionAssessments.isCurrent, true))
-    )
+    .leftJoin(questionAssessmentsInForce, eq(questionAssessmentsInForce.claimId, claims.id))
     .where(and(...filters))
     .orderBy(desc(claims.updatedAt), desc(claims.id))
     .limit(opts.limit + 1);

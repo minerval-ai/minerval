@@ -24,10 +24,10 @@ const Q = "11111111-1111-1111-1111-111111111111";
 describe("node judgment SQL", () => {
   it("reads each kind's own table", () => {
     for (const sql of [nodeMarginalYieldSql("c"), nodeAssessedAtSql("c")]) {
-      expect(sql).toMatch(/WHEN 'quantity' THEN \(SELECT j\.\w+ FROM quantity_estimates j/);
-      expect(sql).toMatch(/WHEN 'question' THEN \(SELECT j\.\w+ FROM question_assessments j/);
-      expect(sql).toMatch(/ELSE \(SELECT j\.\w+ FROM assessments j/);
-      expect(sql).toContain("j.claim_id = c.id AND j.is_current = true");
+      expect(sql).toMatch(/WHEN 'quantity' THEN \(SELECT j\.\w+ FROM quantity_estimates_in_force j/);
+      expect(sql).toMatch(/WHEN 'question' THEN \(SELECT j\.\w+ FROM question_assessments_in_force j/);
+      expect(sql).toMatch(/ELSE \(SELECT j\.\w+ FROM assessments_in_force j/);
+      expect(sql).toContain("WHERE j.claim_id = c.id");
     }
     expect(nodeMarginalYieldSql("c")).toContain("j.marginal_yield");
     expect(nodeAssessedAtSql("c")).toContain("j.assessed_at");

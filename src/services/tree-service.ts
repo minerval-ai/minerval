@@ -38,9 +38,9 @@ interface KindRowFields {
 }
 
 const NODE_KIND_SELECT_SQL = `c.kind AS node_kind, qe.estimate, qd.unit, qa.standing`;
-const NODE_KIND_JOIN_SQL = `LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+const NODE_KIND_JOIN_SQL = `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
          LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
-         LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true`;
+         LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
 
 interface MathRowFields {
   bounty_micro_usd?: number | string | null;
@@ -179,7 +179,7 @@ export async function getClaimTree(
             ${NODE_MATH_SELECT_SQL},
             ${NODE_KIND_SELECT_SQL}
        FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
        ${NODE_MATH_JOIN_SQL}
        ${NODE_KIND_JOIN_SQL}
       WHERE c.id = $1`,
@@ -219,11 +219,11 @@ export async function getClaimTree(
               alc.lean_check_submitted_by
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.child_claim_id
-         LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+         LEFT JOIN assessments_in_force a ON a.claim_id = c.id
          LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
          LEFT JOIN arguments arg ON arg.id = am.argument_id
-         LEFT JOIN argument_evaluations ae
-                ON ae.argument_id = am.argument_id AND ae.is_current = true
+         LEFT JOIN argument_evaluations_in_force ae
+                ON ae.argument_id = am.argument_id
          LEFT JOIN LATERAL ${argumentLeanCheckLateralSql("arg")} alc ON true
          ${NODE_MATH_JOIN_SQL}
          ${NODE_KIND_JOIN_SQL}
@@ -298,7 +298,7 @@ export async function getClaimDependents(claimId: string): Promise<DependentClai
             ${NODE_MATH_SELECT_SQL}
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.parent_claim_id
-     LEFT JOIN assessments a ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+     LEFT JOIN assessments_in_force a ON a.claim_id = cr.parent_claim_id
      ${NODE_MATH_JOIN_SQL}
      WHERE cr.child_claim_id = $1 AND c.state = 'active'
      ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text`,
@@ -352,8 +352,8 @@ export async function getTransitiveDependents(
               ${NODE_MATH_SELECT_SQL}
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.parent_claim_id
-         LEFT JOIN assessments a
-                ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+         LEFT JOIN assessments_in_force a
+                ON a.claim_id = cr.parent_claim_id
          ${NODE_MATH_JOIN_SQL}
         WHERE cr.child_claim_id = ANY($1) AND c.state = 'active'
         ORDER BY cr.parent_claim_id, c.importance DESC`,
@@ -406,7 +406,7 @@ export async function listClaimDependents(
             COUNT(*) OVER ()::text AS total
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.parent_claim_id
-     LEFT JOIN assessments a ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+     LEFT JOIN assessments_in_force a ON a.claim_id = cr.parent_claim_id
      ${NODE_MATH_JOIN_SQL}
      WHERE cr.child_claim_id = $1 AND c.state = 'active'
      ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text

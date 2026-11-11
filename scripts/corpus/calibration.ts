@@ -112,13 +112,13 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
       confidence: number;
       reasoning_trace: string;
     }>(
-      `SELECT status, confidence, reasoning_trace FROM assessments
-        WHERE claim_id = $1 AND is_current`,
+      `SELECT status, confidence, reasoning_trace FROM assessments_in_force
+        WHERE claim_id = $1`,
       [item.id]
     );
     const subclaims = await rawQuery<{ rel: string; text: string; status: string | null }>(
       `SELECT r.relation_type AS rel, c.text,
-              (SELECT status FROM assessments a WHERE a.claim_id = c.id AND a.is_current) AS status
+              (SELECT status FROM assessments_in_force a WHERE a.claim_id = c.id) AS status
          FROM claim_relationships r JOIN claims c ON c.id = r.child_claim_id
         WHERE r.parent_claim_id = $1`,
       [item.id]

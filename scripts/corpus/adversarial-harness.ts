@@ -71,7 +71,7 @@ export async function readClaimState(id: string): Promise<ClaimState | null> {
     `SELECT c.id, c.text, c.importance, a.status, a.claim_credence AS credence, a.confidence,
             a.summary, a.reasoning_trace, a.assessed_at
        FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE c.id = $1`,
     [id]
   );
@@ -127,7 +127,7 @@ export async function loadHolisticView(): Promise<Array<HolisticClaim & { id: st
   const tops = await rawQuery<{ id: string; text: string; importance: number; status: string | null; credence: number | null }>(
     `SELECT c.id, c.text, c.importance, a.status, a.claim_credence AS credence
        FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE c.state = 'active' AND EXISTS (SELECT 1 FROM claim_instances ci WHERE ci.claim_id = c.id)
       ORDER BY c.importance DESC, c.created_at ASC`
   );
@@ -136,7 +136,7 @@ export async function loadHolisticView(): Promise<Array<HolisticClaim & { id: st
     `SELECT r.parent_claim_id AS parent, r.relation_type AS relation, k.text, a.status
        FROM claim_relationships r
        JOIN claims k ON k.id = r.child_claim_id AND k.state = 'active'
-       LEFT JOIN assessments a ON a.claim_id = k.id AND a.is_current
+       LEFT JOIN assessments_in_force a ON a.claim_id = k.id
       WHERE r.parent_claim_id = ANY($1)`,
     [tops.map((t) => t.id)]
   );

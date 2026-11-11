@@ -108,7 +108,7 @@ limit.
 WITH settled AS (
   SELECT c.id, c.text, c.importance, a.status, a.confidence, a.claim_credence, a.assessed_at
     FROM claims c
-    JOIN assessments a ON a.claim_id = c.id AND a.is_current
+    JOIN assessments_in_force a ON a.claim_id = c.id
    WHERE c.state = 'active'
      AND a.status = ANY($1::text[])
      AND a.confidence >= $2
@@ -138,7 +138,7 @@ inconclusive_children AS (
     FROM claim_relationships cr
     JOIN settled s ON s.id = cr.parent_claim_id
     JOIN claims ch ON ch.id = cr.child_claim_id AND ch.state = 'active'
-    JOIN assessments ca ON ca.claim_id = ch.id AND ca.is_current AND ca.status = 'inconclusive'
+    JOIN assessments_in_force ca ON ca.claim_id = ch.id AND ca.status = 'inconclusive'
    WHERE cr.relation_type = 'requires'
    GROUP BY cr.parent_claim_id
 )
@@ -180,7 +180,7 @@ Parameters `$1` min. instances, `$2` limit.
 WITH inconclusive AS (
   SELECT c.id, c.text, c.importance, a.status, a.confidence, a.claim_credence, a.assessed_at
     FROM claims c
-    JOIN assessments a ON a.claim_id = c.id AND a.is_current
+    JOIN assessments_in_force a ON a.claim_id = c.id
    WHERE c.state = 'active' AND a.status = 'inconclusive'
 ),
 inst AS (

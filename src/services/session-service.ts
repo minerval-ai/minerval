@@ -505,7 +505,7 @@ export async function resumeMessages(
     ? [null]
     : await rawQuery<{ assessed_at: string | null; status: string | null; passes: number }>(
     `SELECT (SELECT MAX(assessed_at)::text FROM assessments WHERE claim_id = $1 AND assessed_at > $2::timestamptz) AS assessed_at,
-            (SELECT status FROM assessments WHERE claim_id = $1 AND is_current = true LIMIT 1) AS status,
+            (SELECT status FROM assessments_in_force WHERE claim_id = $1 LIMIT 1) AS status,
             (SELECT count(*)::int FROM agent_runs WHERE claim_id = $1 AND agent = 'steward' AND started_at > $2::timestamptz) AS passes`,
     [s.node_id, s.suspended_at ?? new Date().toISOString()]
   ).catch(() => [{ assessed_at: null, status: null, passes: 0 }]);

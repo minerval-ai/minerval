@@ -1148,17 +1148,17 @@ export async function executeManagementTool(
                 -- Each kind keeps its current assessment in its own table.
                 GREATEST(
                   a.assessed_at,
-                  (SELECT MAX(q.assessed_at) FROM quantity_estimates q
-                    WHERE q.claim_id = cl.id AND q.is_current = true),
-                  (SELECT MAX(qa.assessed_at) FROM question_assessments qa
-                    WHERE qa.claim_id = cl.id AND qa.is_current = true)
+                  (SELECT MAX(q.assessed_at) FROM quantity_estimates_in_force q
+                    WHERE q.claim_id = cl.id),
+                  (SELECT MAX(qa.assessed_at) FROM question_assessments_in_force qa
+                    WHERE qa.claim_id = cl.id)
                 ) AS assessed_at
            FROM claim_instances ci
            JOIN grant_sources gs
              ON gs.source_id = ci.source_id AND gs.grant_id = $1 AND ci.detached_at IS NULL
            JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
-           LEFT JOIN assessments a
-             ON a.claim_id = ci.claim_id AND a.is_current = true
+           LEFT JOIN assessments_in_force a
+             ON a.claim_id = ci.claim_id
           WHERE ci.source_id = $2
        )
        SELECT *, COUNT(*) OVER()::int AS total FROM linked
@@ -1193,8 +1193,8 @@ export async function executeManagementTool(
            JOIN claims cl
              ON cl.id = COALESCE(fa.claim_id, ci.claim_id)
             AND cl.state = 'active'
-           LEFT JOIN assessments a
-             ON a.claim_id = cl.id AND a.is_current = true
+           LEFT JOIN assessments_in_force a
+             ON a.claim_id = cl.id
           WHERE g.id = $1
        )
        SELECT COUNT(*)::int AS claims,
