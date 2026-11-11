@@ -20,6 +20,7 @@ const SUPPORT_LINE: Record<InstanceReading["support"], string | null> = {
   overstates: "The assertion outruns the source's own evidence.",
   understates: "The source's evidence would bear a stronger statement than it makes.",
   asserts_without_evidence: "Asserted without evidence of the source's own.",
+  evidence_not_shown: "The source reports a result from evidence it holds and has not published.",
   contradicts_own_evidence: "The source's own material cuts against its assertion.",
   unclear: null,
 };

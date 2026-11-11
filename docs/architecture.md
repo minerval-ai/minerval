@@ -542,7 +542,7 @@ say which in a given case (Part VIII, §9).
 Four tables carry it. `claim_instance_readings` is what the Steward concluded
 from opening one instance's source against the claim: `support`, whether the
 source's own evidence bears the assertion it makes (`supports`,
-`overstates`, `understates`, `asserts_without_evidence`,
+`overstates`, `understates`, `asserts_without_evidence`, `evidence_not_shown`,
 `contradicts_own_evidence`, `unclear`), which is explicitly not whether the
 claim is true; `deployment`, what the source is using the claim for; a
 reader-facing `note`; `worth_reading` with its reason; `source_read`, whether

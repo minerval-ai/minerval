@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "hash": "b7985803424a752871dbdfa176277d1a8e0b6ad55e083569a16b1847e81ddd48",
+  "hash": "68d7f765494e600ba4d60f4cde06f527bd0cf993dbf413e7a0add73782553b53",
   "constitution": {
-    "hash": "7cb39113b41e9682644685b16efe7a389d1431606cd2228f252b9f39b634bbaa",
+    "hash": "35c37da5d2887e26ced6f5c2e4c73d8d4592dafd49523cee0e1e3c7d3ea17856",
     "source_path": "admin_constitution.md"
   },
   "roles": [
@@ -132,8 +132,8 @@
     },
     {
       "name": "provenance",
-      "version": 6,
-      "hash": "50566f8ad97d03d7fe7264df4a2052cc4362a28d6a293710e68f52264d9873c1"
+      "version": 7,
+      "hash": "e64d07e458e81e6e9fe3c891a2fdb07045c7bd6daf79d87c5c6748cd2c772a84"
     },
     {
       "name": "search",
