@@ -565,7 +565,7 @@
       "name": "provenance",
       "displayName": "Provenance",
       "description": "How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.",
-      "version": 6,
+      "version": 7,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -728,10 +728,11 @@
                   "overstates",
                   "understates",
                   "asserts_without_evidence",
+                  "evidence_not_shown",
                   "contradicts_own_evidence",
                   "unclear"
                 ],
-                "description": "Whether the source's OWN evidence and argument bear the claim as this source states it. This is not whether the claim is true: that is your judgment as Steward, made elsewhere. 'supports': the source shows what it asserts. 'overstates': the assertion outruns the source's evidence. 'understates': the source's evidence would bear a stronger statement. 'asserts_without_evidence': stated as given, with no supporting evidence offered; ordinary and not itself a fault, but worth recording. 'contradicts_own_evidence': the source's own material cuts against its assertion. 'unclear': you could not tell from what you read."
+                "description": "Whether the source's OWN evidence and argument bear the claim as this source states it. This is not whether the claim is true: that is your judgment as Steward, made elsewhere. 'supports': the source shows what it asserts. 'overstates': the assertion outruns the source's evidence. 'understates': the source's evidence would bear a stronger statement. 'asserts_without_evidence': stated as given, with no supporting evidence offered; ordinary and not itself a fault, but worth recording. 'evidence_not_shown': the source reports a result from evidence it holds and has not published (its own evaluation, an internal log, a dataset it does not release). This is not 'asserts_without_evidence': the evidence exists, and what is missing is your sight of it (§9). Say in the note what the evidence is said to be and whether anyone other than the source has examined it. Where an assessment made on that evidence has been published, name it: it is evidence the Steward can weigh. 'contradicts_own_evidence': the source's own material cuts against its assertion. 'unclear': you could not tell from what you read."
               },
               "deployment": {
                 "type": "string",
@@ -1072,7 +1073,7 @@
           }
         }
       ],
-      "bodyChars": 21262
+      "bodyChars": 21592
     },
     {
       "name": "search",

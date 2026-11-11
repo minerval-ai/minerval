@@ -405,6 +405,7 @@ export const INSTANCE_SUPPORT_READINGS = [
   "overstates",
   "understates",
   "asserts_without_evidence",
+  "evidence_not_shown",
   "contradicts_own_evidence",
   "unclear",
 ] as const;
@@ -420,6 +421,13 @@ export const INSTANCE_SUPPORT_GUIDANCE =
   "'understates': the source's evidence would bear a stronger statement. " +
   "'asserts_without_evidence': stated as given, with no supporting evidence " +
   "offered — ordinary and not itself a fault, but worth recording. " +
+  "'evidence_not_shown': the source reports a result from evidence it holds " +
+  "and has not published (its own evaluation, an internal log, a dataset it " +
+  "does not release). This is not 'asserts_without_evidence': the evidence " +
+  "exists, and what is missing is your sight of it (§9). Say in the note " +
+  "what the evidence is said to be and whether anyone other than the source " +
+  "has examined it. Where an assessment made on that evidence has been " +
+  "published, name it: it is evidence the Steward can weigh. " +
   "'contradicts_own_evidence': the source's own material cuts against its " +
   "assertion. " +
   "'unclear': you could not tell from what you read.";
