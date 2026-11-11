@@ -1038,6 +1038,21 @@ export interface PlanItemLedger {
    * cannot say).
    */
   since?: string;
+  /**
+   * assess/reassess/deepen: the commission this item's standing order
+   * placed on the node's pass (standing-order-service.ts), once it has.
+   */
+  order?: { budget_owls: number; tier: "standard" | "strong"; placed_at: string };
+  /**
+   * deepen only: the node's children this item has ordered a pass on (or
+   * found already paid for), so each is ordered once per item.
+   */
+  children?: string[];
+  /**
+   * deepen only, while the item still waits on its children: when the
+   * node's own pass was seen finished.
+   */
+  ran_at?: string;
 }
 
 /** The plan item shape the materializer reads (a loose PlanItem). */
@@ -1047,6 +1062,8 @@ export interface MaterializablePlanItem {
   claim_id?: string;
   variant?: string;
   rationale?: string;
+  /** assess/reassess/deepen: the budget of each pass the item commissions; absent = the row's estimate. */
+  budget_owls?: number;
   /** ingest only: read the document for this subject (ingest-focus-service.ts). */
   focus?: string;
   /** sweep only: a topic tag's slug, or "residual". */
@@ -1367,11 +1384,17 @@ export async function materializeGrantPlan(
   }
 
   const ensuredFormalize = new Set<string>();
+  // Standing orders are placed in plan order: once today's rate has turned
+  // one away, the later ones wait behind it (standing-order-service.ts).
+  const orderQueue = { rateHeld: false };
+  let started = -1;
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
     let ledger: PlanItemLedger;
     try {
       ledger = early.get(i) ?? await materializePlanItem(item, i, {
+        grantId: g.id,
+        orderQueue,
         ctx,
         cursor,
         active,
@@ -1409,6 +1432,25 @@ export async function materializeGrantPlan(
         [g.id, ["items", String(i), "ledger"], JSON.stringify(ledger), i]
       );
     }
+    // Work that has started: it ran, is running, was retired, or has the
+    // mandate's commission on it.
+    if (
+      ledger.status === "running" || ledger.status === "done" ||
+      (ledger.status === "cancelled" && ledger.action_id) ||
+      (ledger.status === "open" && ledger.order)
+    ) {
+      started = i;
+    }
+  }
+  // The cursor marks the plan's started prefix, which adjust_plan keeps: it
+  // moves past the last item whose work has started. (The direct steward
+  // lane used to move it as it claimed each claim item; with every pass a
+  // commission, the items' own standing says where the plan has got to.)
+  if (started + 1 > cursor) {
+    await rawQuery(
+      `UPDATE grants SET plan_cursor = GREATEST(plan_cursor, $2), updated_at = now() WHERE id = $1`,
+      [g.id, started + 1]
+    );
   }
   return outcomes;
 }
@@ -1419,7 +1461,9 @@ function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
     a.status === b.status &&
     (a.reason ?? null) === (b.reason ?? null) &&
     (a.action_id ?? null) === (b.action_id ?? null) &&
-    (a.exclusion_group ?? null) === (b.exclusion_group ?? null)
+    (a.exclusion_group ?? null) === (b.exclusion_group ?? null) &&
+    JSON.stringify(a.order ?? null) === JSON.stringify(b.order ?? null) &&
+    JSON.stringify(a.children ?? null) === JSON.stringify(b.children ?? null)
   );
 }
 
@@ -1427,6 +1471,8 @@ async function materializePlanItem(
   item: MaterializablePlanItem,
   index: number,
   o: {
+    grantId: string;
+    orderQueue: { rateHeld: boolean };
     ctx: MaterializeContext;
     cursor: number;
     active: boolean;
@@ -1446,9 +1492,9 @@ async function materializePlanItem(
     const group = INGEST_GROUP(item.url, focus);
     if (index < o.cursor) {
       // The cursor passed this item. Its row, when one exists, says whether
-      // the ingest actually ran: the direct steward lane (grant-pipeline.ts)
-      // moves the cursor past a claim item and takes any ingest item before
-      // it along, and such a row stays open, funded from the escrow
+      // the ingest actually ran: the cursor moves past the last item whose
+      // work has started and takes any ingest item before it along, and
+      // such a row stays open, funded from the escrow
       // (fundGrantSelfActions), until it runs. Forcing "done" on position
       // hid exactly those (#427). Only an item with no row at all (executed
       // before the ledger recorded plan work) reads done on position alone.
@@ -1493,25 +1539,42 @@ async function materializePlanItem(
     // A stewarding item is consumed once its pass has run: a finished row
     // stays finished (re-enqueueing on every sweep would loop the claim
     // through the Steward forever). The pass may also have run on another
-    // lane while the row sat open (the mandate's direct steward lane, a
-    // user's order, the background drain): no lane but the ledger's own
-    // closes the row, the sweep then retires it as "assessed elsewhere",
-    // and the item read cancelled, or was queued again, for work that ran
-    // (#427). An assessment dated after the item's standing was written
-    // says the pass ran: the item reads done and keeps reading done.
-    if (item.ledger?.action_id) {
+    // lane while the row sat open (a reader's order, the background
+    // drain): no lane but the ledger's own closes the row, the sweep then
+    // retires it as "assessed elsewhere", and the item read cancelled, or
+    // was queued again, for work that ran (#427). An assessment dated after
+    // the item's standing was written says the pass ran: the item reads
+    // done and keeps reading done.
+    if (item.ledger?.status === "done") return item.ledger;
+    const orders = await import("./standing-order-service.js");
+    // The node's own pass, once it has run. A deepen item has a second half
+    // (its children's passes), so it is not finished by this alone.
+    let ran: PlanItemLedger | null = null;
+    if (item.ledger?.ran_at && item.ledger.action_id) {
+      // Seen finished on an earlier sweep. The row is the node's current
+      // potential pass and may have reopened since, for someone else's ask.
+      ran = {
+        status: "done",
+        action_id: item.ledger.action_id,
+        exclusion_group: item.ledger.exclusion_group,
+        ran_at: item.ledger.ran_at,
+        checked_at: nowIso(),
+      };
+    } else if (item.ledger?.action_id) {
       const prior = await groupLedger({ actionId: item.ledger.action_id });
       if (prior) {
-        if (prior.status === "done") return fromRow(prior);
-        if (item.ledger.status === "done") return item.ledger;
-        if (prior.status !== "running" && assessedSince(claim, item.ledger.checked_at)) {
-          return fromRow(
+        if (prior.status === "done") {
+          ran = fromRow(prior);
+        } else if (prior.status !== "running" && assessedSince(claim, item.ledger.checked_at)) {
+          // The pass the item asked for ran without the item's money: the
+          // order is withdrawn, so its budget is not left held on the row.
+          await orders.releaseStandingOrder(o.grantId, claim.id);
+          ran = fromRow(
             { ...prior, status: "done" },
             "the pass ran on another lane after this item opened its row " +
               "(the claim was stewarded outside the ledger row)"
           );
-        }
-        if (prior.status === "cancelled") {
+        } else if (prior.status === "cancelled") {
           // A park is the one retirement another item cannot fix: the claim
           // is out of every lane's candidate set, so re-adding only buys one
           // more pass that fails the same way. Say so, with the class of
@@ -1523,6 +1586,9 @@ async function materializePlanItem(
           // falls through below and opens a fresh row, which is what the
           // funder paid for.
           if (claim.steward_state === "error") {
+            // The order's money comes back too: it would otherwise stay
+            // held against the escrow on a row nothing will run.
+            const back = await orders.releaseStandingOrder(o.grantId, claim.id);
             return fromRow(
               prior,
               `the row was retired unrun: the Steward parked this claim as ` +
@@ -1531,6 +1597,9 @@ async function materializePlanItem(
                 `takes it out of the queue. Another item will not help: a ` +
                 `park is not retried on its own, and it is reported to ` +
                 `maintainers. A commission on the node buys another attempt. ` +
+                (back > 0 || item.ledger.order
+                  ? `The budget this item commissioned is back in the escrow. `
+                  : "") +
                 `Reason: ` +
                 `${STEWARD_ERROR_REASON_LABELS[stewardErrorReasonOf(claim.steward_error_reason)]}.`
             );
@@ -1550,39 +1619,108 @@ async function materializePlanItem(
         ? fromRow(row, reason)
         : { status: "done", reason, checked_at: nowIso() };
     }
+    if (ran && kind !== "deepen") return ran;
     if (!o.active) return o.notActive;
-    if (kind === "deepen") {
-      // The claim plus its deferred subtree: promote the held-out
-      // subclaims so the drain reaches them too (#98's brake, released for
-      // this subtree by a funder's say-so). Idempotent, so it runs whether
-      // or not the claim itself still needs queueing (an earlier item on
-      // the same claim may have queued it already).
-      await rawQuery(
-        `UPDATE claims SET steward_state = 'pending', updated_at = now()
-          WHERE state = 'active' AND steward_state = 'deferred'
-            AND id IN (SELECT child_claim_id FROM claim_relationships
-                        WHERE parent_claim_id = $1)`,
-        [claim.id]
-      );
-    }
-    if (claim.steward_state !== "pending" && claim.steward_state !== "running") {
-      const { enqueueSteward } = await import("./queue-service.js");
-      await enqueueSteward({
+
+    // The item is a standing order (#849): the mandate commissions the pass
+    // whole, at the item's budget or the row's estimate, on the item's
+    // tier. What the day's rate cannot cover yet waits and is asked for
+    // again; what could never fit is blocked, with the figures either way.
+    const tier = orders.orderTier(item.variant);
+    const budgetMicroUsd =
+      Number(item.budget_owls) > 0 ? Math.round(Number(item.budget_owls) * loadConfig().owlCostMicroUsd) : null;
+    let own: PlanItemLedger;
+    if (ran) {
+      own = ran;
+    } else if (o.orderQueue.rateHeld) {
+      own = waiting(orders.HELD_BEHIND_EARLIER);
+    } else {
+      const res = await orders.placeStandingOrder({
+        grantId: o.grantId,
         claimId: claim.id,
-        trigger: "mandate_plan",
+        tier,
+        budgetMicroUsd,
         // The kind of pass and nothing else: a Steward serves the graph, so
         // neither which mandate paid nor the Grantmaker's reasons reach it.
         // What a mandate's agents find goes in as a contribution (§19).
-        context:
+        brief:
           `A funded mandate scheduled a ${kind} pass on this claim.` +
-          (kind === "deepen"
-            ? " Its deferred subclaims were released into the queue."
-            : ""),
+          (kind === "deepen" ? " Its deferred subclaims were released into the queue." : ""),
       });
+      if (res.state === "blocked") {
+        own = blocked(res.reason);
+      } else if (res.state === "waiting") {
+        if (res.rate) o.orderQueue.rateHeld = true;
+        own = waiting(res.reason);
+      } else {
+        const row = await groupLedger({ actionId: res.actionId });
+        if (!row) {
+          own = blocked("no assess row could be opened for this claim");
+        } else if (res.state === "placed") {
+          own = {
+            ...fromRow(row),
+            order: {
+              budget_owls: res.budgetMicroUsd / loadConfig().owlCostMicroUsd,
+              tier: res.tier,
+              placed_at: nowIso(),
+            },
+          };
+        } else {
+          // Paid for already: by this item on an earlier sweep (its order
+          // is on the item), or by anyone else, whose pass meets the item.
+          const mine = item.ledger?.action_id === row.action_id ? item.ledger.order : undefined;
+          own = mine
+            ? { ...fromRow(row), order: mine }
+            : fromRow(
+                row,
+                row.status === "open" || row.status === "running"
+                  ? "a pass on this node is already paid for; this item is met when it finishes, at no cost to the mandate"
+                  : undefined
+              );
+        }
+      }
     }
-    await ensureAssessActions(claim.id);
-    const row = await groupLedger({ group: ASSESS_GROUP(claim.id) });
-    return row ? fromRow(row) : blocked("no assess row could be opened for this claim");
+    if (kind !== "deepen") return own;
+
+    // deepen's second half: the node's deferred children are released
+    // (#98's brake, lifted for them by a funder's say-so), and each child
+    // waiting for a pass gets one from the mandate, like the node's own.
+    // One level; idempotent, so it runs on every sweep until every child
+    // is dealt with, which catches the children the node's pass mints.
+    await rawQuery(
+      `UPDATE claims SET steward_state = 'pending', updated_at = now()
+        WHERE state = 'active' AND steward_state = 'deferred'
+          AND id IN (SELECT child_claim_id FROM claim_relationships
+                      WHERE parent_claim_id = $1)`,
+      [claim.id]
+    );
+    const kids = await orders.orderChildPasses({
+      grantId: o.grantId,
+      parentId: claim.id,
+      tier,
+      budgetMicroUsd,
+      already: item.ledger?.children ?? [],
+      queue: o.orderQueue,
+    });
+    const withChildren = (l: PlanItemLedger, reason?: string): PlanItemLedger => ({
+      ...l,
+      ...(reason ? { reason } : {}),
+      ...(kids.children.length > 0 ? { children: kids.children } : {}),
+    });
+    const pending = kids.blocked ?? kids.waiting;
+    if (own.status === "done") {
+      // The node's pass ran; the item is done once its children are ordered.
+      const ranAt = own.ran_at ?? nowIso();
+      if (kids.blocked) {
+        return withChildren({ ...own, status: "blocked", ran_at: ranAt }, `the pass on the node ran; ${kids.blocked}`);
+      }
+      if (kids.waiting) {
+        return withChildren({ ...own, status: "waiting", ran_at: ranAt }, `the pass on the node ran; ${kids.waiting}`);
+      }
+      const { ran_at: _seen, ...finished } = own;
+      return withChildren(finished);
+    }
+    return withChildren(own, pending ? [own.reason, pending].filter(Boolean).join(" Also: ") : own.reason);
   }
 
   if (kind === "formalize") {
@@ -1984,28 +2122,57 @@ export async function materializePlanItems(
 }
 
 /**
- * Materialize a live mandate's plan now if it carries a proposal, or an
- * item waiting on one, that is not yet a node (#656). Called when the
- * mandate is funded, so its proposals are filed then and not a sweep later,
- * and at the start of each review pass, which a decided proposal wakes: the
- * pass then reads the proposal's outcome and the items bound to its node.
- * Never throws; the sweep retries on its cadence.
+ * Materialize a live mandate's plan now if any of its items is not settled.
+ * Called when a plan goes live (funded, approved, a decomposition's plan
+ * drafted), so its proposals are filed (#656) and its standing orders placed
+ * (#849) then and not a sweep later, and at the start of each review pass:
+ * the pass then reads each proposal's outcome, the items bound to its node,
+ * and where every order stands. Never throws; the sweep retries on its
+ * cadence.
  */
-export async function materializeOpenProposals(grantId: string): Promise<void> {
+export async function materializeLivePlan(grantId: string): Promise<void> {
   try {
     const [open] = await rawQuery<{ id: string }>(
       `SELECT g.id FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it
-        WHERE g.id = $1 AND g.status = 'active' AND it->>'claim_id' IS NULL
-          AND (it->>'action' = 'propose' OR it->>'claim_ref' IS NOT NULL)
+        WHERE g.id = $1 AND g.status = 'active'
+          AND COALESCE(it->'ledger'->>'status', '') NOT IN ('done', 'cancelled')
         LIMIT 1`,
       [grantId]
     );
     if (open) await materializePlanItems(grantId);
   } catch (err) {
     console.error(
-      `[reconcile] proposals of mandate ${grantId} not materialized: ${err instanceof Error ? err.message : String(err)}`
+      `[reconcile] plan of mandate ${grantId} not materialized: ${err instanceof Error ? err.message : String(err)}`
     );
   }
+}
+
+/**
+ * Bring up to date every live mandate whose plan has a stewarding item
+ * still in motion: an order waiting for room, one placed and not yet run,
+ * or an item not yet materialized. The scheduler calls this between full
+ * sweeps (STANDING_ORDER_RETRY_MINUTES), so room that opens in the day's
+ * rate or the escrow is used within minutes, and a finished pass reads
+ * done. Returns how many plans it materialized.
+ */
+export async function materializeStandingOrders(): Promise<number> {
+  const grants = await rawQuery<{ id: string }>(
+    `SELECT DISTINCT g.id FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it
+      WHERE g.status = 'active' AND it->>'action' IN ('assess', 'reassess', 'deepen')
+        AND COALESCE(it->'ledger'->>'status', '') IN ('', 'waiting', 'open', 'running')`
+  );
+  let done = 0;
+  for (const g of grants) {
+    try {
+      await materializePlanItems(g.id);
+      done++;
+    } catch (err) {
+      console.error(
+        `[reconcile] standing orders of mandate ${g.id} not materialized: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+  return done;
 }
 
 /** A mandate whose plan failed to materialize: log it and file a report. */

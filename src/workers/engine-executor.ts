@@ -1529,6 +1529,12 @@ async function runGrantAgentAction(
         }`
       )
     );
+    // A decomposition's plan is live as drafted: its standing orders are
+    // placed now, not a sweep later (a no-op for a plan awaiting approval).
+    if (action.kind === "grant_planning") {
+      const { materializeLivePlan } = await import("../services/action-service.js");
+      await materializeLivePlan(grant.id);
+    }
     // A mandate whose passes have a share of their own reopens a review only
     // while the share holds something.
     const share = await grantmakerShareLeftMicroUsd(grant).catch(() => null);

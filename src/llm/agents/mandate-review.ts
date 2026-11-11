@@ -71,7 +71,7 @@ import { countPlanItems, describePlanCounts } from "../../services/plan-state.js
 import {
   REVIEW_GROUP,
   grantmakerShareLeftMicroUsd,
-  materializeOpenProposals,
+  materializeLivePlan,
   materializePlanItems,
 } from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
@@ -219,9 +219,10 @@ async function runMandateReviewImpl(input: {
   // Anchors the two-pass closure rule: a close request is only
   // confirmable by a pass that STARTED after it was recorded.
   const passStartedAt = new Date();
-  // A plan's proposals (#656) are brought up to date before the plan is
-  // read: a decided proposal is what woke this pass.
-  await materializeOpenProposals(input.grantId);
+  // The plan is brought up to date before it is read: a decided proposal
+  // (#656) may be what woke this pass, and a standing order that was
+  // waiting for room (#849) is asked for again.
+  await materializeLivePlan(input.grantId);
   const [grant] = await rawQuery<{
     id: string;
     name: string;
@@ -327,7 +328,9 @@ async function runMandateReviewImpl(input: {
       description:
         "Append new items to your mandate's plan: sources you found that should be ingested, claims that " +
         "need passes, a claim, quantity or question the graph does not hold yet with the passes you want on it. Each item is priced and bounded by your escrow, and " +
-        "executes through the ledger like everything else. Appends only; " +
+        "executes through the ledger like everything else: a pass you plan " +
+        "is commissioned from this mandate, within its daily rate, as soon " +
+        "as the rate and escrow have the room. Appends only; " +
         "already-planned work stays. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
         "standing (open, running, done, cancelled, waiting, blocked) with " +

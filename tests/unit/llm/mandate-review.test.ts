@@ -93,7 +93,7 @@ vi.mock("../../../src/services/allocation-policy-service.js", async (importOrigi
 }));
 vi.mock("../../../src/services/action-service.js", () => ({
   materializePlanItems: async () => [],
-  materializeOpenProposals: async () => {},
+  materializeLivePlan: async () => {},
   grantmakerShareLeftMicroUsd: async () => null,
 }));
 vi.mock("../../../src/llm/client.js", () => ({

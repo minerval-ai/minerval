@@ -25,6 +25,7 @@ const { state } = vi.hoisted(() => ({
     reopened: [] as unknown[][],
     cancelled: [] as unknown[][],
     grantSources: [] as unknown[][],
+    livePlans: [] as string[],
     fundCalls: 0,
     lookout: null as null | Record<string, unknown>,
     lookoutRuns: 0,
@@ -71,6 +72,10 @@ vi.mock("../../../src/services/action-service.js", () => ({
   grantmakerShareLeftMicroUsd: vi.fn(async () => null),
   // The mandate's own figure for a review pass (#820).
   reviewPassBudgetMicroUsd: vi.fn(async () => 7_000_000),
+  // A plan that went live with its planning run places its standing orders at once (#849).
+  materializeLivePlan: vi.fn(async (grantId: string) => {
+    state.livePlans.push(grantId);
+  }),
   claimAction: vi.fn(async () => true),
   releaseAction: vi.fn(async (id: string) => {
     state.released.push(id);
@@ -193,6 +198,7 @@ beforeEach(() => {
   state.reopened = [];
   state.cancelled = [];
   state.grantSources = [];
+  state.livePlans = [];
   state.fundCalls = 0;
   state.lookout = {
     id: "l-1",
@@ -220,6 +226,7 @@ describe("processNextEngineAction", () => {
     expect(r).toMatchObject({ status: "processed", ok: true, kind: "grant_planning" });
     expect(state.grantorRuns).toBe(1);
     expect(state.completed).toEqual([{ id: "act-1", metered: 123_000 }]);
+    expect(state.livePlans).toEqual(["g-1"]);
   });
 
   it("runs a mandate review; continue_review reopens the action", async () => {

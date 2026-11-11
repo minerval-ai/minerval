@@ -127,14 +127,18 @@ export function applyWorkspaceWrite(
 }
 
 /**
- * A floor on what a plan's ledger items cost, in owls: one strong Steward
- * pass (not the cheapest tier, so submit_plan says "strong") for each assess, reassess, and deepen item (a deepen costs more, by the
- * children it releases) and one ingestion for each ingest item, at the
- * estimates the ledger itself prices rows with. The planning pass refuses a
- * plan whose floor already overruns the escrow; it is a backstop, not a
- * quote. The Grantmaker prices plans itself from cost_sheet.
+ * A floor on what a plan's ledger items cost, in owls: for each assess,
+ * reassess, and deepen item the budget its standing order commissions (the
+ * item's budget_owls, else one Steward pass on its variant, strong when it
+ * names none, so submit_plan says "strong"; a deepen costs more, by the
+ * children it orders a pass on) and one ingestion for each ingest item, at
+ * the estimates the ledger itself prices rows with. The planning pass
+ * refuses a plan whose floor already overruns the escrow; it is a backstop,
+ * not a quote. The Grantmaker prices plans itself from cost_sheet.
  */
-export async function planCostFloorOwls(items: readonly { action: string }[]): Promise<{
+export async function planCostFloorOwls(
+  items: readonly { action: string; variant?: string; budget_owls?: number }[]
+): Promise<{
   floor_owls: number;
   per_item_owls: { steward_pass: number; ingest: number };
 }> {
@@ -143,7 +147,14 @@ export async function planCostFloorOwls(items: readonly { action: string }[]): P
   const ingest = capOwls("source_ingest");
   let floor = 0;
   for (const it of items) {
-    if (it.action === "assess" || it.action === "reassess" || it.action === "deepen") floor += pass;
+    if (it.action === "assess" || it.action === "reassess" || it.action === "deepen") {
+      floor +=
+        Number(it.budget_owls) > 0
+          ? Number(it.budget_owls)
+          : it.variant === "standard"
+            ? microUsdToOwls(tiers.standardMicroUsd)
+            : pass;
+    }
     else if (it.action === "ingest") floor += ingest;
   }
   return {
