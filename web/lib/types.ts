@@ -432,7 +432,20 @@ export interface ClaimSeed {
   seeded_by: { id: string; text: string } | null;
 }
 
+// The claim a read was addressed to when it has been merged into another
+// (#884): the API answers with the survivor's record and says so here.
+// `stance_relation` is `opposed` when the absorbed claim was the survivor's
+// negation, so the survivor's verdict reads the other way round for it.
+export interface ResolvedFrom {
+  id: string;
+  canonical_form: string;
+  stance_relation: "same" | "opposed" | null;
+  merged_at: string | null;
+}
+
 export interface ClaimDetail {
+  // Present when the id asked for was merged into this claim (#884).
+  resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
   assessment: Assessment | null;
   subclaim_count: number;
@@ -1760,4 +1773,6 @@ export interface ClaimCard {
   assessed_at: string | null;
   updated_at: string;
   page_url: string;
+  /** Null unless the id asked for was merged into another node (#884). */
+  resolved_from?: ResolvedFrom | null;
 }
