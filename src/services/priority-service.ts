@@ -60,11 +60,11 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
     created_by: string;
   }>(
     `SELECT c.queue_priority, c.importance, c.contestation, c.created_by,
-            (SELECT a.marginal_yield FROM assessments a
-              WHERE a.claim_id = c.id AND a.is_current = true
+            (SELECT a.marginal_yield FROM assessments_in_force a
+              WHERE a.claim_id = c.id
               ORDER BY a.assessed_at DESC LIMIT 1) AS marginal_yield,
-            (SELECT a.assessed_at FROM assessments a
-              WHERE a.claim_id = c.id AND a.is_current = true
+            (SELECT a.assessed_at FROM assessments_in_force a
+              WHERE a.claim_id = c.id
               ORDER BY a.assessed_at DESC LIMIT 1) AS assessed_at,
             COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
                         FROM action_allocations a

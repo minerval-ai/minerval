@@ -9,8 +9,8 @@
  * claim's Steward — the prompt instructs it to evaluate every named argument
  * against the current premise assessments (and it owns the claim, so it can
  * also refresh anything else that is stale while it's there). Detection: a
- * named argument on an active claim with no is_current row in
- * argument_evaluations.
+ * named argument on an active claim with no row in
+ * argument_evaluations_in_force.
  *
  * Safe by default: prints what it WOULD enqueue and exits. Pass `--confirm`
  * to actually enqueue. Re-driving stewards costs real model spend — run it
@@ -37,8 +37,8 @@ async function main(): Promise<void> {
             array_agg(coalesce(a.name, a.id::text) ORDER BY a.created_at) AS argument_names
        FROM arguments a
        JOIN claims c ON c.id = a.claim_id
-       LEFT JOIN argument_evaluations ae
-              ON ae.argument_id = a.id AND ae.is_current = true
+       LEFT JOIN argument_evaluations_in_force ae
+              ON ae.argument_id = a.id
       WHERE c.state = 'active'
         AND a.name IS NOT NULL
         AND ae.id IS NULL

@@ -348,7 +348,7 @@ export async function getSourceDocument(sourceId: string): Promise<SourceDocumen
       source_read: boolean | null;
     }>(
       `SELECT ci.id, ci.segment_id, ci.claim_id, c.text AS claim_text,
-              (SELECT a.status FROM assessments a WHERE a.claim_id = c.id AND a.is_current = true
+              (SELECT a.status FROM assessments_in_force a WHERE a.claim_id = c.id
                 ORDER BY a.assessed_at DESC LIMIT 1) AS status,
               ci.stance, ci.verbatim_text, r.support, r.note, r.source_read
          FROM claim_instances ci

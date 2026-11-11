@@ -206,7 +206,7 @@ describe("the pass note says what the node has (#883)", () => {
   it("reads the node's state, not a stale structure_and_assess trigger", async () => {
     const { rawQuery } = await import("../../../src/db/client.js");
     vi.mocked(rawQuery).mockImplementation((async (sql: string) => {
-      if (sql.includes("FROM assessments") && sql.includes("is_current")) return [{ one: 1 }];
+      if (sql.includes("FROM assessments_in_force")) return [{ one: 1 }];
       if (sql.includes("AS structured")) return [{ structured: true }];
       return [];
     }) as typeof rawQuery);

@@ -53,7 +53,7 @@ export async function generateReport(cluster: string, outDir?: string): Promise<
     `SELECT relation_type, count(*)::int n FROM claim_relationships GROUP BY 1 ORDER BY 2 DESC`
   );
   const byAssessment = await rawQuery<{ status: string; n: number }>(
-    `SELECT status, count(*)::int n FROM assessments WHERE is_current GROUP BY 1 ORDER BY 2 DESC`
+    `SELECT status, count(*)::int n FROM assessments_in_force GROUP BY 1 ORDER BY 2 DESC`
   );
   const [argCount] = await rawQuery<{ n: number }>(`SELECT count(*)::int n FROM arguments`);
   const [relCount] = await rawQuery<{ n: number }>(
@@ -87,7 +87,7 @@ export async function generateReport(cluster: string, outDir?: string): Promise<
        a.status AS assessment_status
      FROM claims c
      JOIN claim_instances ci ON ci.claim_id = c.id
-     LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current
+     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
      GROUP BY c.id, a.status
      ORDER BY instance_count DESC, source_count DESC, c.text`
   );
@@ -133,7 +133,7 @@ export async function generateReport(cluster: string, outDir?: string): Promise<
   const unassessed = await rawQuery<{ text: string }>(
     `SELECT c.text
      FROM claims c JOIN claim_instances ci ON ci.claim_id = c.id
-     LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current
+     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
      WHERE a.id IS NULL GROUP BY c.id, c.text ORDER BY c.text`
   );
 

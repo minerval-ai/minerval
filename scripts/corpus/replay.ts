@@ -343,7 +343,7 @@ async function loadGraph(label: string, url: string): Promise<AgreementGraph> {
   return withClient(url, async (c) => {
     const claims = await c.query<{ id: string; text: string; created_by: string; importance: number; status: string | null; credence: number | null; embedding: string | null }>(
       `SELECT c.id, c.text, c.created_by, c.importance, a.status, a.claim_credence AS credence, c.embedding::text AS embedding
-         FROM claims c LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current
+         FROM claims c LEFT JOIN assessments_in_force a ON a.claim_id = c.id
         WHERE c.state = 'active'`
     );
     const edges = await c.query<{ parent: string; child: string; rel: string }>(

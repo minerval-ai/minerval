@@ -387,7 +387,7 @@ export async function assembleClaimMira(
       `SELECT c.id, c.text, qa.standing
          FROM claim_relationships r
          JOIN claims c ON c.id = r.parent_claim_id AND c.state = 'active'
-         LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
+         LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
         WHERE r.child_claim_id = $1 AND r.relation_type = 'answers'
         ORDER BY r.created_at, r.id`,
       [claimId]

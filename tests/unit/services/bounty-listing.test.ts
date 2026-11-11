@@ -117,7 +117,7 @@ describe("listOpenBounties", () => {
     state.listing = [listingRow({ checked: "proof", assessment_status: null, importance: "0.25" })];
     const { items } = await listOpenBounties();
     const q = state.queries.find((x) => x.sql.includes("FROM bounties b"))!;
-    expect(q.sql).toMatch(/LEFT JOIN assessments a ON a\.claim_id = c\.id AND a\.is_current = true/);
+    expect(q.sql).toMatch(/LEFT JOIN assessments_in_force a ON a\.claim_id = c\.id/);
     expect(q.sql).toMatch(/c\.claim_type/);
     expect(q.sql).toMatch(/c\.importance/);
     expect(q.sql).toMatch(/FROM lean_checks lc/);

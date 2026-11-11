@@ -144,17 +144,17 @@ interface PassTask {
 
 const LOG = "log_stewardship_decision";
 
-/** Where each kind's current judgment lives, to tell a first judgment from a revisit. */
-const CURRENT_JUDGMENT_TABLE: Record<NodeKind, string> = {
-  claim: "assessments",
-  quantity: "quantity_estimates",
-  question: "question_assessments",
+/** The view of each kind's judgment in force, to tell a first judgment from a revisit. */
+const JUDGMENT_IN_FORCE_VIEW: Record<NodeKind, string> = {
+  claim: "assessments_in_force",
+  quantity: "quantity_estimates_in_force",
+  question: "question_assessments_in_force",
 };
 
 /** Whether the node has a current assessment (or estimate, or standing). A failed read counts as none, which asks for one. */
 async function hasCurrentJudgment(claimId: string, kind: NodeKind): Promise<boolean> {
   const rows = await rawQuery<{ one: number }>(
-    `SELECT 1 AS one FROM ${CURRENT_JUDGMENT_TABLE[kind]} WHERE claim_id = $1 AND is_current = true LIMIT 1`,
+    `SELECT 1 AS one FROM ${JUDGMENT_IN_FORCE_VIEW[kind]} WHERE claim_id = $1 LIMIT 1`,
     [claimId]
   ).catch(() => []);
   return rows.length > 0;

@@ -106,7 +106,7 @@ export async function listRelatedClaims(claimId: string): Promise<RelatedClaim[]
        FROM claim_links l
        JOIN claims c
          ON c.id = CASE WHEN l.claim_a_id = $1 THEN l.claim_b_id ELSE l.claim_a_id END
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE (l.claim_a_id = $1 OR l.claim_b_id = $1)
         AND c.state = 'active'
       ORDER BY l.created_at, l.id`,

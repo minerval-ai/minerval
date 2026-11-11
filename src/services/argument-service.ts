@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
-import { arguments_, argumentEvaluations } from "../db/schema.js";
+import { arguments_, argumentEvaluations, argumentEvaluationsInForce } from "../db/schema.js";
 
 /**
  * Inline claim reference inside an argument's written form:
@@ -160,13 +160,8 @@ export async function getCurrentEvaluation(argumentId: string) {
   const db = getDb();
   const [evaluation] = await db
     .select()
-    .from(argumentEvaluations)
-    .where(
-      and(
-        eq(argumentEvaluations.argumentId, argumentId),
-        eq(argumentEvaluations.isCurrent, true)
-      )
-    )
+    .from(argumentEvaluationsInForce)
+    .where(eq(argumentEvaluationsInForce.argumentId, argumentId))
     .limit(1);
   return evaluation ?? null;
 }
@@ -241,12 +236,12 @@ export async function getEvaluationStateForClaim(
             (ae.id IS NOT NULL AND ${EVALUATION_STALE_SQL}) AS stale
        FROM arguments a
        JOIN claims c ON c.id = a.claim_id
-       LEFT JOIN argument_evaluations ae
-              ON ae.argument_id = a.id AND ae.is_current = true
-       LEFT JOIN assessments ca
-              ON ca.claim_id = a.claim_id AND ca.is_current = true
-       LEFT JOIN quantity_estimates cq
-              ON cq.claim_id = a.claim_id AND cq.is_current = true
+       LEFT JOIN argument_evaluations_in_force ae
+              ON ae.argument_id = a.id
+       LEFT JOIN assessments_in_force ca
+              ON ca.claim_id = a.claim_id
+       LEFT JOIN quantity_estimates_in_force cq
+              ON cq.claim_id = a.claim_id
       WHERE a.claim_id = $1
         AND a.name IS NOT NULL
         AND a.retired_at IS NULL

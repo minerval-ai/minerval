@@ -12,6 +12,7 @@ import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import {
   claims,
   assessments,
+  assessmentsInForce,
   claimInstances,
   auditLog,
 } from "../../db/schema.js";
@@ -2428,20 +2429,15 @@ export async function executeStewardTool(
         // so the stamp lands on the fresh assessment. A quantity has no
         // assessment: its evaluations are stamped with the current estimate.
         const [currentEstimate] = await rawQuery<{ id: string }>(
-          `SELECT qe.id FROM quantity_estimates qe JOIN claims c ON c.id = qe.claim_id
-            WHERE qe.claim_id = $1 AND qe.is_current = true AND c.kind = 'quantity'`,
+          `SELECT qe.id FROM quantity_estimates_in_force qe JOIN claims c ON c.id = qe.claim_id
+            WHERE qe.claim_id = $1 AND c.kind = 'quantity'`,
           [argument.claimId]
         );
         const db = getDb();
         const [currentAssessment] = await db
-          .select({ id: assessments.id })
-          .from(assessments)
-          .where(
-            and(
-              eq(assessments.claimId, argument.claimId),
-              eq(assessments.isCurrent, true)
-            )
-          )
+          .select({ id: assessmentsInForce.id })
+          .from(assessmentsInForce)
+          .where(eq(assessmentsInForce.claimId, argument.claimId))
           .limit(1);
 
         await setArgumentEvaluation({

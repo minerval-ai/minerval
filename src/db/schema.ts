@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgView,
   uuid,
   text,
   real,
@@ -18,7 +19,7 @@ import {
   primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { sql, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -5415,4 +5416,41 @@ export const agentSessions = pgTable(
       sql`${table.status} IN ('running', 'waiting', 'ready', 'expired', 'closed')`
     ),
   ]
+);
+
+// ---------------------------------------------------------------------------
+// The judgment in force (#566)
+//
+// A node's judgment in force is the one a reader or an agent should go by:
+// today, the current row of the table its kind keeps (a proposition's verdict
+// in `assessments`, a quantity's estimate in `quantity_estimates`, a
+// question's standing in `question_assessments`), and the current evaluation
+// of an argument in `argument_evaluations`. Every read of "the current
+// judgment" goes through one of these four views, so that what "in force"
+// means is defined once, here, and can change here: when judgments come to
+// be versioned by label, the view will return the highest version its reader
+// is cleared for, and no query that reads it will need to change.
+//
+// Read the view to learn what a node's judgment is. Read the table for
+// history (every row, current or not) and for the write seam that supersedes
+// a current row; nothing writes through a view.
+//
+// drizzle-kit writes the views into migrations with their columns spelled
+// out, so adding a column to one of the tables regenerates its view: run
+// `npm run db:generate` as for any schema change.
+// ---------------------------------------------------------------------------
+export const assessmentsInForce = pgView("assessments_in_force").as((qb) =>
+  qb.select().from(assessments).where(eq(assessments.isCurrent, true))
+);
+
+export const argumentEvaluationsInForce = pgView("argument_evaluations_in_force").as((qb) =>
+  qb.select().from(argumentEvaluations).where(eq(argumentEvaluations.isCurrent, true))
+);
+
+export const quantityEstimatesInForce = pgView("quantity_estimates_in_force").as((qb) =>
+  qb.select().from(quantityEstimates).where(eq(quantityEstimates.isCurrent, true))
+);
+
+export const questionAssessmentsInForce = pgView("question_assessments_in_force").as((qb) =>
+  qb.select().from(questionAssessments).where(eq(questionAssessments.isCurrent, true))
 );

@@ -1,8 +1,8 @@
 import { attachArgumentEvidence, sendArgumentEvidenceBacklog } from "../services/argument-evidence-service.js";
 import type { FastifyInstance } from "fastify";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
-import { assessments } from "../db/schema.js";
+import { assessmentsInForce } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
 import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
@@ -739,8 +739,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const db = getDb();
         const [assessment] = await db
           .select()
-          .from(assessments)
-          .where(and(eq(assessments.claimId, claim_id), eq(assessments.isCurrent, true)))
+          .from(assessmentsInForce)
+          .where(eq(assessmentsInForce.claimId, claim_id))
           .limit(1);
 
         const subclaimCount = await getSubclaimCount(claim_id);

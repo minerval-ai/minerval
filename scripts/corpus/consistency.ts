@@ -93,7 +93,7 @@ const SCRIPT = "scripts/corpus/consistency.ts";
 
 async function currentAssessment(claimId: string): Promise<AssessmentSnap | null> {
   const [row] = await rawQuery<{ id: string; status: string; claim_credence: number | null; assessed_at: Date }>(
-    `SELECT id, status, claim_credence, assessed_at FROM assessments WHERE claim_id = $1 AND is_current = true`,
+    `SELECT id, status, claim_credence, assessed_at FROM assessments_in_force WHERE claim_id = $1`,
     [claimId]
   );
   return row
@@ -201,8 +201,8 @@ async function plant(n: number, outDir: string): Promise<void> {
        FROM claim_relationships r
        JOIN claims p ON p.id = r.parent_claim_id AND p.state = 'active'
        JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
-       JOIN assessments pa ON pa.claim_id = p.id AND pa.is_current
-       JOIN assessments ca ON ca.claim_id = c.id AND ca.is_current
+       JOIN assessments_in_force pa ON pa.claim_id = p.id
+       JOIN assessments_in_force ca ON ca.claim_id = c.id
       WHERE r.relation_type IN ('requires', 'supports')
         AND ca.status IN ('supported', 'verified')
         AND pa.status IN ('supported', 'verified', 'inconclusive')
@@ -217,8 +217,8 @@ async function plant(n: number, outDir: string): Promise<void> {
        FROM claim_relationships r
        JOIN claims p ON p.id = r.parent_claim_id AND p.state = 'active'
        JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
-       JOIN assessments pa ON pa.claim_id = p.id AND pa.is_current
-       JOIN assessments ca ON ca.claim_id = c.id AND ca.is_current
+       JOIN assessments_in_force pa ON pa.claim_id = p.id
+       JOIN assessments_in_force ca ON ca.claim_id = c.id
       WHERE r.relation_type = 'contradicts'
         AND ca.status IN ('supported', 'verified', 'inconclusive')
         AND pa.status IN ('supported', 'inconclusive', 'doubtful')
@@ -389,7 +389,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
   const plantClaims = plants.flatMap((p) => p.claims);
   const cadence = await rawQuery<{ id: string }>(
     `SELECT c.id FROM claims c
-       JOIN assessments a ON a.claim_id = c.id AND a.is_current
+       JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE c.state = 'active' AND c.steward_state NOT IN ('pending', 'running')
         AND NOT (c.id = ANY($2::uuid[]))
       ORDER BY c.importance * (0.3 + 0.7 * COALESCE(c.contestation, 0)) DESC, c.id
@@ -466,7 +466,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
        FROM consistency_flags f
        JOIN claims c ON c.id = f.primary_claim_id
        LEFT JOIN actions x ON x.id = f.action_id
-       LEFT JOIN assessments cur ON cur.claim_id = f.primary_claim_id AND cur.is_current
+       LEFT JOIN assessments_in_force cur ON cur.claim_id = f.primary_claim_id
       WHERE f.created_at >= $1 ORDER BY f.created_at`,
     [startedAt]
   );

@@ -160,9 +160,9 @@ async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
                         WHEN 'question' THEN qa.assessed_at
                         WHEN 'quantity' THEN qe.assessed_at END AS assessed_at
        FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-       LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
-       LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
+       LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
+       LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
        LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
       WHERE c.id = ANY($1::uuid[])`,
     [ids]

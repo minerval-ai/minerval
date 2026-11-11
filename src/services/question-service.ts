@@ -295,12 +295,12 @@ export interface QuestionDetailView {
 // A node's standing as a reference: a proposition's status, a question's standing.
 const NODE_REF_COLUMNS = `c.id, c.text, c.kind, a.status, qa.standing`;
 const NODE_REF_JOINS = `
-  LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-  LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true`;
+  LEFT JOIN assessments_in_force a ON a.claim_id = c.id
+  LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
 
 export async function getCurrentStanding(claimId: string): Promise<QuestionStanding | null> {
   const [row] = await rawQuery<{ standing: QuestionStanding }>(
-    `SELECT standing FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+    `SELECT standing FROM question_assessments_in_force WHERE claim_id = $1`,
     [claimId]
   );
   return row?.standing ?? null;
@@ -311,7 +311,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
     rawQuery<QuestionAssessmentView & { incomplete: string | null }>(
       `SELECT id, standing, summary, reasoning_trace, model, assessed_at,
               favored_claim_ids::text[] AS favored_ids, incomplete
-         FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+         FROM question_assessments_in_force WHERE claim_id = $1`,
       [claimId]
     ),
     rawQuery<
@@ -328,7 +328,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
          FROM claim_relationships r
          JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
          ${NODE_REF_JOINS}
-         LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+         LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
          LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
         WHERE r.parent_claim_id = $1
           AND r.relation_type IN ('answers', 'part_of', 'assumes', 'requires')
