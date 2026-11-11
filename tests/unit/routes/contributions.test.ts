@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => ({
   getRequest: vi.fn(),
 }));
 
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal)
+);
 vi.mock("../../../src/services/claim-service.js", () => ({
   getClaimById: mocks.getClaimById,
 }));

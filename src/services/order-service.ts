@@ -18,6 +18,7 @@ import { getDb, rawQuery } from "../db/client.js";
 import { assessmentOrders, claims, type AssessmentOrder } from "../db/schema.js";
 import { capMicroUsd, microUsdToOwls } from "./owl.js";
 import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export type OrderCreateResult =
   | { ok: true; order: AssessmentOrder }
@@ -50,10 +51,12 @@ export async function createOrder(input: {
     return { ok: false, code: "CLAIM_NOT_FOUND", message: "Claim not found" };
   }
   if (claim.state !== "active") {
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(input.claimId);
     return {
       ok: false,
       code: "CLAIM_NOT_ACTIVE",
-      message: `Claim is ${claim.state}; only active claims can be assessed`,
+      message: merged?.message ?? `Claim is ${claim.state}; only active claims can be assessed`,
     };
   }
 

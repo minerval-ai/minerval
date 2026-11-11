@@ -23,6 +23,7 @@
  *     so MCP keeps parity with the REST API.
  */
 import { z } from "zod";
+import { mergedAliasRefusal, resolveClaimId } from "../services/claim-alias-service.js";
 import type { FastifyInstance } from "fastify";
 import {
   McpServer,
@@ -897,6 +898,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         const claim = await getClaimById(input.claim_id);
         if (!claim) return errorResult("NOT_FOUND", "Claim not found");
       }
+      // A contribution addressed to a merged node is refused and told the
+      // survivor (#884), as POST /contributions refuses it.
+      for (const id of [input.claim_id, input.merge_target_claim_id]) {
+        const merged = await mergedAliasRefusal(id);
+        if (merged) {
+          return errorResult("CLAIM_MERGED", merged.message, { merged_into: merged.survivorId });
+        }
+      }
 
       const answered = await withAnsweredRequest({
         contributionType: input.contribution_type,
@@ -1122,7 +1131,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       mimeType: "application/json",
     },
     async (uri, { claim_id }) => {
-      const id = String(claim_id);
+      // A merged id resolves to its survivor (#884), as get_claim reads it.
+      const resolution = await resolveClaimId(String(claim_id));
+      if (!resolution) throw new Error(`Claim not found: ${String(claim_id)}`);
+      const id = resolution.id;
       const claim = await getClaimById(id);
       if (!claim) throw new Error(`Claim not found: ${id}`);
       const [assessment, tree] = [
@@ -1136,6 +1148,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             mimeType: "application/json",
             text: JSON.stringify(
               {
+                ...(resolution.resolvedFrom ? { resolved_from: resolution.resolvedFrom } : {}),
                 claim: {
                   id: claim.id,
                   canonical_form: claim.text,

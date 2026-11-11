@@ -25,6 +25,7 @@ import type { PlanItemLedger } from "./action-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
@@ -441,10 +442,12 @@ export async function createGrant(input: {
       [input.scopeClaimId]
     );
     if (!claim) {
+      // A merged node names its survivor (#884).
+      const merged = await mergedAliasRefusal(input.scopeClaimId);
       return {
         ok: false,
         code: "CLAIM_NOT_FOUND",
-        message: "Scope claim not found or not active",
+        message: merged?.message ?? "Scope claim not found or not active",
       };
     }
   }

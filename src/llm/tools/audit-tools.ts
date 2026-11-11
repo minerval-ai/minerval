@@ -454,7 +454,10 @@ export function getAuditToolDefinitions(): Tool[] {
         "credence, the Steward's full reasoning trace, the trigger and its " +
         "context, the model that ran it, and which one is current. Use it " +
         "to judge a Steward's assessments: whether the reasoning supports " +
-        "the verdict, and whether a change of verdict was explained. Paged.",
+        "the verdict, and whether a change of verdict was explained. For an " +
+        "id that was merged into another node this is the absorbed node's " +
+        "own record, as it stood at the merge; get_claim on the id names " +
+        "the survivor, whose history is its own. Paged.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -475,7 +478,9 @@ export function getAuditToolDefinitions(): Tool[] {
         "arbitrations on them, the Steward's logged decisions " +
         "(log_stewardship_decision, kind steward_note), and the " +
         "mathematics record where there is one. Each event has a kind, " +
-        "time and actor. Paged.",
+        "time and actor. For an id that was merged into another node this " +
+        "is the absorbed node's own history; get_claim on the id names the " +
+        "survivor. Paged.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -867,6 +872,10 @@ export async function executeAuditTool(
         if (since === "invalid" || until === "invalid") {
           return JSON.stringify({ success: false, message: "since and until must be ISO 8601 times." });
         }
+        // The row the id names, merged or not (#884): auditing a merge means
+        // reading what the absorbed node's verdicts were, and the merge
+        // leaves them on its row. Every other reader's history resolves to
+        // the survivor; the tool's description says which this is.
         const claim = await getClaimById(claimId);
         if (!claim) {
           return JSON.stringify({ success: false, message: `Claim ${claimId} not found.` });

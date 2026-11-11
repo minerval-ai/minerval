@@ -17,6 +17,7 @@ import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
+import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import {
   getArgumentsForClaim,
@@ -116,7 +117,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "dependencies, with their standing and credence), `findings` (the " +
   "newest findings already noted on the node, with `findings_note` when " +
   "there are more), " +
-  "`proofs` (every Lean check record). Free.";
+  "`proofs` (every Lean check record). " +
+  RESOLVED_FROM_DESCRIPTION +
+  " Free.";
 
 export const CLAIM_VIEW_INCLUDE_DESCRIPTION =
   "Sections to add to the base view; none by default. Ask for the ones " +
@@ -204,9 +207,14 @@ function iso(d: Date | string | null | undefined): string | null {
  * throws the database's own error (22P02), which callers translate.
  */
 export async function getClaimView(
-  claimId: string,
+  requestedId: string,
   opts: ClaimViewOptions = {}
 ): Promise<Record<string, unknown> | null> {
+  // A merged id resolves to its survivor (#884, constitution §5): the view
+  // below is the survivor's, and `resolved_from` says which id was asked.
+  const resolution = await resolveClaimId(requestedId);
+  if (!resolution) return null;
+  const claimId = resolution.id;
   const claim = await getClaimById(claimId);
   if (!claim) return null;
   const include = new Set(opts.include ?? []);
@@ -268,6 +276,8 @@ export async function getClaimView(
       : null;
 
   const payload: Record<string, unknown> = {
+    // First, so a reader meets it before the verdict it qualifies.
+    ...(resolution.resolvedFrom ? { resolved_from: resolution.resolvedFrom } : {}),
     claim: {
       id: claim.id,
       kind,

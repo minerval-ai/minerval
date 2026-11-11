@@ -25,6 +25,10 @@ const { NODES, EDGES } = vi.hoisted(() => ({
   ],
 }));
 
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal)
+);
 vi.mock("../../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (sql: string, params: unknown[]) => {
     if (sql.includes("FROM claims")) {

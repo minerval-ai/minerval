@@ -41,6 +41,7 @@ import {
 } from "./consistency-service.js";
 import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 export { allocationDayUseSql } from "./day-use.js";
 
 export type ActionKind =
@@ -1480,7 +1481,12 @@ async function materializePlanItem(
   const claim = await claimStanding(item.claim_id);
   if (!claim) return blocked(`claim ${item.claim_id} does not exist`);
   if (claim.state !== "active") {
-    return blocked(`claim ${item.claim_id} is ${claim.state}, not active; the ledger only carries work on active claims`);
+    // A merged node names its survivor (#884), so the plan can be rewritten for it.
+    const merged = await mergedAliasRefusal(item.claim_id);
+    return blocked(
+      `claim ${item.claim_id} is ${claim.state}, not active; the ledger only carries work on active claims` +
+        (merged ? `. ${merged.message}` : "")
+    );
   }
 
   if (kind === "assess" || kind === "reassess" || kind === "deepen") {

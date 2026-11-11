@@ -49,6 +49,23 @@ skill bundles it in full, and the section numbers below point into it.
   already hold ids for. An unassessed claim comes back with null judgment
   fields, which is the graph being silent, not an error; ids the graph does
   not hold come back in `not_found`. Free.
+- **An id that was merged**: the graph merges duplicate claims, and a claim
+  with its own negation (constitution §5). The absorbed claim's id keeps
+  working: any read of it (`get_claim`, a card, `get_decomposition`,
+  `get_dependents`, `cite_claim` and the other reads of one claim) returns
+  the surviving claim under the survivor's id, with `resolved_from` naming
+  the id you asked for, its wording, when it was merged, and
+  `stance_relation`. Read `stance_relation` before you report anything:
+  `same` means your id stated the survivor's proposition; `opposed` means it
+  was the survivor's negation, so the verdict you are looking at is about
+  the opposite of what your id said (a survivor that is `well_supported`
+  means the claim you asked about is not). Report the survivor's wording
+  with the survivor's verdict, say that the claim you were asked about was
+  merged into it, and use the survivor's id and `page_url` from then on. A
+  write addressed to a merged id (a contribution, an order, funding) is
+  refused and names the survivor; restate it for the survivor rather than
+  resending it. An id that names nothing at all is an error, not a merge:
+  copy ids exactly from a result, never retype them.
 - **Less of any read**: the tools generated from the REST API's read routes
   (`list_claims`, `cite_claim`, `get_assessment_history`, the cards and the
   rest) take `fields`, a comma-separated list of dotted paths such as

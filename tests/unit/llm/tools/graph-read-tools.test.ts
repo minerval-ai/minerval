@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal, async (id) => {
+    const { getClaimById } = await import("../../../../src/services/claim-service.js");
+    return (await getClaimById(id)) != null;
+  })
+);
 vi.mock("../../../../src/services/search-service.js", () => ({
   hybridSearch: vi.fn(),
 }));
@@ -335,14 +342,14 @@ describe("graph-read-tools", () => {
       } as never);
       vi.mocked(getQuestionDetail).mockResolvedValue({ standing: "open", answers: [] } as never);
 
-      mockGetClaim.mockResolvedValueOnce({ id: "q1", kind: "quantity", ...base } as never);
+      mockGetClaim.mockResolvedValue({ id: "q1", kind: "quantity", ...base } as never);
       const qty = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "q1" }))!);
       expect(qty.claim.kind).toBe("quantity");
       expect(qty.quantity.estimate).toEqual({ form: "point", central: 4 });
       expect(qty.quantity.estimates).toHaveLength(2);
       expect(qty.question).toBeNull();
 
-      mockGetClaim.mockResolvedValueOnce({ id: "k1", kind: "question", ...base } as never);
+      mockGetClaim.mockResolvedValue({ id: "k1", kind: "question", ...base } as never);
       const qn = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "k1" }))!);
       expect(qn.claim.kind).toBe("question");
       // The question's own judgment fields sit beside its record (#755).

@@ -49,6 +49,7 @@ import {
   type IncomingFile,
   type ValidatedAttachment,
 } from "./attachment-service.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 // ---------------------------------------------------------------------------
 // The state machine, as a pure function
@@ -857,7 +858,9 @@ export async function filePrizeClaim(input: FilePrizeClaimInput): Promise<FiledP
     [input.claimId]
   );
   if (!claim || claim.state !== "active") {
-    return { ok: false, status: 404, code: "NOT_FOUND", message: "claim not found or not active" };
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(input.claimId);
+    return { ok: false, status: 404, code: "NOT_FOUND", message: merged?.message ?? "claim not found or not active" };
   }
   // 409 NO_OPEN_BOUNTY: the bounty must be open, and no completed attempt
   // with an accepted check may have finished (the gate closes at the

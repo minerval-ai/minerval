@@ -221,6 +221,34 @@ read is free, an agent which signals allocation turns on.
   - `"findings"`: findings already noted on the node.
   - `"proofs"`: every Lean check record on any version of the statement.
 
+  A merged id resolves to its survivor (#884). A merge leaves the absorbed
+  node as an alias "so that existing references still resolve" (constitution
+  §5), so `get_claim` on an absorbed id returns the survivor's view, with
+  `claim.id` the survivor's, and `resolved_from: {id, canonical_form,
+  stance_relation, merged_at}` first in the payload: the id asked for, its
+  own wording, how it stood to the survivor, and when it was merged.
+  `stance_relation` is `same`, or `opposed` when the node was merged with its
+  negation, in which case the survivor's status, credence and argument
+  stances are about the opposite of what the caller's id stated; it is
+  composed over the chain when the id was absorbed in more than one step,
+  and null where a merge's record does not say. The same holds for
+  `get_decomposition`, `get_dependents`, the `claim://` resource, the cards
+  (where `resolved_from` is always present, null for a node's own id) and
+  every read route on `/claims/:claim_id`, which also set the
+  `x-minerval-resolved-from` header, including on exports that are not JSON;
+  `fields` never trims `resolved_from` away. One function follows the
+  pointer for all of them (`resolveClaimId`,
+  `src/services/claim-alias-service.ts`; the routes through
+  `src/server/plugins/claim-alias.ts`). Three kinds of read answer with the
+  row the id names instead: the formal statement routes
+  (`/claims/:claim_id/formalization`, `.lean`, `/formalizations`), and the
+  bounty, prize-claim and solver-attempt reads, because those records are
+  pinned to the absorbed node's own formal statement, which a merge does not
+  move and an opposed merge would invert. A write addressed to a merged id
+  is never redirected: it is refused (REST: 409 `CLAIM_MERGED` with
+  `merged_into`) and names the survivor, since the writer composed it for
+  the node it named.
+
   `formalization` is returned beside `assessment`: the published Lean 4
   statement, its pin (toolchain and Mathlib revision), both hashes, the
   correspondence note, and the review-period end, or null when the claim has

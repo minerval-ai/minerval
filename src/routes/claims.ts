@@ -48,6 +48,7 @@ import { leanChecksByArgument } from "../services/formalization-service.js";
 import { claimTypeEnum, uuidSchema } from "../schemas/common.js";
 import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../services/tag-service.js";
 import { CLAIM_CARDS_MAX_IDS, getClaimCard, getClaimCards } from "../services/claim-card-service.js";
+import { RESOLVED_FROM_SCHEMA } from "../services/claim-alias-service.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -279,6 +280,8 @@ export const claimCardSchema = {
       description: "When the node itself last changed.",
     },
     page_url: { type: "string", description: "The node's public page." },
+    // Null unless the id asked for was merged into another node (#884).
+    resolved_from: RESOLVED_FROM_SCHEMA,
   },
   required: [
     "id",
@@ -294,6 +297,7 @@ export const claimCardSchema = {
     "assessed_at",
     "updated_at",
     "page_url",
+    "resolved_from",
   ],
 } as const;
 
@@ -303,7 +307,10 @@ const CARD_NOTE =
   "question's `standing`, a quantity's `estimate` and `unit`), its " +
   "`contestation`, when it was last assessed and last changed, and its " +
   "`page_url`. Every key is always present. An unassessed node is not an " +
-  "error: its judgment fields are null.";
+  "error: its judgment fields are null. `resolved_from` is null unless the " +
+  "id you asked for was merged into another node: then the card is the " +
+  "survivor's, and where `resolved_from.stance_relation` is `opposed` its " +
+  "judgment is of the opposite of what your id stated.";
 
 /**
  * Parse `ids=<uuid>,<uuid>,...`: distinct ids in the order first given.

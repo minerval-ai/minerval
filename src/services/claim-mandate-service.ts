@@ -25,6 +25,7 @@
 import { rawQuery } from "../db/client.js";
 import { owlsToMicroUsd } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 /** The fewest owls a decomposition is funded with: below this, the
  *  Grantmaker's share could not pay for a pass that plans anything. */
@@ -98,7 +99,9 @@ export async function createClaimMandate(input: {
     [input.claimId]
   );
   if (!claim) {
-    return { ok: false, code: "CLAIM_NOT_FOUND", message: "Claim not found or not active" };
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(input.claimId);
+    return { ok: false, code: "CLAIM_NOT_FOUND", message: merged?.message ?? "Claim not found or not active" };
   }
   const budgetMicro = owlsToMicroUsd(input.budgetOwls);
   const [job] = await rawQuery<{ id: string }>(

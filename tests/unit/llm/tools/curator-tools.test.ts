@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal)
+);
 vi.mock("../../../../src/services/reconciliation-service.js", () => ({
   mergeClaims: vi.fn(async () => ({
     survivorId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",

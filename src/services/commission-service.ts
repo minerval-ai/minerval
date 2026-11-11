@@ -32,6 +32,7 @@ import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
 import { requestQuoteNote } from "./request-service.js";
 import { stewardPark, stewardParkNote, type StewardPark } from "./steward-park-reason.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export type CommissionPayer =
   | { kind: "grant"; grantId: string }
@@ -172,7 +173,11 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
        FROM claims WHERE id = $1 AND state = 'active'`,
     [input.claimId]
   );
-  if (!claim) return { ok: false, code: "NOT_FOUND", message: "No active node has that id." };
+  if (!claim) {
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(input.claimId);
+    return { ok: false, code: "NOT_FOUND", message: merged?.message ?? "No active node has that id." };
+  }
   // A parked node: this commission is its retry, and the payer is told (#846).
   let parked: { parked?: CommissionedPark } = {};
   if (claim.steward_state === "error") {

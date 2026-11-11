@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { mergedAliasRefusal } from "../services/claim-alias-service.js";
 import {
   createContributionBody,
   listContributionsParams,
@@ -120,6 +121,21 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
             },
           },
         },
+        // The node, or the merge target, was merged into another (#884):
+        // `merged_into` is the survivor to address instead.
+        409: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: { type: "string" },
+                message: { type: "string" },
+                merged_into: { type: "string", format: "uuid" },
+              },
+            },
+          },
+        },
         // An answer_request whose request_id is missing, unknown, closed,
         // or on another node (#723).
         422: {
@@ -159,6 +175,17 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         if (!claim) {
           return reply.code(404).send({
             error: { code: "NOT_FOUND", message: "Claim not found" },
+          });
+        }
+      }
+      // A contribution addressed to a merged node is refused and told the
+      // survivor (#884): the row exists, so the check above passed it and
+      // the contribution landed where no Steward would read it.
+      for (const id of [body.claim_id, body.merge_target_claim_id]) {
+        const merged = await mergedAliasRefusal(id);
+        if (merged) {
+          return reply.code(409).send({
+            error: { code: "CLAIM_MERGED", message: merged.message, merged_into: merged.survivorId },
           });
         }
       }

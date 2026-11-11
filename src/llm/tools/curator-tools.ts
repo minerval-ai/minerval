@@ -11,6 +11,7 @@
  *    enqueues the parent's Steward to adopt it.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
 import { ZodError } from "zod";
 import {
@@ -436,11 +437,33 @@ export function getCuratorToolDefinitions(): Tool[] {
   ];
 }
 
+/**
+ * The Curator's operations that write onto a node it names, with the input
+ * fields that carry the ids: checked for merged nodes before the write
+ * (#884). Merging into an absorbed node would hang a chain off a dead row,
+ * and an edge, a link or an instance placed on one would never be read.
+ * Removals and reversals are left alone: they take things off, by record.
+ */
+const MERGED_TARGET_KEYS: Record<string, readonly string[]> = {
+  merge_claims: ["survivor_id", "loser_id"],
+  complete_quantity_definition: ["claim_id"],
+  reclassify_claim: ["claim_id"],
+  add_relationship_edge: ["parent_id", "child_id"],
+  reassign_instance: ["to_claim_id"],
+  link_claims: ["claim_id", "other_claim_id"],
+  suggest_edge_to_steward: ["parent_id", "child_id"],
+};
+
 export async function executeCuratorTool(
   toolName: string,
   input: Record<string, unknown>
 ): Promise<string> {
   try {
+    const mergedKeys = MERGED_TARGET_KEYS[toolName];
+    if (mergedKeys) {
+      const merged = await mergedInputRefusal(input, mergedKeys);
+      if (merged) return JSON.stringify({ success: false, message: merged });
+    }
     switch (toolName) {
       case "merge_claims": {
         // Strict on purpose (#182): 'opposed' flips every moved stance, so a

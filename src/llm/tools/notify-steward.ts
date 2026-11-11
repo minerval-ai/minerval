@@ -15,6 +15,7 @@
  *  - the Curator: curator_change.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { mergedAliasRefusals } from "../../services/claim-alias-service.js";
 import { rawQuery } from "../../db/client.js";
 import {
   enqueueSteward,
@@ -204,7 +205,15 @@ export async function executeNotifySteward(
         );
   const kindOf = new Map(found.map((r) => [r.id, r.kind]));
   const parkedIds = new Set(found.filter((r) => r.steward_state === "error").map((r) => r.id));
+  // A merged node has no Steward to read a notice (#884): refused, naming
+  // the survivor, whose Steward is the one to tell.
+  const merged = await mergedAliasRefusals(wellFormed.filter((id) => kindOf.has(id)));
   const targets = wellFormed.filter((id) => {
+    const alias = merged.get(id);
+    if (alias) {
+      refused.push({ id, reason: alias.message });
+      return false;
+    }
     if (kindOf.has(id)) return true;
     refused.push({
       id,
