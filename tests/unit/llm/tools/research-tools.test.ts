@@ -156,8 +156,12 @@ describe("definitions", () => {
     }
     const { getSpendToolDefinitions } = await import("../../../../src/llm/tools/spend-tools.js");
     const commission = getSpendToolDefinitions().find((t) => t.name === "commission")!;
-    expect(commission.description).toContain("The researcher's tools are web search, read_page, the graph's read tools, query_sql");
+    expect(commission.description).toContain(
+      "The researcher's tools are web search, read_page, read_arxiv_source (the TeX, tables and data files of an arXiv paper's source), the graph's read tools, query_sql"
+    );
     expect(commission.description).toMatch(/code-execution sandbox/);
+    // Which tiers can look at a figure (#912), beside which can run code.
+    expect(commission.description).toMatch(/look at a figure by its image URL \(view_image\)/);
   });
 
   it("says in fund_request that the run works to the budget given, not to the quote (#885)", async () => {

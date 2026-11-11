@@ -183,6 +183,8 @@ const AGENT_INLINE_TOOL_NAMES = [
   "ingestion_report",
   "submit_plan",
   "read_page",
+  "view_image",
+  "read_arxiv_source",
   "load_skill",
 ];
 

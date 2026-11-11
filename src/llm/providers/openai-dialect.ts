@@ -105,13 +105,57 @@ export function toolResultText(
   return text;
 }
 
+/** An image a tool showed, lifted out of its tool_result for the OpenAI-shaped paths. */
+export interface ToolResultImage {
+  /** `data:<media type>;base64,<data>`, or the URL when the block named one. */
+  url: string;
+}
+
+/**
+ * What a tool_result shows besides its text (#912). Neither OpenAI wire
+ * form carries an image inside a function result on every model, so both
+ * adapters send the result's text where the call is answered and the images
+ * in a user message directly after the turn's results, which every vision
+ * model reads. A PDF document block has no counterpart on these paths; the
+ * tools that attach one do so only for a model that takes it (models.ts,
+ * modelReadsPdfDocuments), and one that arrives anyway is named in `notes`
+ * so the model is told what it is not seeing.
+ */
+export function toolResultAttachments(
+  content: Anthropic.ToolResultBlockParam["content"]
+): { images: ToolResultImage[]; notes: string[] } {
+  const images: ToolResultImage[] = [];
+  const notes: string[] = [];
+  if (!content || typeof content === "string") return { images, notes };
+  for (const block of content) {
+    if (block.type === "image") {
+      const source = block.source;
+      if (source.type === "base64") {
+        images.push({ url: `data:${source.media_type};base64,${source.data}` });
+      } else if (source.type === "url") {
+        images.push({ url: source.url });
+      } else {
+        notes.push("[An image attached to a tool result could not be passed to this model.]");
+      }
+    } else if (block.type !== "text") {
+      notes.push(`[A ${block.type} attached to a tool result could not be passed to this model.]`);
+    }
+  }
+  return { images, notes };
+}
+
+/** The line that introduces the images a turn's tools showed. */
+export const TOOL_IMAGES_LEAD =
+  "The image(s) your tool call(s) above returned, in the order of the calls:";
+
 /**
  * Translate the seam's Anthropic messages (plus an optional system prompt) into
  * Chat Completions messages.
  *
  * tool_result blocks become standalone `role:"tool"` messages emitted BEFORE
  * any sibling text, because the API requires every tool call to be answered
- * immediately after the assistant turn that made it.
+ * immediately after the assistant turn that made it. Images a tool showed
+ * follow them in a user message, ahead of that sibling text.
  */
 export function toChatMessages(
   messages: LlmMessage[],
@@ -130,6 +174,7 @@ export function toChatMessages(
     const text: string[] = [];
     const toolCalls: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] = [];
     const toolMessages: ChatMessage[] = [];
+    const shown: ToolResultImage[] = [];
 
     for (const block of message.content) {
       switch (block.type) {
@@ -146,13 +191,16 @@ export function toChatMessages(
             },
           });
           break;
-        case "tool_result":
+        case "tool_result": {
+          const { images, notes } = toolResultAttachments(block.content);
           toolMessages.push({
             role: "tool",
             tool_call_id: block.tool_use_id,
-            content: toolResultText(block.content),
+            content: [toolResultText(block.content), ...notes].join("\n"),
           });
+          shown.push(...images);
           break;
+        }
         default:
           throw new Error(
             `Content block "${block.type}" is not supported on the ` +
@@ -172,6 +220,15 @@ export function toChatMessages(
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         });
       }
+    } else if (shown.length > 0) {
+      out.push({
+        role: "user",
+        content: [
+          { type: "text", text: TOOL_IMAGES_LEAD },
+          ...shown.map((image) => ({ type: "image_url" as const, image_url: { url: image.url } })),
+          ...(text.length > 0 ? [{ type: "text" as const, text: text.join("") }] : []),
+        ],
+      });
     } else if (text.length > 0) {
       out.push({ role: "user", content: text.join("") });
     }

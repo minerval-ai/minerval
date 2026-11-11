@@ -174,3 +174,41 @@ export function modelRefusalFallbackForm(id: string): "array" | "default" | null
 export function modelSupportsLongRun(id: string): boolean {
   return /^claude-(fable|mythos|opus-5)/.test(id);
 }
+
+/**
+ * Whether the model takes images as input, so a tool may show it one (#912).
+ * An ALLOWLIST by family, like modelAcceptsTemperature: a model wrongly
+ * assumed to see would be sent an image block its API rejects, which fails
+ * the run, while one wrongly assumed blind is only told it cannot view a
+ * figure. Every Claude model the Anthropic API serves takes images. The
+ * OpenAI and OpenRouter entries are the families whose image input is
+ * published (OpenRouter's model list gives `input_modalities`; the cheap
+ * tier's GPT-6 Luna lists text, image and file). A model pinned elsewhere
+ * that does see needs its family added here.
+ */
+export function modelSeesImages(id: string): boolean {
+  if (isAnthropicModelId(id)) return true;
+  if (/^gpt-(4o|4\.1|[5-9])/.test(id)) return true;
+  return /^(openai\/gpt-(4o|4\.1|[5-9])|anthropic\/claude-|google\/gemini-)/.test(id);
+}
+
+/**
+ * Whether a tool may hand the model a PDF as a document block, each page
+ * read as text and as an image. Only the Anthropic adapter sends one; the
+ * OpenAI-shaped paths have no translation for it (providers/openai-dialect.ts).
+ */
+export function modelReadsPdfDocuments(id: string): boolean {
+  return isAnthropicModelId(id);
+}
+
+/**
+ * The most visual tokens one image costs on the model, for telling an agent
+ * what a figure will cost it: an image is ⌈width/28⌉ × ⌈height/28⌉ tokens,
+ * downscaled first to fit this cap. 4,784 on Claude 4.7 and later, 1,568 on
+ * earlier Claude models. Other providers price images their own way; the
+ * higher figure is used for them, as the estimate an agent should budget to.
+ */
+export function modelImageTokenCap(id: string): number {
+  if (/^claude-(haiku-4|sonnet-4|opus-4-[0-6])/.test(id)) return 1568;
+  return 4784;
+}

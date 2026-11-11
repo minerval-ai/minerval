@@ -22,6 +22,7 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { skillsSection } from "./skills.js";
 import { CODE_EXECUTION_USD_PER_HOUR, type BudgetEstimate } from "../instrument-harness.js";
+import { modelImageTokenCap, modelReadsPdfDocuments, modelSeesImages } from "../models.js";
 
 /** Where the analysis paragraph goes; see getResearcherRolePrompt. */
 const ANALYSIS = "<<analysis>>";
@@ -68,6 +69,17 @@ becomes a fact, a subgroup becomes a population, a correlation becomes a
 cause. When a source asserts something load-bearing, find where it came
 from, and read the passage there. When you cannot reach the origin, say
 exactly where the trail stopped.
+
+A number is not always in a page's text. A paper's tables are in its TeX
+as typed, and the data behind a plot is often a file beside them:
+read_arxiv_source lists and reads the files arXiv holds for a paper, and
+read_page reads a data file in a repository as written. Where a value
+exists only as a point on a plot, look at the figure (view_image, when it
+is in your toolset) and report it as read from the figure, with the
+precision its axes allow, never as the number the paper states. Where a
+figure cannot be shown to you (an EPS, or a run whose model takes no
+images), say that in the report; do not estimate the value from the text
+around it.
 
 Keep three things apart in everything you write: what a source shows
 (its data, its method, its result), what it asserts (its framing, its
@@ -230,7 +242,13 @@ build one.
 The run that takes the request up is a Researcher like you, with the tools
 you can see in this run and nothing more: it reads the open web and the
 graph, searches the literature, and computes in a sandbox with one CPU and
-no network. It has no GPU, cannot train or fine-tune a model, cannot call a
+no network. It reads the source files arXiv holds for a paper (TeX, tables,
+data files), and the task message says whether the tier the work runs on
+can look at a figure. A value read off a plot is an estimate, so quote
+such work as an estimate of what the figure shows; where the value exists
+only in a figure that cannot be shown (an EPS, or any image on a tier that
+takes none), that part cannot be met, and the report says so. It has no
+GPU, cannot train or fine-tune a model, cannot call a
 model API or any other service to run an experiment, cannot collect new
 data from people or instruments, and cannot buy access to anything. Quote
 only work it can do. Where a request asks for work beyond those means (a
@@ -370,7 +388,7 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
     : input.requestedBy === "request_scope"
     ? "This run scopes a request, and the section When You Scope a Request applies. It records nothing on the graph and does not do the work: your report's plan and budget_quote_usd are recorded on the request, and the quote becomes its budget. The brief above is the request as filed; get_request reads it with the work already done on it." +
       (input.fullWork
-        ? ` The full work will run on the ${input.fullWork.tier} tier (${input.fullWork.model}${input.fullWork.effort ? `, ${input.fullWork.effort} effort` : ""}), whatever the work, so price it on that tier's line of cost_sheet.`
+        ? ` The full work will run on the ${input.fullWork.tier} tier (${input.fullWork.model}${input.fullWork.effort ? `, ${input.fullWork.effort} effort` : ""}), whatever the work, so price it on that tier's line of cost_sheet. On figures and source files, that run: ${figureReadingSentence(input.fullWork.model).trim()}`
         : "") +
       (input.documentReview
         ? ` The request bears on one document alone, "${input.documentReview.title}"${input.documentReview.url ? ` (${input.documentReview.url})` : ""}, so the full work is a review of it, recorded on its page (When You Review a Document). ` +
@@ -509,6 +527,12 @@ export function budgetGuide(input: ResearcherTaskInput): string {
   const has = (n: string) => input.toolNames.includes(n);
   if (has("web_search")) costs.push("web_search carries a fee of a few cents or less per search, and its results stay in the conversation");
   if (has("read_page")) costs.push("read_page has no fee, but the page (up to about 3,000 tokens) stays in the conversation");
+  if (has("read_arxiv_source")) costs.push("read_arxiv_source has no fee, and a window of a source file costs what a page does");
+  if (has("view_image")) {
+    costs.push(
+      `view_image has no fee, but an image costs up to about ${modelImageTokenCap(input.model).toLocaleString("en-US")} input tokens (each result gives its estimate) and stays in the conversation like a page`
+    );
+  }
   if (has("code_execution")) costs.push(`code_execution is billed at $${CODE_EXECUTION_USD_PER_HOUR.toFixed(2)} per container-hour, small next to tokens`);
   if (input.toolNames.some((n) => n.startsWith("elicit_"))) {
     costs.push(
@@ -524,4 +548,23 @@ export function budgetGuide(input: ResearcherTaskInput): string {
     lines.push(`Tool costs beyond tokens: ${costs.join("; ")}. The graph reads and the notebook cost only their tokens.`);
   }
   return lines.join("\n\n");
+}
+
+/**
+ * What a run on `model` can do with figures and source archives, in a
+ * sentence for whoever writes its brief or scopes work for it.
+ */
+export function figureReadingSentence(model: string): string {
+  if (!modelSeesImages(model)) {
+    return (
+      "It reads an arXiv paper's source archive (TeX, tables, data files) but cannot look at images, so a " +
+      "value that exists only as a plotted point is beyond it. "
+    );
+  }
+  return (
+    "It can look at a figure by its image URL and read an arXiv paper's source archive (TeX, tables, data " +
+    "files, figure files)" +
+    (modelReadsPdfDocuments(model) ? ", and a short PDF as a document" : "") +
+    "; a value read off a plot is an estimate, and a figure that exists only as EPS or SVG cannot be shown. "
+  );
 }

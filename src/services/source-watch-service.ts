@@ -21,8 +21,9 @@
  * read is capped in size.
  */
 import { rawQuery } from "../db/client.js";
-import { fetchPublicUrl } from "./url-guard.js";
-import { windowText, type TextWindow } from "./document-text.js";
+import { fetchPublicBytes, fetchPublicUrl, type PublicBody } from "./url-guard.js";
+import { bodyToText, looksLikePdf, windowText, type TextWindow } from "./document-text.js";
+import { sniffImage } from "./paper-files.js";
 
 const CROSSREF = "https://api.crossref.org";
 const USER_AGENT = "Minerval/1.0 (lookout; mailto:hello@minerval.ai)";
@@ -552,6 +553,61 @@ export type ReadPageResult =
   | ({ ok: true; url: string; text: string; chars: number } & Omit<TextWindow, "content">)
   | { ok: false; problem: string };
 
+/** File extensions that mean a plain-text file when the server calls it only "octet-stream" or nothing. */
+const PLAIN_TEXT_EXTENSION = /\.(csv|tsv|dat|txt|tex|bib|bbl|sty|cls|md|ya?ml|toml|py|r|jl|m|ipynb)$/i;
+
+/**
+ * Whether a body is a plain-text file to be read as written, not a page to
+ * be stripped of markup: a data file or a TeX file from a repository
+ * (raw.githubusercontent.com serves them as text/plain). htmlToText on one
+ * drops everything between a `<` and a later `>` (`$a < b$ ... $c > d$`)
+ * and folds its tabs and blank lines, which loses columns of a table (#912).
+ * HTML and XML, however served, are still stripped.
+ */
+function servedAsPlainText(body: PublicBody, text: string): boolean {
+  const type = (body.contentType ?? "").split(";")[0]!.trim().toLowerCase();
+  if (/^<(!doctype html|html|\?xml)[\s>]/i.test(text.trimStart().slice(0, 64))) return false;
+  if (/^text\/(?!html|xml)/.test(type)) return true;
+  if (/^application\/(x-tex|x-latex|x-bibtex|csv|x-yaml|yaml|toml)$/.test(type)) return true;
+  if (type === "" || type === "application/octet-stream" || type === "binary/octet-stream") {
+    let path = "";
+    try {
+      path = new URL(body.url).pathname;
+    } catch {
+      path = "";
+    }
+    return PLAIN_TEXT_EXTENSION.test(path);
+  }
+  return false;
+}
+
+/**
+ * A fetched body as the text read_page pages through. What the body is, is
+ * decided from its bytes first: an image or an archive is not decoded into
+ * noise but named, with the tool that reads it.
+ */
+export async function pageText(body: PublicBody): Promise<string> {
+  const image = sniffImage(body.bytes);
+  if (image) {
+    throw new Error(
+      `${body.url} is an image (${image.mediaType}, ${image.width} by ${image.height} px), which read_page ` +
+        `cannot read as text. view_image shows one to an agent that has it.`
+    );
+  }
+  if (body.bytes[0] === 0x1f && body.bytes[1] === 0x8b) {
+    throw new Error(
+      `${body.url} is a gzip archive, which read_page cannot read as text. For a paper's source on arXiv, ` +
+        `read_arxiv_source lists and reads the files in it.`
+    );
+  }
+  const text = await bodyToText(body.bytes, body.contentType, body.url);
+  // A PDF's extracted text and a JSON body are already text; so is a plain-text file.
+  if (looksLikePdf(body.bytes, body.contentType) || /^\s*[{[]/.test(text) || servedAsPlainText(body, text)) {
+    return text;
+  }
+  return htmlToText(text, Infinity);
+}
+
 /**
  * Fetch a public page and return one window of its text; errors as a
  * message. The window has the contract of provenance_read_source
@@ -568,8 +624,7 @@ export async function readPage(
   opts: { offset?: number; maxChars?: number } = {}
 ): Promise<ReadPageResult> {
   try {
-    const body = await fetchPublicUrl(url, { userAgent: USER_AGENT });
-    const full = /^\s*[{[]/.test(body) ? body : htmlToText(body, Infinity);
+    const full = await pageText(await fetchPublicBytes(url, { userAgent: USER_AGENT }));
     const { content, ...window } = windowText(full, opts.offset, opts.maxChars);
     return { ok: true, url, text: content, chars: content.length, ...window };
   } catch (err) {
