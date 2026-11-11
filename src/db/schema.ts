@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgView,
   uuid,
   text,
   real,
@@ -18,7 +19,7 @@ import {
   primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { sql, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -487,6 +488,10 @@ export const assessments = pgTable(
     // NULL = written outside a traced run, or before the column existed and
     // not matched by the backfill in the migration that added it.
     runId: uuid("run_id"),
+    // Whether what this judgment was made against was recorded with it
+    // (judgment_inputs, #566). False on judgments from before that record,
+    // which therefore cannot be said to be stale or fresh by it.
+    inputsRecorded: boolean("inputs_recorded").notNull().default(false),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
     trigger: text("trigger"),
@@ -4982,6 +4987,10 @@ export const quantityEstimates = pgTable(
     marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
+    // Whether what this judgment was made against was recorded with it
+    // (judgment_inputs, #566). False on judgments from before that record,
+    // which therefore cannot be said to be stale or fresh by it.
+    inputsRecorded: boolean("inputs_recorded").notNull().default(false),
     isCurrent: boolean("is_current").notNull().default(true),
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
@@ -5082,6 +5091,10 @@ export const questionAssessments = pgTable(
     fundedByJobId: uuid("funded_by_job_id"),
     // The agent run that wrote it, as on assessments.run_id.
     runId: uuid("run_id"),
+    // Whether what this judgment was made against was recorded with it
+    // (judgment_inputs, #566). False on judgments from before that record,
+    // which therefore cannot be said to be stale or fresh by it.
+    inputsRecorded: boolean("inputs_recorded").notNull().default(false),
     isCurrent: boolean("is_current").notNull().default(true),
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
@@ -5516,4 +5529,99 @@ export const agentSessions = pgTable(
       sql`${table.status} IN ('running', 'waiting', 'ready', 'expired', 'closed')`
     ),
   ]
+);
+
+// ---------------------------------------------------------------------------
+// judgment_inputs: what each judgment was made against (#566)
+//
+// When a node's judgment is written (a claim's assessment, a quantity's
+// estimate, a question's assessment), the state of what it rests on is
+// recorded with it, one row per input:
+//
+//   - 'premise': a node under this one (an edge with this node as parent),
+//     with the relation and the id of that node's judgment in force at the
+//     time, or NULL when it had none.
+//   - 'source': a source attached to this node by a live instance, with the
+//     source's content hash when it had one.
+//
+// Staleness then follows from versions instead of from someone remembering
+// to say so: a judgment is out of date when a premise has been judged again,
+// when a premise or a source has been added or removed, or when one of its
+// sources has had a correction or a retraction since
+// (services/judgment-inputs-service.ts).
+//
+// judgment_id points at one of three tables by judgment_kind, so it carries
+// no foreign key; the rows are written in the same statement sequence as the
+// judgment and never updated. A judgment whose inputs_recorded is false has
+// no rows here because none were recorded, not because it rests on nothing.
+// ---------------------------------------------------------------------------
+export const judgmentInputs = pgTable(
+  "judgment_inputs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    judgmentKind: text("judgment_kind").notNull(),
+    judgmentId: uuid("judgment_id").notNull(),
+    inputKind: text("input_kind").notNull(),
+    // 'premise': the node under this one, the edge's relation, and that
+    // node's judgment in force when this judgment was written.
+    nodeId: uuid("node_id"),
+    relationType: text("relation_type"),
+    inputJudgmentId: uuid("input_judgment_id"),
+    // 'source': the source, and its content hash then when it had one.
+    sourceId: uuid("source_id"),
+    contentHash: text("content_hash"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
+    check(
+      "ck_judgment_inputs_judgment_kind",
+      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment')`
+    ),
+    check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source')`),
+    check(
+      "ck_judgment_inputs_shape",
+      sql`(${table.inputKind} = 'premise' AND ${table.nodeId} IS NOT NULL AND ${table.relationType} IS NOT NULL AND ${table.sourceId} IS NULL)
+        OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// The judgment in force (#566)
+//
+// A node's judgment in force is the one a reader or an agent should go by:
+// today, the current row of the table its kind keeps (a proposition's verdict
+// in `assessments`, a quantity's estimate in `quantity_estimates`, a
+// question's standing in `question_assessments`), and the current evaluation
+// of an argument in `argument_evaluations`. Every read of "the current
+// judgment" goes through one of these four views, so that what "in force"
+// means is defined once, here, and can change here: when judgments come to
+// be versioned by label, the view will return the highest version its reader
+// is cleared for, and no query that reads it will need to change.
+//
+// Read the view to learn what a node's judgment is. Read the table for
+// history (every row, current or not) and for the write seam that supersedes
+// a current row; nothing writes through a view.
+//
+// drizzle-kit writes the views into migrations with their columns spelled
+// out, so adding a column to one of the tables regenerates its view: run
+// `npm run db:generate` as for any schema change.
+// ---------------------------------------------------------------------------
+export const assessmentsInForce = pgView("assessments_in_force").as((qb) =>
+  qb.select().from(assessments).where(eq(assessments.isCurrent, true))
+);
+
+export const argumentEvaluationsInForce = pgView("argument_evaluations_in_force").as((qb) =>
+  qb.select().from(argumentEvaluations).where(eq(argumentEvaluations.isCurrent, true))
+);
+
+export const quantityEstimatesInForce = pgView("quantity_estimates_in_force").as((qb) =>
+  qb.select().from(quantityEstimates).where(eq(quantityEstimates.isCurrent, true))
+);
+
+export const questionAssessmentsInForce = pgView("question_assessments_in_force").as((qb) =>
+  qb.select().from(questionAssessments).where(eq(questionAssessments.isCurrent, true))
 );

@@ -39,6 +39,7 @@ import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
+import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
 import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
 import { loadConfig } from "../config.js";
 import { CODE_EXECUTION_TOOL, meterCodeExecution, turnUsedCodeExecution } from "./instrument-harness.js";
@@ -424,7 +425,8 @@ export async function toolUseLoop(options: {
   temperature?: number;
   effort?: EffortLevel;
   maxIterations?: number;
-  executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+  /** The result as a string, or a ToolOutput when the tool shows the model an image or a document (tool-output.ts). */
+  executeTool: (name: string, input: Record<string, unknown>) => Promise<ToolExecution>;
   /** Called when the model calls a "final" tool (e.g. submit_decomposition). Return result to stop loop. */
   onFinalTool?: (name: string, input: Record<string, unknown>) => unknown | null;
   /**
@@ -709,9 +711,9 @@ export async function toolUseLoop(options: {
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,
-        content: output,
+        content: toolResultContent(output),
       });
-      executedTools.push({ name: tu.name, input: tu.input, output });
+      executedTools.push({ name: tu.name, input: tu.input, output: toolOutputForTrace(output) });
     }
     if (trace && executedTools.length > 0) {
       recordAgentStep(trace, "tool_results", executedTools);
@@ -866,7 +868,7 @@ export async function longRunToolLoop(options: {
   maxIterations?: number;
   /** Wall-clock cap for the whole loop; checked before each turn. */
   maxWallMs?: number;
-  executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+  executeTool: (name: string, input: Record<string, unknown>) => Promise<ToolExecution>;
   /** Called when the model calls a "final" tool. Return non-null to stop the loop. */
   onFinalTool?: (name: string, input: Record<string, unknown>) => unknown | null;
   beforeTurn?: (state: LongRunLoopState) => Promise<{ stop?: string } | void>;
@@ -1006,8 +1008,8 @@ export async function longRunToolLoop(options: {
       const output =
         malformedToolArguments(tu.input) ??
         (await options.executeTool(tu.name, tu.input));
-      toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: output });
-      executedTools.push({ name: tu.name, input: tu.input, output });
+      toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: toolResultContent(output) });
+      executedTools.push({ name: tu.name, input: tu.input, output: toolOutputForTrace(output) });
     }
     if (trace && executedTools.length > 0) {
       recordAgentStep(trace, "tool_results", executedTools);

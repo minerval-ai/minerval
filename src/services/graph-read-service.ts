@@ -237,9 +237,9 @@ async function searchSignals(ids: string[]): Promise<Map<string, SearchSignals>>
             FLOOR(EXTRACT(EPOCH FROM (now() - COALESCE(a.assessed_at, qe.assessed_at, qa.assessed_at)))
                   / 86400)::int AS days_since_assessed
        FROM claims c
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-       LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
-       LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
+       LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
+       LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
       WHERE c.id = ANY($1)`,
     [ids]
   );

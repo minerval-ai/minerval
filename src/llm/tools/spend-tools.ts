@@ -19,7 +19,7 @@ import { rawQuery } from "../../db/client.js";
 import { registerAwait } from "../../services/session-service.js";
 import { commissionResearch } from "../../services/research-commission-service.js";
 import type { ResearchModelTier } from "../../services/research-run-service.js";
-import { researcherToolsSentence, sandboxTiersSentence } from "./research-tools.js";
+import { figureTiersSentence, researcherToolsSentence, sandboxTiersSentence } from "./research-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -36,6 +36,7 @@ export function getSpendToolDefinitions(): Tool[] {
         "own while you carry on. " +
         researcherToolsSentence() +
         sandboxTiersSentence() +
+        figureTiersSentence() +
         "You set the run's budget: read the costing skill's cost_sheet for " +
         "what such runs cost and use the high end of the range, not the middle, since what the run " +
         "doesn't spend comes back. The budget leaves yours at once. The run's agent is told its " +

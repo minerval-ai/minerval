@@ -19,6 +19,7 @@ import {
   type QuantityUnit,
   type ValueShown,
 } from "../schemas/kinds.js";
+import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
 /** Set a quantity's definition, making a fresh claim a quantity if it is not one yet. */
@@ -88,6 +89,8 @@ export async function recordEstimate(input: {
         input.marginalYield ?? null,
       ]
     );
+    // What the estimate was made against, in the same transaction (#566).
+    await recordJudgmentInputs(tx.query, "quantity_estimate", row!.id, input.claimId);
     return { id: row!.id };
   });
 }
@@ -270,7 +273,7 @@ export async function getCurrentEstimate(
 ): Promise<{ estimate: QuantityEstimate; assessed: QuantityAssessedView } | null> {
   const [row] = await rawQuery<{ estimate: QuantityEstimate } & QuantityAssessedView>(
     `SELECT id, estimate, summary, work, model, assessed_at
-       FROM quantity_estimates WHERE claim_id = $1 AND is_current = true`,
+       FROM quantity_estimates_in_force WHERE claim_id = $1`,
     [claimId]
   );
   if (!row) return null;
@@ -300,7 +303,7 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
          FROM quantity_readings r
          JOIN sources s ON s.id = r.source_id
          LEFT JOIN claims bc ON bc.id = r.bearing_claim_id
-         LEFT JOIN assessments a ON a.claim_id = bc.id AND a.is_current = true
+         LEFT JOIN assessments_in_force a ON a.claim_id = bc.id
         WHERE r.claim_id = $1
         ORDER BY r.created_at, r.id`,
       [claimId]
@@ -309,7 +312,7 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
       `SELECT c.id, c.text, qc.direction, qc.value, a.status, a.claim_credence AS credence
          FROM quantity_cuts qc
          JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
-         LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+         LEFT JOIN assessments_in_force a ON a.claim_id = c.id
         WHERE qc.quantity_id = $1
         ORDER BY qc.value, c.id`,
       [claimId]

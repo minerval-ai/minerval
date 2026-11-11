@@ -26,7 +26,8 @@ export function getReadPageToolDefinition(): Tool {
   return {
     name: READ_PAGE_TOOL_NAME,
     description:
-      "Fetch one public web page (HTML, PDF or text) and read it as text, one window at a time " +
+      "Fetch one public web page (HTML, PDF or text; a data or TeX file in a repository is read as " +
+      "written) and read it as text, one window at a time " +
       `(${SOURCE_READ_DEFAULT_CHARS.toLocaleString("en-US")} characters unless max_chars says ` +
       `otherwise, at most ${SOURCE_READ_MAX_CHARS.toLocaleString("en-US")}). When truncated is ` +
       "true, call again with offset: next_offset to read on, to the end if the page matters. " +

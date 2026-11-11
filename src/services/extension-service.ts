@@ -421,7 +421,7 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
       reasoning_trace: string;
     }>(
       `SELECT standing, summary, reasoning_trace
-         FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
+         FROM question_assessments_in_force WHERE claim_id = $1`,
       [claimId]
     );
     matched.standing = row?.standing ?? null;

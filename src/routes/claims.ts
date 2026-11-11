@@ -1,10 +1,11 @@
 import { attachArgumentEvidence, sendArgumentEvidenceBacklog } from "../services/argument-evidence-service.js";
 import type { FastifyInstance } from "fastify";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
-import { assessments } from "../db/schema.js";
+import { assessmentsInForce } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
 import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
+import { getJudgmentInputs } from "../services/judgment-inputs-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
@@ -739,8 +740,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const db = getDb();
         const [assessment] = await db
           .select()
-          .from(assessments)
-          .where(and(eq(assessments.claimId, claim_id), eq(assessments.isCurrent, true)))
+          .from(assessmentsInForce)
+          .where(eq(assessmentsInForce.claimId, claim_id))
           .limit(1);
 
         const subclaimCount = await getSubclaimCount(claim_id);
@@ -1726,6 +1727,98 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       },
     }
   );
+
+  // GET /claims/:claim_id/judgment-inputs
+  app.get<{ Params: { claim_id: string } }>("/:claim_id/judgment-inputs", {
+    schema: {
+      tags: ["claims"],
+      summary:
+        "What a node's judgment in force was made against, and what has changed since: " +
+        "each node under it with the judgment it had then and has now (unchanged, rejudged " +
+        "or removed), nodes added under it since, sources attached or detached since, and " +
+        "corrections or retractions on its sources since. changed is true when any of those " +
+        "is non-empty; recorded is false for a judgment written before this was recorded, " +
+        "about which nothing can be said",
+      params: {
+        type: "object",
+        properties: { claim_id: { type: "string", format: "uuid" } },
+        required: ["claim_id"],
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            node_id: { type: "string", format: "uuid" },
+            judgment: {
+              type: "object",
+              nullable: true,
+              properties: {
+                kind: { type: "string", enum: ["assessment", "quantity_estimate", "question_assessment"] },
+                id: { type: "string", format: "uuid" },
+                assessed_at: { type: "string", format: "date-time" },
+              },
+            },
+            recorded: { type: "boolean" },
+            premises: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  node_id: { type: "string", format: "uuid" },
+                  relation: { type: "string" },
+                  judged_against: { type: "string", format: "uuid", nullable: true },
+                  in_force_now: { type: "string", format: "uuid", nullable: true },
+                  state: { type: "string", enum: ["unchanged", "rejudged", "removed"] },
+                },
+              },
+            },
+            premises_added: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  node_id: { type: "string", format: "uuid" },
+                  relation: { type: "string" },
+                  in_force_now: { type: "string", format: "uuid", nullable: true },
+                },
+              },
+            },
+            sources: {
+              type: "object",
+              properties: {
+                recorded: { type: "integer" },
+                added: { type: "array", items: { type: "string", format: "uuid" } },
+                removed: { type: "array", items: { type: "string", format: "uuid" } },
+                events_since: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      source_id: { type: "string", format: "uuid" },
+                      kind: { type: "string" },
+                      detected_at: { type: "string", format: "date-time" },
+                    },
+                  },
+                },
+              },
+            },
+            // Null when the judgment has no record to compare against.
+            changed: { type: "boolean", nullable: true },
+          },
+        },
+        404: errorEnvelope,
+      },
+    },
+    handler: async (request, reply) => {
+      const inputs = await getJudgmentInputs(request.params.claim_id);
+      if (!inputs) {
+        return reply.code(404).send({
+          error: { code: "NOT_FOUND", message: "Claim not found", request_id: request.id },
+        });
+      }
+      return reply.send(inputs);
+    },
+  });
 
   // GET /claims/:claim_id/assessments
   app.get<{ Params: { claim_id: string }; Querystring: Record<string, string> }>(

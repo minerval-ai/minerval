@@ -141,9 +141,9 @@ function normalizeClaimIds(primary: string, raw: unknown): string[] {
  * key, so it holds any of the three).
  */
 const CURRENT_RECORD_JOINS = `
-  LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true AND c.kind = 'claim'
-  LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true AND c.kind = 'quantity'
-  LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true AND c.kind = 'question'`;
+  LEFT JOIN assessments_in_force a ON a.claim_id = c.id AND c.kind = 'claim'
+  LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id AND c.kind = 'quantity'
+  LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id AND c.kind = 'question'`;
 const RECORD_ID = `COALESCE(a.id, qe.id, qa.id)`;
 /** A question's standing reads as its status; a quantity has none (its estimate is the record). */
 const RECORD_STATUS = `COALESCE(a.status, qa.standing)`;
@@ -1297,8 +1297,8 @@ export async function figureAndAnswerChecks(
        FROM quantity_cuts qc
        JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
        JOIN claims q ON q.id = qc.quantity_id AND q.state = 'active'
-       JOIN assessments a ON a.claim_id = qc.claim_id AND a.is_current = true AND a.claim_credence IS NOT NULL
-       JOIN quantity_estimates qe ON qe.claim_id = qc.quantity_id AND qe.is_current = true
+       JOIN assessments_in_force a ON a.claim_id = qc.claim_id AND a.claim_credence IS NOT NULL
+       JOIN quantity_estimates_in_force qe ON qe.claim_id = qc.quantity_id
       WHERE ${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")}`,
     params
   );
@@ -1330,10 +1330,10 @@ export async function figureAndAnswerChecks(
             qa.favored_claim_ids::text[] AS favored_ids,
             c.id AS answer_id, c.text AS answer_text, a.status AS answer_status
        FROM claims q
-       JOIN question_assessments qa ON qa.claim_id = q.id AND qa.is_current = true
+       JOIN question_assessments_in_force qa ON qa.claim_id = q.id
        JOIN claim_relationships r ON r.parent_claim_id = q.id AND r.relation_type = 'answers'
        JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE q.kind = 'question' AND q.state = 'active' AND ${inScope.replaceAll("{{node}}", "q.id")}`,
     params
   );

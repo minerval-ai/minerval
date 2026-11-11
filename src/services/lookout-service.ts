@@ -612,8 +612,8 @@ export async function flagReassessment(input: {
   }
 
   const [current] = await rawQuery<{ id: string; status: string; claim_credence: number | null }>(
-    `SELECT id, status, claim_credence FROM assessments
-      WHERE claim_id = $1 AND is_current = true LIMIT 1`,
+    `SELECT id, status, claim_credence FROM assessments_in_force
+      WHERE claim_id = $1 LIMIT 1`,
     [input.claimId]
   );
 
@@ -878,7 +878,7 @@ const FLAG_SELECT = `
     FROM lookout_flags f
     LEFT JOIN claims c ON c.id = f.claim_id
     LEFT JOIN actions a ON a.id = f.action_id
-    LEFT JOIN assessments cur ON cur.claim_id = f.claim_id AND cur.is_current = true`;
+    LEFT JOIN assessments_in_force cur ON cur.claim_id = f.claim_id`;
 
 export async function listLookoutFlags(
   lookoutId: string,

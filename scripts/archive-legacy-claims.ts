@@ -80,7 +80,7 @@ async function main(): Promise<void> {
               SELECT 1 FROM claim_instances i WHERE i.claim_id = c.id
             ))::int AS with_instances,
             count(*) FILTER (WHERE EXISTS (
-              SELECT 1 FROM assessments a WHERE a.claim_id = c.id AND a.is_current
+              SELECT 1 FROM assessments_in_force a WHERE a.claim_id = c.id
             ))::int AS assessed
        FROM claims c
       WHERE c.state = '${fromState}' AND ${epochClause}`,

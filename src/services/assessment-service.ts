@@ -1,13 +1,13 @@
 import { getDb } from "../db/client.js";
-import { assessments } from "../db/schema.js";
+import { assessments, assessmentsInForce } from "../db/schema.js";
 import { eq, desc, and, gte, lte, count } from "drizzle-orm";
 
 export async function getCurrentAssessment(claimId: string) {
   const db = getDb();
   const rows = await db
     .select()
-    .from(assessments)
-    .where(and(eq(assessments.claimId, claimId), eq(assessments.isCurrent, true)))
+    .from(assessmentsInForce)
+    .where(eq(assessmentsInForce.claimId, claimId))
     .limit(1);
   return rows[0] ?? null;
 }

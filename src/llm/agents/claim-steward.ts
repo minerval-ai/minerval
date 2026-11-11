@@ -53,6 +53,7 @@ import { resolveProvider } from "../providers/routing.js";
 import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-harness.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
+import { createFigureTools } from "../tools/figure-tools.js";
 import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
@@ -144,17 +145,17 @@ interface PassTask {
 
 const LOG = "log_stewardship_decision";
 
-/** Where each kind's current judgment lives, to tell a first judgment from a revisit. */
-const CURRENT_JUDGMENT_TABLE: Record<NodeKind, string> = {
-  claim: "assessments",
-  quantity: "quantity_estimates",
-  question: "question_assessments",
+/** The view of each kind's judgment in force, to tell a first judgment from a revisit. */
+const JUDGMENT_IN_FORCE_VIEW: Record<NodeKind, string> = {
+  claim: "assessments_in_force",
+  quantity: "quantity_estimates_in_force",
+  question: "question_assessments_in_force",
 };
 
 /** Whether the node has a current assessment (or estimate, or standing). A failed read counts as none, which asks for one. */
 async function hasCurrentJudgment(claimId: string, kind: NodeKind): Promise<boolean> {
   const rows = await rawQuery<{ one: number }>(
-    `SELECT 1 AS one FROM ${CURRENT_JUDGMENT_TABLE[kind]} WHERE claim_id = $1 AND is_current = true LIMIT 1`,
+    `SELECT 1 AS one FROM ${JUDGMENT_IN_FORCE_VIEW[kind]} WHERE claim_id = $1 LIMIT 1`,
     [claimId]
   ).catch(() => []);
   return rows.length > 0;
@@ -580,6 +581,7 @@ async function runClaimStewardImpl(input: {
   // server runs it on an Anthropic model; elsewhere the loop executes it
   // (tools/web-search-tool.ts).
   const webSearch = createWebSearch(model);
+  const figureTools = createFigureTools({ model });
 
   // The graph search the Curator also gets (#69). get_claim reads the claim,
   // its subclaims and their credences, and get_claim_dependents what rests on
@@ -654,6 +656,10 @@ async function runClaimStewardImpl(input: {
     // A search hit is a snippet; the page is where an abstract, a results
     // table, or a retraction notice actually is (#333).
     getReadPageToolDefinition(),
+    // A value that sits only in a plot, or in the TeX and data files behind
+    // a paper (#912): view_image where this pass's model takes images, and
+    // read_arxiv_source on every model.
+    ...figureTools.definitions,
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
     ...getSpendToolDefinitions(),
@@ -811,6 +817,8 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
         `${task.concluding}. Whatever is not recorded when the run ends is lost.`,
     },
     executeTool: async (name, toolInput) => {
+      const figure = await figureTools.execute(name, toolInput);
+      if (figure !== null) return figure;
       const output = await dispatch(name, toolInput);
       if (succeeded(output)) done.add(name);
       return output;

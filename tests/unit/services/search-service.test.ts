@@ -136,8 +136,8 @@ describe("search-service", () => {
       const sql = mockRawQuery.mock.calls[0]![0] as string;
       expect(sql).toContain("WHEN 'question' THEN qa.id IS NOT NULL");
       expect(sql).toContain("WHEN 'quantity' THEN qe.id IS NOT NULL");
-      expect(sql).toContain("LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true");
-      expect(sql).toContain("LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true");
+      expect(sql).toContain("LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id");
+      expect(sql).toContain("LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id");
     });
 
     it("binds a kind filter", async () => {

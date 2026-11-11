@@ -93,7 +93,7 @@ async function buildContext(question: string, top: number): Promise<ContextClaim
     reasoning_trace: string;
   }>(
     `SELECT claim_id, status, confidence, claim_credence, summary, reasoning_trace
-       FROM assessments WHERE is_current AND claim_id = ANY($1::uuid[])`,
+       FROM assessments_in_force WHERE claim_id = ANY($1::uuid[])`,
     [ids]
   );
   const byId = new Map(rows.map((r) => [r.claim_id, r]));
@@ -152,7 +152,7 @@ async function currentAssessments(ids: string[]): Promise<Map<string, Assessment
   if (ids.length === 0) return new Map();
   const rows = await rawQuery<{ id: string; claim_id: string; status: string; confidence: number; claim_credence: number | null; assessed_at: string }>(
     `SELECT id, claim_id, status, confidence, claim_credence, assessed_at
-       FROM assessments WHERE is_current AND claim_id = ANY($1::uuid[])`,
+       FROM assessments_in_force WHERE claim_id = ANY($1::uuid[])`,
     [ids]
   );
   return new Map(

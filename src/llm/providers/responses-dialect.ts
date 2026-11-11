@@ -32,7 +32,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 
-import { parseToolArguments, toolResultText } from "./openai-dialect.js";
+import {
+  parseToolArguments,
+  toolResultAttachments,
+  toolResultText,
+  TOOL_IMAGES_LEAD,
+  type ToolResultImage,
+} from "./openai-dialect.js";
 import type { LlmContentBlock, LlmMessage, LlmTool, ToolUse } from "./types.js";
 
 type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
@@ -88,6 +94,7 @@ export function toResponsesInput(messages: LlmMessage[]): ResponseInputItem[] {
     }
 
     const text: string[] = [];
+    const shown: ToolResultImage[] = [];
 
     for (const block of message.content) {
       const items = readResponsesItemsBlock(block);
@@ -113,15 +120,17 @@ export function toResponsesInput(messages: LlmMessage[]): ResponseInputItem[] {
             arguments: JSON.stringify(block.input ?? {}),
           });
           break;
-        case "tool_result":
+        case "tool_result": {
+          const content = block.content as Anthropic.ToolResultBlockParam["content"];
+          const { images, notes } = toolResultAttachments(content);
           out.push({
             type: "function_call_output",
             call_id: block.tool_use_id,
-            output: toolResultText(
-              block.content as Anthropic.ToolResultBlockParam["content"]
-            ),
+            output: [toolResultText(content), ...notes].join("\n"),
           });
+          shown.push(...images);
           break;
+        }
         default:
           throw new Error(
             `Content block "${block.type}" is not supported on the OpenAI ` +
@@ -130,6 +139,21 @@ export function toResponsesInput(messages: LlmMessage[]): ResponseInputItem[] {
       }
     }
 
+    // Images a tool showed go in a user message after the turn's outputs
+    // (openai-dialect.ts, toolResultAttachments, says why), ahead of the text.
+    if (shown.length > 0) {
+      out.push({
+        role: "user",
+        content: [
+          { type: "input_text", text: TOOL_IMAGES_LEAD },
+          ...shown.map((image) => ({
+            type: "input_image" as const,
+            image_url: image.url,
+            detail: "auto" as const,
+          })),
+        ],
+      });
+    }
     if (text.length > 0) {
       out.push({ role: message.role, content: text.join("") });
     }

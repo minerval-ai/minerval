@@ -160,7 +160,7 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
     reasoningTrace: string;
   }>(
     `SELECT claim_id AS "claimId", status, confidence, reasoning_trace AS "reasoningTrace"
-     FROM assessments WHERE is_current`
+     FROM assessments_in_force`
   );
 
   const instances = await rawQuery<{

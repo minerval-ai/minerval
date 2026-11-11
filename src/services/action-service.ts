@@ -201,8 +201,8 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
   const tiers = await stewardTierCostEstimates();
   const [claim] = await rawQuery<{ text: string; assessed: boolean }>(
     `SELECT c.text,
-            EXISTS (SELECT 1 FROM assessments x
-                     WHERE x.claim_id = c.id AND x.is_current = true)
+            EXISTS (SELECT 1 FROM assessments_in_force x
+                     WHERE x.claim_id = c.id)
               AS assessed
        FROM claims c
       WHERE c.id = $1 AND c.state = 'active'`,
@@ -1254,12 +1254,12 @@ async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
             -- proposition's verdict, a quantity's estimate, a question's
             -- standing. GREATEST skips the NULLs of the other two.
             GREATEST(
-              (SELECT MAX(x.assessed_at) FROM assessments x
-                WHERE x.claim_id = c.id AND x.is_current = true),
-              (SELECT MAX(q.assessed_at) FROM quantity_estimates q
-                WHERE q.claim_id = c.id AND q.is_current = true),
-              (SELECT MAX(qa.assessed_at) FROM question_assessments qa
-                WHERE qa.claim_id = c.id AND qa.is_current = true)
+              (SELECT MAX(x.assessed_at) FROM assessments_in_force x
+                WHERE x.claim_id = c.id),
+              (SELECT MAX(q.assessed_at) FROM quantity_estimates_in_force q
+                WHERE q.claim_id = c.id),
+              (SELECT MAX(qa.assessed_at) FROM question_assessments_in_force qa
+                WHERE qa.claim_id = c.id)
             ) AS assessed_at
        FROM claims c WHERE c.id = $1`,
     [claimId]

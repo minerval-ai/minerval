@@ -229,7 +229,23 @@ export function portableTranscript(messages: MessageParam[]): MessageParam[] {
     for (const b of m.content as unknown as Array<Record<string, unknown>>) {
       const type = String(b.type ?? "");
       if (type === "thinking" || type === "redacted_thinking") continue;
-      if (type === "text" || type === "tool_use" || type === "tool_result" || type === "image" || type === "document") {
+      if (type === "tool_result" && Array.isArray(b.content)) {
+        // An image or a document a tool showed (#912) is megabytes of base64
+        // that a paused session would keep in its row and pay to re-read on
+        // resuming. Its place is marked, so the resumed run knows what it no
+        // longer sees and can look again.
+        blocks.push({
+          ...b,
+          content: (b.content as Array<Record<string, unknown>>).map((c) =>
+            c.type === "image" || c.type === "document"
+              ? {
+                  type: "text",
+                  text: `[The ${c.type} this call showed is not carried into a resumed session. Call the tool again to see it.]`,
+                }
+              : c
+          ),
+        });
+      } else if (type === "text" || type === "tool_use" || type === "tool_result" || type === "image" || type === "document") {
         blocks.push(b);
       } else if (type === "server_tool_use") {
         blocks.push(asText(`you called ${String(b.name ?? "a server tool")}`, b.input));
@@ -505,7 +521,7 @@ export async function resumeMessages(
     ? [null]
     : await rawQuery<{ assessed_at: string | null; status: string | null; passes: number }>(
     `SELECT (SELECT MAX(assessed_at)::text FROM assessments WHERE claim_id = $1 AND assessed_at > $2::timestamptz) AS assessed_at,
-            (SELECT status FROM assessments WHERE claim_id = $1 AND is_current = true LIMIT 1) AS status,
+            (SELECT status FROM assessments_in_force WHERE claim_id = $1 LIMIT 1) AS status,
             (SELECT count(*)::int FROM agent_runs WHERE claim_id = $1 AND agent = 'steward' AND started_at > $2::timestamptz) AS passes`,
     [s.node_id, s.suspended_at ?? new Date().toISOString()]
   ).catch(() => [{ assessed_at: null, status: null, passes: 0 }]);

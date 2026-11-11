@@ -114,8 +114,8 @@ export async function getArgumentView(
              FROM argument_evaluations ae
              JOIN arguments a ON a.id = ae.argument_id
              JOIN claims c ON c.id = a.claim_id
-             LEFT JOIN assessments ca ON ca.claim_id = a.claim_id AND ca.is_current = true
-             LEFT JOIN quantity_estimates cq ON cq.claim_id = a.claim_id AND cq.is_current = true
+             LEFT JOIN assessments_in_force ca ON ca.claim_id = a.claim_id
+             LEFT JOIN quantity_estimates_in_force cq ON cq.claim_id = a.claim_id
             WHERE ae.argument_id = $1
             ORDER BY ae.created_at DESC`,
           [argumentId]
@@ -168,8 +168,8 @@ export async function getArgumentView(
           `SELECT c.id, c.text, c.kind, a.status, a.confidence, a.claim_credence AS credence,
                   qe.estimate
              FROM claims c
-             LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-             LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+             LEFT JOIN assessments_in_force a ON a.claim_id = c.id
+             LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
             WHERE c.id = ANY($1::uuid[])`,
           [ids]
         );

@@ -64,9 +64,9 @@ const PRIZE_SELECT_SQL = `pb.amount_micro_usd AS prize_micro_usd, ${checkedKindS
 // The kinds' verdicts (constitution §2, §7a), joined as the tree joins them:
 // at most one current estimate and one current standing per node, by their
 // partial unique indexes, and one definition per quantity.
-const KIND_JOIN_SQL = `LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+const KIND_JOIN_SQL = `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
     LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
-    LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true`;
+    LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
 const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit`;
 const ASSESSED_SQL = `(CASE c.kind WHEN 'question' THEN qa.id IS NOT NULL
       WHEN 'quantity' THEN qe.id IS NOT NULL ELSE a.status IS NOT NULL END)`;
@@ -198,7 +198,7 @@ async function hybridSearchWithEmbedding(
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
     FROM claims c
-    LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+    LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
     ${KIND_JOIN_SQL}
     WHERE c.state = 'active' AND c.merged_into IS NULL
@@ -244,7 +244,7 @@ async function keywordSearch(
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
     FROM claims c
-    LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+    LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
     ${KIND_JOIN_SQL}
     WHERE c.state = 'active' AND c.merged_into IS NULL
@@ -296,7 +296,7 @@ export async function keywordClaimSearch(
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence
     FROM claims c
-    LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+    LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND c.text_search @@ websearch_to_tsquery('english', $1)
       ${excludeClause}
@@ -341,7 +341,7 @@ export async function findSimilarClaims(
       1 - (c.embedding <=> $1::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence
     FROM claims c
-    LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+    LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND 1 - (c.embedding <=> $1::vector) > $2
       ${excludeClause}

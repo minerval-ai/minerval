@@ -286,7 +286,7 @@ export async function assembleEvidenceRecord(
        FROM argument_subclaims am
        JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
-       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE cr.parent_claim_id = $1
       ORDER BY am.created_at, cr.created_at`,
     [claimId]

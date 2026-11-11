@@ -53,7 +53,7 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.includes("FROM lookout_flags f") && q.includes("f.kind = 'reassess'")) {
       return state.openFlag ? [state.openFlag] : [];
     }
-    if (q.includes("FROM assessments") && q.includes("is_current = true LIMIT 1")) {
+    if (q.includes("FROM assessments_in_force") && q.includes("WHERE claim_id = $1 LIMIT 1")) {
       return state.current ? [state.current] : [];
     }
     if (q.includes("variant = 'standard' AND status = 'open'")) {

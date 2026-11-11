@@ -92,7 +92,7 @@ function describeDrain(stats: DrainStats): string {
 
 async function claimState(id: string): Promise<{ text: string; status: string | null }> {
   const [row] = await rawQuery<{ text: string; status: string | null }>(
-    `SELECT c.text, a.status FROM claims c LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current WHERE c.id = $1`,
+    `SELECT c.text, a.status FROM claims c LEFT JOIN assessments_in_force a ON a.claim_id = c.id WHERE c.id = $1`,
     [id]
   );
   return { text: row?.text ?? "", status: row?.status ?? null };

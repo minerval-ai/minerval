@@ -241,6 +241,9 @@ describe("toolset by model", () => {
     expect(names).not.toContain("detach_claim_instance");
     expect(names).not.toContain("lean_search");
     expect(names).toContain("read_page");
+    // A figure looked at, and a paper's source files (#912).
+    expect(names).toContain("view_image");
+    expect(names).toContain("read_arxiv_source");
     expect(names.slice(-3)).toEqual(["report", "web_search", "code_execution"]);
     expect(result.toolNames).toEqual(names);
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
@@ -251,6 +254,7 @@ describe("toolset by model", () => {
     expect(task).toMatch(/a page read in full early on costs about \$0\.\d\d by the end of the run/);
     expect(task).toContain("web_search carries a fee");
     expect(task).toContain("read_page has no fee");
+    expect(task).toContain("view_image has no fee, but an image costs up to about 4,784 input tokens");
     expect(task).toContain("code_execution is billed at $0.05 per container-hour");
     expect(task).toContain("a guard of 200 turns stops a stuck loop");
     expect(task).toContain("must report within 20 minutes of wall-clock time");
@@ -282,6 +286,9 @@ describe("toolset by model", () => {
     expect(names).toContain("provenance_read_source");
     expect(names).toContain("search_claims");
     expect(names).toContain("read_page");
+    // GPT-6 Luna takes images, so the cheap tier looks at figures too.
+    expect(names).toContain("view_image");
+    expect(names).toContain("read_arxiv_source");
     // The client-side web_search (OpenRouter), not the Anthropic server tool.
     const search = (opts.tools as Array<{ name: string; type?: string; input_schema?: unknown }>).find(
       (t) => t.name === "web_search"
