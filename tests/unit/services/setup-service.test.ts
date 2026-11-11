@@ -63,15 +63,27 @@ describe("splitSetup", () => {
 
   it("records references and settings, not text, in the setup record", () => {
     const parts = split({ system: stewardSystem() });
-    const record = setupRecord(parts, { model: "claude-opus-5-5", effort: "high" }, "abc123", "public");
+    const record = setupRecord(parts, { model: "claude-opus-5-5", effort: "high" }, "abc123", "public", []);
     expect(record).toMatchObject({
       commit: "abc123",
       label: "public",
+      featuresOff: [],
       model: "claude-opus-5-5",
       effort: "high",
       maxTokens: null,
     });
     expect(JSON.stringify(record).length).toBeLessThan(1000);
     expect(record.parts.map((p) => p.kind)).toEqual(["constitution", "role"]);
+  });
+
+  it("records the features that were off for the run, and an empty list when none was", () => {
+    const parts = split({ system: stewardSystem() });
+    const settings = { model: "claude-opus-5-5" };
+    expect(setupRecord(parts, settings, null, "public", []).featuresOff).toEqual([]);
+    const off = ["mathematics", "prizes"] as const;
+    const record = setupRecord(parts, settings, null, "public", off);
+    expect(record.featuresOff).toEqual(["mathematics", "prizes"]);
+    // Its own list, not the caller's.
+    expect(record.featuresOff).not.toBe(off);
   });
 });
