@@ -19,6 +19,7 @@ import {
   type QuantityUnit,
   type QuestionStanding,
 } from "../schemas/kinds.js";
+import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
 
@@ -205,6 +206,8 @@ export async function recordQuestionAssessment(input: {
         getUsageContext().runId ?? null,
       ]
     );
+    // What the assessment was made against, in the same transaction (#566).
+    await recordJudgmentInputs(tx.query, "question_assessment", row!.id, input.claimId);
     return { id: row!.id };
   });
 }
