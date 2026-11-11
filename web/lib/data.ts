@@ -1,3 +1,4 @@
+import { cache } from "react";
 import {
   apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
   fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
@@ -48,9 +49,11 @@ function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): Search
 
 export type DataSource = "live" | "fixture";
 
-export async function loadClaim(
+// Memoized for the length of one render, so a page and its generateMetadata
+// read the claim once between them.
+export const loadClaim = cache(async (
   id: string,
-): Promise<{ detail: ClaimDetail | null; source: DataSource }> {
+): Promise<{ detail: ClaimDetail | null; source: DataSource }> => {
   if (!apiConfigured()) return { detail: getClaim(id), source: "fixture" };
   try {
     return { detail: await fetchClaimDetail(id), source: "live" };
@@ -58,7 +61,7 @@ export async function loadClaim(
     console.error("[minerval] live claim fetch failed, using fixture:", err);
     return { detail: getClaim(id), source: "fixture" };
   }
-}
+});
 
 // Offline stand-in for the API's search, which also matches by meaning:
 // every word of the query somewhere in what the request asks, why, or what

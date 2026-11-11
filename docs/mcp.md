@@ -355,7 +355,34 @@ read is free, an agent which signals allocation turns on.
 Generated from the REST routes (see [Parity](#parity-with-the-rest-api));
 each tool's description is its route's summary plus the route it runs.
 
-- **Claims:** `list_claims`, `cite_claim`, `get_claim_provenance`,
+**`fields` on read tools.** Every tool generated from a GET route that
+answers with a JSON object takes an optional `fields`: a comma-separated
+list of dotted paths (`"results.id,results.text,next_cursor"`), and the
+result is pruned to them, so an agent can keep a read out of its context
+without losing the parts it needs. It is the REST API's `fields` parameter
+(docs/architecture.md, "The API"; `src/server/plugins/partial-response.ts`),
+reaching the tool through the route's querystring schema like any other
+input: a path through a list applies to each item, a path that matches
+nothing is left out, a null on the way stays null, and malformed input is a
+`VALIDATION_ERROR`. The export tools, whose results are not JSON objects,
+do not take it (`export_claim_nanopub`, `export_claim_scasp`,
+`export_claim_mira`, `get_formalization_lean`); `cite_claim` applies it to
+its JSON format only. The hand-written tools above do not take it either:
+`search_claims`, `get_decomposition`, `get_dependents` and `get_claim` are
+defined once for callers and the graph's own agents, with the same inputs
+on both sides, and `get_claim` already narrows with `include`. For a small
+read of a claim, use a card.
+
+- **Claims:** `list_claims`, `get_claim_card` (the graph's judgment of one
+  node, whole, in a small fixed shape: text, kind, state, status and its
+  confidence, a question's standing or a quantity's estimate and unit,
+  contestation, when it was last assessed and last changed, and its page
+  link, with every key always present and nulls for a node not yet
+  assessed; prefer it to `get_claim` when you need where a claim stands and
+  not the reasoning behind it), `get_claim_cards` (`{ids}`, comma-separated,
+  up to 100: the cards in the order asked, with ids the graph does not hold
+  listed in `not_found`; one call where a list of claims would otherwise
+  take a `get_claim` each), `cite_claim`, `get_claim_provenance`,
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
   `get_claim_events`, `propose_claim` (reviewed by the Contribution Reviewer

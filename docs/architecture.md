@@ -1724,6 +1724,46 @@ else here is bounded by an account's budget; an anonymous caller has no account
 or budget to bound it, so a count per address is the only measure there is.
 Requests that present a key are not subject to this limit.
 
+**The claim card.** `GET /claims/:claim_id/card` answers with the graph's
+judgment of one node, whole, in a small fixed shape for a site that embeds
+a claim or an agent that reports where one stands: `id`, `kind`, `text`,
+`state`, `assessment_status`, `assessment_confidence` (how sure the Steward
+is of the status, or of a question's standing; not the probability that the
+claim is true), `standing` (a question's), `estimate` and `unit` (a
+quantity's), `contestation`, `assessed_at`, `updated_at` and `page_url`.
+Every key is always present. An unassessed node is not an error: its
+judgment fields are null. The card leaves out the reasoning, arguments,
+sources and tree, which `GET /claims/:claim_id` serves; it does not leave
+out any part of the judgment, because a status is reported with its
+confidence and the claim's contestation beside it.
+
+`GET /claims/cards?ids=<uuid>,<uuid>,...` reads up to 100 cards in one
+request and one query. It answers `{cards, not_found}`: the cards in the
+order asked (a repeated id once), and the ids the graph does not hold named
+in `not_found` rather than dropped. More than 100 ids, or an id that is not
+a uuid, is a 400.
+
+**Partial responses.** Every GET route that answers with a JSON object
+takes `fields`, a comma-separated list of dotted paths, and prunes its
+response to them: `GET /claims/:id?fields=claim.text,assessment.status,assessment.confidence`.
+A path selects the value at it, whole. A path through a list applies to
+each item (`fields=results.id,results.text`), and items keep their
+positions. A path that matches nothing is left out, and a null on the way
+is kept as null, so `assessment.status` on an unassessed claim answers
+`{"assessment": null}`. Without `fields` the response is unchanged.
+Malformed input (an empty path, a character outside letters, digits, `_`
+and `-`, the parameter given twice, more than 2,000 characters) is a 400 in
+the usual error envelope. It is one mechanism
+(`src/server/plugins/partial-response.ts`), not something each route
+implements: the paths select from what the route's response schema serves,
+and pruning happens before the body is serialized, so anything computed
+from the response bytes sees the pruned body. It does not apply to other
+methods, to error responses, or to responses that are not JSON objects
+(BibTeX and CSL citations, the nanopublication, s(CASP) and MIRA exports,
+Lean source, Atom feeds, attachments). Trimming a response is the caller's
+choice of what to carry, not of what to report: a caller that will report a
+status should keep the confidence and contestation that go with it.
+
 ### The web app
 
 This site, a Next.js app at `minerval.ai`. It talks to the API server-side
