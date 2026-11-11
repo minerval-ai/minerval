@@ -71,4 +71,6 @@ when they drift. They are as current as the plugin you have installed.
 For the exact text an agent ran under at a given time, use
 `list_setup_parts` and `get_setup_part`: every version of the constitution
 and each role prompt that has run, numbered in order, with the commit it
-first ran under.
+first ran under. `get_prompt_set` gives the whole set the deployment runs
+now as one hash, with the hash of the constitution, of each role prompt and
+of each skill, so you can check a run's setup (`get_run`) against it.

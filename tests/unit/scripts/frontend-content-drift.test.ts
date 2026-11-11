@@ -3,7 +3,7 @@ import { tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { describe, it, expect } from "vitest";
-import { syncFrontendContent } from "../../../scripts/sync-frontend-content.js";
+import { PROMPT_SET_FILE, syncFrontendContent } from "../../../scripts/sync-frontend-content.js";
 
 /**
  * Prompt transparency as a CI property (docs/mathematics.md §3.7): what the
@@ -41,6 +41,14 @@ describe.skipIf(!existsSync(vendored))("vendored frontend content", () => {
           ).toBe(true);
         }
       }
+      // The prompt set names the constitution, every role prompt and every
+      // skill by hash, so a change to any of them shows here as well.
+      expect(
+        readFileSync(join(vendored, PROMPT_SET_FILE), "utf-8") ===
+          readFileSync(join(tmp, PROMPT_SET_FILE), "utf-8"),
+        `web/content/${PROMPT_SET_FILE} has drifted from the prompt code; ` +
+          `run: npx tsx scripts/sync-frontend-content.ts`
+      ).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

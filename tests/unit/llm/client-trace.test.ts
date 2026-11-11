@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getPromptSet } from "../../../src/services/prompt-set.js";
 
 // toolUseLoop should record one 'assistant' step per model turn and one
 // 'tool_results' step per executed batch — but only when a trace handle is
@@ -89,7 +90,11 @@ describe("single-shot completion step recording", () => {
     expect(mocks.recordAgentStep).toHaveBeenCalledTimes(2);
     const [, promptKind, prompt] = mocks.recordAgentStep.mock.calls[0]!;
     expect(promptKind).toBe("prompt");
-    expect(prompt).toMatchObject({
+    // The prompt step's content arrives as a promise: it waits on the prompt
+    // set's hash, which is stamped on the setup.
+    const recorded = (await prompt) as { setup: { promptSet: string | null } };
+    expect(recorded.setup.promptSet).toBe(getPromptSet().hash);
+    expect(recorded).toMatchObject({
       model: "m",
       system: DATED_SYSTEM,
       initialMessages: messages,
@@ -158,7 +163,7 @@ describe("toolUseLoop step recording", () => {
     ]);
     // The prompt step carries the whole setup: system prompt, initial
     // messages and the tool descriptors, verbatim.
-    expect(calls[0]![2]).toMatchObject({
+    expect(await calls[0]![2]).toMatchObject({
       system: DATED_SYSTEM,
       initialMessages: [{ role: "user", content: "go" }],
       tools: [{ name: "search", description: "find things", input_schema: { type: "object" } }],

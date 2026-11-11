@@ -273,7 +273,10 @@ export function finishAgentRun(
   })();
 }
 
-/** Append one step to the run. Sequence is claimed synchronously. */
+/**
+ * Append one step to the run. Sequence is claimed synchronously; the content
+ * may be a promise, for a step whose content takes a moment to assemble.
+ */
 export function recordAgentStep(
   trace: AgentTrace,
   kind: AgentStepKind,
@@ -288,7 +291,7 @@ export function recordAgentStep(
         seq,
         kind,
         content: capContent(
-          content,
+          await content,
           kind === "prompt" ? MAX_PROMPT_STEP_CONTENT_CHARS : MAX_STEP_CONTENT_CHARS
         ),
       });

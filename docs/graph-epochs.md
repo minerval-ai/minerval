@@ -25,6 +25,16 @@ compiler fix — nothing of record is lost, provided we snapshot first.
   legacy pre-stamping cohort. Bump the default in the same PR as any material
   prompt/constitution change, so "claims from before fix X" is always a `WHERE`
   clause.
+- **The prompt set's hash** — the epoch is a name someone bumps; the prompt
+  set is the exact identity. `src/services/prompt-set.ts` builds one manifest
+  from the running code (the constitution's hash, each role prompt's, each
+  skill's version and hash) and one hash over it. `scripts/sync-frontend-content.ts`
+  writes it to `web/content/prompt-set.json`, the drift test fails when that
+  copy is stale, `GET /setup/prompt-set` (`get_prompt_set`) serves the
+  deployed one, and every traced run records the hash it ran under on its
+  prompt step (`setup.promptSet`, shown by `get_run`). So "which prompts was
+  this made under" has an answer that does not depend on anyone remembering
+  to bump the epoch, and two deployments can be compared by one string.
 - **`state='archived'`** — a retired cohort leaves search, matching, browse,
   trees, dependents, and the candidate set (every read path filters
   `state = 'active'`, as an allowlist), but keeps its rows, provenance,

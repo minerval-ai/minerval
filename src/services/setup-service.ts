@@ -10,9 +10,9 @@
  * can fetch exactly what that was.
  *
  * The splitting and hashing are in setup-split.ts, which the LLM client
- * imports on every prompt step; this module (the registry of known roles,
- * storage and reads) imports every role's prompt module, so the client
- * loads it lazily when it stores parts.
+ * imports on every prompt step; this module (storage and reads) uses the
+ * registry of known roles (llm/prompts/known-roles.ts), which imports every
+ * role's prompt module, so the client loads it lazily when it stores parts.
  *
  * Parts of a setup:
  *   - `constitution`: admin_constitution.md, when the system prompt carries it.
@@ -27,7 +27,8 @@
  *
  * What is published. The constitution is public. A role part is public when
  * its text is exactly what the code produces for a known role (the registry
- * below, built from the same prompt functions the agents call), which makes
+ * in llm/prompts/known-roles.ts, built from the same prompt functions the
+ * agents call), which makes
  * it public by construction: it is the repository's own text at the deployed
  * commit. Any other part (a block that varies per run, a tool descriptor) is
  * recorded by hash and name only until the visibility rules for run content
@@ -35,21 +36,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { getAuditAgentSystemPromptBlocks } from "../llm/prompts/audit-agent.js";
-import { getClaimStewardSystemPromptBlocks } from "../llm/prompts/claim-steward.js";
-import { getConsistencyCheckerSystemPromptBlocks } from "../llm/prompts/consistency-checker.js";
-import { getContributionReviewerSystemPromptBlocks } from "../llm/prompts/contribution-reviewer.js";
-import { getCorrespondentSystemPromptBlocks } from "../llm/prompts/correspondent.js";
-import { getCuratorSystemPromptBlocks } from "../llm/prompts/curator.js";
-import { getDisputeArbitratorSystemPromptBlocks } from "../llm/prompts/dispute-arbitrator.js";
-import { getExtractorSystemPromptBlocks } from "../llm/prompts/extractor.js";
-import { getGrantmakerSystemPromptBlocks } from "../llm/prompts/grantmaker.js";
-import { getLookoutSystemPromptBlocks } from "../llm/prompts/lookout.js";
-import { getMatcherSystemPromptBlocks } from "../llm/prompts/matcher.js";
-import { getMathSolverSystemPromptBlocks } from "../llm/prompts/math-solver.js";
-import { getQuestionStewardSystemPromptBlocks } from "../llm/prompts/question-steward.js";
-import { getResearcherSystemPromptBlocks } from "../llm/prompts/researcher.js";
-import { getTaggerSystemPrompt } from "../llm/prompts/tagger.js";
+import { KNOWN_ROLES } from "../llm/prompts/known-roles.js";
 import { hashText, roleText, type SetupPartKind, type SplitPart } from "./setup-split.js";
 
 export { hashText, splitSetup, type SetupPartKind } from "./setup-split.js";
@@ -69,36 +56,6 @@ export interface SetupPart {
 }
 
 // --- the registry of known roles --------------------------------------------
-
-interface KnownRole {
-  name: string;
-  sourcePath: string;
-  blocks: () => string[];
-}
-
-/**
- * Every role whose prompt is fixed text in the repository, with the function
- * its agent calls. Variants a launcher can choose (the Researcher with and
- * without the constitution) are listed as separate entries under one name.
- */
-const KNOWN_ROLES: readonly KnownRole[] = [
-  { name: "claim-steward", sourcePath: "src/llm/prompts/claim-steward.ts", blocks: getClaimStewardSystemPromptBlocks },
-  { name: "question-steward", sourcePath: "src/llm/prompts/question-steward.ts", blocks: getQuestionStewardSystemPromptBlocks },
-  { name: "curator", sourcePath: "src/llm/prompts/curator.ts", blocks: getCuratorSystemPromptBlocks },
-  { name: "extractor", sourcePath: "src/llm/prompts/extractor.ts", blocks: () => getExtractorSystemPromptBlocks() },
-  { name: "matcher", sourcePath: "src/llm/prompts/matcher.ts", blocks: getMatcherSystemPromptBlocks },
-  { name: "contribution-reviewer", sourcePath: "src/llm/prompts/contribution-reviewer.ts", blocks: getContributionReviewerSystemPromptBlocks },
-  { name: "dispute-arbitrator", sourcePath: "src/llm/prompts/dispute-arbitrator.ts", blocks: getDisputeArbitratorSystemPromptBlocks },
-  { name: "audit-agent", sourcePath: "src/llm/prompts/audit-agent.ts", blocks: getAuditAgentSystemPromptBlocks },
-  { name: "grantmaker", sourcePath: "src/llm/prompts/grantmaker.ts", blocks: getGrantmakerSystemPromptBlocks },
-  { name: "lookout", sourcePath: "src/llm/prompts/lookout.ts", blocks: getLookoutSystemPromptBlocks },
-  { name: "correspondent", sourcePath: "src/llm/prompts/correspondent.ts", blocks: getCorrespondentSystemPromptBlocks },
-  { name: "consistency-checker", sourcePath: "src/llm/prompts/consistency-checker.ts", blocks: getConsistencyCheckerSystemPromptBlocks },
-  { name: "math-solver", sourcePath: "src/llm/prompts/math-solver.ts", blocks: getMathSolverSystemPromptBlocks },
-  { name: "researcher", sourcePath: "src/llm/prompts/researcher.ts", blocks: () => getResearcherSystemPromptBlocks({ includeConstitution: true }) },
-  { name: "researcher", sourcePath: "src/llm/prompts/researcher.ts", blocks: () => getResearcherSystemPromptBlocks({ includeConstitution: false }) },
-  { name: "tagger", sourcePath: "src/llm/prompts/tagger.ts", blocks: () => [getTaggerSystemPrompt()] },
-];
 
 let registry: Map<string, { name: string; sourcePath: string }> | null = null;
 

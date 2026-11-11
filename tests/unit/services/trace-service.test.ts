@@ -139,6 +139,23 @@ describe("recordAgentStep", () => {
     expect(rows.every((r) => r.runId === trace.runId)).toBe(true);
   });
 
+  it("waits for content given as a promise, keeping the sequence it claimed", async () => {
+    const trace = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    let settle!: (content: unknown) => void;
+    recordAgentStep(trace, "prompt", new Promise((resolve) => (settle = resolve)));
+    recordAgentStep(trace, "assistant", { stopReason: "end_turn" });
+    expect(trace.seq.n).toBe(2);
+    await flush();
+    settle({ setup: { promptSet: "abc" } });
+    await flush();
+    const rows = mocks.insertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    const prompt = rows.find((r) => r.kind === "prompt")!;
+    expect(prompt.seq).toBe(0);
+    expect(prompt.content).toEqual({ setup: { promptSet: "abc" } });
+    expect(rows.find((r) => r.kind === "assistant")!.seq).toBe(1);
+  });
+
   it("caps oversized content instead of writing it whole", async () => {
     const trace = startAgentRun("steward", {})!;
     mocks.insertValues.mockClear();

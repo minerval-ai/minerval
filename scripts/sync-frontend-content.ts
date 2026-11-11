@@ -92,6 +92,7 @@ import {
   SIMULATION_NOTICE,
 } from "./corpus/persona-prompts.js";
 import type { PersonaEntry } from "./corpus/personas-lib.js";
+import { getPromptSet } from "../src/services/prompt-set.js";
 import {
   ROLE_VIEW,
   SKILL_ROLES,
@@ -201,6 +202,9 @@ const AGENTS: AgentMeta[] = [
     model: `Chosen per launch: ${modelLabel(MODELS.frontier)} (strong), ${modelLabel(MODELS.sonnet)} (standard), ${modelLabel(OPENROUTER_MODELS.flash)} (cheap)`, fn: getResearcherSystemPrompt },
 ];
 
+/** The prompt set's manifest (src/services/prompt-set.ts), beside the content it names. */
+export const PROMPT_SET_FILE = "prompt-set.json";
+
 export interface AgentIndexEntry {
   key: string;
   name: string;
@@ -238,8 +242,9 @@ export interface SkillIndexEntry {
 
 /**
  * Write the vendored content into `contentDir`: the three verbatim documents,
- * the agents' role and full prompts plus their index, and the skills' bodies,
- * per-role spliced blocks, and index. Pure with respect to everything but the
+ * the agents' role and full prompts plus their index, the skills' bodies,
+ * per-role spliced blocks, and index, and the prompt set (prompt-set.json:
+ * one hash over the constitution, every role prompt and every skill). Pure with respect to everything but the
  * filesystem, so the drift test can target a temporary directory.
  */
 export function syncFrontendContent(contentDir: string): {
@@ -258,6 +263,12 @@ export function syncFrontendContent(contentDir: string): {
   copyFileSync(resolve(root, "docs/rewards-policy.md"), resolve(contentDir, "rewards-policy.md"));
   copyFileSync(resolve(root, "docs/contributor-terms.md"), resolve(contentDir, "contributor-terms.md"));
   copyFileSync(resolve(root, "docs/terms-of-service.md"), resolve(contentDir, "terms-of-service.md"));
+
+  // ---- the prompt set: the identity of everything vendored below ----------
+  writeFileSync(
+    resolve(contentDir, PROMPT_SET_FILE),
+    JSON.stringify(getPromptSet(), null, 2) + "\n"
+  );
 
   const skills = listSkills();
 
