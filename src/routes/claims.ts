@@ -25,6 +25,7 @@ import {
   addArgument,
   getArgumentsForClaim,
   getEvaluationStateForClaim,
+  getRetiredArgumentsForClaim,
 } from "../services/argument-service.js";
 import { createClaimProposal } from "../services/intake-service.js";
 import { assembleClaimCitation } from "../services/citation-service.js";
@@ -642,6 +643,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               },
               tree: { type: "object", nullable: true, additionalProperties: true },
               arguments: { type: "array", nullable: true },
+              // Arguments its Steward retired or the Curator merged away
+              // (#741, #541), deep only: the record, each with its reason and
+              // its own page. Empty when there are none.
+              retired_arguments: looseArray,
               instances: { type: "array", nullable: true },
               // Source provenance (#286), deep only: the Steward's account of
               // what the support rests on (null until written; shown to
@@ -888,6 +893,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             evaluation: evalByArgument.get(a.id)?.content ?? null,
             shows: a.shows ?? null,
             lean_check: checkByArgument.get(a.id) ?? null,
+          }));
+          // Retired arguments keep their pages (§7: retiring preserves the
+          // name, page and record); the claim page lists them apart.
+          const retired = await getRetiredArgumentsForClaim(claim_id);
+          response.retired_arguments = retired.map((a) => ({
+            id: a.id,
+            name: a.name,
+            stance: a.stance,
+            retired_at: a.retiredAt?.toISOString() ?? null,
+            reason: a.retiredReason,
+            merged_into: a.mergedInto ?? null,
           }));
 
           // The instances the claim carries, in the order a reader sees
