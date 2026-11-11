@@ -3457,6 +3457,8 @@ export const assistantConversations = pgTable(
     turnPartial: text("turn_partial"),
     // The running turn's one-line progress note and its cost so far.
     turnNote: text("turn_note"),
+    // What the running turn has done so far, newest last: [{tool, about}].
+    turnActivity: jsonb("turn_activity"),
     turnCostMicroUsd: bigint("turn_cost_micro_usd", { mode: "number" }).notNull().default(0),
     // Set by the user's stop button; the running turn ends at its next step.
     stopRequested: boolean("stop_requested").notNull().default(false),

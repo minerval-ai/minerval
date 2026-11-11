@@ -30,7 +30,7 @@ export default async function AskPagePage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="col-wide account">
+    <div className="col-wide account ask-page">
       <PageHead
         back={{ href: "/ask", label: "ask" }}
         kicker="Page"
