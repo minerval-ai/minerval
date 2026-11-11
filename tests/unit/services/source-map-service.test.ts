@@ -237,6 +237,29 @@ describe("recordInstanceReading", () => {
     expect(result.quote_check).toBe("no_stored_content");
     expect(result.replaced).toBe(false);
   });
+
+  it("records evidence not shown as a reading of its own (§9)", async () => {
+    const inserts: unknown[][] = [];
+    routeQueries([
+      [/FROM claim_instances ci/, () => [instanceRow()]],
+      [
+        /INSERT INTO claim_instance_readings/,
+        (params) => {
+          inserts.push(params);
+          return [{ id: "r", inserted: true }];
+        },
+      ],
+    ]);
+    await recordInstanceReading({
+      claimId: CLAIM,
+      instanceId: INSTANCE,
+      support: "evidence_not_shown",
+      note: "The result is reported from an internal evaluation that is not released.",
+      sourceRead: true,
+      createdBy: "claim_steward",
+    });
+    expect(inserts[0]?.[1]).toBe("evidence_not_shown");
+  });
 });
 
 describe("recordProvenanceEdge", () => {
