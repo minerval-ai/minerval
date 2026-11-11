@@ -552,7 +552,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   ]);
   const skillLoader = createSkillLoadTools("researcher", { domains: claimDomains });
   const checker = leanCheckerConfigured(config);
-  // Mathlib tools only with a checker to run them; the provenance tools only
+  // Mathlib tools only with a checker to run them (none when mathematics is
+  // switched off, src/features.ts); the provenance tools only
   // on a claim, since they read or record on a claim, or on the nodes a
   // request bears on, except that an examination needs
   // provenance_read_source to read its document, and a run taking up a

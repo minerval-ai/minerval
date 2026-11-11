@@ -17,6 +17,7 @@ import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
 import { EmbedClaim } from "./claim/EmbedClaim";
+import { AskBox } from "./AskBox";
 import { OrderAssessment } from "./claim/OrderAssessment";
 import { FundDecomposition } from "./claim/FundDecomposition";
 import { FormalStatement } from "./claim/FormalStatement";
@@ -494,6 +495,11 @@ export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fi
       {/* its neighbour on the way out: the claim shown on another site,
           with the judgment whole */}
       <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      {/* the Assistant, opened from this node (#646): it is told which page
+          the question came from */}
+      <section className="ask-about">
+        <AskBox nodeId={claim.id} placeholder={`Ask the Assistant about this ${claim.kind ?? "claim"}…`} />
+      </section>
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no

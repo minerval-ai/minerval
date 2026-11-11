@@ -2033,6 +2033,57 @@ See docs/allocation.md, "Platform mandates".
 
 ---
 
+## Features
+
+A feature is an optional part of the product that a deployment can switch
+off. Each feature is its own switch, every one is on by default, and a
+deployment switches off the ones it does not want by naming them in one
+environment variable, `FEATURES_OFF` (comma-separated). There are no named
+bundles: a deployment is described by the features it has off and by nothing
+else. A name in `FEATURES_OFF` that is not a feature stops the process at
+start with the list of names that are, so a typo cannot leave a feature on
+unnoticed. The list, with a sentence on each, is `src/features.ts`.
+
+There are three:
+
+- `extension`: the browser extension's API (page analysis, sharing an
+  analysis, and chat over a page).
+- `mathematics`: formal statements, the Lean checker and the solver's proof
+  attempts.
+- `prizes`: prizes and bounties for machine-checked proofs. Prizes need
+  mathematics, so switching `mathematics` off switches `prizes` off too.
+
+Switching a feature off means three things, and they go together:
+
+- Its routes are not mounted. A call to one gets the same 404 as any path
+  the API does not have, and the route is absent from the OpenAPI document.
+- Its tools are not offered. The MCP tools generated from its routes are not
+  built, because they are built from the routes that are mounted; its
+  hand-written MCP tools (`get_bounty_terms`, `get_page_analysis`) are not
+  registered; and the graph's own agents are not given its tools (the Lean
+  and proof-attempt tools, the prize tools, the Grantmaker's bounty tools).
+  The Assistant's tools are the MCP list, so it follows.
+- Its workers are not started. With `extension` off the fill of page hashes
+  on older sources does not run; with `prizes` off the runner's prize-check
+  and window-closing lanes do not run; with `mathematics` off the solver
+  process says why and exits, and the Lean checker is treated as not
+  configured whatever `LEAN_CHECKER_URL` says.
+
+Nothing else changes. The tables stay. Core routes that carry a field about
+a feature (a claim's formalization record, the prize money in a mandate's
+accounts) keep the field and report what the tables hold, which is nothing
+in a deployment that has never had the feature. The role prompts and skills
+are the same text either way. A formalization the Steward is asked
+for with `mathematics` off ends the way it does with no checker configured:
+the run is told the formal tools are unavailable and why, and logs that it
+could not proceed.
+
+`GET /setup/features` (`list_features` on MCP) reports each feature with
+whether it is on and what switching it off removes. That is how the web app
+and outside agents learn what a deployment has.
+
+---
+
 ## Deployment
 
 The API runs as a container on ECS Fargate behind an application load balancer

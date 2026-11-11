@@ -10,9 +10,13 @@
  *   GET /setup/prompt-set                    the prompt set this deployment's
  *     code builds: one hash over the constitution, every role prompt and
  *     every skill, with the hash of each (services/prompt-set.ts).
+ *   GET /setup/features                      the optional parts of the
+ *     product (src/features.ts), each with whether this deployment has it
+ *     on and what switching it off removes.
  */
 import type { FastifyInstance } from "fastify";
 import { loadConfig } from "../config.js";
+import { FEATURE_NAMES, listFeatures } from "../features.js";
 import { getPromptSet } from "../services/prompt-set.js";
 import { getSetupPart, listSetupParts } from "../services/setup-service.js";
 
@@ -117,6 +121,37 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     },
     handler: async (_request, reply) =>
       reply.send({ ...getPromptSet(), commit: loadConfig().gitSha ?? null }),
+  });
+
+  app.get("/features", {
+    schema: {
+      tags: ["setup"],
+      summary:
+        "The optional parts of the product and whether this deployment has each one on. " +
+        "A feature that is off has no routes mounted, no tools offered and no workers " +
+        "started here, so a tool or route missing from this deployment is explained by " +
+        "this list",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            features: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", enum: [...FEATURE_NAMES] },
+                  on: { type: "boolean" },
+                  // What the feature is, and what switching it off removes.
+                  description: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    handler: async (_request, reply) => reply.send({ features: listFeatures() }),
   });
 
   app.get<{ Params: { kind: string; name: string; version: number } }>(

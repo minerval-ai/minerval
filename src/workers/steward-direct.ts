@@ -112,7 +112,11 @@ export async function missingTriggerTools(
   claimId: string
 ): Promise<{ skills: string[]; active: string[]; missing: string[] }> {
   const skills = await skillsForClaim(claimId);
-  const active = getActiveSkillToolDefinitions(skills, "claim-steward").map((t) => t.name);
+  // What the skills declare, whether or not a feature being off withholds
+  // it from the run: this asks what kind of claim it is.
+  const active = getActiveSkillToolDefinitions(skills, "claim-steward", { declared: true }).map(
+    (t) => t.name
+  );
   const missing = REQUIRED_TOOLS_BY_TRIGGER[trigger].filter((name) => !active.includes(name));
   return { skills: skills.map((s) => s.name), active, missing };
 }

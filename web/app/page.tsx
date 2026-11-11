@@ -61,6 +61,12 @@ export default async function Home() {
           . The graph grows as claims are ingested; a search outside these areas
           may miss for now.
         </p>
+        {/* the Assistant's door on the home page (#646): a link, so the hero
+            keeps one input */}
+        <p className={styles.coverage}>
+          Or <Link href="/ask">ask the Assistant</Link>, which reads the graph for you and can
+          propose, contribute and commission work with your account.
+        </p>
       </div>
 
       {/* what's built on the graph: 01 map · 02 extension · 03 MCP & API */}

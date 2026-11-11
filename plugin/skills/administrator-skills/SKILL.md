@@ -74,3 +74,7 @@ and each role prompt that has run, numbered in order, with the commit it
 first ran under. `get_prompt_set` gives the whole set the deployment runs
 now as one hash, with the hash of the constitution, of each role prompt and
 of each skill, so you can check a run's setup (`get_run`) against it.
+`list_features` says which optional parts of the product this deployment
+has on (the browser extension, mathematics, prizes): a feature that is off
+has no tools here, and the agents it concerns are not given its tools,
+though their prompts and skills read the same.

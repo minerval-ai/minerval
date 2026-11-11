@@ -600,8 +600,8 @@
     "invokedWhen": "A signed-in user sends a message on the Ask page.",
     "model": "Claude Fable 5.2 by default; the user may choose Claude Opus 5.5 for a conversation",
     "hasConstitution": true,
-    "roleChars": 7564,
-    "fullChars": 105640,
+    "roleChars": 7843,
+    "fullChars": 105919,
     "skills": []
   }
 ]

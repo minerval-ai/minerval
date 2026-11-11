@@ -93,7 +93,7 @@ describe("caller skills", () => {
     // A backticked identifier that reads as a tool call (verb_noun), as
     // opposed to a field name such as `page_url`.
     const TOOLISH =
-      /`((?:get|list|search|match|assess|extract|submit|propose|order|fund|start|send|approve|raise|cite|top_up|cancel|export|challenge)_[a-z_]+)`/g;
+      /`((?:get|list|search|match|assess|extract|submit|propose|order|fund|start|send|approve|raise|cite|top_up|cancel|export|challenge|save)_[a-z_]+)`/g;
     const texts = [
       ...listCallerSkills()
         .filter((s) => s.name !== "administrator-skills")

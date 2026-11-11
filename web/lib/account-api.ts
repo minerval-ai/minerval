@@ -1170,7 +1170,8 @@ export interface AssistantCitationView {
 
 export type AssistantCardView =
   | { type: "held"; id: string }
-  | { type: "grant_conversation"; id: string };
+  | { type: "grant_conversation"; id: string }
+  | { type: "page"; id: string };
 
 export interface AssistantMessageView {
   role: "user" | "assistant";
@@ -1340,4 +1341,72 @@ export function setAssistantAllowance(
     body: { kinds },
     actingUser: externalId,
   });
+}
+
+// --- pages (#646): what an agent saved for the user to keep ------------------
+
+export interface PageSummaryView {
+  id: string;
+  title: string;
+  saved_at: string;
+  created_at: string;
+  page_url: string;
+}
+
+/** What the graph held for a node when its page was saved. */
+export interface PageHeld {
+  status: string | null;
+  standing: string | null;
+  estimate: unknown | null;
+}
+
+export interface PageNodeView {
+  id: string;
+  kind: string;
+  text: string;
+  state: string;
+  assessment_status: string | null;
+  assessment_confidence: number | null;
+  standing: string | null;
+  estimate: unknown | null;
+  unit: unknown | null;
+  contestation: number | null;
+  assessed_at: string | null;
+  page_url: string;
+  /** Present when the node has moved since the page was saved. */
+  saved?: PageHeld;
+}
+
+export interface PageView extends PageSummaryView {
+  body: string;
+  nodes: Record<string, PageNodeView>;
+  decompositions: Record<
+    string,
+    Array<{ id: string; relation: string | null; argument: string | null; stance: string | null }>
+  >;
+  unresolved: string[];
+  versions: Array<{ title: string; saved_at: string }>;
+}
+
+export async function listPages(externalId: string): Promise<PageSummaryView[]> {
+  const r = await accountFetch<{ pages: PageSummaryView[] }>("/pages", { actingUser: externalId });
+  return r.pages;
+}
+
+export async function getPage(externalId: string, id: string): Promise<PageView> {
+  const r = await accountFetch<{ page: PageView }>(`/pages/${pathSegment(id)}`, {
+    actingUser: externalId,
+  });
+  return r.page;
+}
+
+export function savePage(
+  externalId: string,
+  input: { id: string; title: string; body: string }
+): Promise<{ page: { id: string; unresolved: string[] } }> {
+  return accountFetch("/pages", { method: "POST", body: input, actingUser: externalId });
+}
+
+export function deletePage(externalId: string, id: string): Promise<{ deleted: boolean }> {
+  return accountFetch(`/pages/${pathSegment(id)}`, { method: "DELETE", actingUser: externalId });
 }
