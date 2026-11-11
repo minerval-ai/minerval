@@ -179,10 +179,12 @@ async function uncheckedCitedSources(limit: number): Promise<string[]> {
  * fetched.
  *
  * The queue is the source row, so the source's label is the label of the
- * work: the segments cut and the notices recorded here are written at it,
- * and a restricted document's are never written as public (runAtSourceLabel
- * in label-service.ts). The text and the facts go into the source's own
- * row, whose label is left as it is.
+ * work (runAtSourceLabel in label-service.ts). What it writes today does
+ * not depend on that: the text and the facts go into the source's own row,
+ * whose label is left as it is, and the segments and the notices carry the
+ * source's label by their own rule, whoever cuts or records them. Opening
+ * the work at the source's label keeps anything else this worker comes to
+ * write about a restricted document from being public.
  */
 export async function fillSource(
   sourceId: string,

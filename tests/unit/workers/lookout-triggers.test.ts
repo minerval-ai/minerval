@@ -33,10 +33,6 @@ const { state, queries } = vi.hoisted(() => ({
     claimLabels: {} as Record<string, string>,
     // The label each Steward was told at (currentLabel inside the enqueue).
     toldAt: [] as Array<{ claimId: string; label: string }>,
-    // The label each source carries; one with no entry reads as no row.
-    sourceLabels: {} as Record<string, string>,
-    // The label each source event was recorded at.
-    recordedAt: [] as Array<{ sourceId: string; label: string }>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -49,10 +45,6 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.includes("payload->>'notice_doi' = $1")) return [{ n: state.dupPending }];
     if (q.includes("SELECT sensitivity_label FROM claims")) {
       const label = state.claimLabels[params[0] as string];
-      return label ? [{ sensitivity_label: label }] : [];
-    }
-    if (q.includes("SELECT sensitivity_label FROM sources")) {
-      const label = state.sourceLabels[params[0] as string];
       return label ? [{ sensitivity_label: label }] : [];
     }
     return [];
@@ -75,8 +67,6 @@ vi.mock("../../../src/services/source-watch-service.js", () => ({
 vi.mock("../../../src/services/source-facts-service.js", () => ({
   eventKindForCrossref: (t: string) => (t === "expression_of_concern" ? "expression_of_concern" : t),
   recordSourceEvent: vi.fn(async (input: Record<string, unknown>) => {
-    const { currentLabel } = await import("../../../src/llm/usage-context.js");
-    state.recordedAt.push({ sourceId: input.sourceId as string, label: currentLabel() });
     state.sourceEvents.push(input);
     return { recorded: state.recorded };
   }),
@@ -120,8 +110,6 @@ beforeEach(() => {
   state.stewardFails = [];
   state.claimLabels = {};
   state.toldAt = [];
-  state.sourceLabels = {};
-  state.recordedAt = [];
 });
 
 describe("retractionPollTick", () => {
@@ -140,34 +128,6 @@ describe("retractionPollTick", () => {
       { claimId: "c-restricted", label: "internal" },
       { claimId: "c-open", label: "public" },
     ]);
-  });
-
-  // The poll records against one source at a time, so each event is written
-  // at that source's own label, whatever its nodes carry (src/labels.ts).
-  it("records each notice at the label of the source it is against", async () => {
-    state.subscribed = 0;
-    state.notices = [
-      { notice_doi: "10.1/n1", retracted_dois: ["10.1/held"], type: "retraction", title: "Retraction of X", updated: "2026-09-10T00:00:00Z", source: "publisher" },
-      { notice_doi: "10.1/n2", retracted_dois: ["10.1/open"], type: "correction", title: "Correction to Y", updated: "2026-09-10T00:00:00Z", source: "publisher" },
-      { notice_doi: "10.1/n3", retracted_dois: ["10.1/gone"], type: "correction", title: "Correction to Z", updated: "2026-09-10T00:00:00Z", source: "publisher" },
-    ];
-    state.matches = [
-      { doi: "10.1/held", source_id: "s-restricted", url: "u1", title: "Held", claim_ids: ["c-open"] },
-      { doi: "10.1/open", source_id: "s-open", url: "u2", title: "Open", claim_ids: [] },
-      // A source deleted between the join and the write: nothing to run at.
-      { doi: "10.1/gone", source_id: "s-gone", url: "u3", title: "Gone", claim_ids: [] },
-    ];
-    state.sourceLabels = { "s-restricted": "internal", "s-open": "public" };
-    state.claimLabels = { "c-open": "public" };
-    const r = await retractionPollTick({ now: NOW });
-    expect(r.sourceEvents).toBe(3);
-    expect(state.recordedAt).toEqual([
-      { sourceId: "s-restricted", label: "internal" },
-      { sourceId: "s-open", label: "public" },
-      { sourceId: "s-gone", label: "public" },
-    ]);
-    // The letter about the restricted source still goes at its node's label.
-    expect(state.toldAt).toEqual([{ claimId: "c-open", label: "public" }]);
   });
 
   it("records what happened to a matched source even when no lookout watches, and tells its Stewards but wakes no lookout", async () => {

@@ -55,7 +55,7 @@ import {
 } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
 import { enqueueSteward } from "../services/queue-service.js";
-import { runAtClaimLabel, runAtSourceLabel } from "../services/label-service.js";
+import { runAtClaimLabel } from "../services/label-service.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
 
@@ -237,20 +237,17 @@ export async function retractionPollTick(
   for (const m of matches) {
     const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
     if (!notice) continue;
-    // The poll runs outside any run and records against one source at a
-    // time, so each event is written at that source's label
-    // (runAtSourceLabel): a notice against a restricted document says the
-    // graph holds it, and is not written as public.
-    const { recorded } = await runAtSourceLabel(m.source_id, () =>
-      recordSourceEvent({
-        sourceId: m.source_id,
-        kind: eventKindForCrossref(notice.type),
-        occurredAt: notice.updated,
-        noticeUrl: notice.notice_doi ? `https://doi.org/${notice.notice_doi}` : null,
-        note: notice.title,
-        detectedBy: "crossref_poll",
-      })
-    );
+    // Each event is written at the label of the source the notice is
+    // against, by recordSourceEvent itself: a notice against a restricted
+    // document says the graph holds it, and is not written as public.
+    const { recorded } = await recordSourceEvent({
+      sourceId: m.source_id,
+      kind: eventKindForCrossref(notice.type),
+      occurredAt: notice.updated,
+      noticeUrl: notice.notice_doi ? `https://doi.org/${notice.notice_doi}` : null,
+      note: notice.title,
+      detectedBy: "crossref_poll",
+    });
     if (recorded) {
       result.sourceEvents++;
       fresh.push({ match: m, notice });

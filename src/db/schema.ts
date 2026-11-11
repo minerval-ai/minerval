@@ -73,13 +73,15 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // (currentLabel in llm/usage-context.ts). Two kinds of row carry one:
 // what a run writes (the graph's content: nodes, edges, arguments, tags,
 // definitions and formal statements; judgments and what each rested on;
-// sources and what is read from them: instances, readings, segments,
-// events, provenance, examinations; the run itself), and work waiting to be
-// done or resumed (a job, a ledger action, an order, a paused session),
-// which hands its label to the run that later takes it up (runAtLabel). A
-// claim and a source are both: work that starts from the claim or the
-// source itself, with no row of its own to wait in, runs at that row's
-// label. No reader is held to a label yet.
+// sources and what is read from them: instances, readings, provenance,
+// examinations; the run itself), and work waiting to be done or resumed (a
+// job, a ledger action, an order, a paused session), which hands its label
+// to the run that later takes it up (runAtLabel). A claim and a source are
+// both: work that starts from the claim or the source itself, with no row
+// of its own to wait in, runs at that row's label. One kind of row takes
+// its label from neither a run nor a request: what is derived mechanically
+// from a document (its segments, the notices against it) carries the
+// document's label. No reader is held to a label yet.
 // ---------------------------------------------------------------------------
 export const labels = pgTable("labels", {
   name: text("name").primaryKey(),
@@ -936,8 +938,9 @@ export const sourceEvents = pgTable(
     note: text("note"),
     // Which watcher recorded it ("crossref_poll", "facts_fetch").
     detectedBy: text("detected_by").notNull(),
-    // Who may read this row (src/labels.ts), stamped from the usage context
-    // when it is written.
+    // Who may read this row (src/labels.ts): the label of the source the
+    // notice is against, whoever recorded it. A notice is looked up about
+    // the document and holds no judgment of the run that asked.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
@@ -987,8 +990,9 @@ export const sourceSegments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    // Who may read this row (src/labels.ts), stamped from the usage context
-    // when it is written. Not `label` above, which is the heading a reader sees.
+    // Who may read this row (src/labels.ts): the source's label, whoever
+    // segmented it, because the segments are computed from the document's
+    // text. Not `label` above, which is the heading a reader sees.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [

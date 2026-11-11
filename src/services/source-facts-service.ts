@@ -18,13 +18,12 @@
  * fails leaves the fact null, and the page says it was not found.
  */
 import { rawQuery } from "../db/client.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { PUBLIC_LABEL } from "../labels.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
 import { SOURCE_EVENT_KINDS, type SourceEventKind } from "../schemas/common.js";
 import { listCurrentSourceInterests, type SourceInterestView } from "./source-interest-service.js";
-import { runAtSourceLabelOutsideAnyRun } from "./label-service.js";
 
 export interface PageFacts {
   title: string | null;
@@ -187,6 +186,13 @@ export interface RecordSourceEventInput {
  * Record what happened to a document, once: the same kind of event with the
  * same notice is the same event, however many times a watcher sees it.
  * Returns whether this call recorded it.
+ *
+ * The event carries the label of the source the notice is against, whoever
+ * records it: the retraction poll, the backfill, or the facts lookup that
+ * follows a run's fetch. A notice is looked up about the document and is
+ * the same whoever asks, so it holds no judgment of the run that asked, and
+ * one recorded at a reader's label would keep the same notice from being
+ * recorded for the document's other readers (src/labels.ts).
  */
 export async function recordSourceEvent(input: RecordSourceEventInput): Promise<{ recorded: boolean }> {
   if (!(SOURCE_EVENT_KINDS as readonly string[]).includes(input.kind)) {
@@ -195,7 +201,7 @@ export async function recordSourceEvent(input: RecordSourceEventInput): Promise<
   const occurred = input.occurredAt ? new Date(input.occurredAt) : null;
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO source_events (source_id, kind, occurred_at, notice_url, note, detected_by, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE((SELECT sensitivity_label FROM sources WHERE id = $1), $7))
      ON CONFLICT (source_id, kind, notice_url) DO NOTHING
      RETURNING id`,
     [
@@ -205,11 +211,9 @@ export async function recordSourceEvent(input: RecordSourceEventInput): Promise<
       (input.noticeUrl ?? "").trim(),
       input.note ?? null,
       input.detectedBy,
-      // The watcher's label: the source's own when a poll or the backfill
-      // recorded it (runAtSourceLabel in label-service.ts), the reading
-      // run's when a run's fetch did. An event already recorded keeps the
-      // label it has.
-      currentLabel(),
+      // Never written: a source that does not exist has no label to give,
+      // and the insert then fails on the source it names, as it always did.
+      PUBLIC_LABEL,
     ]
   );
   return { recorded: rows.length > 0 };
@@ -240,27 +244,19 @@ interface FactsRow {
  * Look up and record what can be known about a source without judgment.
  * Idempotent and fill-only. `checkDoi` and `fetch` are seams for tests.
  *
- * The lookup is work on the source itself. Reached from a worker or a
- * script, outside any run, it runs at the source's label, so the notices it
- * records against a restricted document are not written as public
- * (runAtSourceLabelOutsideAnyRun). Reached from a run that has just fetched
- * the document, it is that run's work and keeps its label. The facts
- * themselves go into the source's own row, whose label nothing here writes.
+ * Nothing it writes takes the label of whatever asked for the lookup. The
+ * facts go into the source's own row, whose label nothing here writes, and
+ * each notice it finds is recorded at the source's label
+ * (recordSourceEvent).
  */
 export async function refreshSourceFacts(
   sourceId: string,
-  deps: FactsLookupDeps = {}
+  deps: {
+    checkDoi?: (doi: string) => Promise<DoiCheck>;
+    fetch?: (url: string) => Promise<string>;
+    archive?: boolean;
+  } = {}
 ): Promise<RefreshSourceFactsResult> {
-  return runAtSourceLabelOutsideAnyRun(sourceId, () => lookUpSourceFacts(sourceId, deps));
-}
-
-interface FactsLookupDeps {
-  checkDoi?: (doi: string) => Promise<DoiCheck>;
-  fetch?: (url: string) => Promise<string>;
-  archive?: boolean;
-}
-
-async function lookUpSourceFacts(sourceId: string, deps: FactsLookupDeps): Promise<RefreshSourceFactsResult> {
   const [row] = await rawQuery<FactsRow>(
     `SELECT id, url, title, raw_content, source_type, authors, publisher, published_date, doi, archived_url
        FROM sources WHERE id = $1`,

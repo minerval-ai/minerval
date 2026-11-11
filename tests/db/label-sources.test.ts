@@ -1,24 +1,25 @@
 /**
  * Sources and what is read from them carry a label (src/labels.ts).
  *
- * Against real Postgres and the real write seams, four things:
+ * Against real Postgres and the real write seams, five things:
  *
- *  - A row read from a source or written about one (a passage recorded from
- *    it, a reading and its log, the document's segments, a notice against
- *    it, what it was extracted for, an edge to the document it draws on, a
- *    relation between two documents, a claim's origin and its source map,
- *    an examination with its coverage, findings, citations and audit notes,
- *    a recorded stake, a mandate's ingested source, a feed item, a shared
- *    page analysis) carries the label of the run that writes it, and is
- *    public when written outside any run. Nothing is inherited from the
- *    source or the claim, and a write that lands on a row already there
- *    leaves that row's label alone.
+ *  - A row a run writes about a source (a passage recorded from it, a
+ *    reading and its log, what it was extracted for, an edge to the document
+ *    it draws on, a relation between two documents, a claim's origin and its
+ *    source map, an examination with its coverage, findings, citations and
+ *    audit notes, a recorded stake, a mandate's ingested source, a feed
+ *    item, a shared page analysis) carries the label of the run that writes
+ *    it, and is public when written outside any run. Nothing is inherited
+ *    from the source or the claim, and a write that lands on a row already
+ *    there leaves that row's label alone.
+ *  - What is derived mechanically from a document, with no judgment of a run
+ *    in it (its segments, the notices against it), carries the document's
+ *    label, whichever run or worker produced it.
  *  - A fetch that writes into a source's own row (its text, its facts, its
  *    page hash) leaves the source's label as it was.
  *  - Work that starts from a source itself, with no row of its own to wait
- *    in, runs at the source's label: the source backfill, the facts lookup
- *    and the segmenting when nothing has set a label, the retraction poll,
- *    and the scheduler's note of a source someone else ingested.
+ *    in, runs at the source's label: the source backfill, and the
+ *    scheduler's note of a source someone else ingested.
  *  - None of it reaches a reader: no view query_sql reads, no API response
  *    and no agent's read of a source carries the column.
  *
@@ -39,6 +40,8 @@ const stage = vi.hoisted(() => {
     /** The network: what each URL answers with. A URL not here fails. */
     pages: new Map<string, string>(),
     fetched: [] as string[],
+    /** The label in the air when each URL was fetched. */
+    fetchedAt: new Map<string, string>(),
     /** Crossref's record of a work, by DOI: the notices against it. */
     works: new Map<string, Array<{ doi: string; type: string; label: string; updated: string }>>(),
     /** What the retraction poll's window holds. */
@@ -52,7 +55,9 @@ vi.mock("../../src/services/url-guard.js", async (orig) => ({
   ...(await orig<typeof import("../../src/services/url-guard.js")>()),
   assertPublicHttpUrl: async (raw: string) => new URL(raw),
   fetchPublicUrl: vi.fn(async (url: string) => {
+    const { currentLabel } = await import("../../src/llm/usage-context.js");
     stage.fetched.push(url);
+    stage.fetchedAt.set(url, currentLabel());
     const body = stage.pages.get(url);
     if (body === undefined) throw new Error(`no network in tests: ${url}`);
     return body;
@@ -424,6 +429,7 @@ beforeAll(async () => {
 beforeEach(() => {
   stage.pages.clear();
   stage.fetched.length = 0;
+  stage.fetchedAt.clear();
   stage.works.clear();
   stage.notices = [];
   stage.extracted = [];
@@ -452,8 +458,8 @@ describe("the columns", () => {
   });
 
   it("sit beside a segment's heading, which keeps its name and its value", async () => {
-    const source = await seedSource(PUBLIC_LABEL, { content: PAGE });
-    await inRunAt(INTERNAL, () => segmentSource(source.id));
+    const source = await seedSource(INTERNAL, { content: PAGE });
+    await segmentSource(source.id);
     const rows = await rawQuery<{ label: string | null; sensitivity_label: string }>(
       `SELECT label, sensitivity_label FROM source_segments WHERE source_id = $1 AND kind = 'section' ORDER BY ordinal`,
       [source.id]
@@ -471,15 +477,18 @@ describe("the columns", () => {
     // A run whose context names one records nothing.
     await expect(
       runWithUsageContext({ label: "undefined-label" }, () =>
-        recordSourceEvent({ sourceId: source.id, kind: "correction", noticeUrl: "https://doi.org/10.5555/never", detectedBy: "facts_fetch" })
+        recordExtraction({ sourceId: source.id, focus: null, claimsExtracted: 0, claimsCreated: 0, claimsMatched: 0 })
       )
     ).rejects.toSatisfy((err) => sqlState(err) === FOREIGN_KEY_VIOLATION);
-    expect(await labelsOn("source_events", source.id)).toEqual([]);
+    expect(await labelsOn("source_extractions", source.id)).toEqual([]);
   });
 });
 
 describe("a row read from a source or written about one", () => {
   it("written inside a run carries the run's label, in every table", async () => {
+    // The run records the source too, so the two tables that follow the
+    // source's label (its segments and its notices) agree with the rest.
+    // Where the run and the source differ is the next describe's.
     const { tables } = await inRunAt(INTERNAL, writeOneOfEach);
     expect(Object.keys(tables).sort()).toEqual(SOURCE_TABLES);
     expect(await labelsOf(tables)).toEqual(everyTableAt(INTERNAL));
@@ -494,7 +503,7 @@ describe("a row read from a source or written about one", () => {
   it("is the writer's whatever source it hangs from: restricted on a public source, public on a restricted one", async () => {
     const write = async (label: string) => {
       const source = await seedSource(label, { content: PAGE });
-      // Segmented as a worker would, so the passages carry the source's label.
+      // Segmented, so there are passages to anchor a finding to. They carry the source's label.
       await segmentSource(source.id);
       const claim = await settledClaim("sources whatever");
       const steward = { role: "claim-steward" as const, claimId: claim };
@@ -654,12 +663,98 @@ describe("a row read from a source or written about one", () => {
   });
 });
 
+// What is computed from a document or looked up about it is the same whoever
+// asks, so it carries the document's label and not the label of the run that
+// happened to ask (src/labels.ts). What that run concludes stays the run's.
+describe("what is derived mechanically from a document", () => {
+  /** A source with a DOI and no text, its page on the network, and a notice Crossref holds against it. */
+  async function unopened(label: string) {
+    const doi = `10.5555/${randomUUID().slice(0, 8)}`;
+    const source = await seedSource(label, { url: `https://doi.org/${doi}` });
+    stage.pages.set(source.url, PAGE);
+    stage.works.set(doi, [{ doi: `${doi}.c1`, type: "correction", label: "Correction", updated: "2026-09-10T00:00:00Z" }]);
+    return { ...source, doi };
+  }
+  /** A run opens the document for the first time, then records a passage from it and reads it. */
+  async function openedBy(runLabel: string, source: { id: string; url: string }) {
+    const claim = await settledClaim("sources derived");
+    return inRunAt(runLabel, async () => {
+      const read = await readSourceContent({ sourceId: source.id });
+      expect(read.origin).toBe("fetched");
+      const instance = ok(
+        await executeStewardTool("record_claim_instance", { claim_id: claim, url: source.url, verbatim_text: QUOTE, stance: "affirms" })
+      ).instance_id as string;
+      ok(await executeRecordReading({ instance_id: instance, support: "supports", source_read: true }, { role: "claim-steward", claimId: claim }));
+      return {
+        source: (await sourceRow(source.id)).sensitivity_label,
+        segments: await labelsOn("source_segments", source.id),
+        notices: await labelsOn("source_events", source.id),
+        instance: await labelOf("claim_instances", instance),
+        reading: await labelsWhere("claim_instance_readings", "instance_id = $1", [instance]),
+      };
+    });
+  }
+
+  it("is public when a run at a second label opens a public source: its segments and the notice against it", async () => {
+    const open = await unopened(PUBLIC_LABEL);
+    expect(await openedBy(INTERNAL, open)).toEqual({
+      source: PUBLIC_LABEL, segments: [PUBLIC_LABEL], notices: [PUBLIC_LABEL],
+      // The passage the run recorded and its reading of it are judgments, and the run's.
+      instance: INTERNAL, reading: [INTERNAL],
+    });
+    expect((await rawQuery(`SELECT 1 FROM source_segments WHERE source_id = $1`, [open.id])).length).toBeGreaterThan(2);
+  });
+
+  it("is restricted when a run at public opens a restricted source, as it can until reads are held to a label", async () => {
+    const restricted = await unopened(INTERNAL);
+    expect(await openedBy(PUBLIC_LABEL, restricted)).toEqual({
+      source: INTERNAL, segments: [INTERNAL], notices: [INTERNAL],
+      instance: PUBLIC_LABEL, reading: [PUBLIC_LABEL],
+    });
+  });
+
+  it("carries the source's label from each seam that writes it, inside a run and outside any", async () => {
+    for (const [sourceLabel, otherLabel] of [[INTERNAL, PUBLIC_LABEL], [PUBLIC_LABEL, INTERNAL]] as const) {
+      const source = await unopened(sourceLabel);
+      await rawQuery(`UPDATE sources SET raw_content = $2 WHERE id = $1`, [source.id, PAGE]);
+      // Outside any run, as a script or a worker calls them.
+      await segmentSource(source.id);
+      expect(await refreshSourceFacts(source.id)).toMatchObject({ events_recorded: 1, doi: source.doi });
+      expect(await labelsOn("source_segments", source.id)).toEqual([sourceLabel]);
+      expect(await labelsOn("source_events", source.id)).toEqual([sourceLabel]);
+      // Inside a run at the other label: segmenting again replaces the
+      // segments, and a second notice is recorded. Both are still the source's.
+      await inRunAt(otherLabel, async () => {
+        expect((await segmentSource(source.id)).segments).toBeGreaterThan(2);
+        expect(await recordSourceEvent({ sourceId: source.id, kind: "retraction", noticeUrl: `https://doi.org/${source.doi}.r1`, detectedBy: "facts_fetch" }))
+          .toEqual({ recorded: true });
+      });
+      expect(await labelsOn("source_segments", source.id)).toEqual([sourceLabel]);
+      const events = await rawQuery<{ kind: string; sensitivity_label: string }>(
+        `SELECT kind, sensitivity_label FROM source_events WHERE source_id = $1 ORDER BY kind`,
+        [source.id]
+      );
+      expect(events).toEqual([
+        { kind: "correction", sensitivity_label: sourceLabel },
+        { kind: "retraction", sensitivity_label: sourceLabel },
+      ]);
+      expect((await sourceRow(source.id)).sensitivity_label).toBe(sourceLabel);
+    }
+  });
+
+  it("is not recorded against a source that does not exist, which fails as it always did", async () => {
+    await expect(
+      recordSourceEvent({ sourceId: randomUUID(), kind: "correction", noticeUrl: "https://doi.org/10.5555/never", detectedBy: "facts_fetch" })
+    ).rejects.toSatisfy((err) => sqlState(err) === FOREIGN_KEY_VIOLATION);
+  });
+});
+
 // The extraction of a submitted document runs at the label of its job, so
 // what the worker reads out of the document carries the label the document
-// was submitted at.
+// was submitted at. The document's segments follow the document.
 describe("a document a worker extracts", () => {
-  async function ingested(label: string | null) {
-    const url = pageUrl("submitted");
+  async function ingested(label: string | null, known?: { url: string }) {
+    const url = known?.url ?? pageUrl("submitted");
     const submit = () => submitSource({ url, content: PAGE });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");
@@ -682,10 +777,16 @@ describe("a document a worker extracts", () => {
     };
   }
 
-  it("has its instances, its extraction record and its segments at the label it was submitted at", async () => {
+  it("has its instances and its extraction record at the label it was submitted at, and its segments at the source's", async () => {
+    // A document first recorded by the submission is at the submission's label, so all four agree.
     const at = (label: string) => ({ source: label, instances: [label], extractions: [label], segments: [label] });
     expect(await ingested(INTERNAL)).toEqual(at(INTERNAL));
     expect(await ingested(null)).toEqual(at(PUBLIC_LABEL));
+    // A document the graph already held as public, submitted at a second label: the reading is the job's, the structure the document's.
+    const known = await seedSource(PUBLIC_LABEL);
+    expect(await ingested(INTERNAL, known)).toEqual({
+      source: PUBLIC_LABEL, instances: [INTERNAL], extractions: [INTERNAL], segments: [PUBLIC_LABEL],
+    });
   });
 });
 
@@ -701,9 +802,6 @@ describe("a fetch into a source's own row", () => {
     expect(await sourceRow(source.id)).toMatchObject({
       sensitivity_label: PUBLIC_LABEL, has_text: true, publisher: "A registry", checked: true,
     });
-    // What the reading run wrote beside the row is the run's.
-    expect(await labelsOn("source_segments", source.id)).toEqual([INTERNAL]);
-    expect(await labelsOn("source_events", source.id)).toEqual([INTERNAL]);
   });
 
   it("made for a document found again by its URL leaves the label it was first recorded at", async () => {
@@ -770,6 +868,9 @@ describe("work that starts from a source", () => {
       // The worker's tick runs outside any run.
       expect(currentLabel()).toBe(PUBLIC_LABEL);
       expect(await sourceBackfillTick()).toMatchObject({ taken: 2, fetched: 2, facts: 2, segmented: 2 });
+      // Each source's page was fetched with that source's label in the air.
+      expect(stage.fetchedAt.get(restricted.url)).toBe(INTERNAL);
+      expect(stage.fetchedAt.get(open.url)).toBe(PUBLIC_LABEL);
       expect(await filled(restricted.id)).toEqual(filledAt(INTERNAL));
       expect(await filled(open.id)).toEqual(filledAt(PUBLIC_LABEL));
     } finally {
@@ -781,29 +882,8 @@ describe("work that starts from a source", () => {
   it("is done at the source's label whatever context the worker is in", async () => {
     const restricted = await unfetched(INTERNAL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => fillSource(restricted.id))).toBe(true);
+    expect(stage.fetchedAt.get(restricted.url)).toBe(INTERNAL);
     expect(await filled(restricted.id)).toEqual(filledAt(INTERNAL));
-  });
-
-  it("is done by the facts lookup at the source's label outside any run, and at the run's label inside one", async () => {
-    const outside = await unfetched(INTERNAL);
-    expect(await refreshSourceFacts(outside.id)).toMatchObject({ events_recorded: 1, doi: outside.doi });
-    expect(await labelsOn("source_events", outside.id)).toEqual([INTERNAL]);
-    expect(await sourceRow(outside.id)).toMatchObject({ sensitivity_label: INTERNAL, publisher: "A registry" });
-
-    // A run that looks the facts up is doing its own work: the notice is the run's.
-    const inside = await unfetched(INTERNAL);
-    await inRunAt(PUBLIC_LABEL, () => refreshSourceFacts(inside.id));
-    expect(await labelsOn("source_events", inside.id)).toEqual([PUBLIC_LABEL]);
-    expect((await sourceRow(inside.id)).sensitivity_label).toBe(INTERNAL);
-  });
-
-  it("is done by the segmenting at the source's label outside any run, and at the run's label inside one", async () => {
-    const restricted = await seedSource(INTERNAL, { content: PAGE });
-    await segmentSource(restricted.id);
-    expect(await labelsOn("source_segments", restricted.id)).toEqual([INTERNAL]);
-    // Segmenting again replaces the segments, so they are the new writer's.
-    await inRunAt(PUBLIC_LABEL, () => segmentSource(restricted.id));
-    expect(await labelsOn("source_segments", restricted.id)).toEqual([PUBLIC_LABEL]);
   });
 
   it("is recorded by the retraction poll at the label of the source each notice is against", async () => {

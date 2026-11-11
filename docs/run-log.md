@@ -62,8 +62,11 @@ label in a run's setup is the label of whatever asked for the run, through
 however many hand-overs, and never something the agent chose. A run that
 starts from a claim itself, with no such row (the Tagger's, or a pass the
 scheduler's sweep opens for a pending claim), works at the claim's label.
-Work that starts from a source the same way (the source backfill, the
-retraction poll) is done at the source's label; it opens no run.
+Work that starts from a source the same way (the source backfill) is done
+at the source's label; it opens no run. Two kinds of row are not the run's
+at all: a document's segments and the notices against it are derived from
+the document, the same whoever asks, and carry the document's label even
+when a run's fetch produced them.
 
 ## Checking a log
 

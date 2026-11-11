@@ -78,24 +78,25 @@ export async function runAtClaimLabelOutsideAnyRun<T>(claimId: string, fn: () =>
  * Run `fn` at a source's label: for work that starts from the source itself.
  *
  * The same floor as runAtClaimLabel, for documents. A worker finds a source
- * with no facts, no stored text or no segments and fills them in, and a
- * poll finds a notice against a source and records it. None of that waits
- * in a row of its own, so it used to run with no label and wrote the events
- * and the segments of a restricted document as public. The source is the
- * only thing that says what the work is about, so its label is the one the
- * work runs at, whatever context the worker itself is in.
+ * with no facts, no stored text or no segments and fills them in. That does
+ * not wait in a row of its own, so it used to run with no label, and
+ * whatever it wrote about a restricted document was public. The source is
+ * the only thing that says what the work is about, so its label is the one
+ * the work runs at, whatever context the worker itself is in.
  *
  * What the work writes into the source's own row (the fetched text, the
  * facts) lands on a row already there and leaves its label alone. The label
- * is read here and never written.
+ * is read here and never written. The document's segments and the notices
+ * against it do not depend on this at all: they carry the source's label
+ * by their own rule, whoever produces them (src/labels.ts).
  *
  * It is a floor and not the whole rule. It keeps a worker's writes about a
  * restricted source from being public. It does not cover a restricted run
- * reading a public source: that run's own rows are stamped with its label
- * like any other, but the text it fetches lands in the public row, and the
- * segments it cuts are the document's only segmentation. Telling those
- * apart takes more than one copy or one reading per document, which is
- * later work.
+ * reading a public source: that run's judgments are stamped with its label
+ * like any other, but the text it fetches lands in the public row, and an
+ * instance has one current reading whoever wrote it. Telling those apart
+ * takes more than one copy or one reading per document, which is later
+ * work.
  *
  * A source that does not exist has nothing to run at: `fn` runs as it would
  * have and finds that out for itself.
@@ -110,12 +111,11 @@ export async function runAtSourceLabel<T>(sourceId: string, fn: () => Promise<T>
 }
 
 /**
- * runAtSourceLabel for code that is reached both from a worker and from
- * inside a run (the facts lookup and the segmenting, which follow every
- * fetch of a document). Inside a run the work is that run's and keeps its
- * label: a restricted reading of a public source is the reader's. Only
- * where nothing has set a label (a worker, a script, a request that carries
- * none) does the source's label stand in.
+ * runAtSourceLabel for code that is reached both from a sweep and from
+ * inside a run (noting, in a mandate's pipeline, a source someone else
+ * ingested). Inside a run the work is that run's and keeps its label, as
+ * all work a run does. Only where nothing has set a label (a sweep, a
+ * script, a request that carries none) does the source's label stand in.
  */
 export async function runAtSourceLabelOutsideAnyRun<T>(sourceId: string, fn: () => Promise<T>): Promise<T> {
   if (getUsageContext().label !== undefined) return fn();

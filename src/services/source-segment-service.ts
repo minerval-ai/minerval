@@ -18,11 +18,9 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
-import { currentLabel } from "../llm/usage-context.js";
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
-import { runAtSourceLabelOutsideAnyRun } from "./label-service.js";
 
 /** Segments beyond this are not recorded; a book is segmented up to here. */
 export const MAX_SEGMENTS = 5000;
@@ -176,19 +174,15 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
  * its instances. Returns how many segments were written; zero when the
  * source has no stored text.
  *
- * Segmenting is work on the source itself. Started by a worker or a script,
- * outside any run, it runs at the source's label, so a restricted document's
- * structure is not written as public (runAtSourceLabelOutsideAnyRun). Started
- * by a run that is reading the document, it is that run's work and the
- * segments carry the run's label.
+ * The segments carry the source's label, whoever asks for them: a run that
+ * is reading the document, or a worker outside any run. They are computed
+ * from the document's text and hold no judgment of the run that happened to
+ * open it first, and a document has one segmentation, which every reader of
+ * the document shares (src/labels.ts).
  */
 export async function segmentSource(sourceId: string): Promise<{ segments: number; anchored: number }> {
-  return runAtSourceLabelOutsideAnyRun(sourceId, () => cutSegments(sourceId));
-}
-
-async function cutSegments(sourceId: string): Promise<{ segments: number; anchored: number }> {
-  const [row] = await rawQuery<{ raw_content: string | null }>(
-    `SELECT raw_content FROM sources WHERE id = $1`,
+  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string }>(
+    `SELECT raw_content, sensitivity_label FROM sources WHERE id = $1`,
     [sourceId]
   );
   if (!row?.raw_content?.trim()) return { segments: 0, anchored: 0 };
@@ -197,11 +191,9 @@ async function cutSegments(sourceId: string): Promise<{ segments: number; anchor
 
   await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1`, [sourceId]);
   await rawQuery(`DELETE FROM source_segments WHERE source_id = $1`, [sourceId]);
-  // The segments are new rows, so they carry the label of whatever is
-  // segmenting: the reading run's, or the source's own when a worker
-  // segments it outside any run (runAtSourceLabel in label-service.ts).
-  // The column is not `label`, which is a segment's heading.
-  const sensitivityLabel = currentLabel();
+  // The source's label, not the label of whatever is segmenting. The
+  // column is not `label`, which is a segment's heading.
+  const sensitivityLabel = row.sensitivity_label;
   // Ids are made here so a child can name its parent in the same batch;
   // parents precede children in document order, so each batch's foreign
   // keys point at rows already inserted or inserted in the same statement.

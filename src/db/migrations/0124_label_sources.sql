@@ -9,8 +9,10 @@
 -- the page fetched for it. Each gets the "sensitivity_label" column
 -- "sources" got in 0121, 'public' on every row that exists. A row is
 -- stamped with the label of the run that writes it, and work that starts
--- from a source itself runs at the source's label. Nothing reads the
--- column to hold anyone to a clearance.
+-- from a source itself runs at the source's label. Two tables hold what is
+-- derived mechanically from a document, its segments and the notices
+-- against it, and their rows carry the document's label whoever produced
+-- them. Nothing reads the column to hold anyone to a clearance.
 --
 -- On "source_segments" the new column sits beside "label", which is a
 -- segment's heading and is not touched.

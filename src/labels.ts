@@ -26,17 +26,37 @@
  * `label_reads` (cleared for `label`, may also read `reads`). A label always
  * reads itself, which needs no pair.
  *
- * A row gets its label from the run or the request that writes it
- * (currentLabel in llm/usage-context.ts), the way an assessment gets its
- * funder and its model. An agent never chooses one. That is the whole rule
- * for stamping, and nothing is inherited from the row a new row hangs from:
- * an argument written at a restricted label on a public claim is restricted,
- * and so is the edge that joins a restricted subclaim to a public parent. A
- * reading of a source is the reader's in the same way: a passage a
- * restricted run records from a public document is restricted, and so is
- * its reading of it. A write that lands on a row already there (an upsert)
- * leaves that row's label as it was, and so does the text or the facts a
- * fetch writes into a source's own row.
+ * A row gets its label in one of two ways, and an agent never chooses it.
+ *
+ * What a run writes carries the run's label: the label of the run or the
+ * request that writes the row (currentLabel in llm/usage-context.ts), the
+ * way an assessment gets its funder and its model. Nothing is inherited
+ * from the row a new row hangs from: an argument written at a restricted
+ * label on a public claim is restricted, and so is the edge that joins a
+ * restricted subclaim to a public parent. A reading of a source is the
+ * reader's in the same way: a passage a restricted run records from a
+ * public document is restricted, and so are its reading of it, the
+ * examination it opens and the stake it records. A write that lands on a
+ * row already there (an upsert) leaves that row's label as it was, and so
+ * does the text or the facts a fetch writes into a source's own row.
+ *
+ * What is derived mechanically from a row, with no judgment of the run in
+ * it, carries that row's label. A document's segments are computed from
+ * its text, and a notice against it (a correction, a retraction) is looked
+ * up about it. Both are the same whoever asks, so `source_segments` and
+ * `source_events` carry the source's label, whichever run or worker
+ * produced them (segmentSource in services/source-segment-service.ts,
+ * recordSourceEvent in services/source-facts-service.ts). A document has
+ * one segmentation and a notice is recorded once. Stamped with the label
+ * of whoever asked first, a restricted run that opened a public document
+ * would leave it with restricted segments, and the notice it recorded
+ * would keep the same notice from being recorded for everyone else. The
+ * test for this rule is that the row would be the same whoever produced
+ * it. A row that says what a run concluded, chose or was asked to do is a
+ * judgment and takes the first rule: an instance, a reading, a provenance
+ * edge, an examination and its findings, a recorded stake, and the record
+ * of an extraction, which holds what that run proposed and whose focus it
+ * read for.
  *
  * A run works at the label of the work that started it. Most runs are not
  * opened by the code that decided they should happen: a job is enqueued and
@@ -63,15 +83,15 @@
  * label, which is later work.
  *
  * A source is the same kind of carrier. The source backfill finds a
- * document with no facts, no text or no segments and fills them in, the
- * retraction poll records a notice against it, and the scheduler, placing a
- * mandate's plan, notes a document someone else ingested. That work runs at
- * the source's label (runAtSourceLabel in services/label-service.ts), and
- * it is the same floor: what a worker writes about a restricted source is
- * never public. A restricted run that reads a public source is not covered
- * by it. Its own rows carry its label, but the text it fetches lands in the
- * public row, a document has one segmentation and an instance one current
- * reading whoever wrote them, and a source is still found by its URL
+ * document with no facts, no text or no segments and fills them in, and
+ * the scheduler, placing a mandate's plan, notes a document someone else
+ * ingested. That work runs at the source's label (runAtSourceLabel in
+ * services/label-service.ts), and it is the same floor: what a worker
+ * writes about a restricted source is never public. A restricted run that
+ * reads a public source is not covered by it. Its judgments carry its
+ * label and the document's segments and notices carry the document's, but
+ * the text it fetches lands in the public row, an instance has one current
+ * reading whoever wrote it, and a source is still found by its URL
  * whatever its label. Telling those apart is later work too.
  *
  * A carrier whose label is missing is not treated as public: the run is
