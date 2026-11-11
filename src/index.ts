@@ -6,7 +6,8 @@ import { buildApp } from "./server/app.js";
 import { loadConfig } from "./config.js";
 import { featureOn } from "./features.js";
 import { assertSkillToolsRegistered } from "./llm/tools/skill-tools.js";
-import { getDb, closeDb } from "./db/client.js";
+import { getDb, closeDb, rawQuery } from "./db/client.js";
+import { ensureSqlRoles, hasSqlRoleCredentials } from "./db/sql-roles.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
@@ -49,6 +50,28 @@ async function main() {
       migrationsFolder: join(process.cwd(), "drizzle-migrations"),
     });
     console.log("Migrations complete.");
+
+    // Read-only SQL's login roles live in the database, not in the stack, so
+    // a deployment that never made them answers every query UNAVAILABLE.
+    // Made here, after migrations (which create the group role they join),
+    // and set again on every start, which also applies a rotated secret.
+    // A failure is logged, not fatal: SQL is one feature, and the rest of
+    // the API should still serve.
+    const roles = {
+      agentUser: config.sqlAgentDbUser,
+      agentPassword: config.sqlAgentDbPassword,
+      callerUser: config.sqlCallerDbUser,
+      callerPassword: config.sqlCallerDbPassword,
+    };
+    if (hasSqlRoleCredentials(roles)) {
+      try {
+        for (const line of await ensureSqlRoles((text, params) => rawQuery(text, params), roles)) {
+          console.log(`[sql] ${line}`);
+        }
+      } catch (err) {
+        console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
+      }
+    }
   }
 
   const app = await buildApp();
