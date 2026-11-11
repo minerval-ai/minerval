@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
 import { getRunStep, getRunSummary, listRunSteps } from "../../src/services/run-view-service.js";
+import { openResearchRun, stampResearchRun } from "../../src/services/research-run-service.js";
 import { hashText } from "../../src/services/setup-split.js";
 
 async function seedRun(opts: { reasons?: string[] } = {}): Promise<string> {
@@ -84,6 +85,36 @@ describe("reading agent runs", () => {
     const service = await getRunSummary(id, { isService: true });
     expect(service).toMatchObject({ public: false, private_reasons: ["tool:grant_overview"], steps_recorded: 4 });
     expect(service && "withheld" in service).toBe(false);
+  });
+
+  it("reads a Researcher's run by its research run id, as a request's work log names it (#897)", async () => {
+    const id = await seedRun();
+    const research = await openResearchRun({
+      claimId: null,
+      grantId: null,
+      requestedBy: "request",
+      requesterRunId: null,
+      jobId: null,
+      task: "Take up the request.",
+      model: "claude-opus-5-5",
+      modelTier: "strong",
+      effort: "high",
+      includeConstitution: true,
+      ceilingMicroUsd: 4_500_000,
+    });
+    // Before the run is stamped with its agent run, the id names no run.
+    expect(await getRunSummary(research.id)).toBeNull();
+    await stampResearchRun(research.id, { runId: id, tools: ["report"] });
+    // Either id reads the same run, under the agent run's own id.
+    expect(await getRunSummary(research.id)).toEqual(await getRunSummary(id));
+    expect(await getRunSummary(research.id)).toMatchObject({ id, steps_recorded: 4, cost_usd: 0.25 });
+    expect(await listRunSteps(research.id, { limit: 2 })).toEqual(await listRunSteps(id, { limit: 2 }));
+    expect(await getRunStep(research.id, 1)).toEqual(await getRunStep(id, 1));
+    // A private run stays withheld by whichever id it is asked for.
+    const hidden = await seedRun({ reasons: ["input:grantmaker-brief"] });
+    await stampResearchRun(research.id, { runId: hidden, tools: ["report"] });
+    expect(await getRunSummary(research.id)).toMatchObject({ id: hidden, withheld: true });
+    expect(await listRunSteps(research.id)).toMatchObject({ id: hidden, withheld: true });
   });
 
   it("finds no run for an unknown or malformed id", async () => {
