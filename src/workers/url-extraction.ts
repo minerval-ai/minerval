@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { sources, claims, claimInstances } from "../db/schema.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+import { sourceContentHash } from "../services/source-content.js";
 
 const NODE_KIND_SET: ReadonlySet<string> = new Set(NODE_KINDS);
 
@@ -209,7 +210,7 @@ async function processUrlExtraction(
       content = await fetchUrlContent(message.url);
       await db
         .update(sources)
-        .set({ rawContent: content })
+        .set({ rawContent: content, contentHash: sourceContentHash(content) })
         .where(eq(sources.id, source.id));
       fetchedNow = true;
     }
@@ -602,7 +603,7 @@ async function handleDocumentProblem(
           `whether claims or instances from this source need attention.`,
       });
     } else {
-      await rawQuery(`UPDATE sources SET raw_content = NULL WHERE id = $1`, [sourceId]);
+      await rawQuery(`UPDATE sources SET raw_content = NULL, content_hash = NULL WHERE id = $1`, [sourceId]);
     }
   } catch (err) {
     console.error(
