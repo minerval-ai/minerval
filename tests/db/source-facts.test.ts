@@ -80,6 +80,51 @@ describe("refreshSourceFacts", () => {
     expect((await getSourceFacts(id))!.source).toMatchObject({ authors: ["Jane Smith"], source_type: "dataset", published_date: "2021-06" });
   });
 
+  it("reads an arXiv PDF's or HTML page's facts from the paper's abstract page", async () => {
+    const ABS = `<html><head><meta name="citation_title" content="Reasoning in the wild">
+      <meta name="citation_author" content="Li, Sichao"><meta name="citation_author" content="Ma, Sai">
+      <meta name="citation_date" content="2025/03/11"><meta property="og:site_name" content="arXiv.org"></head></html>`;
+    const fetched: string[] = [];
+    const fetch = async (url: string) => {
+      fetched.push(url);
+      if (url.startsWith("https://arxiv.org/abs/")) return ABS;
+      throw new Error("no archived copy");
+    };
+    const paper = randomUUID().slice(0, 8);
+
+    // A PDF: its stored text is not a page at all.
+    const pdf = await seedSource({ url: `https://arxiv.org/pdf/${paper}v2`, content: "%PDF-1.7 binary" });
+    await refreshSourceFacts(pdf, { fetch });
+    expect(fetched).toContain(`https://arxiv.org/abs/${paper}v2`);
+    expect((await getSourceFacts(pdf))!.source).toMatchObject({
+      title: "Reasoning in the wild", authors: ["Li, Sichao", "Ma, Sai"],
+      publisher: "arXiv.org", published_date: "2025-03-11", source_type: "preprint",
+    });
+
+    // The full-text HTML: a page, with a title and no other facts. Its own title is kept.
+    const html = await seedSource({
+      url: `https://arxiv.org/html/${paper}v1`, title: "Given title",
+      content: `<html><head><meta property="og:title" content="The page's own title"></head><body><p>Text</p></body></html>`,
+    });
+    await refreshSourceFacts(html, { fetch });
+    expect((await getSourceFacts(html))!.source).toMatchObject({
+      title: "Given title", authors: ["Li, Sichao", "Ma, Sai"], published_date: "2025-03-11", source_type: "preprint",
+    });
+
+    // The abstract page itself is read where it is, with no second fetch.
+    fetched.length = 0;
+    const abs = await seedSource({ url: `https://arxiv.org/abs/${paper}`, content: ABS });
+    await refreshSourceFacts(abs, { fetch });
+    expect(fetched.filter((u) => u.startsWith("https://arxiv.org/"))).toEqual([]);
+    expect((await getSourceFacts(abs))!.source).toMatchObject({ authors: ["Li, Sichao", "Ma, Sai"], source_type: "preprint" });
+
+    // An abstract page that cannot be fetched leaves the facts empty and the lookup done.
+    const down = await seedSource({ url: `https://arxiv.org/pdf/${paper}v9`, content: "%PDF-1.7 binary" });
+    await refreshSourceFacts(down, { fetch: async () => { throw new Error("503"); } });
+    expect((await getSourceFacts(down))!.source).toMatchObject({ authors: [], published_date: null, source_type: "preprint" });
+    expect((await getSourceFacts(down))!.source.facts_checked_at).not.toBeNull();
+  });
+
   it("works from the page alone when there is no DOI, and finds an archived copy", async () => {
     const id = await seedSource({
       title: "Given title",

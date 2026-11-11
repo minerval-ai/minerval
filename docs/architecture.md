@@ -594,7 +594,10 @@ sections and passages, each instance anchored to the passage its quote sits
 in (#507). Both are filled once, on ingest and when `provenance_read_source`
 first fetches a document (`refreshSourceFactsOnce`, `segmentSourceOnce`).
 Most of a page's facts are in its own metadata, so both need the document's
-text, and a source an agent cites by URL without opening it (recording an
+text. Where the URL cited is a rendering that carries no metadata, an arXiv
+PDF or full-text HTML page, the lookup reads the facts from the paper's
+abstract page instead (`factsPageUrl`), and a paper on arXiv is recorded as a
+preprint from its address alone (`kindFromUrl`). And a source an agent cites by URL without opening it (recording an
 instance, an argument passage, a reading or an upstream edge) is created
 with none. The source backfill (`src/workers/source-backfill.ts`) fills
 what those two paths miss. For a source with a URL and no stored text that
