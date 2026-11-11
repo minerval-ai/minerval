@@ -36,6 +36,7 @@ import {
   backfillReportEmbeddings,
   checkReportRateLimit,
   getReportView,
+  AmbiguousReportIdError,
   computeDedupeKey,
   formatAgentReport,
   listReportsAwaitingIssue,
@@ -680,6 +681,40 @@ describe("getReportView", () => {
     expect((await getReportView("480"))!.report.id).toBe(REPORT_ID);
     expect(await getReportView("#491")).toBeNull();
     expect(await getReportView("#480 #481")).toBeNull();
+  });
+
+  it("finds a report by a unique prefix of its id, after the issue number (#820)", async () => {
+    const prefixes: unknown[] = [];
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("github_issue_number = ANY")) {
+        return (params![0] as number[])[0] === 12345678 ? [{ ...ROW, github_issue_number: 12345678 }] : [];
+      }
+      if (sql.includes("id::text LIKE $1")) {
+        prefixes.push(params![0]);
+        return String(params![0]).startsWith(REPORT_ID.slice(0, 8)) ? [ROW] : [];
+      }
+      return [];
+    });
+    expect((await getReportView(REPORT_ID.slice(0, 8).toUpperCase()))!.report.id).toBe(REPORT_ID);
+    expect(prefixes.at(-1)).toBe(`${REPORT_ID.slice(0, 8)}%`);
+    // An all-digit string that names an issue is read as the issue number.
+    prefixes.length = 0;
+    expect(await getReportView("12345678")).not.toBeNull();
+    expect(prefixes).toEqual([]);
+    // Too short to be a prefix: not looked up.
+    expect(await getReportView(REPORT_ID.slice(0, 7))).toBeNull();
+    expect(prefixes).toEqual([]);
+  });
+
+  it("refuses a prefix that starts more than one report's id, naming neither", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string) =>
+      sql.includes("id::text LIKE $1") ? [ROW, { ...ROW, id: OTHER_ID }] : []
+    );
+    const err = await getReportView("abcdef01").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AmbiguousReportIdError);
+    expect((err as Error).message).toMatch(/more than one report/);
+    expect((err as Error).message).not.toContain(REPORT_ID);
+    expect((err as Error).message).not.toContain(OTHER_ID);
   });
 
   it("returns null for a bad id, an unknown id, and another origin's report", async () => {
