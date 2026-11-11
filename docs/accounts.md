@@ -374,6 +374,13 @@ Assistant's own progress line) and `turn.partial` (the text of the reply
 once it starts writing). A reply usually opens with a long run of tool
 calls and no text, so the page shows the activity.
 
+**Names.** A conversation is named from its first message by a small
+model (`ASSISTANT_TITLE_MODEL`, the cheap tier by default), in the
+background while the Assistant starts on the reply: two to six words in
+place of the message's opening words, which stand in until the name
+arrives and stay if the call fails. The call is untraced, and its cost (a
+fraction of a cent) is charged with the conversation's.
+
 **The page.** `/ask` is laid out as a chat, not as an article
 (`web/app/ask/layout.tsx`): a sidebar of the user's conversations, pages
 and mandates, the conversation with its composer pinned at the bottom, and
