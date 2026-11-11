@@ -204,17 +204,20 @@ async function processUrlExtraction(
 
     // Fetch content if not already available
     let content = source.rawContent;
+    let fetchedNow = false;
     if (!content) {
       content = await fetchUrlContent(message.url);
       await db
         .update(sources)
         .set({ rawContent: content })
         .where(eq(sources.id, source.id));
+      fetchedNow = true;
     }
     // The facts a source page shows without judgment (#507): authors,
-    // publisher, date, DOI, an archived copy. Once per source; a failure
-    // loses the facts, never the extraction.
-    await refreshSourceFactsOnce(source.id);
+    // publisher, date, DOI, an archived copy. Once per source, and again
+    // when the text arrived just now, since a lookup made before it had no
+    // page to read. A failure loses the facts, never the extraction.
+    await refreshSourceFactsOnce(source.id, { newText: fetchedNow });
 
     // Extract claims
     // No claim cap: how many reusable propositions a document turns on is a

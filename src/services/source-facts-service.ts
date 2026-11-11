@@ -327,14 +327,23 @@ export async function refreshSourceFacts(
  * Refresh a source's facts if nobody has yet, swallowing every failure: the
  * hook the fetch paths call after storing a document, where losing the facts
  * must never lose the document.
+ *
+ * `newText` says the document's text was stored just now. The lookup then
+ * runs even if one ran before: a source can be checked while it has no text
+ * (its URL cited, the page not yet fetched), and that lookup had no page
+ * metadata to read. Every fact is fill-only, so looking again can add and
+ * never replace.
  */
-export async function refreshSourceFactsOnce(sourceId: string): Promise<void> {
+export async function refreshSourceFactsOnce(
+  sourceId: string,
+  opts: { newText?: boolean } = {}
+): Promise<void> {
   try {
     const [row] = await rawQuery<{ facts_checked_at: Date | null }>(
       `SELECT facts_checked_at FROM sources WHERE id = $1`,
       [sourceId]
     );
-    if (!row || row.facts_checked_at) return;
+    if (!row || (row.facts_checked_at && !opts.newText)) return;
     await refreshSourceFacts(sourceId);
   } catch (err) {
     console.error(
