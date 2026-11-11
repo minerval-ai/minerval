@@ -4,6 +4,7 @@ import { normalizePageUrl, pageUrlHash } from "./page-url.js";
 import { getDb } from "../db/client.js";
 import { sources } from "../db/schema.js";
 import { createJob, type JobAttribution } from "./job-service.js";
+import { sourceContentHash } from "./source-content.js";
 import { enqueueUrlExtraction } from "./queue-service.js";
 
 /**
@@ -35,6 +36,7 @@ export async function getOrCreateSource(input: {
         .update(sources)
         .set({
           rawContent: input.content,
+          contentHash: sourceContentHash(input.content),
           ...(input.title && existing.title === existing.url ? { title: input.title } : {}),
         })
         .where(eq(sources.id, existing.id))
@@ -50,6 +52,7 @@ export async function getOrCreateSource(input: {
       url: input.url,
       title: input.title ?? input.url,
       rawContent: input.content,
+      contentHash: sourceContentHash(input.content),
       pageUrlHash: pageHashOf(input.url),
     })
     .returning();

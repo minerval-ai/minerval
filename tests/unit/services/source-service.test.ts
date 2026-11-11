@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { pageUrlHash } from "../../../src/services/page-url.js";
+import { sourceContentHash } from "../../../src/services/source-content.js";
 
 /**
  * A source row can exist with no content before anyone submits the document
@@ -61,6 +62,7 @@ describe("getOrCreateSource", () => {
     expect(state.updates).toEqual([
       {
         rawContent: "# The paper\n…",
+        contentHash: sourceContentHash("# The paper\n…"),
         title: "Astrophysical implications of hypothetical stable TeV-scale black holes",
       },
     ]);
@@ -77,13 +79,15 @@ describe("getOrCreateSource", () => {
   it("keeps a real title when only content was missing", async () => {
     state.existing = [{ id: "s1", url: "u", title: "Kept", rawContent: null }];
     await getOrCreateSource({ url: "u", title: "Other", content: "text" });
-    expect(state.updates).toEqual([{ rawContent: "text" }]);
+    expect(state.updates).toEqual([{ rawContent: "text", contentHash: sourceContentHash("text") }]);
   });
 
   it("creates the row when none exists", async () => {
     const row = await getOrCreateSource({ url: "u", title: "T", content: "c" });
     // "u" is no web page, so its page hash is the empty marker.
-    expect(state.inserts).toEqual([{ url: "u", title: "T", rawContent: "c", pageUrlHash: "" }]);
+    expect(state.inserts).toEqual([
+      { url: "u", title: "T", rawContent: "c", contentHash: sourceContentHash("c"), pageUrlHash: "" },
+    ]);
     expect(row.id).toBe("new");
   });
 
