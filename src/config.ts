@@ -538,16 +538,14 @@ const configSchema = z.object({
   //   value = importance × contested-factor × expected-quality-gain
   //         + stake boost + provenance boost
   // where contested-factor = floor + (1−floor)×contestation and the gain
-  // term is the last pass's marginal_yield (1.0 when unassessed), revived
-  // by staleness as evidence drifts. All knobs are legible and printable —
-  // heuristics start as guesses and get revised as the eval engine grows.
+  // term is the last pass's marginal_yield (1.0 when unassessed). All
+  // knobs are legible and printable — heuristics start as guesses and get
+  // revised as the eval engine grows.
   // The contested-factor floor: how fundable an uncontested claim stays.
   valueContestationFloor: z.coerce.number().default(0.25),
   // Money never enters the VALUE estimate. Reader contributions toward a
   // claim reduce its effective COST in the selection ratio, and once they
   // cover the expected cost the pass simply runs, funded (steward-pipeline).
-  // Days until staleness alone fully revives a claim's expected gain.
-  priorityStalenessSaturationDays: z.coerce.number().default(90),
   // User-proposed claims outrank equal-value corpus work (#284): a human
   // cared enough to type it in.
   priorityUserProvenanceBoost: z.coerce.number().default(0.15),
@@ -1305,8 +1303,6 @@ export function loadConfig(): Config {
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
     valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
     owlCostMicroUsd: process.env.OWL_COST_MICRO_USD,
-    priorityStalenessSaturationDays:
-      process.env.PRIORITY_STALENESS_SATURATION_DAYS,
     priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,
     stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
     strongGainMultiplier: process.env.STRONG_GAIN_MULTIPLIER,

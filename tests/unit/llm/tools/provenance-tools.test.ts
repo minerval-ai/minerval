@@ -234,6 +234,21 @@ describe("provenance_read_source", () => {
     expect(facts.getSourceFacts).not.toHaveBeenCalled();
   });
 
+  it("adds them to the read that fetched the document, whatever window it asked for", async () => {
+    // The fetch is when the facts are looked up, and a notice recorded then
+    // is not sent to the reading Steward's own node: it has to be here.
+    mocks.readSourceContent.mockResolvedValue({
+      source: { id: "s1" }, origin: "fetched", total_chars: 100, offset: 50, content: "x", truncated: true,
+    });
+    facts.getSourceFacts.mockResolvedValue({
+      source: { authors: [], publisher: null, published_date: null, doi: "10.1/x", archived_url: null },
+      events: [{ kind: "retraction", occurred_at: null, notice_url: "https://doi.org/10.1/n", note: null, detected_at: "x", detected_by: "facts_fetch" }],
+      versions: [], copies: [], copy_of: [], interests: [],
+    });
+    const out = JSON.parse(await executeReadSource({ source_id: "s1", offset: 50 }, steward));
+    expect(out.facts.events).toEqual([{ kind: "retraction", occurred_at: null, notice_url: "https://doi.org/10.1/n", note: null }]);
+  });
+
   it("turns a service refusal into a structured result rather than throwing", async () => {
     mocks.readSourceContent.mockRejectedValue(new SourceMapError("No source s9 exists."));
     const out = JSON.parse(await executeReadSource({ source_id: "s9" }, steward));

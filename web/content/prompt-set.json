@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "3e15a25a9aaa6b1128b49cb2f7f8e251c7c6cc7c39c2114cf31a49fbd75563aa",
+  "hash": "c107b96c6503da442612a475fcc6cf2e018bd13eb9f0b2c23ed66b6153eb5301",
   "constitution": {
     "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
@@ -24,7 +24,7 @@
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "005d559c230b062778a0c7e424c76e4eabeeb4debf781681420d7750aa1e4450"
+        "3d90e306b635ff4b58587f0410bf1b0fe60f230282b96ad34e4b76f02862e4bb"
       ]
     },
     {
@@ -101,7 +101,7 @@
       "name": "question-steward",
       "source_path": "src/llm/prompts/question-steward.ts",
       "blocks": [
-        "1cba543a877c02ae7b95057a2f0337ed0616a412a9a6b64360e8a65a3f2eb429"
+        "890280359d7f78a99b3500c41eb1b2ae5d63a3c40fc56feedecd76710891a9e0"
       ]
     },
     {

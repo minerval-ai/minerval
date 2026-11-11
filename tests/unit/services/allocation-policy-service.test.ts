@@ -63,7 +63,6 @@ describe("POLICY_BOUNDS (mathematics keys, §10.5)", () => {
     expect(Object.keys(POLICY_BOUNDS).sort()).toEqual(
       [
         "contestation_floor",
-        "staleness_saturation_days",
         "user_provenance_boost",
         "strong_gain_multiplier",
         "est_steward_run_cost_owls",
@@ -164,6 +163,21 @@ describe("defaults", () => {
       expect(policy[key]).toBeGreaterThanOrEqual(POLICY_BOUNDS[key].min);
       expect(policy[key]).toBeLessThanOrEqual(POLICY_BOUNDS[key].max);
     }
+  });
+});
+
+describe("a removed key", () => {
+  // staleness_saturation_days was a policy key until nothing read it. The
+  // General mandate's Grantmaker could set it, so a stored policy may still
+  // hold it: such a policy loads, the key is left out, and the rest applies.
+  it("a stored policy that still holds staleness_saturation_days loads without it", async () => {
+    state.stored = { staleness_saturation_days: 45, staleness_base_days: 30, contestation_floor: 0.5 };
+    const policy = await getMandateAllocationPolicy("g-old");
+    expect(policy.staleness_base_days).toBe(30);
+    expect(policy.contestation_floor).toBe(0.5);
+    expect(policy).not.toHaveProperty("staleness_saturation_days");
+    expect(Object.keys(policy).sort()).toEqual(Object.keys(POLICY_BOUNDS).sort());
+    expect(POLICY_BOUNDS).not.toHaveProperty("staleness_saturation_days");
   });
 });
 
