@@ -1496,7 +1496,7 @@ export async function executeStewardTool(
           runId: getUsageContext().runId ?? null,
           // Who may read the verdict (src/labels.ts): the label the run
           // writes at, stamped the same way.
-          label: currentLabel(),
+          sensitivityLabel: currentLabel(),
         }).returning({ id: assessments.id });
 
         // What the verdict was made against: the nodes under the claim with

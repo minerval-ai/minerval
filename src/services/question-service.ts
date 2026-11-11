@@ -187,7 +187,7 @@ export async function recordQuestionAssessment(input: {
       `INSERT INTO question_assessments
          (claim_id, standing, favored_claim_ids, summary, reasoning_trace, incomplete,
           model, funded_by_job_id, trigger, trigger_context, confidence, marginal_yield,
-          run_id, label)
+          run_id, sensitivity_label)
        VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
       [
         input.claimId,

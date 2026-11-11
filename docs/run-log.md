@@ -44,8 +44,8 @@ object: the commit the code was built from, the hash of the prompt set
 run wrote at.
 
 A label says who may read a row (`src/labels.ts`). Every judgment and source
-a run writes is stamped with the run's label, and so is its `agent_runs`
-row. Recording the label in the setup puts it under the chain: the label a
+a run writes is stamped with the run's label (the `sensitivity_label`
+column), and so is its `agent_runs` row. Recording the label in the setup puts it under the chain: the label a
 sealed run worked at cannot be changed afterwards without the log no longer
 reaching its seal. The public graph has one label, `public`, so every run
 there records `"label": "public"`; a run logged before labels existed has

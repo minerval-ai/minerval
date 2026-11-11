@@ -121,13 +121,13 @@ describe("startAgentRun", () => {
     expect(row.claimId).toBe("22222222-2222-2222-2222-222222222222");
     expect(row.userId).toBeNull();
     // A run opened with no label writes at public (src/labels.ts).
-    expect(row.label).toBe("public");
+    expect(row.sensitivityLabel).toBe("public");
   });
 
   it("stamps the run row with the label the run writes at", () => {
     startAgentRun("steward", { label: "internal" });
     const row = mocks.insertValues.mock.calls[0]![0] as Record<string, unknown>;
-    expect(row.label).toBe("internal");
+    expect(row.sensitivityLabel).toBe("internal");
   });
 });
 

@@ -32,8 +32,11 @@ function sqlState(err: unknown): string | undefined {
 }
 
 async function labelOf(table: string, id: string): Promise<string | undefined> {
-  const [row] = await rawQuery<{ label: string }>(`SELECT label FROM ${table} WHERE id = $1`, [id]);
-  return row?.label;
+  const [row] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM ${table} WHERE id = $1`,
+    [id]
+  );
+  return row?.sensitivity_label;
 }
 
 /** One row in each labelled content table, written through its own write seam; returns their ids. */
@@ -127,22 +130,26 @@ describe("the labels table", () => {
     expect(pairs!.n).toBe("0");
   });
 
-  it("gives every labelled table a column that defaults to public", async () => {
-    // The tables whose `label` points at this table. Two older columns share
-    // the name and mean something else (actions.label, source_segments.label).
-    const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string }>(
-      `SELECT c.table_name, c.column_default, c.is_nullable
+  it("gives every labelled table a sensitivity_label that defaults to public and points here", async () => {
+    // The column has its own name because `label` is already a display name
+    // on tables that will need one (actions, source_segments).
+    const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
+      `SELECT c.table_name, c.column_default, c.is_nullable,
+              EXISTS (
+                SELECT 1 FROM pg_constraint k
+                  JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
+                 WHERE k.conrelid = format('%I.%I', c.table_schema, c.table_name)::regclass
+                   AND k.contype = 'f' AND k.confrelid = 'public.labels'::regclass
+                   AND a.attname = c.column_name
+              ) AS fk
          FROM information_schema.columns c
-         JOIN pg_constraint k
-           ON k.conrelid = format('%I.%I', c.table_schema, c.table_name)::regclass
-          AND k.contype = 'f' AND k.confrelid = 'public.labels'::regclass
-         JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1] AND a.attname = c.column_name
-        WHERE c.table_schema = 'public' AND c.column_name = 'label' AND c.table_name <> 'label_reads'
+         JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+        WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
     expect(rows).toEqual(
       ["agent_runs", "argument_evaluations", "assessments", "quantity_estimates", "question_assessments", "sources"].map(
-        (table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO" })
+        (table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true })
       )
     );
   });
@@ -177,21 +184,21 @@ describe("a write outside any run", () => {
       source: "public",
     });
     // The views of the judgment in force carry the column with the rest.
-    const [inForce] = await rawQuery<{ label: string }>(
-      `SELECT label FROM assessments_in_force WHERE claim_id = $1`,
+    const [inForce] = await rawQuery<{ sensitivity_label: string }>(
+      `SELECT sensitivity_label FROM assessments_in_force WHERE claim_id = $1`,
       [ids.claim]
     );
-    expect(inForce!.label).toBe("public");
+    expect(inForce!.sensitivity_label).toBe("public");
   });
 
   it("is public on a row inserted without naming a label", async () => {
     const claim = await seedClaim("labels default");
-    const [row] = await rawQuery<{ label: string }>(
+    const [row] = await rawQuery<{ sensitivity_label: string }>(
       `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace)
-       VALUES ($1, 'supported', 0.7, 'dbtest') RETURNING label`,
+       VALUES ($1, 'supported', 0.7, 'dbtest') RETURNING sensitivity_label`,
       [claim]
     );
-    expect(row!.label).toBe("public");
+    expect(row!.sensitivity_label).toBe("public");
   });
 });
 
@@ -242,25 +249,25 @@ describe("a label that no row defines", () => {
     const claim = await seedClaim("labels fk");
     const inserts: Array<[string, unknown[]]> = [
       [
-        `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, is_current, label)
+        `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, is_current, sensitivity_label)
          VALUES ($1, 'supported', 0.7, 'dbtest', false, 'undefined-label')`,
         [claim],
       ],
       [
-        `INSERT INTO quantity_estimates (claim_id, estimate, work, is_current, label)
+        `INSERT INTO quantity_estimates (claim_id, estimate, work, is_current, sensitivity_label)
          VALUES ($1, '{"form":"none"}', 'dbtest', false, 'undefined-label')`,
         [claim],
       ],
       [
-        `INSERT INTO question_assessments (claim_id, standing, reasoning_trace, is_current, label)
+        `INSERT INTO question_assessments (claim_id, standing, reasoning_trace, is_current, sensitivity_label)
          VALUES ($1, 'open', 'dbtest', false, 'undefined-label')`,
         [claim],
       ],
       [
-        `INSERT INTO sources (url, title, label) VALUES ($1, 'DB-test source', 'undefined-label')`,
+        `INSERT INTO sources (url, title, sensitivity_label) VALUES ($1, 'DB-test source', 'undefined-label')`,
         [`https://dbtest.example/labels/${randomUUID()}`],
       ],
-      [`INSERT INTO agent_runs (agent, label) VALUES ('steward', 'undefined-label')`, []],
+      [`INSERT INTO agent_runs (agent, sensitivity_label) VALUES ('steward', 'undefined-label')`, []],
     ];
     for (const [sql, params] of inserts) {
       await expect(rawQuery(sql, params), sql).rejects.toSatisfy((err) => sqlState(err) === FOREIGN_KEY_VIOLATION);
@@ -275,7 +282,7 @@ describe("a label that no row defines", () => {
     });
     await expect(
       rawQuery(
-        `INSERT INTO argument_evaluations (argument_id, verdict, content, is_current, label)
+        `INSERT INTO argument_evaluations (argument_id, verdict, content, is_current, sensitivity_label)
          VALUES ($1, 'likely', 'dbtest', false, 'undefined-label')`,
         [argument.id]
       )

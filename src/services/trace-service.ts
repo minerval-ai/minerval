@@ -198,7 +198,7 @@ export function startAgentRun(
         commitSha: loadConfig().gitSha ?? null,
         // The label the run writes at, from the context that opened it, so
         // the run row and the rows the run writes carry the same one.
-        label: attribution.label ?? PUBLIC_LABEL,
+        sensitivityLabel: attribution.label ?? PUBLIC_LABEL,
         // A run starts private when its agent's inputs are not public by
         // construction (llm/run-visibility.ts); tools can add reasons later.
         privateReasons: initialReasons,

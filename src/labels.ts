@@ -4,7 +4,12 @@
  * A private deployment of this code is the public graph with redaction: the
  * same tables and the same agents, where a row carries a label and a reader
  * or an agent run reads only the labels it is cleared for. A judgment, a
- * source and an agent run each carry one (the `label` column).
+ * source and an agent run each carry one, in the `sensitivity_label` column.
+ * The column is not simply `label` because that name is already a display
+ * name on tables that will need a label too (actions.label,
+ * source_segments.label), and one name has to be free on every table.
+ * Everywhere else the concept keeps its short name: the `labels` table, the
+ * run context's `label`, the `label` in a run's logged setup.
  *
  * A label is a row in the `labels` table, not a value in a list here. A
  * deployment defines its own, and may define several restricted ones that

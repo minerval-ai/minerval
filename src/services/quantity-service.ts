@@ -76,7 +76,7 @@ export async function recordEstimate(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO quantity_estimates
          (claim_id, estimate, summary, work, model, funded_by_job_id, trigger, trigger_context,
-          marginal_yield, label)
+          marginal_yield, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         input.claimId,

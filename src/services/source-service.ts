@@ -57,7 +57,7 @@ export async function getOrCreateSource(input: {
       pageUrlHash: pageHashOf(input.url),
       // The label of the run recording it (src/labels.ts); a plain request
       // outside any run records it as public.
-      label: currentLabel(),
+      sensitivityLabel: currentLabel(),
     })
     .returning();
   return source!;

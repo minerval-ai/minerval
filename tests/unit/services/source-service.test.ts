@@ -87,7 +87,7 @@ describe("getOrCreateSource", () => {
     // "u" is no web page, so its page hash is the empty marker. Written
     // outside any run, the row is public (src/labels.ts).
     expect(state.inserts).toEqual([
-      { url: "u", title: "T", rawContent: "c", contentHash: sourceContentHash("c"), pageUrlHash: "", label: "public" },
+      { url: "u", title: "T", rawContent: "c", contentHash: sourceContentHash("c"), pageUrlHash: "", sensitivityLabel: "public" },
     ]);
     expect(row.id).toBe("new");
   });

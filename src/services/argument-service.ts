@@ -199,7 +199,7 @@ export async function setArgumentEvaluation(input: {
       isCurrent: true,
       createdBy: input.createdBy ?? "claim_steward",
       // The label of the run that wrote it (src/labels.ts).
-      label: currentLabel(),
+      sensitivityLabel: currentLabel(),
     })
     .returning();
   return evaluation!;

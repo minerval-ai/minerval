@@ -68,9 +68,9 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // which needs no pair.
 //
 // The public graph has one label, 'public' (seeded by the migration that
-// created the table), and no pairs. The rows that carry a label are stamped
-// from the run or request that writes them (currentLabel in
-// llm/usage-context.ts); nothing reads the column yet.
+// created the table), and no pairs. The rows that carry a label hold it in
+// sensitivity_label, stamped from the run or request that writes them
+// (currentLabel in llm/usage-context.ts); nothing reads the column yet.
 // ---------------------------------------------------------------------------
 export const labels = pgTable("labels", {
   name: text("name").primaryKey(),
@@ -93,10 +93,12 @@ export const labelReads = pgTable(
   (table) => [primaryKey({ columns: [table.label, table.reads] })]
 );
 
-// The label column of a row that carries one. The default is what a row
+// The label column of a row that carries one. It is sensitivity_label, not
+// label, because some tables that will need one already have a `label` that
+// is a display name (actions, source_segments). The default is what a row
 // written before labels existed is, and what a write outside any run gets.
-const labelColumn = () =>
-  text("label")
+const sensitivityLabelColumn = () =>
+  text("sensitivity_label")
     .notNull()
     .default(PUBLIC_LABEL)
     .references(() => labels.name);
@@ -553,7 +555,7 @@ export const assessments = pgTable(
     relabeledFrom: text("relabeled_from"),
     // Who may read this verdict (src/labels.ts), stamped from the usage
     // context by update_claim_assessment, never by the agent.
-    label: labelColumn(),
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     // One current verdict per claim, whatever its label. It becomes one per
@@ -807,7 +809,7 @@ export const argumentEvaluations = pgTable(
       .defaultNow(),
     // Who may read this evaluation (src/labels.ts), stamped from the usage
     // context when it is written.
-    label: labelColumn(),
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_argument_evaluations_argument").on(table.argumentId),
@@ -860,7 +862,7 @@ export const sources = pgTable("sources", {
   pageUrlHash: text("page_url_hash"),
   // Who may read this document (src/labels.ts): the label of the run or
   // request that first recorded it.
-  label: labelColumn(),
+  sensitivityLabel: sensitivityLabelColumn(),
 }, (table) => [
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
@@ -1844,7 +1846,7 @@ export const agentRuns = pgTable(
     sealedAt: timestamp("sealed_at", { withTimezone: true }),
     // The label the run wrote at (src/labels.ts): every labelled row it
     // wrote carries the same one, and so does its prompt step's setup.
-    label: labelColumn(),
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -5134,8 +5136,8 @@ export const quantityEstimates = pgTable(
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
-    // Who may read this estimate (src/labels.ts), as on assessments.label.
-    label: labelColumn(),
+    // Who may read this estimate (src/labels.ts), as on assessments.sensitivity_label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_quantity_estimates_current")
@@ -5240,8 +5242,8 @@ export const questionAssessments = pgTable(
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
-    // Who may read this assessment (src/labels.ts), as on assessments.label.
-    label: labelColumn(),
+    // Who may read this assessment (src/labels.ts), as on assessments.sensitivity_label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_question_assessments_current")
@@ -5751,7 +5753,8 @@ export const judgmentInputs = pgTable(
 //
 // Read the view to learn what a node's judgment is. Read the table for
 // history (every row, current or not) and for the write seam that supersedes
-// a current row; nothing writes through a view.
+// a current row; nothing writes through a view. A file that mentions
+// is_current has to say why (tests/unit/db/judgment-in-force.test.ts).
 //
 // drizzle-kit writes the views into migrations with their columns spelled
 // out, so adding a column to one of the tables regenerates its view: run
