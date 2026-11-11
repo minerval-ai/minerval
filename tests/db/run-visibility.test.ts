@@ -47,9 +47,9 @@ describe("run visibility", () => {
     const runId = await withAgent("researcher", async () => {
       markCurrentRunPrivate("input:grantmaker-brief");
       markCurrentRunPrivate("input:grantmaker-brief");
-      markCurrentRunPrivate("tool:inspect_ledger");
+      markCurrentRunPrivate("tool:grant_overview");
       return getUsageContext().runId!;
     });
-    expect((await reasons(runId))!.sort()).toEqual(["input:grantmaker-brief", "tool:inspect_ledger"]);
+    expect((await reasons(runId))!.sort()).toEqual(["input:grantmaker-brief", "tool:grant_overview"]);
   });
 });

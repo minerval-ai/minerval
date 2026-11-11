@@ -75,14 +75,14 @@ describe("reading agent runs", () => {
   });
 
   it("withholds a private run, its steps and each step, except from a service read", async () => {
-    const id = await seedRun({ reasons: ["tool:inspect_ledger"] });
-    const withheld = { id, agent: "steward", withheld: true, public: false, private_reasons: ["tool:inspect_ledger"] };
+    const id = await seedRun({ reasons: ["tool:grant_overview"] });
+    const withheld = { id, agent: "steward", withheld: true, public: false, private_reasons: ["tool:grant_overview"] };
     expect(await getRunSummary(id)).toEqual(withheld);
     expect(await listRunSteps(id)).toEqual(withheld);
     expect(await getRunStep(id, 0)).toEqual(withheld);
     // A service read gets the run, still marked as not public.
     const service = await getRunSummary(id, { isService: true });
-    expect(service).toMatchObject({ public: false, private_reasons: ["tool:inspect_ledger"], steps_recorded: 4 });
+    expect(service).toMatchObject({ public: false, private_reasons: ["tool:grant_overview"], steps_recorded: 4 });
     expect(service && "withheld" in service).toBe(false);
   });
 

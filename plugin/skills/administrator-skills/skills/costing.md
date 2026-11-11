@@ -7,12 +7,13 @@ description: >-
   worth doing is a separate judgment.
 metadata:
   minerval:
-    version: 4
+    version: 5
     since_epoch: 2026-09-domain-skills
     changelog:
       3: Consistency sweeps are on cost_sheet and fundable as plan items (#831), so the Grantmaker prices one by its partition's size.
       2: The Dispute Arbitrator gets cost_sheet, so a request it files on overturning a propose_request is priced the way the Reviewer prices one.
       4: "Work is commissioned whole: budget a commission at the high end of the cost range, since what the run does not spend comes back, and petition when a run turns out to need more. The Grantmaker's list counts the officers' sittings and drops funding part of a request."
+      5: "survey_scope is retired: query_sql counts the subclaims a deepen would release across a subtree."
     kind: method
 ---
 
@@ -93,8 +94,8 @@ work:
 - **assess and reassess**: one Steward pass each, on the standard or the
   strong tier.
 - **deepen**: one pass on the node. The children it releases get open
-  rows of their own, each a pass when you fund it; get_decomposition and
-  survey_scope show how many are waiting. Price the first level from
+  rows of their own, each a pass when you fund it; get_decomposition shows
+  how many are waiting, and query_sql counts them across a subtree. Price the first level from
   that, and keep room for the levels after it, since nobody knows the
   size of the tree in advance.
 - **ingest**: one ingestion per source. The claims it brings in arrive

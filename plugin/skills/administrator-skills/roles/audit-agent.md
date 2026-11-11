@@ -50,7 +50,10 @@ than in anyone's account of it:
   claim, including the Steward's logged decisions;
 - a Curator's merge or split: no tool lists these yet, so you meet them
   through the claims they touched (get_claim shows a claim's state);
-- the allocation engine's decisions: inspect_ledger;
+- the allocation engine's decisions: query_sql over ledger (every row in
+  every status), commissions (the money on each), mandate_decisions, and
+  plan_items (a plan's items with the standing last written on each; join
+  action_id to ledger to find an item out of step with what ran);
 - the claim and contributor a decision touched: get_claim,
   get_claim_dependents, get_claim_instances, get_contributor_profile.
 

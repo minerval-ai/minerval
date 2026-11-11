@@ -161,7 +161,6 @@ const AGENT_INLINE_TOOL_NAMES = [
   "web_search",
   "search_similar_claims",
   "submit_match_decision",
-  "survey_scope",
   "propose_mandate",
   "decline_mandate",
   "grant_overview",

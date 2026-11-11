@@ -88,9 +88,8 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
   createMandateTools: vi.fn((opts: Record<string, unknown>) => {
     state.mandateToolOpts = opts;
     return {
-      definitions: [{ name: "survey_scope" }, { name: "read_page" }],
-      execute: async (name: string) =>
-        name === "survey_scope" ? '{"count":1,"next_offset":null,"claims":[{"id":"c1"}]}' : null,
+      definitions: [{ name: "read_page" }],
+      execute: async (name: string) => (name === "read_page" ? '{"ok":true,"text":"page"}' : null),
     };
   }),
 }));
@@ -243,15 +242,15 @@ describe("runLookout", () => {
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
       "query_sql",
       "submit_contribution",
-      "survey_scope", "read_page", "scope_sources", "check_doi", "recent_retractions",
+      "read_page", "scope_sources", "check_doi", "recent_retractions",
       "read_listing",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
     expect(state.loop!.briefing).toContain("Each tool result shows what you have spent");
     // The shared mandate tools, without the mandate's workspace (#691).
-    expect(state.mandateToolOpts).toEqual({ surveyLimit: 25, scopeClaimId: null, scopeQuery: "nutrition" });
-    expect(JSON.parse(await state.loop!.executeTool("survey_scope", {}))).toMatchObject({ count: 1 });
+    expect(state.mandateToolOpts).toBeUndefined();
+    expect(JSON.parse(await state.loop!.executeTool("read_page", { url: "https://x.test" }))).toMatchObject({ ok: true });
     // Room to rewrite a whole workspace in one call (#689).
     expect(state.maxTokens).toBe(16384);
 

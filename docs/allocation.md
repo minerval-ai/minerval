@@ -61,7 +61,7 @@ Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
 no owl is spent until the funder approves the plan it proposes. The
 planner has the review pass's survey affordances, because the first
 territory survey is the same job as every later one: the graph
-(search_claims, survey_scope, list_requests) AND the open web (web_search,
+(search_claims, query_sql, list_requests) AND the open web (web_search,
 read_page), the live price list (cost_sheet, from the costing skill), and
 the mandate's workspace, so its survey notes become the mandate's opening
 working memory. What it does not have is anything that spends or moves
@@ -94,8 +94,8 @@ with a budget and a mission would need:
   and commissioned (src/services/mandate-reflection-service.ts). It starts
   from what happened, not from scratch, and fixes causes in the operating
   policy rather than cases;
-- **survey the territory**: the graph (search_claims, survey_scope,
-  query_sql) AND the open web (web_search): finding where the good physics
+- **survey the territory**: the graph (search_claims, query_sql) AND the
+  open web (web_search): finding where the good physics
   papers are is the agent's job;
 - **a workspace** (`grants.workspace`): the agent's own durable working
   document, read back in full every pass — its map of the territory,
@@ -213,7 +213,7 @@ lookout is shown as it works. There is no count of runs a day: a burst of
 events waits for the next funded run, which reads them all. The engine executor runs it on
 the cheap tier (`LOOKOUT_MODEL`; a lookout may carry its own model). It reads
 its brief, its own workspace, and the queued inputs; then the graph
-(search, open, walk down, walk up, survey_scope, scope_sources), the
+(search, open, walk down, walk up, scope_sources), the
 retraction record (check_doi, recent_retractions), and the open web
 (web_search, read_page), and the graph feed and SQL. Most runs find
 nothing, and say so.
@@ -706,7 +706,7 @@ a posted bounty names its posting mandate) is never put to that mandate:
 an audit of a Governance mandate goes to General's officers instead, so
 each platform mandate pays for audits of the other. Declining an audit is
 visible, not prevented: an audit no one commissions sits open on the
-ledger with its age, on the mandate's page and in `inspect_ledger`, and an
+ledger with its age, on the mandate's page and in `query_sql`'s `ledger`, and an
 officer's decline is logged with its reason.
 
 **Prize audits** are paid from the bounty's prize-review reserve, which

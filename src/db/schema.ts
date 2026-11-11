@@ -2561,11 +2561,11 @@ export const ingestFocuses = pgTable("ingest_focuses", {
 // when a trigger fires (a heartbeat on its own cadence, an input event
 // queued by a poller or a person), reads the graph and the open web, and
 // answers one question: has anything happened that warrants work in
-// scope? Its outputs are CANDIDATES on the ledger, never conclusions —
-// a reassess valued on the mandate's behalf (capped by max_value), an
-// ingest appended to the mandate's plan (capped per run), a note for the
-// Grantmaker's next review pass. Money, importance, and assessments are
-// beyond its reach by construction.
+// scope? Its outputs are work, never conclusions: a pass or an ingest it
+// commissions within the limit its Grantmaker set (commission_limit), or
+// raises to the mandate's program officers, and a note for the
+// Grantmaker's next review pass. Importance and assessments are beyond its
+// reach by construction.
 //
 // Scope is the brief's words: "this claim and what it turns on" is one
 // shape, "the retraction record for sources behind the nutrition claims"
@@ -2595,15 +2595,10 @@ export const lookouts = pgTable(
     triggers: jsonb("triggers").notNull().default([]),
     // Per-lookout model override; null = config.lookoutModel.
     model: text("model"),
-    // The ceiling on the valuation anything the lookout raises (a
-    // reassessment, an ingest) may write on the mandate's behalf (0–10).
-    // The Grantmaker delegates this much of its spending judgment and no
-    // more.
-    maxValue: real("max_value").notNull().default(6),
     // The most the lookout may commission on its own for one item, from the
     // mandate's money; above it, or at 0, it raises the item to the
-    // mandate's program officers. Replaces max_value, which no longer
-    // writes anything (valuations are retired).
+    // mandate's program officers. The Grantmaker delegates this much of its
+    // spending judgment and no more.
     commissionLimitMicroUsd: bigint("commission_limit_micro_usd", { mode: "number" }).notNull().default(0),
     // The graph feed: the part of the graph the lookout follows (nodes, with
     // everything beneath them, and tags), and how far through the change
@@ -2611,10 +2606,6 @@ export const lookouts = pgTable(
     territoryClaimIds: uuid("territory_claim_ids").array().notNull().default(sql`'{}'::uuid[]`),
     territoryTagIds: uuid("territory_tag_ids").array().notNull().default(sql`'{}'::uuid[]`),
     changesCursor: text("changes_cursor"),
-    // No longer read or written (#695): ingests are valued within
-    // max_value and ranked by the allocator, not counted per run. Kept,
-    // with its default, so live rows need no migration; safe to drop.
-    maxIngestsPerRun: integer("max_ingests_per_run").notNull().default(3),
     // The lookout's own durable notes, read back every run: what it has
     // already seen and flagged, sources checked and when, what to watch.
     workspace: text("workspace"),
@@ -2645,10 +2636,6 @@ export const lookouts = pgTable(
     check(
       "ck_lookouts_status",
       sql`${table.status} IN ('active', 'paused', 'retired')`
-    ),
-    check(
-      "ck_lookouts_max_value",
-      sql`${table.maxValue} >= 0 AND ${table.maxValue} <= 10`
     ),
     check("ck_lookouts_heartbeat", sql`${table.heartbeatHours} >= 0`),
   ]
@@ -2752,9 +2739,10 @@ export const lookoutFlags = pgTable(
       onDelete: "set null",
     }),
     rationale: text("rationale").notNull(),
-    // The lookout's urgency 0–10, before the mandate's max_value clamp.
+    // Historical (#695 to the retirement of valuations): the lookout's
+    // urgency 0–10, and the value written on the mandate's behalf after its
+    // ceiling clamped it. New flags write neither.
     urgency: real("urgency"),
-    // The value actually written on the mandate's behalf, after the clamp.
     valueWritten: real("value_written"),
     // The assessment at flag time (reassess flags), for the precision read.
     statusAtFlag: text("status_at_flag"),
@@ -2818,11 +2806,6 @@ export const lookoutFeeds = pgTable(
     pollHours: integer("poll_hours").notNull().default(6),
     // Untriaged items expire after this many days (counted, never hidden).
     retainDays: integer("retain_days").notNull().default(14),
-    // No longer read or written (#695): auto_ingest items are valued at
-    // the lookout's max_value and ranked by the allocator, not counted per
-    // day. Kept, with its default, so live rows need no migration; safe to
-    // drop.
-    dailyIngestCap: integer("daily_ingest_cap").notNull().default(5),
     // The focus an ingest from this feed carries by default (auto_ingest,
     // and the lookout's triage unless it gives its own): "the author's
     // claims about X". Null = the whole document.

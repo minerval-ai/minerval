@@ -1,4 +1,4 @@
-# Method skill: Sql (version 1)
+# Method skill: Sql (version 2)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -48,6 +48,14 @@ unknown.
 - `mandate_decisions`: every commission, grant, refusal, decline and note
   a mandate's agents made. decision_id, mandate_id, decided_by, item_kind,
   decision, target, owls, reason, petition_id, action_id, created_at
+- `plan_items`: each item of a mandate's plan, as its page shows it, with
+  the standing the plan materializer last wrote on it. mandate_id,
+  item_index, plan_cursor (items before it have been taken up), action,
+  node_id, url, partition, variant, focus, rationale, ledger_status,
+  ledger_reason, action_id (the ledger row it names), exclusion_group,
+  ledger_checked_at. Join action_id to `ledger` to check a plan against
+  what ran: a named row that is missing, or whose status disagrees with
+  ledger_status, is a plan out of step with its ledger.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at
@@ -96,15 +104,24 @@ SELECT l.kind, count(*) AS runs, sum(c.spent_owls) AS spent,
  GROUP BY l.kind ORDER BY spent DESC;
 ```
 
-Everything beneath a node, with its standing:
+Everything beneath a node, with the signals for deciding where work goes
+(a scope survey): standing, age, expected gain from another pass, and
+subclaims still waiting on a deepen. For a territory found by meaning,
+start from search_claims' ids instead of the subtree.
 
 ```sql
 WITH RECURSIVE sub(id) AS (
   SELECT $1::uuid
   UNION SELECT e.child_id FROM edges e JOIN sub ON e.parent_id = sub.id)
-SELECT n.id, n.text, a.status
+SELECT n.id, n.text, n.importance, n.contestation, n.steward_state,
+       a.status, now()::date - a.assessed_at::date AS days_since_assessed,
+       a.marginal_yield,
+       (SELECT count(*) FROM edges e JOIN nodes c ON c.id = e.child_id
+         WHERE e.parent_id = n.id AND c.steward_state = 'deferred') AS deferred_subclaims
   FROM sub JOIN nodes n USING (id)
-  LEFT JOIN assessments a ON a.node_id = n.id AND a.is_current;
+  LEFT JOIN assessments a ON a.node_id = n.id AND a.is_current
+ WHERE n.state = 'active'
+ ORDER BY n.importance DESC LIMIT 100;
 ```
 
 **What is not here.** Only public data: no emails, keys, balances or

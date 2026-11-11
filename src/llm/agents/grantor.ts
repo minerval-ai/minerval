@@ -60,12 +60,9 @@ import {
 } from "../../services/grant-service.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
+import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { grantmakerShareLeftMicroUsd } from "../../services/action-service.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
-
-// The survey lives in its own service now; re-exported so the agents that
-// import it from here (grantmaker, mandate-review, lookout) keep working.
-export { surveyScope, type SurveyRow } from "../../services/scope-survey-service.js";
 
 export interface GrantorPlan {
   strategy: string;
@@ -170,13 +167,9 @@ async function runGrantorImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model, mandate: true });
-  // The mandate toolbox (#333): survey_scope, read_page,
-  // update_workspace — one implementation shared with the review pass.
-  const mandateTools = createMandateTools({
-    grantId: grant.id,
-    scopeClaimId: grant.scope_claim_id,
-    scopeQuery: grant.scope_query,
-  });
+  // The mandate toolbox (#333): read_page and update_workspace, one
+  // implementation shared with the review pass.
+  const mandateTools = createMandateTools({ grantId: grant.id });
   const submitTool: Tool = {
     name: "submit_plan",
     description:
@@ -193,6 +186,9 @@ async function runGrantorImpl(input: {
     ...reportTools.definitions,
     ...findingTools.definitions,
     ...getGraphReadToolDefinitions(),
+    // The territory's signals (importance, contestation, standing, what is
+    // stale or deferred) over a subtree or a set of nodes.
+    getSqlToolDefinition(),
     ...mandateTools.definitions,
     // The open requests in the territory (#683): work the plan may make
     // happen once the mandate runs. Reading them commits nothing; the
@@ -214,11 +210,11 @@ async function runGrantorImpl(input: {
     `Declared scope hints: ` +
     (scopeHints.length
       ? scopeHints.join(" and ") +
-        ` (survey_scope with no arguments surveys these; they are search ` +
-        `aids, and the mission's words are the scope).`
-      : `none. The mission is defined entirely by its words above; survey ` +
-        `the graph by meaning (search_claims, survey_scope with a query) ` +
-        `and the world by web search.`) +
+        ` (search aids: the mission's words are the scope; query_sql ` +
+        `surveys a subtree's signals).`
+      : `none. The mission is defined entirely by its words above; find ` +
+        `the territory by meaning with search_claims, survey it with ` +
+        `query_sql, and the world by web search.`) +
     `\n\nBudget: ${budgetOwls} owls escrowed (1 owl ≈ one dollar of metered ` +
     `spend; cost_sheet lists what each kind of work has cost). Your own ` +
     `planning and review passes are part of what it pays for, so leave ` +
@@ -261,6 +257,8 @@ async function runGrantorImpl(input: {
         // Each node a read returns carries the open actions on it.
         const graphRead = await executeGraphReadTool(name, toolInput);
         if (graphRead !== null) return annotateOpenActions(name, graphRead, grant.id);
+        const sqlOut = await executeSqlTool(name, toolInput);
+        if (sqlOut !== null) return sqlOut;
         const mandateTool = await mandateTools.execute(name, toolInput);
         if (mandateTool !== null) return annotateOpenActions(name, mandateTool, grant.id);
         if (name === LIST_REQUESTS_TOOL.name) {

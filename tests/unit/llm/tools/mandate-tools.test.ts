@@ -2,15 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
  * The mandate toolbox (llm/tools/mandate-tools.ts, #333): one
- * implementation of survey_scope, read_page and update_workspace for every mode of a mandate's Grantmaker. The survey
- * falls back to the mandate's declared scope hints only when a call names
- * nothing; the workspace is offered only for a live mandate and is
- * bounded; anything else is "not my tool" (null).
+ * implementation of read_page and update_workspace for every mode of a
+ * mandate's Grantmaker. The workspace is offered only for a live mandate
+ * and is bounded; anything else is "not my tool" (null).
  */
 
 const { state } = vi.hoisted(() => ({
   state: {
-    surveys: [] as Array<Record<string, unknown>>,
     updates: [] as Array<{ sql: string; params: unknown[] }>,
     pages: [] as string[],
     pageOpts: [] as Array<Record<string, unknown>>,
@@ -21,12 +19,6 @@ vi.mock("../../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (sql: string, params: unknown[] = []) => {
     state.updates.push({ sql, params });
     return [];
-  }),
-}));
-vi.mock("../../../../src/services/scope-survey-service.js", () => ({
-  surveyScope: vi.fn(async (input: Record<string, unknown>) => {
-    state.surveys.push(input);
-    return [{ id: "c1" }];
   }),
 }));
 vi.mock("../../../../src/services/source-watch-service.js", () => ({
@@ -54,7 +46,6 @@ import {
 } from "../../../../src/llm/tools/mandate-tools.js";
 
 beforeEach(() => {
-  state.surveys = [];
   state.updates = [];
   state.pages = [];
   state.pageOpts = [];
@@ -63,41 +54,12 @@ beforeEach(() => {
 describe("createMandateTools", () => {
   it("offers the workspace only for a live mandate", () => {
     expect(createMandateTools().definitions.map((t) => t.name)).toEqual([
-      "survey_scope",
       "read_page",
     ]);
     expect(createMandateTools({ grantId: "g-1" }).definitions.map((t) => t.name)).toEqual([
-      "survey_scope",
       "read_page",
       "update_workspace",
     ]);
-  });
-
-  it("surveys the declared scope hints when a call names nothing, and exactly what it names otherwise", async () => {
-    const tools = createMandateTools({
-      scopeClaimId: "root",
-      scopeQuery: "nutrition",
-      surveyLimit: 25,
-    });
-    const blank = JSON.parse((await tools.execute("survey_scope", {}))!);
-    // A short page has nothing behind it.
-    expect(blank).toEqual({ count: 1, next_offset: null, claims: [{ id: "c1" }] });
-    const full = JSON.parse((await createMandateTools({ surveyLimit: 1 }).execute("survey_scope", { query: "x", offset: 3 }))!);
-    expect(full.next_offset).toBe(4);
-    state.surveys.splice(1);
-    expect(state.surveys[0]).toMatchObject({
-      scopeClaimId: "root",
-      scopeQuery: "nutrition",
-      offset: 0,
-      limit: 25,
-    });
-
-    await tools.execute("survey_scope", { query: "vitamin d", offset: 25 });
-    expect(state.surveys[1]).toMatchObject({
-      scopeClaimId: null,
-      scopeQuery: "vitamin d",
-      offset: 25,
-    });
   });
 
   it("reads a page and rewrites the workspace whole", async () => {

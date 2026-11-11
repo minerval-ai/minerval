@@ -39,6 +39,7 @@ const REVIEWED_COLUMNS: Record<string, string[]> = {
   messages: ["message_id", "node_id", "trigger", "sender_kind", "sender_node_id", "paid", "body", "created_at", "read_at", "outcome", "outcome_note"],
   mandates: ["mandate_id", "title", "objective", "status", "is_platform", "daily_rate_owls", "escrow_owls", "operating_policy", "created_at"],
   mandate_decisions: ["decision_id", "mandate_id", "decided_by", "item_kind", "decision", "target", "owls", "reason", "petition_id", "action_id", "created_at"],
+  plan_items: ["mandate_id", "item_index", "plan_cursor", "action", "node_id", "url", "partition", "variant", "focus", "rationale", "ledger_status", "ledger_reason", "action_id", "exclusion_group", "ledger_checked_at"],
   petitions: ["petition_id", "mandate_id", "kind", "asked_owls", "granted_owls", "requester_agent", "requester_node_id", "status", "plan", "reason", "created_at", "decided_at"],
   contributions: ["contribution_id", "node_id", "type", "review_status", "submitted_at"],
   requests: ["request_id", "ask", "why", "state", "keeper_kind", "keeper_node_id", "budget_owls", "created_at", "closed_at"],

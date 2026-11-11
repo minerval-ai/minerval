@@ -2685,8 +2685,8 @@ replace the priors.
 ### 10.3 Scope
 
 The mandate's scope is its words, never its keyword list. `scope_query`
-(`mathematics OR theorem OR conjecture OR proof`) is retrieval for
-`survey_scope`, not membership (`docs/allocation.md`, "The standard"); which
+(`mathematics OR theorem OR conjecture OR proof`) is retrieval for the
+pipeline's selectors, not membership (`docs/allocation.md`, "The standard"); which
 actions fall under the mandate is the Grantmaker's judgment, and the
 `mathematics` domain tag is a strong prior for that judgment, not a filter.
 In scope: propositions of mathematics (`mathematical`), the contested

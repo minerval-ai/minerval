@@ -257,8 +257,8 @@
     "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 10107,
-    "fullChars": 103104,
+    "roleChars": 10340,
+    "fullChars": 103337,
     "skills": [
       {
         "name": "costing",
