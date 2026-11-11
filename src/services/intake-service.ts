@@ -30,6 +30,7 @@ import { matchClaim } from "../llm/agents/matcher.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { createJob } from "./job-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   enqueueClaimPipeline,
   enqueueContribution,
@@ -111,6 +112,7 @@ export async function createClaimProposal(input: {
       // argument (the case for a node is a contribution on it once it exists).
       content: "",
       proposedCanonicalForm: input.claimText,
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 
@@ -145,6 +147,7 @@ export async function createSourceProposal(input: {
       content: input.url,
       sourceId: source.id,
       evidenceUrls: [input.url],
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 

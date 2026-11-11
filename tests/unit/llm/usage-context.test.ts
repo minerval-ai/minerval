@@ -18,11 +18,12 @@ vi.mock("../../../src/services/trace-service.js", () => ({
 import {
   currentLabel,
   getUsageContext,
+  runAtLabel,
   runWithUsageContext,
   untraced,
   withAgent,
 } from "../../../src/llm/usage-context.js";
-import { PUBLIC_LABEL } from "../../../src/labels.js";
+import { MissingLabelError, PUBLIC_LABEL } from "../../../src/labels.js";
 
 const fakeTrace = () => ({ runId: "run-1", seq: { n: 0 }, ready: Promise.resolve() });
 
@@ -135,6 +136,47 @@ describe("currentLabel", () => {
 });
 
 // RUN_LOG_MODE=record (#552): the run is not finished until its log is.
+// A run works at the label of the work that started it (src/labels.ts): the
+// worker that picks a row up opens its run with the row's label.
+describe("runAtLabel", () => {
+  it("runs the work at the row's label, and hands back what it returns", async () => {
+    const out = await runAtLabel("internal", "job j-1", async () => {
+      expect(currentLabel()).toBe("internal");
+      return 7;
+    });
+    expect(out).toBe(7);
+    expect(currentLabel()).toBe(PUBLIC_LABEL);
+  });
+
+  it("keeps the label through the identity a worker sets inside it and the run that opens", async () => {
+    await runAtLabel("internal", "ledger action a-1", () =>
+      runWithUsageContext({ userId: "u-1", jobId: "job-9" }, () =>
+        withAgent("steward", async () => {
+          expect(getUsageContext()).toMatchObject({ label: "internal", userId: "u-1", jobId: "job-9", agent: "steward" });
+        })
+      )
+    );
+    expect(mocks.start).toHaveBeenCalledWith("steward", expect.objectContaining({ label: "internal" }));
+  });
+
+  it("takes the row's label over the label of whatever is delivering the work", async () => {
+    await runWithUsageContext({ label: "internal" }, () =>
+      runAtLabel(PUBLIC_LABEL, "paused session s-1", async () => {
+        expect(currentLabel()).toBe(PUBLIC_LABEL);
+      })
+    );
+  });
+
+  it("refuses a row with no label instead of running it as public", () => {
+    const work = vi.fn();
+    for (const missing of [undefined, null, ""]) {
+      expect(() => runAtLabel(missing, "job j-2", work)).toThrow(MissingLabelError);
+    }
+    expect(() => runAtLabel(undefined, "job j-2", work)).toThrow(/job j-2 carries no label/);
+    expect(work).not.toHaveBeenCalled();
+  });
+});
+
 describe("withAgent in record mode", () => {
   it("holds the result until the log is sealed", async () => {
     mocks.record = true;

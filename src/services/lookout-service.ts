@@ -30,6 +30,7 @@
 import { rawQuery } from "../db/client.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
 import { ensureAssessActions, ASSESS_GROUP, INGEST_GROUP } from "./action-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { enqueueSteward } from "./queue-service.js";
 import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
 import { ingestCoverage, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
@@ -758,14 +759,15 @@ export async function flagIngest(input: {
   if (focus) await recordIngestFocus(group, url, focus);
   await rawQuery(
     `INSERT INTO actions
-       (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-     VALUES ('ingest', $1, 'standard', $2, $3, $4)
+       (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ('ingest', $1, 'standard', $2, $3, $4, $5)
      ON CONFLICT (exclusion_group, variant) DO NOTHING`,
     [
       group,
       url,
       focus ? `Ingest ${url} (focus: ${focus.slice(0, 120)})` : `Ingest ${url}`,
       capMicroUsd("source_ingest"),
+      currentLabel(),
     ]
   );
   const [row] = await rawQuery<{ id: string; status: string }>(

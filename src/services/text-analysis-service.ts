@@ -19,6 +19,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { jobs, type Job } from "../db/schema.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export const TEXT_ANALYSIS_TYPES = ["extract_claims", "assess_text"] as const;
 export type TextAnalysisType = (typeof TEXT_ANALYSIS_TYPES)[number];
@@ -73,6 +74,9 @@ export async function startTextAnalysis(
       result: { heartbeat_at: new Date().toISOString() },
       userId: owner.userId,
       apiKeyId: owner.apiKeyId,
+      // The work below runs in this same context, so it needs no hand-over;
+      // the row records the label it ran at (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning();
   const id = job!.id;

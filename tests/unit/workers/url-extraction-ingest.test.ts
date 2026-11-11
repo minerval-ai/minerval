@@ -61,7 +61,7 @@ vi.mock("../../../src/llm/agents/skill-selection.js", () => ({ sanitizeDomains: 
 vi.mock("../../../src/services/embedding-service.js", () => ({ generateEmbedding: async () => [0.1] }));
 vi.mock("../../../src/services/job-service.js", () => ({
   updateJob: vi.fn(async () => undefined),
-  getJobById: async () => ({ userId: null, apiKeyId: null }),
+  getJobById: async () => ({ userId: null, apiKeyId: null, sensitivityLabel: "public" }),
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => undefined),

@@ -12,6 +12,10 @@
  *   - agent entry points set the actor: withAgent("extractor", ...) merges the
  *     agent name into whatever identity context is already active.
  *
+ * The same context carries the label the work writes at (src/labels.ts).
+ * Workers set it outside both layers, from the row the work waited in:
+ * runAtLabel(job.sensitivityLabel, ...).
+ *
  * No context at all = system work (metered with null user, e.g. Steward
  * governance sweeps), which is exactly the semantics we want by default.
  */
@@ -29,7 +33,7 @@ import {
 } from "../services/trace-service.js";
 import { setStatementObserver } from "../db/statement-observer.js";
 import { writesGraph } from "../db/graph-writes.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { MissingLabelError, PUBLIC_LABEL } from "../labels.js";
 
 export interface UsageContext {
   userId?: string | null;
@@ -92,9 +96,11 @@ export interface UsageContext {
   passBudget?: PassBudget;
   /**
    * The label the enclosing work writes at (src/labels.ts): stamped onto the
-   * run row, its prompt step's setup, and every judgment and source it
-   * writes (currentLabel below), never chosen by the agent. Absent means
-   * public, which is all the public graph has; nothing sets another yet.
+   * run row, its prompt step's setup, every judgment and source it writes,
+   * and every piece of work it enqueues (currentLabel below), never chosen
+   * by the agent. Set by whatever picks work up, from the row the work
+   * waited in (runAtLabel below). Absent means public: a request outside
+   * any run, which is all the public graph has.
    */
   label?: string;
 }
@@ -143,6 +149,22 @@ export function getUsageContext(): UsageContext {
  */
 export function currentLabel(): string {
   return getUsageContext().label ?? PUBLIC_LABEL;
+}
+
+/**
+ * Run `fn` at the label of the work that started it. Every worker and
+ * executor calls this with the label of the row it picked up (a job, a
+ * ledger action, an order, a paused session), so the run it opens, what that
+ * run writes and what that run enqueues all carry the label the work had
+ * when it was created. `work` names the row for the error.
+ *
+ * A row with no label is refused, not run as public: the caller read a row
+ * without its label, or a message was queued without one, and either would
+ * otherwise write private work as public without a sign.
+ */
+export function runAtLabel<T>(label: string | null | undefined, work: string, fn: () => T): T {
+  if (typeof label !== "string" || label.length === 0) throw new MissingLabelError(work);
+  return runWithUsageContext({ label }, fn);
 }
 
 export function runWithUsageContext<T>(

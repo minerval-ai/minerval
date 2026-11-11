@@ -5,6 +5,7 @@ import { refreshQueuePriority } from "./priority-service.js";
 import { ensureAssessActions, ensureAuditAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 import { postMessage, type MessageSender } from "./inbox-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -18,7 +19,29 @@ function getSqsClient(): SQSClient {
 export interface ClaimPipelineMessage {
   claimId: string;
   jobId: string;
+  /**
+   * The label of the work that enqueued this (src/labels.ts), stamped by
+   * enqueueClaimPipeline; the worker onboards the claim at it. The other
+   * queues' messages point at a row that carries the label (a job, a
+   * contribution, an appeal). This one has to carry it, because a Steward
+   * that mints a subclaim enqueues with no job row behind it, and between
+   * the enqueue and the worker the message is all that stands for the work.
+   */
+  label: string;
 }
+
+/**
+ * A claim pipeline message written before the label field existed: the same
+ * message with no `label` key. Nothing enqueues one now (enqueueClaimPipeline
+ * always stamps the label), but the queue outlives a deploy, so the worker
+ * can still be handed one that the earlier code wrote. Only the worker's
+ * side of the queue uses this type, and it says there what it does with
+ * such a message and when the type can go (workers/claim-pipeline.ts).
+ */
+export type PreLabelClaimPipelineMessage = Omit<ClaimPipelineMessage, "label">;
+
+/** What the claim pipeline's worker may find in the queue. */
+export type QueuedClaimPipelineMessage = ClaimPipelineMessage | PreLabelClaimPipelineMessage;
 
 export interface UrlExtractionMessage {
   sourceId: string;
@@ -186,9 +209,10 @@ export function getLocalQueue<T extends keyof typeof localQueues>(
 }
 
 export async function enqueueClaimPipeline(
-  message: ClaimPipelineMessage
+  work: Omit<ClaimPipelineMessage, "label">
 ): Promise<void> {
   const config = loadConfig();
+  const message: ClaimPipelineMessage = { ...work, label: currentLabel() };
 
   if (!config.sqsClaimPipelineQueue) {
     // Local dev: push to in-memory queue

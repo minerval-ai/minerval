@@ -136,6 +136,8 @@ vi.mock("../../../src/llm/agents/mandate-review.js", () => ({ runMandateReview: 
 vi.mock("../../../src/services/source-service.js", () => ({ submitSource: vi.fn() }));
 vi.mock("../../../src/workers/steward-direct.js", () => ({ invokeStewardDirect: vi.fn() }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  // The executor opens each row's handler at the row's label; here it only passes through.
+  runAtLabel: (_label: unknown, _work: string, fn: () => unknown) => fn(),
   runBudget: () => null,
   budgetRefusal: () => null,
   runWithUsageContext: (ctx: Record<string, unknown>, fn: () => Promise<unknown>) => {
@@ -177,6 +179,7 @@ const curateAction = () => ({
   target_ref: null,
   cost_est_micro_usd: 250_000,
   coverage_micro_usd: 250_000,
+  sensitivity_label: "public",
   updated_at: new Date(),
 });
 
@@ -189,6 +192,7 @@ const auditAction = () => ({
   target_ref: RUN_ID,
   cost_est_micro_usd: 500_000,
   coverage_micro_usd: 500_000,
+  sensitivity_label: "public",
   updated_at: new Date(),
 });
 

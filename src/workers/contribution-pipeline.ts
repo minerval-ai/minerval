@@ -19,7 +19,7 @@ import type { ContributionMessage } from "../services/queue-service.js";
 import { runContributionReview } from "../llm/agents/contribution-reviewer.js";
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
 
 /**
  * Who this review is for. A contribution exists because one contributor
@@ -60,7 +60,7 @@ export const ORDINARY_REVIEW_TYPE_FILTER = `contribution_type <> 'claim_prize'`;
 export async function handleContributionMessage(
   message: ContributionMessage
 ): Promise<void> {
-  const claimed = await rawQuery<{ id: string }>(
+  const claimed = await rawQuery<{ id: string; sensitivity_label: string }>(
     `UPDATE contributions
         SET review_claimed_at = now(),
             review_attempts = review_attempts + 1
@@ -70,10 +70,14 @@ export async function handleContributionMessage(
         AND (review_claimed_at IS NULL
              OR review_claimed_at < now() - interval '${REVIEW_RECLAIM_MINUTES} minutes')
         AND review_attempts < ${MAX_REVIEW_ATTEMPTS}
-      RETURNING id`,
+      RETURNING id, sensitivity_label`,
     [message.contributionId]
   );
   if (claimed.length === 0) return; // already reviewed, in flight, or parked
+  // The review runs at the label the contribution was submitted at, read
+  // from its row (src/labels.ts). The queue message carries none: the
+  // recovery sweep enqueues the same message from outside any run.
+  const label = claimed[0]!.sensitivity_label;
 
   // What the review cost, recorded on the contribution even when the review
   // fails partway: a mandate's research pays its reviews from a delegated
@@ -81,10 +85,12 @@ export async function handleContributionMessage(
   const meter = { billedMicroUsd: 0 };
   try {
     const { userId, jobId } = await reviewSubject(message.contributionId);
-    await runWithUsageContext({ userId, ...(jobId ? { jobId } : {}), meter }, () =>
-      runContributionReview({
-        contributionId: message.contributionId,
-      })
+    await runAtLabel(label, `contribution ${message.contributionId}`, () =>
+      runWithUsageContext({ userId, ...(jobId ? { jobId } : {}), meter }, () =>
+        runContributionReview({
+          contributionId: message.contributionId,
+        })
+      )
     );
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) {

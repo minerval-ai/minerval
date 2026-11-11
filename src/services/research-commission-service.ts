@@ -19,7 +19,7 @@
  * once, and the engine launches the Researcher on it.
  */
 import { rawQuery } from "../db/client.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import {
   carriedNotebook,
   closeResearchRun,
@@ -117,10 +117,10 @@ export async function commissionResearch(input: {
   });
   if (examination) await linkResearchRun(examination.id, run.id);
   const [action] = await rawQuery<{ id: string }>(
-    `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
-     VALUES ('research', $1, 'standard', $2, $3, $4, $5)
+    `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ('research', $1, 'standard', $2, $3, $4, $5, $6)
      RETURNING id`,
-    [RESEARCH_GROUP(run.id), input.nodeId, run.id, `Research: ${input.task.slice(0, 100)}`, budget]
+    [RESEARCH_GROUP(run.id), input.nodeId, run.id, `Research: ${input.task.slice(0, 100)}`, budget, currentLabel()]
   );
   const placed = await placeCommission({
     group: RESEARCH_GROUP(run.id),

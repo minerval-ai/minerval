@@ -50,6 +50,7 @@ import {
 } from "./prize-commitment.js";
 import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export { HOLDING_BOUNTY_STATUSES, PRIZE_RESERVE_JOB_KIND, isHoldingBountyStatus };
 
@@ -1022,8 +1023,8 @@ export async function mintPrizeReviewReserve(
     [platformId, reserve, bounty.claim_id, `prize_reserve_mint:${bounty.id}`]
   );
   const [job] = await r.query<{ id: string }>(
-    `INSERT INTO budget_jobs (user_id, kind, claim_id, budget_micro_usd, status, checkpoint)
-     VALUES ($1, $2, $3, $4, 'running', $5::jsonb)
+    `INSERT INTO budget_jobs (user_id, kind, claim_id, budget_micro_usd, status, checkpoint, sensitivity_label)
+     VALUES ($1, $2, $3, $4, 'running', $5::jsonb, $6)
      RETURNING id`,
     [
       platformId,
@@ -1031,6 +1032,7 @@ export async function mintPrizeReviewReserve(
       bounty.claim_id,
       reserve,
       JSON.stringify({ bounty_id: bounty.id, note: "prize-review reserve" }),
+      currentLabel(),
     ]
   );
   await r.query(

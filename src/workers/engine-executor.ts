@@ -54,7 +54,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
@@ -190,19 +190,28 @@ export async function processNextEngineAction(
       "formalize",
       ...(researcherOn ? (["request", "research"] as const) : []),
     ])) ?? (await nextFallbackAction());
-  if (!action || !(await claimAction(action.id))) return { status: "empty" };
+  if (!action) return { status: "empty" };
 
-  if (action.kind === "ingest") return runIngestAction(action);
-  if (action.kind === "formalize") return runFormalizeAction(action, opts);
-  if (action.kind === "lookout_run") return runLookoutAction(action, opts);
-  if (action.kind === "correspondent_run") return runCorrespondentAction(action, opts);
-  if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
-  if (action.kind === "curate") return runCurateAction(action);
-  if (action.kind === "audit") return runAuditAction(action);
-  if (action.kind === "request") return runRequestAction(action);
-  if (action.kind === "research") return runResearchAction(action);
-  if (action.kind === "resume") return runResumeAction(action);
-  return runGrantAgentAction(action, opts);
+  // Every kind runs at the label of its ledger row, which is the label of
+  // the work that opened the row (src/labels.ts). The whole of the kind's
+  // handler is inside, not only the agent's run: what it enqueues before
+  // and after (a job for an ingest, a follow-up, a reopened row) is work
+  // this row started, and takes its label the same way.
+  return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, async (): Promise<EngineProcessResult> => {
+    if (!(await claimAction(action.id, action.sensitivity_label))) return { status: "empty" };
+
+    if (action.kind === "ingest") return runIngestAction(action);
+    if (action.kind === "formalize") return runFormalizeAction(action, opts);
+    if (action.kind === "lookout_run") return runLookoutAction(action, opts);
+    if (action.kind === "correspondent_run") return runCorrespondentAction(action, opts);
+    if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
+    if (action.kind === "curate") return runCurateAction(action);
+    if (action.kind === "audit") return runAuditAction(action);
+    if (action.kind === "request") return runRequestAction(action);
+    if (action.kind === "research") return runResearchAction(action);
+    if (action.kind === "resume") return runResumeAction(action);
+    return runGrantAgentAction(action, opts);
+  });
 }
 
 /** Unfunded fallback-lane Curator runs this process (CURATOR_MAX_RUNS). */
@@ -231,7 +240,7 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
   if (kinds.length === 0) return null;
   const [row] = await rawQuery<RunnableAction>(
     `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
-            a.target_ref, a.cost_est_micro_usd, a.updated_at,
+            a.target_ref, a.cost_est_micro_usd, a.updated_at, a.sensitivity_label,
             0::bigint AS coverage_micro_usd
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
@@ -544,7 +553,11 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   let billedMicroUsd = 0;
   let failure: unknown = null;
   try {
-    const metered = await runWithUsageContext(
+    // The resumed run continues the paused run's transcript, so it works at
+    // the session's label. The row that resumes it was opened at that label
+    // (session-service.ts, commissionResumption), and the session is what
+    // holds what the paused run read.
+    const metered = await runAtLabel(session.sensitivity_label, `paused session ${session.id}`, () => runWithUsageContext(
       { userId: funder.userId, jobId: funder.jobId, ...(session.node_id ? { claimId: session.node_id } : {}) },
       () =>
         withPassBudget(actionBudget(action, "the budget resuming this paused session"), async () => {
@@ -570,7 +583,7 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
               throw new Error(`No resumption for a ${session.role} session.`);
           }
         })
-    );
+    ));
     billedMicroUsd = metered.billedMicroUsd;
   } catch (err) {
     failure = err;

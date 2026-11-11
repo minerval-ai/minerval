@@ -29,7 +29,7 @@ import { handleContributionMessage } from "./workers/contribution-pipeline.js";
 import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
 import { abandonStewardLeases } from "./services/steward-lease.js";
 import type {
-  ClaimPipelineMessage,
+  QueuedClaimPipelineMessage,
   UrlExtractionMessage,
   ContributionMessage,
   ArbitrationMessage,
@@ -84,7 +84,9 @@ async function main() {
   };
 
   if (config.sqsClaimPipelineQueue) {
-    pollers.push(startPoller<ClaimPipelineMessage>({
+    // The queue may still hold messages from before the label field
+    // (workers/claim-pipeline.ts), so the poller hands over either shape.
+    pollers.push(startPoller<QueuedClaimPipelineMessage>({
       queueUrl: config.sqsClaimPipelineQueue,
       handler: handleClaimPipeline,
       logger,

@@ -23,10 +23,30 @@ vi.mock("../../../src/services/inbox-service.js", () => ({
   postMessage: vi.fn(async () => "m"),
 }));
 
-import { enqueueSteward } from "../../../src/services/queue-service.js";
+import { enqueueClaimPipeline, enqueueSteward, getLocalQueue } from "../../../src/services/queue-service.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { rawQuery } from "../../../src/db/client.js";
 import { postMessage } from "../../../src/services/inbox-service.js";
 import { recordEnqueueEvent } from "../../../src/services/enqueue-events-service.js";
+
+// The claim pipeline's message is all that stands for the work between the
+// enqueue and the worker, so it carries the label of whatever enqueued it
+// (src/labels.ts). No caller passes one.
+describe("enqueueClaimPipeline", () => {
+  beforeEach(() => {
+    getLocalQueue("claimPipeline").length = 0;
+  });
+
+  it("stamps the message with the label of the run that enqueues it", async () => {
+    await runWithUsageContext({ label: "internal" }, () => enqueueClaimPipeline({ claimId: "c-1", jobId: "steward" }));
+    expect(getLocalQueue("claimPipeline")).toEqual([{ claimId: "c-1", jobId: "steward", label: "internal" }]);
+  });
+
+  it("stamps public outside any run", async () => {
+    await enqueueClaimPipeline({ claimId: "c-2", jobId: "job-1" });
+    expect(getLocalQueue("claimPipeline")).toEqual([{ claimId: "c-2", jobId: "job-1", label: "public" }]);
+  });
+});
 
 // The claim row is the Steward's queue, so these semantics live in one SQL
 // statement (atomic under concurrent enqueues). The regression this pins

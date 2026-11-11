@@ -19,7 +19,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import {
   STEWARD_SUCCESS_CLEAR_SET,
   parksAtOnce,
@@ -58,6 +58,8 @@ interface JobRow {
   claim_id: string | null;
   budget_micro_usd: number;
   checkpoint: Record<string, unknown> | null;
+  /** The label the job was funded at; its passes run at it (src/labels.ts). */
+  sensitivity_label: string;
 }
 
 /** Subtree progress counts for the checkpoint / job page. */
@@ -162,10 +164,17 @@ export async function processNextBudgetJobTask(
               LIMIT 1
               FOR UPDATE SKIP LOCKED) pick
       WHERE b.id = pick.id
-      RETURNING b.id, b.user_id, b.claim_id, b.budget_micro_usd, b.checkpoint`
+      RETURNING b.id, b.user_id, b.claim_id, b.budget_micro_usd, b.checkpoint,
+                b.sensitivity_label`
   );
   if (jobs.length === 0 || !jobs[0]!.claim_id) return { status: "empty" };
   const job = jobs[0]!;
+  // Each pass the job pays for runs at the job's label (src/labels.ts).
+  return runAtLabel(job.sensitivity_label, `budget job ${job.id}`, () => advanceBudgetJob(job, model));
+}
+
+/** One step of a claimed job: pause at the floor, finish an exhausted subtree, or run one pass. */
+async function advanceBudgetJob(job: JobRow, model: string): Promise<BudgetJobProcessResult> {
   const rootClaimId = job.claim_id!;
 
   const spent = await getJobSpentMicroUsd(job.id);

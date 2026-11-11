@@ -81,9 +81,14 @@ vi.mock("../../../src/config.js", () => ({
 }));
 
 import {
+  LABEL_ON_REOPEN_SQL,
+  claimAction,
+  ensureCurateAction,
   nextRunnableAction,
   completeAction,
 } from "../../../src/services/action-service.js";
+import { rawQuery } from "../../../src/db/client.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 
 const act = (over: Partial<MockAction>): MockAction => ({
   id: "a1",
@@ -151,6 +156,42 @@ describe("nextRunnableAction (exclusion-group resolution)", () => {
     ];
     const winner = await nextRunnableAction(["assess"]);
     expect(winner?.id).toBe("g2");
+  });
+});
+
+// A row carries the label of the work that opened it, and the executor runs
+// it at that label (src/labels.ts).
+describe("the label on a ledger row", () => {
+  const calls = () => vi.mocked(rawQuery).mock.calls as Array<[string, unknown[]?]>;
+  beforeEach(() => {
+    vi.mocked(rawQuery).mockClear();
+  });
+
+  it("is read with the row the executor is handed", async () => {
+    await nextRunnableAction(["assess"]);
+    expect(calls()[0]![0]).toContain("a.sensitivity_label");
+  });
+
+  it("is checked by the claim when the executor names the label it is about to run at", async () => {
+    await claimAction("a1", "internal");
+    expect(calls()[0]![0]).toContain("status = 'open' AND sensitivity_label = $2");
+    expect(calls()[0]![1]).toEqual(["a1", "internal"]);
+    // A caller that runs the row itself, in its own context, claims by id alone.
+    await claimAction("a1");
+    expect(calls()[1]![0]).not.toContain("sensitivity_label");
+    expect(calls()[1]![1]).toEqual(["a1"]);
+  });
+
+  it("is the opening work's on a new row, and a reopened row's only once the row had finished", async () => {
+    vi.mocked(rawQuery).mockResolvedValueOnce([{ text: "A claim" }]);
+    await runWithUsageContext({ label: "internal" }, () => ensureCurateAction("c1"));
+    const insert = calls().find(([q]) => q.includes("INSERT INTO actions"))!;
+    expect(insert[0]).toContain("sensitivity_label)");
+    expect(insert[0]).toContain(LABEL_ON_REOPEN_SQL);
+    expect(insert[1]!.at(-1)).toBe("internal");
+    // An open or running row keeps the label of the work already waiting on it.
+    expect(LABEL_ON_REOPEN_SQL).toContain("WHEN actions.status IN ('open', 'running') THEN actions.sensitivity_label");
+    expect(LABEL_ON_REOPEN_SQL).toContain("ELSE EXCLUDED.sensitivity_label");
   });
 });
 

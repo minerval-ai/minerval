@@ -29,6 +29,7 @@ import {
 } from "./api-key-service.js";
 import { mandateDraftHash } from "./mandate-draft-hash.js";
 import { owlsToMicroUsd } from "./owl.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   PLATFORM_EXTERNAL_ID,
   PLATFORM_GRANTMAKING_SCOPE,
@@ -155,10 +156,10 @@ export async function fundPlatformConversation(input: {
       [platformId, budgetMicro, `platform_mandate_buy:${convo.id}`]
     );
     const [job] = await tx.query<{ id: string }>(
-      `INSERT INTO budget_jobs (user_id, kind, claim_id, budget_micro_usd, status)
-       VALUES ($1, 'grant', $2, $3, 'running')
+      `INSERT INTO budget_jobs (user_id, kind, claim_id, budget_micro_usd, status, sensitivity_label)
+       VALUES ($1, 'grant', $2, $3, 'running', $4)
        RETURNING id`,
-      [platformId, mandate.scope_claim_id ?? null, budgetMicro]
+      [platformId, mandate.scope_claim_id ?? null, budgetMicro, currentLabel()]
     );
     await tx.query(
       `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id, idempotency_key)

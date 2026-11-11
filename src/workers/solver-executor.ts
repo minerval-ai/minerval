@@ -27,7 +27,7 @@ import { rawQuery, closeDb } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { featureOn } from "../features.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { runMathSolver, type MathSolverResult } from "../llm/agents/math-solver.js";
 import {
   checkSolverBudget,
@@ -174,11 +174,24 @@ export async function processNextSolverAction(
 
   const action = await nextRunnableAction(["attempt_proof"]);
   if (!action) return { status: "empty" };
+  // The attempt, and the Steward pass that follows it, run at the label of
+  // the ledger row that opened them (src/labels.ts).
+  return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () =>
+    serveAttemptAction(action, opts, logger)
+  );
+}
+
+/** Serve one claimed attempt_proof row: the solver's run, its close, and the Steward's pass on the outcome. */
+async function serveAttemptAction(
+  action: RunnableAction,
+  opts: { model?: string },
+  logger: Logger
+): Promise<SolverProcessResult> {
   if (!action.claim_id) {
     await refuse(action, "attempt_proof action carries no claim_id", logger);
     return { status: "skipped", actionId: action.id };
   }
-  if (!(await claimAction(action.id))) return { status: "empty" };
+  if (!(await claimAction(action.id, action.sensitivity_label))) return { status: "empty" };
 
   // The claim and its published statement. The group names the statement;
   // a group that does not is served the claim's current published one.

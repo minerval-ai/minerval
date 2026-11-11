@@ -26,6 +26,7 @@ import { rawQuery } from "../db/client.js";
 import { owlsToMicroUsd } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /** The fewest owls a decomposition is funded with: below this, the
  *  Grantmaker's share could not pay for a pass that plans anything. */
@@ -105,9 +106,9 @@ export async function createClaimMandate(input: {
   }
   const budgetMicro = owlsToMicroUsd(input.budgetOwls);
   const [job] = await rawQuery<{ id: string }>(
-    `INSERT INTO budget_jobs (user_id, kind, claim_id, budget_micro_usd, status)
-     VALUES ($1, 'grant', $2, 0, 'running') RETURNING id`,
-    [input.userId, claim.id]
+    `INSERT INTO budget_jobs (user_id, kind, claim_id, budget_micro_usd, status, sensitivity_label)
+     VALUES ($1, 'grant', $2, 0, 'running', $3) RETURNING id`,
+    [input.userId, claim.id, currentLabel()]
   );
   // Escrow behind the balance guard, under the owl-balance lock.
   const held = await withOwlBalanceLock(input.userId, (tx) =>
