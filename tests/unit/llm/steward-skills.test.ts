@@ -139,6 +139,7 @@ const PROVENANCE_TOOLS = [
   "provenance_record_root",
   "provenance_write_map",
   "provenance_cite_findings",
+  "record_source_interest",
 ];
 
 describe("Steward toolset without a domain tag", () => {
@@ -189,7 +190,7 @@ describe("Steward toolset without a domain tag", () => {
       view: await opts.executeTool("load_skill", { name: "provenance" }),
       recorded: [...(getUsageContext().skills ?? [])],
     }));
-    expect(view.startsWith("# Method skill: Provenance (version 7)")).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 8)")).toBe(true);
     expect(view).toContain("## For the Claim Steward");
     expect(recorded).toEqual(["provenance"]);
     const unknown = JSON.parse(await opts.executeTool("load_skill", { name: "alchemy" }));

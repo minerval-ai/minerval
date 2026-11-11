@@ -1,7 +1,7 @@
 {
   "name": "minerval-extension",
   "displayName": "Minerval",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Reads the page against the Minerval claim graph: flags misleading claims, explains unsettled ones, answers questions with citations.",
   "license": "Apache-2.0",
   "author": "Minerval",

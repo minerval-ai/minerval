@@ -26,7 +26,7 @@ export default function Privacy() {
         }
       />
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
-        Effective October 19, 2026 · applies to minerval.ai, the Minerval API, and
+        Effective November 11, 2026 · applies to minerval.ai, the Minerval API, and
         the Minerval browser extension.
       </p>
 
@@ -81,10 +81,32 @@ export default function Privacy() {
       <p>
         Content you hand over to be analyzed rather than ingested is
         different, and is never part of a transcript: the page open in your
-        browser when you use the extension, questions typed into its chat,
-        and passages sent to the MCP server&rsquo;s analysis tools are
-        processed and then discarded. Only the metering record described
-        above remains.
+        browser when you use the extension and passages sent to the MCP
+        server&rsquo;s analysis tools are processed and then discarded. Only
+        the metering record described above remains.
+      </p>
+
+      <h2 id="assistant">The Assistant</h2>
+      <p>
+        The Assistant is an agent that works for your account, on the Ask
+        page and in the extension&rsquo;s chat. Its conversations are yours
+        and are kept so you can return to them: we store what you wrote,
+        what it replied, the actions it prepared for you and what you
+        decided about each, the pages it saved for you, and what each reply
+        cost. They are private to your account. A conversation started from
+        the extension also stores the address and title of the page you were
+        reading and the passages the extension had marked on it, because the
+        Assistant is told them; it does not store the page&rsquo;s text.
+      </p>
+      <p>
+        The Assistant&rsquo;s runs leave a transcript like other agents&rsquo;,
+        visible only to you and kept for thirty days. Deleting a conversation
+        on the Ask page deletes its text, its prepared actions and those
+        transcripts; deleting a page deletes the page. What a conversation
+        cost stays in your owl history. Anything the Assistant sends to the
+        graph for you (a proposed claim, a contribution, a funded mandate)
+        is public like any other, and happens only when you run it or have
+        allowed that kind of action.
       </p>
 
       <h2 id="extension">The browser extension</h2>
@@ -94,8 +116,9 @@ export default function Privacy() {
         by pressing <em>Analyze page</em> in the popup, or by opting a site
         (or all sites) into automatic analysis in the extension&rsquo;s
         settings. Any site can be disabled entirely. Questions you type into
-        the popup chat, along with the page&rsquo;s claim context, are
-        likewise sent only when you send them.
+        the popup chat, along with the page&rsquo;s address, title and
+        claim context, are likewise sent only when you send them, and are
+        kept as a conversation with <a href="#assistant">the Assistant</a>.
       </p>
       <p>
         To show you what is already known about a page (a check another
@@ -134,8 +157,9 @@ export default function Privacy() {
         results are cached in server memory, keyed by the page URL and a
         hash of its content, so re-analyzing an unchanged page is instant
         and is not re-processed; the cache expires within about an hour and
-        does not survive a server restart. Chat questions are handled the
-        same way and are not retained at all. Analysis requests
+        does not survive a server restart. Chat is different: it is a
+        conversation with the Assistant, kept in your account as described
+        above until you delete it. Analysis and chat requests
         authenticate with your API key and are metered as described above.
       </p>
       <p>

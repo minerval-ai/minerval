@@ -130,6 +130,11 @@ skill bundles it in full, and the section numbers below point into it.
   developer of the model that assessed it. Pass that on with the verdict
   ("assessed by Claude Opus 5.5, made by Anthropic, which the claim names").
   It is a disclosure, not a finding that the verdict is wrong.
+- When a source is recorded as having an interest in the claim, pass that
+  on wherever you cite the source (§9). It is a disclosure, not a finding
+  that the source is wrong.
+- A source read as "evidence not shown" is not a source without evidence:
+  it reports a result from evidence it holds and has not published (§9).
 - A verdict is about the claim as its words read today, not about any
   source that states it (§3, §4). Check that the claim's words say what the
   text you are checking says before you apply the verdict to the text.

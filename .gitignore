@@ -38,8 +38,10 @@ infra/node_modules/
 !.claude/settings.json
 !.claude/hooks/
 
-# Corpus harness — per-run outputs (post markdown IS committed)
-runs/
+# Corpus harness — per-run outputs (post markdown IS committed). Anchored to
+# the repo root (scripts/corpus/lib.ts RUNS_ROOT): unanchored, it also hid the
+# web app's /runs pages, which #872 shipped without.
+/runs/
 
 # Misc
 which

@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 const agents = vi.hoisted(() => {
   process.env.RESEARCHER_ENABLED = "true";
-  return { calls: [] as Array<{ role: string; input: unknown; resume: { sessionId: string; messages: unknown[] } | undefined }> };
+  return { calls: [] as Array<{ role: string; input: unknown; resume: { sessionId: string; messages: unknown[]; privateReasons?: string[] } | undefined }> };
 });
 
 vi.mock("../../src/services/embedding-service.js", () => ({
@@ -123,6 +123,8 @@ describe("sessions for agents whose work is not one node's", () => {
     const last = JSON.stringify(call.resume!.messages.at(-1));
     expect(last).toContain("Your session resumes");
     expect(last).toContain("Both nodes cite the same 2019 survey.");
+    // A research report is not public, so the resumed run starts private.
+    expect(call.resume?.privateReasons).toContain("input:research-report");
     // The resume row settled.
     const [done] = await rawQuery<{ status: string }>(`SELECT status FROM actions WHERE exclusion_group = $1`, [row!.exclusion_group]);
     expect(done!.status).toBe("done");

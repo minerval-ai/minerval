@@ -194,6 +194,16 @@ type Tool = Anthropic.Tool;
 type ToolUnion = Anthropic.Messages.ToolUnion;
 
 const PROVENANCE_PREFIX = "provenance_";
+/**
+ * The Provenance skill's one tool without the prefix: it records a stake a
+ * source has in what it says (§9). It is offered and withheld with the
+ * provenance tools that write.
+ */
+const SOURCE_INTEREST_TOOL = "record_source_interest";
+
+function isProvenanceTool(name: string): boolean {
+  return name.startsWith(PROVENANCE_PREFIX) || name === SOURCE_INTEREST_TOOL;
+}
 
 /**
  * The provenance tools that read or record on one node. On a request run
@@ -203,8 +213,15 @@ const PROVENANCE_PREFIX = "provenance_";
  */
 const NODE_PROVENANCE_TOOLS = new Set(["provenance_get_map", "provenance_record_reading", "provenance_record_edge"]);
 
-/** A node provenance tool with a required claim_id limited to the request's nodes. */
-function withRequestNodeId(tool: Tool, nodes: { id: string; text: string; kind: string }[]): Tool {
+/**
+ * A node provenance tool with a claim_id limited to the request's nodes:
+ * required, except where the tool can also record on a source alone.
+ */
+function withRequestNodeId(
+  tool: Tool,
+  nodes: { id: string; text: string; kind: string }[],
+  required = true
+): Tool {
   const schema = tool.input_schema as { type: "object"; properties?: Record<string, unknown>; required?: string[] };
   return {
     ...tool,
@@ -216,12 +233,14 @@ function withRequestNodeId(tool: Tool, nodes: { id: string; text: string; kind: 
           type: "string",
           enum: nodes.map((n) => n.id),
           description:
-            "The node this call reads or records on: one of the nodes the request bears on (" +
+            (required
+              ? "The node this call reads or records on: one of the nodes the request bears on ("
+              : "The node the record is scoped to, for scope 'claim': one of the nodes the request bears on (") +
             nodes.map((n) => `${n.id}, the ${n.kind} "${n.text.slice(0, 120)}"`).join("; ") +
             ").",
         },
       },
-      required: [...new Set([...(schema.required ?? []), "claim_id"])],
+      required: required ? [...new Set([...(schema.required ?? []), "claim_id"])] : (schema.required ?? []),
     },
   };
 }
@@ -549,15 +568,23 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const skillTools = getActiveSkillToolDefinitions(listSkills(), "researcher")
     .filter(
       (t) =>
-        (graphWrites || (!t.name.startsWith(PROVENANCE_PREFIX) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
+        (graphWrites || (!isProvenanceTool(t.name) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
         (checker || !isLeanTool(t.name)) &&
-        (!t.name.startsWith(PROVENANCE_PREFIX) ||
+        (!isProvenanceTool(t.name) ||
           !!input.claim ||
           onRequestNodes ||
           ((!!examination || takesUpRequest) && t.name === "provenance_read_source")) &&
         (!t.name.startsWith(EXAMINATION_PREFIX) || !!examination)
     )
-    .map((t) => (onRequestNodes && NODE_PROVENANCE_TOOLS.has(t.name) ? withRequestNodeId(t, requestNodes) : t));
+    .map((t) =>
+      !onRequestNodes
+        ? t
+        : NODE_PROVENANCE_TOOLS.has(t.name)
+          ? withRequestNodeId(t, requestNodes)
+          : t.name === SOURCE_INTEREST_TOOL
+            ? withRequestNodeId(t, requestNodes, false)
+            : t
+    );
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
   const pangramTools = createPangramTools({ config });
@@ -802,7 +829,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (isSkillTool(name)) {
       // Provenance records land on the run's claim and no other: a claim_id
       // in the input that names a different one is refused, not honoured.
-      if (name.startsWith(PROVENANCE_PREFIX) && input.claim) {
+      if (isProvenanceTool(name) && input.claim) {
         const named = typeof toolInput.claim_id === "string" ? toolInput.claim_id.trim() : "";
         if (named && named !== input.claim.id) {
           return JSON.stringify({
@@ -819,6 +846,17 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
           return JSON.stringify({
             success: false,
             message: `${name} records on one of the nodes this request bears on: name it in claim_id (${[...requestNodeIds].join(", ")}).`,
+          });
+        }
+      }
+      // An interest scoped to a claim is scoped to one of the request's
+      // nodes; one scoped to the source names no node.
+      if (onRequestNodes && name === SOURCE_INTEREST_TOOL && toolInput.scope === "claim") {
+        const named = typeof toolInput.claim_id === "string" ? toolInput.claim_id.trim() : "";
+        if (!requestNodeIds.has(named)) {
+          return JSON.stringify({
+            success: false,
+            message: `With scope 'claim', ${name} records on one of the nodes this request bears on: name it in claim_id (${[...requestNodeIds].join(", ")}).`,
           });
         }
       }

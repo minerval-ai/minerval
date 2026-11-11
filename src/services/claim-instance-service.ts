@@ -26,6 +26,7 @@ import {
   type StoryStanding,
 } from "./provenance-story-service.js";
 import type { InstanceReadingView, QuoteCheckResult } from "./source-map-service.js";
+import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
 
 /** The SQL predicate for an instance that belongs to its claim, for a given table alias. */
 export function activeInstanceSql(alias = "ci"): string {
@@ -139,7 +140,9 @@ export async function countClaimInstances(claimId: string): Promise<number> {
 /**
  * The claim's instances in reading order, for the claim page, the public
  * API and the MCP read: the rows that belong, no paging, no readings. The
- * shape matches what those surfaces have always served, plus the rank.
+ * shape matches what those surfaces have always served, plus the rank and
+ * the interest recorded for the instance's source on this claim (§9): the
+ * claim's own record where there is one, else the source-wide one, else null.
  */
 export async function listOrderedClaimInstances(claimId: string): Promise<
   Array<{
@@ -157,12 +160,14 @@ export async function listOrderedClaimInstances(claimId: string): Promise<
     source_url: string | null;
     source_type: string;
     display_rank: number | null;
+    source_interest: SourceInterestView | null;
   }>
 > {
   const [rows, story] = await Promise.all([
     loadInstanceRows(claimId, false),
     getProvenanceStory(claimId).catch(() => null),
   ]);
+  const interests = await interestsForClaim(claimId, rows.map((r) => r.source_id));
   return orderClaimInstances(rows, story).map((r) => ({
     id: r.id,
     source_id: r.source_id,
@@ -178,6 +183,7 @@ export async function listOrderedClaimInstances(claimId: string): Promise<
     source_url: r.source_url,
     source_type: r.source_type,
     display_rank: r.display_rank,
+    source_interest: interests.get(r.source_id) ?? null,
   }));
 }
 
@@ -216,6 +222,7 @@ export async function getClaimInstancePage(
   const ids = page.map((r) => r.id);
   const nodeBySource = new Map((story?.nodes ?? []).map((n) => [n.source.id, n] as const));
 
+  const interests = await interestsForClaim(claimId, page.map((r) => r.source_id));
   const [readingRows, edgeRows] = ids.length
     ? await Promise.all([
         rawQuery<{
@@ -288,6 +295,9 @@ export async function getClaimInstancePage(
         source_type: r.source_type,
         source_url: r.source_url,
         source_published_date: r.source_published_date,
+        // The stake recorded for this source on this claim (§9), or null: a
+        // fact about the source, never a finding against it.
+        source_interest: interests.get(r.source_id) ?? null,
         recorded_by: r.created_by,
         display_rank: r.display_rank,
         reading: readings.get(r.id) ?? null,

@@ -144,7 +144,7 @@ export default async function ClaimsIndex({
             color: "var(--muted)",
           }}
         >
-          These investigations began as the case studies in the{" "}
+          The first investigations began as the case studies in the{" "}
           <a href="https://flf.org/epistack-competition/">FLF Epistack competition</a>: the origin of SARS-CoV-2, the safety
           of micro black holes, and eggs and cardiovascular risk.
         </p>

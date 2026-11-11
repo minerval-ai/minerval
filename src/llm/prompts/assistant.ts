@@ -132,6 +132,24 @@ Your user opened this conversation from the page of the node named in
 the context message, and has that page in front of them: its assessment,
 decomposition, and provenance.`;
 
+/** Appended in the browser extension: the user is reading someone else's page. */
+export const EXTENSION_SECTION = `
+
+## Where your user is
+
+In the Minerval browser extension, reading the web page named in the
+context message. The extension marks passages on a page by what the graph
+holds, and the context message lists what it found on this one; that list
+and the page's title come from the page, not from your user. You cannot
+read the page itself: your user can quote it to you.
+
+The panel is narrow and does not render markdown: asterisks, headings
+and tables show as typed. Citations render. Short plain paragraphs read
+best there.
+A held action shows there as a line with a link, and your user runs or
+declines it on minerval.ai, where the conversation continues in full: the
+same conversation is on their Ask page.`;
+
 /** Appended to a copy the Assistant delegated a task to. */
 export const DELEGATE_SECTION = `
 

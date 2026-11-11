@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // The Provenance skill's executors (#286) over a mocked service: each takes
 // the claim from the run's context, stamps the writer from the role, turns
 // a SourceMapError into a structured refusal, and never throws.
+// record_source_interest (§9) is the same over the interest service.
 
 const mocks = vi.hoisted(() => ({
   getClaimSourceMap: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 const story = vi.hoisted(() => ({ getProvenanceStory: vi.fn() }));
 const facts = vi.hoisted(() => ({ getSourceFacts: vi.fn() }));
+const interest = vi.hoisted(() => ({ recordSourceInterest: vi.fn() }));
 const exams = vi.hoisted(() => ({
   listExaminations: vi.fn(),
   getExaminationOutline: vi.fn(),
@@ -32,6 +34,10 @@ vi.mock("../../../../src/services/source-map-service.js", () => {
 });
 vi.mock("../../../../src/services/provenance-story-service.js", () => story);
 vi.mock("../../../../src/services/source-facts-service.js", () => facts);
+vi.mock("../../../../src/services/source-interest-service.js", () => {
+  class SourceInterestError extends Error {}
+  return { SourceInterestError, ...interest };
+});
 vi.mock("../../../../src/services/examination-service.js", () => {
   class ExaminationError extends Error {}
   return { ExaminationError, ...exams };
@@ -40,6 +46,7 @@ vi.mock("../../../../src/db/client.js", () => ({ getDb: vi.fn(), rawQuery: vi.fn
 
 import { SourceMapError } from "../../../../src/services/source-map-service.js";
 import { ExaminationError } from "../../../../src/services/examination-service.js";
+import { SourceInterestError } from "../../../../src/services/source-interest-service.js";
 import {
   PROVENANCE_TOOL_NAMES,
   executeCiteFindings,
@@ -52,6 +59,7 @@ import {
   executeRecordEdge,
   executeRecordReading,
   executeRecordRoot,
+  executeRecordSourceInterest,
   executeRecordSourceRelationship,
   executeWriteMap,
   registerProvenanceTools,
@@ -74,6 +82,7 @@ beforeEach(() => {
   mocks.listDetachedInstances.mockResolvedValue([]);
   story.getProvenanceStory.mockReset().mockResolvedValue(EMPTY_STORY);
   facts.getSourceFacts.mockReset().mockResolvedValue(null);
+  interest.recordSourceInterest.mockReset();
   for (const fn of Object.values(exams)) fn.mockReset();
   exams.listExaminations.mockResolvedValue([]);
 });
@@ -200,13 +209,22 @@ describe("provenance_read_source", () => {
     facts.getSourceFacts.mockResolvedValue({
       source: { authors: ["J"], publisher: "P", published_date: "2022", doi: "10.1/x", archived_url: null },
       events: [{ kind: "correction", occurred_at: "2026-08-12T00:00:00.000Z", notice_url: "https://doi.org/10.1/n", note: "Table 3", detected_at: "x", detected_by: "crossref_poll" }],
-      versions: [], copies: [], copy_of: [],
+      versions: [], copies: [], copy_of: [], interests: [],
     });
     const out = JSON.parse(await executeReadSource({ source_id: "s1" }, steward));
     expect(out.facts).toMatchObject({
       authors: ["J"], doi: "10.1/x",
       events: [{ kind: "correction", occurred_at: "2026-08-12T00:00:00.000Z", notice_url: "https://doi.org/10.1/n", note: "Table 3" }],
     });
+    // No interest recorded, so the facts carry no empty list to read past.
+    expect(out.facts).not.toHaveProperty("interests");
+    const stake = { party: "Acme Labs", stake: "Acme makes the system the card describes.", claim_id: null, recorded_at: "2026-11-01T00:00:00.000Z" };
+    facts.getSourceFacts.mockResolvedValue({
+      source: { authors: [], publisher: "Acme Labs", published_date: null, doi: null, archived_url: null },
+      events: [], versions: [], copies: [], copy_of: [], interests: [stake],
+    });
+    const withStake = JSON.parse(await executeReadSource({ source_id: "s1" }, steward));
+    expect(withStake.facts.interests).toEqual([stake]);
     mocks.readSourceContent.mockResolvedValue({
       source: { id: "s1" }, origin: "stored", total_chars: 100, offset: 50, content: "x", truncated: true,
     });
@@ -338,6 +356,84 @@ describe("the write tools", () => {
       expect(out.success).toBe(false);
       expect(out.message).toMatch(/no claim is in scope/);
     }
+  });
+});
+
+describe("record_source_interest (§9)", () => {
+  const SOURCE = "bbbbbbbb-0000-4000-8000-000000000002";
+  const recorded = (claimId: string | null, supersedes = false) => ({
+    id: "n1", source_id: SOURCE, claim_id: claimId, party: "Acme Labs",
+    stake: "Acme makes the system the card describes.", recorded_at: "2026-11-01T00:00:00.000Z",
+    supersedes_earlier: supersedes,
+  });
+
+  it("scopes a record to the run's claim, stamps the writer, and says where it is shown", async () => {
+    interest.recordSourceInterest.mockResolvedValue(recorded(CLAIM));
+    const out = JSON.parse(
+      await executeRecordSourceInterest(
+        { source_id: ` ${SOURCE} `, party: " Acme Labs ", stake: "Acme makes the system the card describes.", scope: "claim" },
+        steward
+      )
+    );
+    expect(interest.recordSourceInterest).toHaveBeenCalledWith({
+      sourceId: SOURCE,
+      claimId: CLAIM,
+      party: "Acme Labs",
+      stake: "Acme makes the system the card describes.",
+      recordedBy: "claim_steward",
+    });
+    expect(out).toMatchObject({ success: true, id: "n1", source_id: SOURCE, claim_id: CLAIM, party: "Acme Labs", supersedes_earlier: false });
+    expect(out.note).toMatch(/Recorded for this claim/);
+    expect(out.note).toMatch(/still evidence/);
+    expect(out.note).not.toMatch(/earlier record/);
+  });
+
+  it("records for the source as a whole with no claim, whatever claim the run serves", async () => {
+    interest.recordSourceInterest.mockResolvedValue(recorded(null, true));
+    const out = JSON.parse(
+      await executeRecordSourceInterest(
+        { source_id: SOURCE, party: "Acme Labs", stake: "s", scope: "source", claim_id: CLAIM },
+        { role: "researcher", claimId: CLAIM }
+      )
+    );
+    expect(interest.recordSourceInterest).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: null, recordedBy: "researcher" })
+    );
+    expect(out.claim_id).toBeNull();
+    expect(out.note).toMatch(/source as a whole/);
+    expect(out.note).toMatch(/earlier record for the same source and scope is kept as history/);
+  });
+
+  it("refuses a missing or unknown scope, and scope 'claim' with no claim in reach, without writing", async () => {
+    for (const scope of [undefined, "", "everything"]) {
+      const out = JSON.parse(await executeRecordSourceInterest({ source_id: SOURCE, party: "p", stake: "s", scope }, steward));
+      expect(out.success).toBe(false);
+      expect(out.message).toMatch(/scope is required/);
+    }
+    const noClaim = JSON.parse(
+      await executeRecordSourceInterest({ source_id: SOURCE, party: "p", stake: "s", scope: "claim" }, { role: "researcher" })
+    );
+    expect(noClaim.success).toBe(false);
+    expect(noClaim.message).toMatch(/needs a claim/);
+    expect(interest.recordSourceInterest).not.toHaveBeenCalled();
+    // Outside a claim-scoped run a claim can be named, and a source-wide
+    // record needs none.
+    interest.recordSourceInterest.mockResolvedValue(recorded(CLAIM));
+    await executeRecordSourceInterest({ source_id: SOURCE, party: "p", stake: "s", scope: "claim", claim_id: CLAIM }, { role: "researcher" });
+    expect(interest.recordSourceInterest).toHaveBeenLastCalledWith(expect.objectContaining({ claimId: CLAIM }));
+    interest.recordSourceInterest.mockResolvedValue(recorded(null));
+    await executeRecordSourceInterest({ source_id: SOURCE, party: "p", stake: "s", scope: "source" }, { role: "researcher" });
+    expect(interest.recordSourceInterest).toHaveBeenLastCalledWith(expect.objectContaining({ claimId: null }));
+  });
+
+  it("turns the service's refusal into a structured result, through the registry too", async () => {
+    interest.recordSourceInterest.mockRejectedValue(new SourceInterestError("party is required."));
+    const out = JSON.parse(await executeRecordSourceInterest({ source_id: SOURCE, stake: "s", scope: "source" }, steward));
+    expect(out).toEqual({ success: false, message: "party is required." });
+    const viaRegistry = JSON.parse(
+      await executeSkillTool("record_source_interest", { source_id: SOURCE, stake: "s", scope: "source" }, steward)
+    );
+    expect(viaRegistry).toEqual({ success: false, message: "party is required." });
   });
 });
 
