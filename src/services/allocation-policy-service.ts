@@ -1,23 +1,41 @@
 /**
- * Allocation policy — the rules of the platform's own spending, owned by
- * an agent, not by code.
+ * Allocation policy: the figures the platform's machinery reads when it
+ * prices and paces work, with their bounds and defaults.
  *
- * Minerval's background lane is itself a mandate ("General maintenance",
- * platform-run, policy 'general'): its escrow is however many dollars the
- * platform allocates to expanding and maintaining the graph, its daily
- * spend rate paces the lane, and — the point of this module — its
- * ALLOCATION POLICY holds the formulas the lane runs on: the value
- * heuristic's knobs, the cost priors, the model-tier threshold, the
- * reassessment cadence. The policy is amended by the mandate's Grantmaker
- * in conversation (update_allocation_policy), never edited directly: when
- * we learn something about allocation, we ask the agent to change its
- * formula. Env config supplies the shared DEFAULTS — the same defaults any
- * other mandate inherits, so the machinery stays replicable — and the
- * governing mandate's policy overlays them.
+ * It decides nothing about what is funded. Since #855 no formula does: each
+ * payer commissions work by its own judgment, a mandate through the
+ * operating policy its Grantmaker writes in prose and the program officers
+ * who work under it (operating-policy-service.ts; docs/allocation.md, "The
+ * standard"). What is kept here is what code still needs a figure for:
  *
- * Every knob is bounded here, mechanically: the agent has near-total
- * control of the process within the framework, and the framework is these
- * ranges.
+ *   - cost priors (the est_* keys): what a run of each kind is expected to
+ *     cost until the ledger holds enough metered runs for a live estimate
+ *     (cost-estimate-service.ts), and what the cost sheet shows agents
+ *     (llm/tools/costing-tools.ts);
+ *   - the re-check cadence (staleness_base_days), which makes candidates
+ *     and spends nothing (workers/allocation-scheduler.ts);
+ *   - the attempt cooldown and per-claim attempt cap on mathematical claims
+ *     (action-service.ts, attempt-service.ts);
+ *   - the consistency sweep's expected gain and per-node cost, and the
+ *     reconcile scan's size and similarity floor.
+ *
+ * The values in force are the shared defaults below (env config for some,
+ * the design's figures for the rest) overlaid with what a mandate stores in
+ * grants.allocation_policy: the General mandate's for the platform's own
+ * work (getEffectiveAllocationPolicy), a mandate's own for its own
+ * (getMandateAllocationPolicy). No agent writes that column now. The
+ * Grantmaker's update_allocation_policy tool went with the formulas in
+ * #855; the one writer left is scripts/seed-platform-mandates.ts, which
+ * merges the keys a platform mandate's seed names over what is stored. A
+ * row written before then may hold any key the tool could set.
+ *
+ * Several keys below were read only by the retired value formula and its
+ * allocator, and nothing reads them now. They are still declared, bounded
+ * and defaulted. A stored policy needs none of that to load: overlayPolicy
+ * reads only the keys in POLICY_BOUNDS and ignores every other.
+ *
+ * Every stored value is clamped to POLICY_BOUNDS on read, so a stored
+ * policy cannot put a figure outside its range.
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -57,7 +75,10 @@ export interface AllocationPolicy {
   attempt_claim_lifetime_cap_owls: number;
   // --- Maintenance and audit (#363): curation and audit are ledger actions
   // a mandate chooses to buy, not work induced onto whoever is nearest.
-  /** Retired with the allocator: kept so stored policies still parse. */
+  /** Read by nothing: the allocator that held a mandate's maintenance to
+   *  this share of its daily rate was retired in #855. Still declared, like
+   *  the other unread keys (module header); a stored policy that holds it
+   *  would load the same without it. */
   maintenance_share: number;
   /** Cost prior for one `curate` run, in owls, until the ledger holds
    *  enough completed runs for the live p80. */
