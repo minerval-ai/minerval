@@ -11,12 +11,18 @@ export function SourceHead({
   page, groups, exams, sample,
 }: { page: SourcePage; groups: Group[]; exams: ExamView[]; sample: boolean }) {
   const { source, versions, copies, copy_of, events } = page.facts;
+  const interests = page.facts.interests ?? [];
   const doc = page.document;
   const published = partialDate(source.published_date);
   const later = versions.filter((v) => v.later);
   const claimIds = new Set<string>();
-  for (const seg of doc?.segments ?? []) seg.instances.forEach((i) => claimIds.add(i.claim.id));
-  doc?.unanchored.forEach((i) => claimIds.add(i.claim.id));
+  // The words of each claim the document states, to name the claim an
+  // interest is recorded for.
+  const claimText = new Map<string, string>();
+  for (const i of [...(doc?.segments ?? []).flatMap((seg) => seg.instances), ...(doc?.unanchored ?? [])]) {
+    claimIds.add(i.claim.id);
+    claimText.set(i.claim.id, i.claim.text);
+  }
   const nFindings = exams.reduce((n, e) => n + e.exam.findings.length, 0);
   const stored = doc && doc.total_chars > 0;
   const lastEvent = [...events].sort((a, b) => (b.occurred_at ?? b.detected_at).localeCompare(a.occurred_at ?? a.detected_at))[0];
@@ -71,6 +77,27 @@ export function SourceHead({
         <div key={v.id} className={`${s.notice} ${s.plain}`}>
           <span className="sc">Copy of</span>
           <Link href={`/sources/${v.id}`}>{v.title}</Link>
+        </div>
+      ))}
+      {/* A recorded interest (§9) is a fact about the source, so it takes the
+          plain notice and not the colour of a correction or a retraction. */}
+      {interests.map((it, i) => (
+        <div key={`interest-${i}`} className={`${s.notice} ${s.plain}`}>
+          <span className="sc">Interest recorded</span>
+          <span>
+            <b>{it.party}</b>
+            {` · ${it.stake} `}
+            {it.claim_id && (
+              <>
+                Recorded for{" "}
+                <Link href={`/claims/${it.claim_id}`}>
+                  {claimText.has(it.claim_id) ? <q>{claimText.get(it.claim_id)}</q> : "one claim"}
+                </Link>
+                .{" "}
+              </>
+            )}
+            What this source says is evidence, and each claim&rsquo;s Steward weighs it knowing the stake.
+          </span>
         </div>
       ))}
 

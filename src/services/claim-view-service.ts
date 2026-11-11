@@ -122,8 +122,8 @@ export const CLAIM_VIEW_DESCRIPTION =
   "and their standing and credence. " +
   STEWARD_PARKED_DESCRIPTION +
   "), " +
-  "`provenance` (the instances with their readings, and the edges among " +
-  "their sources), `dependents` (one page ranked by importance, with " +
+  "`provenance` (the instances with their readings and any interest " +
+  "recorded for their source, and the edges among their sources), `dependents` (one page ranked by importance, with " +
   "`dependents_total`), `related` (lateral see-also links, never " +
   "dependencies, with their standing and credence), `findings` (the " +
   "newest findings already noted on the node, with `findings_note` when " +

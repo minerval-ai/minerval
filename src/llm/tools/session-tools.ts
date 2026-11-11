@@ -12,12 +12,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { getUsageContext } from "../usage-context.js";
+import { getUsageContext, markCurrentRunPrivate } from "../usage-context.js";
 import { creditRunBudget, runBudgetLeft } from "../run-funding.js";
 import { runWithUsageContext } from "../usage-context.js";
 import { randomUUID } from "node:crypto";
 import { originalPayer } from "../../services/commission-service.js";
 import {
+  RESEARCH_REPORT_REASON,
   outstanding,
   renderResearchSessionArrivals,
   suspendSession,
@@ -54,6 +55,10 @@ export function getSessionToolDefinitions(): Tool[] {
  */
 export async function takeArrivals(sessionId: string): Promise<string | null> {
   const replies = await takeLiveReplies(sessionId);
+  // A research report is not public (the claim page leaves it out), so a
+  // run it reaches is private (llm/run-visibility.ts). This is the one place
+  // arrivals enter a run, by wait_for_answers or in the next tool result.
+  if (replies.some((r) => r.kind === "research")) markCurrentRunPrivate(RESEARCH_REPORT_REASON);
   const credit = replies.reduce((sum, r) => sum + Number(r.credit_micro_usd ?? 0), 0);
   if (credit > 0) creditRunBudget(credit);
   return renderResearchSessionArrivals(replies);
@@ -95,6 +100,8 @@ export async function executeSessionTool(name: string, _input: Record<string, un
 export interface SessionResume {
   sessionId: string;
   messages: Anthropic.MessageParam[];
+  /** Why the resumed transcript is private (sessionPrivateReasons); the new run takes them on. */
+  privateReasons?: string[];
 }
 
 /**
@@ -110,7 +117,12 @@ export function openSession(role: string, nodeId: string | null, input: unknown,
   let transcript: Anthropic.MessageParam[] | null = null;
   return {
     session,
-    initialMessages: (fresh: Anthropic.MessageParam[]) => resume?.messages ?? fresh,
+    initialMessages: (fresh: Anthropic.MessageParam[]) => {
+      // Called inside the agent's run: a resumed transcript carries the
+      // paused run's private reasons into this one (run-visibility.ts).
+      for (const r of resume?.privateReasons ?? []) markCurrentRunPrivate(r);
+      return resume?.messages ?? fresh;
+    },
     run: <T>(fn: () => Promise<T>) => runWithUsageContext({ session }, fn),
     loop: {
       pendingInput: async () => takeArrivals(session.id).catch(() => null),

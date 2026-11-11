@@ -53,16 +53,24 @@ graph · 11 new". It lists both groups.
 
 ## Chat
 
-The **Chat** tab answers questions about the page you're on, grounded in
-the graph, with claim citations. Each tab keeps its own conversation for the
+The **Chat** tab is the Minerval Assistant, the agent that works for your
+account, opened from the page you're on: it is told the page's address,
+title and what the extension found on it, reads the graph, and answers with
+claim citations. Its work is charged in owls at what it costs, shown under
+each reply, and **Stop** ends a reply that is running. If it prepares
+something that would spend owls on the graph or publish under your name
+(proposing a claim, funding work), nothing happens from the extension: the
+reply says an action is waiting and links to minerval.ai, where you run or
+decline it. Each tab keeps its own conversation for the
 page it is about: close the popup (clicking back into the page closes it)
 and reopen it, and the conversation is still there, including an answer
 that finished while the popup was closed. Moving the tab to another page
 starts a new conversation; until you ask something there, going Back to
 the page finds the old one.
-**Clear** starts over. Conversations are kept only in the browser's
-memory for the session: they are never written to disk and are gone when
-you close the tab or quit the browser.
+**New** starts another conversation about the page. The tab's copy lives
+in the browser's memory for the session, but the conversation itself is
+saved in your account: every one is on minerval.ai/ask, where you can
+continue or delete it.
 
 To keep the chat beside the article while you read, press **⇥** in the
 popup's header to open it in the browser's side panel. The popup closes
@@ -103,9 +111,8 @@ extraction. Because of that, **page text is never sent automatically by
 default**: you trigger analysis from the popup, or opt a site (or everything)
 into automatic analysis in settings. Any site can be disabled entirely.
 
-What is sent is transient. Page text and chat questions are analyzed and
-discarded: they are never written to Minerval's database or to its agent
-transcripts, and no claim enters the graph from them unless you propose it
+Page text is transient. It is analyzed and discarded: never written to
+Minerval's database or to its agent transcripts, and no claim enters the graph from it unless you propose it
 (see [Adding claims to the graph](#adding-claims-to-the-graph); only the
 claim's wording is kept). Results are cached in
 server memory for about an hour so re-opening a page is instant; only a
@@ -173,8 +180,9 @@ those passages where they sit, with no click, no charge and no API key.
 
 ## Metering
 
-All analysis and chat calls authenticate with your API key and are metered
-per token against your account's monthly allowance (#70). Reading claim
+All analysis and chat calls authenticate with your API key. Analysis is
+metered per token against your account (#70); chat is the Assistant's work,
+charged to your owl balance as it runs. Reading claim
 details is free and unmetered.
 
 ## How it works
@@ -182,7 +190,8 @@ details is free and unmetered.
 Capture the page's readable text → extract claims (Extractor) → match each
 against the graph (Matcher) → a dedicated **extension agent** judges how each
 on-page phrasing relates to what the graph knows and decides the markup
-(issue #72). The same agent powers the popup chat.
+(issue #72). The popup chat is the Assistant (`/assistant/conversations`),
+the same agent as minerval.ai/ask.
 
 Analysis is asynchronous (#93): the API answers 202 + a content hash once its
 grace window passes and the extension polls until the result is ready.

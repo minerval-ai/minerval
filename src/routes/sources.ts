@@ -103,13 +103,15 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
   // GET /sources/:source_id — the facts about a document that need no
   // judgment (#507): identity (authors, publisher, date, kind, DOI, an
   // archived copy), its other versions and republished copies, and what has
-  // happened to it since publication. The first section of the source page.
+  // happened to it since publication, and any interest recorded for it (§9).
+  // The first section of the source page.
   // Public and read-only, like a claim page. No response schema: the shape
   // is the read model's.
   app.get<{ Params: { source_id: string } }>("/:source_id", {
     schema: {
       tags: ["sources"],
-      summary: "Facts about a source: identity, versions, copies, corrections and retractions",
+      summary:
+        "Facts about a source: identity, versions, copies, corrections and retractions, and any recorded interest",
       params: {
         type: "object",
         properties: { source_id: { type: "string", format: "uuid" } },

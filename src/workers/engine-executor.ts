@@ -85,7 +85,7 @@ import type { OperatingPolicy } from "../services/operating-policy-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
 import { renderResearchReport } from "../services/research-commission-service.js";
-import { deliverReply, resumeMessages, takeSessionForResume } from "../services/session-service.js";
+import { deliverReply, resumeMessages, sessionPrivateReasons, takeSessionForResume } from "../services/session-service.js";
 import { runConsistencyChecker } from "../llm/agents/consistency-checker.js";
 import {
   carriedNotebook,
@@ -539,7 +539,7 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   const { session, replies } = taken;
   const funder = await funderContext(action);
   const messages = await resumeMessages(session, replies, {});
-  const resume = { sessionId: session.id, messages };
+  const resume = { sessionId: session.id, messages, privateReasons: sessionPrivateReasons(session, replies) };
   const input = (session.context?.input ?? {}) as never;
   let billedMicroUsd = 0;
   let failure: unknown = null;

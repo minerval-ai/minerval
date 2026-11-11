@@ -39,10 +39,12 @@ import { runWithUsageContext } from "../llm/usage-context.js";
 import { runAssistantTurn, type AssistantToolUse } from "../llm/agents/assistant.js";
 import {
   getAssistantContext,
+  EXTENSION_SECTION,
   NODE_SECTION,
   WEB_SECTION,
 } from "../llm/prompts/assistant.js";
 import { RUN_TURN_GUARD } from "../llm/prompts/turn-budget.js";
+import { getChatContextPrompt } from "../llm/prompts/extension-agent.js";
 import {
   assistantAuth,
   HELD_KINDS,
@@ -405,8 +407,36 @@ function transcriptOf(convo: AssistantConversation) {
   }));
 }
 
+/** The page a conversation was opened from in the browser extension. */
+export interface AssistantPageOrigin {
+  url: string | null;
+  title: string | null;
+  /** What the extension found on the page, as it reported it. */
+  claims: Array<{
+    verbatim_text: string;
+    verdict: string;
+    claim_id: string | null;
+    canonical_form: string | null;
+    status: string | null;
+  }>;
+}
+
+type Origin = { node_id?: string; page?: AssistantPageOrigin } | null;
+
 async function openedFrom(convo: AssistantConversation): Promise<string> {
-  const origin = convo.origin as { node_id?: string } | null;
+  const origin = convo.origin as Origin;
+  if (origin?.page) {
+    // Everything in this block is the page's or the extension's reading of
+    // it; the prompt's extension section says so.
+    return (
+      "the browser extension.\n\n" +
+      getChatContextPrompt({
+        pageUrl: origin.page.url,
+        pageTitle: origin.page.title,
+        pageClaims: origin.page.claims,
+      })
+    );
+  }
   if (!origin?.node_id) return "the Ask page";
   const card = (await getClaimCards([origin.node_id])).get(origin.node_id);
   return card
@@ -534,7 +564,10 @@ async function runTurn(
       runAssistantTurn({
         transcript: transcriptOf(convo),
         context,
-        sections: [WEB_SECTION, ...(convo.origin ? [NODE_SECTION] : [])],
+        sections:
+          convo.surface === "extension"
+            ? [EXTENSION_SECTION]
+            : [WEB_SECTION, ...((convo.origin as Origin)?.node_id ? [NODE_SECTION] : [])],
         model,
         account,
         conversationMicroUsd: convo.spentMicroUsd,
@@ -660,6 +693,8 @@ export async function startAssistantConversation(input: {
   user: AssistantUser;
   message: string;
   nodeId?: string | null;
+  /** Set when the conversation is opened from the browser extension. */
+  page?: AssistantPageOrigin | null;
   model?: string | null;
 }): Promise<AssistantResult> {
   const message = cleanMessage(input.message);
@@ -674,7 +709,12 @@ export async function startAssistantConversation(input: {
     .values({
       userId: input.user.id,
       title: titleOf(message),
-      origin: input.nodeId ? { node_id: input.nodeId } : null,
+      origin: input.page
+        ? { page: input.page }
+        : input.nodeId
+          ? { node_id: input.nodeId }
+          : null,
+      ...(input.page ? { surface: "extension" } : {}),
       model: input.model ?? null,
     })
     .returning();

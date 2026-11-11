@@ -627,6 +627,26 @@ beside each instance, and the edges behind a disclosure, in words), on
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
 `get_claim_instances`.
 
+A source may also carry a recorded **interest** (§9): a stake its author or
+publisher has in what it says, as with a lab's own system card or a
+company's account of its own product. An agent that notices one records it
+with `record_source_interest` (the Steward, and the researcher wherever it
+has the provenance tools that write): the party, the stake in a sentence or
+two, and a scope, either the source as a whole or one claim. The row goes
+to `source_interests`, which is append-only: a new record for the same
+source and scope supersedes the older one for readers, and the older rows
+are kept (`src/services/source-interest-service.ts`). The record is a fact
+about the source. It moves no status and discounts nothing: what the source
+says is evidence, and the Steward weighs it knowing the stake. It is served
+with the source's facts (`GET /sources/:id` and `get_source`, as
+`interests`, current records only), and on each instance's source wherever
+a claim's instances or provenance are read (`source_interest` on the
+instances of `GET /claims/:id`, `get_claim` and `get_claim_instances`;
+`source.interest` in `provenance_get_map` and `GET /claims/:id/provenance`).
+There a claim's own record is preferred to the source-wide one. The source
+page shows it as a notice, and the claim page marks the instance. There is
+no REST route that writes one.
+
 A claim is a canonical proposition with no home source, so `get_claim`
 returns the canonical record and an `instance_count`, and the instances only
 when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
@@ -1078,9 +1098,9 @@ contribution, and a Lookout's is a flag for a Steward to judge.
 
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
-live web page against graph state (verdicts range from "egregious" to "fine")
-and powers the extension's chat, grounded in the same graph tools. It never
-writes to the graph.
+live web page against graph state (verdicts range from "egregious" to "fine").
+It never writes to the graph. The extension's chat is no longer this agent's:
+it is the Assistant, opened from the page (docs/accounts.md).
 
 ### The Lean checker
 
@@ -1931,16 +1951,19 @@ A claim's page offers the three snippets under "Embed this claim", beside
 
 The extension analyzes the page you are reading: captured text flows through
 the Extractor and Matcher, then the Extension Agent judges each on-page claim
-against graph state and the verdicts are anchored as a non-destructive overlay,
-with a chat popup grounded in the same graph. Analysis answers immediately when
+against graph state and the verdicts are anchored as a non-destructive overlay.
+The chat popup is the Assistant, told which page it was opened from. Analysis answers immediately when
 the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
-Nothing the extension sends is persisted (#356). The page is whatever the
-reader has open, so the whole pipeline runs untraced (no `agent_runs` or
-`agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or instances,
-and keeps its result only in an in-memory cache; chat is the same. The MCP's
+Page text the extension sends is not persisted (#356). The page is whatever
+the reader has open, so the analysis pipeline runs untraced (no `agent_runs`
+or `agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or
+instances, and keeps its result only in an in-memory cache. Chat is the
+exception since it became the Assistant: a conversation is kept in the
+user's account, with the page's address, title and marked passages (never
+its text), and its runs are logged privately like any Assistant run. The MCP's
 on-demand analysis tools follow the same rule. Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)
