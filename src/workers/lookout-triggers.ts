@@ -22,10 +22,11 @@
  * is recorded, the Steward of every active node that asserts the source, or
  * rests on it through recorded provenance (a copy or version of the work,
  * or a source drawing on it), gets one `source_event` message naming the
- * notice and the path. A message spends nothing: the node becomes a
- * candidate, and whether its pass runs is the ledger's to decide, as for
- * any other message. The Steward decides what the notice means for its
- * node; a correction may change nothing.
+ * notice and the path (services/source-notice-service.ts, which the facts
+ * fetch's DOI check sends through too). A message spends nothing: the node
+ * becomes a candidate, and whether its pass runs is the ledger's to decide,
+ * as for any other message. The Steward decides what the notice means for
+ * its node; a correction may change nothing.
  *
  * The poll itself is a scan, not a judgment: it does not decide which
  * lookout cares about which retraction (that is the lookout's, in the
@@ -54,8 +55,12 @@ import {
   sourcesForDois,
 } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
-import { enqueueSteward } from "../services/queue-service.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
+import {
+  TOLD_NOTICE_TYPES,
+  tellStewardsOfSourceEvents,
+  type FreshSourceEvent,
+} from "../services/source-notice-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
 
 const FLAG_KEY = "lookout_retraction_poll";
@@ -115,77 +120,6 @@ async function writeMark(since: Date, polledAt: Date | null): Promise<void> {
   );
 }
 
-type SourceMatch = Awaited<ReturnType<typeof sourcesForDois>>[number];
-type Notice = Awaited<ReturnType<typeof retractionNoticesSince>>["notices"][number];
-type FreshEvent = { match: SourceMatch; notice: Notice };
-
-/**
- * Tell the Steward of every active node that asserts a source with a
- * freshly recorded notice, or rests on it through recorded provenance, what
- * happened and how the notice reaches the node: one message per node per
- * notice, however many of its sources the notice touches. Only events this
- * poll recorded for the first time are sent, so the overlap window and a
- * re-run never repeat a message. A message spends nothing (enqueueSteward):
- * the ledger decides whether the pass it asks for runs. One failed send is
- * logged and the rest still go, since the event is already recorded and
- * will not come round again.
- */
-async function tellStewards(
-  fresh: FreshEvent[],
-  resting: Awaited<ReturnType<typeof claimsRestingOnSources>>
-): Promise<number> {
-  const letters = new Map<string, { claimId: string; notice: Notice; paths: string[] }>();
-  const add = (claimId: string, notice: Notice, path: string) => {
-    const key = `${notice.notice_doi ?? notice.title ?? ""}|${claimId}`;
-    const letter = letters.get(key) ?? { claimId, notice, paths: [] };
-    if (!letter.paths.includes(path)) letter.paths.push(path);
-    letters.set(key, letter);
-  };
-  for (const { match: m, notice } of fresh) {
-    const named = `"${m.title || m.url}" (${m.url})`;
-    for (const claimId of m.claim_ids) {
-      add(claimId, notice, `${named} is one of this node's sources.`);
-    }
-    for (const r of resting.filter((x) => x.source_id === m.source_id)) {
-      add(
-        r.claim_id,
-        notice,
-        r.via === "copy_or_version"
-          ? `"${r.through_source_title}", one of this node's sources, is a copy or another version of ${named}.`
-          : `"${r.through_source_title}", one of this node's sources, draws on ${named}` +
-              (r.relation_type ? ` (recorded as ${r.relation_type}).` : ".")
-      );
-    }
-  }
-
-  let told = 0;
-  for (const { claimId, notice, paths } of letters.values()) {
-    const kind = (notice.type ?? "retraction").replace(/_/g, " ");
-    const when = notice.updated ? ` dated ${notice.updated.slice(0, 10)}` : "";
-    const where = notice.notice_doi ? ` The notice: https://doi.org/${notice.notice_doi}.` : "";
-    const title = notice.title ? ` ("${notice.title}")` : "";
-    const context =
-      `Crossref records a ${kind} notice${title}${when} against a document this ` +
-      `node rests on.${where}\n\n` +
-      paths.map((p) => `- ${p}`).join("\n") +
-      `\n\nOpen the document with provenance_read_source: its first window lists ` +
-      `the event. Decide what it means for your reading of the source and for ` +
-      `your assessment. A correction may change nothing, and a notice against a ` +
-      `source your verdict does not rest on may not either; say which in your ` +
-      `reasoning.`;
-    try {
-      await enqueueSteward({ claimId, trigger: "source_event", context });
-      told++;
-    } catch (err) {
-      console.warn(
-        `[retraction-poll] could not tell the Steward of ${claimId}:`,
-        err instanceof Error ? err.message : err
-      );
-    }
-  }
-  return told;
-}
-
 /**
  * One retraction poll. Exported so tests and an operator can drive it;
  * `force` ignores the cadence (not the high-water mark).
@@ -210,7 +144,8 @@ export async function retractionPollTick(
   const from = new Date(since.getTime() - 86_400_000);
   const window = await retractionNoticesSince({
     since: from,
-    types: ["retraction", "correction", "expression_of_concern"],
+    // The notices Stewards are told of: the list the facts fetch tells by too.
+    types: [...TOLD_NOTICE_TYPES],
     maxPages: MAX_PAGES_PER_POLL,
   });
   const notices = window.notices;
@@ -226,7 +161,7 @@ export async function retractionPollTick(
   // Beyond the claims that assert a matched source, the claims whose
   // recorded provenance runs through it (#507): a copy or another version
   // of the work, or a source that draws on it by a provenance edge.
-  const fresh: FreshEvent[] = [];
+  const fresh: FreshSourceEvent[] = [];
   for (const m of matches) {
     const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
     if (!notice) continue;
@@ -240,7 +175,7 @@ export async function retractionPollTick(
     });
     if (recorded) {
       result.sourceEvents++;
-      fresh.push({ match: m, notice });
+      fresh.push({ source: m, notice });
     }
   }
 
@@ -255,7 +190,7 @@ export async function retractionPollTick(
     ? await claimsRestingOnSources(matches.map((m) => m.source_id))
     : [];
 
-  result.stewardsTold = await tellStewards(fresh, resting);
+  result.stewardsTold = await tellStewardsOfSourceEvents(fresh, resting);
 
   for (const m of watched ? matches : []) {
     const through = resting.filter((r) => r.source_id === m.source_id);

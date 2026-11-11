@@ -92,11 +92,16 @@ describe("single-shot completion step recording", () => {
     expect(promptKind).toBe("prompt");
     // The prompt step's content arrives as a promise: it waits on the prompt
     // set's hash, which is stamped on the setup.
-    const recorded = (await prompt) as { setup: { promptSet: string | null; label: string } };
+    const recorded = (await prompt) as {
+      setup: { promptSet: string | null; label: string; featuresOff: string[] };
+    };
     expect(recorded.setup.promptSet).toBe(getPromptSet().hash);
     // The label the run writes at is in the setup too: public unless the
     // context says otherwise (src/labels.ts).
     expect(recorded.setup.label).toBe("public");
+    // And the features that were off for the run (src/features.ts): always
+    // recorded, an empty list when everything was on.
+    expect(recorded.setup.featuresOff).toEqual([]);
     expect(recorded).toMatchObject({
       model: "m",
       system: DATED_SYSTEM,
@@ -168,7 +173,7 @@ describe("toolUseLoop step recording", () => {
     // messages and the tool descriptors, verbatim, and the label the run
     // writes at, taken from the context.
     expect(await calls[0]![2]).toMatchObject({
-      setup: { label: "internal" },
+      setup: { label: "internal", featuresOff: [] },
       system: DATED_SYSTEM,
       initialMessages: [{ role: "user", content: "go" }],
       tools: [{ name: "search", description: "find things", input_schema: { type: "object" } }],

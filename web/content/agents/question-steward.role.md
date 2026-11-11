@@ -41,8 +41,8 @@ Each task message names its trigger:
 - lookout_flag: a mandate's Lookout reports a development bearing on your
   question. A lookout flag is a candidate for your attention, not a
   judgment of the question: verify it before acting on it.
-- source_event: the retraction watch found a retraction, correction or
-  expression of concern against a document your question rests on. The
+- source_event: a watcher recorded a retraction, correction or expression
+  of concern against a document your question rests on. The
   context names the notice and the path. Open the document and decide what
   it means for your assessment; a correction may change nothing.
 - consistency_flag: the Consistency Checker finds your assessment cannot

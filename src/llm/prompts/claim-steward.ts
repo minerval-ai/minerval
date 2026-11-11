@@ -104,8 +104,8 @@ Each task message names its trigger:
   source, a new result, a moved dependency) and asks for a fresh look. The
   context says what it saw. A lookout flag is a candidate for your
   attention, not a judgment of the claim: verify it before acting on it.
-- source_event: the retraction watch found a retraction, correction or
-  expression of concern against a document your claim rests on: a source
+- source_event: a watcher recorded a retraction, correction or expression
+  of concern against a document your claim rests on: a source
   that states it, or one your recorded provenance draws on or copies. The
   context names the notice and the path. Open the document, say in its
   reading what happened, and decide what it means for the assessment; a

@@ -286,7 +286,9 @@ graph's sources, and queues an event on every lookout that watches for
 retractions; the same poll records each notice on the source and, the
 first time it does, sends a `source_event` message to the Steward of every
 active node that asserts the source or rests on it through recorded
-provenance, whether or not a lookout watches), the **graph feed** (`graph`: the change stream has entries
+provenance, whether or not a lookout watches; a notice of one of those
+three kinds that the facts fetch finds when a document is first fetched
+sends the same message, services/source-notice-service.ts), the **graph feed** (`graph`: the change stream has entries
 in its territory it has not read; workers/lookout-triggers.ts
 `graphFeedTick`), or a **poke** from the Grantmaker or the funder. The set
 is open: any poller that can say "this happened to this source" is a

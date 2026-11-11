@@ -13,7 +13,8 @@
  * message on any other provider rather than degrading silently.
  *
  * Being the one path, it is also where every call with a system prompt is
- * told today's date (run-date.ts, #771).
+ * told today's date (run-date.ts, #771), and where an agent run in a
+ * deployment with features switched off is told which (withRunBrief below).
  *
  * This file does dispatch and provider-independent control flow only. The
  * request-building, wire format, and response parsing for each backend live in
@@ -39,6 +40,8 @@ import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
+import { withFeaturesOffNote } from "./features-off-note.js";
+import { offFeatures } from "../features.js";
 import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
 import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
 import { loadConfig } from "../config.js";
@@ -65,6 +68,26 @@ const DEFAULT_MAX_TOKENS = 8192;
 /** The streaming path's output ceiling (providers/anthropic.ts LONG_RUN_MAX_OUTPUT_TOKENS). */
 const LONG_RUN_MAX_TOKENS = 128_000;
 
+/**
+ * What the seam adds to the first task message of an agent run: the note
+ * that says which features this deployment has switched off
+ * (features-off-note.ts), and nothing when every feature is on, which is how
+ * the public deployment runs. The role prompts cannot say it, because they
+ * are the same text in every deployment, and an agent is told the limits it
+ * works under, with the reason.
+ *
+ * An agent run is a call with an agent on the usage context, which withAgent
+ * sets and every agent's entry point passes through; a run that is not
+ * traced (untraced) is still one. A call outside any agent run is sent as
+ * given. Every function here that sends messages applies this on entry, and
+ * a conversation that already carries the note is left alone, so a loop's
+ * later turns and a resumed transcript are told once, in the first message.
+ */
+function withRunBrief(messages: MessageParam[]): MessageParam[] {
+  if (!getUsageContext().agent) return messages;
+  return withFeaturesOffNote(messages);
+}
+
 export async function complete(options: {
   messages: MessageParam[];
   system?: SystemPrompt;
@@ -76,7 +99,11 @@ export async function complete(options: {
   effort?: EffortLevel;
 }): Promise<CompletionResult> {
   checkBudget();
-  options = { ...options, system: withRunDate(options.system) };
+  options = {
+    ...options,
+    system: withRunDate(options.system),
+    messages: withRunBrief(options.messages),
+  };
   const model = options.model ?? DEFAULT_MODEL;
   // Sonnet 5.5 runs adaptive thinking by default and thinking spend counts
   // against max_tokens, so the old 4096 default left too little room for the
@@ -142,8 +169,9 @@ function recordPromptStep(step: {
   );
   // The setup as versioned parts (services/setup-service.ts): each part is
   // stored once, and the step records which ones it ran under, with the
-  // label the run writes at (src/labels.ts). Never fails the run: a setup
-  // that cannot be split or stored is left out.
+  // label the run writes at (src/labels.ts) and the features that were off
+  // for it (src/features.ts). Never fails the run: a setup that cannot be
+  // split or stored is left out.
   // The registry that names role parts imports every role's prompt module,
   // so storage loads lazily, off the step's path.
   let setup: SetupRecord | null = null;
@@ -152,7 +180,8 @@ function recordPromptStep(step: {
       system: step.system ?? null,
       tools: tools as Array<{ name: string } & Record<string, unknown>>,
     });
-    setup = setupRecord(parts, step, loadConfig().gitSha ?? null, currentLabel());
+    const config = loadConfig();
+    setup = setupRecord(parts, step, config.gitSha ?? null, currentLabel(), offFeatures(config));
     const agent = context.agent ?? "unknown";
     void import("../services/setup-service.js")
       .then((s) => s.storeSetupParts(s.classifyParts(parts, agent)))
@@ -250,7 +279,11 @@ export async function completeWithTools(options: {
 }): Promise<ToolCompletionResult> {
   checkBudget();
   const model = options.model ?? DEFAULT_MODEL;
-  options = { ...options, system: withRunDate(options.system) };
+  options = {
+    ...options,
+    system: withRunDate(options.system),
+    messages: withRunBrief(options.messages),
+  };
   return getAdapter(model).completeWithTools({
     ...options,
     model,
@@ -279,7 +312,11 @@ export async function completeStructured<T>(options: {
   effort?: EffortLevel;
 }): Promise<T> {
   checkBudget();
-  options = { ...options, system: withRunDate(options.system) };
+  options = {
+    ...options,
+    system: withRunDate(options.system),
+    messages: withRunBrief(options.messages),
+  };
   const model = options.model ?? DEFAULT_MODEL;
   const result = await getAdapter(model).completeStructured<T>({
     ...options,
@@ -503,8 +540,14 @@ export async function toolUseLoop(options: {
    */
   onEnd?: (transcript: MessageParam[]) => void;
 }): Promise<ToolCompletionResult> {
-  // Dated once for the whole loop, so every turn sends the same prompt.
-  options = { ...options, system: withRunDate(options.system) };
+  // Dated once for the whole loop, so every turn sends the same prompt, and
+  // briefed once: the first message carries the run's brief from here on, in
+  // what is sent, in the prompt step and in the transcript handed to onEnd.
+  options = {
+    ...options,
+    system: withRunDate(options.system),
+    initialMessages: withRunBrief(options.initialMessages),
+  };
   const messages = [...options.initialMessages];
   const finish = (r: ToolCompletionResult): ToolCompletionResult => {
     options.onEnd?.([...messages, { role: "assistant", content: r.rawContent } as MessageParam]);
@@ -876,8 +919,13 @@ export async function longRunToolLoop(options: {
   afterTurn?: (state: LongRunLoopState, result: ToolCompletionResult) => Promise<void>;
   reminder?: (state: LongRunLoopState) => string | null;
 }): Promise<LongRunLoopResult> {
-  // Dated once for the whole run, so every turn sends the same prompt.
-  options = { ...options, system: withRunDate(options.system) };
+  // Dated once for the whole run, so every turn sends the same prompt, and
+  // briefed once, in the first message.
+  options = {
+    ...options,
+    system: withRunDate(options.system),
+    initialMessages: withRunBrief(options.initialMessages),
+  };
   const model = options.model ?? DEFAULT_MODEL;
   const adapter = getAdapter(model);
   const streaming = adapter.completeWithToolsStreaming;
