@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { loadClaims, loadOpenPrizes, loadTag, loadTags, loadTerritories } from "@/lib/data";
+import { loadClaims, loadFeatures, loadOpenPrizes, loadTag, loadTags, loadTerritories } from "@/lib/data";
+import { featureOn } from "@/lib/features";
 import { claimTypeMeta, DEFINED_IN, IMPORTANCE_FLOORS, importanceFloorMin } from "@/lib/ontology";
 import type { ImportanceFloor } from "@/lib/ontology";
 import { StatusBadge, StandingBadge, Unassessed, Importance } from "@/components/Assessment";
@@ -75,10 +76,14 @@ export default async function ClaimsIndex({
   const impFloor: ImportanceFloor =
     IMPORTANCE_FLOORS.find((f) => f.value === impRaw)?.value ?? "any";
   const minImportance = importanceFloorMin(impFloor);
+  // Where prizes are off there is no prize filter and no prize strip, and a
+  // link that still carries the filter is read as if it did not.
+  const features = await loadFeatures();
+  const prizesOn = featureOn(features, "prizes");
   // Only claims with a live prize (docs/mathematics.md §8.3), and a claim-type
   // restriction (the listing-backed territory's front door); an unknown type
   // is ignored rather than passed through.
-  const withPrizes = prizesRaw === "1" || prizesRaw === "true";
+  const withPrizes = prizesOn && (prizesRaw === "1" || prizesRaw === "true");
   const claimType: ClaimType | undefined =
     typeRaw && claimTypeMeta(typeRaw) ? (typeRaw as ClaimType) : undefined;
   // A topic-tag restriction (#272): the slug as given; the lever shows the
@@ -99,7 +104,7 @@ export default async function ClaimsIndex({
     const [territories, recent, prizes, topics] = await Promise.all([
       loadTerritories(),
       loadClaims(undefined, { assessed, minImportance }),
-      loadOpenPrizes(PRIZE_STRIP),
+      prizesOn ? loadOpenPrizes(PRIZE_STRIP) : null,
       loadTags(TOPIC_STRIP),
     ]);
 
@@ -120,13 +125,13 @@ export default async function ClaimsIndex({
           {territories.length} investigations · growing as claims are ingested
         </p>
 
-        <ClaimsControls q="" assessed={assessed} imp={impFloor} />
+        <ClaimsControls q="" assessed={assessed} imp={impFloor} prizeFilter={prizesOn} />
 
         <Territories territories={territories} />
 
         <Topics items={topics.tags} />
 
-        <OpenPrizes items={prizes.prizes.slice(0, PRIZE_STRIP)} />
+        {prizes && <OpenPrizes items={prizes.prizes.slice(0, PRIZE_STRIP)} />}
 
         <RecentClaims items={recent.results.slice(0, RECENT_STRIP)} />
 
@@ -174,6 +179,7 @@ export default async function ClaimsIndex({
         assessed={assessed}
         imp={impFloor}
         prizes={withPrizes}
+        prizeFilter={prizesOn}
         type={claimType}
         tag={tagLever}
         kind={kind}
@@ -238,7 +244,7 @@ export default async function ClaimsIndex({
                       and the small machine-checked badge; the importance
                       figure stays alone at the far right */}
                   {c.prize_micro_usd != null && <PrizeChip micro={c.prize_micro_usd} linkTo={claimHref} />}
-                  {c.checked && <MachineChecked kind={c.checked} size="sm" linkTo={claimHref} />}
+                  {c.checked && <MachineChecked kind={c.checked} size="sm" linkTo={claimHref} rules={prizesOn} />}
                   {/* topic tags (#272): each chip narrows the list to its
                       topic; the active one is not repeated */}
                   <TopicChips tags={(c.tags ?? []).filter((t) => t.slug !== tagSlug)} limit={3} />

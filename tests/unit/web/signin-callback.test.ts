@@ -21,6 +21,8 @@ const h = vi.hoisted(() => {
   return {
     RedirectSignal,
     session: null as null | { externalId: string },
+    // Which optional features the deployment has on (web/lib/features.ts).
+    features: { extension: true, mathematics: true, prizes: true },
     redirect: vi.fn((url: string): never => {
       throw new RedirectSignal(url);
     }),
@@ -46,6 +48,9 @@ vi.mock("../../../web/auth", () => ({
   googleEnabled: () => true,
   devLoginEnabled: () => true,
 }));
+// The page asks which features are on. The real loader lives in the data
+// layer, which needs the API client and React; the page only needs the answer.
+vi.mock("../../../web/lib/data", () => ({ loadFeatures: async () => h.features }));
 
 import SignInPage from "../../../web/app/signin/page";
 import {
@@ -101,10 +106,22 @@ async function signInRedirectTos(callbackUrl: unknown): Promise<unknown[]> {
   return h.signIn.mock.calls.map((call) => (call[1] as { redirectTo?: unknown }).redirectTo);
 }
 
+/** Every piece of text in a rendered tree, in order, including a page head's title and lede. */
+function textOf(node: unknown): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    const { props } = node as Node;
+    return [props.title, props.lede, props.children].map(textOf).join("");
+  }
+  return "";
+}
+
 beforeEach(() => {
   h.redirect.mockClear();
   h.signIn.mockClear();
   h.session = null;
+  h.features = { extension: true, mathematics: true, prizes: true };
 });
 
 describe("/signin callbackUrl (F45)", () => {
@@ -141,5 +158,22 @@ describe("/signin callbackUrl (F45)", () => {
 
   it.each(HONEST_PATHS)("keeps the %s callback unchanged (signed out)", async (_src, path) => {
     expect(await signInRedirectTos(viaSigninLink(path))).toEqual([path, path, path]);
+  });
+});
+
+// The sign-in page names the browser extension among what an account is for.
+// A deployment with the extension switched off has no extension to name
+// (docs/architecture.md, "Features").
+describe("/signin and the extension feature", () => {
+  it("names the extension where the deployment has it", async () => {
+    const text = textOf(await render(undefined));
+    expect(text).toContain("consumer (API keys, usage, the coming browser extension) and contributor");
+  });
+
+  it("does not name the extension where it is switched off", async () => {
+    h.features = { extension: false, mathematics: true, prizes: true };
+    const text = textOf(await render(undefined));
+    expect(text).not.toMatch(/extension/i);
+    expect(text).toContain("consumer (API keys, usage) and contributor");
   });
 });

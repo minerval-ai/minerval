@@ -7,7 +7,7 @@
  * question_assessments as a standing.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import {
   ANSWER_BASES,
   ANSWER_RELATIONS,
@@ -187,8 +187,8 @@ export async function recordQuestionAssessment(input: {
       `INSERT INTO question_assessments
          (claim_id, standing, favored_claim_ids, summary, reasoning_trace, incomplete,
           model, funded_by_job_id, trigger, trigger_context, confidence, marginal_yield,
-          run_id)
-       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+          run_id, sensitivity_label)
+       VALUES ($1, $2, $3::uuid[], $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
       [
         input.claimId,
         input.standing,
@@ -202,8 +202,10 @@ export async function recordQuestionAssessment(input: {
         input.triggerContext ?? null,
         input.confidence ?? null,
         input.marginalYield ?? null,
-        // The run that wrote it, stamped from the usage context.
+        // The run that wrote it, and the label it writes at
+        // (src/labels.ts), both stamped from the usage context.
         getUsageContext().runId ?? null,
+        currentLabel(),
       ]
     );
     // What the assessment was made against, in the same transaction (#566).

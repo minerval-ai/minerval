@@ -25,6 +25,8 @@ import { OwlMark } from "../../components/OwlMark";
 import { PrizeAward } from "../../components/account/PrizeAward";
 import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
+import { loadFeatures } from "../../lib/data";
+import { featureOn } from "../../lib/features";
 import type { ContributorProfile, OpenPrizeClaim } from "../../lib/types";
 import { PageHead } from "@/components/PageHead";
 
@@ -169,6 +171,14 @@ export default async function AccountPage({
   const activeKeys = keys.filter((k) => !k.revoked_at);
   const revokedKeys = keys.filter((k) => k.revoked_at);
   const caps = entitlement.caps_owls ?? {};
+  // What the account shows about an optional part of the product goes with
+  // that part: the extension's price rows, and the prize sections, whose
+  // forms post to routes that do not exist where prizes are off. The ledger
+  // below is left whole, because it is a record of what was charged and
+  // paid, whatever is switched on today.
+  const features = await loadFeatures();
+  const extensionOn = featureOn(features, "extension");
+  const prizesOn = featureOn(features, "prizes");
 
   return (
     <div className="col-wide account">
@@ -242,8 +252,12 @@ export default async function AccountPage({
               ["propose a claim (reviewed, then assessed)", caps.claim_proposal],
               ["order a claim assessment", caps.assessment],
               ["submit a source for extraction", caps.source_ingest],
-              ["extension page analysis", caps.extension_analysis],
-              ["extension chat exchange", caps.extension_chat],
+              ...(extensionOn
+                ? [
+                    ["extension page analysis", caps.extension_analysis],
+                    ["extension chat exchange", caps.extension_chat],
+                  ]
+                : []),
               ["API text analysis (match / extract / assess)", caps.text_analysis],
             ]
               .filter(([, cap]) => typeof cap === "number")
@@ -309,7 +323,7 @@ export default async function AccountPage({
       </section>
 
       {/* ------------------------------------------------ prizes (§8.7) */}
-      {prizeClaims.length > 0 && (
+      {prizesOn && prizeClaims.length > 0 && (
         <section>
           <h2>Prizes</h2>
           <p>
@@ -416,10 +430,11 @@ export default async function AccountPage({
         <h2>API keys</h2>
         <p>
           Keys authenticate requests to the Minerval API as you (header{" "}
-          <code>x-api-key</code>). Create one for each surface, a CLI or the
-          browser extension, so that each can be revoked on its own.
+          <code>x-api-key</code>). Create one for each surface
+          {extensionOn && <>, a CLI or the browser extension,</>} so that each
+          can be revoked on its own.
         </p>
-        <KeyCreator />
+        <KeyCreator extension={extensionOn} />
         {activeKeys.length > 0 && (
           <table className="account-table">
             <thead>
@@ -571,7 +586,7 @@ export default async function AccountPage({
           </span>
           {/* prize owls beside, not inside, owls earned (§8.7): the
               leaderboard sum excludes them */}
-          {typeof user.owls_prized === "number" && user.owls_prized > 0 && (
+          {prizesOn && typeof user.owls_prized === "number" && user.owls_prized > 0 && (
             <span className="summary-chip">
               {owls(user.owls_prized)} owls in prizes
             </span>

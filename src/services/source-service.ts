@@ -6,6 +6,7 @@ import { sources } from "../db/schema.js";
 import { createJob, type JobAttribution } from "./job-service.js";
 import { sourceContentHash } from "./source-content.js";
 import { enqueueUrlExtraction } from "./queue-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /**
  * Find or create the source row for a URL, without enqueueing extraction.
@@ -54,6 +55,9 @@ export async function getOrCreateSource(input: {
       rawContent: input.content,
       contentHash: sourceContentHash(input.content),
       pageUrlHash: pageHashOf(input.url),
+      // The label of the run recording it (src/labels.ts); a plain request
+      // outside any run records it as public.
+      sensitivityLabel: currentLabel(),
     })
     .returning();
   return source!;

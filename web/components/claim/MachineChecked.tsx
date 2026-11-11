@@ -15,13 +15,17 @@ import { Term } from "../Term";
 // clip overflow (the map's preview panel), where the meaning is given in the
 // panel's own prose instead.
 export function MachineChecked({
-  kind, size = "sm", linkTo, align, plain = false,
+  kind, size = "sm", linkTo, align, plain = false, rules = true,
 }: {
   kind: CheckKind;
   size?: "sm" | "lg";
   linkTo?: string;
   align?: "center" | "start" | "end";
   plain?: boolean;
+  // Whether the popover links to the prize rules, which define the term.
+  // False in a deployment with prizes switched off, where that page does
+  // not exist; the gloss still says what the badge means.
+  rules?: boolean;
 }) {
   const m = MACHINE_CHECKED[kind];
   const cls = `badge checked${size === "lg" ? " lg" : ""}`;
@@ -36,7 +40,7 @@ export function MachineChecked({
   return (
     <Term
       gloss={m.gloss}
-      href={DEFINED_IN.machineChecked}
+      href={rules ? DEFINED_IN.machineChecked : undefined}
       source={RULES_SOURCE}
       linkTo={linkTo}
       align={align}

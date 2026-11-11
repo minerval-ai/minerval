@@ -5,7 +5,9 @@ import { createKeyAction, type CreateKeyState } from "./actions";
 
 // Client island so the one-time plaintext key can be shown inline after
 // creation (it is never persisted anywhere — copy it or lose it).
-export function KeyCreator() {
+// `extension` says whether this deployment has the browser extension, which
+// is the example key name; without it the field gives no example.
+export function KeyCreator({ extension = true }: { extension?: boolean }) {
   const [state, formAction, pending] = useActionState<CreateKeyState, FormData>(
     createKeyAction,
     {}
@@ -16,7 +18,7 @@ export function KeyCreator() {
       <form action={formAction} className="key-create">
         <input
           name="name"
-          placeholder='key name, e.g. "browser extension"'
+          placeholder={extension ? 'key name, e.g. "browser extension"' : "key name"}
           maxLength={120}
           required
           autoComplete="off"

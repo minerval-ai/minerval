@@ -23,11 +23,12 @@ import {
 // are either the same in meaning (cosine 1) or unrelated (cosine 0), and a
 // keyword match is never reordered by a stray fraction of similarity:
 //   - text about the sun or a solar eclipse lies along axis 0;
-//   - a bare search token of the kind these tests mint (`zs` and eight hex
-//     digits) has the last axis to itself, so searching for one matches
-//     nothing by meaning. Hashed with the rest, it landed on another
-//     request's axis about once in 1,500 and the search then returned that
-//     request too;
+//   - a text of one word has the last axis to itself. Every search token
+//     these tests mint is one word (`zs` or `zr` and eight hex digits,
+//     sometimes with a suffix) and no request's text is, so searching for
+//     one matches nothing by meaning. Hashed with the rest, a token landed
+//     on some request's axis about once in 1,500 per request and the search
+//     then returned that request too;
 //   - any other text is hashed onto one of the axes between.
 // `down` makes every call fail, as the embedder does when it is.
 const embedder = vi.hoisted(() => ({ down: false }));
@@ -37,7 +38,7 @@ vi.mock("../../src/services/embedding-service.js", () => ({
     const v = new Array(1536).fill(0);
     let h = 0;
     for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 1534;
-    const axis = /\b(sun|solar|eclipse)\b/i.test(text) ? 0 : /^zs[0-9a-f]{8}$/.test(text.trim()) ? 1535 : 1 + h;
+    const axis = /\b(sun|solar|eclipse)\b/i.test(text) ? 0 : /^\S+$/.test(text.trim()) ? 1535 : 1 + h;
     v[axis] = 1;
     return v;
   }),

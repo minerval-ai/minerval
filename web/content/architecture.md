@@ -2101,6 +2101,14 @@ could not proceed.
 whether it is on and what switching it off removes. That is how the web app
 and outside agents learn what a deployment has.
 
+The web app reads that list on the server (`web/lib/features.ts`) and leaves
+out what belongs to a feature that is off. Its links, panels, badges and
+filters are not rendered, the fields a core route still carries about it are
+not shown, and a page that exists only for it (the prize listing, the prize
+rules, a proof attempt's report) answers "not found". If the list cannot be
+read, the web app shows everything, so a passing error never hides part of a
+site that has it.
+
 ---
 
 ## Deployment
