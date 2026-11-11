@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 5
+    version: 6
     since_epoch: 2026-11-responsive-funding
     changelog:
+      6: "plan_items: a stewarding item is a standing order its mandate commissions (#849); its money is in commissions with commissioned_by plan, and waiting or blocked says the rate or escrow has no room"
       5: "nodes carries steward_park_reason (#846): why a node is parked after failed Steward passes, so a query can find premises that will not be judged until someone commissions them"
       4: "assessments carries relabeled_from (#848): the retired label a migration carried a status over from, set until the node is re-judged; a query lists that backlog with its open reassess rows"
       3: "plan_items carries a plan's proposals (#656): what a propose item proposed, the contribution it filed, the node it became, and which items wait on it"
@@ -82,6 +83,12 @@ unknown.
   filed (join `contributions`), and node_id the node it became or landed
   on once accepted. An item with node_ref and no node_id is waiting on the
   proposal whose proposal_ref that is.
+  An `assess`, `reassess` or `deepen` item is a
+  standing order its mandate commissions: once placed, its money is the
+  row in `commissions` on that action_id with commissioned_by `plan`. A
+  ledger_status of `waiting` on one is an order the mandate's daily rate
+  or escrow has no room for yet, and `blocked` one that could never fit;
+  ledger_reason gives the figures.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at

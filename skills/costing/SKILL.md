@@ -7,7 +7,7 @@ description: >-
   worth doing is a separate judgment.
 metadata:
   minerval:
-    version: 6
+    version: 7
     since_epoch: 2026-09-domain-skills
     changelog:
       3: Consistency sweeps are on cost_sheet and fundable as plan items (#831), so the Grantmaker prices one by its partition's size.
@@ -15,6 +15,7 @@ metadata:
       4: "Work is commissioned whole: budget a commission at the high end of the cost range, since what the run does not spend comes back, and petition when a run turns out to need more. The Grantmaker's list counts the officers' sittings and drops funding part of a request."
       5: "survey_scope is retired: query_sql counts the subclaims a deepen would release across a subtree."
       6: "A request's work runs at the budget its payer gives, not at the quote (#885): fund it at the quote, or below it only to buy a stage, and read a run's funding mark before its outcome. A scoping quote prices only work a Researcher has the means to do."
+      7: "A stewarding plan item is a standing order the mandate commissions (#849): its budget is budget_owls or the pass's estimate, on the strong tier unless the item says standard, and a deepen item also orders a pass on each child waiting for one. The daily rate must cover one pass's budget."
     kind: method
 ---
 
@@ -93,12 +94,18 @@ it as an estimate, and say what it buys. What to count for each kind of
 work:
 
 - **assess and reassess**: one Steward pass each, on the standard or the
-  strong tier.
-- **deepen**: one pass on the node. The children it releases get open
-  rows of their own, each a pass when you fund it; get_decomposition shows
-  how many are waiting, and query_sql counts them across a subtree. Price the first level from
-  that, and keep room for the levels after it, since nobody knows the
-  size of the tree in advance.
+  strong tier. A plan item is a standing order for that pass: your mandate
+  commissions it at the item's budget_owls, or at the pass's estimate when
+  the item names none, on the strong tier unless the item's variant says
+  standard. Price the item at that budget; what the pass does not spend
+  comes back.
+- **deepen**: one pass on the node, and one on each of its children that
+  is waiting for a pass (the stubs it releases, and the ones the node's own
+  pass mints), each at the item's budget and tier. get_decomposition shows
+  how many are waiting, and query_sql counts them across a subtree. Price
+  the item as the node plus that first level, and keep room for the levels
+  after it, which are further items, since nobody knows the size of the
+  tree in advance.
 - **ingest**: one ingestion per source. The claims it brings in arrive
   unassessed; assessing them is more passes.
 - **formalize and attempt_proof**: their own lines. An attempt at the max
@@ -142,7 +149,12 @@ work:
 - **petitions**: what your officers grant to runs that turned out to need
   more. Keep room for it in proportion to how hard the work is to foresee.
 
-The daily rate decides how fast the budget is spent, not how much.
+The daily rate decides how fast the budget is spent, not how much. Every
+budget the mandate commissions, a plan item's included, is held against
+the day's rate until its run settles, so set the rate above the largest
+single budget you plan: an order larger than the whole rate can never be
+placed and reads blocked, and one the day has no room left for waits for
+room, in plan order.
 
 ## For the Contribution Reviewer and the Dispute Arbitrator
 

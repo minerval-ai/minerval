@@ -72,6 +72,12 @@ unknown.
   filed (join `contributions`), and node_id the node it became or landed
   on once accepted. An item with node_ref and no node_id is waiting on the
   proposal whose proposal_ref that is.
+  An `assess`, `reassess` or `deepen` item is a
+  standing order its mandate commissions: once placed, its money is the
+  row in `commissions` on that action_id with commissioned_by `plan`. A
+  ledger_status of `waiting` on one is an order the mandate's daily rate
+  or escrow has no room for yet, and `blocked` one that could never fit;
+  ledger_reason gives the figures.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at

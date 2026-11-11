@@ -1311,9 +1311,10 @@ result. A Steward pays from its pass's budget: every lane that runs a
 Steward sets one on the usage context (`withPassBudget` in
 `src/llm/usage-context.ts`), namely the allocations covering a ledger
 action, what is left of the background daily budget on the fallback lane,
-the cap a buyer was quoted for a paid order, the remaining budget of the
-job funding a money trigger or a deep decomposition, and a mandate's
-uncommitted budget. What is left is that budget less the pass's metered
+the cap a buyer was quoted for a paid order, and the remaining budget of
+the job funding a money trigger or a deep decomposition. (A mandate's plan
+items are commissions on ledger actions, so a pass they buy works to the
+allocation covering it.) What is left is that budget less the pass's metered
 spend, the research it already launched included; a pass with no budget is
 not offered `delegate_research`. A Grantmaker pays from its mandate's
 uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),

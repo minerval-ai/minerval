@@ -272,10 +272,12 @@ budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
 items. A live mandate executes through the action ledger
 (docs/allocation.md): planning runs, its Grantmaker's periodic review
 passes, and ingest items are self-funded ledger actions run by the engine
-executor (`src/workers/engine-executor.ts`); plan claim items and the
-'deepen' policy run direct steward passes (`src/workers/grant-pipeline.ts`);
-'cover'/'maintain' mandates spend through their own valuations and daily
-allocator. Mandates also fund each other as peers (regrants) and can spawn
+executor (`src/workers/engine-executor.ts`); a plan's claim items, and
+the nodes a 'deepen' policy mandate's scope holds waiting, are Steward
+passes the mandate commissions within its daily rate and escrow
+(`src/services/standing-order-service.ts`), run with every other
+commissioned pass; everything else a mandate pays for, its officers and
+lookouts commission under its operating policy. Mandates also fund each other as peers (regrants) and can spawn
 new mandates with their own Grantmakers. Direct `POST /grants` (scope +
 policy + budget) remains for service/operator tooling.
 
