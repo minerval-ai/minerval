@@ -1096,7 +1096,7 @@ Design principles, in force in the implementation:
   of the claim graph and the truth. Mandates that attempt to warp or
   influence the graph's conclusions or ideology are declined outright, at
   any budget, and the agent says so.
-- **Every action type is fundable.** Mandate plans mix `assess`,
+- **Every action type is fundable.** Mandate plans mix `propose`, `assess`,
   `reassess`, `deepen`, `ingest`, `formalize` and `attempt_proof` items —
   "ingest and assess everything in this article or series" is a normal
   mandate, with source URLs as ingest items metered to the grant's escrow.
@@ -1108,10 +1108,40 @@ Design principles, in force in the implementation:
   goal and grows it on review passes. Ingesting a source brings in every
   claim it makes, so the sources a mandate reads decide which claims exist
   to be assessed. A live mandate's Grantmaker contributes through the
-  Contribution Reviewer like anyone (`submit_contribution`), new claims
-  and questions included, each review paid from the escrow
+  Contribution Reviewer like anyone (`submit_contribution`), new claims,
+  questions and quantities included, each review paid from the escrow
   (`submitGrantContribution`); an accepted proposal gets no express pass
   charged to the funder, since the mandate funds its own passes.
+- **A mandate can be planned around a node the graph does not hold yet
+  (#656).** A funder's question, claim or quantity that the graph holds in
+  no wording used to leave the plan with nothing to assess, deepen or be
+  scoped to until a later review pass. A plan now carries it as a
+  `propose` item: the `kind` proposed (claim, quantity or question, the
+  same for all three), the wording (`text`), and a rationale that becomes
+  the contribution's public record. Other items name it by its `ref`
+  (`claim_ref` in place of `claim_id`), and the mandate's scope may too
+  (`scope_ref` in place of `scope_claim_id`). A mandate's agents still
+  write nothing to the graph (§19): drafting the plan files nothing and
+  charges nothing, and once the mandate is live the plan materializer
+  files the proposal through the Grantmaker's own contribution door
+  (`submitGrantContribution`), once, with its review reserved against and
+  paid from the escrow like any other. The Contribution Reviewer judges
+  the wording; on an accept the Matcher settles the node's kind and
+  canonical form, or lands the proposal on a node the graph already holds
+  under other words. Either way the materializer writes that node's id
+  onto the propose item and onto every item that named it, which are
+  ordinary items from then on, and sets `grants.scope_claim_id` for a
+  mandate whose `scope_ref` named it. Until then the propose item and its
+  dependents read `waiting`; a rejected proposal reads `blocked` with the
+  Reviewer's reasons, as do its dependents, and none of their work is
+  priced or run. An identical proposal the mandate already filed is
+  adopted, never paid for twice. A funded mandate materializes its
+  proposals at funding, and each review pass, which a decided proposal
+  wakes (`contribution_reviewed`), brings them up to date before it reads
+  the plan, so nothing waits on the six-hour sweep. `adjust_plan` may drop
+  a proposal that has not been filed; one that has is a contribution on
+  the public record like any other, and the node it became is the
+  graph's.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and
@@ -1143,7 +1173,11 @@ Design principles, in force in the implementation:
   and a dead one never look alike (#416), and the plan's executed count
   (the review briefing, `grant_overview`'s `plan_counts`) is the number of
   items whose work ran, never the cursor's position (#427). Per kind:
-  `assess` / `reassess` / `deepen` need an active claim, queue it for its
+  `propose` needs a kind and a wording, files its contribution once the
+  mandate is active, waits on the review, and is done when the proposal is
+  a node;
+  `assess` / `reassess` / `deepen` need an active claim (or, by
+  `claim_ref`, the proposal that will become one), queue it for its
   Steward and open its assess group once per item (a finished pass stays
   finished, whichever lane ran it: the mandate's direct steward lane closes
   the row it ran, and a pass that ran elsewhere while the row sat open

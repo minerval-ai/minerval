@@ -22,10 +22,23 @@ import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import type { PlanItemLedger } from "./action-service.js";
+import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
+
+/** The longest wording a proposal carries, at every door (contribution-service.ts). */
+export const PROPOSAL_TEXT_MAX_CHARS = 2000;
+
+/** A propose item's ref: a short label, the same shape as a slug. */
+const REF_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/**
+ * A propose item's rationale is filed as the contribution's content, which
+ * the Reviewer's door holds to this length (submitGrantContribution).
+ */
+const PROPOSAL_RATIONALE_MIN_CHARS = 40;
 export type GrantPolicy = (typeof GRANT_POLICIES)[number];
 
 export interface PlanItem {
@@ -56,8 +69,17 @@ export interface PlanItem {
    *                 follow. Funded from the mandate's escrow and day like
    *                 an ingest item; consumed by the first sweep of the
    *                 partition that finishes after the item opened its row.
+   * propose       — a claim, quantity or question the graph does not hold
+   *                 (#656): `kind` and `text`, filed once the mandate is
+   *                 live as a contribution through the Contribution Reviewer
+   *                 (§19), its review paid from the escrow. The Matcher
+   *                 settles its kind and wording, or lands it on a node the
+   *                 graph already holds. `ref` names it so other items
+   *                 (`claim_ref`) and the mandate's scope (`scope_ref`) can
+   *                 bind to the node it becomes.
    */
   action:
+    | "propose"
     | "assess"
     | "reassess"
     | "deepen"
@@ -66,6 +88,20 @@ export interface PlanItem {
     | "attempt_proof"
     | "sweep";
   claim_id?: string;
+  /**
+   * In place of claim_id on a claim item: the `ref` of a propose item in
+   * the same plan. The materializer writes claim_id once the proposal is a
+   * node, and the item is then an ordinary one.
+   */
+  claim_ref?: string;
+  /** propose only: a label for the proposal, unique in the plan. */
+  ref?: string;
+  /** propose only: the kind proposed; the Matcher settles the node's kind. */
+  kind?: NodeKind;
+  /** propose only: the wording proposed. */
+  text?: string;
+  /** propose only, written by the materializer: the contribution it filed. */
+  contribution_id?: string;
   url?: string;
   /** sweep only: a topic tag's slug, or "residual". */
   partition?: string;
@@ -99,8 +135,26 @@ export const PLAN_KIND_RULES =
   "What each kind needs to become a priced ledger row (the tool result " +
   "and grant_overview report each item's standing as open, running, " +
   "done, cancelled, waiting, or blocked, with the reason): " +
+  "propose: a claim, quantity or question the graph does not hold in any " +
+  "wording (search first): kind, text (the wording, neutral; a quantity's " +
+  "says what is measured, in which population and unit) and a rationale " +
+  "saying why the graph needs the node, in at least " +
+  `${PROPOSAL_RATIONALE_MIN_CHARS} characters, since it is filed with the ` +
+  "proposal as the mandate's public record. Nothing is filed until the mandate is live; " +
+  "then it goes to the Contribution Reviewer as a contribution like " +
+  "anyone's, shown as from a funded mandate, and its review is paid from " +
+  "your escrow (cost_sheet: contribution_review_usd), so price it in. The " +
+  "item waits while the review is pending, and is done when the proposal " +
+  "is accepted: the Matcher settles the node's kind and canonical wording, " +
+  "or lands it on a node the graph already holds under other words, and " +
+  "the result names the node either way. A rejected proposal reads " +
+  "blocked with the Reviewer's reasons; reword it in a new item or drop " +
+  "what depended on it. Give the item a ref and other items may name it " +
+  "as claim_ref in place of claim_id (and the mandate as scope_ref): they " +
+  "wait for the review, take the node's id when it is accepted, and are " +
+  "priced and run like any other item from then on. " +
   "assess/reassess/deepen: an active node of any kind (claim, quantity, " +
-  "or question; claim_id is the node's id); the item queues the node for " +
+  "or question; claim_id is the node's id, or claim_ref a proposal's ref); the item queues the node for " +
   "its Steward and opens (or keeps) its assess group, once per item " +
   "(a finished pass stays finished, whichever lane ran it; add another " +
   "item for another pass). The pass records the kind's assessment: a " +
@@ -142,6 +196,7 @@ export const PLAN_ITEM_SCHEMA = {
     action: {
       type: "string",
       enum: [
+        "propose",
         "assess",
         "reassess",
         "deepen",
@@ -154,7 +209,29 @@ export const PLAN_ITEM_SCHEMA = {
     claim_id: {
       type: "string",
       description:
-        "Required for every kind but ingest and sweep: the node's id, as a tool result gave it.",
+        "Required for every kind but propose, ingest and sweep, unless claim_ref is given: " +
+        "the node's id, as a tool result gave it.",
+    },
+    claim_ref: {
+      type: "string",
+      description:
+        "In place of claim_id, for a node the graph does not hold yet: the ref of a propose item in this plan.",
+    },
+    ref: {
+      type: "string",
+      description:
+        "propose only, optional: a short label for the proposal (lowercase letters, digits, hyphens; " +
+        "at most 40 characters), unique in the plan, for claim_ref and scope_ref to name.",
+    },
+    kind: {
+      type: "string",
+      enum: [...NODE_KINDS],
+      description: "Required for propose: the kind you propose. The Matcher settles the node's kind.",
+    },
+    text: {
+      type: "string",
+      maxLength: PROPOSAL_TEXT_MAX_CHARS,
+      description: "Required for propose: the wording you propose, neutral, presupposing no more than it must.",
     },
     partition: {
       type: "string",
@@ -201,6 +278,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const PLAN_ACTIONS = new Set<PlanItem["action"]>([
+  "propose",
   "assess",
   "reassess",
   "deepen",
@@ -218,9 +296,23 @@ const PARTITION_RE = /^[a-z0-9][a-z0-9-]*$/;
  * known action, an http(s) url for an ingest, a claim id for everything
  * else. Returns the problem in the agent's words, or null when the items
  * are well-formed. Whether the ids are REAL is the ledger's business (a
- * missing claim blocks the item there, with the reason).
+ * missing claim blocks the item there, with the reason). A claim_ref must
+ * name a propose item among `items` or in `knownRefs`, the refs of the plan
+ * these items are joining (extend_plan, adjust_plan).
  */
-export function validatePlanItems(items: readonly PlanItem[]): string | null {
+export function validatePlanItems(
+  items: readonly PlanItem[],
+  knownRefs: readonly string[] = []
+): string | null {
+  const refs = new Set(knownRefs);
+  for (const item of items) {
+    if (!item || typeof item !== "object" || item.action !== "propose" || item.ref == null) continue;
+    if (typeof item.ref !== "string" || !REF_RE.test(item.ref)) {
+      return `a propose item's ref is a label of at most 40 lowercase letters, digits and hyphens (got: ${String(item.ref)})`;
+    }
+    if (refs.has(item.ref)) return `the ref "${item.ref}" is already used by another propose item in this plan`;
+    refs.add(item.ref);
+  }
   for (const item of items) {
     if (!item || typeof item !== "object") return "each plan item must be an object";
     if (!PLAN_ACTIONS.has(item.action)) {
@@ -229,7 +321,22 @@ export function validatePlanItems(items: readonly PlanItem[]): string | null {
     if (typeof item.rationale !== "string" || !item.rationale.trim()) {
       return `${item.action} item needs a rationale`;
     }
-    if (item.action === "ingest") {
+    if (item.action === "propose") {
+      if (!(NODE_KINDS as readonly unknown[]).includes(item.kind)) {
+        return `propose item needs a kind: ${NODE_KINDS.join(", ")} (got: ${String(item.kind ?? "none")})`;
+      }
+      const text = typeof item.text === "string" ? item.text.trim() : "";
+      if (!text) return "propose item needs text: the wording you propose";
+      if (text.length > PROPOSAL_TEXT_MAX_CHARS) {
+        return `a propose item's text is over ${PROPOSAL_TEXT_MAX_CHARS} characters: a claim, question or quantity, not an essay`;
+      }
+      if (item.rationale.trim().length < PROPOSAL_RATIONALE_MIN_CHARS) {
+        return (
+          `a propose item's rationale is filed with the proposal as its public record: say why the ` +
+          `graph needs the node, in at least ${PROPOSAL_RATIONALE_MIN_CHARS} characters`
+        );
+      }
+    } else if (item.action === "ingest") {
       if (!item.url || !/^https?:\/\//.test(item.url)) {
         return `ingest item needs an http(s) url (got: ${item.url ?? "none"})`;
       }
@@ -247,8 +354,18 @@ export function validatePlanItems(items: readonly PlanItem[]): string | null {
       if (item.variant !== undefined && item.variant !== null && item.variant !== "standard" && item.variant !== "strong") {
         return `a sweep item's variant is standard or strong (got: ${String(item.variant)})`;
       }
+    } else if (item.claim_ref && !item.claim_id) {
+      if (!refs.has(item.claim_ref)) {
+        return `${item.action} item's claim_ref "${String(item.claim_ref)}" names no propose item in this plan`;
+      }
+      if (item.action === "attempt_proof" && item.variant === "strong") {
+        return "an attempt_proof item's variant is standard or max";
+      }
     } else if (!item.claim_id || !UUID_RE.test(item.claim_id)) {
-      return `${item.action} item needs a claim_id from your survey results`;
+      return (
+        `${item.action} item needs a claim_id from your survey results, or the claim_ref of a ` +
+        `propose item for a node the graph does not hold yet`
+      );
     } else if (item.action === "attempt_proof" && item.variant === "strong") {
       return "an attempt_proof item's variant is standard or max";
     }
@@ -268,10 +385,15 @@ export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
     const focus = it.action === "ingest" && typeof it.focus === "string" ? it.focus.trim() : "";
     const partition =
       it.action === "sweep" && typeof it.partition === "string" ? it.partition.trim().toLowerCase() : "";
+    const propose = it.action === "propose";
     return {
       action: it.action,
       rationale: String(it.rationale ?? ""),
-      ...(it.claim_id ? { claim_id: it.claim_id } : {}),
+      // A propose item's claim_id and contribution_id are the materializer's
+      // to write, never the plan's author's.
+      ...(it.claim_id && !propose ? { claim_id: it.claim_id } : {}),
+      ...(it.claim_ref && !it.claim_id && !propose ? { claim_ref: it.claim_ref } : {}),
+      ...(propose ? { kind: it.kind, text: String(it.text).trim(), ...(it.ref ? { ref: it.ref } : {}) } : {}),
       ...(it.url ? { url: it.url } : {}),
       ...(focus ? { focus } : {}),
       ...(partition ? { partition } : {}),

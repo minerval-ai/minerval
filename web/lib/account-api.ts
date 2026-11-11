@@ -487,6 +487,8 @@ export interface GrantView {
     items?: Array<{
       claim_id?: string;
       url?: string;
+      // A propose item's wording (#656).
+      text?: string;
       action: string;
       rationale: string;
     }>;
@@ -699,8 +701,12 @@ export interface GrantMandateView {
   plan: {
     strategy: string;
     items: Array<{
-      action: "assess" | "reassess" | "deepen" | "ingest";
+      action: "propose" | "assess" | "reassess" | "deepen" | "ingest";
       claim_id?: string;
+      claim_ref?: string;
+      ref?: string;
+      kind?: string;
+      text?: string;
       url?: string;
       rationale: string;
     }>;
@@ -889,8 +895,15 @@ export interface MandateDetailView extends MandateSummaryView {
   // The readers the mandate funds for an audience (#563); absent from an older API.
   correspondents?: MandateCorrespondentView[];
   plan_items: Array<{
-    action: "assess" | "reassess" | "deepen" | "ingest" | "formalize" | "attempt_proof" | "sweep";
+    action: "propose" | "assess" | "reassess" | "deepen" | "ingest" | "formalize" | "attempt_proof" | "sweep";
     claim_id?: string;
+    /** In place of claim_id until the proposal it names is a node (#656). */
+    claim_ref?: string;
+    /** propose items: the label, kind and wording proposed, and the contribution filed. */
+    ref?: string;
+    kind?: string;
+    text?: string;
+    contribution_id?: string;
     url?: string;
     /** sweep items: a topic tag's slug, or "residual". */
     partition?: string;

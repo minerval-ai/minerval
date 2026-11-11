@@ -41,6 +41,7 @@ const ACTION_LABEL: Record<string, string> = {
   deepen: "deepen",
   ingest: "ingest",
   sweep: "consistency sweep",
+  propose: "propose",
 };
 
 const STATE_LABEL: Record<string, string> = {
@@ -610,6 +611,20 @@ export default async function MandatePage({
                   <span className="mandate-target">
                     {item.partition === "residual" ? "the residual bucket" : `tag ${item.partition}`}
                   </span>
+                ) : item.action === "propose" ? (
+                  // A proposal (#656): its wording, and the node once the
+                  // review has made it one.
+                  <span className="mandate-target">
+                    a new {item.kind}: “{item.text}”
+                    {item.claim_id && (
+                      <>
+                        {" "}
+                        (<Link href={`/claims/${item.claim_id}`}>the node it became</Link>)
+                      </>
+                    )}
+                  </span>
+                ) : !item.claim_id ? (
+                  <span className="mandate-target">the proposed node “{item.claim_ref}”</span>
                 ) : (
                   <Link className="mandate-target" href={`/claims/${item.claim_id}`}>
                     view claim

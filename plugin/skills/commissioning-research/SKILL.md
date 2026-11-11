@@ -91,8 +91,13 @@ saves a wasted conversation.
   the claims bearing on it.
 - Deepening a question into a programme of research: its subquestions,
   candidate answers, and the claims and quantities that would settle it.
-  If the graph does not hold the question yet, the Grantmaker can
-  propose it once the mandate is live, reviewed like anyone's proposal.
+  If the graph does not hold the question yet (or the claim, or the
+  quantity), the Grantmaker can put it in the plan as a proposal, with
+  the work on it planned against it. Nothing is filed until the mandate
+  is funded; then the proposal is reviewed like anyone's, its review
+  paid from the mandate, and the Matcher settles its wording or finds
+  the node the graph already holds. The planned work binds to that node.
+  A rejected proposal leaves that work unspent.
 - Funding open requests (work the graph has said would improve what it
   knows), whatever they find. A request bearing on one document alone is
   a review of that document for its own sake: what it says, whether its

@@ -50,6 +50,7 @@ import { createMandateTools } from "../tools/mandate-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { annotateOpenActions } from "../../services/open-actions-service.js";
 import {
+  planProposalRefs,
   validateMandate,
   executeManagementTool,
   type GrantMandate,
@@ -65,7 +66,11 @@ import {
 import { createResearchTools } from "../tools/research-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
-import { grantmakerShareLeftMicroUsd, materializePlanItems } from "../../services/action-service.js";
+import {
+  grantmakerShareLeftMicroUsd,
+  materializeOpenProposals,
+  materializePlanItems,
+} from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
 import { reflectionSections } from "../../services/mandate-reflection-service.js";
 import { allocationDayUseSql } from "../../services/day-use.js";
@@ -138,6 +143,9 @@ async function runMandateReviewImpl(input: {
   // Anchors the two-pass closure rule: a close request is only
   // confirmable by a pass that STARTED after it was recorded.
   const passStartedAt = new Date();
+  // A plan's proposals (#656) are brought up to date before the plan is
+  // read: a decided proposal is what woke this pass.
+  await materializeOpenProposals(input.grantId);
   const [grant] = await rawQuery<{
     id: string;
     name: string;
@@ -240,7 +248,7 @@ async function runMandateReviewImpl(input: {
       name: "extend_plan",
       description:
         "Append new items to your mandate's plan: sources you found that should be ingested, claims that " +
-        "need passes. Each item is priced and bounded by your escrow, and " +
+        "need passes, a claim, quantity or question the graph does not hold yet with the passes you want on it. Each item is priced and bounded by your escrow, and " +
         "executes through the ledger like everything else. Appends only; " +
         "already-planned work stays. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
@@ -679,7 +687,7 @@ async function runMandateReviewImpl(input: {
           funder_named: true,
           funder_stake: "none",
         };
-        const problem = validateMandate(probe);
+        const problem = validateMandate(probe, await planProposalRefs(grant.id));
         if (problem) return JSON.stringify({ success: false, problem });
         // Stored in the one plan-item form every path writes (#684).
         const stored = normalizePlanItems(newItems);

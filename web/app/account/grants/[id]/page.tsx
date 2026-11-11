@@ -147,6 +147,8 @@ export default async function GrantPage({
                           }
                         })()}
                       </a>
+                    ) : item.text ? (
+                      <span>“{item.text}”</span>
                     ) : (
                       <span style={{ color: "var(--faint)" }}>—</span>
                     )}

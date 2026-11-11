@@ -37,7 +37,8 @@ import {
   reclaimAbandonedSweeps,
   type PartitionStatus,
 } from "./consistency-service.js";
-import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
+import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 export { allocationDayUseSql } from "./day-use.js";
 
 export type ActionKind =
@@ -475,7 +476,7 @@ export async function reconcileActions(): Promise<{
 
   // Ingest + planning + valuation actions from live grants.
   const grants = await rawQuery<PlanGrantRow>(
-    `SELECT id, name, status, policy, plan, plan_cursor, mandate FROM grants
+    `SELECT id, name, status, policy, plan, plan_cursor, scope_claim_id, mandate FROM grants
       WHERE status IN ('active', 'planning')`
   );
   const ctx = newMaterializeContext();
@@ -1048,6 +1049,13 @@ export interface MaterializablePlanItem {
   focus?: string;
   /** sweep only: a topic tag's slug, or "residual". */
   partition?: string;
+  /** In place of claim_id: the ref of a propose item in the same plan (#656). */
+  claim_ref?: string;
+  /** propose only: its label, the kind and wording proposed, and the contribution it filed. */
+  ref?: string;
+  kind?: string;
+  text?: string;
+  contribution_id?: string;
   ledger?: PlanItemLedger;
   [key: string]: unknown;
 }
@@ -1059,7 +1067,8 @@ export interface PlanGrantRow {
   policy: string;
   plan: { strategy?: string; items?: MaterializablePlanItem[] } | null;
   plan_cursor: number;
-  mandate?: { grantmaker_share_owls?: number | null } | null;
+  scope_claim_id?: string | null;
+  mandate?: { grantmaker_share_owls?: number | null; scope_ref?: string | null } | null;
 }
 
 /**
@@ -1272,6 +1281,12 @@ export async function materializeGrantPlan(
     `the mandate is ${g.status}, not active; this work opens once it is`
   );
 
+  // Proposals first (#656): a propose item files its contribution and reads
+  // its review, and an item that names it by claim_ref takes the node's id
+  // once there is one. From then on it is an ordinary item, so everything
+  // below, and every reader of the plan, sees a claim_id.
+  const early = await materializeProposals(g, items, { active, notActive });
+
   // attempt_proof entitlement is per claim across items: the n-th item on a
   // claim entitles the n-th group, and its rationale is what may waive the
   // cooldown (§7.2). Resolve each claim once, then read every item's group.
@@ -1315,7 +1330,7 @@ export async function materializeGrantPlan(
     const item = items[i]!;
     let ledger: PlanItemLedger;
     try {
-      ledger = await materializePlanItem(item, i, {
+      ledger = early.get(i) ?? await materializePlanItem(item, i, {
         ctx,
         cursor,
         active,
@@ -1677,6 +1692,227 @@ async function materializeSweepItem(
 }
 
 /**
+ * Write one field of one plan item, by path, while the item at that index
+ * is still the same kind of item (an adjust_plan racing the sweep replaces
+ * the plan's remainder).
+ */
+async function setPlanItemField(
+  grantId: string,
+  index: number,
+  action: string,
+  field: string,
+  value: string,
+  run: { query: (q: string, p?: unknown[]) => Promise<unknown[]> } = { query: rawQuery }
+): Promise<void> {
+  await run.query(
+    `UPDATE grants
+        SET plan = jsonb_set(plan, $2::text[], to_jsonb($3::text))
+      WHERE id = $1 AND plan->'items'->$4::int->>'action' = $5`,
+    [grantId, ["items", String(index), field], value, index, action]
+  );
+}
+
+/**
+ * File a propose item's contribution, once (#656). The sweep and an
+ * extend_plan in the same minute both materialize the plan, and a second
+ * filing is a second review paid from the escrow, so a mandate files its
+ * proposals one at a time, under a lock. An identical proposal this mandate has already
+ * filed (through submit_contribution, or a filing whose id never reached
+ * the item) is adopted rather than filed and paid for again.
+ */
+async function fileProposal(
+  grantId: string,
+  index: number,
+  item: MaterializablePlanItem
+): Promise<{ contributionId: string } | { problem: string }> {
+  const type = PROPOSAL_TYPE_FOR_KIND[item.kind as NodeKind];
+  const text = String(item.text ?? "").trim();
+  // Lazy: contribution-service reaches queue-service, which imports this module.
+  const { submitGrantContribution } = await import("./contribution-service.js");
+  return withTransaction(async (tx) => {
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`plan-propose:${grantId}`]);
+    const [now] = await tx.query<{ contribution_id: string | null }>(
+      `SELECT plan->'items'->$2::int->>'contribution_id' AS contribution_id FROM grants WHERE id = $1`,
+      [grantId, index]
+    );
+    if (now?.contribution_id) return { contributionId: now.contribution_id };
+    const [prior] = await tx.query<{ id: string }>(
+      `SELECT id FROM contributions
+        WHERE grant_id = $1 AND research_run_id IS NULL
+          AND contribution_type = $2 AND proposed_canonical_form = $3
+        ORDER BY submitted_at DESC LIMIT 1`,
+      [grantId, type, text]
+    );
+    let contributionId = prior?.id;
+    if (!contributionId) {
+      // The Grantmaker's own door (§19): the same checks, the same escrow
+      // reservation for the review, the same public record.
+      const filed = await submitGrantContribution({
+        grantId,
+        input: { contribution_type: type, proposed_text: text, content: String(item.rationale ?? "") },
+      });
+      if (!filed.success || !filed.contribution_id) return { problem: filed.message };
+      contributionId = filed.contribution_id;
+    }
+    await setPlanItemField(grantId, index, "propose", "contribution_id", contributionId, tx);
+    return { contributionId };
+  });
+}
+
+interface ProposalStanding {
+  ledger: PlanItemLedger;
+  /** The node the proposal became or landed on, once accepted. */
+  claimId: string | null;
+}
+
+/** Where one propose item stands: filed (when the mandate is live), then as its review reads. */
+async function materializeProposeItem(
+  g: PlanGrantRow,
+  index: number,
+  item: MaterializablePlanItem,
+  o: { active: boolean; notActive: PlanItemLedger }
+): Promise<ProposalStanding> {
+  // Accepted and bound: a done proposal stays done.
+  if (item.claim_id && item.ledger?.status === "done") return { ledger: item.ledger, claimId: item.claim_id };
+  if (!(NODE_KINDS as readonly unknown[]).includes(item.kind) || !String(item.text ?? "").trim()) {
+    return { ledger: blocked("a propose item needs a kind (claim, quantity, question) and text"), claimId: null };
+  }
+  let contributionId = item.contribution_id ?? null;
+  if (!contributionId) {
+    // Nothing is filed, and no review paid for, before the mandate is live.
+    if (!o.active) return { ledger: o.notActive, claimId: null };
+    const filed = await fileProposal(g.id, index, item);
+    if ("problem" in filed) {
+      return {
+        ledger: blocked(`the proposal was not filed: ${filed.problem} It is tried again on the next sweep.`),
+        claimId: null,
+      };
+    }
+    contributionId = filed.contributionId;
+    item.contribution_id = contributionId;
+  }
+  const [c] = await rawQuery<{
+    review_status: string;
+    claim_id: string | null;
+    reasoning: string | null;
+    node_text: string | null;
+    node_kind: string | null;
+    minted: boolean | null;
+  }>(
+    `SELECT c.review_status, c.claim_id, n.text AS node_text, n.kind AS node_kind,
+            n.created_at >= c.submitted_at AS minted,
+            (SELECT r.reasoning FROM contribution_reviews r
+              WHERE r.contribution_id = c.id AND NOT r.superseded
+              ORDER BY r.reviewed_at DESC LIMIT 1) AS reasoning
+       FROM contributions c LEFT JOIN claims n ON n.id = c.claim_id
+      WHERE c.id::text = $1 AND c.grant_id = $2`,
+    [contributionId, g.id]
+  );
+  if (!c) return { ledger: blocked(`contribution ${contributionId} is not one of this mandate's`), claimId: null };
+  if (c.review_status === "accepted" && c.claim_id) {
+    if (item.claim_id !== c.claim_id) {
+      await setPlanItemField(g.id, index, "propose", "claim_id", c.claim_id);
+      item.claim_id = c.claim_id;
+    }
+    const node = `${c.node_kind ?? "node"} "${(c.node_text ?? "").slice(0, 240)}" (${c.claim_id})`;
+    return {
+      ledger: {
+        status: "done",
+        reason:
+          (c.minted
+            ? `accepted (contribution ${contributionId}): it entered the graph as the ${node}`
+            : `accepted (contribution ${contributionId}): the graph already held it, and it landed on the ${node}`) +
+          (c.node_kind && c.node_kind !== item.kind
+            ? `; proposed as a ${item.kind}, and the Matcher settled its kind`
+            : ""),
+        checked_at: nowIso(),
+      },
+      claimId: c.claim_id,
+    };
+  }
+  if (c.review_status === "rejected") {
+    return {
+      ledger: blocked(
+        `the Contribution Reviewer rejected the proposal (contribution ${contributionId}): ` +
+          `${(c.reasoning ?? "(no reasoning recorded)").slice(0, 400)} ` +
+          `Reword it in a new propose item, or drop the items that name it.`
+      ),
+      claimId: null,
+    };
+  }
+  return {
+    ledger: waiting(
+      c.review_status === "escalated"
+        ? `contribution ${contributionId} was escalated to the Dispute Arbitrator, who decides it`
+        : `contribution ${contributionId} awaits the Contribution Reviewer; its review is paid from the escrow`
+    ),
+    claimId: null,
+  };
+}
+
+/**
+ * The plan's proposals (#656): each propose item's standing, the claim_id
+ * written onto every item whose claim_ref names an accepted proposal, the
+ * standing of the ones still waiting on (or blocked by) theirs, and the
+ * mandate's scope bound to the proposal its scope_ref names. Returns the
+ * standings decided here by item index; an item absent from the map is
+ * materialized as the ordinary item it is (or has just become).
+ */
+async function materializeProposals(
+  g: PlanGrantRow,
+  items: MaterializablePlanItem[],
+  o: { active: boolean; notActive: PlanItemLedger }
+): Promise<Map<number, PlanItemLedger>> {
+  const early = new Map<number, PlanItemLedger>();
+  const byRef = new Map<string, ProposalStanding>();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    if (item.action !== "propose") continue;
+    let standing: ProposalStanding;
+    try {
+      standing = await materializeProposeItem(g, i, item, o);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[reconcile] plan item ${i} (propose) of mandate ${g.id} failed: ${msg}`);
+      standing = { ledger: blocked(`the materializer failed on this item: ${msg}`), claimId: null };
+    }
+    early.set(i, standing.ledger);
+    if (item.ref) byRef.set(item.ref, standing);
+  }
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    if (item.action === "propose" || item.claim_id || !item.claim_ref) continue;
+    const proposal = byRef.get(item.claim_ref);
+    if (!proposal) {
+      early.set(i, blocked(`claim_ref "${item.claim_ref}" names no propose item in this plan`));
+    } else if (proposal.claimId) {
+      await setPlanItemField(g.id, i, item.action, "claim_id", proposal.claimId);
+      item.claim_id = proposal.claimId;
+    } else if (proposal.ledger.status === "blocked") {
+      early.set(i, blocked(`the proposal "${item.claim_ref}" this item is for did not become a node: ${proposal.ledger.reason}`));
+    } else {
+      early.set(
+        i,
+        waiting(`the proposal "${item.claim_ref}" this item is for is not a node yet; the item takes the node's id when it is accepted`)
+      );
+    }
+  }
+  // A mandate scoped to a proposal is scoped to the node it became.
+  const scoped = g.mandate?.scope_ref ? byRef.get(g.mandate.scope_ref)?.claimId : null;
+  if (scoped && !g.scope_claim_id) {
+    await rawQuery(
+      `UPDATE grants
+          SET scope_claim_id = $2::uuid,
+              mandate = jsonb_set(COALESCE(mandate, '{}'::jsonb), '{scope_claim_id}', to_jsonb($2::text))
+        WHERE id = $1 AND scope_claim_id IS NULL`,
+      [g.id, scoped]
+    );
+    g.scope_claim_id = scoped;
+  }
+  return early;
+}
+
+/**
  * Materialize one mandate's plan now, outside the sweep: the extend_plan
  * and adjust_plan tools call this so the Grantmaker learns, in the same
  * turn, whether each item became work and if not why. Returns the outcomes
@@ -1687,7 +1923,7 @@ export async function materializePlanItems(
   indices?: readonly number[]
 ): Promise<PlanItemOutcome[]> {
   const [g] = await rawQuery<PlanGrantRow>(
-    `SELECT id, name, status, policy, plan, plan_cursor FROM grants WHERE id = $1`,
+    `SELECT id, name, status, policy, plan, plan_cursor, scope_claim_id, mandate FROM grants WHERE id = $1`,
     [grantId]
   );
   if (!g) return [];
@@ -1695,6 +1931,31 @@ export async function materializePlanItems(
   if (!indices) return outcomes;
   const wanted = new Set(indices);
   return outcomes.filter((o) => wanted.has(o.index));
+}
+
+/**
+ * Materialize a live mandate's plan now if it carries a proposal, or an
+ * item waiting on one, that is not yet a node (#656). Called when the
+ * mandate is funded, so its proposals are filed then and not a sweep later,
+ * and at the start of each review pass, which a decided proposal wakes: the
+ * pass then reads the proposal's outcome and the items bound to its node.
+ * Never throws; the sweep retries on its cadence.
+ */
+export async function materializeOpenProposals(grantId: string): Promise<void> {
+  try {
+    const [open] = await rawQuery<{ id: string }>(
+      `SELECT g.id FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it
+        WHERE g.id = $1 AND g.status = 'active' AND it->>'claim_id' IS NULL
+          AND (it->>'action' = 'propose' OR it->>'claim_ref' IS NOT NULL)
+        LIMIT 1`,
+      [grantId]
+    );
+    if (open) await materializePlanItems(grantId);
+  } catch (err) {
+    console.error(
+      `[reconcile] proposals of mandate ${grantId} not materialized: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 /** A mandate whose plan failed to materialize: log it and file a report. */

@@ -623,7 +623,8 @@ Contributions flow through review (`contribution_reviews`), can be
 appealed (`appeals`), and escalated to arbitration (`arbitration_results`).
 
 Two **intake** types extend the same machinery to brand-new content:
-`propose_claim` (a suggested claim, or with `propose_question` a question:
+`propose_claim` (a suggested claim, or with `propose_question` a question
+and with `propose_quantity` a quantity:
 its wording alone, with no argument, since the case for or against a node
 comes through contributions on it once it exists) and
 `propose_source` (a document submitted for extraction). These have no target
@@ -883,7 +884,7 @@ These act through tools over the life of a claim and the graph:
   and the mandate plans through `query_sql`: `ledger` holds every row in
   every status, `commissions` the money on each, and `plan_items` every
   plan item with the standing last written on it, joined to the row it
-  names, so a report about the ledger is verified there instead of taken
+  names (and, for a node a plan proposed, to the contribution it filed), so a report about the ledger is verified there instead of taken
   on the reporter's word.
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest

@@ -132,6 +132,13 @@ async function claimNextGrantTarget(
         }
         continue;
       }
+      // A proposal (#656) and the items that wait on one hold the mandate
+      // open in place until the review is in: the materializer then writes
+      // the node's id onto them, and they are claim items like any other.
+      if (item.action === "propose" || (!item.claim_id && item.claim_ref)) {
+        if (!item.ledger || item.ledger.status === "waiting") waitingOnLedger = true;
+        continue;
+      }
       if (!item.claim_id) {
         await setPlanCursor(grant.id, i + 1);
         continue;

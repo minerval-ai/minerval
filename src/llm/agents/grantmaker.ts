@@ -85,6 +85,12 @@ export interface GrantMandate {
   title: string;
   objective: string;
   scope_claim_id?: string | null;
+  /**
+   * In place of scope_claim_id, for a root the graph does not hold yet
+   * (#656): the ref of a propose item in the plan. The mandate is scoped to
+   * the node that proposal becomes, once it is accepted.
+   */
+  scope_ref?: string | null;
   scope_query?: string | null;
   plan: { strategy: string; items: PlanItem[] };
   expected_cost_owls: number;
@@ -168,6 +174,14 @@ const MANDATE_SCHEMA = {
         "a quantity, or a question (a question with its subquestions is the " +
         "natural root of a programme of research).",
     },
+    scope_ref: {
+      type: "string",
+      description:
+        "In place of scope_claim_id, when the root is a node the graph does " +
+        "not hold yet: the ref of a propose item in the plan. The mandate is " +
+        "scoped to the node that proposal becomes once it is accepted, " +
+        "whether new or one the Matcher found the graph already held.",
+    },
     scope_query: {
       type: "string",
       description:
@@ -221,8 +235,11 @@ const MANDATE_SCHEMA = {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Mechanical mandate validation; exported for tests. */
-export function validateMandate(raw: GrantMandate): string | null {
+/**
+ * Mechanical mandate validation; exported for tests. `knownRefs` are the
+ * proposal refs of the plan the items are joining (extend_plan, adjust_plan).
+ */
+export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] = []): string | null {
   if (raw.skills !== undefined) {
     if (!Array.isArray(raw.skills)) return "skills must be an array of skill names";
     const known = new Set(listSkills().map((s) => s.name));
@@ -247,7 +264,29 @@ export function validateMandate(raw: GrantMandate): string | null {
   if (!(raw.expected_cost_owls > 0)) {
     return "expected_cost_owls must be positive";
   }
-  return validatePlanItems(raw.plan.items);
+  if (raw.scope_ref) {
+    if (raw.scope_claim_id) return "give scope_claim_id or scope_ref, not both";
+    if (!raw.plan.items.some((it) => it?.action === "propose" && it.ref === raw.scope_ref)) {
+      return `scope_ref "${String(raw.scope_ref)}" names no propose item in the plan`;
+    }
+  }
+  return validatePlanItems(raw.plan.items, knownRefs);
+}
+
+/**
+ * The proposal refs a live mandate's plan already carries, for items
+ * joining it: all of them (extend_plan), or those of the executed items an
+ * adjust_plan keeps (`executedOnly`).
+ */
+export async function planProposalRefs(grantId: string, opts: { executedOnly?: boolean } = {}): Promise<string[]> {
+  const rows = await rawQuery<{ ref: string }>(
+    `SELECT t.e->>'ref' AS ref
+       FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) WITH ORDINALITY t(e, i)
+      WHERE g.id = $1 AND t.e->>'action' = 'propose' AND t.e->>'ref' IS NOT NULL
+        AND ($2::boolean IS NOT TRUE OR t.i <= g.plan_cursor)`,
+    [grantId, opts.executedOnly ?? false]
+  );
+  return rows.map((r) => r.ref);
 }
 
 /**
@@ -638,8 +677,10 @@ async function runGrantmakerTurnImpl(input: {
           title: String(raw.title).trim(),
           objective: String(raw.objective),
           scope_claim_id: raw.scope_claim_id || null,
+          ...(raw.scope_ref ? { scope_ref: String(raw.scope_ref) } : {}),
           scope_query: raw.scope_query || null,
-          plan: raw.plan,
+          // The one stored form every plan path writes (#684).
+          plan: { ...raw.plan, items: normalizePlanItems(raw.plan.items) },
           expected_cost_owls: raw.expected_cost_owls,
           funder_named: raw.funder_named,
           funder_stake: /^none\.?$/i.test(String(raw.funder_stake).trim())
@@ -1251,7 +1292,7 @@ export async function executeManagementTool(
       funder_named: true,
       funder_stake: "none",
     };
-    const problem = validateMandate(probe);
+    const problem = validateMandate(probe, await planProposalRefs(grantId, { executedOnly: true }));
     if (problem) return JSON.stringify({ success: false, problem });
     // Stored in the one plan-item form every path writes (#684).
     const stored = normalizePlanItems(items);
