@@ -122,6 +122,10 @@ export const claims = pgTable(
     // historical migrations that wrote it still apply.
     stewardContext: text("steward_context"),
     stewardError: text("steward_error"),
+    // The class of steward_error, one of a few fixed words safe to publish
+    // (steward-park-reason.ts). steward_error is raw text for logs and the
+    // service-scoped report; every public surface shows this instead (#846).
+    stewardErrorReason: text("steward_error_reason"),
     // While 'running' this is the run's lease: set when a lane claims the row
     // and refreshed by the run's heartbeat, so only a dead run goes stale
     // (steward-lease.ts).

@@ -31,7 +31,7 @@ const { state, queries } = vi.hoisted(() => ({
     // The Steward standing of the claims a test names (#834): its queue
     // state and, when it parked, the failure recorded against it.
     stewardState: "done" as string,
-    stewardError: null as string | null,
+    stewardErrorReason: null as string | null,
     stewardAttempts: 0,
     // The action row `groupLedger` finds by id, for an item that already
     // carries an action_id.
@@ -53,7 +53,7 @@ vi.mock("../../../src/db/client.js", () => ({
           id,
           state: "active",
           steward_state: state.stewardState,
-          steward_error: state.stewardError,
+          steward_error_reason: state.stewardErrorReason,
           steward_attempts: state.stewardAttempts,
           published: state.publishedFor.has(id),
         },
@@ -136,7 +136,7 @@ beforeEach(() => {
   state.lastAttemptFinishedAt = null;
   state.dueLookouts = [];
   state.stewardState = "done";
-  state.stewardError = null;
+  state.stewardErrorReason = null;
   state.stewardAttempts = 0;
   state.rowById = null;
 });
@@ -412,9 +412,9 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     },
   ];
 
-  it("states the park and its error, and does not ask for another item", async () => {
+  it("states the park and the class of its error, and does not ask for another item", async () => {
     state.stewardState = "error";
-    state.stewardError = "boom: null reference in decomposition";
+    state.stewardErrorReason = "model_refusal";
     state.stewardAttempts = 3;
     state.rowById = ROW;
     state.grant.plan.items = parkedItem();
@@ -424,7 +424,9 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     expect(ledger?.status).toBe("cancelled");
     expect(ledger?.reason).toContain("parked this claim as 'error'");
     expect(ledger?.reason).toContain("3 failed passes");
-    expect(ledger?.reason).toContain("boom: null reference in decomposition");
+    // The explanation is public: it carries the fixed class, which is all
+    // the reconciler reads (#846).
+    expect(ledger?.reason).toContain("Reason: the model refused the request.");
     expect(ledger?.reason).not.toContain("add another item");
     // Nothing is queued while the claim is parked: the pass would fail the
     // same way, and the lanes would retire the row again.

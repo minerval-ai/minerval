@@ -24,7 +24,11 @@ unknown.
 
 - `nodes`: id, kind (claim, quantity, question), text, claim_type, state,
   merged_into, importance, contestation, steward_state, stewarded_at,
-  proposed_by_person, tags (array of slugs), created_at, updated_at
+  proposed_by_person, tags (array of slugs), created_at, updated_at,
+  steward_park_reason (null unless steward_state is 'error': the node is
+  parked after failed Steward passes and will not be assessed until someone
+  commissions a pass on it; one of credentials_fault, model_refusal,
+  database_fault, tool_failure, provider_error, other)
 - `assessments`: id, node_id, status, confidence, credence, marginal_yield,
   is_current, assessed_at, trigger, summary, reasoning_head (the first 500
   characters), relabeled_from (the retired label, contested or

@@ -28,7 +28,7 @@ const PASSWORD = "dbtest-sql";
  * already serves. A new column fails this test until it is reviewed here.
  */
 const REVIEWED_COLUMNS: Record<string, string[]> = {
-  nodes: ["id", "kind", "text", "claim_type", "state", "merged_into", "importance", "contestation", "steward_state", "stewarded_at", "proposed_by_person", "tags", "created_at", "updated_at"],
+  nodes: ["id", "kind", "text", "claim_type", "state", "merged_into", "importance", "contestation", "steward_state", "stewarded_at", "proposed_by_person", "tags", "created_at", "updated_at", "steward_park_reason"],
   assessments: ["id", "node_id", "status", "confidence", "credence", "marginal_yield", "is_current", "assessed_at", "trigger", "summary", "reasoning_head", "relabeled_from"],
   edges: ["id", "parent_id", "child_id", "relation", "reasoning", "created_at"],
   arguments: ["id", "node_id", "name", "stance", "shows", "description", "created_at", "retired_at"],

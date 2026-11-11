@@ -21,6 +21,8 @@ import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import {
+  STEWARD_SUCCESS_CLEAR_SET,
+  parksAtOnce,
   reportStewardPark,
   stewardFailureSet,
   stewardReleaseSet,
@@ -28,6 +30,7 @@ import {
 } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
+import { classifyStewardFailure } from "../services/steward-park-reason.js";
 import {
   getJobSpentMicroUsd,
   refundUnspentBudget,
@@ -244,7 +247,7 @@ export async function processNextBudgetJobTask(
     await rawQuery(
       `UPDATE claims
           SET ${stewardReleaseSet("'done'")},
-              steward_error = NULL, steward_attempts = 0
+              ${STEWARD_SUCCESS_CLEAR_SET}
         WHERE id = $1`,
       [target.id]
     );
@@ -289,10 +292,10 @@ export async function processNextBudgetJobTask(
     // than spending the job one failed pass at a time.
     await rawQuery(
       `UPDATE claims
-          SET ${stewardFailureSet("$2", "$3")},
+          SET ${stewardFailureSet("$2", "$3", "$4", "$5::boolean")},
               updated_at = now()
         WHERE id = $1`,
-      [target.id, target.prior_state, msg]
+      [target.id, target.prior_state, msg, classifyStewardFailure(err), parksAtOnce(err)]
     );
     // Reports only if that CASE actually parked the claim (#834).
     await reportStewardPark(target.id, "budget-job-pipeline");

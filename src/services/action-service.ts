@@ -21,6 +21,7 @@
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
   estimateLedgerKindCostMicroUsd,
@@ -1181,14 +1182,14 @@ interface ClaimStanding {
   published: boolean;
   /** When the claim's current assessment was made; null while unassessed. */
   assessed_at: Date | null;
-  /** The last genuine failure recorded by a Steward lane, if any. */
-  steward_error: string | null;
+  /** The public class of the last genuine failure a Steward lane recorded, if any. */
+  steward_error_reason: string | null;
   steward_attempts: number;
 }
 
 async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
   const [row] = await rawQuery<ClaimStanding>(
-    `SELECT c.id, c.state, c.steward_state, c.steward_error,
+    `SELECT c.id, c.state, c.steward_state, c.steward_error_reason,
             COALESCE(c.steward_attempts, 0) AS steward_attempts,
             EXISTS (SELECT 1 FROM claim_formalizations f
                      WHERE f.claim_id = c.id AND f.status = 'published') AS published,
@@ -1468,10 +1469,11 @@ async function materializePlanItem(
         if (prior.status === "cancelled") {
           // A park is the one retirement another item cannot fix: the claim
           // is out of every lane's candidate set, so re-adding only buys one
-          // more pass that fails the same way. Say so, with the error, and
-          // leave the item reading cancelled until the park clears (#834;
-          // the park itself is reported to maintainers by
-          // reportStewardPark). Any other retirement — assessed elsewhere,
+          // more pass that fails the same way. Say so, with the class of
+          // the error (never its raw text, which this explanation would
+          // publish, #846), and leave the item reading cancelled until the
+          // park clears (#834; the park itself is reported to maintainers
+          // by reportStewardPark). Any other retirement — assessed elsewhere,
           // a pass that ran on the express lane — is spent work: the item
           // falls through below and opens a fresh row, which is what the
           // funder paid for.
@@ -1479,10 +1481,13 @@ async function materializePlanItem(
             return fromRow(
               prior,
               `the row was retired unrun: the Steward parked this claim as ` +
-                `'error' after ${claim.steward_attempts} failed passes, which ` +
-                `takes it out of the queue. Another item will not help until ` +
-                `the failure is fixed; it is reported to maintainers. Last ` +
-                `error: ${(claim.steward_error ?? "(none recorded)").slice(0, 300)}`
+                `'error' after ${claim.steward_attempts} failed ` +
+                `pass${claim.steward_attempts === 1 ? "" : "es"}, which ` +
+                `takes it out of the queue. Another item will not help: a ` +
+                `park is not retried on its own, and it is reported to ` +
+                `maintainers. A commission on the node buys another attempt. ` +
+                `Reason: ` +
+                `${STEWARD_ERROR_REASON_LABELS[stewardErrorReasonOf(claim.steward_error_reason)]}.`
             );
           }
         }

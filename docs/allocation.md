@@ -1185,9 +1185,10 @@ Design principles, in force in the implementation:
   already carries an assessment reads done, `reassess` being the ask for a
   fresh pass; `deepen` also releases the claim's deferred subclaims; a row
   retired because the claim parked as `error` reads cancelled with the
-  park's own failure named, since another item would be retired the same
-  way — the park is reported to maintainers instead (#834), and the item
-  opens a fresh row once it clears);
+  class of the park's failure named (never its raw text, #846), since
+  another item would be retired the same way — the park is reported to
+  maintainers instead (#834), a commission on the node buys another
+  attempt, and the item opens a fresh row once the park clears);
   `ingest` needs a url and executes in plan order, one group per url and
   focus (an ingest item the cursor passed before its row ran stays funded
   and reads from its row);

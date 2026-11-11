@@ -267,7 +267,7 @@ describe("processNextGrantTask", () => {
     const release = state.claimUpdates.at(-1)!;
     expect(release.sql).toContain("steward_attempts = steward_attempts + 1");
     expect(release.sql).toContain("THEN 'error'");
-    expect(release.params).toEqual(["c-1", "pending", "400 invalid_request_error"]);
+    expect(release.params).toEqual(["c-1", "pending", "400 invalid_request_error", "provider_error", false]);
     expect(state.jobUpdates.some((u) => u.params[1] === "400 invalid_request_error")).toBe(true);
   });
 

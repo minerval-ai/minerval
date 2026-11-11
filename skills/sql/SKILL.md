@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 4
+    version: 5
     since_epoch: 2026-11-responsive-funding
     changelog:
+      5: "nodes carries steward_park_reason (#846): why a node is parked after failed Steward passes, so a query can find premises that will not be judged until someone commissions them"
       4: "assessments carries relabeled_from (#848): the retired label a migration carried a status over from, set until the node is re-judged; a query lists that backlog with its open reassess rows"
       3: "plan_items carries a plan's proposals (#656): what a propose item proposed, the contribution it filed, the node it became, and which items wait on it"
       2: "plan_items: a mandate's plan item by item, with the ledger row each names, for checking a plan against what ran; the subtree query carries the scope-survey signals, replacing survey_scope"
@@ -33,7 +34,11 @@ unknown.
 
 - `nodes`: id, kind (claim, quantity, question), text, claim_type, state,
   merged_into, importance, contestation, steward_state, stewarded_at,
-  proposed_by_person, tags (array of slugs), created_at, updated_at
+  proposed_by_person, tags (array of slugs), created_at, updated_at,
+  steward_park_reason (null unless steward_state is 'error': the node is
+  parked after failed Steward passes and will not be assessed until someone
+  commissions a pass on it; one of credentials_fault, model_refusal,
+  database_fault, tool_failure, provider_error, other)
 - `assessments`: id, node_id, status, confidence, credence, marginal_yield,
   is_current, assessed_at, trigger, summary, reasoning_head (the first 500
   characters), relabeled_from (the retired label, contested or
@@ -135,6 +140,7 @@ WITH RECURSIVE sub(id) AS (
   SELECT $1::uuid
   UNION SELECT e.child_id FROM edges e JOIN sub ON e.parent_id = sub.id)
 SELECT n.id, n.text, n.importance, n.contestation, n.steward_state,
+       n.steward_park_reason,
        a.status, now()::date - a.assessed_at::date AS days_since_assessed,
        a.marginal_yield,
        (SELECT count(*) FROM edges e JOIN nodes c ON c.id = e.child_id

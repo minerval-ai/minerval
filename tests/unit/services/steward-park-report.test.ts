@@ -12,6 +12,7 @@ const { state } = vi.hoisted(() => ({
     row: null as null | {
       steward_state: string;
       steward_error: string | null;
+      steward_error_reason?: string | null;
       steward_attempts: number;
       text: string;
       retired_backing_micro_usd: number;

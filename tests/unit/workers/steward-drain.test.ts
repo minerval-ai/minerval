@@ -265,6 +265,29 @@ describe("Steward DB-backed drain", () => {
     expect(state.markedError).not.toContain("a"); // never parked
   });
 
+  it("requeues on rejected credentials and stops the drain, parking nothing (#846)", async () => {
+    // The August 2026 outage: every call answered 401 for thirty seconds.
+    state.pending = ["a", "b", "c"];
+    state.throwFor = () =>
+      Object.assign(new Error("401 authentication_error: API key is invalid"), { status: 401 });
+    const res = await drainStewardQueue();
+    expect(res.budgetHit).toBe(true); // the breaker stopped the drain
+    expect(res.processed).toBe(0);
+    expect(runCalls.length).toBe(5); // TRANSIENT_CIRCUIT_BREAK, not once per attempt per claim
+    expect(state.markedError).toEqual([]); // nothing parked
+    expect(state.attempts).toEqual({}); // and no attempt counted against any claim
+  });
+
+  it("parks on the first model refusal rather than paying for three (#846)", async () => {
+    const { LlmRefusalError } = await import("../../../src/llm/errors.js");
+    state.pending = ["a"];
+    state.throwFor = () => new LlmRefusalError("claude-opus-5-5", "some_policy");
+    const res = await drainStewardQueue();
+    expect(runCalls).toEqual(["a"]);
+    expect(state.markedError).toContain("a");
+    expect(res.processed).toBe(1);
+  });
+
   it("parks a genuinely failing claim as error only after the attempt cap", async () => {
     state.pending = ["a"];
     state.throwFor = () => new Error("boom: null reference in decomposition");
