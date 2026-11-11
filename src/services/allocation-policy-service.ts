@@ -25,8 +25,6 @@ import { loadConfig } from "../config.js";
 export interface AllocationPolicy {
   /** Value formula: contested-factor floor (how fundable uncontested stays). */
   contestation_floor: number;
-  /** Days until staleness alone fully revives a claim's expected gain. */
-  staleness_saturation_days: number;
   /** Value boost for human-proposed claims. */
   user_provenance_boost: number;
   /** Expected gain of a strong-model pass over a standard one:
@@ -131,7 +129,6 @@ export const POLICY_BOUNDS: Record<
   { min: number; max: number }
 > = {
   contestation_floor: { min: 0, max: 1 },
-  staleness_saturation_days: { min: 1, max: 3650 },
   user_provenance_boost: { min: 0, max: 2 },
   strong_gain_multiplier: { min: 1, max: 5 },
   est_steward_run_cost_owls: { min: 0.001, max: 100 },
@@ -254,7 +251,6 @@ function defaultsFromConfig(): AllocationPolicy {
   const c = loadConfig();
   return {
     contestation_floor: c.valueContestationFloor ?? 0.25,
-    staleness_saturation_days: c.priorityStalenessSaturationDays ?? 90,
     user_provenance_boost: c.priorityUserProvenanceBoost ?? 0.15,
     strong_gain_multiplier: c.strongGainMultiplier ?? 1.3,
     est_steward_run_cost_owls: c.estStewardRunCostOwls ?? 0.25,
@@ -322,7 +318,12 @@ function clampToBounds(
   return Math.min(b.max, Math.max(b.min, n));
 }
 
-/** Overlay a stored partial policy onto a base, ignoring invalid keys. */
+/**
+ * Overlay a stored partial policy onto a base, ignoring invalid keys. Only
+ * the keys in POLICY_BOUNDS are read, so a stored policy that still holds a
+ * key since removed (staleness_saturation_days, which nothing read after
+ * the value formula was retired) loads as if the key were not there.
+ */
 export function overlayPolicy(
   base: AllocationPolicy,
   partial: Partial<AllocationPolicy> | null | undefined
