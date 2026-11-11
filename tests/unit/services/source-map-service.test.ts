@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { sourceContentHash } from "../../../src/services/source-content.js";
 
 // The source map service (#286) over a mocked DB: the mechanical quote
 // check and the text reduction it runs on, the validation every write
@@ -505,7 +506,8 @@ describe("readSourceContent", () => {
     expect(mocks.getOrCreateSource).toHaveBeenCalledWith({ url: "https://x.example/new" });
     expect(result.origin).toBe("fetched");
     expect(result.content).toBe("Fresh text.");
-    expect(updates[0]).toEqual([SOURCE_C, "<html><body><p>Fresh text.</p></body></html>"]);
+    const fresh = "<html><body><p>Fresh text.</p></body></html>";
+    expect(updates[0]).toEqual([SOURCE_C, fresh, sourceContentHash(fresh)]);
   });
 
   it("scrubs NUL and control characters from a fetched copy before storing it (#430)", async () => {
@@ -524,7 +526,8 @@ describe("readSourceContent", () => {
     const result = await readSourceContent({ sourceId: SOURCE_A });
     expect(result.origin).toBe("fetched");
     expect(result.content).toBe("Extracted text with\nnoise");
-    expect(updates[0]).toEqual([SOURCE_A, "Extracted text with\nnoise"]);
+    // The hash is of the text as stored, after the scrub.
+    expect(updates[0]).toEqual([SOURCE_A, "Extracted text with\nnoise", sourceContentHash("Extracted text with\nnoise")]);
   });
 
   it("refuses an unknown source id and a source with neither text nor URL", async () => {
