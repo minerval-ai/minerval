@@ -22,6 +22,7 @@ import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
 import { SOURCE_EVENT_KINDS, type SourceEventKind } from "../schemas/common.js";
+import { listCurrentSourceInterests, type SourceInterestView } from "./source-interest-service.js";
 
 export interface PageFacts {
   title: string | null;
@@ -382,9 +383,15 @@ export interface SourceFactsView {
     note: string | null;
     detected_by: string;
   }>;
+  /**
+   * Stakes recorded for the source (§9), current records only: the one that
+   * holds for the source as a whole (claim_id null) first, then any scoped
+   * to one claim. A fact about the source, never a finding against it.
+   */
+  interests: SourceInterestView[];
 }
 
-/** The facts section of a source page: identity, versions, copies, and events. */
+/** The facts section of a source page: identity, versions, copies, events, and recorded interests. */
 export async function getSourceFacts(sourceId: string): Promise<SourceFactsView | null> {
   const [row] = await rawQuery<{
     id: string;
@@ -406,7 +413,7 @@ export async function getSourceFacts(sourceId: string): Promise<SourceFactsView 
     [sourceId]
   );
   if (!row) return null;
-  const [relations, events] = await Promise.all([
+  const [relations, events, interests] = await Promise.all([
     rawQuery<{
       relation_type: string;
       this_is_parent: boolean;
@@ -436,6 +443,7 @@ export async function getSourceFacts(sourceId: string): Promise<SourceFactsView 
         ORDER BY COALESCE(occurred_at, detected_at)`,
       [sourceId]
     ),
+    listCurrentSourceInterests(sourceId),
   ]);
   const other = (r: (typeof relations)[number]) => ({ id: r.other_id, title: r.other_title, url: r.other_url });
   return {
@@ -467,5 +475,6 @@ export async function getSourceFacts(sourceId: string): Promise<SourceFactsView 
       note: e.note,
       detected_by: e.detected_by,
     })),
+    interests,
   };
 }

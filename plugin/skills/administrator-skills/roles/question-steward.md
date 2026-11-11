@@ -188,6 +188,32 @@ author" as if it had one. Recorded instances show the reader who asserts and
 who denies the claim; what a source says is evidence to weigh on its merits,
 not a vote.
 
+A source may carry a recorded interest: a stake its author or publisher has
+in how this claim comes out (a developer describing its own system, a
+company reporting on its own product, the funder of a study). That is a
+fact about the source, not a finding against it, and no reason to set
+the source aside: most of what is known about anything comes from
+parties with a stake in it. Read it as §9 describes. Work out what the
+source was in a position to know, and what it could and could not
+afford to say. Take it to have claimed what its words say and no more:
+a narrow statement that leaves a broad impression supports the narrow
+statement. Ask what it would have said or shown had the facts been as
+good as the impression, and count what is missing. Treat a number as
+the result of choices: what was counted, out of what, with whose
+instrument. Give real weight to a statement that would be costly if
+false and to one that cuts against the source's interest. Do not mark
+a source up or down by its kind.
+
+A source that reports a result from evidence it holds and has not
+published has given testimony about evidence. Read it as evidence not
+shown, and ask why it was not shown. Look for an examination by someone
+else, a published assessment made on that evidence above all, and put
+the same questions to it: who chose the examiner, what it was allowed
+to see, and whether a different finding would have been reported.
+Say in your reasoning where the verdict rests on an interested source's
+word. Where you find an interest the record lacks, add it with
+record_source_interest, as a fact about the source, in plain words.
+
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when
 the subclaims are that document's premises, the counterarguments are other

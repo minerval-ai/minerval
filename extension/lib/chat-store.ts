@@ -19,10 +19,21 @@ import type {
  * pages and worker, not by content scripts. A tab's chat belongs to the page
  * it was started on: when the tab moves to another page the chat starts over,
  * and closing the tab drops it.
+ *
+ * What is dropped is this record, not the conversation: each chat is a
+ * conversation with the Assistant, saved in the user's account, and the
+ * record keeps its id so the next question continues it.
  */
 
 export interface ChatMessage extends ChatTurn {
   citations?: ChatCitation[];
+  /** What the reply cost, in millionths of an owl. */
+  cost?: number;
+  /** Actions the Assistant prepared that wait for the user on minerval.ai. */
+  waiting?: number;
+  /** Pages the Assistant saved while replying. */
+  pages?: string[];
+  stopped?: "user" | "balance";
 }
 
 export interface TabChat {
@@ -32,6 +43,11 @@ export interface TabChat {
   /** The answer being written, or null when none is in flight. */
   pending: { text: string; turn: number } | null;
   error: string | null;
+  /**
+   * The Assistant conversation behind this chat, kept in the user's account
+   * (minerval.ai/ask). Null until the first question is accepted.
+   */
+  conversationId?: string | null;
 }
 
 const PREFIX = "chat:";
@@ -105,7 +121,8 @@ export interface AskInput {
 
 type ChatFn = (
   input: Extract<BackgroundRequest, { type: "chat" }>,
-  onText: (delta: string, turn: number) => void
+  onText: (delta: string, turn: number) => void,
+  onConversation: (id: string) => void
 ) => Promise<ChatResponse>;
 
 // How often a streaming answer's text is written to storage, so a popup
@@ -129,7 +146,13 @@ export async function askInTab(
   if (current.pending) throw new Error("An answer is already being written for this page.");
 
   const messages: ChatMessage[] = [...current.messages, { role: "user", content: input.question }];
-  let state: TabChat = { page: input.page, messages, pending: { text: "", turn: -1 }, error: null };
+  let state: TabChat = {
+    page: input.page,
+    messages,
+    pending: { text: "", turn: -1 },
+    error: null,
+    conversationId: current.conversationId ?? null,
+  };
   await writeTabChat(input.tabId, state);
 
   // Write only if the tab's chat is still this one (not moved to another
@@ -158,12 +181,18 @@ export async function askInTab(
           type: "chat",
           messages: messages.map(({ role, content }) => ({ role, content })),
           page: input.context,
+          conversationId: current.conversationId ?? null,
         },
         (delta, turn) => {
           const prev = state.pending;
           // A new model turn (after the agent looks something up) starts over.
           const text = !prev || prev.turn !== turn ? delta : prev.text + delta;
           state = { ...state, pending: { text, turn } };
+          timer ??= setTimeout(flushPending, PENDING_WRITE_MS);
+        },
+        (id) => {
+          // Known before the answer is: a reply can be stopped while it runs.
+          state = { ...state, conversationId: id };
           timer ??= setTimeout(flushPending, PENDING_WRITE_MS);
         }
       );
@@ -173,9 +202,18 @@ export async function askInTab(
         ...state,
         messages: [
           ...messages,
-          { role: "assistant", content: reply.reply, citations: reply.citations },
+          {
+            role: "assistant",
+            content: reply.reply,
+            citations: reply.citations,
+            ...(reply.cost_micro_usd !== undefined ? { cost: reply.cost_micro_usd } : {}),
+            ...(reply.waiting ? { waiting: reply.waiting } : {}),
+            ...(reply.pages?.length ? { pages: reply.pages } : {}),
+            ...(reply.stopped ? { stopped: reply.stopped } : {}),
+          },
         ],
         pending: null,
+        conversationId: reply.conversation_id ?? state.conversationId ?? null,
       });
     } catch (err) {
       if (timer) clearTimeout(timer);

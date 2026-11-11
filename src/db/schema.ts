@@ -1512,6 +1512,53 @@ export const claimProvenanceRoots = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// source_interests (§9)
+//
+// A stake a source's author or publisher has in what the source says: a
+// developer describing its own system, a company reporting on its own
+// product, the funder of a study. It is a fact about the source, recorded by
+// the agent that noticed it (record_source_interest), and never a finding
+// against the source: what the source says stays evidence, and each claim's
+// Steward weighs it knowing the stake.
+//
+// `claim_id` sets the scope. NULL: the interest holds for whatever this
+// source says about the party's own affairs. A claim id: it holds for that
+// one claim. A read for a claim prefers the claim's own record and falls back
+// to the source-wide one (services/source-interest-service.ts).
+//
+// Append-only. A new row for the same source and scope supersedes the older
+// one for readers, and the older rows stay as the history. Nothing here is
+// updated or deleted.
+// ---------------------------------------------------------------------------
+export const sourceInterests = pgTable(
+  "source_interests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
+    // Who has the stake, as a name.
+    party: text("party").notNull(),
+    // What they stand to gain or lose, in a sentence or two.
+    stake: text("stake").notNull(),
+    recordedBy: text("recorded_by").notNull(),
+    // The agent run that recorded it, from the usage context. No FK, like
+    // llm_usage.run_id.
+    runId: uuid("run_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_source_interests_source").on(table.sourceId, table.claimId, table.createdAt),
+    index("idx_source_interests_claim")
+      .on(table.claimId)
+      .where(sql`claim_id IS NOT NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // jobs
 // ---------------------------------------------------------------------------
 export const jobs = pgTable(
@@ -5615,6 +5662,10 @@ export const agentSessions = pgTable(
     // after its run ended): [{grantId, microUsd}], each placed on the pass
     // that resumes it, beside what the paused run had left.
     extraFunding: jsonb("extra_funding").notNull().default([]),
+    // Why the paused run's transcript was private (llm/run-visibility.ts).
+    // The transcript is the resumed run's opening, so the resumed run takes
+    // these reasons on; nothing a run read is made public by resuming it.
+    privateReasons: text("private_reasons").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

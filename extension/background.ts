@@ -1,6 +1,7 @@
 import {
   analyzePage,
   chat,
+  stopChat,
   getAnalysisStatus,
   getClaimDetail,
   getEntitlement,
@@ -8,7 +9,7 @@ import {
   proposeClaim,
   getSubmissionProgress,
 } from "~lib/api";
-import { askInTab, clearTabChat, settleInterruptedChats } from "~lib/chat-store";
+import { askInTab, clearTabChat, readTabChat, settleInterruptedChats } from "~lib/chat-store";
 import {
   type AnalyzeProgress,
   type BackgroundRequest,
@@ -121,6 +122,12 @@ export function startBackground(): void {
                 data: await handleCheckAnalysis(message.contentHash),
               });
               break;
+            case "chat-stop": {
+              const stored = await readTabChat(message.tabId, message.page);
+              if (stored.conversationId) await stopChat(stored.conversationId);
+              respond({ ok: true, data: null });
+              break;
+            }
             case "chat-ask": {
               const { answer } = await askInTab(message, chat);
               keepAliveUntil(answer);

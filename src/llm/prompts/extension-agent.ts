@@ -113,6 +113,10 @@ claim's "index"; a claim you skip is silently left unmarked.
 ${JSON.stringify(input.claims, null, 2)}`;
 }
 
+// Superseded by the Assistant (prompts/assistant.ts): the extension's chat
+// tab now opens an Assistant conversation. This prompt and POST
+// /extension/chat remain for installed versions of the extension that still
+// call the old route, and go when those have updated.
 const CHAT_ROLE = `# Your Role: Extension Chat Agent
 
 You are the conversational half of the Minerval browser extension. The user

@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 7)
+# Method skill: Provenance (version 8)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -68,4 +68,7 @@ rewriting. A split leaves each claim's readings and edges with the
 instances that went to it, and the map with the original. Relations between
 two documents are claim-independent and survive every merge and split.
 Origins the loser's Steward recorded stay with the loser; the survivor's
-Steward records its own when it refreshes the map.
+Steward records its own when it refreshes the map. An interest recorded for
+a source as a whole follows the source onto every claim. One recorded for
+the loser alone stays with the loser, and the survivor's Steward records it
+again if it holds for the survivor.

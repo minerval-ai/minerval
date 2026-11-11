@@ -67,11 +67,13 @@ export interface SessionRow {
   deadline: string | null;
   resumes: number;
   extra_funding: Array<{ grantId: string; microUsd: number }>;
+  /** Why the paused run's transcript was private; the resumed run takes them on. */
+  private_reasons: string[];
 }
 
 const COLUMNS = `id, role, node_id, context, status, transcript, model, awaiting, replies, payer,
   budget_left_micro_usd::bigint AS budget_left_micro_usd, suspended_at::text AS suspended_at,
-  deadline::text AS deadline, resumes, extra_funding`;
+  deadline::text AS deadline, resumes, extra_funding, private_reasons`;
 
 /** Where a session stands, for a decider that must know whether its run is still live. */
 export async function sessionStatus(id: string | null): Promise<SessionRow["status"] | null> {
@@ -288,7 +290,9 @@ export async function suspendSession(input: {
           SET status = $2, transcript = $3::jsonb, model = $4, payer = $5::jsonb,
               budget_left_micro_usd = $6, suspended_at = now(),
               deadline = now() + make_interval(secs => $7),
-              context = COALESCE($8::jsonb, context), updated_at = now()
+              context = COALESCE($8::jsonb, context),
+              private_reasons = ARRAY(SELECT DISTINCT unnest(private_reasons || $9::text[])),
+              updated_at = now()
         WHERE id = $1
         RETURNING ${COLUMNS}`,
       [
@@ -300,6 +304,8 @@ export async function suspendSession(input: {
         Math.max(0, Math.round(input.budgetLeftMicroUsd)),
         Math.round(config.sessionWaitHours * 3600),
         input.context ? JSON.stringify(input.context) : null,
+        // The pausing run's private reasons, from its trace (run-visibility.ts).
+        [...(getUsageContext().trace?.privateReasons ?? [])],
       ]
     );
     if (next === "ready") resume = row ?? null;
@@ -511,6 +517,21 @@ export async function takeReadySession(nodeId: string, role: string): Promise<{ 
  * What a resumed session reads first: the answers, and what changed on its
  * node while it was paused, appended to the conversation it left.
  */
+/**
+ * The reasons a run resuming `s` with `replies` is private
+ * (llm/run-visibility.ts): those of the run that paused, whose transcript it
+ * continues, and a research report among the replies, which the claim page
+ * leaves out and so is not public. The resuming run marks itself with them.
+ */
+export function sessionPrivateReasons(s: Pick<SessionRow, "private_reasons">, replies: SessionReply[]): string[] {
+  const reasons = new Set(s.private_reasons ?? []);
+  if (replies.some((r) => r.kind === "research")) reasons.add(RESEARCH_REPORT_REASON);
+  return [...reasons];
+}
+
+/** A research report arrived in the run: reports are not served publicly. */
+export const RESEARCH_REPORT_REASON = "input:research-report";
+
 export async function resumeMessages(
   s: SessionRow,
   replies: SessionReply[],

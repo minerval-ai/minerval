@@ -233,6 +233,8 @@ describe("toolset by model", () => {
     expect(names).toContain("code_execution");
     expect(names).toContain("provenance_get_map");
     expect(names).toContain("provenance_record_edge");
+    // A source's interest (§9) is recorded wherever the readings are.
+    expect(names).toContain("record_source_interest");
     expect(names).not.toContain("provenance_write_map");
     expect(names).not.toContain("provenance_record_root");
     expect(names).not.toContain("delegate_research");
@@ -324,6 +326,7 @@ describe("toolset by model", () => {
     await runResearcher(input({ claim: false }));
     const names = (mocks.toolLoopCalls[0]!.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.filter((n) => n.startsWith("provenance_"))).toEqual([]);
+    expect(names).not.toContain("record_source_interest");
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("serves a mandate rather than one claim");
   });
@@ -348,6 +351,7 @@ describe("toolset by model", () => {
     ]);
     // Reading the document, yes; recording on a claim, no.
     expect(names.filter((n) => n.startsWith("provenance_"))).toEqual(["provenance_read_source"]);
+    expect(names).not.toContain("record_source_interest");
     expect(names).not.toContain("examination_note_finding");
     const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain(
@@ -401,6 +405,7 @@ describe("toolset by model", () => {
       await runResearcher(i);
       const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
       expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+      expect(names).not.toContain("record_source_interest");
       expect(names).not.toContain("record_claim_instance");
       expect(names).not.toContain("submit_contribution");
       expect(names).toContain("get_source_examinations");
@@ -421,6 +426,7 @@ describe("toolset by model", () => {
     await runResearcher(i);
     const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+    expect(names).not.toContain("record_source_interest");
     expect(names).not.toContain("record_claim_instance");
     const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("Research a mandate funds writes nothing to the graph");
@@ -536,6 +542,9 @@ describe("a run that takes up a request (#728, #730, #732)", () => {
     mocks.script.calls = [
       { name: "provenance_record_reading", input: { instance_id: "i1", support: "supports" } },
       { name: "provenance_record_reading", input: { claim_id: "cccccccc-0000-4000-8000-000000000009", instance_id: "i1" } },
+      // An interest scoped to a claim names one of the request's nodes too.
+      { name: "record_source_interest", input: { source_id: "s1", party: "p", stake: "s", scope: "claim" } },
+      { name: "record_source_interest", input: { source_id: "s1", party: "p", stake: "s", scope: "claim", claim_id: "cccccccc-0000-4000-8000-000000000009" } },
     ];
     await runResearcher(requestInput({ nodes: true }));
     const tools = mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string; input_schema: { properties: Record<string, { enum?: string[] }>; required?: string[] } }>;
@@ -545,6 +554,11 @@ describe("a run that takes up a request (#728, #730, #732)", () => {
     // Sources need no node.
     const read = tools.find((t) => t.name === "provenance_read_source")!;
     expect(read.input_schema.properties.claim_id).toBeUndefined();
+    // An interest may be scoped to one of the nodes or to the source alone,
+    // so its claim_id is limited to the nodes and not required.
+    const stake = tools.find((t) => t.name === "record_source_interest")!;
+    expect(stake.input_schema.properties.claim_id!.enum).toEqual([CLAIM, OTHER]);
+    expect(stake.input_schema.required).not.toContain("claim_id");
     // No instance tool: an instance is recorded on one node a run serves.
     expect(names()).not.toContain("record_claim_instance");
     for (const out of mocks.script.outputs) {
@@ -557,6 +571,7 @@ describe("a run that takes up a request (#728, #730, #732)", () => {
   it("reads sources whole on a request that bears on no node, and records nothing on one", async () => {
     await runResearcher(requestInput());
     expect(names().filter((n) => n.startsWith("provenance_"))).toEqual(["provenance_read_source"]);
+    expect(names()).not.toContain("record_source_interest");
     expect(task()).toContain("bears on no node the graph holds");
   });
 
@@ -565,6 +580,7 @@ describe("a run that takes up a request (#728, #730, #732)", () => {
     i.fullWork = { tier: "strong", model: "claude-opus-5-5", effort: "high" };
     await runResearcher(i);
     expect(names().filter((n) => n.startsWith("provenance_"))).toEqual([]);
+    expect(names()).not.toContain("record_source_interest");
     expect(names()).not.toContain("record_claim_instance");
     expect(task()).toContain("The full work will run on the strong tier (claude-opus-5-5, high effort)");
     const report = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string; input_schema: { properties: Record<string, unknown> } }>)
@@ -764,11 +780,14 @@ describe("what the researcher may write", () => {
       { name: "provenance_write_map", input: { summary: "x" } },
       { name: "update_claim_instance", input: {} },
       { name: "provenance_record_reading", input: { claim_id: "bbbbbbbb-0000-4000-8000-000000000002" } },
+      { name: "record_source_interest", input: { source_id: "s1", party: "p", stake: "s", scope: "claim", claim_id: "bbbbbbbb-0000-4000-8000-000000000002" } },
     ];
     await runResearcher(input());
     expect(JSON.parse(mocks.script.outputs[0]!).message).toMatch(/not in this run's toolset/);
     expect(JSON.parse(mocks.script.outputs[1]!).message).toMatch(/not in this run's toolset/);
     expect(JSON.parse(mocks.script.outputs[2]!).message).toMatch(/provenance tools work on it alone/);
+    expect(JSON.parse(mocks.script.outputs[3]!).message).toMatch(/provenance tools work on it alone/);
+    expect(mocks.writes.some((w) => w.table === "source_interests")).toBe(false);
     const tables = new Set(mocks.writes.map((w) => w.table));
     expect(tables.has("claim_source_maps")).toBe(false);
   });

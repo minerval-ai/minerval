@@ -19,6 +19,9 @@
  *    the derivation from the source's kind is wrong.
  *  - `provenance_write_map` records the reader-facing account and whether
  *    it is material enough to show.
+ *  - `record_source_interest` records a stake a source's author or
+ *    publisher has in what it says (§9): a fact about the source, never a
+ *    finding against it.
  *
  * Every executor returns a string and never throws, like the other tool
  * families: a refusal is a structured result the agent routes around.
@@ -39,6 +42,7 @@ import {
 import { getProvenanceStory } from "../../services/provenance-story-service.js";
 import { orderClaimInstances } from "../../services/claim-instance-service.js";
 import { getSourceFacts } from "../../services/source-facts-service.js";
+import { SourceInterestError, recordSourceInterest } from "../../services/source-interest-service.js";
 import {
   ExaminationError,
   addFacets,
@@ -70,6 +74,7 @@ export const PROVENANCE_TOOL_NAMES: readonly string[] = [
   "examination_record_finding",
   "provenance_cite_findings",
   "examination_note_finding",
+  "record_source_interest",
 ];
 
 function str(v: unknown): string {
@@ -93,7 +98,13 @@ async function guarded(fn: () => Promise<string>): Promise<string> {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof SourceMapError || err instanceof ExaminationError) return refuse(err.message);
+    if (
+      err instanceof SourceMapError ||
+      err instanceof ExaminationError ||
+      err instanceof SourceInterestError
+    ) {
+      return refuse(err.message);
+    }
     throw err;
   }
 }
@@ -176,6 +187,8 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
         "Instance and source ids here are the ones the provenance_record_* tools take. " +
         "A reading says whether a source's own evidence bears what it asserts, not " +
         "whether the claim is true; that judgment is yours. Nothing here is a score. " +
+        "A source's interest, where one is recorded, is a stake its author or publisher " +
+        "has in what it says: a fact about the source, and what it says is still evidence. " +
         "In top_of_story, an origin's basis is 'steward' (recorded) or 'primary_source_kind' " +
         "(derived from its kind); an untraced source has nothing recorded upstream and " +
         "nothing saying it is where the claim begins.",
@@ -212,6 +225,9 @@ export const executeReadSource: SkillToolExecutor = async (input) =>
               events: facts.events.map((e) => ({ kind: e.kind, occurred_at: e.occurred_at, notice_url: e.notice_url, note: e.note })),
               versions: facts.versions,
               copy_of: facts.copy_of,
+              // A stake recorded for the source (§9): a fact about it, not
+              // a finding against it.
+              ...(facts.interests.length > 0 ? { interests: facts.interests } : {}),
             },
           }
         : {}),
@@ -409,6 +425,42 @@ export const executeWriteMap: SkillToolExecutor = async (input, ctx) =>
     });
   });
 
+const INTEREST_SCOPES = ["claim", "source"] as const;
+
+export const executeRecordSourceInterest: SkillToolExecutor = async (input, ctx) =>
+  guarded(async () => {
+    const scope = str(input.scope);
+    if (!(INTEREST_SCOPES as readonly string[]).includes(scope)) {
+      return refuse(
+        "scope is required and must be 'claim' (the stake is in how this claim comes out) or " +
+          "'source' (the stake holds for whatever the source says about the party's own affairs)."
+      );
+    }
+    const claimId = scope === "claim" ? claimFor(input, ctx) : null;
+    if (scope === "claim" && !claimId) {
+      return refuse("scope 'claim' needs a claim: pass claim_id, since no claim is in scope for this run.");
+    }
+    const result = await recordSourceInterest({
+      sourceId: str(input.source_id),
+      claimId,
+      party: str(input.party),
+      stake: str(input.stake),
+      recordedBy: writerFor(ctx),
+    });
+    return JSON.stringify({
+      success: true,
+      ...result,
+      note:
+        (result.claim_id
+          ? "Recorded for this claim. It is shown beside this source's instances on the claim's page, and on the source's page."
+          : "Recorded for the source as a whole. It is shown on the source's page, and beside its instances on every claim that has no record of its own for this source.") +
+        (result.supersedes_earlier
+          ? " An earlier record for the same source and scope is kept as history and is no longer the one shown."
+          : "") +
+        " The record is a fact about the source: what the source says is still evidence, and how the stake bears on a claim is said in that claim's reasoning.",
+    });
+  });
+
 /** The vocabulary guidance, re-exported so the tool descriptions and the skill text cannot drift. */
 export const PROVENANCE_GUIDANCE = {
   relation: CLAIM_PROVENANCE_RELATION_GUIDANCE,
@@ -433,4 +485,5 @@ export function registerProvenanceTools(
   register("examination_record_finding", executeRecordFinding);
   register("provenance_cite_findings", executeCiteFindings);
   register("examination_note_finding", executeNoteFinding);
+  register("record_source_interest", executeRecordSourceInterest);
 }

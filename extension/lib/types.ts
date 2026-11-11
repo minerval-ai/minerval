@@ -97,6 +97,16 @@ export interface ChatTurn {
 export interface ChatResponse {
   reply: string;
   citations: ChatCitation[];
+  /** The Assistant conversation the reply belongs to, kept on minerval.ai. */
+  conversation_id?: string;
+  /** What the reply cost, in millionths of an owl. */
+  cost_micro_usd?: number;
+  /** Actions the Assistant prepared that wait for the user on minerval.ai. */
+  waiting?: number;
+  /** Pages the Assistant saved for the user while replying. */
+  pages?: string[];
+  /** Set when the reply ended early. */
+  stopped?: "user" | "balance";
 }
 
 /** Markup levels, most→least conservative. Controls which verdicts render. */
@@ -246,7 +256,11 @@ export type BackgroundRequest =
       type: "chat";
       messages: ChatTurn[];
       page: ChatPageContext;
+      /** The conversation to continue; absent, a new one is opened. */
+      conversationId?: string | null;
     }
+  /** Ask the Assistant's running reply in a tab to stop at its next step. */
+  | { type: "chat-stop"; tabId: number; page: string }
   /**
    * Ask the next question in a tab's chat (lib/chat-store.ts). Answered once
    * the question is stored; the answer is written to the stored chat.
