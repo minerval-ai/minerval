@@ -13,6 +13,7 @@ import { getMandateAllocationView, getPublicMandate } from "../../src/services/m
 import { executeManagementTool } from "../../src/llm/agents/grantmaker.js";
 import { commissionAction } from "../../src/services/commission-service.js";
 import { cancelGrant } from "../../src/services/grant-service.js";
+import { completeAction } from "../../src/services/action-service.js";
 import {
   OWL, owlBalance, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedLlmUsage, seedUser, jobBudget,
 } from "./helpers.js";
@@ -150,6 +151,39 @@ describe("withdrawFromMandate", () => {
 });
 
 describe("the operations view", () => {
+  it("shows what the mandate funded itself beside what it commissioned, and counts an overage with its run (#849)", async () => {
+    const m = await mandateWithTerms(await seedUser("ops-kinds"), 50 * OWL);
+    // A review pass the mandate covered at its estimate, run and settled.
+    const review = await seedAction({ group: `review:${m.grantId}`, kind: "mandate_review", targetRef: m.grantId, costMicroUsd: 2 * OWL });
+    const reviewAlloc = await seedAllocation({ group: `review:${m.grantId}`, actionId: review, grantId: m.grantId, amountMicroUsd: 2 * OWL });
+    await rawQuery(`UPDATE action_allocations SET spent_micro_usd = $2, released_at = now() + interval '1 second' WHERE id = $1`, [reviewAlloc, 1.5 * OWL]);
+    // A lookout run under way.
+    const lookout = await seedAction({ group: `lookout:${m.grantId}`, kind: "lookout_run", costMicroUsd: OWL, status: "running" });
+    await seedAllocation({ group: `lookout:${m.grantId}`, actionId: lookout, grantId: m.grantId, amountMicroUsd: OWL });
+    // A commissioned pass that ran past its budget: its allocation is
+    // spent whole (nothing stamps released_at on it), and the overage is a
+    // second allocation, created already spent and released.
+    const claimId = await seedClaim("ops-overage");
+    const pass = await seedAction({ group: `assess:${claimId}`, claimId, costMicroUsd: OWL });
+    await commissionAction({ payer: { kind: "grant", grantId: m.grantId }, actionId: pass, budgetMicroUsd: 2 * OWL, commissionedBy: "plan" });
+    const [row] = await rawQuery<{ id: string }>(
+      `SELECT action_id AS id FROM action_allocations WHERE grant_id = $1 AND exclusion_group = $2`,
+      [m.grantId, `assess:${claimId}`]
+    );
+    await rawQuery(`UPDATE actions SET status = 'running' WHERE id = $1`, [row!.id]);
+    await completeAction(row!.id, 3 * OWL, { meteredJobId: m.jobId });
+
+    const view = (await getMandateAllocationView(m.grantId))!;
+    expect(view.kinds).toEqual([
+      { kind: "assess", funding: "commissioned", runs: 1, running: 0, budget_owls: 3, spent_owls: 3 },
+      { kind: "mandate_review", funding: "self_funded", runs: 1, running: 0, budget_owls: 2, spent_owls: 1.5 },
+      { kind: "lookout_run", funding: "self_funded", runs: 1, running: 1, budget_owls: 1, spent_owls: 0 },
+    ]);
+    // The pass is settled, not waiting, though its allocation was never released.
+    expect(view.commissions[0]).toMatchObject({ kind: "assess", commissioned_by: "plan", state: "settled", spent_owls: 2 });
+    expect(view.budget).toMatchObject({ spent_owls: 4.5, held_owls: 1, outside_ledger_owls: 0 });
+  });
+
   it("shows the policy, the day's use, the commissions and the decisions", async () => {
     const m = await mandateWithTerms(await seedUser("ops-view"), 10 * OWL);
     await rawQuery(
@@ -172,7 +206,9 @@ describe("the operations view", () => {
     const view = (await getMandateAllocationView(m.grantId))!;
     expect(view.operating_policy).toContain("Fund the deep-ocean questions first.");
     expect(view.budget).toMatchObject({ daily_rate_owls: 5, used_today_owls: 2, held_owls: 2 });
-    expect(view.kinds).toEqual([{ kind: "assess", runs: 1, running: 1, budget_owls: 2, spent_owls: 0 }]);
+    expect(view.kinds).toEqual([
+      { kind: "assess", funding: "commissioned", runs: 1, running: 1, budget_owls: 2, spent_owls: 0 },
+    ]);
     expect(view.commissions[0]).toMatchObject({ action_id: actionId, budget_owls: 2, state: "waiting", reason: "A contested premise." });
     expect(view.decisions[0]).toMatchObject({ decided_by: "program_officer", decision: "commissioned", owls: 2 });
   });
@@ -200,6 +236,8 @@ describe("the operations view", () => {
     expect(view.budget).toMatchObject({
       escrow_owls: 50, spent_owls: 8, held_owls: 5, regranted_owls: 4, prizes_owls: 0, remaining_owls: 33,
     });
+    // The 2 owls of the management conversation are in spent and in no kind's row.
+    expect(view.budget.outside_ledger_owls).toBe(2);
     expect((await getPublicMandate(m.grantId))!.spent_owls).toBe(8);
     const overview = JSON.parse((await executeManagementTool(m.grantId, "grant_overview", {}))!);
     expect(overview).toMatchObject({

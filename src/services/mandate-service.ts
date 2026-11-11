@@ -469,8 +469,16 @@ export async function listMandateAttempts(grantId: string, limit = 100): Promise
 
 export interface OperationsKindRow {
   kind: string;
-  /** Runs this mandate commissioned of this kind in the window. */
+  /**
+   * How the mandate paid: `commissioned` (an agent, a plan item or the
+   * funder chose the run and its budget) or `self_funded` (its own upkeep,
+   * covered at the row's estimate: planning and review passes, lookout and
+   * correspondent runs, planned ingests and sweeps).
+   */
+  funding: "commissioned" | "self_funded";
+  /** Runs this mandate paid for of this kind, this way, in the window. */
   runs: number;
+  /** Of those, the ones still waiting or running. */
   running: number;
   budget_owls: number;
   spent_owls: number;
@@ -512,6 +520,14 @@ export interface MandateAllocationView {
   budget: {
     escrow_owls: number;
     spent_owls: number;
+    /**
+     * The part of spent_owls metered to the mandate's job outside the
+     * ledger, which no row in `kinds` shows and the daily rate does not
+     * bound: the Grantmaker's chat with the funder, and spend past what a
+     * run's allocations covered where no allocation of the mandate's
+     * recorded it.
+     */
+    outside_ledger_owls: number;
     daily_rate_owls: number;
     /** Spent or held by running work today, against the daily rate. */
     used_today_owls: number;
@@ -575,14 +591,44 @@ export async function getMandateAllocationView(
   ]);
 
   const window = `now() - make_interval(days => ${OPERATIONS_WINDOW_DAYS})`;
-  const kinds = await rawQuery<{ kind: string; runs: number; running: number; budget: string; spent: string }>(
-    `SELECT a.kind, count(*)::int AS runs,
-            count(*) FILTER (WHERE al.released_at IS NULL)::int AS running,
-            COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS budget,
-            COALESCE(SUM(al.spent_micro_usd), 0)::bigint AS spent
-       FROM action_allocations al JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.created_at >= ${window}
-      GROUP BY a.kind ORDER BY runs DESC`,
+  // Every allocation of the mandate's in the window, commissioned or
+  // self-funded: the table used to show commissions alone, so a mandate's
+  // review, lookout, ingest and sweep spend appeared nowhere in it (#849).
+  // An overage row (completeAction records a run's spend past its
+  // allocations as an allocation already spent and released, created and
+  // released in the same instant) adds to the spend of the run it belongs
+  // to, and is not a run of its own. A fully spent allocation is settled,
+  // though nothing stamps released_at on it.
+  const kinds = await rawQuery<{
+    kind: string;
+    commissioned: boolean;
+    runs: number;
+    running: number;
+    budget: string;
+    spent: string;
+  }>(
+    `SELECT kind, commissioned,
+            count(*) FILTER (WHERE NOT overage)::int AS runs,
+            count(*) FILTER (WHERE live)::int AS running,
+            COALESCE(SUM(amount), 0)::bigint AS budget,
+            COALESCE(SUM(spent), 0)::bigint AS spent
+       FROM (
+         SELECT a.kind, al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
+                (al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd) AS live,
+                (al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
+                 AND al.spent_micro_usd = al.amount_micro_usd) AS overage,
+                CASE WHEN al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
+                          AND al.spent_micro_usd = al.amount_micro_usd
+                     THEN COALESCE((SELECT p.commissioned_by IS NOT NULL FROM action_allocations p
+                                     WHERE p.grant_id = al.grant_id AND p.action_id = al.action_id
+                                       AND p.created_at < al.created_at
+                                     ORDER BY p.created_at DESC LIMIT 1), false)
+                     ELSE al.commissioned_by IS NOT NULL END AS commissioned
+           FROM action_allocations al JOIN actions a ON a.id = al.action_id
+          WHERE al.grant_id = $1 AND al.created_at >= ${window}
+       ) x
+      GROUP BY kind, commissioned
+      ORDER BY SUM(spent) DESC, count(*) DESC, kind, commissioned`,
     [grantId]
   );
 
@@ -606,7 +652,7 @@ export async function getMandateAllocationView(
   }>(
     `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by,
             al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
-            (al.released_at IS NOT NULL) AS released, a.status, al.reason,
+            (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
             al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
        FROM action_allocations al JOIN actions a ON a.id = al.action_id
       WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.created_at >= ${window}
@@ -656,6 +702,7 @@ export async function getMandateAllocationView(
     budget: {
       escrow_owls: microUsdToOwls(escrow),
       spent_owls: microUsdToOwls(Math.min(money.spent, escrow)),
+      outside_ledger_owls: microUsdToOwls(Math.min(money.outsideLedger, escrow)),
       daily_rate_owls: microUsdToOwls(Number(grant.daily_budget_micro_usd)),
       used_today_owls: microUsdToOwls(usedToday),
       held_owls: microUsdToOwls(money.held),
@@ -666,6 +713,7 @@ export async function getMandateAllocationView(
     window_days: OPERATIONS_WINDOW_DAYS,
     kinds: kinds.map((k) => ({
       kind: k.kind,
+      funding: k.commissioned ? ("commissioned" as const) : ("self_funded" as const),
       runs: Number(k.runs),
       running: Number(k.running),
       budget_owls: microUsdToOwls(Number(k.budget)),

@@ -49,8 +49,11 @@ function KindTiles({ view }: { view: MandateAllocationView }) {
   return (
     <div className="alloc-tiles">
       {view.kinds.map((k) => (
-        <div className="alloc-tile" key={k.kind}>
-          <span className="alloc-tile-kind sc">{KIND_LABEL[k.kind] ?? k.kind}</span>
+        <div className="alloc-tile" key={`${k.kind}-${k.funding}`}>
+          <span className="alloc-tile-kind sc">
+            {KIND_LABEL[k.kind] ?? k.kind}
+            {k.funding === "self_funded" ? " · own upkeep" : ""}
+          </span>
           <span className="alloc-tile-big">{k.runs.toLocaleString()}</span>
           <span className="alloc-tile-sub">
             {k.running > 0 ? `${k.running.toLocaleString()} under way · ` : ""}
@@ -84,6 +87,9 @@ export async function AllocationSection({ mandateId }: { mandateId: string }) {
           {owls(b.used_today_owls)} of {owls(b.daily_rate_owls)} owls of today&rsquo;s rate used
         </span>
         <span className="summary-chip">{owls(b.held_owls)} held by running work</span>
+        {b.outside_ledger_owls > 0 && (
+          <span className="summary-chip">{owls(b.outside_ledger_owls)} spent outside the ledger</span>
+        )}
         <span className="summary-chip">
           officers decide up to {owls(view.officer_limit.owls)} owls
         </span>
@@ -105,7 +111,9 @@ export async function AllocationSection({ mandateId }: { mandateId: string }) {
 
       <KindTiles view={view} />
       <p className="alloc-hist-caption">
-        Runs commissioned in the last {view.window_days} days, by kind.
+        Runs the mandate paid for in the last {view.window_days} days, by kind: the work it
+        commissioned, and its own upkeep (its Grantmaker&rsquo;s passes, its lookouts, the sources
+        and sweeps its plan names), covered at each run&rsquo;s estimate.
         {p.received > 0 &&
           ` Petitions heard: ${p.received} (${p.granted} granted, ${p.refused} refused, ` +
             `${p.follow_up} follow-ups, ${p.escalated + p.pending} still open).`}
