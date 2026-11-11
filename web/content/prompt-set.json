@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "c107b96c6503da442612a475fcc6cf2e018bd13eb9f0b2c23ed66b6153eb5301",
+  "hash": "4aa616c4880f2e82269a87bb547a9c5551050eacffb5a0345fa6bdc11c5a3870",
   "constitution": {
     "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
@@ -24,7 +24,7 @@
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "3d90e306b635ff4b58587f0410bf1b0fe60f230282b96ad34e4b76f02862e4bb"
+        "5b03f8634d39fc052993429246b6715b030af9ba45b72ccad511fc49dbb24ff7"
       ]
     },
     {
@@ -66,7 +66,7 @@
       "name": "extractor",
       "source_path": "src/llm/prompts/extractor.ts",
       "blocks": [
-        "0e563e22752da6cb1d058af419431df00c31af9fdc486bf7a21077da5e7b433f"
+        "b048d5b9decd97f9cf7e25f7481053775ffa3482d4178e3b41d0dbbb3397476c"
       ]
     },
     {
@@ -139,8 +139,8 @@
     },
     {
       "name": "provenance",
-      "version": 8,
-      "hash": "2543e4f632ee9e353166237794bdd47510b119cde3150455da5ace1479e014e0"
+      "version": 9,
+      "hash": "6dcf8325b85b4d9cf054a937644b015cd650d4cd59eaf78a58d647ced967901d"
     },
     {
       "name": "search",

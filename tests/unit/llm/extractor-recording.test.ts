@@ -233,6 +233,30 @@ describe("the Extractor's recording", () => {
     expect(problems).toEqual([{ kind: "unreadable", note: "A paywall page." }]);
   });
 
+  it("offers document_kind only to a caller that keeps it, reports it, and refuses a kind off the list", async () => {
+    respondWith(
+      turn([["finish_extraction", { document_kind: "peer_reviewed" }]]),
+      turn([["finish_extraction", { document_kind: "preprint" }]])
+    );
+    const kinds: unknown[] = [];
+    await extractClaims({ content: "an arXiv paper", onDocumentKind: (k) => kinds.push(k) });
+    expect(toolResults(1)[0]).toMatchObject({ success: false });
+    expect(kinds).toEqual(["preprint"]);
+
+    // A caller that keeps no kind is not asked for one, and one given anyway is ignored.
+    respondWith(turn([["finish_extraction", { document_kind: "peer_reviewed" }]]));
+    await expect(extractClaims({ content: "a page" })).resolves.toEqual([]);
+  });
+
+  it("does not report the kind of a document it reports as a problem", async () => {
+    respondWith(
+      turn([["finish_extraction", { document_kind: "news_article", document_problem: { kind: "unreadable", note: "A paywall page." } }]])
+    );
+    const kinds: unknown[] = [];
+    await extractClaims({ content: "subscribe to read", onDocumentKind: (k) => kinds.push(k) });
+    expect(kinds).toEqual([]);
+  });
+
   it("keeps a quantity's stated figure and a stated probability, and refuses a figure on a claim (#744)", async () => {
     respondWith(
       turn([

@@ -29,7 +29,7 @@ import { mergeClaims, reverseReconciliation } from "../../src/services/reconcili
 
 async function source() {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'A paper', 'paper') RETURNING id`,
+    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'A paper', 'journal_article') RETURNING id`,
     [`https://dbtest.example/${randomUUID()}`]
   );
   return row!.id;

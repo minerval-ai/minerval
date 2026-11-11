@@ -76,7 +76,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
           id: "ffffffff-1111-2222-3333-444444444444",
           title: "A skeptical column",
           url: "https://example.com/column",
-          source_type: "news",
+          source_type: "news_article",
         },
       },
       {

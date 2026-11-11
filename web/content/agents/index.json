@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 8589,
-    "fullChars": 106913,
+    "roleChars": 8778,
+    "fullChars": 107102,
     "skills": [
       {
         "name": "mathematics",
@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 29738,
-    "fullChars": 128062,
+    "roleChars": 29979,
+    "fullChars": 128303,
     "skills": [
       {
         "name": "costing",

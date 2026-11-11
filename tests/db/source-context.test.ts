@@ -39,9 +39,9 @@ describe("getSourceContext", () => {
   it("reads lineage, prominence, and history for a report across two claims", async () => {
     const stats = await seedSource("Statistics release", "official_statistics");
     const report = await seedSource("Think-tank report", "report");
-    const wire = await seedSource("Wire story", "news");
-    const copy = await seedSource("Syndicated copy", "news");
-    const copyOfCopy = await seedSource("Copy of the copy", "news");
+    const wire = await seedSource("Wire story", "news_article");
+    const copy = await seedSource("Syndicated copy", "news_article");
+    const copyOfCopy = await seedSource("Copy of the copy", "news_article");
     const half = await seedClaim("half of new jobs are part-time");
     const prefer = await seedClaim("most part-time workers want full-time hours");
 

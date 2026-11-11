@@ -45,7 +45,7 @@ const DEATHS = {
 
 async function seedSource(label = "source"): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO sources (url, title, source_type) VALUES ($1, $2, 'paper') RETURNING id`,
+    `INSERT INTO sources (url, title, source_type) VALUES ($1, $2, 'journal_article') RETURNING id`,
     [`https://example.org/${label}/${randomUUID()}`, `DB-test ${label}`]
   );
   return row!.id;
@@ -236,7 +236,7 @@ describe("quantities", () => {
         stated: { form: "point", central: 50e6 },
         // A figure read from a table has no sentence.
         verbatim_text: null,
-        source_type: "paper",
+        source_type: "journal_article",
       }),
     ]);
     expect(detail.readings).toEqual([
