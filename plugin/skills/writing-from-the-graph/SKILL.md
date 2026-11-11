@@ -28,6 +28,15 @@ Facts specific to Minerval that bear on making a document from it.
 - **Pinned citations.** `cite_claim` returns a citation tied to the
   assessment version, so a document can say what the graph held on the
   day it was written. A status read later may differ.
+- **Pages.** `save_page` keeps a document in the user's account, private
+  to them, at `/ask/pages/:id`. Its markdown can embed nodes that are
+  read from the graph each time the page is opened: `[claim:<uuid>]`
+  inline, and on a line of its own `{{node <uuid>}}`,
+  `{{nodes <uuid> <uuid> ...}}` (a table the reader can sort) or
+  `{{decomposition <uuid>}}`. The page records each node's judgment when
+  saved and marks any that has moved; the prose around an embed does not
+  update, so a status written out in a sentence goes stale where an
+  embed does not. `list_pages` and `get_page` read them back.
 - **What the support rests on.** `get_claim_provenance`, or `get_claim`
   with `include: ["provenance"]`: which sources are one voice, and how
   each bears its assertion.

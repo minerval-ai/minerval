@@ -1605,8 +1605,9 @@ textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(-
 .ask-cite {
   font-family: var(--sans); font-size: 0.7em; font-weight: 600; vertical-align: 0.35em;
   padding: 0 0.28em; margin-left: 0.1em; border: 1px solid currentColor; border-radius: 3px;
-  text-decoration: none; white-space: nowrap; display: inline-flex; gap: 0.25em; align-items: baseline;
+  text-decoration: none; white-space: nowrap;
 }
+.ask-cite > span { margin-left: 0.25em; }
 .ask-cite:hover { text-decoration: none; background: var(--paper-sunk); }
 a.ask-cite:not([class*="st-"]), a.ask-cite:not([class*="st-"]):visited { color: var(--muted); }
 .ask-cited {
@@ -1660,3 +1661,46 @@ a.ask-cite:not([class*="st-"]), a.ask-cite:not([class*="st-"]):visited { color: 
 @media (max-width: 520px) {
   .ask-fields > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
+
+/* a page an agent saved for the user (/ask/pages/:id): markdown with live embeds */
+.kept-view { display: flex; flex-direction: column; gap: 1.1rem; max-width: 46rem; }
+.kept-view > * { min-width: 0; max-width: 100%; }
+.kept-view .ask-prose { max-width: var(--measure); }
+.kept-view .ask-notice { font-family: var(--sans); border-color: var(--st-inconclusive); background: var(--st-inconclusive-tint); }
+.kept-card { margin: 0; }
+.kept-fact { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); }
+.kept-estimate { font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft); }
+.kept-moved {
+  font-family: var(--sans); font-size: 0.72rem; color: var(--st-inconclusive);
+  display: inline-block; margin-left: 0.4rem;
+}
+.kept-missing { font-family: var(--sans); font-size: 0.78rem; color: var(--faint); margin: 0; }
+.kept-table-wrap { overflow-x: auto; }
+.kept-table { max-width: none; margin: 0; }
+.kept-table td:first-child { min-width: 14rem; }
+.kept-table td { vertical-align: top; }
+.kept-sort {
+  font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit;
+  background: none; border: none; padding: 0; cursor: pointer; white-space: nowrap;
+}
+.kept-sort:hover { color: var(--ink); }
+.kept-decomposition ul {
+  list-style: none; margin: 0.5rem 0 0 0.4rem; padding: 0 0 0 1rem;
+  border-left: 1px solid var(--rule); display: flex; flex-direction: column; gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.kept-manage { font-family: var(--sans); border-top: 1px solid var(--rule-soft); padding-top: 0.7rem; }
+.kept-edit { max-width: 46rem; }
+.kept-edit input, .kept-edit textarea {
+  font-family: var(--sans); font-size: 0.9rem; line-height: 1.5; padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card); color: var(--ink);
+}
+.kept-edit textarea { font-family: var(--mono); font-size: 0.8rem; resize: vertical; }
+/* the ask box other pages carry: one line that opens the Assistant */
+.ask-box { display: flex; gap: 0.5rem; max-width: 40rem; font-family: var(--sans); }
+.ask-box input {
+  flex: 1; min-width: 0; font-family: var(--sans); font-size: 0.86rem; padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card); color: var(--ink);
+}
+.ask-page-card { text-decoration: none; }
+.ask-about { margin: 1.2rem 0; }

@@ -373,6 +373,24 @@ to the Grantmaker as coming from the funder's assistant, so the Grantmaker
 knows which words are the funder's own. Funding the drafted mandate is the
 user's act.
 
+**Pages.** `save_page` (`POST /pages`) keeps something for the user as a
+page in their account: markdown whose embeds name nodes by id
+(`[claim:<uuid>]` inline; `{{node …}}`, `{{nodes …}}` and
+`{{decomposition …}}` on a line of their own). The site renders an embed
+with its own components from the graph as it stands when the page is
+opened, so no agent-written code runs, and the page records what each node
+held when it was saved and marks what has moved (`page-service.ts`). Pages
+are private to their user, shown at `/ask/pages/:id`, where the user edits,
+exports and deletes them. Saving is an MCP tool, so the user's own agent
+can make pages too, and the Assistant's call runs without a card (private,
+free, earlier text kept). Deleting takes the signed-in session and is not a
+tool.
+
+**Other doors.** Node pages and `/mandates` carry an ask box that opens
+`/ask` with the question written and, from a node, the node named to the
+Assistant. The box sends nothing: the question is sent from the Ask page,
+where the bill and the balance are in view.
+
 **Model.** Claude Fable 5.2 by default (`ASSISTANT_MODEL`), with Claude
 Opus 5.5 as the cheaper choice per conversation (`ASSISTANT_STANDARD_MODEL`).
 

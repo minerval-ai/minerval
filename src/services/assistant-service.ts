@@ -87,7 +87,8 @@ export interface AssistantCitation {
 
 export type AssistantCard =
   | { type: "held"; id: string }
-  | { type: "grant_conversation"; id: string };
+  | { type: "grant_conversation"; id: string }
+  | { type: "page"; id: string };
 
 export interface AssistantMessage {
   role: "user" | "assistant";
@@ -555,6 +556,9 @@ async function runTurn(
 
     for (const id of new Set(turn.toolUses.map((u) => u.grantConversationId).filter(Boolean))) {
       cards.push({ type: "grant_conversation", id: id! });
+    }
+    for (const id of new Set(turn.toolUses.map((u) => u.pageId).filter(Boolean))) {
+      cards.push({ type: "page", id: id! });
     }
     const citations = await hydrateCitations(turn.reply).catch(() => []);
     const reply: AssistantMessage = {

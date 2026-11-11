@@ -12,7 +12,8 @@ description: >-
 ## Surfaces
 
 - **minerval.ai**: the site. Reading needs no account.
-- **The Assistant** (`/ask`): an agent working for the signed-in user
+- **The Assistant** (`/ask`, with an ask box on node pages and
+  `/mandates`): an agent working for the signed-in user
   with the account's tools. Its work is charged in owls at metered cost
   as it runs, with no ceiling but the balance; the page shows the bill
   and a stop button. A tool that spends owls on the graph or publishes
@@ -49,7 +50,8 @@ description: >-
 | Route | What is there |
 | --- | --- |
 | `/` | Search, the live claim map, and how Minerval works |
-| `/ask`, `/ask/c/:id` | The Assistant: a new conversation, past ones, and one conversation with its held actions, bill, model choice and stop button |
+| `/ask`, `/ask/c/:id` | The Assistant: a new conversation, past ones and saved pages, and one conversation with its held actions, bill, model choice and stop button |
+| `/ask/pages/:id` | A page saved for the user with `save_page`: markdown with embedded nodes shown as the graph holds them now and marked where they have moved since. Edit, export as markdown, delete. Private to the user |
 | `/claims` | Search and browse nodes, with filters for kind, assessment, importance, prizes, type and topic |
 | `/claims/:id` | A node: status or estimate or standing, the assessment and its reasoning, findings, decomposition, provenance, citation, contributions, and the funding disclosure. Order an assessment, deepen the subtree, or contribute from here |
 | `/claims/:id/map`, `/claims/:id/history` | The decomposition as a map; every past assessment |

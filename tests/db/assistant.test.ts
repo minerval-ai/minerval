@@ -413,6 +413,36 @@ describe("held actions", () => {
   });
 });
 
+describe("the Assistant saving a page", () => {
+  it("saves through its own tools without asking, and the reply carries the page", async () => {
+    const u = await user("pages");
+    let pageId = "";
+    script(async (input) => {
+      const saved = await input.account.call("save_page", { title: "A brief", body: "What the graph holds." });
+      if (saved.isError) throw new Error(saved.text);
+      pageId = (JSON.parse(saved.text) as { page: { id: string } }).page.id;
+      // Deleting is the user's own act: no tool reaches it.
+      const gone = await input.account.call("delete_page", { id: pageId }).catch(() => ({ isError: true }));
+      expect(gone.isError).toBe(true);
+      return {
+        reply: "Saved.",
+        stopped: null,
+        toolUses: [{ tool: "save_page", ok: true, pageId }],
+        runId: null,
+      };
+    });
+    const convo = await start(u, "Write me a brief.");
+    await settleAssistantTurns();
+    const done = await read(convo.id, u.id);
+    expect(done.messages[1]!.cards).toEqual([{ type: "page", id: pageId }]);
+    const rows = await rawQuery<{ user_id: string; title: string }>(
+      `SELECT user_id, title FROM assistant_pages WHERE id = $1`,
+      [pageId]
+    );
+    expect(rows).toEqual([{ user_id: u.id, title: "A brief" }]);
+  });
+});
+
 describe("the Assistant in a granting conversation", () => {
   it("marks what it writes as its own, and the user's messages stay unmarked", async () => {
     const u = await user("grant");
