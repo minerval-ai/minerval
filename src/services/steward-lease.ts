@@ -38,6 +38,22 @@ export function stewardReleaseSet(state: string): string {
 }
 
 /**
+ * The trigger a lane runs a claimed node under: the stored one while it
+ * names a pass not yet served (the row was pending, deferred, parked or
+ * mid-run when claimed), else the lane's own. steward_trigger is not cleared
+ * when a pass completes, so on a row claimed from 'done' it names a pass
+ * already run: reusing it told a Steward that a structured, assessed claim
+ * was on its first pass (#883).
+ */
+export function unservedTrigger(
+  priorState: string,
+  stored: string | null,
+  fallback: string
+): string {
+  return priorState !== "done" && stored ? stored : fallback;
+}
+
+/**
  * After this many genuine (non-transient) failures a claim parks as 'error',
  * so no lane keeps paying for a pass that fails the same way every time.
  * Transient failures (API budget/credit/429/5xx/network) never count.

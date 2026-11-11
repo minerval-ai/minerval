@@ -161,6 +161,65 @@ async function hasCurrentJudgment(claimId: string, kind: NodeKind): Promise<bool
 }
 
 /**
+ * Whether the node has structure: an active subclaim, subquestion or answer,
+ * or an unretired argument. null when the read fails, so the pass note
+ * claims nothing about structure it has not seen.
+ */
+async function hasStructure(claimId: string): Promise<boolean | null> {
+  const rows = await rawQuery<{ structured: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM claim_relationships cr
+                      JOIN claims c ON c.id = cr.child_claim_id
+                     WHERE cr.parent_claim_id = $1 AND c.state = 'active')
+         OR EXISTS (SELECT 1 FROM arguments
+                     WHERE claim_id = $1 AND retired_at IS NULL) AS structured`,
+    [claimId]
+  ).catch(() => null);
+  return rows?.[0] ? Boolean(rows[0].structured) : null;
+}
+
+/**
+ * What this pass is, said from the node as it stands rather than from the
+ * trigger alone (#883): a stale structure_and_assess once told a Steward
+ * that a structured, assessed claim was a blank first pass.
+ */
+export function stewardPassNote(
+  noun: string,
+  trigger: string,
+  node: { judged: boolean; structured: boolean | null }
+): string {
+  const { judged, structured } = node;
+  const warranted = `the structure its importance warrants (a minor or settled ${noun} may need none)`;
+  if (!judged && structured === false) {
+    const opening =
+      trigger === "structure_and_assess"
+        ? `This is the ${noun}'s first pass.`
+        : "The context says what prompted this pass.";
+    return `${opening} It has no structure or assessment yet: give it
+${warranted}, and assess it.`;
+  }
+  const later = "This is a later pass; the context says what prompted it.";
+  if (judged && structured === false) {
+    return `${later} The ${noun} has an assessment but
+no structure yet. Judge it afresh (§22): give it ${warranted}, keep what
+still holds, and change what does not, including how earlier passes read the
+${noun}.`;
+  }
+  if (judged) {
+    return `${later} The ${noun} already
+has ${structured ? "structure and an assessment" : "an assessment"}. Judge it afresh (§22): keep what still holds,
+and change or rebuild what does not, including how earlier passes read the
+${noun}.`;
+  }
+  return structured
+    ? `${later} The ${noun} already has
+structure but no current assessment. Judge the structure afresh (§22), keeping
+what holds and rebuilding what does not, and assess it.`
+    : `${later} The ${noun} has no current
+assessment: read what it has with get_claim, judge it afresh (§22), and assess
+it.`;
+}
+
+/**
  * The ordinary stewardship task: what this pass is and what must be on the
  * record when it ends. How to go about it is the Steward's judgment, guided
  * by its role prompt; a numbered procedure here read as a checklist to get
@@ -613,17 +672,12 @@ async function runClaimStewardImpl(input: {
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
 
-  const isInitial = input.trigger === "structure_and_assess";
-
   const noun = kind === "claim" ? "claim" : kind;
-  const passNote = isInitial
-    ? `This is the ${noun}'s first pass. It has no structure yet: give it the
-structure its importance warrants (a minor or settled ${noun} may need none),
-and assess it.`
-    : `This is a later pass; the context says what prompted it. The ${noun} already
-has structure and an assessment. Judge it afresh (§22): keep what still holds,
-and change or rebuild what does not, including how earlier passes read the
-${noun}.`;
+  const [judged, structured] = await Promise.all([
+    hasCurrentJudgment(input.claimId, kind),
+    hasStructure(input.claimId),
+  ]);
+  const passNote = stewardPassNote(noun, input.trigger, { judged, structured });
 
   const iterationBudget = config.stewardMaxIterations;
 
@@ -680,11 +734,7 @@ a cent.`
   const task =
     formalTask ??
     moneyTask(input.trigger) ??
-    defaultTask(
-      passNote,
-      kind,
-      isInitial || !(await hasCurrentJudgment(input.claimId, kind))
-    );
+    defaultTask(passNote, kind, !judged);
 
   // Every unread message on the node, whole (inbox-service.ts). The lane's
   // own context, when it has one, still comes first.

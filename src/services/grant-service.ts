@@ -22,10 +22,8 @@ import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import type { PlanItemLedger } from "./action-service.js";
-import {
-  getJobSpentMicroUsd,
-  refundUnspentBudget,
-} from "./budget-job-service.js";
+import { refundUnspentBudget } from "./budget-job-service.js";
+import { grantEscrowBreakdown } from "./regrant-service.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 export type GrantPolicy = (typeof GRANT_POLICIES)[number];
@@ -536,7 +534,10 @@ export async function serializeGrant(grant: Grant) {
     .from(budgetJobs)
     .where(eq(budgetJobs.id, grant.budgetJobId))
     .limit(1);
-  const spent = job ? await getJobSpentMicroUsd(job.id) : 0;
+  // Spent as every mandate report counts it (grantEscrowBreakdown, #849).
+  const spent = job
+    ? (await grantEscrowBreakdown({ id: grant.id, budgetJobId: job.id })).spent
+    : 0;
   const budget = job ? Number(job.budgetMicroUsd) : 0;
 
   // What the grant actually bought: assessments stamped with its job id.

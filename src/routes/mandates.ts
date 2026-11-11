@@ -104,7 +104,9 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
       tags: ["mandates"],
       summary:
         "The mandate's operations: the operating policy its program officers " +
-        "carry out, its budget and today's use of its daily rate, what it " +
+        "carry out, its escrow (spent, held by running work, regranted, " +
+        "held for prizes, and the remainder, which add up to the escrow) " +
+        "and today's use of its daily rate, what it " +
         "commissioned in the last 30 days and how those runs used their " +
         "budgets (paged), its officers' and Grantmaker's recent decisions, " +
         "and the petitions it heard",

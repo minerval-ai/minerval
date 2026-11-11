@@ -523,6 +523,9 @@ export interface MandateAllocationView {
     daily_rate_owls: number;
     used_today_owls: number;
     held_owls: number;
+    regranted_owls: number;
+    prizes_owls: number;
+    remaining_owls: number;
   };
   window_days: number;
   kinds: OperationsKindRow[];

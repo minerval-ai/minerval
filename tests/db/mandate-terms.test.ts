@@ -9,10 +9,13 @@
 import { describe, it, expect } from "vitest";
 import { rawQuery } from "../../src/db/client.js";
 import { amendObjective, withdrawFromMandate } from "../../src/services/mandate-terms-service.js";
-import { getMandateAllocationView } from "../../src/services/mandate-service.js";
+import { getMandateAllocationView, getPublicMandate } from "../../src/services/mandate-service.js";
+import { executeManagementTool } from "../../src/llm/agents/grantmaker.js";
 import { commissionAction } from "../../src/services/commission-service.js";
 import { cancelGrant } from "../../src/services/grant-service.js";
-import { OWL, owlBalance, seedAction, seedClaim, seedGrantWithJob, seedUser, jobBudget } from "./helpers.js";
+import {
+  OWL, owlBalance, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedLlmUsage, seedUser, jobBudget,
+} from "./helpers.js";
 
 async function mandateWithTerms(funderId: string, budget: number) {
   const m = await seedGrantWithJob({ funderId, budgetMicroUsd: budget });
@@ -172,5 +175,35 @@ describe("the operations view", () => {
     expect(view.kinds).toEqual([{ kind: "assess", runs: 1, running: 1, budget_owls: 2, spent_owls: 0 }]);
     expect(view.commissions[0]).toMatchObject({ action_id: actionId, budget_owls: 2, state: "waiting", reason: "A contested premise." });
     expect(view.decisions[0]).toMatchObject({ decided_by: "program_officer", decision: "commissioned", owls: 2 });
+  });
+
+  it("counts spent once across every report, and the escrow's terms add up (#849)", async () => {
+    const m = await mandateWithTerms(await seedUser("spent-once"), 50 * OWL);
+    const other = await seedGrantWithJob({ funderId: await seedUser("spent-once-target"), budgetMicroUsd: 10 * OWL });
+    // A finished self-funded run: its 6 owls are metered to the job AND
+    // consumed as a share; a management conversation metered 2 more.
+    const doneGroup = `assess:${await seedClaim("spent-once-a")}`;
+    const done = await seedAction({ group: doneGroup, costMicroUsd: OWL });
+    await seedAllocation({ group: doneGroup, actionId: done, grantId: m.grantId, amountMicroUsd: 10 * OWL, spentMicroUsd: 6 * OWL, released: true });
+    await seedLlmUsage({ jobId: m.jobId, costMicroUsd: 6 * OWL });
+    await seedLlmUsage({ jobId: m.jobId, costMicroUsd: 2 * OWL });
+    // Work waiting with 5 owls held, and 4 regranted out.
+    const waitGroup = `assess:${await seedClaim("spent-once-b")}`;
+    const waiting = await seedAction({ group: waitGroup, costMicroUsd: OWL });
+    await seedAllocation({ group: waitGroup, actionId: waiting, grantId: m.grantId, amountMicroUsd: 5 * OWL });
+    await rawQuery(
+      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd) VALUES ($1, $2, $3)`,
+      [m.grantId, other.grantId, 4 * OWL]
+    );
+
+    const view = (await getMandateAllocationView(m.grantId))!;
+    expect(view.budget).toMatchObject({
+      escrow_owls: 50, spent_owls: 8, held_owls: 5, regranted_owls: 4, prizes_owls: 0, remaining_owls: 33,
+    });
+    expect((await getPublicMandate(m.grantId))!.spent_owls).toBe(8);
+    const overview = JSON.parse((await executeManagementTool(m.grantId, "grant_overview", {}))!);
+    expect(overview).toMatchObject({
+      budget_owls: 50, spent_owls: 8, held_owls: 5, regranted_owls: 4, prizes_owls: 0, remaining_owls: 33,
+    });
   });
 });

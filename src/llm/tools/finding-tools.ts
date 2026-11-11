@@ -99,7 +99,8 @@ export function getFindingToolDefinitions(options: { mandate?: boolean } = {}): 
             type: "array",
             description:
               "The records the finding rests on, by id; at least one. Cite " +
-              "the assessment itself, not only its claim, so the finding " +
+              "the assessment itself (its id is `assessment.id` in " +
+              "get_claim), not only its claim, so the finding " +
               "still points at what it rested on after a reassessment. An id " +
               "that does not resolve is dropped and named in the reply.",
             items: {

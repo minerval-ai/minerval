@@ -62,10 +62,7 @@ import { materializePlanItems } from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
 import { countPlanItems, describePlanItems } from "../../services/plan-state.js";
 import { getMandatePipeline } from "../../services/mandate-service.js";
-import {
-  getJobContributions,
-  getJobSpentMicroUsd,
-} from "../../services/budget-job-service.js";
+import { getJobContributions } from "../../services/budget-job-service.js";
 import {
   requestBounty,
   openBounty,
@@ -360,8 +357,9 @@ async function runGrantmakerTurnImpl(input: {
   const overviewTool: Tool = {
     name: "grant_overview",
     description:
-      "The live state of this conversation's funded grant: budget, metered " +
-      "spend, status, contributors, the plan with each item's execution " +
+      "The live state of this conversation's funded grant: budget, spent, " +
+      "held by running work, regranted, held for prizes, and what remains " +
+      "(the five add up to the budget), status, contributors, the plan with each item's execution " +
       "state, the review passes' workspace and last note, any closure or " +
       "bounty they have pending, and the notes they left for the funder.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
@@ -825,8 +823,10 @@ export function getManagementReadToolDefinitions(): Tool[] {
       name: "allocation_report",
       description:
         "This mandate's operations, the same data its public page renders: " +
-        "the operating policy in force and the officers' limit, the budget " +
-        "and today's use of the daily rate, what the mandate commissioned in " +
+        "the operating policy in force and the officers' limit, the escrow " +
+        "(spent, held by running work, regranted, held for prizes, and what " +
+        "remains; the five add up to the escrow, counted as grant_overview " +
+        "counts them) and today's use of the daily rate, what the mandate commissioned in " +
         "the last 30 days by kind and run by run (budget, spent, state, " +
         "reason), its officers' and your recent decisions, the petitions it " +
         "heard, and what waits in its inbox. Use this for 'where is the " +
@@ -1027,15 +1027,21 @@ export async function executeManagementTool(
       [grantId]
     );
     if (!grant) return JSON.stringify({ error: "grant not found" });
-    const spent = await getJobSpentMicroUsd(grant.budget_job_id);
+    // The escrow term by term, as allocation_report and the briefing count
+    // it (#849): spent + held + regranted + prizes + remaining = budget.
+    const { grantEscrowBreakdown } = await import("../../services/regrant-service.js");
+    const money = await grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id });
     const contributions = await getJobContributions(grant.budget_job_id);
     return JSON.stringify({
       status: grant.status,
       budget_status: grant.job_status,
       budget_owls: microUsdToOwls(Number(grant.budget_micro_usd)),
-      spent_owls: microUsdToOwls(spent),
+      spent_owls: microUsdToOwls(money.spent),
+      held_owls: microUsdToOwls(money.held),
+      regranted_owls: microUsdToOwls(money.regrants),
+      prizes_owls: microUsdToOwls(money.prizes),
       remaining_owls: microUsdToOwls(
-        Math.max(0, Number(grant.budget_micro_usd) - spent)
+        Math.max(0, Number(grant.budget_micro_usd) - money.committed)
       ),
       contributors: contributions.length,
       strategy: grant.plan?.strategy ?? null,

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { jobs } from "../db/schema.js";
 
@@ -53,8 +53,10 @@ export async function updateJob(
     .update(jobs)
     .set({
       ...updates,
+      // The database's clock, not the worker's: a mandate's event scan reads
+      // completed_at against its own watermark (mandate-event-service.ts).
       ...(updates.status === "completed" || updates.status === "failed"
-        ? { completedAt: new Date() }
+        ? { completedAt: sql`now()` }
         : {}),
     })
     .where(eq(jobs.id, jobId))

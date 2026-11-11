@@ -31,6 +31,31 @@ export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
 }
 
 /**
+ * A mandate's escrow, term by term, in micro-USD. These are the figures
+ * every report of a mandate's money uses (allocation_report and
+ * get_mandate_allocation, grant_overview, the public summary, the review
+ * briefing), so they agree with each other and with the headroom check:
+ * spent + held + regrants + prizes = committed, and the escrow less
+ * committed is what remains (#849).
+ */
+export interface GrantEscrowBreakdown {
+  /** Consumed allocation shares plus metered spend on the job that no
+   * share accounts for. Ledger runs metered to the job are in both
+   * llm_usage and the shares, and count once. */
+  spent: number;
+  /** Unspent remainders of allocations not yet released: money held by
+   * commissioned work that is waiting or running. */
+  held: number;
+  /** Regranted to other mandates, net of returned shares. */
+  regrants: number;
+  /** The prize term (prize-commitment.ts): bounties held, prizes paid,
+   * and the prize-review reserve. */
+  prizes: number;
+  /** The sum of the four: what the escrow is already good for. */
+  committed: number;
+}
+
+/**
  * Everything this grant's escrow is already good for: consumed + outstanding
  * allocation shares, NON-LEDGER metered spend on its job (management
  * conversations etc. — llm_usage minus what ledger runs already consumed as
@@ -47,6 +72,17 @@ export async function grantCommittedMicroUsd(
   },
   tx?: TxQuery
 ): Promise<number> {
+  return (await grantEscrowBreakdown(grant, tx)).committed;
+}
+
+/** grantCommittedMicroUsd's terms, for the reports that show them. */
+export async function grantEscrowBreakdown(
+  grant: {
+    id: string;
+    budgetJobId: string;
+  },
+  tx?: TxQuery
+): Promise<GrantEscrowBreakdown> {
   const query = <T,>(text: string, params?: unknown[]) =>
     tx ? tx.query<T>(text, params) : rawQuery<T>(text, params);
   const [row] = await query<{
@@ -86,13 +122,11 @@ export async function grantCommittedMicroUsd(
        ${prizeCommitmentSql("$1")} AS prizes`,
     [grant.id, grant.budgetJobId]
   );
-  return (
-    Number(row?.shares ?? 0) +
-    Number(row?.outstanding ?? 0) +
-    Number(row?.nonledger ?? 0) +
-    Number(row?.regrants ?? 0) +
-    Number(row?.prizes ?? 0)
-  );
+  const spent = Number(row?.shares ?? 0) + Number(row?.nonledger ?? 0);
+  const held = Number(row?.outstanding ?? 0);
+  const regrants = Number(row?.regrants ?? 0);
+  const prizes = Number(row?.prizes ?? 0);
+  return { spent, held, regrants, prizes, committed: spent + held + regrants + prizes };
 }
 
 export interface RegrantEdge {

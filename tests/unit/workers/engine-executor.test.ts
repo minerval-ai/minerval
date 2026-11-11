@@ -81,6 +81,11 @@ vi.mock("../../../src/services/action-service.js", () => ({
     jobId: "job-1",
     grantId: "g-1",
   })),
+  // A co-funding mandate beside the largest.
+  actionFunderGrants: vi.fn(async () => ["g-1", "g-2"]),
+  recordGrantSource: vi.fn(async (...params: unknown[]) => {
+    state.grantSources.push(params);
+  }),
 }));
 
 vi.mock("../../../src/services/allocation-service.js", () => ({
@@ -238,8 +243,8 @@ describe("processNextEngineAction", () => {
     expect(state.submitted).toEqual(["https://example.org/p"]);
     // NOT completed here: the extraction worker closes it with real cost.
     expect(state.completed).toHaveLength(0);
-    // The funding mandate records the source in its pipeline.
-    expect(state.grantSources).toHaveLength(1);
+    // Every funding mandate records the source in its pipeline (#657).
+    expect(state.grantSources.map((p) => p[0])).toEqual(["g-1", "g-2"]);
   });
 
   it("hands a scoped ingest's focus and group to the extraction", async () => {

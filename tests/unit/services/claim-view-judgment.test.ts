@@ -71,6 +71,7 @@ vi.mock("../../../src/services/assessment-service.js", () => ({
   getCurrentAssessment: vi.fn(async () =>
     mocks.kind === "claim"
       ? {
+          id: "44444444-4444-4444-4444-444444444444",
           status: "supported",
           confidence: 0.8,
           claimCredence: 0.75,
@@ -160,6 +161,11 @@ describe("get_claim's view of the prior judgment", () => {
       claim_credence: 0.75,
       marginal_yield: 0.2,
     });
+  });
+
+  it("gives the assessment's id, which note_finding cites (#890)", async () => {
+    const out = (await getClaimView(CLAIM))!;
+    expect(out.assessment).toMatchObject({ id: "44444444-4444-4444-4444-444444444444" });
   });
 
   it("gives each subclaim and related claim its credence (§21)", async () => {

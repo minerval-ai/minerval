@@ -9,8 +9,8 @@
  *  - collectMandateEvents reads the graph since each mandate's watermark
  *    (`grants.events_scanned_at`) and records what bears on its work: an
  *    assessment on a node it funded (with the children that pass left
- *    waiting), a decision on a contribution it submitted, a source it
- *    ingested, a lookout's flag. Collecting from the tables, not from hooks
+ *    waiting), a decision on a contribution it submitted, a source in its
+ *    pipeline whose extraction finished, a lookout's flag. Collecting from the tables, not from hooks
  *    in every lane, means no Steward lane or reviewer path can skip it.
  *  - wakeDueMandateReviews reopens the review row of a mandate with pending
  *    events once its last pass is WAKE_AFTER_MINUTES old; the drain funds it
@@ -120,14 +120,31 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
          RETURNING id`,
         window
       );
+      // A source is news once its extraction has finished, not when it was
+      // submitted: the event carries the outcome and the nodes linked as of
+      // then (#898). It falls in the window that holds the later of the
+      // extraction's end and the mandate's attribution, so an extraction
+      // that ends days after submission is recorded when it ends, and a
+      // mandate attributed to a source extracted long ago is told when it is
+      // attributed; the unique (mandate, kind, row) records each once. A row
+      // with no extraction job on record is settled as it stands.
       const ingested = await rawQuery(
         `INSERT INTO mandate_events (grant_id, kind, ref_id, payload)
          SELECT gs.grant_id, 'source_ingested', gs.id,
                 jsonb_build_object('url', gs.url,
+                  'outcome', COALESCE(j.status, 'unknown'),
+                  'already_extracted', j.completed_at IS NOT NULL AND j.completed_at < gs.created_at,
+                  'error', LEFT(j.error, 200),
+                  'document_problem', j.result->>'document_problem',
                   'nodes', (SELECT COUNT(DISTINCT ci.claim_id) FROM claim_instances ci
                              WHERE ci.source_id = gs.source_id AND ci.detached_at IS NULL))
            FROM grant_sources gs
-          WHERE gs.grant_id = $1 AND gs.created_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND gs.created_at <= $3
+           LEFT JOIN jobs j ON j.id = gs.job_id
+          WHERE gs.grant_id = $1
+            AND (j.id IS NULL OR j.status IN ('completed', 'failed'))
+            AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at))
+                  > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES})
+            AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at)) <= $3
          ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
          RETURNING id`,
         window
@@ -232,6 +249,31 @@ export async function consumeMandateEvents(grantId: string, ids: readonly string
   );
 }
 
+/**
+ * A finished ingest as a briefing line, stating the extraction's outcome so
+ * "no nodes" can only mean an extraction that found none (#898).
+ */
+function describeIngest(p: Record<string, unknown>): string {
+  const nodes = Number(p.nodes ?? 0);
+  const linked = `${nodes} node${nodes === 1 ? "" : "s"} linked to it`;
+  // Recorded at submission, before events waited for the extraction.
+  if (p.outcome === undefined) return `Submitted ${p.url} for extraction; ${linked} at the time.`;
+  if (p.outcome === "failed") {
+    return (
+      `Ingesting ${p.url} failed${p.error ? `: ${p.error}` : ""}.` +
+      (nodes > 0 ? ` ${linked} from earlier readings.` : " Nothing was extracted from it.")
+    );
+  }
+  if (p.outcome === "unknown") return `${p.url} is in your pipeline with no extraction on record; ${linked}.`;
+  const problem = p.document_problem ? ` The Extractor reported the document as ${p.document_problem}.` : "";
+  if (p.already_extracted) {
+    return `${p.url} was already in the graph, extracted before your mandate asked for it: ${linked}.${problem}`;
+  }
+  return nodes > 0
+    ? `Ingested ${p.url}: extraction completed, ${linked}.${problem}`
+    : `Ingested ${p.url}: extraction completed and found no claims; no nodes linked to it.${problem}`;
+}
+
 /** One event as a line of the review briefing. */
 export function describeMandateEvent(e: MandateEventRow): string {
   const p = e.payload as Record<string, unknown>;
@@ -257,7 +299,7 @@ export function describeMandateEvent(e: MandateEventRow): string {
         "."
       );
     case "source_ingested":
-      return `Ingested ${p.url}: ${p.nodes ?? 0} nodes linked to it.`;
+      return describeIngest(p);
     case "lookout_flag":
       return `A lookout raised a ${p.flag}${node}${p.url ? ` (${p.url})` : ""}: ${p.rationale}`;
     default:

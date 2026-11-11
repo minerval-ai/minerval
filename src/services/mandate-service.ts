@@ -19,9 +19,8 @@ import { microUsdToOwls } from "./owl.js";
 import {
   contributeToBudgetJob,
   getJobContributions,
-  getJobSpentMicroUsd,
 } from "./budget-job-service.js";
-import { grantAllocationExposureMicroUsd } from "./allocation-service.js";
+import { grantEscrowBreakdown } from "./regrant-service.js";
 import { serializeAttemptSummary, type AttemptRow } from "./attempt-service.js";
 import { LIVE_BOUNTY_STATUSES } from "./bounty-service.js";
 import type { AttemptSummary } from "./claim-extras-types.js";
@@ -118,14 +117,14 @@ export function funderDisclosure(row: {
 }
 
 async function summarize(row: GrantRow): Promise<MandateSummary> {
-  // A mandate's spend is what its runs metered directly to its job PLUS
-  // its consumed shares of co-funded actions (the allocation engine).
-  const [jobSpent, exposure, contributions] = await Promise.all([
-    getJobSpentMicroUsd(row.budget_job_id),
-    grantAllocationExposureMicroUsd(row.id),
+  // A mandate's spend is its consumed allocation shares plus whatever its
+  // job metered that no share accounts for (grantEscrowBreakdown): every
+  // report of a mandate's money counts it the same way (#849).
+  const [escrow, contributions] = await Promise.all([
+    grantEscrowBreakdown({ id: row.id, budgetJobId: row.budget_job_id }),
     getJobContributions(row.budget_job_id),
   ]);
-  const spent = jobSpent + exposure.spentMicroUsd;
+  const spent = escrow.spent;
   return {
     id: row.id,
     title: row.mandate?.title ?? row.name,
@@ -516,6 +515,12 @@ export interface MandateAllocationView {
     used_today_owls: number;
     /** Budgets commissioned and not yet settled. */
     held_owls: number;
+    /** Regranted to other mandates, net of returned shares. */
+    regranted_owls: number;
+    /** Bounties held, prizes paid, and the prize-review reserve. */
+    prizes_owls: number;
+    /** The escrow less spent, held, regranted and prizes: what is free to commit. */
+    remaining_owls: number;
   };
   window_days: number;
   kinds: OperationsKindRow[];
@@ -561,9 +566,8 @@ export async function getMandateAllocationView(
   const policy = await getOperatingPolicy(grantId);
   const limit = officerLimit(policy);
 
-  const [jobSpent, exposure, usedToday] = await Promise.all([
-    getJobSpentMicroUsd(grant.budget_job_id),
-    grantAllocationExposureMicroUsd(grantId),
+  const [money, usedToday] = await Promise.all([
+    grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id }),
     grantDayUseMicroUsd(grantId),
   ]);
 
@@ -640,7 +644,6 @@ export async function getMandateAllocationView(
   );
 
   const escrow = Number(grant.budget_micro_usd);
-  const spent = jobSpent + exposure.spentMicroUsd;
   return {
     grant_id: grantId,
     title: grant.title ?? grant.name,
@@ -648,10 +651,13 @@ export async function getMandateAllocationView(
     officer_limit: { owls: microUsdToOwls(limit.microUsd), reason: limit.reason },
     budget: {
       escrow_owls: microUsdToOwls(escrow),
-      spent_owls: microUsdToOwls(Math.min(spent, escrow)),
+      spent_owls: microUsdToOwls(Math.min(money.spent, escrow)),
       daily_rate_owls: microUsdToOwls(Number(grant.daily_budget_micro_usd)),
       used_today_owls: microUsdToOwls(usedToday),
-      held_owls: microUsdToOwls(exposure.outstandingMicroUsd),
+      held_owls: microUsdToOwls(money.held),
+      regranted_owls: microUsdToOwls(money.regrants),
+      prizes_owls: microUsdToOwls(money.prizes),
+      remaining_owls: microUsdToOwls(Math.max(0, escrow - money.committed)),
     },
     window_days: OPERATIONS_WINDOW_DAYS,
     kinds: kinds.map((k) => ({

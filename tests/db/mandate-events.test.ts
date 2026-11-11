@@ -25,6 +25,7 @@ import { seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 import {
   WAKE_AFTER_MINUTES,
   collectMandateEvents,
+  describeMandateEvent,
   pendingMandateEvents,
   wakeDueMandateReviews,
 } from "../../src/services/mandate-event-service.js";
@@ -79,7 +80,10 @@ describe("collecting a mandate's events", () => {
       [ct!.id]
     );
     const [src] = await rawQuery<{ id: string }>(`INSERT INTO sources (title, url) VALUES ('A report', 'https://example.org/report') RETURNING id`);
-    await rawQuery(`INSERT INTO grant_sources (grant_id, source_id, url) VALUES ($1, $2, 'https://example.org/report')`, [grantId, src!.id]);
+    const [job] = await rawQuery<{ id: string }>(
+      `INSERT INTO jobs (type, status, input, completed_at) VALUES ('url_extraction', 'completed', '{}', now()) RETURNING id`
+    );
+    await rawQuery(`INSERT INTO grant_sources (grant_id, source_id, url, job_id) VALUES ($1, $2, 'https://example.org/report', $3)`, [grantId, src!.id, job!.id]);
     const [lk] = await rawQuery<{ id: string }>(`INSERT INTO lookouts (grant_id, title, brief) VALUES ($1, 'watch', 'brief') RETURNING id`, [grantId]);
     await rawQuery(`INSERT INTO lookout_flags (lookout_id, kind, claim_id, rationale) VALUES ($1, 'note', $2, 'A new result bears on this.')`, [lk!.id, node]);
 
@@ -87,6 +91,51 @@ describe("collecting a mandate's events", () => {
     const kinds = (await pendingMandateEvents(grantId)).events.map((e) => e.kind).sort();
     expect(kinds).toEqual(["contribution_reviewed", "lookout_flag", "source_ingested"]);
   });
+  it("records a source once its extraction has finished, with the outcome and the nodes as of then (#898)", async () => {
+    const { grantId } = await mandate();
+    const [src] = await rawQuery<{ id: string }>(`INSERT INTO sources (title, url) VALUES ('Slow', 'https://example.org/slow') RETURNING id`);
+    const [job] = await rawQuery<{ id: string }>(`INSERT INTO jobs (type, status, input) VALUES ('url_extraction', 'processing', '{}') RETURNING id`);
+    // Submitted long before the scan's window: the extraction is what is news.
+    await rawQuery(
+      `INSERT INTO grant_sources (grant_id, source_id, url, job_id, created_at) VALUES ($1, $2, 'https://example.org/slow', $3, now() - interval '3 days')`,
+      [grantId, src!.id, job!.id]
+    );
+    expect(await collectMandateEvents(grantId)).toBe(0);
+
+    const node = await seedClaim("slow source node");
+    await rawQuery(`INSERT INTO claim_instances (claim_id, source_id, verbatim_text) VALUES ($1, $2, 'quoted')`, [node, src!.id]);
+    await rawQuery(`UPDATE jobs SET status = 'completed', completed_at = now() WHERE id = $1`, [job!.id]);
+    await rawQuery(`UPDATE grants SET events_scanned_at = now() - interval '1 minute' WHERE id = $1`, [grantId]);
+    expect(await collectMandateEvents(grantId)).toBe(1);
+    const { events } = await pendingMandateEvents(grantId);
+    expect(events[0]!.payload).toMatchObject({ outcome: "completed", nodes: 1, already_extracted: false });
+    expect(describeMandateEvent(events[0]!)).toBe("Ingested https://example.org/slow: extraction completed, 1 node linked to it.");
+
+    await rawQuery(`UPDATE grants SET events_scanned_at = now() - interval '1 minute' WHERE id = $1`, [grantId]);
+    expect(await collectMandateEvents(grantId)).toBe(0);
+  });
+
+  it("says a failed extraction failed, and tells a mandate attributed to an extracted source so", async () => {
+    const { grantId } = await mandate();
+    const [bad] = await rawQuery<{ id: string }>(`INSERT INTO sources (title, url) VALUES ('Gone', 'https://example.org/gone') RETURNING id`);
+    const [badJob] = await rawQuery<{ id: string }>(
+      `INSERT INTO jobs (type, status, input, error, completed_at) VALUES ('url_extraction', 'failed', '{}', 'HTTP 404', now()) RETURNING id`
+    );
+    await rawQuery(`INSERT INTO grant_sources (grant_id, source_id, url, job_id) VALUES ($1, $2, 'https://example.org/gone', $3)`, [grantId, bad!.id, badJob!.id]);
+    const [old] = await rawQuery<{ id: string }>(`INSERT INTO sources (title, url) VALUES ('Old', 'https://example.org/old') RETURNING id`);
+    const [oldJob] = await rawQuery<{ id: string }>(
+      `INSERT INTO jobs (type, status, input, completed_at) VALUES ('url_extraction', 'completed', '{}', now() - interval '20 days') RETURNING id`
+    );
+    await rawQuery(`INSERT INTO grant_sources (grant_id, source_id, url, job_id) VALUES ($1, $2, 'https://example.org/old', $3)`, [grantId, old!.id, oldJob!.id]);
+
+    expect(await collectMandateEvents(grantId)).toBe(2);
+    const lines = (await pendingMandateEvents(grantId)).events.map(describeMandateEvent).sort();
+    expect(lines).toEqual([
+      "Ingesting https://example.org/gone failed: HTTP 404. Nothing was extracted from it.",
+      "https://example.org/old was already in the graph, extracted before your mandate asked for it: 0 nodes linked to it.",
+    ]);
+  });
+
   it("records a row committed after a scan that carries an earlier time", async () => {
     const { grantId, jobId } = await mandate();
     // The scan has moved past now; the row's transaction started before it.

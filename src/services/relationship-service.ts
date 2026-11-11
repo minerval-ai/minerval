@@ -13,7 +13,20 @@
  * outage) propagates instead of being swallowed as success.
  */
 import { rawQuery } from "../db/client.js";
+import { RELATION_TYPES } from "../schemas/common.js";
+import { KIND_RELATION_TYPES } from "../schemas/kinds.js";
 import { asRunner, type Runner } from "./query-runner.js";
+
+/** Every relation an edge may carry: the decomposition relations and the kinds' own (§7a). */
+export const EDGE_RELATION_TYPES: readonly string[] = [...RELATION_TYPES, ...KIND_RELATION_TYPES];
+
+/** An edge write named a relation outside EDGE_RELATION_TYPES. */
+export class UnknownRelationError extends Error {
+  constructor(relation: string) {
+    super(`Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`);
+    this.name = "UnknownRelationError";
+  }
+}
 
 export interface InsertEdgeInput {
   parentId: string;
@@ -35,7 +48,10 @@ export interface EdgeIdentity {
  * Insert a decomposition edge, or find the one already there. The unique
  * index on (parent, child, relation) is the conflict target, so only a true
  * duplicate reads as `created: false`; a parent or child that does not exist
- * throws (foreign key), as does a self-edge (check constraint).
+ * throws (foreign key), as does a self-edge (check constraint). An off-enum
+ * relation throws UnknownRelationError (#658): the column is plain text, and
+ * a tool's enum is advisory to a model, so such an edge would be stored as
+ * given and read by nothing.
  */
 export async function insertRelationshipEdge(
   input: InsertEdgeInput,
@@ -43,6 +59,9 @@ export async function insertRelationshipEdge(
 ): Promise<{ id: string; created: boolean }> {
   const run = asRunner(tx);
   const relationType = input.relationType.toLowerCase();
+  if (!EDGE_RELATION_TYPES.includes(relationType)) {
+    throw new UnknownRelationError(input.relationType);
+  }
   const inserted = await run.query<{ id: string }>(
     `INSERT INTO claim_relationships
        (parent_claim_id, child_claim_id, relation_type, reasoning, confidence, created_by)

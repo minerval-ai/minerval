@@ -8,20 +8,29 @@ import { observeStatement } from "./statement-observer.js";
 
 let _pool: pg.Pool | null = null;
 
+/**
+ * TLS for every connection to the database, the pool's and read-only SQL's
+ * (services/sql-service.ts) alike: in production, verified against the RDS
+ * CA bundle, since RDS refuses unencrypted connections there.
+ */
+export function databaseSsl(): pg.ClientConfig["ssl"] {
+  if (loadConfig().env !== "production") return undefined;
+  return {
+    ca: readFileSync(join(process.cwd(), "rds-ca-bundle.pem"), "utf8"),
+    rejectUnauthorized: true,
+  };
+}
+
 function getPool(): pg.Pool {
   if (_pool) return _pool;
   const config = loadConfig();
+  const ssl = databaseSsl();
   _pool = new pg.Pool({
     connectionString: config.databaseUrl,
     max: 20,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    ...(config.env === "production" && {
-      ssl: {
-        ca: readFileSync(join(process.cwd(), "rds-ca-bundle.pem"), "utf8"),
-        rejectUnauthorized: true,
-      },
-    }),
+    ...(ssl && { ssl }),
   });
   return _pool;
 }

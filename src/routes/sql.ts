@@ -22,6 +22,7 @@ const STATUS: Record<SqlRefusal["code"], number> = {
   BUSY: 429,
   ONE_AT_A_TIME: 429,
   ALLOWANCE: 402,
+  UNAVAILABLE: 503,
 };
 
 export async function sqlRoutes(app: FastifyInstance): Promise<void> {

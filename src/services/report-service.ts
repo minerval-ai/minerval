@@ -607,12 +607,27 @@ export interface ReportView {
   duplicate_of: Pick<AgentReportRow, "id" | "title" | "status" | "triage_note" | "github_issue_url"> | null;
 }
 
+/** A report id's prefix as agents cite it: at least its first 8 hex digits. */
+const REPORT_ID_PREFIX_RE = /^[0-9a-f]{8}[0-9a-f-]{0,28}$/i;
+
+/** An id prefix that starts more than one report's id. Names none of them. */
+export class AmbiguousReportIdError extends Error {
+  constructor(prefix: string) {
+    super(
+      `"${prefix}" starts more than one report's id. Give more of the id, ` +
+        `or the full id from search_issues.`
+    );
+    this.name = "AmbiguousReportIdError";
+  }
+}
+
 /**
  * get_issue: read one report in full, the way a maintainer would follow a
  * link: body, triage note, the latest sightings with their accounts, the
  * reports collapsed onto it, and the report it was collapsed onto. Found
- * by its id or by its GitHub issue number. Origin-scoped like the search.
- * Null when there is no such report.
+ * by its id, its GitHub issue number, or a unique prefix of its id (at
+ * least 8 characters; AmbiguousReportIdError when it starts more than one).
+ * Origin-scoped like the search. Null when there is no such report.
  */
 export async function getReportView(
   id: string,
@@ -629,9 +644,24 @@ export async function getReportView(
   } else {
     // A GitHub issue number (`#480`, `480`, or the issue's URL), as agents
     // cite the tracker (#493).
-    const { numbers, rest } = parseIssueNumbers(String(id ?? "").trim());
-    if (numbers.length !== 1 || (rest && rest !== String(numbers[0]))) return null;
-    [report] = await findReportsByIssueNumber(numbers, origin);
+    const raw = String(id ?? "").trim();
+    const { numbers, rest } = parseIssueNumbers(raw);
+    if (numbers.length === 1 && (!rest || rest === String(numbers[0]))) {
+      [report] = await findReportsByIssueNumber(numbers, origin);
+    }
+    // The short id agents and triage notes cite (#820): a unique prefix of
+    // the id. Tried after the issue number, so an all-digit string that
+    // names an issue still reads as one.
+    if (!report && REPORT_ID_PREFIX_RE.test(raw)) {
+      const matches = await rawQuery<AgentReportRow>(
+        `SELECT ${REPORT_COLUMNS} FROM agent_reports
+          WHERE id::text LIKE $1 AND origin = $2
+          ORDER BY id LIMIT 2`,
+        [`${raw.toLowerCase()}%`, origin]
+      );
+      if (matches.length > 1) throw new AmbiguousReportIdError(raw);
+      report = matches[0];
+    }
   }
   if (!report) return null;
   const reportId = report.id;

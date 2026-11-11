@@ -38,6 +38,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import {
+  AmbiguousReportIdError,
   getReportView,
   raiseIssue,
   searchReports,
@@ -268,14 +269,17 @@ export function getReportToolDefinitions(): Tool[] {
         "its issue link, the latest sightings with the reporters' accounts, " +
         "the reports collapsed onto it as duplicates, and the report it was " +
         "collapsed onto if it is itself a duplicate. Follow ids from " +
-        "search_issues or from a related report here, or a GitHub issue " +
-        "number (#480) someone cited. Read-only; free.",
+        "search_issues or from a related report here, the short id (its " +
+        "first 8 characters) a note cites, or a GitHub issue number (#480) " +
+        "someone cited. Read-only; free.",
       input_schema: {
         type: "object" as const,
         properties: {
           report_id: {
             type: "string",
-            description: "The report's id, or its GitHub issue number (#480).",
+            description:
+              "The report's id, a unique prefix of it (at least 8 " +
+              "characters), or its GitHub issue number (#480).",
           },
         },
         required: ["report_id"],
@@ -490,12 +494,20 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
   };
 
   const executeGet = async (input: Record<string, unknown>): Promise<string> => {
-    const view = await getReportView(String(input.report_id ?? ""), { origin: "internal" });
+    let view: Awaited<ReturnType<typeof getReportView>>;
+    try {
+      view = await getReportView(String(input.report_id ?? ""), { origin: "internal" });
+    } catch (err) {
+      if (err instanceof AmbiguousReportIdError) {
+        return JSON.stringify({ success: false, message: err.message });
+      }
+      throw err;
+    }
     if (!view) {
       return JSON.stringify({
         success: false,
         message:
-          `No report on record with that id or issue number. search_issues finds ` +
+          `No report on record with that id, id prefix or issue number. search_issues finds ` +
           `reports by keyword or meaning; an issue number with no report may be a ` +
           `pull request or a person's issue, which this record does not hold.`,
       });

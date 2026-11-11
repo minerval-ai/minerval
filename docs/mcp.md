@@ -194,8 +194,8 @@ read is free, an agent which signals allocation turns on.
   (`src/services/claim-view-service.ts`, #774), so a skill that names
   `get_claim` means one thing to every reader. Every read returns `claim`
   (`kind`, canonical form, type, state, importance, contestation, tags,
-  page link, `steward_state` and `stewarded_at`), `assessment` (status,
-  confidence, credence, reasoning), the kind's record, `preliminary_seed`
+  page link, `steward_state` and `stewarded_at`), `assessment` (its `id`,
+  status, confidence, credence, reasoning, `run_id`), the kind's record, `preliminary_seed`
   while the node is unassessed, the formalization record, `requests`,
   `subclaim_count`, `instance_count` and `source_map` (the Steward's account
   of what the support rests on, with `material` saying whether the claim page

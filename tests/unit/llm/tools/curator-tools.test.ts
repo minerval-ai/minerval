@@ -37,6 +37,8 @@ import {
   reverseReconciliation,
 } from "../../../../src/services/reconciliation-service.js";
 import { enqueueSteward } from "../../../../src/services/queue-service.js";
+import { addRelationshipEdge } from "../../../../src/services/reconciliation-service.js";
+import { UnknownRelationError } from "../../../../src/services/relationship-service.js";
 
 const NODE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
@@ -242,5 +244,16 @@ describe("curator link_claims / unlink_claims (#436)", () => {
     );
     await executeCuratorTool("unlink_claims", { claim_id: X, other_claim_id: Y, reasoning: "none" });
     expect(vi.mocked(unlinkClaims).mock.calls[1]![0]).toMatchObject({ kind: undefined });
+  });
+});
+
+describe("curator add_relationship_edge (#658)", () => {
+  it("answers an off-enum relation with the valid ones, not an error string", async () => {
+    vi.mocked(addRelationshipEdge).mockRejectedValueOnce(new UnknownRelationError("causes"));
+    const out = JSON.parse(
+      await executeCuratorTool("add_relationship_edge", { parent_id: "p", child_id: "c", relation: "causes", reasoning: "r" })
+    );
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/Unknown relation "causes"\. Use one of: requires/);
   });
 });

@@ -106,7 +106,7 @@ vi.mock("../../../src/llm/client.js", async () => {
   };
 });
 
-import { runClaimSteward } from "../../../src/llm/agents/claim-steward.js";
+import { runClaimSteward, stewardPassNote } from "../../../src/llm/agents/claim-steward.js";
 import { withPassBudget } from "../../../src/llm/usage-context.js";
 
 const CLAIM_ID = "aaaaaaaa-0000-4000-8000-000000000002";
@@ -171,5 +171,53 @@ describe("Steward runner by kind", () => {
     expect(names).toContain("file_request");
     expect(names).not.toContain("set_request_targets");
     expect(opts.initialMessages[0]!.content).toContain("update_claim_assessment");
+  });
+});
+
+describe("the pass note says what the node has (#883)", () => {
+  it("calls a pass first only when the node has no structure and no assessment", () => {
+    const blank = stewardPassNote("claim", "structure_and_assess", { judged: false, structured: false });
+    expect(blank).toContain("first pass");
+    expect(blank).toContain("no structure or assessment yet");
+    // The same blank node under another trigger is not called a first pass.
+    expect(stewardPassNote("claim", "user_order", { judged: false, structured: false })).not.toContain(
+      "first pass"
+    );
+  });
+
+  it("never tells a Steward a structured or assessed node is blank, whatever the trigger", () => {
+    for (const node of [
+      { judged: true, structured: true },
+      { judged: true, structured: false },
+      { judged: false, structured: true },
+      { judged: true, structured: null },
+      { judged: false, structured: null },
+    ]) {
+      const note = stewardPassNote("claim", "structure_and_assess", node);
+      expect(note).not.toContain("first pass");
+      expect(note).not.toContain("no structure or assessment");
+      expect(note.includes("an assessment but\nno structure")).toBe(node.judged && node.structured === false);
+    }
+    expect(stewardPassNote("claim", "structure_and_assess", { judged: true, structured: true })).toContain(
+      "already\nhas structure and an assessment"
+    );
+  });
+
+  it("reads the node's state, not a stale structure_and_assess trigger", async () => {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    vi.mocked(rawQuery).mockImplementation((async (sql: string) => {
+      if (sql.includes("FROM assessments") && sql.includes("is_current")) return [{ one: 1 }];
+      if (sql.includes("AS structured")) return [{ structured: true }];
+      return [];
+    }) as typeof rawQuery);
+    try {
+      const opts = await run("claim");
+      const message = opts.initialMessages[0]!.content;
+      expect(message).not.toContain("first pass");
+      expect(message).toContain("has a current assessment");
+      expect(message).not.toContain("has no current assessment");
+    } finally {
+      vi.mocked(rawQuery).mockImplementation((async () => []) as typeof rawQuery);
+    }
   });
 });
