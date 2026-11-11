@@ -211,6 +211,11 @@ export function renderIssueBody(row: AgentReportRow): string {
     ["Severity", row.severity],
     ["Agent", row.model ? `${row.agent} (${row.model})` : row.agent],
     ["Origin", row.origin],
+    // The contributor an outside caller's report is attributed to (the id
+    // of its public profile, GET /contributors/:id). Agents' reports have none.
+    ...(row.reporter_contributor_id
+      ? [["Reporter", `contributor \`${row.reporter_contributor_id}\``] as [string, string]]
+      : []),
     ["Surface", row.surface ? `\`${row.surface}\`` : "—"],
     ["First seen", iso(row.first_seen_at)],
     ["Report id", `\`${row.id}\``],

@@ -984,7 +984,8 @@ sighting is filed as an issue in `GITHUB_ISSUES_REPO`, labelled
 `agent-generated` with its kind and severity (`github-issue-service.ts`).
 A report from an outside caller is filed only where
 `GITHUB_ISSUES_INCLUDE_EXTERNAL` is on, as it is in production; it then
-carries `origin/external` as well, and the @mentions in its text are
+carries `origin/external` as well and names the reporting contributor's
+id, and the @mentions in its text are
 broken so that filing it notifies nobody. Issues are
 written as the minerval-agents GitHub App: `github-app-auth.ts` signs a
 JWT with the App's private key and exchanges it for an hourly installation
