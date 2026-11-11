@@ -22,6 +22,7 @@
  * only lever is `withdraw`.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { findingStatusEnum } from "../schemas/common.js";
 import { generateEmbedding } from "./embedding-service.js";
 
@@ -302,8 +303,8 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
       }
       await rawQuery(
         `INSERT INTO agent_finding_sightings
-           (finding_id, account, refs, importance, agent, model, run_id, job_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           (finding_id, account, refs, importance, agent, model, run_id, job_id, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           row.id,
           v.account,
@@ -313,6 +314,9 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
           input.model ?? null,
           uuidOrNull(input.runId),
           uuidOrNull(input.jobId),
+          // The sighting is the run's that met the finding again; the
+          // finding keeps the label it was noted at.
+          currentLabel(),
         ]
       );
       return {
@@ -339,8 +343,8 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
     const rows = await rawQuery<{ id: string }>(
       `INSERT INTO agent_findings
          (headline, account, claim_id, refs, importance, embedding, agent,
-          model, run_id, job_id, skills)
-       VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11)
+          model, run_id, job_id, skills, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         v.headline,
@@ -354,6 +358,8 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
         uuidOrNull(input.runId),
         uuidOrNull(input.jobId),
         input.skills ?? null,
+        // The label of the run that notes it (src/labels.ts).
+        currentLabel(),
       ]
     );
     const row = rows[0];

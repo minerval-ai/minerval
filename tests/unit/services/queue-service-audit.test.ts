@@ -59,6 +59,8 @@ describe("requestAudit", () => {
       "bad-faith:X",
       null,
       null,
+      // The label the audit is asked for at: public outside any run (src/labels.ts).
+      "public",
     ]);
 
     expect(mocks.ensureAuditAction).toHaveBeenCalledWith({
@@ -82,7 +84,7 @@ describe("requestAudit", () => {
       bountyId: "bounty-1",
     });
     const [, params] = mocks.rawQuery.mock.calls[0]!;
-    expect(params?.slice(4)).toEqual(["grant-9", "bounty-1"]);
+    expect(params?.slice(4, 6)).toEqual(["grant-9", "bounty-1"]);
   });
 
   it("funds a prize audit from the bounty's reserve, not a mandate's valuation", async () => {

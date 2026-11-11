@@ -74,7 +74,9 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // what a run writes (the graph's content: nodes, edges, arguments, tags,
 // definitions and formal statements; judgments and what each rested on;
 // sources and what is read from them: instances, readings, provenance,
-// examinations; the run itself), and work waiting to be done or resumed (a
+// examinations; the run itself and what it writes about itself: its
+// steps, its usage rows, the parts of its setup, the investigations,
+// reports, findings and audits it opens), and work waiting to be done or resumed (a
 // job, a ledger action, an order, a paused session), which hands its label
 // to the run that later takes it up (runAtLabel). A claim and a source are
 // both: work that starts from the claim or the source itself, with no row
@@ -1851,6 +1853,10 @@ export const llmUsage = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request the call was made for (src/labels.ts).
+    // A usage row holds counts and cost, never content, but it says that a
+    // run happened, on which claim and for whom.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_llm_usage_user_time").on(table.userId, table.createdAt),
@@ -1974,6 +1980,12 @@ export const agentSteps = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run the step belongs to (src/labels.ts), taken from
+    // the run when it opened and not from whatever is in the air when the
+    // queued write lands (services/trace-service.ts). The hash chain covers
+    // prev_hash, seq, kind and content, not this column: the label a run
+    // worked at is under the chain in its prompt step's setup.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_steps_run").on(table.runId, table.seq),
@@ -2008,6 +2020,10 @@ export const setupParts = pgTable(
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that first stored this text (src/labels.ts). A
+    // part is stored once and shared by every run that used the same text,
+    // so this is the label of the first sighting and stays that way.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     primaryKey({ columns: [table.kind, table.name, table.hash] }),
@@ -4175,6 +4191,9 @@ export const auditRuns = pgTable(
     bountyId: uuid("bounty_id").references(() => bounties.id, {
       onDelete: "set null",
     }),
+    // The label the audit was asked for at (src/labels.ts): the run or
+    // request that asked, or, for one a timer opens, the thing audited.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_audit_runs_action").on(table.actionId),
@@ -4562,6 +4581,10 @@ export const researchRuns = pgTable(
     examinationId: uuid("examination_id").references((): AnyPgColumn => examinations.id, {
       onDelete: "set null",
     }),
+    // The label of the run that launched the investigation (src/labels.ts).
+    // The report and the notebook are the researcher's, whose run works at
+    // the same label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_research_runs_claim").on(table.claimId),
@@ -4946,6 +4969,9 @@ export const agentReports = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that first filed the report
+    // (src/labels.ts). A repeat lands on this row and leaves it alone.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_agent_reports_dedupe_key").on(table.dedupeKey),
@@ -4994,6 +5020,8 @@ export const agentReportSightings = pgTable(
     seenAt: timestamp("seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that saw it again (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_report_sightings_report").on(table.reportId, table.seenAt),
@@ -5064,6 +5092,8 @@ export const agentFindings = pgTable(
     lastNotedAt: timestamp("last_noted_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that noted the finding (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_findings_claim").on(table.claimId, table.lastNotedAt),
@@ -5099,6 +5129,8 @@ export const agentFindingSightings = pgTable(
     notedAt: timestamp("noted_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that met the finding again (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_finding_sightings_finding").on(table.findingId, table.notedAt),

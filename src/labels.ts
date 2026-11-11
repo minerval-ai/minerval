@@ -12,6 +12,10 @@
  * notice against it, the edges that say what draws on what, an examination
  * and its findings, a recorded stake, a page analysis kept for the next
  * reader, a feed item waiting to be read.
+ * And so does what a run writes about itself: each step of its transcript,
+ * the usage row of each model call, the parts of its setup, an
+ * investigation it launches, a report or a finding it files and each later
+ * sighting of one, an audit it asks for.
  * The column is not simply `label` because that name is already a display
  * name on tables that will need a label too (actions.label,
  * source_segments.label), and one name has to be free on every table.
@@ -39,6 +43,24 @@
  * examination it opens and the stake it records. A write that lands on a
  * row already there (an upsert) leaves that row's label as it was, and so
  * does the text or the facts a fetch writes into a source's own row.
+ *
+ * A step of a run's transcript is the run's in the strictest sense: it
+ * carries the label the run was opened at, which the run's handle keeps
+ * (AgentTrace.label in services/trace-service.ts), and not the label in the
+ * air when it is written. Steps are written from a queue, later than they
+ * are claimed, and a step can be recorded from inside work that set another
+ * label; it is a step of its run either way. The transcript is the most
+ * sensitive thing a run leaves, so its label does not depend on timing.
+ *
+ * A part of a run's setup (the constitution, a role prompt, a tool's
+ * descriptor) is stored once, under the hash of its text, and shared by
+ * every run that used the same text. It carries the label of the run that
+ * stored it first (storeSetupParts in services/setup-service.ts). It is
+ * not derived from any row whose label it could take, and nothing tells
+ * the repository's own text, the same whoever asks, from text a deployment
+ * wrote for itself. So a text first used by a restricted run stays
+ * restricted for the public runs that use it afterwards. Telling those
+ * apart takes a key with the label in it, which is later work.
  *
  * What is derived mechanically from a row, with no judgment of the run in
  * it, carries that row's label. A document's segments are computed from

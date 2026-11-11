@@ -36,6 +36,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { KNOWN_ROLES } from "../llm/prompts/known-roles.js";
 import { hashText, roleText, type SetupPartKind, type SplitPart } from "./setup-split.js";
 
@@ -128,8 +129,23 @@ function partKey(p: { kind: string; name: string; hash: string }): string {
  * the same (kind, name). Two processes seeing two new texts at once can race
  * for a number; the unique index on (kind, name, version) refuses the loser,
  * which retries with the next number.
+ *
+ * A part carries the label of the run that first stored its text (`label`,
+ * the run whose prompt step named it, or the caller's own when it is not
+ * given; src/labels.ts). A part is not derived
+ * from any row whose label it could take, so it is the run's, like anything
+ * else a run writes. That is not the whole answer. The constitution and a
+ * known role prompt are the same whoever asks, but a role block or a tool
+ * descriptor can hold a deployment's own text, and nothing here can tell the
+ * two apart: `public` says the text matches the code that is running, and a
+ * private deployment may run code of its own. The row is found by the hash
+ * of its text whatever its label, so a text a restricted run stored first
+ * stays restricted for the public runs that use it after, and the version
+ * numbers of one (kind, name) count every label's texts together. Telling
+ * those apart takes a key with the label in it, or a record of which labels
+ * have used a part, which is later work with the rest of the reads.
  */
-export async function storeSetupParts(parts: readonly SetupPart[]): Promise<void> {
+export async function storeSetupParts(parts: readonly SetupPart[], label: string = currentLabel()): Promise<void> {
   const commit = loadConfig().gitSha ?? null;
   for (const p of parts) {
     const key = partKey(p);
@@ -138,12 +154,12 @@ export async function storeSetupParts(parts: readonly SetupPart[]): Promise<void
       try {
         await rawQuery(
           `INSERT INTO setup_parts
-             (kind, name, hash, content, public, source_path, first_seen_commit, version)
-           SELECT $1, $2, $3, $4, $5, $6, $7,
+             (kind, name, hash, content, public, source_path, first_seen_commit, sensitivity_label, version)
+           SELECT $1, $2, $3, $4, $5, $6, $7, $8,
                   COALESCE(MAX(version), 0) + 1
              FROM setup_parts WHERE kind = $1 AND name = $2
            ON CONFLICT (kind, name, hash) DO NOTHING`,
-          [p.kind, p.name, p.hash, p.content, p.public, p.sourcePath, commit]
+          [p.kind, p.name, p.hash, p.content, p.public, p.sourcePath, commit, label]
         );
         known.add(key);
         break;

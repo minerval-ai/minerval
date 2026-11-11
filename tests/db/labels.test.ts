@@ -163,26 +163,28 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Four groups: the judgments, sources and runs (this file); the rows
+    // Five groups: the judgments, sources and runs (this file); the rows
     // that stand for work waiting to be done, which hand their label to the
     // run that takes it up (label-carried.test.ts); the graph's own
     // content, from nodes and edges to formal statements
-    // (label-graph.test.ts); and what is read from a source or written
-    // about one, from instances and segments to examinations
-    // (label-sources.test.ts).
+    // (label-graph.test.ts); what is read from a source or written about
+    // one, from instances and segments to examinations
+    // (label-sources.test.ts); and what a run writes about itself, from the
+    // steps of its transcript to the reports it files (label-runs.test.ts).
     expect(rows).toEqual(
       [
-        "actions", "agent_runs", "agent_sessions", "answer_relations", "appeals", "argument_evaluations",
+        "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
+        "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals", "argument_evaluations",
         "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments", "assessment_orders",
-        "assessments", "assistant_held_actions", "audit_notes", "budget_jobs", "claim_formalizations",
+        "assessments", "assistant_held_actions", "audit_notes", "audit_runs", "budget_jobs", "claim_formalizations",
         "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
         "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claims",
         "contributions", "examination_coverage", "examination_findings", "examinations", "grant_sources", "jobs",
-        "judgment_inputs", "lean_checks", "lookout_feed_items", "proof_attempts", "quantity_cuts",
+        "judgment_inputs", "lean_checks", "llm_usage", "lookout_feed_items", "proof_attempts", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
-        "reading_citations", "reconciliation_events", "shared_page_analyses", "source_events",
-        "source_extractions", "source_interests", "source_relationships", "source_segments", "sources",
-        "taggings", "tags",
+        "reading_citations", "reconciliation_events", "research_runs", "setup_parts", "shared_page_analyses",
+        "source_events", "source_extractions", "source_interests", "source_relationships", "source_segments",
+        "sources", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });
