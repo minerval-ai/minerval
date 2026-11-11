@@ -31,6 +31,8 @@ export type FindingStatus = (typeof findingStatusEnum.options)[number];
 export const FINDING_REF_KINDS = [
   "claim",
   "assessment",
+  "question_assessment",
+  "quantity_estimate",
   "argument",
   "contribution",
   "lean_check",
@@ -42,6 +44,8 @@ export type FindingRefKind = (typeof FINDING_REF_KINDS)[number];
 const REF_TABLES: Record<FindingRefKind, string> = {
   claim: "claims",
   assessment: "assessments",
+  question_assessment: "question_assessments",
+  quantity_estimate: "quantity_estimates",
   argument: "arguments",
   contribution: "contributions",
   lean_check: "lean_checks",
@@ -394,9 +398,9 @@ export interface AgentFindingRow {
   first_noted_at: Date;
   last_noted_at: Date;
   /**
-   * True when the finding cites an assessment that is no longer the claim's
-   * current one: the graph has moved since the note was written. Computed
-   * at read time, never stored.
+   * True when the finding cites an assessment, a question's standing or a
+   * quantity's estimate that is no longer the node's current one: the graph
+   * has moved since the note was written. Computed at read time, never stored.
    */
   stale: boolean;
 }
@@ -408,8 +412,15 @@ const FINDING_SELECT = `
          f.first_noted_at, f.last_noted_at,
          EXISTS (
            SELECT 1 FROM jsonb_array_elements(f.refs) r
-             JOIN assessments a ON a.id = (r->>'id')::uuid
-            WHERE r->>'kind' = 'assessment' AND a.is_current = false
+            WHERE (r->>'kind' = 'assessment' AND EXISTS (
+                    SELECT 1 FROM assessments a
+                     WHERE a.id = (r->>'id')::uuid AND a.is_current = false))
+               OR (r->>'kind' = 'question_assessment' AND EXISTS (
+                    SELECT 1 FROM question_assessments qa
+                     WHERE qa.id = (r->>'id')::uuid AND qa.is_current = false))
+               OR (r->>'kind' = 'quantity_estimate' AND EXISTS (
+                    SELECT 1 FROM quantity_estimates qe
+                     WHERE qe.id = (r->>'id')::uuid AND qe.is_current = false))
          ) AS stale
     FROM agent_findings f
     JOIN claims c ON c.id = f.claim_id`;

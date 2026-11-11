@@ -100,7 +100,9 @@ export function getFindingToolDefinitions(options: { mandate?: boolean } = {}): 
             description:
               "The records the finding rests on, by id; at least one. Cite " +
               "the assessment itself (its id is `assessment.id` in " +
-              "get_claim), not only its claim, so the finding " +
+              "get_claim; on a question, a question_assessment, " +
+              "`question.assessment.id`; on a quantity, a quantity_estimate, " +
+              "`quantity.assessed.id`), not only its node, so the finding " +
               "still points at what it rested on after a reassessment. An id " +
               "that does not resolve is dropped and named in the reply.",
             items: {

@@ -198,7 +198,7 @@ export const CURATION_CONTRIBUTION_TYPES = ["propose_merge", "propose_split", "p
  * nodes, and the structural proposals among them (#832). A consistency
  * audit is where duplicates turn up; filed as a challenge instead, a merge
  * case goes to the node's Steward rather than to the Curator, who
- * adjudicates merges and splits (§5). New claims and questions stay with
+ * adjudicates merges and splits (§5). New claims, questions and quantities stay with
  * the Grantmaker, which sees the whole mandate.
  */
 export const RESEARCH_CONTRIBUTION_TYPES = [...MANDATE_CONTRIBUTION_TYPES, ...CURATION_CONTRIBUTION_TYPES] as const;
@@ -316,12 +316,14 @@ async function checkStructuralProposal(
   return { ok: true, mergeTarget: null, proposedText: null };
 }
 
-/** What a mandate's Grantmaker (and its lookouts) may submit: the same, structural proposals, and new claims and questions. */
+/** The proposals of a node the graph does not hold, one per kind (§2, §7a). */
+export const NODE_PROPOSAL_TYPES = ["propose_claim", "propose_question", "propose_quantity"] as const;
+
+/** What a mandate's Grantmaker (and its lookouts) may submit: the same, structural proposals, and new claims, questions and quantities. */
 export const GRANTMAKER_CONTRIBUTION_TYPES = [
   ...MANDATE_CONTRIBUTION_TYPES,
   ...CURATION_CONTRIBUTION_TYPES,
-  "propose_claim",
-  "propose_question",
+  ...NODE_PROPOSAL_TYPES,
 ] as const;
 
 /**
@@ -329,8 +331,8 @@ export const GRANTMAKER_CONTRIBUTION_TYPES = [
  * mandate's agents write nothing to the graph directly, and like anyone may
  * contribute through the Contribution Reviewer, paying for the review). It
  * is filed under the funder's account and shown as "a funded mandate", its
- * review metered to the mandate's budget job. A proposed claim or question
- * has no node yet: it is an intake contribution, and an accept materializes
+ * review metered to the mandate's budget job. A proposed claim, question or
+ * quantity has no node yet: it is an intake contribution, and an accept materializes
  * it through the Matcher. Before writing, the mandate's uncommitted escrow
  * must cover the estimated review, counting the reviews still pending on
  * its earlier submissions.
@@ -350,14 +352,14 @@ export async function submitGrantContribution(input: {
   if (content.length < 40) {
     return { success: false, message: "content must say what you found and what it rests on, or why the question needs asking." };
   }
-  const intake = type === "propose_claim" || type === "propose_question";
+  const intake = (NODE_PROPOSAL_TYPES as readonly string[]).includes(type);
   // A request may bear on several nodes, sources, or something the graph
   // does not hold yet (Part VIII, #724): with no node named, content says
   // what it bears on and the review settles it.
   const unanchoredRequest = type === "propose_request" && !claimId;
   if (intake) {
     if (!proposed) return { success: false, message: `${type} needs proposed_text: the wording you propose.` };
-    if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim or question, not an essay." };
+    if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim, question or quantity, not an essay." };
   } else if (!unanchoredRequest) {
     const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
     if (!node) return { success: false, message: `No active node ${claimId || "(none given)"}; ${type} is about an existing node.` };
@@ -700,12 +702,11 @@ export function formatContribution(c: {
     page_url: c.claimId
       ? `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${c.claimId}`
       : null,
-    // Set only for an accepted propose_claim / propose_question: the node it
-    // became or landed on, so the contributor can follow it. (An accepted
+    // Set only for an accepted propose_claim / propose_question /
+    // propose_quantity: the node it became or landed on, so the contributor can follow it. (An accepted
     // propose_source mints its claims through extraction, not here.)
     became_claim_id:
-      c.claimId &&
-      (c.contributionType === "propose_claim" || c.contributionType === "propose_question")
+      c.claimId && (NODE_PROPOSAL_TYPES as readonly string[]).includes(c.contributionType)
         ? c.claimId
         : null,
   };

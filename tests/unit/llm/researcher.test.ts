@@ -258,14 +258,16 @@ describe("toolset by model", () => {
     expect(task).toContain("The code-execution sandbox is available");
   });
 
-  it("runs the strong tier on the long-run loop with effort and a task budget", async () => {
+  it("runs the strong tier on the long-run loop with effort and no provider task budget", async () => {
     const result = await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     expect(result.status).toBe("completed");
     expect(mocks.longRunCalls).toHaveLength(1);
     const opts = mocks.longRunCalls[0]!;
     expect(opts.effort).toBe("high");
     expect(opts.fallbacks).toBe("none");
-    expect(typeof opts.taskBudgetTokens).toBe("number");
+    // The dollar ceiling is the only budget: a token countdown the task
+    // message never explains ended runs at a fraction of it (#897).
+    expect(opts.taskBudgetTokens).toBeUndefined();
     expect(opts.maxWallMs).toBe(20 * 60_000);
     const names = (opts.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names).toContain("code_execution");
@@ -497,6 +499,7 @@ describe("a run that takes up a request (#728, #730, #732)", () => {
       requestNodes?: unknown;
       priorRun?: unknown;
       fullWork?: unknown;
+      quoteMicroUsd?: number | null;
     };
     i.run.requested_by = over.scope ? "request_scope" : "request";
     if (over.nodes) {
@@ -562,6 +565,23 @@ describe("a run that takes up a request (#728, #730, #732)", () => {
     expect(report.input_schema.properties.plan).toBeDefined();
   });
 
+  it("tells a run funded below the request's quote, and no other run (#885)", async () => {
+    const under = requestInput();
+    under.run.ceiling_micro_usd = 2_000_000;
+    under.quoteMicroUsd = 5_000_000;
+    await runResearcher(under);
+    expect(task()).toContain("The whole of this work is quoted at $5.00, and this run is funded at $2.00");
+    expect(task()).toContain("do the part of it this budget covers properly");
+    const atQuote = requestInput();
+    atQuote.run.ceiling_micro_usd = 5_000_000;
+    atQuote.quoteMicroUsd = 5_000_000;
+    await runResearcher(atQuote);
+    expect(task()).not.toContain("is quoted at");
+    // A request nobody priced has no quote to be under.
+    await runResearcher(requestInput());
+    expect(task()).not.toContain("is quoted at");
+  });
+
   it("opens with the previous run's notebook and says where it came from", async () => {
     const i = requestInput();
     i.run.notebook = { "from run abcdef12: thread": "where it stood" };
@@ -590,6 +610,17 @@ describe("the prompt", () => {
     const without = (mocks.toolLoopCalls.at(-1)!.system as string[])[0]!;
     expect(without).toContain("try analyses until one comes out");
     expect(without).not.toContain("<<analysis>>");
+  });
+
+  it("has scoping quote only work a Researcher has the means to do (#885)", async () => {
+    await runResearcher(input());
+    const system = (mocks.toolLoopCalls.at(-1)!.system as string[])[0]!.replace(/\s+/g, " ");
+    expect(system).toContain("It has no GPU, cannot train or fine-tune a model, cannot call a model API");
+    expect(system).toContain("report cannot_be_met, saying what the work needs and who could do it");
+    expect(system).toContain("quote that part alone");
+    // The quote is the price funders see, not a bound on the run: its payer sets that.
+    expect(system).not.toContain("it bounds the run that takes the request up");
+    expect(system).toContain("a run funded below your quote is told so and marked so on the request");
   });
 
   it("leaves the answer's length to judgment", async () => {

@@ -46,6 +46,10 @@ vi.mock("../../../src/services/request-service.js", () => ({
   recordWork: vi.fn(async () => ({ id: "w" })),
   requestBrief: () => "brief",
   setRequestBudget: vi.fn(async () => {}),
+  workLabel: (w: { by: string; outcome: string | null; funding?: string | null }) => {
+    const marks = [w.outcome, w.funding].filter(Boolean).join("; ");
+    return `${w.by}${marks ? ` (${marks})` : ""}`;
+  },
 }));
 
 vi.mock("../../../src/db/client.js", () => ({

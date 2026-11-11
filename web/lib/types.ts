@@ -631,6 +631,9 @@ export interface QuantityCut {
 
 /** Who estimated a quantity, when, and why: the record behind its estimate. */
 export interface QuantityAssessed {
+  // The estimate's own id: what a finding cites as a quantity_estimate ref.
+  // Optional while API deploys race the frontend.
+  id?: string;
   summary: string | null;
   work: string;
   model?: string | null;
@@ -707,6 +710,9 @@ export interface QuestionInstance {
 
 /** A question's current assessment: its standing, the Steward's account, and the answers it favors. */
 export interface QuestionAssessment {
+  // The row's own id: what a finding cites as a question_assessment ref.
+  // Optional while API deploys race the frontend.
+  id?: string;
   standing: QuestionStanding;
   summary: string | null;
   reasoning_trace: string;
@@ -747,6 +753,10 @@ export interface RequestWork {
   summary: string;
   at: string;
   funded_by?: string | null;
+  /** Set when the run was funded below what the work was quoted at: "funded at $2.00 of a $5.00 quote". */
+  funding?: string | null;
+  /** The agent run that did the work. */
+  run_id?: string | null;
 }
 
 /** Something someone could do that would improve what the graph knows (Part VIII, Requests). */
@@ -836,10 +846,19 @@ export interface ClaimTag extends TagRef {
 
 // A notable finding (#394): what an administrator found that people who hold
 // the question would be better for knowing, in the graph's voice, published
-// as written. `stale` means a cited assessment is no longer the claim's
-// current one; the page says so beside the note.
+// as written. `stale` means a cited assessment, question standing or quantity
+// estimate is no longer the node's current one; the page says so beside the note.
 export interface FindingRef {
-  kind: "claim" | "assessment" | "argument" | "contribution" | "lean_check" | "proof_attempt" | "formalization";
+  kind:
+    | "claim"
+    | "assessment"
+    | "question_assessment"
+    | "quantity_estimate"
+    | "argument"
+    | "contribution"
+    | "lean_check"
+    | "proof_attempt"
+    | "formalization";
   id: string;
 }
 export interface Finding {

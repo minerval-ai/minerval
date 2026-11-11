@@ -200,6 +200,13 @@ export async function recordWork(input: {
   outcome?: RequestOutcome | null;
   summary: string;
   fundedByJobId?: string | null;
+  /**
+   * For a run on the full work (#885): the budget it was given and what
+   * the work was priced at when it started, so the log can say when a run
+   * was funded below its quote.
+   */
+  budgetMicroUsd?: number | null;
+  quoteMicroUsd?: number | null;
 }): Promise<{ id: string }> {
   if (input.outcome != null && !(REQUEST_OUTCOMES as readonly string[]).includes(input.outcome)) {
     throw new RequestError(`Unknown outcome "${input.outcome}"`);
@@ -214,8 +221,9 @@ export async function recordWork(input: {
     if (isClosed(req.state)) throw new RequestError(`Request ${input.requestId} is ${req.state}`);
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO request_work
-         (request_id, by_label, contributor_id, research_run_id, outcome, summary, funded_by_job_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+         (request_id, by_label, contributor_id, research_run_id, outcome, summary, funded_by_job_id,
+          budget_micro_usd, quote_micro_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         input.requestId,
         input.byLabel,
@@ -224,6 +232,8 @@ export async function recordWork(input: {
         input.outcome ?? null,
         input.summary.trim(),
         input.fundedByJobId ?? null,
+        input.budgetMicroUsd == null ? null : Math.round(input.budgetMicroUsd),
+        input.quoteMicroUsd == null ? null : Math.round(input.quoteMicroUsd),
       ]
     );
     if (req.state !== "in_progress") {
@@ -485,6 +495,12 @@ export interface RequestView {
    * The work done on it. research_run_id names the Researcher's run, whose
    * full report and notebook get_research_run serves to the keeper and the
    * Stewards of what it bears on (#718); the public API leaves it out.
+   * run_id is the agent run that did the work, which get_run and
+   * list_run_steps read (they take either id). budget_usd and quote_usd
+   * are set on a run of the full work: what it was funded at and what the
+   * work was priced at then, and funding says so in words when the first
+   * was below the second (#885), so a starved partial result can be told
+   * from a real one.
    */
   work: {
     by: string;
@@ -493,6 +509,10 @@ export interface RequestView {
     at: Date;
     funded_by: string | null;
     research_run_id: string | null;
+    run_id: string | null;
+    budget_usd: number | null;
+    quote_usd: number | null;
+    funding: string | null;
   }[];
 }
 
@@ -574,9 +594,14 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       created_at: Date;
       funded_by_job_id: string | null;
       research_run_id: string | null;
+      run_id: string | null;
+      budget_micro_usd: string | null;
+      quote_micro_usd: string | null;
     }>(
-      `SELECT request_id, by_label, outcome, summary, created_at, funded_by_job_id, research_run_id
-         FROM request_work WHERE request_id = ANY($1::uuid[]) ORDER BY created_at, id`,
+      `SELECT w.request_id, w.by_label, w.outcome, w.summary, w.created_at, w.funded_by_job_id,
+              w.research_run_id, rr.run_id, w.budget_micro_usd, w.quote_micro_usd
+         FROM request_work w LEFT JOIN research_runs rr ON rr.id = w.research_run_id
+        WHERE w.request_id = ANY($1::uuid[]) ORDER BY w.created_at, w.id`,
       [ids]
     ),
     rawQuery<{
@@ -640,8 +665,84 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       at: w.created_at,
       funded_by: w.funded_by_job_id ? (fundingLabels.get(w.funded_by_job_id) ?? null) : null,
       research_run_id: w.research_run_id ?? null,
+      run_id: w.run_id ?? null,
+      budget_usd: w.budget_micro_usd == null ? null : usd(w.budget_micro_usd),
+      quote_usd: w.quote_micro_usd == null ? null : usd(w.quote_micro_usd),
+      funding: underQuoteMark(
+        w.budget_micro_usd == null ? null : Number(w.budget_micro_usd),
+        w.quote_micro_usd == null ? null : Number(w.quote_micro_usd)
+      ),
     })),
   }));
+}
+
+/**
+ * Whether a budget is below a quote, to the cent: a quote of $4.50 funded
+ * at $4.50 is funded at its quote however the micro-dollars round.
+ */
+export function isUnderQuote(budgetMicroUsd: number | null, quoteMicroUsd: number | null): boolean {
+  if (budgetMicroUsd == null || quoteMicroUsd == null || !(quoteMicroUsd > 0)) return false;
+  return Math.round(budgetMicroUsd / 10_000) < Math.round(quoteMicroUsd / 10_000);
+}
+
+/**
+ * How a run funded below what its work was priced at reads on the work log
+ * (#885): "funded at $2.00 of a $5.00 quote". Null for a run funded at its
+ * quote or above, and for work that carried no price.
+ */
+export function underQuoteMark(budgetMicroUsd: number | null, quoteMicroUsd: number | null): string | null {
+  if (!isUnderQuote(budgetMicroUsd, quoteMicroUsd)) return null;
+  const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
+  return `funded at ${usd(budgetMicroUsd!)} of a ${usd(quoteMicroUsd!)} quote`;
+}
+
+/** One piece of work as a brief lists it: who, the outcome, the funding mark when under quote. */
+export function workLabel(w: RequestView["work"][number]): string {
+  const marks = [w.outcome, w.funding].filter(Boolean).join("; ");
+  return `${w.by}${marks ? ` (${marks})` : ""}`;
+}
+
+/**
+ * What the payer of a commission on a request's full work is told about its
+ * quote (#885), by every path that commissions one (commissionAction): the
+ * quote, plainly whether the budget is below it and what that means for the
+ * run, and the earlier runs on the request that were funded below theirs,
+ * with how each ended. It informs and refuses nothing: a commission's
+ * budget is its payer's choice, a stage of a large request is a fair thing
+ * to buy, and the quote is an estimate. What it stops is paying for a
+ * starved run, or a third one, without knowing.
+ */
+export async function requestQuoteNote(input: {
+  requestId: string;
+  budgetMicroUsd: number;
+  quoteMicroUsd: number;
+}): Promise<{ underQuote: boolean; note: string }> {
+  const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
+  const earlier = await rawQuery<{ outcome: string | null; budget: string; quote: string }>(
+    `SELECT outcome, budget_micro_usd AS budget, quote_micro_usd AS quote
+       FROM request_work
+      WHERE request_id = $1 AND outcome IS NOT NULL
+        AND budget_micro_usd IS NOT NULL AND quote_micro_usd IS NOT NULL
+      ORDER BY created_at, id`,
+    [input.requestId]
+  ).catch(() => []);
+  const starved = earlier.filter((w) => isUnderQuote(Number(w.budget), Number(w.quote)));
+  const history = starved.length
+    ? ` ${starved.length === 1 ? "One earlier run" : `${starved.length} earlier runs`} on this request ${starved.length === 1 ? "was" : "were"} funded below ${starved.length === 1 ? "its" : "their"} quote: ` +
+      starved.map((w) => `${usd(Number(w.budget))} of ${usd(Number(w.quote))} (${w.outcome})`).join(", ") +
+      ". Another run below the quote is likely to end the same way; get_request shows what each left."
+    : "";
+  if (!isUnderQuote(input.budgetMicroUsd, input.quoteMicroUsd)) {
+    return { underQuote: false, note: `The work is quoted at ${usd(input.quoteMicroUsd)}; this budget covers it.${history}` };
+  }
+  return {
+    underQuote: true,
+    note:
+      `Below the quote: the work is quoted at ${usd(input.quoteMicroUsd)} and this commission gives it ${usd(input.budgetMicroUsd)}. ` +
+      "It runs all the same, since the budget is yours to set, but the run is told it is funded below the quote and will do only the part of the plan this covers. " +
+      `Its work is recorded on the request as "${underQuoteMark(input.budgetMicroUsd, input.quoteMicroUsd)}", and what it leaves needs a further commission.` +
+      history,
+  };
 }
 
 /**
@@ -665,7 +766,7 @@ export function requestBrief(request: RequestView): string {
       : null,
     request.bears_on_text ? `Bears on, in words: ${request.bears_on_text}` : null,
     request.work.length
-      ? `Work already done on it: ${request.work.map((w) => `${w.by}${w.outcome ? ` (${w.outcome})` : ""}: ${w.summary}`).join(" | ")}`
+      ? `Work already done on it: ${request.work.map((w) => `${workLabel(w)}: ${w.summary}`).join(" | ")}`
       : null,
   ]
     .filter(Boolean)

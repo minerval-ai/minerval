@@ -111,9 +111,15 @@ export function getFundRequestToolDefinition(): Tool {
     description:
       "Commission the work on an open request in your scope (list_requests shows them), whole, from " +
       "your mandate. The work is a row on the action ledger: a scoping pass while the request has no " +
-      "budget (it returns a quote, which becomes the budget), then the full work. You decide whether " +
-      "the request is worth doing and the budget it should have to be done properly (set it at the " +
-      "high end of what the costing skill says such work costs); the request is the brief, and how " +
+      "budget (it returns a quote, which becomes the request's budget_usd and what the full work is " +
+      "priced at), then the full work. The run works to the budget you give here, not to the quote: " +
+      "you decide whether the request is worth doing and what to pay, and nothing raises a smaller " +
+      "budget to the quote. Fund the full work at its quote unless you mean to buy one stage of it. " +
+      "A budget below the quote is accepted, and the result says so plainly: that run is told it is " +
+      "funded below the quote, does only part of the plan, usually returns partly_met, and is marked " +
+      "on the request's work log (funding: \"funded at $X of a $Y quote\"), so read that mark before " +
+      "you take an earlier partly_met as what the work can find or pay for another run like it. " +
+      "The request is the brief, and how " +
       "the work is done and what it finds are not yours to shape. Every outcome is a complete one and " +
       "paid for alike, and is recorded on the request for its keeper to judge. The run starts at once; " +
       "what it does not spend comes back when it settles, and all of it if the request closes first. " +
@@ -136,6 +142,23 @@ export function getFundRequestToolDefinition(): Tool {
  * configured model is Anthropic-served (agents/researcher.ts); the launcher
  * is told which, since a replication on a tier without it cannot run code.
  */
+/**
+ * What a Researcher run can use, for whoever writes its brief (#847): a
+ * brief that names a tool the Researcher lacks sends the run looking for
+ * it. Shared by delegate_research and commission (kind research).
+ */
+export function researcherToolsSentence(graphWrites = true): string {
+  return (
+    "The researcher's tools are web search, read_page, the graph's read tools, query_sql " +
+    "(read-only SQL over the graph's public views), scholarly search where configured, " +
+    (graphWrites
+      ? "a notebook, and the provenance tools on a claim-scoped task. "
+      : "and a notebook. ") +
+    "It has no others: no Lean checker, no model or other API to call, no GPU, and it cannot " +
+    "commission or delegate work of its own, so a brief should not ask for a tool outside this list. "
+  );
+}
+
 export function sandboxTiersSentence(): string {
   const withSandbox = RESEARCH_MODEL_TIERS.filter((t) => {
     const model = modelForTier(t);
@@ -206,10 +229,8 @@ export function getResearchToolDefinitions(
         "plan). Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
-        "Every tier has web search, read_page, the graph's read tools, scholarly search " +
-        (graphWrites
-          ? "where configured, a notebook, and the provenance tools on a claim-scoped task. "
-          : "where configured, and a notebook. ") +
+        "On every tier: " +
+        researcherToolsSentence(graphWrites) +
         "Tiers: 'strong' runs the best model class, for a replication or an analysis " +
         "where the best model pays; 'standard' for most delegated reading and checking; " +
         "'cheap' for reading and mapping a large literature economically. " +
@@ -803,6 +824,9 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       funded: what,
       status: placed.status,
       budget_usd: usdText(placed.placedMicroUsd),
+      ...(placed.quote
+        ? { quote_usd: usdText(placed.quote.quoteMicroUsd), below_quote: placed.quote.underQuote, quote: placed.quote.note }
+        : {}),
       note:
         placed.status === "commissioned"
           ? "Commissioned whole: the Researcher takes it up on the next pass with this budget, and its outcome is recorded on the request for its keeper. What it does not spend comes back."

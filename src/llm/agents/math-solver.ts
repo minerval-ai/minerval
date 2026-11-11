@@ -28,11 +28,8 @@ import {
   STOP_CANCELLED,
   STOP_CEILING,
   STOP_PAUSED,
-  TASK_BUDGET_FRACTION,
-  TASK_BUDGET_MIN_TOKENS,
   meterCodeExecution,
   spendLine,
-  taskBudgetTokens,
   turnUsedCodeExecution,
 } from "../instrument-harness.js";
 import { createReportTools, RAISE_ISSUE_TOOL_NAME } from "../tools/report-tools.js";
@@ -77,16 +74,13 @@ export const SOLVER_AGENT = "math_solver";
 
 // The solver is the first instrument and a special case of the general
 // harness (src/llm/instrument-harness.ts, #298): the stop reasons, the
-// reminder fraction, the task budget, the turn guard, and the container
+// reminder fraction, the turn guard, and the container
 // rate are shared with the researcher and re-exported here under the names
 // the solver's tests and worker use.
 export const SOLVER_STOP_CEILING = STOP_CEILING;
 export const SOLVER_STOP_PAUSED = STOP_PAUSED;
 export const SOLVER_STOP_CANCELLED = STOP_CANCELLED;
 export const SOLVER_REMINDER_FRACTION = REMINDER_FRACTION;
-export const SOLVER_TASK_BUDGET_FRACTION = TASK_BUDGET_FRACTION;
-export const SOLVER_TASK_BUDGET_MIN_TOKENS = TASK_BUDGET_MIN_TOKENS;
-export const solverTaskBudgetTokens = taskBudgetTokens;
 export const SOLVER_MAX_TURNS_GUARD = MAX_TURNS_GUARD;
 export { CODE_EXECUTION_USD_PER_HOUR, CODE_EXECUTION_TOOL };
 
@@ -843,9 +837,9 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
   };
 
   // The running state in the unit that binds (#758): the dollar spend line
-  // rides on every turn's message, beside the provider's token countdown,
-  // which does not see checker or container time; the wrap-up notice
-  // follows it once past the reminder fraction.
+  // rides on every turn's message, read from the meter, so it counts
+  // checker and container time; the wrap-up notice follows it once past
+  // the reminder fraction. It is the only budget the solver is shown.
   let meterAtLastTurn = 0;
   const reminder = (_state: LongRunLoopState): string => {
     const spent = meterMicroUsd();
@@ -891,7 +885,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
       system: getMathSolverSystemPromptBlocks(),
       model,
       effort: input.effort,
-      taskBudgetTokens: solverTaskBudgetTokens(input.ceilingMicroUsd, model),
       fallbacks: "none",
       maxIterations: SOLVER_MAX_TURNS_GUARD,
       executeTool,

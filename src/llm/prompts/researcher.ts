@@ -227,12 +227,30 @@ estimate of the full work's cost with room for what you could not foresee,
 and in plan the plan the quote prices. Load the costing skill for how to
 build one.
 
+The run that takes the request up is a Researcher like you, with the tools
+you can see in this run and nothing more: it reads the open web and the
+graph, searches the literature, and computes in a sandbox with one CPU and
+no network. It has no GPU, cannot train or fine-tune a model, cannot call a
+model API or any other service to run an experiment, cannot collect new
+data from people or instruments, and cannot buy access to anything. Quote
+only work it can do. Where a request asks for work beyond those means (a
+new experiment, a training run, access a lab or a company holds), a quote
+would sell a run that cannot deliver: report cannot_be_met, saying what the
+work needs and who could do it, so its keeper can leave it for someone who
+can.
+Where part of it is desk work a Researcher can do and that part is worth
+having on its own, quote that part alone, say in plan what it leaves out
+and why, and say the same in your answer so no funder takes the quote for
+the price of the whole.
+
 Some scoping runs end the matter. If the request is answered by what you
 found while looking, report met or negative. If it cannot or should not be
 met, report cannot_be_met or declined. Otherwise report revise when the
 request should change before anyone funds it, and scoped when it is ready
 to fund at your quote. The quote becomes the request's budget and the
-price funders see; it bounds the run that takes the request up.
+price funders see. Whoever commissions the work chooses its budget, and a
+run funded below your quote is told so and marked so on the request, so
+quote what the work needs, not what you expect someone to pay.
 
 ${skillsSection("researcher")}`;
 
@@ -296,6 +314,11 @@ export interface ResearcherTaskInput {
   claim: { id: string; text: string; kind?: string } | null;
   /** For a request run on several nodes: the nodes its provenance tools may record on (#728). */
   requestNodes?: { id: string; text: string; kind: string }[];
+  /**
+   * For a run taking up a request: what the full work was priced at, when
+   * it has a price. A run funded below it is told so (#885).
+   */
+  quoteUsd?: number | null;
   /** For a run on a request: the earlier run its notebook opens with (#730). */
   priorRun?: { id: string; status: string; requestedBy: string } | null;
   /** For a scoping run: what the full work will run on (#732). */
@@ -407,8 +430,17 @@ Tools in this run: ${input.toolNames.join(", ")}. ${sandboxLine}${notebookNote}`
  * and sources it reads whole in every case; never a verdict.
  */
 function requestRunLine(input: ResearcherTaskInput, has: (n: string) => boolean): string {
+  // A payer may commission the work below its quote (#885). The run is told,
+  // so it does a stage well instead of the whole thinly, and its report
+  // prices the rest.
+  const quote = input.quoteUsd ?? null;
+  const underQuote =
+    quote !== null && Math.round(input.budgetUsd * 100) < Math.round(quote * 100)
+      ? ` The whole of this work is quoted at $${quote.toFixed(2)}, and this run is funded at $${input.budgetUsd.toFixed(2)}, which is its payer's choice to make. Do not spread that over the whole plan: do the part of it this budget covers properly, starting from what earlier runs left, and say in your report what remains and what it would cost (remaining_budget_usd). Your work is recorded on the request as funded below its quote.`
+      : "";
   const opening =
-    "This run takes up a request, and the section When You Take Up a Request applies. What you find goes in your report, which is recorded as work on the request for its keeper to judge and is read by the Steward of each node it bears on. The brief above is the request as filed; get_request reads it with the work already done on it, and list_requests the other requests on the same nodes.";
+    "This run takes up a request, and the section When You Take Up a Request applies. What you find goes in your report, which is recorded as work on the request for its keeper to judge and is read by the Steward of each node it bears on. The brief above is the request as filed; get_request reads it with the work already done on it, and list_requests the other requests on the same nodes." +
+    underQuote;
   const recordsProvenance = has("provenance_record_reading");
   const instance = has("record_claim_instance")
     ? " and the instances you find (record_claim_instance)"

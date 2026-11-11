@@ -29,8 +29,14 @@ interface MandateView {
   plan: {
     strategy: string;
     items: Array<{
-      action: "assess" | "reassess" | "deepen" | "ingest";
+      action: "propose" | "assess" | "reassess" | "deepen" | "ingest";
       claim_id?: string;
+      // A node the graph does not hold yet (#656): a propose item's kind
+      // and wording, and the items that wait on it by its ref.
+      claim_ref?: string;
+      ref?: string;
+      kind?: string;
+      text?: string;
       url?: string;
       rationale: string;
     }>;
@@ -48,11 +54,21 @@ interface ConversationView {
   grant_id: string | null;
 }
 
+/** What an item that waits on a proposal is for: the proposal's kind and wording. */
+function proposedLabel(
+  items: Array<{ action: string; ref?: string; kind?: string; text?: string }>,
+  ref: string | undefined
+): string {
+  const p = items.find((it) => it.action === "propose" && it.ref === ref);
+  return p ? `${p.kind}: “${p.text}”` : "node";
+}
+
 const ACTION_LABEL: Record<string, string> = {
   assess: "assess",
   reassess: "reassess",
   deepen: "deepen",
   ingest: "ingest source",
+  propose: "propose",
 };
 
 export function GrantConversation({
@@ -220,6 +236,14 @@ export function GrantConversation({
                 <span className="tag">{ACTION_LABEL[item.action] ?? item.action}</span>{" "}
                 {item.action === "ingest" ? (
                   <span className="mandate-target">{item.url}</span>
+                ) : item.action === "propose" ? (
+                  <span className="mandate-target">
+                    a new {item.kind}, reviewed before it enters the graph: “{item.text}”
+                  </span>
+                ) : !item.claim_id ? (
+                  <span className="mandate-target">
+                    the proposed {proposedLabel(mandate.plan.items, item.claim_ref)}
+                  </span>
                 ) : (
                   <a
                     className="mandate-target"

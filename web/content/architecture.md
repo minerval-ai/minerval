@@ -623,7 +623,8 @@ Contributions flow through review (`contribution_reviews`), can be
 appealed (`appeals`), and escalated to arbitration (`arbitration_results`).
 
 Two **intake** types extend the same machinery to brand-new content:
-`propose_claim` (a suggested claim, or with `propose_question` a question:
+`propose_claim` (a suggested claim, or with `propose_question` a question
+and with `propose_quantity` a quantity:
 its wording alone, with no argument, since the case for or against a node
 comes through contributions on it once it exists) and
 `propose_source` (a document submitted for extraction). These have no target
@@ -883,7 +884,7 @@ These act through tools over the life of a claim and the graph:
   and the mandate plans through `query_sql`: `ledger` holds every row in
   every status, `commissions` the money on each, and `plan_items` every
   plan item with the standing last written on it, joined to the row it
-  names, so a report about the ledger is verified there instead of taken
+  names (and, for a node a plan proposed, to the contribution it filed), so a report about the ledger is verified there instead of taken
   on the reporter's word.
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest
@@ -1011,8 +1012,9 @@ sibling channel for the other thing an agent notices in the course of its
 work: something people who hold a question would be better for knowing,
 because what most of them believe is wrong, or missing, or true for reasons
 the record now supplies. A finding is written in the graph's voice, rests on
-typed refs into the graph (claim, assessment, argument, contribution, check,
-attempt, formalization) that are checked to exist on write, carries an
+typed refs into the graph (claim, assessment, a question's standing, a
+quantity's estimate, argument, contribution, check, attempt, formalization)
+that are checked to exist on write, carries an
 importance of its own from 1 to 10, and is published as written on the
 public findings page (`/findings`), where the platform's later writing draws
 from it. The Grantmaker, a mandate's agent, makes no assessment, argument,
@@ -1025,7 +1027,8 @@ passes `joins` to `note_finding` and its account is added as a sighting,
 counted and kept in its own words, rather than a new finding. Findings live in
 `agent_findings` with the same no-FK attribution snapshot as reports, so a
 note outlives the trace it came from; the read side computes a `stale`
-flag when a cited assessment is no longer the claim's current one. The
+flag when a cited assessment, standing or estimate is no longer the node's
+current one. The
 extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
 and the solver do not carry the tool: an outside agent's discovery is a
 contribution, and a Lookout's is a flag for a Steward to judge.
@@ -1197,8 +1200,8 @@ load-bearing ones cheaply.
 
 **Tiers.** The launcher chooses from three, named for the role rather than
 the vendor (`RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`,
-`RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort` and
-the task budget, for work where the best model class pays, such as a
+`RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort`,
+for work where the best model class pays, such as a
 replication. Standard runs the ordinary loop on a Claude model. Cheap runs
 the ordinary loop on the cheap tier, and is the right choice for reading and
 mapping a large literature economically. A tier carries the code-execution
@@ -1320,7 +1323,7 @@ The spend is metered under the launcher's usage context, so it lands on the
 claim and the job that funded the launching run, appears in `llm_usage`
 under agent `researcher`, and is added to the launcher's own cost meter, so
 the launching action is charged for it. The shared pieces of this harness,
-the stop reasons, the reminder fraction, the task budget, and the container
+the stop reasons, the reminder fraction, and the container
 metering, live in `src/llm/instrument-harness.ts` and serve the solver too.
 
 **Budget legibility.** A model told "$2.00" does not know what that buys:
@@ -1334,8 +1337,13 @@ tokens; a model priced by its provider per call (the cheap tier) gets no
 up-front figure. After every turn, on both loops, the model sees a spend
 line read from the meter: what it has spent of what, and about how many
 turns remain at its last turn's cost. The line replaces the turn counter on
-the ordinary loop (`toolUseLoop`'s `turnNote`) and rides beside the
-provider's task-budget countdown on the long-run loop.
+the ordinary loop (`toolUseLoop`'s `turnNote`) and is the reminder on the
+long-run loop. It is the only budget a run is shown. The long-run loop once
+also sent the provider's task budget, a token countdown sized from the
+ceiling; it counts every tool result the model reads at the output price,
+so a run that read a few pages saw it run out at a fraction of its dollars
+and reported that its "working context" was gone (#897, #885). Nothing
+sends one now.
 
 **The record.** Each launch is a `research_runs` row: the brief, the model
 and tier, the ceiling, the spend, the turns, how the run ended (a run that

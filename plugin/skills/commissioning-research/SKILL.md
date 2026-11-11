@@ -91,8 +91,13 @@ saves a wasted conversation.
   the claims bearing on it.
 - Deepening a question into a programme of research: its subquestions,
   candidate answers, and the claims and quantities that would settle it.
-  If the graph does not hold the question yet, the Grantmaker can
-  propose it once the mandate is live, reviewed like anyone's proposal.
+  If the graph does not hold the question yet (or the claim, or the
+  quantity), the Grantmaker can put it in the plan as a proposal, with
+  the work on it planned against it. Nothing is filed until the mandate
+  is funded; then the proposal is reviewed like anyone's, its review
+  paid from the mandate, and the Matcher settles its wording or finds
+  the node the graph already holds. The planned work binds to that node.
+  A rejected proposal leaves that work unspent.
 - Funding open requests (work the graph has said would improve what it
   knows), whatever they find. A request bearing on one document alone is
   a review of that document for its own sake: what it says, whether its
@@ -171,9 +176,16 @@ other work, and anyone may commission it. `get_request` shows its budget
 request with no budget is scoped first: a cheap pass that finds out what
 the work would take and quotes it, and the quote becomes its budget.
 `fund_request_work` commissions whichever is open now, the scoping pass or
-the full work, at the budget your user chooses (the request's budget is
-the usual choice); the Researcher takes it up at once, and every outcome,
-a negative result included, is paid for alike. Your user pays what the
+the full work, at the budget your user chooses; the Researcher takes it up
+at once, and every outcome, a negative result included, is paid for alike.
+Fund the full work at the request's budget. The run works to what your
+user gives it, not to the quote: a smaller budget is accepted, the
+response says it is below the quote (`below_quote`, `note`), and the run
+does only part of the work. `get_request` marks such a run in its work
+log (`funding`: "funded at $2.00 of a $5.00 quote"), so a partly met
+result from one is a run that ran short, not a finding about what the
+work can show. Each piece of work also carries the `run_id` of the run
+that did it, which `get_run` and `list_run_steps` read. Your user pays what the
 work actually costs, and the rest comes back, as does everything if the
 request closes first.
 

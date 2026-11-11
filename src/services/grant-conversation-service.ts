@@ -558,6 +558,12 @@ export async function fundConversationMandate(input: {
     .set({ status: "funded", grantId: grant!.id, updatedAt: new Date() })
     .where(eq(grantConversations.id, convo.id))
     .returning();
+  // A plan that proposes a node the graph lacks (#656) files the proposal
+  // now, from the escrow just made, rather than a sweep later.
+  if (mandate.plan.items.some((it) => it.action === "propose")) {
+    const { materializeOpenProposals } = await import("./action-service.js");
+    await materializeOpenProposals(grant!.id);
+  }
   return { ok: true, conversation: updated!, grantId: grant!.id };
 }
 

@@ -19,6 +19,7 @@ import { rawQuery } from "../../db/client.js";
 import { registerAwait } from "../../services/session-service.js";
 import { commissionResearch } from "../../services/research-commission-service.js";
 import type { ResearchModelTier } from "../../services/research-run-service.js";
+import { researcherToolsSentence, sandboxTiersSentence } from "./research-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -32,7 +33,10 @@ export function getSpendToolDefinitions(): Tool[] {
       description:
         "Pay for another agent's run from your own budget. kind pass: a Steward pass on a node. " +
         "kind research: a Researcher run on a question this work needs answered, which runs on its " +
-        "own while you carry on. You set the run's budget: read the costing skill's cost_sheet for " +
+        "own while you carry on. " +
+        researcherToolsSentence() +
+        sandboxTiersSentence() +
+        "You set the run's budget: read the costing skill's cost_sheet for " +
         "what such runs cost and use the high end of the range, not the middle, since what the run " +
         "doesn't spend comes back. The budget leaves yours at once. The run's agent is told its " +
         "budget and your brief, and that a run paid for it, never which mandate; it may petition " +

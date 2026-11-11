@@ -638,7 +638,7 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
             ok: true,
             message:
               r.status === "commissioned"
-                ? `Commissioned the ${r.kind} at ${owls(budget)} owls.`
+                ? `Commissioned the ${r.kind} at ${owls(budget)} owls.` + (r.quote ? ` ${r.quote.note}` : "")
                 : "That work already has a run paid for or underway; nothing more was spent.",
           });
         } else {

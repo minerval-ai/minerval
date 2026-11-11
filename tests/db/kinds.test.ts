@@ -159,7 +159,7 @@ describe("quantities", () => {
       estimate: { form: "interval", low: 17e6, high: 100e6, level: 0.9 },
       work: "first pass",
     });
-    await recordEstimate({
+    const second = await recordEstimate({
       claimId: q,
       estimate: {
         form: "distribution",
@@ -187,7 +187,8 @@ describe("quantities", () => {
 
     const detail = await getQuantityDetail(q);
     expect(detail.estimate?.form).toBe("distribution");
-    expect(detail.assessed).toMatchObject({ work: "second pass", model: "dbtest-model" });
+    // The current estimate's own id, which a finding cites (quantity_estimate).
+    expect(detail.assessed).toMatchObject({ id: second.id, work: "second pass", model: "dbtest-model" });
   });
 
   it("records stated estimates, argument values, readings and cuts, and serves them", async () => {
@@ -341,7 +342,7 @@ describe("questions", () => {
     ).rejects.toThrow(/not an answer/);
 
     await recordQuestionAssessment({ claimId: question, standing: "open", reasoningTrace: "first" });
-    await recordQuestionAssessment({
+    const current = await recordQuestionAssessment({
       claimId: question,
       standing: "leaning",
       favoredClaimIds: [b],
@@ -351,7 +352,8 @@ describe("questions", () => {
     });
     const detail = await getQuestionDetail(question);
     expect(detail.standing).toBe("leaning");
-    expect(detail.assessment).toMatchObject({ reasoning_trace: "second", favored_ids: [b] });
+    // The current standing's own id, which a finding cites (question_assessment).
+    expect(detail.assessment).toMatchObject({ id: current.id, reasoning_trace: "second", favored_ids: [b] });
     expect(detail.incomplete).toMatch(/undercount/);
     expect(detail.answers.find((x) => x.id === b)!.favored).toBe(true);
     expect(detail.answers.find((x) => x.id === a)!.favored).toBe(false);
@@ -400,7 +402,7 @@ describe("GET /claims/:id for the kinds", () => {
     await app.ready();
     try {
       const q = await seedQuantity();
-      await recordEstimate({ claimId: q, estimate: { form: "point", central: 4e7 }, work: "w" });
+      const estimate = await recordEstimate({ claimId: q, estimate: { form: "point", central: 4e7 }, work: "w" });
       const res = await app.inject({ method: "GET", url: `/claims/${q}?information_depth=cursory` });
       expect(res.statusCode).toBe(200);
       const body = res.json();
@@ -409,7 +411,7 @@ describe("GET /claims/:id for the kinds", () => {
       expect(body.quantity).toMatchObject({
         definition: { measures: DEATHS.measures, unit: DEATHS.unit },
         estimate: { form: "point", central: 4e7 },
-        assessed: { work: "w" },
+        assessed: { id: estimate.id, work: "w" },
         estimates: [],
         readings: [],
         cuts: [],

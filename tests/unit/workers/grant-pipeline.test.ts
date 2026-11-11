@@ -384,6 +384,25 @@ describe("processNextGrantTask", () => {
     ).toBe(false);
   });
 
+  it("holds a plan open, cursor in place, while a proposal and the items naming it wait on its review (#656)", async () => {
+    state.grant = grant({
+      policy: "agent",
+      status: "active",
+      plan: {
+        strategy: "s",
+        items: [
+          { action: "propose", kind: "question", text: "What is so?", ref: "q", rationale: "r", ledger: { status: "waiting" } },
+          { action: "deepen", claim_ref: "q", rationale: "r", ledger: { status: "waiting" } },
+        ],
+      },
+    });
+    const r = await processNextGrantTask();
+    expect(r.status).toBe("empty");
+    expect(stewardRuns).toHaveLength(0);
+    expect(state.grantUpdates.some((u) => u.sql.includes("plan_cursor"))).toBe(false);
+    expect(state.refunds).toHaveLength(0);
+  });
+
   it("waits on ledger ingests without advancing the cursor or completing", async () => {
     state.grant = grant({
       policy: "agent",

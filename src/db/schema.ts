@@ -5125,6 +5125,13 @@ export const requestWork = pgTable(
     outcome: text("outcome"),
     summary: text("summary").notNull(),
     fundedByJobId: uuid("funded_by_job_id"),
+    // For a run on the request's full work: the budget its payer gave it,
+    // and what the work was priced at then (the request's budget, a scoping
+    // quote or its keeper's figure). A run funded below its price is marked
+    // so on the work log, so a starved partial result can be told from a
+    // real one (#885). NULL for scoping passes and for work nobody priced.
+    budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" }),
+    quoteMicroUsd: bigint("quote_micro_usd", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

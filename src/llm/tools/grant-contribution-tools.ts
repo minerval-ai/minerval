@@ -26,12 +26,16 @@ export function getGrantContributionToolDefinition(): Tool {
       "node, an instance or an estimate from a source, an argument, an " +
       "answer to a question, a request, a structural proposal (two nodes " +
       "that are one, one node that is two, a better canonical wording), or " +
-      "a claim or question the graph does not hold yet. It is reviewed like anyone's and shown as from " +
+      "a claim, question or quantity the graph does not hold yet. It is reviewed like anyone's and shown as from " +
       "\"a funded mandate\"; the review is paid from the escrow (cost_sheet " +
       "lists what one costs), and the node's Steward decides what an " +
-      "accepted contribution changes. A proposed claim or question enters " +
-      "through the Matcher, which lands it on an existing node if one " +
-      "already says it; once it is a node, plan passes on it as on any other.",
+      "accepted contribution changes. A proposed claim, question or quantity " +
+      "enters through the Matcher, which settles its kind and wording and " +
+      "lands it on an existing node if one already says it; once it is a " +
+      "node, plan passes on it as on any other. To plan passes on it now, " +
+      "before it is reviewed, put it in the plan as a propose item instead: " +
+      "that files this same contribution, once, and the items that name its " +
+      "ref bind to the node it becomes.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -39,7 +43,7 @@ export function getGrantContributionToolDefinition(): Tool {
         claim_id: {
           type: "string",
           description:
-            "The node it bears on. Omit for propose_claim and propose_question, and for a " +
+            "The node it bears on. Omit for propose_claim, propose_question and propose_quantity, and for a " +
             "propose_request that bears on several nodes, on sources, or on something the " +
             "graph does not hold yet (say what in content).",
         },
@@ -47,8 +51,9 @@ export function getGrantContributionToolDefinition(): Tool {
           type: "string",
           maxLength: 2000,
           description:
-            "propose_claim, propose_question and propose_edit only: the wording " +
-            "you propose, neutral, presupposing no more than it must.",
+            "propose_claim, propose_question, propose_quantity and propose_edit only: the wording " +
+            "you propose, neutral, presupposing no more than it must. A quantity's wording says " +
+            "what is measured, in which population and under which conditions, and in what unit.",
         },
         merge_target_claim_id: {
           type: "string",
@@ -70,7 +75,7 @@ export function getGrantContributionToolDefinition(): Tool {
           description:
             "For the Reviewer and, once it is accepted, the node's Steward, who " +
             "receives it as filed with the evidence: what you found and what it " +
-            "rests on, with locators. For propose_claim and propose_question, why the " +
+            "rests on, with locators. For propose_claim, propose_question and propose_quantity, why the " +
             "graph needs the node: that stays on the mandate's public record of " +
             "the contribution and never enters the graph or reaches the Steward " +
             "(the Reviewer judges the wording alone). An argument for the node, " +

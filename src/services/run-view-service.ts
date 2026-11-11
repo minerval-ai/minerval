@@ -89,11 +89,21 @@ export interface StepSummary {
   tools: string[];
 }
 
+/**
+ * The run with this id. A request's work log and a research report name a
+ * Researcher run by its research_runs id, which is not the id of the agent
+ * run that did the work (research_runs.run_id is), so an id that is no
+ * agent run's is tried as a research run's and resolved to its agent run
+ * (#897): either id reads the same run, served under the same rules.
+ */
 async function loadRun(runId: string): Promise<RunRow | null> {
   const rows = await rawQuery<RunRow>(
     `SELECT id, agent, claim_id, started_at, finished_at, outcome, error, steps, skills,
             wrote_to_graph, commit_sha, private_reasons
-       FROM agent_runs WHERE id = $1`,
+       FROM agent_runs
+      WHERE id = COALESCE(
+              (SELECT id FROM agent_runs WHERE id = $1),
+              (SELECT run_id FROM research_runs WHERE id = $1))`,
     [runId]
   );
   return rows[0] ?? null;
@@ -120,6 +130,8 @@ export async function getRunSummary(
   const run = await loadRun(runId);
   if (!run) return null;
   if (!servable(run, opts.isService ?? false)) return withheld(run);
+  // The agent run's own id from here on: `runId` may have named a research run.
+  runId = run.id;
 
   const [counts, usage, promptRows] = await Promise.all([
     rawQuery<{ n: string }>(`SELECT count(*)::text AS n FROM agent_steps WHERE run_id = $1`, [runId]),
@@ -240,6 +252,8 @@ export async function listRunSteps(
   const run = await loadRun(runId);
   if (!run) return null;
   if (!servable(run, opts.isService ?? false)) return withheld(run);
+  // The agent run's own id from here on: `runId` may have named a research run.
+  runId = run.id;
 
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   // A tool filter is applied after summarizing, so read in pages until the
@@ -277,6 +291,8 @@ export async function getRunStep(
   const run = await loadRun(runId);
   if (!run) return null;
   if (!servable(run, opts.isService ?? false)) return withheld(run);
+  // The agent run's own id from here on: `runId` may have named a research run.
+  runId = run.id;
   const rows = await rawQuery<{ seq: number; kind: string; content: unknown; created_at: Date }>(
     `SELECT seq, kind, content, created_at FROM agent_steps WHERE run_id = $1 AND seq = $2 LIMIT 1`,
     [runId, seq]

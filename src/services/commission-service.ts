@@ -30,6 +30,7 @@ import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
+import { requestQuoteNote } from "./request-service.js";
 
 export type CommissionPayer =
   | { kind: "grant"; grantId: string }
@@ -219,14 +220,35 @@ export async function commissionAction(input: {
   reason?: string | null;
   commissionedBy: string;
 }): Promise<
-  | { ok: true; status: "commissioned"; allocationId: string; kind: string }
+  | {
+      ok: true;
+      status: "commissioned";
+      allocationId: string;
+      kind: string;
+      /**
+       * For the full work on a request (#885): what it is quoted at, and
+       * what the payer is told about its budget against that quote. Every
+       * caller passes the note on in its own result.
+       */
+      quote?: { quoteMicroUsd: number; underQuote: boolean; note: string };
+    }
   | { ok: true; status: "already_commissioned"; kind: string }
   | Extract<CommissionResult, { ok: false }>
 > {
   const budget = Math.round(input.budgetMicroUsd);
   if (!(budget > 0)) return { ok: false, code: "BAD_AMOUNT", message: "A commission needs a budget above zero." };
-  const [row] = await rawQuery<{ id: string; kind: string; exclusion_group: string; claim_id: string | null; status: string; commissioned: boolean }>(
-    `SELECT a.id, a.kind, a.exclusion_group, a.claim_id, a.status,
+  const [row] = await rawQuery<{
+    id: string;
+    kind: string;
+    exclusion_group: string;
+    claim_id: string | null;
+    status: string;
+    commissioned: boolean;
+    variant: string;
+    target_ref: string | null;
+    cost_est_micro_usd: string;
+  }>(
+    `SELECT a.id, a.kind, a.exclusion_group, a.claim_id, a.status, a.variant, a.target_ref, a.cost_est_micro_usd,
             EXISTS (SELECT 1 FROM action_allocations al
                      WHERE al.exclusion_group = a.exclusion_group AND al.released_at IS NULL
                        AND al.commissioned_by IS NOT NULL AND al.spent_micro_usd < al.amount_micro_usd
@@ -250,7 +272,15 @@ export async function commissionAction(input: {
     reason: input.reason ?? null,
   });
   if (!placed.ok) return placed;
-  return { ok: true, status: "commissioned", allocationId: placed.allocationId, kind: row.kind };
+  // A request's full row costs the request's budget, its quote. The budget
+  // stays the payer's choice (action-service.ts actionBudgetMicroUsd), so a
+  // commission below it is placed; the payer is told, here, for every path.
+  const quoteMicroUsd = Number(row.cost_est_micro_usd) || 0;
+  const quote =
+    row.kind === "request" && row.variant === "full" && row.target_ref && quoteMicroUsd > 0
+      ? { quoteMicroUsd, ...(await requestQuoteNote({ requestId: row.target_ref, budgetMicroUsd: budget, quoteMicroUsd })) }
+      : undefined;
+  return { ok: true, status: "commissioned", allocationId: placed.allocationId, kind: row.kind, ...(quote ? { quote } : {}) };
 }
 
 type Placed = { ok: true; allocationId: string } | Extract<CommissionResult, { ok: false }>;

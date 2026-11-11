@@ -45,7 +45,9 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       summary:
         "An agent run: its agent, times, outcome, cost, the commit it ran, and its setup " +
         "(constitution, role prompt, tools, model) by version. A run that read private " +
-        "data answers public: false with the reasons",
+        "data answers public: false with the reasons. run_id is a run's id, or a research " +
+        "run's (the research_run_id a request's work or a research report names), which " +
+        "reads the Researcher's run",
       params: { type: "object", properties: { run_id: RUN_ID }, required: ["run_id"] },
       querystring: { type: "object", properties: { ...includePrivate } },
     },

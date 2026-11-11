@@ -99,7 +99,9 @@ skill bundles it in full, and the section numbers below point into it.
   given only where one number is an honest summary.
 - An assessment's `id` names the verdict itself; cite it, not only the
   claim, when you point at what the graph concluded, so the citation still
-  means that verdict after a reassessment. Its `run_id` names the run that
+  means that verdict after a reassessment. A quantity's estimate
+  (`quantity.assessed.id`) and a question's standing
+  (`question.assessment.id`) carry ids the same way. An assessment's `run_id` names the run that
   wrote it. `get_run` and
   `list_run_steps` show what that run was given and did, step by step,
   when the run is public; a run that read private data is withheld, with
@@ -221,9 +223,9 @@ support matters:
 - When the graph is silent on a claim that matters, or wrong about one,
   the better move is to improve it rather than fill in quietly from
   memory. With your user's agreement:
-  - **Missing claim or question**: `propose_claim` (the Matcher decides
-    whether it enters as a claim, a question or a quantity, so `kind` is
-    only a guess; it takes the wording alone and is reviewed on it before
+  - **Missing claim, question or quantity**: `propose_claim` (the Matcher
+    decides whether it enters as a claim, a question or a quantity, so
+    `kind`, which takes any of the three, is only a guess; it takes the wording alone and is reviewed on it before
     anything enters the graph; spends owls; a rejected good-faith proposal
     refunds). The case for or against it, once it is a node, is a
     `submit_contribution` of its own.

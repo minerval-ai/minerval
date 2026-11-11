@@ -234,7 +234,9 @@ read is free, an agent which signals allocation turns on.
   figures not yet recorded, readings, cut claims) and no assessment, a
   question a `question` record (standing, answers, presuppositions,
   subquestions), a cut claim `threshold_of`, and every node its `requests`,
-  as `GET /claims/:id` serves them.
+  as `GET /claims/:id` serves them. The estimate's record (`quantity.assessed`)
+  and the standing's (`question.assessment`) carry their own `id`, as a
+  claim's `assessment` does.
 - **`get_argument`** `{argument_id, include?, instances_limit?, instances_offset?}`
   — one argument (#541): its conclusion, stance or what it shows about a
   quantity, written form, and retirement if retired. `include` adds
@@ -385,8 +387,9 @@ read of a claim, use a card.
   take a `get_claim` each), `cite_claim`, `get_claim_provenance`,
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
-  `get_claim_events`, `propose_claim` (reviewed by the Contribution Reviewer
-  before anything enters the graph).
+  `get_claim_events`, `propose_claim` (a claim, a question or a quantity by
+  its optional `kind`, reviewed by the Contribution Reviewer before anything
+  enters the graph).
 - **Funding:** `order_assessment`, `fund_claim_assessment` (commission a
   claim's next assessment whole, at a budget you choose; what it does not
   spend comes back),

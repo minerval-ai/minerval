@@ -49,9 +49,15 @@ unknown.
   item_index, plan_cursor (items before it have been taken up), action,
   node_id, url, partition, variant, focus, rationale, ledger_status,
   ledger_reason, action_id (the ledger row it names), exclusion_group,
-  ledger_checked_at. Join action_id to `ledger` to check a plan against
+  ledger_checked_at, proposed_kind, proposed_text, proposal_ref, node_ref,
+  contribution_id. Join action_id to `ledger` to check a plan against
   what ran: a named row that is missing, or whose status disagrees with
-  ledger_status, is a plan out of step with its ledger.
+  ledger_status, is a plan out of step with its ledger. A `propose` item
+  is a node the plan asked the graph to take in: proposed_kind and
+  proposed_text are what it proposed, contribution_id the contribution it
+  filed (join `contributions`), and node_id the node it became or landed
+  on once accepted. An item with node_ref and no node_id is waiting on the
+  proposal whose proposal_ref that is.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at

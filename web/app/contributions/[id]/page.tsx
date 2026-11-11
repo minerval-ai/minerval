@@ -105,7 +105,8 @@ export default async function ContributionPage({
     c.became_claim_id ??
     (c.claim_id &&
     (c.contribution_type === "propose_claim" ||
-      c.contribution_type === "propose_question")
+      c.contribution_type === "propose_question" ||
+      c.contribution_type === "propose_quantity")
       ? c.claim_id
       : null);
 

@@ -816,10 +816,8 @@ const configSchema = z.object({
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
   // turn re-reads the history, so no turn is free and the ceiling ends
-  // every attempt. There is no wall-clock or turn budget; the provider's
-  // task budget (a token countdown the model sees) is derived from the
-  // ceiling in the solver, and the orphan sweep's heartbeat is liveness,
-  // not budget.
+  // every attempt. There is no wall-clock, turn or token budget;
+  // the orphan sweep's heartbeat is liveness, not budget.
   attemptOverageFraction: z.coerce.number().min(0).default(0.25),
   // Agents whose transcripts are always traced regardless of TRACE_LEVEL
   // (comma-separated). The solver's transcript is the evidence a prize

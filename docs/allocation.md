@@ -764,7 +764,10 @@ ledger's own p80 of scoping passes, or `est_request_scope_cost_owls`)
 that finds out what the work would involve and returns a quote. The quote
 becomes the budget and opens the full work; a scoping pass that answers
 the request, or finds it cannot or should not be met, records that
-outcome instead. One variant is open at a time.
+outcome instead. A quote prices only work a Researcher has the means to
+do: a request that needs a GPU, a model API, a lab or new data is
+reported `cannot_be_met` with who could do it, or quoted for its desk part
+alone. One variant is open at a time.
 
 **Who pays.** Whether a request is worth its budget is a judgment, made by
 whoever pays. A fresh request row is put in front of the General mandate's
@@ -774,6 +777,21 @@ commissions it with `POST /requests/:id/contribute` (MCP
 `fund_request_work`) at the budget they choose. Once one commission is on
 the row, another payer is charged nothing. The row runs at once, and what
 the run does not spend comes back.
+
+**Below the quote.** The budget is the payer's choice, so a commission
+below the request's budget is placed, not refused: a stage of a large
+request is a fair thing to buy, and a quote is an estimate. What the
+mechanism owes is that nobody is misled by it (#885). The commissioning
+call says plainly that the budget is below the quote, on every path
+(`commissionAction`: `fund_request`, an officer's `commission`, a reader's
+`fund_request_work`), and lists the earlier runs on the request that were
+funded below theirs with how each ended, so a third starved run is a
+choice and not an accident. The run is told it is funded below the quote
+and does one part of the plan properly. Its entries in the request's work
+log carry what it was funded at and what the work was quoted at
+(`request_work.budget_micro_usd`, `quote_micro_usd`), shown as "funded at
+$2.00 of a $5.00 quote" to funders, to the keeper and to the next run, so
+a starved partial result is never taken for what the work can find.
 
 **Closing.** A request closed while its row is open cancels the row and
 returns every unspent commission: a reader's owls to their balance, a
@@ -1078,7 +1096,7 @@ Design principles, in force in the implementation:
   of the claim graph and the truth. Mandates that attempt to warp or
   influence the graph's conclusions or ideology are declined outright, at
   any budget, and the agent says so.
-- **Every action type is fundable.** Mandate plans mix `assess`,
+- **Every action type is fundable.** Mandate plans mix `propose`, `assess`,
   `reassess`, `deepen`, `ingest`, `formalize` and `attempt_proof` items —
   "ingest and assess everything in this article or series" is a normal
   mandate, with source URLs as ingest items metered to the grant's escrow.
@@ -1090,10 +1108,40 @@ Design principles, in force in the implementation:
   goal and grows it on review passes. Ingesting a source brings in every
   claim it makes, so the sources a mandate reads decide which claims exist
   to be assessed. A live mandate's Grantmaker contributes through the
-  Contribution Reviewer like anyone (`submit_contribution`), new claims
-  and questions included, each review paid from the escrow
+  Contribution Reviewer like anyone (`submit_contribution`), new claims,
+  questions and quantities included, each review paid from the escrow
   (`submitGrantContribution`); an accepted proposal gets no express pass
   charged to the funder, since the mandate funds its own passes.
+- **A mandate can be planned around a node the graph does not hold yet
+  (#656).** A funder's question, claim or quantity that the graph holds in
+  no wording used to leave the plan with nothing to assess, deepen or be
+  scoped to until a later review pass. A plan now carries it as a
+  `propose` item: the `kind` proposed (claim, quantity or question, the
+  same for all three), the wording (`text`), and a rationale that becomes
+  the contribution's public record. Other items name it by its `ref`
+  (`claim_ref` in place of `claim_id`), and the mandate's scope may too
+  (`scope_ref` in place of `scope_claim_id`). A mandate's agents still
+  write nothing to the graph (§19): drafting the plan files nothing and
+  charges nothing, and once the mandate is live the plan materializer
+  files the proposal through the Grantmaker's own contribution door
+  (`submitGrantContribution`), once, with its review reserved against and
+  paid from the escrow like any other. The Contribution Reviewer judges
+  the wording; on an accept the Matcher settles the node's kind and
+  canonical form, or lands the proposal on a node the graph already holds
+  under other words. Either way the materializer writes that node's id
+  onto the propose item and onto every item that named it, which are
+  ordinary items from then on, and sets `grants.scope_claim_id` for a
+  mandate whose `scope_ref` named it. Until then the propose item and its
+  dependents read `waiting`; a rejected proposal reads `blocked` with the
+  Reviewer's reasons, as do its dependents, and none of their work is
+  priced or run. An identical proposal the mandate already filed is
+  adopted, never paid for twice. A funded mandate materializes its
+  proposals at funding, and each review pass, which a decided proposal
+  wakes (`contribution_reviewed`), brings them up to date before it reads
+  the plan, so nothing waits on the six-hour sweep. `adjust_plan` may drop
+  a proposal that has not been filed; one that has is a contribution on
+  the public record like any other, and the node it became is the
+  graph's.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and
@@ -1125,7 +1173,11 @@ Design principles, in force in the implementation:
   and a dead one never look alike (#416), and the plan's executed count
   (the review briefing, `grant_overview`'s `plan_counts`) is the number of
   items whose work ran, never the cursor's position (#427). Per kind:
-  `assess` / `reassess` / `deepen` need an active claim, queue it for its
+  `propose` needs a kind and a wording, files its contribution once the
+  mandate is active, waits on the review, and is done when the proposal is
+  a node;
+  `assess` / `reassess` / `deepen` need an active claim (or, by
+  `claim_ref`, the proposal that will become one), queue it for its
   Steward and open its assess group once per item (a finished pass stays
   finished, whichever lane ran it: the mandate's direct steward lane closes
   the row it ran, and a pass that ran elsewhere while the row sat open

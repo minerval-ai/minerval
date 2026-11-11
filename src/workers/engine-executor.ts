@@ -108,6 +108,7 @@ import {
   recordWork,
   requestBrief,
   setRequestBudget,
+  workLabel,
   type RequestView,
 } from "../services/request-service.js";
 import { REQUEST_OUTCOMES, type RequestOutcome } from "../schemas/kinds.js";
@@ -452,7 +453,7 @@ export function requestKeeperBrief(request: RequestView): string {
     ? request.work
         .map(
           (w, i) =>
-            `${i + 1}. ${w.by}${w.outcome ? ` (${w.outcome})` : " (under way)"}: ${w.summary}` +
+            `${i + 1}. ${w.outcome ? workLabel(w) : `${w.by} (under way)`}: ${w.summary}` +
             (w.research_run_id ? ` [get_research_run ${w.research_run_id}]` : "")
         )
         .join("\n")
@@ -733,6 +734,11 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   // The tier and effort the full work runs on, which a scoping run prices
   // (#732): fixed here, so the quote is for the run it funds.
   const fullWork = { tier: "strong", model: modelForTier("strong"), effort: "high" } as const;
+  // What the full work was priced at, the row's cost (the scoping quote or
+  // its keeper's figure), beside the budget this run was given (#885). A
+  // commission's budget is its payer's choice and may be below it; the run
+  // is told when it is, and the work log says so.
+  const funding = scoping ? {} : { budgetMicroUsd: ceiling, quoteMicroUsd: Number(action.cost_est_micro_usd) || null };
   // What the run may record on (#728): a run taking up a request on one
   // node runs with that node (provenance, instances, its domain skills);
   // one on several records on any of them, each call naming its node.
@@ -801,6 +807,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     outcome: null,
     summary: scoping ? "Being scoped by the Researcher." : "Taken up by the Researcher.",
     fundedByJobId: funder.jobId,
+    ...funding,
   }).catch(() => null);
 
   let billedMicroUsd = 0;
@@ -830,6 +837,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
             requestNodes,
             priorRun: prior ? { id: prior.id, status: prior.status, requestedBy: prior.requested_by } : null,
             fullWork: scoping ? fullWork : null,
+            quoteMicroUsd: funding.quoteMicroUsd ?? null,
             examination: researcherExamination(examination),
             documentReview,
           })
@@ -938,6 +946,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
       outcome,
       summary: summary.slice(0, 4000),
       fundedByJobId: funder.jobId,
+      ...funding,
     }).catch(() => null);
     if (outcome) {
       await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 4000)}`, {
