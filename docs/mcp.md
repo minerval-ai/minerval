@@ -516,6 +516,12 @@ than governance, from the **caller skills** in `plugin/skills/`:
   the granting conversation, what is public, and what money buys.
 - `sql`: how to read the graph with `query_sql`: the views, what each
   column means, and queries that stay inside the limits.
+- `using-minerval`: the product itself, for an agent helping someone use
+  it: the surfaces, the site page by page, how to connect over MCP, and
+  how owls are bought and spent.
+- `writing-from-the-graph`: facts that bear on making a document from the
+  graph: sizing a territory, what importance means, pinned citations,
+  requests.
 - `minerval-constitution`: a reader's guide to the constitution, with the
   constitution itself bundled as `constitution.md`.
 - `administrator-skills`: the administrators' own skills and role prompts,
@@ -531,14 +537,26 @@ They reach callers three ways, from one set of files:
   `src/mcp/caller-skills.ts`), the shortest form of the principles, which
   every client is shown, with pointers to the resources.
 
-The personal assistant (#646) is a caller too, able to do nothing a user's
-own agent over MCP could not, and is meant to read the same files.
+The Assistant (#646, docs/accounts.md) is a caller too. Its tools are this
+server's, built in process for its user at the trust of an API key
+(`src/llm/tools/assistant-tools.ts`), so it can do nothing a user's own
+agent over MCP could not, and it loads these same files with `load_skill`.
+A route added to `ROUTE_TOOLS` reaches it with no further change, except
+that a tool which is not a read must be classified there as held for the
+user or as running without asking, with the reason;
+`tests/unit/llm/assistant-tools.test.ts` fails until it is. Its own
+conversations are readable over MCP (`list_assistant_conversations`,
+`get_assistant_conversation`, `get_assistant_allowance`). Writing to one is
+excluded (an agent that wants an agent can delegate to its own), and so is
+releasing a held action or changing what is allowed, which need the signed-in
+user so that the Assistant cannot press its own cards.
 
 ### Keeping them current
 
 The skills describe things that change: the constitution, tool names, the
-administrators' skills and prompts. Three checks in
-`tests/unit/plugin/caller-skills.test.ts` keep them from drifting:
+administrators' skills and prompts, the site. Three checks in
+`tests/unit/plugin/caller-skills.test.ts`, and a fourth in
+`tests/unit/plugin/using-minerval.test.ts`, keep them from drifting:
 
 - **Vendored copies.** The constitution and the administrators' skills and
   role prompts are copied into `plugin/skills/` (a plugin ships only its own
@@ -553,6 +571,10 @@ administrators' skills and prompts. Three checks in
 - **Constitution sections.** Every `§N` a caller skill cites must be a
   section of the constitution. Renumbering fails here until the skills
   follow.
+- **Site pages.** `using-minerval` lists the site's pages. Every page under
+  `web/app` must be in its table or excluded in the test with a reason, and
+  every route in the table must exist. Adding, moving or removing a page
+  fails here until the skill follows.
 
 What no test catches is a skill that still names the right things but
 describes them wrongly. When you change how a tool behaves, how the

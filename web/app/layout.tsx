@@ -32,6 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 carries both (#367). Anything added here should be weighed the same way:
                 the phone row is one line, and it stays one line. */}
             <nav>
+              <Link href="/ask">ask</Link>
               <Link href="/claims">claims</Link>
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Assessments are based on evidence and reasoning, open to inspection and correction.
             </p>
             <nav style={{ display: "flex", gap: "1.1rem", flexWrap: "wrap" }}>
+              <Link href="/ask">ask</Link>
               <Link href="/claims">claims</Link>
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>

@@ -12,6 +12,7 @@
  * Variants a launcher can choose (the Researcher with and without the
  * constitution) are separate entries under one name.
  */
+import { getAssistantSystemPromptBlocks } from "./assistant.js";
 import { getAuditAgentSystemPromptBlocks } from "./audit-agent.js";
 import { getClaimStewardSystemPromptBlocks } from "./claim-steward.js";
 import { getConsistencyCheckerSystemPromptBlocks } from "./consistency-checker.js";
@@ -52,4 +53,7 @@ export const KNOWN_ROLES: readonly KnownRole[] = [
   { name: "researcher", sourcePath: "src/llm/prompts/researcher.ts", blocks: () => getResearcherSystemPromptBlocks({ includeConstitution: true }) },
   { name: "researcher", sourcePath: "src/llm/prompts/researcher.ts", blocks: () => getResearcherSystemPromptBlocks({ includeConstitution: false }) },
   { name: "tagger", sourcePath: "src/llm/prompts/tagger.ts", blocks: () => [getTaggerSystemPrompt()] },
+  // Not an administrator: the agent that works for a user (#646). Its
+  // prompt is published like the rest.
+  { name: "assistant", sourcePath: "src/llm/prompts/assistant.ts", blocks: getAssistantSystemPromptBlocks },
 ];

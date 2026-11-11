@@ -58,6 +58,7 @@ import { getCorrespondentSystemPrompt } from "../src/llm/prompts/correspondent.j
 import { getConsistencyCheckerSystemPrompt } from "../src/llm/prompts/consistency-checker.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import { getResearcherSystemPrompt } from "../src/llm/prompts/researcher.js";
+import { getAssistantSystemPrompt } from "../src/llm/prompts/assistant.js";
 import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
 import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
 import {
@@ -123,7 +124,7 @@ type AgentMeta = {
   key: string;
   name: string;
   stage: number;
-  group: "processing" | "governance" | "instruments";
+  group: "processing" | "governance" | "instruments" | "assistant";
   tagline: string;
   invokedWhen: string;
   model: string;
@@ -200,6 +201,13 @@ const AGENTS: AgentMeta[] = [
     tagline: "An instrument for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. An administrator launches it with a brief, or it takes up a funded request on its own account. It carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node (and, on a funded request, may file a request of its own), and returns a report: to its launcher, who weighs it, or on the request it answers.",
     invokedWhen: "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
     model: `Chosen per launch: ${modelLabel(MODELS.frontier)} (strong), ${modelLabel(MODELS.sonnet)} (standard), ${modelLabel(OPENROUTER_MODELS.flash)} (cheap)`, fn: getResearcherSystemPrompt },
+  // The Assistant (#646): not an administrator and not an instrument. It
+  // works for one user with the tools that user's account has over MCP,
+  // and reads the constitution without being bound by it.
+  { key: "assistant", name: "Assistant", stage: 12, group: "assistant",
+    tagline: "Works for one signed-in user, with the tools their account has over MCP and nothing more. Not an administrator: it is given the constitution so that it reads the graph as the graph means to be read, and writes nothing to the graph except through the doors open to any account. Its work is charged to its user's balance as it runs, and calls that spend owls on the graph or publish under the user's name wait for the user.",
+    invokedWhen: "A signed-in user sends a message on the Ask page.",
+    model: `${modelLabel(MODELS.frontier)} by default; the user may choose ${modelLabel(MODELS.strong)} for a conversation`, fn: getAssistantSystemPrompt },
 ];
 
 /** The prompt set's manifest (src/services/prompt-set.ts), beside the content it names. */
@@ -209,7 +217,7 @@ export interface AgentIndexEntry {
   key: string;
   name: string;
   stage: number;
-  group: "processing" | "governance" | "instruments";
+  group: "processing" | "governance" | "instruments" | "assistant";
   tagline: string;
   invokedWhen: string;
   model: string;

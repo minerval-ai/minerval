@@ -1589,3 +1589,74 @@ textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(-
 }
 .provenance-record li { margin: 0 0 0.4rem; }
 .provenance-record .provenance-why { color: var(--muted); }
+
+/* the Assistant (/ask): the transcript is the page */
+.ask { display: flex; flex-direction: column; gap: 1rem; max-width: 40rem; font-family: var(--sans); }
+.ask-transcript { display: flex; flex-direction: column; gap: 1.4rem; }
+.ask-transcript .convo-msg { gap: 0.35rem; }
+.ask-prose { font-family: var(--serif); font-size: 1rem; line-height: 1.6; overflow-wrap: anywhere; }
+.ask-prose > :first-child { margin-top: 0; }
+.ask-prose > :last-child { margin-bottom: 0; }
+.ask-prose h1, .ask-prose h2, .ask-prose h3 { font-size: 1.05rem; margin: 1.1rem 0 0.4rem; }
+.ask-prose table { border-collapse: collapse; font-family: var(--sans); font-size: 0.82rem; display: block; overflow-x: auto; }
+.ask-prose th, .ask-prose td { border-bottom: 1px solid var(--rule-soft); padding: 0.3rem 0.8rem 0.3rem 0; text-align: left; vertical-align: top; }
+.ask-prose pre { font-size: 0.78rem; overflow-x: auto; background: var(--paper-sunk); padding: 0.6rem 0.8rem; border-radius: 4px; }
+/* a citation of the graph: its number, and for a claim the glyph of its status */
+.ask-cite {
+  font-family: var(--sans); font-size: 0.7em; font-weight: 600; vertical-align: 0.35em;
+  padding: 0 0.28em; margin-left: 0.1em; border: 1px solid currentColor; border-radius: 3px;
+  text-decoration: none; white-space: nowrap; display: inline-flex; gap: 0.25em; align-items: baseline;
+}
+.ask-cite:hover { text-decoration: none; background: var(--paper-sunk); }
+a.ask-cite:not([class*="st-"]), a.ask-cite:not([class*="st-"]):visited { color: var(--muted); }
+.ask-cited {
+  margin: 0.2rem 0 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.45; color: var(--ink-soft);
+  border-top: 1px solid var(--rule-soft); padding-top: 0.5rem;
+}
+.ask-cited li { margin: 0.2rem 0; }
+.ask-foot {
+  display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; align-items: baseline;
+  margin: 0.1rem 0 0; font-size: 0.72rem; color: var(--faint);
+}
+.ask-foot.ask-running { color: var(--muted); }
+.ask-stopped { color: var(--st-inconclusive); }
+.ask-owls { display: inline-flex; align-items: baseline; white-space: nowrap; }
+.ask-owls .owl-mark { align-self: center; margin-right: 0.2em; }
+.ask-card {
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 1rem;
+  background: var(--paper-card); display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.3rem;
+}
+.ask-card-held { border-color: var(--st-inconclusive); background: var(--st-inconclusive-tint); }
+.ask-card-held > .sc { color: var(--st-inconclusive); }
+.ask-card > p { margin: 0; }
+.ask-card-title { font-size: 0.9rem; font-weight: 600; }
+.ask-card-title code { font-weight: 400; font-size: 0.74rem; color: var(--muted); margin-left: 0.3rem; }
+.ask-fields { margin: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; }
+.ask-fields > div { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 0.6rem; }
+.ask-fields dt { color: var(--muted); font-size: 0.74rem; padding-top: 0.08rem; }
+.ask-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 0.2rem; }
+.ask-allow { display: inline-flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: baseline; font-size: 0.76rem; color: var(--muted); }
+.ask select {
+  font-family: var(--sans); font-size: 0.78rem; padding: 0.2rem 0.3rem; max-width: 100%;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card); color: var(--ink);
+}
+.ask-result summary { font-size: 0.76rem; color: var(--muted); cursor: pointer; }
+.ask-result pre { font-size: 0.72rem; max-height: 14rem; overflow: auto; margin: 0.4rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-thread { display: flex; flex-direction: column; gap: 0.8rem; max-height: 24rem; overflow-y: auto; }
+.ask-bill {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.4rem 1.2rem; align-items: baseline;
+  font-size: 0.78rem; color: var(--muted); border-top: 1px solid var(--rule-soft); padding-top: 0.6rem;
+}
+.ask-notice {
+  font-size: 0.86rem; border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 1rem;
+  background: var(--paper-sunk); margin: 0;
+}
+.ask-allowed { font-size: 0.78rem; color: var(--muted); }
+.ask-allowed summary { cursor: pointer; }
+.ask-allow-kind { display: block; margin: 0.3rem 0; color: var(--ink-soft); }
+.ask-allow-kind .order-caption { display: inline; }
+.ask-manage { display: flex; gap: 1.2rem; font-size: 0.78rem; margin: 0; }
+@media (max-width: 520px) {
+  .ask-fields > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}

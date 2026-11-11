@@ -594,6 +594,24 @@ below which a Grantmaker's pass is not started short (a pass that cannot
 pay for its opening turn buys nothing, and would be bought again), and the
 operator's daily circuit breakers on solver and researcher spend.
 
+The Assistant (docs/accounts.md, "The Assistant") is the one agent with
+no budget, because its payer is not absent: the user it works for is in
+the conversation, sees the bill grow, and can stop the run. So nobody
+quotes it a cap. Each model turn is charged to the user's balance as it
+finishes (`chargeMetered`), the run ends when the balance reaches zero,
+and the agent is told so in place of a budget: its context message gives
+the balance and what the conversation has cost, and the line after every
+tool result gives this reply's cost, the bill and the balance. A run's
+last model call can finish past a balance that reached zero while it
+ran; the platform absorbs that fraction, as it absorbs cost past a cap.
+There is no count of messages, replies or tool calls per conversation or
+per day. Its one hard limit beside the turn guard is not about cost: a
+tool that spends owls on the graph or publishes under the user's name is
+held for the user to release, because the Assistant reads other people's
+text while it works and injected text must not move a person's money or
+name. The user may allow kinds of action to run without asking; the
+Assistant is told which.
+
 ## Consistency sweeps: reading assessments against each other
 
 Each Steward reads its own claim, its subclaims and its evidence; nobody
@@ -1712,7 +1730,9 @@ and legitimate — but the unit economics must stay visible
    standards. Funding is disclosed away from the verdict, with its
    explanation.
 3. Quoted figures are caps; charges settle to metered cost; failures
-   refund; budgets pause rather than die; unspent escrow returns.
+   refund; budgets pause rather than die; unspent escrow returns. Work
+   whose payer is present and watching (the Assistant) is quoted nothing
+   and charged at metered cost as it runs.
 4. Every money number (caps, budgets, commissions, spend, decisions and
    their reasons) is inspectable by anyone.
 5. Bounded spending everywhere: escrows, daily rates and per-run budgets
@@ -1720,7 +1740,8 @@ and legitimate — but the unit economics must stay visible
    own covered upkeep, on the ledger and inside its rate; no lane spends
    a mandate's money beside it), so a producer may raise candidates freely (flags,
    curation requests, reassessments, plan items) without cascading
-   spend. Money, not a count, is the bound wherever money can be.
+   spend. Money, not a count, is the bound wherever money can be. The
+   Assistant's bound is its user's balance.
 5a. An agent is told every constraint it works under, before it starts
    and as it goes: its budget and its spend after every turn, a paid
    tool's price, and any hard limit that remains with the reason for it.
@@ -1753,4 +1774,9 @@ and legitimate — but the unit economics must stay visible
 12. No mandate funds its own audit. An audit whose subject is a mandate
     is never put to that mandate; declining any other audit is a funding
     decision like any other, and it is on the record.
+13. An agent working for a user commits the user's money or name only by
+    the user's own act: the Assistant's calls that spend owls on the
+    graph or publish are held until the user releases them or has allowed
+    their kind, and no tool the Assistant holds can release one or change
+    what is allowed.
 
