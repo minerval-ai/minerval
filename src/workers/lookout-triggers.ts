@@ -55,6 +55,7 @@ import {
 } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
 import { enqueueSteward } from "../services/queue-service.js";
+import { runAtClaimLabel } from "../services/label-service.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
 
@@ -174,7 +175,11 @@ async function tellStewards(
       `source your verdict does not rest on may not either; say which in your ` +
       `reasoning.`;
     try {
-      await enqueueSteward({ claimId, trigger: "source_event", context });
+      // The poll runs outside any run and writes to one node at a time, so
+      // the pass each letter asks for is opened at that node's label
+      // (runAtClaimLabel). The letter names the source, which carries a
+      // label of its own; holding the two together is the source-side work.
+      await runAtClaimLabel(claimId, () => enqueueSteward({ claimId, trigger: "source_event", context }));
       told++;
     } catch (err) {
       console.warn(

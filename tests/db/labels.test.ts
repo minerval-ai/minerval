@@ -163,14 +163,19 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // The first six are what a run writes. The rest stand for work waiting
-    // to be done, and hand their label to the run that takes it up
-    // (label-carried.test.ts).
+    // Three groups: the judgments, sources and runs (this file); the rows
+    // that stand for work waiting to be done, which hand their label to the
+    // run that takes it up (label-carried.test.ts); and the graph's own
+    // content, from nodes and edges to formal statements
+    // (label-graph.test.ts).
     expect(rows).toEqual(
       [
-        "actions", "agent_runs", "agent_sessions", "appeals", "argument_evaluations", "assessment_orders",
-        "assessments", "assistant_held_actions", "budget_jobs", "contributions", "jobs", "quantity_estimates",
-        "question_assessments", "sources",
+        "actions", "agent_runs", "agent_sessions", "answer_relations", "appeals", "argument_evaluations",
+        "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments", "assessment_orders",
+        "assessments", "assistant_held_actions", "budget_jobs", "claim_formalizations", "claim_links",
+        "claim_relationships", "claims", "contributions", "jobs", "judgment_inputs", "lean_checks",
+        "proof_attempts", "quantity_cuts", "quantity_definitions", "quantity_estimates", "quantity_readings",
+        "question_assessments", "reconciliation_events", "sources", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });

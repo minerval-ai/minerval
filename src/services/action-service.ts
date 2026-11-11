@@ -21,7 +21,8 @@
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
+import { runAtClaimLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
@@ -478,8 +479,8 @@ export async function reconcileActions(): Promise<{
   /** Mandates whose plan could not be materialized this sweep (logged). */
   plansFailed: number;
 }> {
-  const pending = await rawQuery<{ id: string }>(
-    `SELECT c.id FROM claims c
+  const pending = await rawQuery<{ id: string; sensitivity_label: string }>(
+    `SELECT c.id, c.sensitivity_label FROM claims c
       WHERE c.state = 'active' AND c.steward_state = 'pending'
         AND NOT EXISTS (SELECT 1 FROM actions a
                          WHERE a.exclusion_group = 'assess:' || c.id::text
@@ -490,7 +491,14 @@ export async function reconcileActions(): Promise<{
     // One claim's failure (a bad row, a transient DB error) must not take
     // the rest of the sweep with it: log and move on (#416).
     try {
-      await ensureAssessActions(row.id);
+      // The sweep starts from the claim, not from a piece of work, so the
+      // rows it opens take the claim's label and the pass they pay for runs
+      // at it (src/labels.ts). That is a floor: work on a restricted claim
+      // is never opened as public. A pass that was asked for at a restricted
+      // label on a public claim, and whose row has since closed, is reopened
+      // here as public, because the pending slot does not say what label it
+      // was asked for at. Closing that needs one judgment per label.
+      await runAtLabel(row.sensitivity_label, `claim ${row.id}`, () => ensureAssessActions(row.id));
     } catch (err) {
       console.error(
         `[reconcile] ensureAssessActions failed for claim ${row.id}: ${
@@ -1399,12 +1407,16 @@ export async function materializeGrantPlan(
     };
     for (const [claimId, indices] of attemptItems) {
       try {
+        // Rows about one claim, opened by the sweep: at the claim's label,
+        // as for a formalize row below.
         attemptResults.set(
           claimId,
-          await ensureAttemptActions(claimId, indices.length, costs, {
-            cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
-            rationales: indices.map((i) => String(items[i]!.rationale ?? "")),
-          })
+          await runAtClaimLabelOutsideAnyRun(claimId, () =>
+            ensureAttemptActions(claimId, indices.length, costs, {
+              cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
+              rationales: indices.map((i) => String(items[i]!.rationale ?? "")),
+            })
+          )
         );
       } catch (err) {
         console.error(
@@ -1771,7 +1783,13 @@ async function materializePlanItem(
     // One statement per claim at a time (§5.4): a second formalize item on
     // the same claim reads the same row rather than upserting it again.
     if (!o.ensuredFormalize.has(claim.id)) {
-      await ensureFormalizeAction(claim.id, await o.ctx.formalizeCostMicroUsd());
+      // A plan is materialized by the sweep as well as from inside its
+      // Grantmaker's run. From the sweep nothing says what label the item
+      // was planned at (a mandate carries none yet), so the row takes the
+      // claim's: a formal statement of a restricted claim is not written as
+      // public. From inside a run it keeps the run's label.
+      const cost = await o.ctx.formalizeCostMicroUsd();
+      await runAtClaimLabelOutsideAnyRun(claim.id, () => ensureFormalizeAction(claim.id, cost));
       o.ensuredFormalize.add(claim.id);
     }
     const row = await groupLedger({ group: FORMALIZE_GROUP(claim.id) });

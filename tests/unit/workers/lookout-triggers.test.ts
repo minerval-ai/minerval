@@ -29,6 +29,10 @@ const { state, queries } = vi.hoisted(() => ({
     recorded: true,
     stewards: [] as Array<Record<string, unknown>>,
     stewardFails: [] as string[],
+    // The label each node carries; one with no entry reads as no row.
+    claimLabels: {} as Record<string, string>,
+    // The label each Steward was told at (currentLabel inside the enqueue).
+    toldAt: [] as Array<{ claimId: string; label: string }>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -39,6 +43,10 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.includes("l.triggers ? 'retraction'")) return [{ n: state.subscribed }];
     if (q.includes("FROM platform_flags")) return state.mark ? [{ value: state.mark }] : [];
     if (q.includes("payload->>'notice_doi' = $1")) return [{ n: state.dupPending }];
+    if (q.includes("SELECT sensitivity_label FROM claims")) {
+      const label = state.claimLabels[params[0] as string];
+      return label ? [{ sensitivity_label: label }] : [];
+    }
     return [];
   }),
 }));
@@ -73,6 +81,8 @@ vi.mock("../../../src/services/lookout-service.js", () => ({
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueSteward: vi.fn(async (input: Record<string, unknown>) => {
     if (state.stewardFails.includes(input.claimId as string)) throw new Error("db down");
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.toldAt.push({ claimId: input.claimId as string, label: currentLabel() });
     state.stewards.push(input);
   }),
 }));
@@ -98,9 +108,28 @@ beforeEach(() => {
   state.recorded = true;
   state.stewards = [];
   state.stewardFails = [];
+  state.claimLabels = {};
+  state.toldAt = [];
 });
 
 describe("retractionPollTick", () => {
+  // The poll runs outside any run and writes to one node at a time, so the
+  // pass each letter asks for is opened at that node's label (src/labels.ts).
+  it("tells each node's Steward at that node's own label", async () => {
+    state.subscribed = 0;
+    state.notices = [
+      { notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "retraction", title: "Retraction of X", updated: "2026-09-10T00:00:00Z", source: "publisher" },
+    ];
+    state.matches = [{ doi: "10.1/paper", source_id: "s-1", url: "u", title: "Paper", claim_ids: ["c-restricted", "c-open"] }];
+    state.claimLabels = { "c-restricted": "internal", "c-open": "public" };
+    const r = await retractionPollTick({ now: NOW });
+    expect(r.stewardsTold).toBe(2);
+    expect(state.toldAt).toEqual([
+      { claimId: "c-restricted", label: "internal" },
+      { claimId: "c-open", label: "public" },
+    ]);
+  });
+
   it("records what happened to a matched source even when no lookout watches, and tells its Stewards but wakes no lookout", async () => {
     state.subscribed = 0;
     state.notices = [

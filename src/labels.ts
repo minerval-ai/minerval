@@ -4,7 +4,9 @@
  * A private deployment of this code is the public graph with redaction: the
  * same tables and the same agents, where a row carries a label and a reader
  * or an agent run reads only the labels it is cleared for. A judgment, a
- * source and an agent run each carry one, in the `sensitivity_label` column.
+ * source, an agent run and each row of the graph's own content (a node, an
+ * edge, an argument, a tag, a definition, a formal statement, the record of
+ * what a judgment rested on) carry one, in the `sensitivity_label` column.
  * The column is not simply `label` because that name is already a display
  * name on tables that will need a label too (actions.label,
  * source_segments.label), and one name has to be free on every table.
@@ -21,7 +23,12 @@
  *
  * A row gets its label from the run or the request that writes it
  * (currentLabel in llm/usage-context.ts), the way an assessment gets its
- * funder and its model. An agent never chooses one.
+ * funder and its model. An agent never chooses one. That is the whole rule
+ * for stamping, and nothing is inherited from the row a new row hangs from:
+ * an argument written at a restricted label on a public claim is restricted,
+ * and so is the edge that joins a restricted subclaim to a public parent. A
+ * write that lands on a row already there (an upsert) leaves that row's
+ * label as it was.
  *
  * A run works at the label of the work that started it. Most runs are not
  * opened by the code that decided they should happen: a job is enqueued and
@@ -34,6 +41,18 @@
  * (runAtLabel in llm/usage-context.ts). Work that a run enqueues therefore
  * keeps the run's label, and so does the work that work enqueues, with no
  * code of its own for the hand-over.
+ *
+ * Some work has no row of its own to wait in. A sweep finds a claim that is
+ * pending, stale or untagged and starts work on it there and then: the
+ * scheduler's reconcile sweep and its staleness check, the Steward's
+ * fallback lane, the Tagger, the retraction poll, the reconcile-candidate
+ * scan, and a mandate's plan when the scheduler materializes it. That work
+ * runs at the claim's label (runAtClaimLabel in services/label-service.ts),
+ * so work on a restricted claim is never written as public. It is a floor,
+ * not the whole rule: a pass asked for at a restricted label on a public
+ * claim is not told apart from a public one by the claim's pending slot,
+ * and those paths take it up as public. Closing that takes one judgment per
+ * label, which is later work.
  *
  * A carrier whose label is missing is not treated as public: the run is
  * refused (MissingLabelError), because writing private work as public is

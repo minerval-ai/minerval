@@ -26,7 +26,7 @@ import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
 import { enqueueClaimPipeline, requestAudit } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
-import { runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
@@ -362,6 +362,9 @@ async function processUrlExtraction(
             // on the proposition's terms, not this source's, so the first
             // source to mention a claim does not set the node's polarity.
             canonicalDirectionNote: cleanNote(matchResult.direction_note),
+            // The extraction runs at its job's label, so a node minted from
+            // the document carries the label the document was submitted at.
+            sensitivityLabel: currentLabel(),
           })
           .returning();
 

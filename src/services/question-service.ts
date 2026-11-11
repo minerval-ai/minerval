@@ -68,14 +68,16 @@ export async function addAnswer(
     await requireQuestion(tx, input.questionId);
     const kind = await lockNodeKind(tx, input.answerId);
     if (kind === "question") throw new KindError("A question answers no question; add it as a subquestion");
+    // A new edge takes this run's label; one already there is revised and
+    // keeps the label it has (src/labels.ts).
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO claim_relationships
-         (parent_claim_id, child_claim_id, relation_type, answer_basis, reasoning, created_by)
-       VALUES ($1, $2, 'answers', $3, $4, $5)
+         (parent_claim_id, child_claim_id, relation_type, answer_basis, reasoning, created_by, sensitivity_label)
+       VALUES ($1, $2, 'answers', $3, $4, $5, $6)
        ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
          SET answer_basis = EXCLUDED.answer_basis, reasoning = EXCLUDED.reasoning
        RETURNING id`,
-      [input.questionId, input.answerId, input.basis, input.reasoning, input.createdBy]
+      [input.questionId, input.answerId, input.basis, input.reasoning, input.createdBy, currentLabel()]
     );
     return { id: row!.id };
   });
@@ -96,12 +98,12 @@ export async function addSubquestion(
     await requireQuestion(tx, input.subquestionId);
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO claim_relationships
-         (parent_claim_id, child_claim_id, relation_type, reasoning, created_by)
-       VALUES ($1, $2, 'part_of', $3, $4)
+         (parent_claim_id, child_claim_id, relation_type, reasoning, created_by, sensitivity_label)
+       VALUES ($1, $2, 'part_of', $3, $4, $5)
        ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
          SET reasoning = EXCLUDED.reasoning
        RETURNING id`,
-      [input.questionId, input.subquestionId, input.reasoning, input.createdBy]
+      [input.questionId, input.subquestionId, input.reasoning, input.createdBy, currentLabel()]
     );
     return { id: row!.id };
   });
@@ -128,12 +130,12 @@ export async function setAnswerRelation(input: {
       if (!answers.has(id)) throw new KindError(`Node ${id} is not an answer to ${input.questionId}`);
     }
     const [row] = await tx.query<{ id: string }>(
-      `INSERT INTO answer_relations (question_id, claim_a_id, claim_b_id, relation, reasoning, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO answer_relations (question_id, claim_a_id, claim_b_id, relation, reasoning, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (question_id, claim_a_id, claim_b_id) DO UPDATE
          SET relation = EXCLUDED.relation, reasoning = EXCLUDED.reasoning
        RETURNING id`,
-      [input.questionId, a, b, input.relation, input.reasoning ?? null, input.createdBy]
+      [input.questionId, a, b, input.relation, input.reasoning ?? null, input.createdBy, currentLabel()]
     );
     return { id: row!.id };
   });

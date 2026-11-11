@@ -2808,18 +2808,22 @@ export async function executeStewardTool(
               kind: childKind,
               pipelineEpoch,
               createdBy: "claim_steward",
+              // The subclaim is this pass's (src/labels.ts): a pass at one
+              // label under a parent at another mints at its own.
+              sensitivityLabel: currentLabel(),
             })
             .returning();
           if (childDefinition) {
             await tx.query(
-              `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-               VALUES ($1, $2, $3, $4, $5, 'claim_steward')`,
+              `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+               VALUES ($1, $2, $3, $4, $5, 'claim_steward', $6)`,
               [
                 created!.id,
                 childDefinition.measures,
                 childDefinition.population ?? null,
                 childDefinition.conditions ?? null,
                 JSON.stringify(childDefinition.unit),
+                currentLabel(),
               ]
             );
           }
@@ -3021,18 +3025,20 @@ export async function executeStewardTool(
               kind: parentKind,
               pipelineEpoch,
               createdBy: "claim_steward",
+              sensitivityLabel: currentLabel(),
             })
             .returning();
           if (parentDefinition) {
             await tx.query(
-              `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-               VALUES ($1, $2, $3, $4, $5, 'claim_steward')`,
+              `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+               VALUES ($1, $2, $3, $4, $5, 'claim_steward', $6)`,
               [
                 created!.id,
                 parentDefinition.measures,
                 parentDefinition.population ?? null,
                 parentDefinition.conditions ?? null,
                 JSON.stringify(parentDefinition.unit),
+                currentLabel(),
               ]
             );
           }

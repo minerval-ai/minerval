@@ -29,6 +29,7 @@
  * reader should not have to ask claim by claim to learn that something moved.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export type JudgmentKind = "assessment" | "quantity_estimate" | "question_assessment";
 
@@ -59,20 +60,25 @@ export async function recordJudgmentInputs(
   judgmentId: string,
   nodeId: string
 ): Promise<void> {
+  // The record carries the label of the run that wrote the judgment, which
+  // is the judgment's own: both are stamped from the same context, one
+  // after the other (src/labels.ts). It says which nodes and sources the
+  // judgment rested on, so it is as restricted as the judgment is.
+  const label = currentLabel();
   await query(
     `INSERT INTO judgment_inputs
-       (judgment_kind, judgment_id, input_kind, node_id, relation_type, input_judgment_id)
-     SELECT $1::text, $2::uuid, 'premise', r.child_claim_id, r.relation_type, ${IN_FORCE_ID_SQL("r.child_claim_id")}
+       (judgment_kind, judgment_id, input_kind, node_id, relation_type, input_judgment_id, sensitivity_label)
+     SELECT $1::text, $2::uuid, 'premise', r.child_claim_id, r.relation_type, ${IN_FORCE_ID_SQL("r.child_claim_id")}, $4
        FROM claim_relationships r
       WHERE r.parent_claim_id = $3`,
-    [kind, judgmentId, nodeId]
+    [kind, judgmentId, nodeId, label]
   );
   await query(
-    `INSERT INTO judgment_inputs (judgment_kind, judgment_id, input_kind, source_id, content_hash)
-     SELECT DISTINCT $1::text, $2::uuid, 'source', s.id, s.content_hash
+    `INSERT INTO judgment_inputs (judgment_kind, judgment_id, input_kind, source_id, content_hash, sensitivity_label)
+     SELECT DISTINCT $1::text, $2::uuid, 'source', s.id, s.content_hash, $4
        FROM claim_instances i JOIN sources s ON s.id = i.source_id
       WHERE i.claim_id = $3 AND i.detached_at IS NULL`,
-    [kind, judgmentId, nodeId]
+    [kind, judgmentId, nodeId, label]
   );
   await query(`UPDATE ${JUDGMENT_TABLE[kind]} SET inputs_recorded = true WHERE id = $1`, [judgmentId]);
 }

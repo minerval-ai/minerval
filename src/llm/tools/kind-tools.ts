@@ -75,7 +75,7 @@ import {
   type NodeKind,
   type QuantityDefinitionInput,
 } from "../../schemas/kinds.js";
-import { getUsageContext } from "../usage-context.js";
+import { currentLabel, getUsageContext } from "../usage-context.js";
 import { MARGINAL_YIELD_DESCRIPTION, QUESTION_CONFIDENCE_DESCRIPTION } from "./judgment-fields.js";
 import { ownershipRefusal } from "./steward-ownership.js";
 
@@ -786,12 +786,14 @@ async function mintNode(input: {
         ...(parent?.domains?.length ? { domains: parent.domains, domainsSource: "inherited" } : {}),
         pipelineEpoch,
         createdBy: input.createdBy,
+        // The node is the minting run's (src/labels.ts), not its parent's.
+        sensitivityLabel: currentLabel(),
       })
       .returning({ id: claims.id });
     if (definition) {
       await tx.query(
-        `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           created!.id,
           definition.measures,
@@ -799,6 +801,7 @@ async function mintNode(input: {
           definition.conditions ?? null,
           JSON.stringify(definition.unit),
           input.createdBy,
+          currentLabel(),
         ]
       );
     }
