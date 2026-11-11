@@ -33,7 +33,7 @@
  */
 import pg from "pg";
 import { loadConfig } from "../config.js";
-import { rawQuery } from "../db/client.js";
+import { databaseSsl, rawQuery } from "../db/client.js";
 
 /** The views callers and agents may read (migration 0091). */
 export const SQL_VIEWS = [
@@ -103,7 +103,8 @@ export class SqlRefusal extends Error {
       | "SQL_ERROR"
       | "BUSY"
       | "ONE_AT_A_TIME"
-      | "ALLOWANCE",
+      | "ALLOWANCE"
+      | "UNAVAILABLE",
     message: string,
     public readonly retryAfterSeconds?: number
   ) {
@@ -247,6 +248,36 @@ export interface SqlResult {
 const MAX_ROWS = 500;
 const MAX_RESULT_BYTES = 1_000_000;
 
+/**
+ * Whether an error is the deployment's fault rather than the query's: the
+ * connection or the role's login failed (SQLSTATE classes 08 and 28), the
+ * server is shutting down or refusing connections (57P), the role lacks a
+ * grant on a view checkQuery already allowed (42501), or the client lost the
+ * connection (an error that is not the server's answer at all). 08P01 is
+ * excluded: it is how the server answers params that don't match the
+ * query's placeholders.
+ */
+function isSystemFault(err: unknown): boolean {
+  if (!(err instanceof pg.DatabaseError)) return true;
+  const code = err.code ?? "";
+  if (code === "08P01") return false;
+  return code.startsWith("08") || code.startsWith("28") || code.startsWith("57P") || code === "42501";
+}
+
+/**
+ * A system fault: logged here with the raw error, answered with a fixed
+ * message, so the caller learns it was not their query and nothing about
+ * the database's hosts or roles.
+ */
+function unavailable(audience: SqlAudience, err: unknown): SqlRefusal {
+  console.error(`[sql] ${audience} query failed on our side:`, err);
+  return new SqlRefusal(
+    "UNAVAILABLE",
+    "SQL is unavailable right now because of a fault on our side, not a problem with your query. " +
+      "It has been logged. Try again later."
+  );
+}
+
 function connectionString(audience: SqlAudience): string | null {
   const config = loadConfig();
   return (audience === "agent" ? config.sqlAgentDatabaseUrl : config.sqlCallerDatabaseUrl) ?? null;
@@ -272,7 +303,13 @@ export async function runReadOnlyQuery(
   const maxRows = Math.max(1, Math.min(MAX_ROWS, Math.floor(opts.maxRows ?? 100)));
   const body = sql.trim().replace(/;\s*$/, "");
   const wrapped = `SELECT * FROM (${body}) q LIMIT ${maxRows + 1}`;
-  const client = new pg.Client({ connectionString: url, query_timeout: timeoutMs + 2000, statement_timeout: timeoutMs });
+  const ssl = databaseSsl();
+  const client = new pg.Client({
+    connectionString: url,
+    query_timeout: timeoutMs + 2000,
+    statement_timeout: timeoutMs,
+    ...(ssl && { ssl }),
+  });
   const started = Date.now();
   try {
     try {
@@ -282,7 +319,8 @@ export async function runReadOnlyQuery(
       if ((err as { code?: string }).code === "53300") {
         throw new SqlRefusal("BUSY", "SQL is at capacity right now. Try again shortly.", 5);
       }
-      throw err;
+      // Nothing about a failed connection is the query's doing.
+      throw unavailable(opts.audience, err);
     }
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
@@ -328,6 +366,7 @@ export async function runReadOnlyQuery(
     if (code === "57014") {
       throw new SqlRefusal("TIMED_OUT", `The query ran past ${timeoutMs / 1000} seconds and was stopped. Narrow it as for a query that is too expensive.`);
     }
+    if (isSystemFault(err)) throw unavailable(opts.audience, err);
     throw new SqlRefusal("SQL_ERROR", `${err instanceof Error ? err.message : String(err)}. The sql skill lists every view's columns.`);
   } finally {
     await client.query("ROLLBACK").catch(() => {});
