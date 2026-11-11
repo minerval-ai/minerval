@@ -18,6 +18,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:renumber": "tsx scripts/renumber-migrations.ts",
     "corpus:fetch": "tsx scripts/corpus/fetch.ts",
     "corpus:reset": "tsx scripts/corpus/reset.ts",
     "corpus:run": "tsx scripts/corpus/run.ts",
