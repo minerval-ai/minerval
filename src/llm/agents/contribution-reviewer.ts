@@ -13,6 +13,7 @@ import {
   getActiveSkillToolDefinitions,
   isSkillTool,
 } from "../tools/skill-tools.js";
+import { withoutOffFeatureTools } from "../tools/feature-tools.js";
 import { domainsForContribution } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
@@ -73,7 +74,9 @@ async function runContributionReviewImpl(input: {
 
   const tools = [
     ...getGovernanceToolDefinitions(),
-    ...getReviewerToolDefinitions(),
+    // Less get_prize_claim_details while the prizes feature is off
+    // (src/features.ts).
+    ...withoutOffFeatureTools(getReviewerToolDefinitions()),
     getReadPageToolDefinition(),
     webSearch.tool,
     ...skillLoader.definitions,

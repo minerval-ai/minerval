@@ -128,6 +128,7 @@ vi.mock("../../../src/llm/tools/skill-tools.js", () => ({ assertSkillToolsRegist
 
 import { LlmBudgetExceededError } from "../../../src/llm/errors.js";
 import {
+  MATHEMATICS_OFF,
   processNextSolverAction,
   runSolverWorker,
   stewardContextLine,
@@ -250,6 +251,15 @@ describe("processNextSolverAction", () => {
   it("does nothing when SOLVER_ENABLED is false", async () => {
     state.config.solverEnabled = false;
     expect(await processNextSolverAction({ logger })).toEqual({ status: "disabled" });
+    expect(state.claimed).toEqual([]);
+  });
+
+  it("refuses to run with the mathematics feature off, and says why", async () => {
+    // SOLVER_ENABLED is true: the feature being off is what stops it.
+    (state.config as Record<string, unknown>).featuresOff = ["mathematics"];
+    const r = await processNextSolverAction({ logger });
+    expect(r).toEqual({ status: "disabled", error: MATHEMATICS_OFF });
+    expect(MATHEMATICS_OFF).toMatch(/mathematics feature is switched off/);
     expect(state.claimed).toEqual([]);
   });
 
@@ -411,6 +421,15 @@ describe("runSolverWorker", () => {
     const { ticks } = await runSolverWorker({ logger, sleep, maxTicks: 10 });
     expect(ticks).toBe(1);
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("exits the loop with the reason when the mathematics feature is off", async () => {
+    (state.config as Record<string, unknown>).featuresOff = ["mathematics"];
+    const sleep = vi.fn(async () => {});
+    const { ticks } = await runSolverWorker({ logger, sleep, maxTicks: 10 });
+    expect(ticks).toBe(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining(MATHEMATICS_OFF));
   });
 
   it("rests after the breaker's run of consecutive transient failures", async () => {

@@ -4,6 +4,11 @@ import {
   isSupportedModelId,
   unresolvableModelIdMessage,
 } from "./llm/providers/routing.js";
+import {
+  parseFeaturesOff,
+  unknownFeatureNames,
+  unknownFeaturesMessage,
+} from "./features.js";
 
 /**
  * Requests per minute one IP address may make without credentials. The one
@@ -56,6 +61,24 @@ const configSchema = z.object({
   logLevel: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
+
+  // Features this deployment switches off (src/features.ts): comma-separated
+  // names, empty by default, so everything is on. A name that is not a
+  // feature fails the load with the list of those that are: a typo must not
+  // leave a feature on unnoticed.
+  featuresOff: z
+    .string()
+    .superRefine((raw, ctx) => {
+      const unknown = unknownFeatureNames(raw);
+      if (unknown.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: unknownFeaturesMessage(unknown),
+        });
+      }
+    })
+    .transform((raw) => (unknownFeatureNames(raw).length > 0 ? [] : parseFeaturesOff(raw)))
+    .prefault(""),
 
   // Database — either a full URL or individual fields (for ECS Secrets Manager)
   databaseUrl: z.string(),
@@ -1212,6 +1235,7 @@ export function loadConfig(): Config {
     port: process.env.PORT,
     host: process.env.HOST,
     logLevel: process.env.LOG_LEVEL,
+    featuresOff: process.env.FEATURES_OFF,
     databaseUrl: rawDatabaseUrl,
     dbHost: process.env.DB_HOST,
     dbPort: process.env.DB_PORT,

@@ -16,6 +16,7 @@
  * the only way a cold-lane verdict arrives, and waitForCheck is that poll.
  */
 import { loadConfig, type Config } from "../config.js";
+import { featureOn } from "../features.js";
 
 export type CheckMode = "prize" | "attempt" | "steward";
 export type CheckKind = "proof" | "disproof";
@@ -178,9 +179,14 @@ export interface LeanCheckerClient {
   getCheck(checkId: string): Promise<CheckRecord>;
 }
 
-/** Whether a checker is configured for this deployment (LEAN_CHECKER_URL). */
+/**
+ * Whether this deployment has a checker to use: one is configured
+ * (LEAN_CHECKER_URL) and the mathematics feature is on (src/features.ts).
+ * With mathematics switched off the checker is treated exactly as an
+ * unconfigured one is, whatever the URL says.
+ */
 export function leanCheckerConfigured(config: Config = loadConfig()): boolean {
-  return config.leanCheckerUrl.trim().length > 0;
+  return featureOn("mathematics", config) && config.leanCheckerUrl.trim().length > 0;
 }
 
 type FetchLike = typeof fetch;

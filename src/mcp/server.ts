@@ -31,6 +31,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 import { getConstitution } from "../llm/prompts/constitution.js";
 import {
   getCallerSkill,
@@ -530,74 +531,81 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     }
   );
 
-  server.registerTool(
-    "get_bounty_terms",
-    {
-      title: "Get the terms of a claim's prize",
-      description:
-        "The machine-readable terms of the live prize on a claim, for an " +
-        "outside solver: the amount and status, the formal statement it is " +
-        "pinned to (id, namespace, source and expression hashes, the Lean " +
-        "toolchain and Mathlib revision, and the URL of the statement file), " +
-        "the axioms a proof may use, the static policy the checker applies, " +
-        "the rules version in force, and whether claims are being accepted " +
-        "now (the statement's review period must have ended). Offering a " +
-        "prize does not change how the claim is assessed. Free.",
-      inputSchema: { claim_id: z.guid() },
-      annotations: { readOnlyHint: true },
-    },
-    async ({ claim_id }) => {
-      const claim = await getClaimById(claim_id);
-      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const terms = await getBountyTerms(claim_id);
-      if (!terms) {
-        return errorResult("NO_BOUNTY", "No live prize is offered on this claim", {
-          page_url: claimPageUrl(claim_id),
-        });
-      }
-      return jsonResult({ ...terms, page_url: claimPageUrl(claim_id) });
-    }
-  );
-
-  server.registerTool(
-    "get_page_analysis",
-    {
-      title: "Get what the graph holds about a web page",
-      description:
-        "What the graph holds about a web page, by its URL (normalized and " +
-        "hashed on the server). Two things, either or both: the analysis a " +
-        "reader of the Minerval browser extension chose to share (the " +
-        "claims the page makes, each matched into the graph with its stance " +
-        "and a verdict on how the page words it), and `recorded`, the " +
-        "passages the graph itself took from the page when it read it as a " +
-        "source, each with its claim, quantity or question and no verdict " +
-        "on the page. Statuses are read now. A page with neither is " +
-        "NOT_SHARED, and assess_text on the page's text is the way to check " +
-        "it. Free.",
-      inputSchema: {
-        url: z.string().url().max(4000).describe("The page's address"),
+  // Hand-written tools are not built from the route catalog, so the ones
+  // that belong to a feature are registered only while it is on
+  // (src/features.ts); the generated tools follow their routes by themselves.
+  if (featureOn("prizes")) {
+    server.registerTool(
+      "get_bounty_terms",
+      {
+        title: "Get the terms of a claim's prize",
+        description:
+          "The machine-readable terms of the live prize on a claim, for an " +
+          "outside solver: the amount and status, the formal statement it is " +
+          "pinned to (id, namespace, source and expression hashes, the Lean " +
+          "toolchain and Mathlib revision, and the URL of the statement file), " +
+          "the axioms a proof may use, the static policy the checker applies, " +
+          "the rules version in force, and whether claims are being accepted " +
+          "now (the statement's review period must have ended). Offering a " +
+          "prize does not change how the claim is assessed. Free.",
+        inputSchema: { claim_id: z.guid() },
+        annotations: { readOnlyHint: true },
       },
-      annotations: { readOnlyHint: true },
-    },
-    async ({ url }) => {
-      const normalized = normalizePageUrl(url);
-      if (!normalized) return errorResult("NOT_A_PAGE", "Only an http or https page has a shared analysis");
-      const hash = pageUrlHash(normalized);
-      const [analysis, recorded] = await Promise.all([
-        getSharedAnalysis(hash),
-        getRecordedPage(hash),
-      ]);
-      if (!analysis && !recorded) {
-        return errorResult(
-          "NOT_SHARED",
-          "No shared analysis of this page, and the graph has not read it as a source; assess_text on its text checks it"
-        );
+      async ({ claim_id }) => {
+        const claim = await getClaimById(claim_id);
+        if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+        const terms = await getBountyTerms(claim_id);
+        if (!terms) {
+          return errorResult("NO_BOUNTY", "No live prize is offered on this claim", {
+            page_url: claimPageUrl(claim_id),
+          });
+        }
+        return jsonResult({ ...terms, page_url: claimPageUrl(claim_id) });
       }
-      // A page only the graph read has no analysis, which is not the same
-      // as an analysis that found nothing: it gets no annotations at all.
-      return jsonResult({ ...(analysis ?? { url: normalized, shared: false }), recorded });
-    }
-  );
+    );
+  }
+
+  if (featureOn("extension")) {
+    server.registerTool(
+      "get_page_analysis",
+      {
+        title: "Get what the graph holds about a web page",
+        description:
+          "What the graph holds about a web page, by its URL (normalized and " +
+          "hashed on the server). Two things, either or both: the analysis a " +
+          "reader of the Minerval browser extension chose to share (the " +
+          "claims the page makes, each matched into the graph with its stance " +
+          "and a verdict on how the page words it), and `recorded`, the " +
+          "passages the graph itself took from the page when it read it as a " +
+          "source, each with its claim, quantity or question and no verdict " +
+          "on the page. Statuses are read now. A page with neither is " +
+          "NOT_SHARED, and assess_text on the page's text is the way to check " +
+          "it. Free.",
+        inputSchema: {
+          url: z.string().url().max(4000).describe("The page's address"),
+        },
+        annotations: { readOnlyHint: true },
+      },
+      async ({ url }) => {
+        const normalized = normalizePageUrl(url);
+        if (!normalized) return errorResult("NOT_A_PAGE", "Only an http or https page has a shared analysis");
+        const hash = pageUrlHash(normalized);
+        const [analysis, recorded] = await Promise.all([
+          getSharedAnalysis(hash),
+          getRecordedPage(hash),
+        ]);
+        if (!analysis && !recorded) {
+          return errorResult(
+            "NOT_SHARED",
+            "No shared analysis of this page, and the graph has not read it as a source; assess_text on its text checks it"
+          );
+        }
+        // A page only the graph read has no analysis, which is not the same
+        // as an analysis that found nothing: it gets no annotations at all.
+        return jsonResult({ ...(analysis ?? { url: normalized, shared: false }), recorded });
+      }
+    );
+  }
 
   // ---- agentic (metered) tools ----
 

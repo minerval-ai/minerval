@@ -44,6 +44,7 @@ import {
   getActiveSkillToolDefinitions,
   isSkillTool,
 } from "../tools/skill-tools.js";
+import { withoutOffFeatureTools } from "../tools/feature-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -498,11 +499,12 @@ async function runGrantmakerTurnImpl(input: {
 
   // The funder present in a person-funded mandate's chat may confirm a
   // posting parked at the autonomy threshold; on a platform mandate that
-  // is the operator key's act.
-  const bountyTools = [
+  // is the operator key's act. None of them is offered while the prizes
+  // feature is off (src/features.ts).
+  const bountyTools = withoutOffFeatureTools([
     ...getBountyToolDefinitions(),
     ...(input.funder === "platform" ? [] : [getConfirmBountyToolDefinition()]),
-  ];
+  ]);
   // The lookout tools (docs/allocation.md, "Lookouts"): standing watches
   // the mandate funds, shared with the review pass.
   // And the Correspondent tools (#563): readers the mandate funds for an
