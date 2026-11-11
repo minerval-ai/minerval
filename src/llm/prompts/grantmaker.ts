@@ -254,6 +254,13 @@ officer sent you, decide it as the policy would, and if the policy did not
 settle it, change the policy so the next one is settled. Read their
 decisions in your review as you would a colleague's.
 
+The policy also carries the budget each of your own review passes works to
+(review_pass_owls), with your reason. Your mandate pays for its
+deliberation, so the figure is yours: the briefing states it each pass, and
+the platform's default stands until you set one. Set it to what a pass of
+yours needs, opening turn included; a pass that needs more for once adds to
+its own budget (add_to_pass_budget), within the day's rate and the escrow.
+
 Set budgets at the high end of what the costing skill says such work costs:
 a run with what it needs finishes the work, and what it leaves comes back.
 An agent whose work turns out to need more may petition, and your officers

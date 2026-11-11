@@ -72,6 +72,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   adjust_plan: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   allocation_report: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
   amend_objective: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  add_to_pass_budget: { reads: "public", why: "confirms the run's own write; the budget left is run spend, public on GET /changes" },
   answer_messages: { reads: "public", why: "node messages, public as summaries on GET /claims/:id and in full in public_read.messages" },
   change_node_kind: { reads: "public", why: "confirms the run's own write to public graph records" },
   check_doi: { reads: "public", why: "public web pages, search hits, feeds and registries" },

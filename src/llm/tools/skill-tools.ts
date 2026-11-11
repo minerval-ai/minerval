@@ -175,6 +175,7 @@ const AGENT_INLINE_TOOL_NAMES = [
   "set_daily_rate",
   "extend_plan",
   "update_workspace",
+  "add_to_pass_budget",
   "continue_review",
   "complete_mandate",
   "note_to_funder",

@@ -186,6 +186,37 @@ describe("runMandateReview", () => {
     ]);
   });
 
+  // #820: the pass can add to its own budget, and is told how; a
+  // decomposition, bounded by its Grantmaker share, is not offered it.
+  it("offers add_to_pass_budget and says when continue_review is worth its second opening turn", async () => {
+    await runMandateReview({ grantId: GRANT });
+    expect(names()).toContain("add_to_pass_budget");
+    expect(state.loop!.briefing).toContain("add to its budget (add_to_pass_budget)");
+    const cont = state.loop!.tools.find((t) => t.name === "continue_review") as unknown as { description: string };
+    expect(cont.description).toContain("pays for its opening turn");
+    expect(cont.description).toContain("add_to_pass_budget");
+  });
+
+  it("does not offer add_to_pass_budget to a decomposition", async () => {
+    state.grant = grant({ mandate: { title: "t", objective: "o", grantmaker_share_owls: 2 } });
+    await runMandateReview({ grantId: GRANT });
+    expect(names()).not.toContain("add_to_pass_budget");
+    expect(state.loop!.briefing).not.toContain("add_to_pass_budget");
+  });
+
+  it("add_to_pass_budget asks for an amount and a reason, and says so when the pass has no ledger row", async () => {
+    state.script = [
+      { name: "add_to_pass_budget", input: { owls: 0, reason: "more survey" } },
+      { name: "add_to_pass_budget", input: { owls: 2 } },
+      { name: "add_to_pass_budget", input: { owls: 2, reason: "more survey" } },
+    ];
+    await runMandateReview({ grantId: GRANT });
+    const out = state.outputs.map((o) => JSON.parse(o));
+    expect(out[0]).toMatchObject({ success: false, problem: expect.stringContaining("above zero") });
+    expect(out[1]).toMatchObject({ success: false, problem: expect.stringContaining("reason is required") });
+    expect(out[2]).toMatchObject({ success: false, problem: expect.stringContaining("not running on a ledger row") });
+  });
+
   it("keeps a note for the funder on the mandate", async () => {
     state.script = [{ name: "note_to_funder", input: { note: "A 40-owl regrant needs you." } }];
     await runMandateReview({ grantId: GRANT });
