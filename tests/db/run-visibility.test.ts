@@ -11,23 +11,25 @@ vi.hoisted(() => {
 import { rawQuery } from "../../src/db/client.js";
 import { getUsageContext, markCurrentRunPrivate, withAgent } from "../../src/llm/usage-context.js";
 
-async function reasons(runId: string): Promise<string[] | null> {
-  for (let i = 0; i < 50; i++) {
-    const [row] = await rawQuery<{ private_reasons: string[]; finished_at: Date | null }>(
+/**
+ * The run's private reasons once the run has finished and every reason in
+ * `expect` has landed. Each mark is written fire-and-forget, so it can land
+ * after the run is stamped finished; reading after a fixed delay raced the
+ * writes on a busy runner (#874's CI). The run's own reasons are what the
+ * test then compares, duplicates included, so a reason written twice still
+ * fails it. Null when the run never finished.
+ */
+async function reasons(runId: string, expect: readonly string[] = []): Promise<string[] | null> {
+  let last: { private_reasons: string[]; finished_at: Date | null } | undefined;
+  for (let i = 0; i < 150; i++) {
+    [last] = await rawQuery<{ private_reasons: string[]; finished_at: Date | null }>(
       `SELECT private_reasons, finished_at FROM agent_runs WHERE id = $1`,
       [runId]
     );
-    if (row?.finished_at) {
-      await new Promise((r) => setTimeout(r, 50)); // let fire-and-forget marks land
-      const [again] = await rawQuery<{ private_reasons: string[] }>(
-        `SELECT private_reasons FROM agent_runs WHERE id = $1`,
-        [runId]
-      );
-      return again!.private_reasons;
-    }
+    if (last?.finished_at && expect.every((r) => last!.private_reasons.includes(r))) return last.private_reasons;
     await new Promise((r) => setTimeout(r, 20));
   }
-  return null;
+  return last?.finished_at ? last.private_reasons : null;
 }
 
 describe("run visibility", () => {
@@ -39,8 +41,8 @@ describe("run visibility", () => {
   it("starts a run of a private agent private, and an unclassified agent too", async () => {
     const grantmaker = await withAgent("grantmaker", async () => getUsageContext().runId!);
     const unknown = await withAgent("not_an_agent", async () => getUsageContext().runId!);
-    expect(await reasons(grantmaker)).toEqual(["agent:grantmaker"]);
-    expect(await reasons(unknown)).toEqual(["agent:not_an_agent:unclassified"]);
+    expect(await reasons(grantmaker, ["agent:grantmaker"])).toEqual(["agent:grantmaker"]);
+    expect(await reasons(unknown, ["agent:not_an_agent:unclassified"])).toEqual(["agent:not_an_agent:unclassified"]);
   });
 
   it("records each reason once, however often it is marked", async () => {
@@ -50,6 +52,7 @@ describe("run visibility", () => {
       markCurrentRunPrivate("tool:grant_overview");
       return getUsageContext().runId!;
     });
-    expect((await reasons(runId))!.sort()).toEqual(["input:grantmaker-brief", "tool:grant_overview"]);
+    const expected = ["input:grantmaker-brief", "tool:grant_overview"];
+    expect((await reasons(runId, expected))!.sort()).toEqual(expected);
   });
 });
