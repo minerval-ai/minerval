@@ -86,9 +86,11 @@ export interface StewardMessage {
     | "lookout_flag"
     // A watcher recorded something that happened to a document this node
     // asserts or rests on through recorded provenance (#507): a retraction,
-    // correction or expression of concern found by the Crossref poll. The
-    // context names the notice and how it reaches the node; the Steward
-    // decides what it means, and the ledger whether the pass runs.
+    // correction, expression of concern or other notice, found by the
+    // Crossref poll or by the facts fetch's DOI check
+    // (source-notice-service.ts). The context names the notice and how it
+    // reaches the node; the Steward decides what it means, and the ledger
+    // whether the pass runs.
     | "source_event"
     // The Consistency Checker (#330) finds this claim's assessment cannot
     // stand with its neighbors' as the edges between them read. The context

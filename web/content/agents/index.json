@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 29746,
-    "fullChars": 128070,
+    "roleChars": 29752,
+    "fullChars": 128076,
     "skills": [
       {
         "name": "costing",
@@ -151,8 +151,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19463,
-    "fullChars": 117787,
+    "roleChars": 19469,
+    "fullChars": 117793,
     "skills": []
   },
   {
