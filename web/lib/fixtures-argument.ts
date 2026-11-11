@@ -113,7 +113,35 @@ const ARG_DIRECT: ArgumentPage = {
   instances_total: 3,
 };
 
-const FIXTURES: Record<string, ArgumentPage> = { "arg-direct": ARG_DIRECT };
+// A retired argument on the same claim, so the claim page's list of retired
+// arguments, and a retired argument's own page, can be seen offline.
+const ARG_HEADLINE: ArgumentPage = {
+  argument: {
+    id: "arg-headline-print",
+    conclusion: ARG_DIRECT.argument.conclusion,
+    name: "The headline print alone",
+    stance: "for",
+    shows: null,
+    written_form: "A single year's headline CPI print of 6.5% is high, so the claim holds.",
+    has_written_form: true,
+    created_at: "2024-10-20T09:00:00Z",
+    retired: {
+      at: "2024-11-02T14:30:00Z",
+      reason: "Restates the direct-measurement argument without the threshold it needs; that argument states it in full.",
+    },
+    merged_into: null,
+  },
+  evaluation: null,
+  evaluation_history: [],
+  premises: [],
+  instances: [],
+  instances_total: 0,
+};
+
+const FIXTURES: Record<string, ArgumentPage> = {
+  "arg-direct": ARG_DIRECT,
+  "arg-headline-print": ARG_HEADLINE,
+};
 
 export const ARGUMENT_FIXTURE_IDS = Object.keys(FIXTURES);
 

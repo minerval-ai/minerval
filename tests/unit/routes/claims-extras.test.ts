@@ -77,6 +77,7 @@ const mocks = vi.hoisted(() => ({
   loadClaimExtras: vi.fn(),
   leanChecksByArgument: vi.fn(),
   getArgumentsForClaim: vi.fn(),
+  getRetiredArgumentsForClaim: vi.fn(),
   getEvaluationStateForClaim: vi.fn(async () => []),
 }));
 
@@ -125,6 +126,7 @@ vi.mock("../../../src/services/claim-link-service.js", () => ({
 vi.mock("../../../src/services/argument-service.js", () => ({
   addArgument: vi.fn(),
   getArgumentsForClaim: mocks.getArgumentsForClaim,
+  getRetiredArgumentsForClaim: mocks.getRetiredArgumentsForClaim,
   getEvaluationStateForClaim: mocks.getEvaluationStateForClaim,
 }));
 vi.mock("../../../src/services/assessment-service.js", () => ({
@@ -185,6 +187,7 @@ beforeEach(() => {
   mocks.getClaimById.mockReset().mockImplementation(async (id: string) => (id === CLAIM_ID ? CLAIM_ROW : null));
   mocks.loadClaimExtras.mockReset().mockResolvedValue(EXTRAS);
   mocks.leanChecksByArgument.mockReset().mockResolvedValue(new Map([[ARGUMENT_ID, LEAN_CHECK]]));
+  mocks.getRetiredArgumentsForClaim.mockReset().mockResolvedValue([]);
   mocks.getArgumentsForClaim.mockReset().mockResolvedValue([
     {
       id: ARGUMENT_ID,
@@ -193,7 +196,6 @@ beforeEach(() => {
       description: null,
       stance: "for",
       content: "The proof checks.",
-      evidenceUrls: [`/lean-checks/lc-1`],
       createdBy: "claim_steward",
       createdAt: new Date("2026-03-01T00:00:00.000Z"),
     },
@@ -268,6 +270,35 @@ describe("GET /claims/:id and the mathematics read models", () => {
       name: "Proof by strong induction (machine-checked)",
       lean_check: LEAN_CHECK,
     });
+    await app.close();
+  });
+
+  it("lists the retired arguments apart in the deep payload, with their reasons (#541)", async () => {
+    mocks.getRetiredArgumentsForClaim.mockResolvedValueOnce([
+      {
+        id: "arg-retired",
+        claimId: CLAIM_ID,
+        name: "An answered argument",
+        stance: "for",
+        retiredAt: new Date("2026-04-01T00:00:00.000Z"),
+        retiredReason: "Answered by later evidence.",
+        mergedInto: null,
+      },
+    ]);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}?information_depth=deep` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().retired_arguments).toEqual([
+      {
+        id: "arg-retired",
+        name: "An answered argument",
+        stance: "for",
+        retired_at: "2026-04-01T00:00:00.000Z",
+        reason: "Answered by later evidence.",
+        merged_into: null,
+      },
+    ]);
+    expect(res.json().arguments.map((a: { id: string }) => a.id)).toEqual([ARGUMENT_ID]);
     await app.close();
   });
 

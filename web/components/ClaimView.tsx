@@ -432,6 +432,36 @@ export function ClaimView({
             })}
           </p>
         )}
+        {/* Arguments no longer on the claim (#541): retiring keeps an
+            argument's name, page and record (§7), so they are listed here,
+            folded away, each linking to its page with the reason. */}
+        {(detail.retired_arguments?.length ?? 0) > 0 && (
+          <details className="reasoning-detail retired-arguments">
+            <summary>
+              {detail.retired_arguments!.length === 1
+                ? "1 retired argument"
+                : `${detail.retired_arguments!.length} retired arguments`}
+            </summary>
+            <p className="retired-arguments-note">
+              No longer among this claim&apos;s arguments. Each keeps its page, with its record and why it was retired.
+            </p>
+            <ul className="retired-arguments-list">
+              {detail.retired_arguments!.map((a) => (
+                <li key={a.id}>
+                  <Link href={`/arguments/${a.id}`}>{a.name ?? "Unnamed argument"}</Link>
+                  {a.stance !== "neutral" && <span className="retired-arguments-stance"> · {a.stance}</span>}
+                  {a.merged_into ? (
+                    <span className="retired-arguments-reason">
+                      {" "}· merged into <Link href={`/arguments/${a.merged_into}`}>another argument</Link>
+                    </span>
+                  ) : (
+                    a.reason && <span className="retired-arguments-reason"> · {a.reason}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {/* Build your part of the graph: an owl budget takes this subtree
             deeper than the background pipeline's economics ever would. */}
         <FundDecomposition claimId={claim.id} />
