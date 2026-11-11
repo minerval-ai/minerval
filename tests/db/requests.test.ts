@@ -19,32 +19,26 @@ import {
   setRequestState,
 } from "../../src/services/request-service.js";
 
-// A stand-in embedder: text about the sun or a solar eclipse lies along one
-// axis; any other text gets a ±1 vector seeded by the text itself. Two such
-// vectors in 1536 dimensions sit near cosine 0 (typically ±0.03, rarely past
-// 0.1), well under the 0.3 floor, so texts mean the same only when the test
-// says so. `down` makes
-// every call fail, as the embedder does when it is.
+// A stand-in embedder. Every text gets a vector along one axis, so two texts
+// are either the same in meaning (cosine 1) or unrelated (cosine 0), and a
+// keyword match is never reordered by a stray fraction of similarity:
+//   - text about the sun or a solar eclipse lies along axis 0;
+//   - a bare search token of the kind these tests mint (`zs` and eight hex
+//     digits) has the last axis to itself, so searching for one matches
+//     nothing by meaning. Hashed with the rest, it landed on another
+//     request's axis about once in 1,500 and the search then returned that
+//     request too;
+//   - any other text is hashed onto one of the axes between.
+// `down` makes every call fail, as the embedder does when it is.
 const embedder = vi.hoisted(() => ({ down: false }));
-vi.mock("../../src/services/embedding-service.js", () => ({
-  generateEmbedding: vi.fn(async (text: string) => {
-    if (embedder.down) throw new Error("embedder down");
-    if (/\b(sun|solar|eclipse)\b/i.test(text)) return [1, ...new Array(1535).fill(0)];
-    let seed = 0;
-    for (const ch of text) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
-    return Array.from({ length: 1536 }, () => {
-      seed = (seed * 1103515245 + 12345) >>> 0;
-      return seed & 0x10000 ? 1 : -1;
-    });
-  }),
-}));
 vi.mock("../../src/services/embedding-service.js", () => ({
   generateEmbedding: vi.fn(async (text: string) => {
     if (embedder.down) throw new Error("embedder down");
     const v = new Array(1536).fill(0);
     let h = 0;
-    for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 1535;
-    v[/\b(sun|solar|eclipse)\b/i.test(text) ? 0 : 1 + h] = 1;
+    for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 1534;
+    const axis = /\b(sun|solar|eclipse)\b/i.test(text) ? 0 : /^zs[0-9a-f]{8}$/.test(text.trim()) ? 1535 : 1 + h;
+    v[axis] = 1;
     return v;
   }),
 }));
