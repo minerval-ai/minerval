@@ -54,8 +54,8 @@
     "invokedWhen": "Anyone submits a contribution (a challenge, support, a new instance, an argument, a merge, split or edit, a source's figure for a quantity, an answer to a question, a request or material for one) or a proposal (a new claim, question or source).",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 15083,
-    "fullChars": 108080,
+    "roleChars": 15566,
+    "fullChars": 108563,
     "skills": [
       {
         "name": "costing",
@@ -316,8 +316,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.2",
     "hasConstitution": true,
-    "roleChars": 17956,
-    "fullChars": 110953,
+    "roleChars": 18884,
+    "fullChars": 111881,
     "skills": [
       {
         "name": "costing",
@@ -553,8 +553,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget (the run is synchronous, and the report comes back as the tool result); or a request's work is funded on the ledger (fund_request_work pays toward it) and the engine runs it.",
     "model": "Chosen per launch: Claude Fable 5.2 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 14039,
-    "fullChars": 107036,
+    "roleChars": 15176,
+    "fullChars": 108173,
     "skills": [
       {
         "name": "costing",

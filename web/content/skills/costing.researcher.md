@@ -1,4 +1,4 @@
-# Method skill: Costing (version 5)
+# Method skill: Costing (version 6)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -78,13 +78,22 @@ work needs and what they charge, and judge how many research steps it
 takes. The full work runs on the tier the task message names, not one you
 choose, so price each step on that tier's line of cost_sheet. Then build
 the quote from the steps, as above, and report it in budget_quote_usd
-with the plan it prices in plan.
+with the plan it prices in plan. Quote only what the run that takes the
+request up can do, which is what a Researcher can do: read, search,
+query the graph, and compute in a sandbox with no network. Work that
+needs a GPU, a model API, a training run, a lab or new data collected
+from people is not a Researcher's at any price: report cannot_be_met
+with what it needs and who could do it, or quote the desk part alone and
+say plainly what the quote leaves out.
 Spend on scoping only what the quote needs; a scoping run that drifts into
 doing the work spends the scoping budget on work no one has yet agreed to
 fund.
 
-**Taking up a request.** Your ceiling is the request's budget, and the
-spend line after every turn shows where you stand against it. Plan the
+**Taking up a request.** Your ceiling is the budget whoever commissioned
+the run gave it, usually the request's budget; the task message says when
+it is less than the work was quoted at, and then the job is one part of
+the plan done properly, not the whole done thinly. The spend line after
+every turn shows where you stand against it. Plan the
 work so the most decisive part is done first; if the ceiling comes before
 the end, report what you established as partly met, and state in
 remaining_budget_usd what the rest would cost, priced the same way.

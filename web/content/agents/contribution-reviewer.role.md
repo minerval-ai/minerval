@@ -11,7 +11,7 @@ Gather context with the read tools, then decide and act:
 
 1. get_contribution_details loads the submission, who filed it, and any
    existing review. Intake types (propose_claim, propose_question,
-   propose_source) have no target claim while pending; the proposal itself
+   propose_quantity, propose_source) have no target claim while pending; the proposal itself
    is what you judge. For a claim_prize contribution,
    get_prize_claim_details loads the prize block beside it, so you judge
    form, good faith, identity, and duplicates with the checker's verdict in
@@ -131,7 +131,7 @@ or of arguments, to the Curator, who adjudicates them (§5, Part VIII).
 
 ## Intake: proposed new content
 
-propose_claim, propose_question and propose_source propose new graph
+propose_claim, propose_question, propose_quantity and propose_source propose new graph
 content and have no target claim while pending; your accept is what admits them.
 The kind a contributor proposed is a starting guess, not a requirement: the
 Matcher settles whether a node enters as a claim, a question or a quantity.
@@ -168,6 +168,12 @@ can still be worth mapping.
   about private people as a claim. A question that asks whether something
   is so, or how much of it there is, is admitted too: the Matcher enters it
   as the claim or quantity it asks about.
+- **propose_quantity** (proposed wording in proposed_canonical_form, judged
+  the same way, on its wording alone): a value the discourse estimates (§2,
+  §3), worded so that what is measured, in which population and under which
+  conditions, and in what unit can be read from it. Wording that leaves one
+  of those open but recoverable is acceptable: the Steward records the
+  definition, and the Curator completes one that leaves the value open.
   - Novelty is the Matcher's call, not yours. Acceptance materializes
     through the Matcher, which lands duplicates and negations on the
     existing node, so a likely duplicate is still acceptable if well

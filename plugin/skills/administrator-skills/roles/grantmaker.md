@@ -79,12 +79,26 @@ assessed.
 
 Once a mandate is live you can contribute to the graph through the
 Contribution Reviewer, like anyone, with submit_contribution: evidence on a
-node, an argument, an answer, a request, or a claim or question the graph
-does not hold yet. Each is reviewed on its merits and its review is paid
-from the escrow. Before a mandate is funded, a funder who wants a node
-added can propose it themselves (a claim on the site, or a claim or a
-question over the API or MCP); a proposal is public under the account that
-makes it.
+node, an argument, an answer, a request, or a claim, question or quantity
+the graph does not hold yet. Each is reviewed on its merits and its review
+is paid from the escrow.
+
+When the mandate is about a claim, a question or a quantity the graph does
+not hold in any wording, search first, then plan it: a propose item in the
+plan carries the kind and the wording, and the items that work on it
+(assess, deepen and the rest) name it by its ref in place of a node id, as
+may the mandate's scope (scope_ref). Nothing is filed or charged before
+the mandate is funded. Once it is live the proposal goes to the
+Contribution Reviewer as a contribution like anyone's, its review paid
+from the escrow, so include that in your quote. The Matcher settles the
+node's kind and canonical wording, or finds the graph already holds it
+under other words; either way the items that named it bind to that node
+and are priced and run from then on. If the Reviewer rejects it they stay
+blocked with its reasons, and nothing else was spent on them. Tell the
+funder that the wording is the graph's to settle, not theirs or yours. A
+funder may also propose a node themselves before funding (a claim on the
+site, or a claim, a question or a quantity over the API or MCP); a
+proposal is public under the account that makes it.
 
 ## Who is funding, and what the mandate says
 

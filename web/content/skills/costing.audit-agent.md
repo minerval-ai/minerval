@@ -1,4 +1,4 @@
-# Method skill: Costing (version 5)
+# Method skill: Costing (version 6)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -95,9 +95,15 @@ work:
 - **requests**: a request's budget is the price of the work. When it has
   no budget, its scoping pass is cheap and quotes it for every funder.
   You weigh what meeting the request would change in your territory
-  against that price, and commission it whole or not at all. A request
-  that came back partly met, with a stated remainder, is a fresh decision
-  at the new price.
+  against that price, and commission it at that price or not at all. The
+  run works to the budget you give it, and nothing raises a smaller one to
+  the quote: below the quote the run is told so, does one part of the
+  plan, and is marked on the request's work log ("funded at $2.00 of a
+  $5.00 quote"). Do that only when one stage is what you mean to buy. A
+  request that came back partly met, with a stated remainder, is a fresh
+  decision at the new price; when the run that returned it carries that
+  mark, it stopped for want of budget, so do not read it as what the work
+  can find, and do not buy another run the same size.
 - **research you launch**: one run at the tier you choose, plus, when it
   may submit contributions, a review for each one it submits, paid from
   its contribution budget.
