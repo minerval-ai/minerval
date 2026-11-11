@@ -1052,6 +1052,9 @@ const configSchema = z.object({
   // for a conversation.
   assistantModel: modelId(MODELS.frontier),
   assistantStandardModel: modelId(MODELS.strong),
+  // Names a conversation from its first message: a few words from the
+  // cheapest capable model.
+  assistantTitleModel: modelId(OPENROUTER_MODELS.flash),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -1402,6 +1405,7 @@ export function loadConfig(): Config {
     grantmakerModel: process.env.GRANTMAKER_MODEL,
     assistantModel: process.env.ASSISTANT_MODEL,
     assistantStandardModel: process.env.ASSISTANT_STANDARD_MODEL,
+    assistantTitleModel: process.env.ASSISTANT_TITLE_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
