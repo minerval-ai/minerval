@@ -168,9 +168,12 @@ read is free, an agent which signals allocation turns on.
   `claims`). Each result carries its `kind`, importance, `contestation`,
   current assessment status/confidence (a question's `standing`, a
   quantity's `estimate` and `unit`), `days_since_assessed`, `since_assessed`
-  (what has changed under its judgment since it was written, as `get_claim`
-  serves it, read for every hit in one query; null on a node with no
-  judgment), its topic
+  (what has changed under its judgment since it was written, read for every
+  hit in one query and served in a short form, since most hits have nothing
+  to say: `{changed: false}`, or `{changed: true}` with only the counts
+  above zero, or `{recorded: false}` for a judgment that predates the
+  record, which is unknown, not unchanged; a node with no judgment has no
+  such key; `get_claim` has every count), its topic
   `tags`, and a `minerval.ai` page link. It also carries `prize_micro_usd`
   (the live bounty on the claim, or null) and `checked` (`proof`,
   `disproof`, or null: whether a machine-checked argument stands on the

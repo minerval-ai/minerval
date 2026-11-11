@@ -12,6 +12,7 @@ import {
   getJudgmentInputs,
   recordJudgmentInputs,
   sinceAssessed,
+  sinceAssessedRow,
   summarizeJudgmentChanges,
 } from "../../src/services/judgment-inputs-service.js";
 import { defineQuantity, recordEstimate } from "../../src/services/quantity-service.js";
@@ -402,9 +403,28 @@ describe("the summary of what changed, for many nodes at once", () => {
     // No counts beside "not recorded": zeros there would read as "nothing changed".
     const said = sinceAssessed(summary.get(unrecorded))!;
     expect(said).toEqual({ recorded: false, changed: null, note: expect.stringContaining("unknown, not unchanged") });
-    expect(sinceAssessed(summary.get(unrecorded), { note: false })).toEqual({ recorded: false, changed: null });
     expect(sinceAssessed(summary.get(never))).toBeNull();
     expect(sinceAssessed(undefined)).toBeNull();
+  });
+
+  it("is served on a list row in as few keys as the fact takes", async () => {
+    const c = await seedCase();
+    await assess(c.a);
+    await seedInstance(c.parent, await seedSource());
+    const fresh = await seedCase();
+    const unrecorded = await seedClaim("row unrecorded");
+    await assess(unrecorded, { record: false });
+    const never = await seedClaim("row never judged");
+    const summary = await summarizeJudgmentChanges([c.parent, fresh.parent, unrecorded, never]);
+
+    // Changed: only the counts above zero.
+    expect(sinceAssessedRow(summary.get(c.parent))).toEqual({ changed: true, premises_rejudged: 1, sources_added: 1 });
+    expect(sinceAssessedRow(summary.get(fresh.parent))).toEqual({ changed: false });
+    // Unknown is said as unknown, never as `changed: false`.
+    expect(sinceAssessedRow(summary.get(unrecorded))).toEqual({ recorded: false });
+    // No judgment: nothing, so the row carries no key.
+    expect(sinceAssessedRow(summary.get(never))).toBeUndefined();
+    expect(sinceAssessedRow(undefined)).toBeUndefined();
   });
 });
 
@@ -505,6 +525,12 @@ describe("what changed since the judgment, where readers already look", () => {
     await assess(c.b);
     const unjudged = await seedClaim("list never judged");
     await seedInstance(unjudged, c.source);
+    const steady = await seedClaim("list judged, nothing moved");
+    await seedInstance(steady, c.source);
+    await assess(steady);
+    const old = await seedClaim("list judged before the record");
+    await seedInstance(old, c.source);
+    await assess(old, { record: false });
     const { grantId } = await seedGrantWithJob({ funderId: await seedUser("changes-funder"), budgetMicroUsd: 10 * OWL });
     const [job] = await rawQuery<{ id: string }>(
       `INSERT INTO jobs (type, status, input, completed_at) VALUES ('url_extraction', 'completed', '{}', now()) RETURNING id`
@@ -515,11 +541,14 @@ describe("what changed since the judgment, where readers already look", () => {
     );
 
     const out = JSON.parse((await executeManagementTool(grantId, "claims_from_source", { source_id: c.source }))!);
-    const byId = new Map<string, { since_assessed: unknown }>(
-      out.claims.map((r: { claim_id: string; since_assessed: unknown }) => [r.claim_id, r])
+    const byId = new Map<string, { since_assessed?: unknown }>(
+      out.claims.map((r: { claim_id: string; since_assessed?: unknown }) => [r.claim_id, r])
     );
-    expect(byId.get(c.parent)!.since_assessed).toEqual({ recorded: true, changed: true, ...none, premises_rejudged: 1 });
-    expect(byId.get(unjudged)!.since_assessed).toBeNull();
+    // The short form of a list row: only what is not the default.
+    expect(byId.get(c.parent)!.since_assessed).toEqual({ changed: true, premises_rejudged: 1 });
+    expect(byId.get(steady)!.since_assessed).toEqual({ changed: false });
+    expect(byId.get(old)!.since_assessed).toEqual({ recorded: false });
+    expect("since_assessed" in byId.get(unjudged)!).toBe(false);
   });
 
   it("opens the Steward's pass, by claim id and text", async () => {

@@ -356,7 +356,10 @@ the same fact is carried where each reader already looks, as counts under
 the name `since_assessed` (`summarizeJudgmentChanges`, one query for any
 number of nodes, built from the same SQL as the detailed read): on
 `GET /claims/:claim_id` and `get_claim` beside the judgment, on every
-`search_claims` hit and on the Grantmaker's `claims_from_source` rows, and
+`search_claims` hit and on the Grantmaker's `claims_from_source` rows (in a
+short form there, because a list is read constantly and most rows have
+nothing to say: counts that are zero are left out, and a node with no
+judgment carries no key), and
 on the claim page as one line under the assessment when something changed.
 A Steward starting a pass on a node it has already judged is told what
 changed in its task message, by claim id and text

@@ -235,7 +235,9 @@ support matters:
   detached, and corrections or retractions on its sources), with `changed`
   true when any of them is above zero. A premise judged again to the same
   verdict still counts, so `changed` says the verdict's footing moved, not
-  that the verdict is wrong. `get_judgment_inputs` names the premises and
+  that the verdict is wrong. A `search_claims` result carries it in a short
+  form: counts that are zero are left out, and a claim with no verdict has
+  no `since_assessed` at all. `get_judgment_inputs` names the premises and
   sources. A verdict written before that was recorded answers
   `recorded: false`, which means unknown, not unchanged.
 - A document the support rests on has a page of its own.

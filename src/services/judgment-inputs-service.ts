@@ -418,28 +418,21 @@ export async function summarizeJudgmentChanges(
  * summary in the words a reader needs. Null for a node with no judgment in
  * force, which has nothing to be out of date. A judgment that predates the
  * record says so and carries no counts, so that zeros are never read as
- * "nothing changed". Lists leave the sentence out (`note: false`) and rely
- * on the tool's description, since it would repeat on every row.
+ * "nothing changed". This is the form a read of one node serves; a row in a
+ * list carries the shorter `sinceAssessedRow`.
  */
 export type SinceAssessed =
-  | { recorded: false; changed: null; note?: string }
+  | { recorded: false; changed: null; note: string }
   | ({ recorded: true; changed: boolean } & JudgmentChangeCounts);
 
 export const SINCE_ASSESSED_UNRECORDED_NOTE =
   "This judgment was written before the graph recorded what a judgment was made against, " +
   "so nothing can be said about what has changed since. That is unknown, not unchanged.";
 
-export function sinceAssessed(
-  summary: JudgmentChangeSummary | undefined,
-  opts: { note?: boolean } = {}
-): SinceAssessed | null {
+export function sinceAssessed(summary: JudgmentChangeSummary | undefined): SinceAssessed | null {
   if (!summary?.judged) return null;
   if (!summary.recorded || summary.changed === null) {
-    return {
-      recorded: false,
-      changed: null,
-      ...(opts.note === false ? {} : { note: SINCE_ASSESSED_UNRECORDED_NOTE }),
-    };
+    return { recorded: false, changed: null, note: SINCE_ASSESSED_UNRECORDED_NOTE };
   }
   return {
     recorded: true,
@@ -454,6 +447,32 @@ export function sinceAssessed(
 }
 
 /**
+ * `since_assessed` on one row of a list (a search hit, a candidate), kept
+ * as small as the fact allows. A search is run constantly by every agent
+ * and by outside callers, and for most hits the fact is "nothing changed":
+ * eight keys on every row would be paid for by every reader to say that. So
+ * a row says only what is not the default: nothing at all for a node with
+ * no judgment (undefined here, so the key is left off the row), `recorded:
+ * false` for a judgment that predates the record, `changed: false` when
+ * nothing moved, and `changed: true` with only the counts above zero.
+ */
+export type SinceAssessedRow =
+  | { recorded: false }
+  | { changed: false }
+  | ({ changed: true } & Partial<JudgmentChangeCounts>);
+
+export function sinceAssessedRow(summary: JudgmentChangeSummary | undefined): SinceAssessedRow | undefined {
+  if (!summary?.judged) return undefined;
+  if (!summary.recorded || summary.changed === null) return { recorded: false };
+  if (!summary.changed) return { changed: false };
+  const moved: Partial<JudgmentChangeCounts> = {};
+  for (const key of Object.keys(NO_CHANGES) as Array<keyof JudgmentChangeCounts>) {
+    if (summary[key] > 0) moved[key] = summary[key];
+  }
+  return { changed: true, ...moved };
+}
+
+/**
  * The description of `since_assessed`, shared by every surface that serves
  * it so that none describes it differently.
  */
@@ -465,3 +484,13 @@ export const SINCE_ASSESSED_DESCRIPTION =
   "sources it was made against); `changed` is true when any count is above zero; " +
   "`recorded: false` with `changed: null` and no counts means the judgment predates this " +
   "record, which is unknown, not unchanged";
+
+/** The same for a row of a list, where the short form is served. */
+export const SINCE_ASSESSED_ROW_DESCRIPTION =
+  "what has changed under its judgment since it was written, kept short: `changed`, and " +
+  "when it is true only the counts above zero (`premises_rejudged`, nodes under it with a " +
+  "newer judgment of their own, whether or not the verdict moved; `premises_added`; " +
+  "`premises_removed`; `sources_added`; `sources_removed`; `source_events`, corrections, " +
+  "retractions and other notices on its sources), counts that are zero being left out; " +
+  "`recorded: false` means the judgment predates this record, which is unknown, not " +
+  "unchanged; no key means the node has no judgment";

@@ -27,8 +27,8 @@ import { attachClaimTags, resolveTagBySlug } from "./tag-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
 import { NODE_KINDS } from "../schemas/kinds.js";
 import {
-  SINCE_ASSESSED_DESCRIPTION,
-  sinceAssessed,
+  SINCE_ASSESSED_ROW_DESCRIPTION,
+  sinceAssessedRow,
   summarizeJudgmentChanges,
   type JudgmentChangeSummary,
 } from "./judgment-inputs-service.js";
@@ -100,8 +100,8 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "`assessment_confidence` on a claim, `standing` on a question, " +
         "`estimate` and `unit` on a quantity), `days_since_assessed`, " +
         "`since_assessed` (" +
-        SINCE_ASSESSED_DESCRIPTION +
-        "; null on a node with no judgment; get_claim with include " +
+        SINCE_ASSESSED_ROW_DESCRIPTION +
+        "; get_claim has every count, and with include " +
         "`judgment_inputs` says which nodes and sources), the " +
         "amount of any live prize for a machine-checked proof or disproof of " +
         "its formal statement (`prize_micro_usd`) and whether such a check " +
@@ -256,6 +256,12 @@ async function searchSignals(ids: string[]): Promise<Map<string, SearchSignals>>
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/** `since_assessed` for one row in its short form, or no key at all for a node with no judgment. */
+function sinceAssessedKey(summary: JudgmentChangeSummary | undefined) {
+  const since = sinceAssessedRow(summary);
+  return since ? { since_assessed: since } : {};
+}
+
 async function searchClaims(input: Record<string, unknown>): Promise<GraphReadResult> {
   const query = String(input.query ?? "");
   const tag = typeof input.tag === "string" ? input.tag.trim() : "";
@@ -282,8 +288,7 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
       return new Map<string, SearchSignals>();
     }),
     // What has changed under each hit's judgment (#566), for all of them in
-    // one query. On a failure the field is left off every hit rather than
-    // set to null, which would say the node has no judgment.
+    // one query. Its failure costs the field, never the search.
     summarizeJudgmentChanges(results.map((r) => r.id)).catch((err) => {
       console.error(`[graph-read] search changes-since failed: ${err instanceof Error ? err.message : err}`);
       return null as Map<string, JudgmentChangeSummary> | null;
@@ -308,7 +313,7 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
           assessment_status: r.assessment_status,
           assessment_confidence: r.assessment_confidence,
           days_since_assessed: s?.days_since_assessed ?? null,
-          ...(changes ? { since_assessed: sinceAssessed(changes.get(r.id), { note: false }) } : {}),
+          ...sinceAssessedKey(changes?.get(r.id)),
           steward_state: s?.steward_state ?? null,
           prize_micro_usd: r.prize_micro_usd ?? null,
           checked: r.checked ?? null,

@@ -216,15 +216,17 @@ describe("graph-read-tools", () => {
     });
 
     // #566: what has changed under each hit's judgment travels with the hit,
-    // read for all of them in one query, never one read per hit.
-    it("says for each hit what has changed since it was judged, in one query", async () => {
+    // read for all of them in one query, never one read per hit, and in the
+    // short form: a search is run constantly, and most hits have nothing to say.
+    it("says for each hit what has changed since it was judged, in one query and as few keys as it takes", async () => {
       mockHybrid.mockResolvedValue({
         results: [
           { id: "c1", text: "Moved under", importance: 0.8 },
           { id: "c2", text: "Judged before the record", importance: 0.7 },
           { id: "c3", text: "Never judged", importance: 0.6 },
+          { id: "c4", text: "Judged, nothing moved", importance: 0.5 },
         ],
-        total: 3,
+        total: 4,
       } as never);
       const zero = {
         premises_rejudged: 0, premises_added: 0, premises_removed: 0,
@@ -235,24 +237,26 @@ describe("graph-read-tools", () => {
           ? [
               { node_id: "c1", recorded: true, ...zero, premises_rejudged: 2, sources_added: 1 },
               { node_id: "c2", recorded: false, ...zero },
+              { node_id: "c4", recorded: true, ...zero },
             ]
           : []) as never);
 
       const out = JSON.parse((await executeGraphReadTool("search_claims", { query: "x" }))!);
 
-      expect(out.results[0].since_assessed).toEqual({
-        recorded: true, changed: true, ...zero, premises_rejudged: 2, sources_added: 1,
-      });
-      // Not recorded is said as such, with no counts to misread as "unchanged".
-      expect(out.results[1].since_assessed).toEqual({ recorded: false, changed: null });
-      expect(out.results[2].since_assessed).toBeNull();
+      // Changed: only the counts above zero.
+      expect(out.results[0].since_assessed).toEqual({ changed: true, premises_rejudged: 2, sources_added: 1 });
+      // Not recorded is said as such, and never as unchanged.
+      expect(out.results[1].since_assessed).toEqual({ recorded: false });
+      // Never judged: no key at all, like other absent facts.
+      expect("since_assessed" in out.results[2]).toBe(false);
+      expect(out.results[3].since_assessed).toEqual({ changed: false });
       const summaryCalls = mockRawQuery.mock.calls.filter(([sql]) => String(sql).includes("judged AS"));
       expect(summaryCalls).toHaveLength(1);
-      expect(summaryCalls[0]![1]).toEqual([["c1", "c2", "c3"]]);
+      expect(summaryCalls[0]![1]).toEqual([["c1", "c2", "c3", "c4"]]);
       mockRawQuery.mockResolvedValue([] as never);
     });
 
-    it("leaves the field off, rather than null, when that read fails", async () => {
+    it("still answers the search, without the field, when that read fails", async () => {
       mockHybrid.mockResolvedValue({ results: [{ id: "c1", text: "A claim", importance: 0.8 }], total: 1 } as never);
       mockRawQuery.mockImplementation((async (sql: string) => {
         if (sql.includes("judged AS")) throw new Error("connection reset");

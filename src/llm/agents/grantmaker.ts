@@ -53,8 +53,8 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { createMandateTools } from "../tools/mandate-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import {
-  SINCE_ASSESSED_DESCRIPTION,
-  sinceAssessed,
+  SINCE_ASSESSED_ROW_DESCRIPTION,
+  sinceAssessedRow,
   summarizeJudgmentChanges,
 } from "../../services/judgment-inputs-service.js";
 import {
@@ -850,8 +850,8 @@ export function getManagementReadToolDefinitions(): Tool[] {
         "The nodes linked to one ingested source (by the source_id the " +
         "ingestion report gives), with kind, importance, contestation, stance, " +
         "when each was last assessed, and `since_assessed` (" +
-        SINCE_ASSESSED_DESCRIPTION +
-        "; null on a node with no assessment; get_claim with include " +
+        SINCE_ASSESSED_ROW_DESCRIPTION +
+        "; get_claim has every count, and with include " +
         "`judgment_inputs` says which nodes and sources). Pages through every node the " +
         "source carries: the result gives the total and the next offset.",
       input_schema: {
@@ -1196,20 +1196,18 @@ export async function executeManagementTool(
     const total = rows[0]?.total ?? (offset > 0 ? ((await page(1, 0))[0]?.total ?? 0) : 0);
     const next = offset + rows.length < total ? offset + rows.length : null;
     // What has changed under each node's assessment (#566), for the page in
-    // one query. A failed read leaves the field off rather than null, which
-    // would say the node has no assessment.
+    // one query, in the short form a list row carries. A failed read costs
+    // the field, never the list.
     const changes = await summarizeJudgmentChanges(rows.map((r) => String(r.claim_id))).catch(() => null);
     return JSON.stringify({
       total,
       offset,
       returned: rows.length,
       next_offset: next,
-      claims: rows.map(({ total: _t, ...r }) => ({
-        ...r,
-        ...(changes
-          ? { since_assessed: sinceAssessed(changes.get(String(r.claim_id)), { note: false }) }
-          : {}),
-      })),
+      claims: rows.map(({ total: _t, ...r }) => {
+        const since = sinceAssessedRow(changes?.get(String(r.claim_id)));
+        return since ? { ...r, since_assessed: since } : r;
+      }),
     });
   }
   if (name === "importance_distribution") {
