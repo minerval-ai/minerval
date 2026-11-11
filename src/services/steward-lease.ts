@@ -3,8 +3,7 @@
  *
  * `steward_state = 'running'` is the lock and `stewarded_at` its lease. Every
  * lane claims the row with a guarded UPDATE (steward-pipeline.ts,
- * order-pipeline.ts, budget-job-pipeline.ts, grant-pipeline.ts,
- * steward-direct.ts); this module holds what they share:
+ * order-pipeline.ts, budget-job-pipeline.ts, steward-direct.ts); this module holds what they share:
  *
  *  - the release: a message that arrived mid-run (`steward_requeued`) turns
  *    the row back into 'pending' instead of the lane's own end state, so the
