@@ -19,6 +19,7 @@ import {
   type QuantityUnit,
   type ValueShown,
 } from "../schemas/kinds.js";
+import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
 /** Set a quantity's definition, making a fresh claim a quantity if it is not one yet. */
@@ -88,6 +89,8 @@ export async function recordEstimate(input: {
         input.marginalYield ?? null,
       ]
     );
+    // What the estimate was made against, in the same transaction (#566).
+    await recordJudgmentInputs(tx.query, "quantity_estimate", row!.id, input.claimId);
     return { id: row!.id };
   });
 }

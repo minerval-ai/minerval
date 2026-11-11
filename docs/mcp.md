@@ -415,6 +415,9 @@ read of a claim, use a card.
   take a `get_claim` each), `cite_claim`, `get_claim_provenance`,
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
+  `get_judgment_inputs` (what a node's judgment in force was made against,
+  and what has changed since: premises judged again, added or removed,
+  sources attached or detached, corrections and retractions on its sources),
   `get_claim_events`, `propose_claim` (a claim, a question or a quantity by
   its optional `kind`, reviewed by the Contribution Reviewer before anything
   enters the graph).
