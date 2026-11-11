@@ -21,6 +21,9 @@ import {
   markRunPrivate,
   markRunWroteGraph,
   recordAgentRunSkills,
+  recordMode,
+  RunLogError,
+  sealAgentRun,
   startAgentRun,
   type AgentTrace,
 } from "../services/trace-service.js";
@@ -142,6 +145,10 @@ export function runWithUsageContext<T>(
  * identity (#334 L0). Nested withAgent calls open nested runs; the inner one
  * shadows the outer for the duration, which is the honest reading of "an
  * agent invoked another agent".
+ *
+ * Work that returns without a promise closes its run without waiting, in
+ * either mode: there is nothing to hold its result behind. Every agent's
+ * entry point is async.
  */
 // A run that writes to the graph keeps its transcript (db/graph-writes.ts).
 // The statement observer sees every query db/client.ts sends; the run open
@@ -174,6 +181,23 @@ export function withAgent<T>(agent: string, fn: () => T): T {
       throw err;
     }
     if (result instanceof Promise) {
+      // In record mode the run is not finished until its log is sealed
+      // (#552): the work's result is held until every step is written, and
+      // a log that could not be written whole fails the run. What the run
+      // already wrote to the graph stays written; a reader tells it by the
+      // run being unsealed.
+      if (recordMode()) {
+        return result.then(
+          async (value) => {
+            if (!(await sealAgentRun(trace, "ok"))) throw new RunLogError(trace.runId);
+            return value;
+          },
+          async (err) => {
+            await sealAgentRun(trace, "error", err);
+            throw err;
+          }
+        ) as unknown as T;
+      }
       return result.then(
         (value) => {
           finishAgentRun(trace, "ok");

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     env: "development",
     traceLevel: "full" as "off" | "full" | undefined,
     gitSha: "abc1234def" as string | undefined,
+    runLogMode: "best_effort" as "best_effort" | "record",
   },
 }));
 
@@ -31,9 +32,11 @@ import {
   startAgentRun,
   finishAgentRun,
   recordAgentStep,
+  sealAgentRun,
   traceLevel,
   traceable,
 } from "../../../src/services/trace-service.js";
+import { checkChain, genesisHash, type ChainedStep } from "../../../src/services/run-log.js";
 
 beforeEach(() => {
   mocks.insertValues.mockClear();
@@ -41,6 +44,8 @@ beforeEach(() => {
   mocks.updateWhere.mockClear();
   mocks.config.traceLevel = "full";
   mocks.config.env = "development";
+  mocks.config.runLogMode = "best_effort";
+  mocks.insertValues.mockImplementation(async () => undefined);
 });
 
 describe("traceLevel resolution", () => {
@@ -191,5 +196,123 @@ describe("finishAgentRun", () => {
     const payload = mocks.updateSet.mock.calls[0]![0] as Record<string, unknown>;
     expect(payload.outcome).toBe("ok");
     expect(payload.error).toBeNull();
+  });
+});
+
+// The log as a hash chain (#552): steps are written in order, each carrying
+// the hash of the one before it, and a run whose every step was written is
+// sealed with the last hash.
+describe("the chain and the seal", () => {
+  const stepRows = () =>
+    mocks.insertValues.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .filter((r) => "seq" in r)
+      .map((r) => ({
+        seq: r.seq as number,
+        kind: r.kind as string,
+        content: r.content,
+        prev_hash: r.prevHash as string,
+        hash: r.hash as string,
+      })) satisfies ChainedStep[];
+
+  it("chains each step to the one before it, starting from the run's genesis", async () => {
+    const trace = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    recordAgentStep(trace, "prompt", { model: "m" });
+    recordAgentStep(trace, "assistant", { stopReason: "tool_use" });
+    recordAgentStep(trace, "tool_results", [{ name: "search", output: "x" }]);
+    expect(await sealAgentRun(trace, "ok")).toBe(true);
+
+    const steps = stepRows();
+    expect(steps.map((s) => s.seq)).toEqual([0, 1, 2]);
+    expect(steps[0].prev_hash).toBe(genesisHash(trace.runId));
+    expect(steps[1].prev_hash).toBe(steps[0].hash);
+    expect(steps[2].prev_hash).toBe(steps[1].hash);
+
+    const seal = mocks.updateSet.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(seal.logHash).toBe(steps[2].hash);
+    expect(seal.sealedAt).toBeInstanceOf(Date);
+    expect(checkChain(trace.runId, steps, { logHash: seal.logHash as string, stepsCounted: 3 }).problem).toBeNull();
+  });
+
+  it("writes steps in the order they were claimed, even when an early one is slow to assemble", async () => {
+    const trace = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    let settle!: (content: unknown) => void;
+    recordAgentStep(trace, "prompt", new Promise((resolve) => (settle = resolve)));
+    recordAgentStep(trace, "assistant", { stopReason: "end_turn" });
+    await flush();
+    expect(stepRows()).toHaveLength(0);
+    settle({ model: "m" });
+    await sealAgentRun(trace, "ok");
+    expect(stepRows().map((s) => s.kind)).toEqual(["prompt", "assistant"]);
+  });
+
+  it("seals a run with no steps at its genesis", async () => {
+    const trace = startAgentRun("steward", {})!;
+    expect(await sealAgentRun(trace, "ok")).toBe(true);
+    const seal = mocks.updateSet.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(seal.logHash).toBe(genesisHash(trace.runId));
+  });
+
+  it("leaves a run that lost a step unsealed, and the gap shows in the chain", async () => {
+    const trace = startAgentRun("steward", {})!;
+    await flush();
+    mocks.insertValues.mockClear();
+    mocks.insertValues
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        throw new Error("connection lost");
+      });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    recordAgentStep(trace, "prompt", { model: "m" });
+    recordAgentStep(trace, "assistant", { stopReason: "tool_use" });
+    recordAgentStep(trace, "tool_results", [{ name: "search" }]);
+    expect(await sealAgentRun(trace, "ok")).toBe(false);
+    errors.mockRestore();
+
+    const finish = mocks.updateSet.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(finish.outcome).toBe("ok");
+    expect(finish.steps).toBe(3);
+    expect("logHash" in finish).toBe(false);
+    expect("sealedAt" in finish).toBe(false);
+
+    // Steps 0 and 2 were written; 2 chains from the lost step 1, not from 0.
+    const written = stepRows().filter((s) => s.seq !== 1);
+    expect(checkChain(trace.runId, written, null).problem).toEqual({ seq: 1, reason: "missing" });
+  });
+
+  it("hashes the content as stored: what a jsonb column keeps of it", async () => {
+    const trace = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    recordAgentStep(trace, "assistant", { b: 1, a: undefined, when: new Date("2026-11-11T00:00:00Z") });
+    await sealAgentRun(trace, "ok");
+    const [step] = stepRows();
+    expect(step.content).toEqual({ b: 1, when: "2026-11-11T00:00:00.000Z" });
+    // A reader of the row, with its keys in any order, recomputes the same hash.
+    const reread = { ...step, content: { when: "2026-11-11T00:00:00.000Z", b: 1 } };
+    expect(checkChain(trace.runId, [reread], null).problem).toBeNull();
+  });
+});
+
+describe("record mode", () => {
+  it("traces every traceable run, whatever TRACE_LEVEL says", () => {
+    mocks.config.runLogMode = "record";
+    mocks.config.traceLevel = "off";
+    expect(traceLevel()).toBe("full");
+    expect(traceable("steward")).toBe(true);
+    // The never-traced agents handle a reader's own page (#356); a private
+    // graph switches those paths off rather than logging them.
+    expect(traceable("extension")).toBe(false);
+  });
+
+  it("cuts nothing to a size cap", async () => {
+    mocks.config.runLogMode = "record";
+    const trace = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    recordAgentStep(trace, "tool_results", [{ output: "x".repeat(300_000) }]);
+    await sealAgentRun(trace, "ok");
+    const row = mocks.insertValues.mock.calls[0]![0] as { content: Array<{ output: string }> };
+    expect(row.content[0].output.length).toBe(300_000);
   });
 });

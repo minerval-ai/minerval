@@ -14,12 +14,20 @@
  *   - toolUseLoop() (src/llm/client.ts) appends steps via recordAgentStep.
  *   - meterLlmUsage() (usage-service) stamps run_id on every usage row.
  *
- * Like metering, every write here is fire-and-forget and swallows its own
- * errors: tracing must never fail or slow an agent run. Consumers therefore
+ * By default every write here is fire-and-forget and swallows its own
+ * errors: tracing does not fail or slow an agent run. Consumers therefore
  * tolerate incomplete traces (a run with missing steps, a run never
  * finished). Single-shot completions outside a tool-use loop (the Extractor,
  * the judge) are recorded as one "assistant" step carrying the prompt and
  * the output, so a run is never a bare row.
+ *
+ * The log is a hash chain (#552; the arithmetic is in run-log.ts). A run's
+ * steps are appended one at a time, in the order they were claimed, each
+ * carrying the hash of the step before it; when the run closes with every
+ * step written, the run row is sealed with the last hash. A run that lost a
+ * step closes unsealed, so "sealed" means the log is whole. With
+ * RUN_LOG_MODE=record the run depends on its log instead of the other way
+ * round: see sealAgentRun and withAgent (llm/usage-context.ts).
  *
  * TRACE_LEVEL: "full" records runs + steps; "off" records nothing. Unset, it
  * defaults off under vitest (unit tests must not attempt DB writes) and full
@@ -51,6 +59,7 @@ import { getDb, rawQuery } from "../db/client.js";
 import { agentPrivateReason } from "../llm/run-visibility.js";
 import { agentRuns, agentSteps } from "../db/schema.js";
 import { loadConfig } from "../config.js";
+import { genesisHash, stepHash } from "./run-log.js";
 
 /** Mutable trace handle carried on the usage context for the run's duration. */
 export interface AgentTrace {
@@ -71,6 +80,29 @@ export interface AgentTrace {
   wroteGraph?: boolean;
   /** Reasons already recorded on the run, so each is written once. */
   privateReasons?: Set<string>;
+  /**
+   * The append queue: settles when every step claimed so far has been
+   * written or has failed. Steps are chained, so they are written one at a
+   * time, in order of seq.
+   */
+  tail: Promise<void>;
+  /** The hash the chain has reached: the genesis, then each step's in turn. */
+  head: string;
+  /** Set when the run row or any step could not be written: the run closes unsealed. */
+  broken?: boolean;
+}
+
+/** Whether runs depend on their logs (RUN_LOG_MODE=record). */
+export function recordMode(): boolean {
+  return loadConfig().runLogMode === "record";
+}
+
+/** A run in record mode whose log could not be written whole. */
+export class RunLogError extends Error {
+  constructor(runId: string) {
+    super(`The log of run ${runId} could not be written whole, so the run is not finished (RUN_LOG_MODE=record)`);
+    this.name = "RunLogError";
+  }
 }
 
 export interface RunAttribution {
@@ -85,10 +117,12 @@ export interface RunAttribution {
  * (docs/mathematics.md §7.4; `math_solver` by default) forces tracing on
  * for the named agents even where TRACE_LEVEL=off has switched it off: the
  * solver's transcript is the evidence a prize review relies on. Otherwise
- * the default is full everywhere but vitest.
+ * the default is full everywhere but vitest. In record mode every
+ * traceable run is traced.
  */
 export function traceLevel(agent?: string): "off" | "full" {
   const config = loadConfig();
+  if (config.runLogMode === "record") return "full";
   if (agent && (config.traceAlwaysAgents ?? []).includes(agent)) return "full";
   if (config.traceLevel) return config.traceLevel;
   if (process.env.VITEST) return "off";
@@ -141,7 +175,15 @@ export function startAgentRun(
   const runId = randomUUID();
   const agentReason = agentPrivateReason(agent);
   const initialReasons = agentReason ? [agentReason] : [];
-  const ready = (async () => {
+  const trace: AgentTrace = {
+    runId,
+    seq: { n: 0 },
+    ready: Promise.resolve(),
+    privateReasons: new Set(initialReasons),
+    tail: Promise.resolve(),
+    head: genesisHash(runId),
+  };
+  trace.ready = (async () => {
     try {
       await getDb().insert(agentRuns).values({
         id: runId,
@@ -156,13 +198,14 @@ export function startAgentRun(
         privateReasons: initialReasons,
       });
     } catch (err) {
+      trace.broken = true;
       console.error(
         "[trace] failed to record agent run:",
         err instanceof Error ? err.message : err
       );
     }
   })();
-  return { runId, seq: { n: 0 }, ready, privateReasons: new Set(initialReasons) };
+  return trace;
 }
 
 /**
@@ -243,15 +286,22 @@ export function markRunPrivate(trace: AgentTrace, reason: string): void {
   })();
 }
 
-/** Stamp the run finished. Fire-and-forget; safe to call exactly once. */
-export function finishAgentRun(
+/**
+ * Close the run: once every step claimed has been written or has failed,
+ * stamp the run finished and, when the log is whole, seal it with the hash
+ * the chain reached. Resolves to whether the run was sealed; never rejects.
+ * Safe to call exactly once.
+ */
+export function sealAgentRun(
   trace: AgentTrace,
   outcome: "ok" | "error",
   error?: unknown
-): void {
-  void (async () => {
+): Promise<boolean> {
+  return (async () => {
     try {
+      await trace.tail;
       await trace.ready;
+      const sealed = !trace.broken;
       await getDb()
         .update(agentRuns)
         .set({
@@ -262,20 +312,36 @@ export function finishAgentRun(
               ? String(error instanceof Error ? error.message : error).slice(0, 2000)
               : null,
           steps: trace.seq.n,
+          ...(sealed ? { logHash: trace.head, sealedAt: new Date() } : {}),
         })
         .where(eq(agentRuns.id, trace.runId));
+      return sealed;
     } catch (err) {
       console.error(
         "[trace] failed to finish agent run:",
         err instanceof Error ? err.message : err
       );
+      return false;
     }
   })();
+}
+
+/** Close the run without waiting on it: the best-effort close. */
+export function finishAgentRun(
+  trace: AgentTrace,
+  outcome: "ok" | "error",
+  error?: unknown
+): void {
+  void sealAgentRun(trace, outcome, error);
 }
 
 /**
  * Append one step to the run. Sequence is claimed synchronously; the content
  * may be a promise, for a step whose content takes a moment to assemble.
+ * Steps are written one at a time in order of seq, each chained to the one
+ * before it. A step that cannot be written leaves the run unsealed; the
+ * chain still advances past it, so the steps after it record that one is
+ * missing rather than closing over the gap.
  */
 export function recordAgentStep(
   trace: AgentTrace,
@@ -283,38 +349,58 @@ export function recordAgentStep(
   content: unknown
 ): void {
   const seq = trace.seq.n++;
-  void (async () => {
+  trace.tail = trace.tail.then(async () => {
     try {
       await trace.ready;
+      const stored = storedContent(
+        await content,
+        recordMode()
+          ? null
+          : kind === "prompt"
+            ? MAX_PROMPT_STEP_CONTENT_CHARS
+            : MAX_STEP_CONTENT_CHARS
+      );
+      const prevHash = trace.head;
+      const hash = stepHash(prevHash, seq, kind, stored);
+      trace.head = hash;
       await getDb().insert(agentSteps).values({
         runId: trace.runId,
         seq,
         kind,
-        content: capContent(
-          await content,
-          kind === "prompt" ? MAX_PROMPT_STEP_CONTENT_CHARS : MAX_STEP_CONTENT_CHARS
-        ),
+        content: stored,
+        prevHash,
+        hash,
       });
     } catch (err) {
+      trace.broken = true;
       console.error(
         "[trace] failed to record agent step:",
         err instanceof Error ? err.message : err
       );
     }
-  })();
+  });
 }
 
-function capContent(content: unknown, cap: number): unknown {
+/**
+ * The content as it will be stored and hashed: what a jsonb column keeps of
+ * it, cut to `cap` characters when there is one. Record mode passes no cap:
+ * a record is not a preview.
+ */
+function storedContent(content: unknown, cap: number | null): unknown {
+  let serialized: string;
   try {
-    const serialized = JSON.stringify(content);
-    if (serialized.length <= cap) return content;
+    // A value JSON has no form for (a function, a symbol) is stored as null.
+    serialized = JSON.stringify(content ?? null) ?? "null";
+  } catch {
+    // Circular or otherwise unserializable content: record that it existed.
+    return { unserializable: true };
+  }
+  if (cap !== null && serialized.length > cap) {
     return {
       truncated: true,
       originalChars: serialized.length,
       preview: serialized.slice(0, cap),
     };
-  } catch {
-    // Circular or otherwise unserializable content: record that it existed.
-    return { unserializable: true };
   }
+  return JSON.parse(serialized);
 }

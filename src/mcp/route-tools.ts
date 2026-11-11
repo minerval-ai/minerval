@@ -176,6 +176,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",
   },
+  "GET /runs/:run_id/verify": { name: "verify_run_log" },
   "GET /runs/:run_id/steps": { name: "list_run_steps" },
   "GET /runs/:run_id/steps/:seq": { name: "get_run_step" },
 
