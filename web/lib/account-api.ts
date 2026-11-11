@@ -722,17 +722,35 @@ export interface GrantConversationView {
   id: string;
   status: "active" | "proposed" | "funded" | "declined" | "abandoned";
   messages: GrantConversationMessage[];
+  message_count?: number;
   mandate: GrantMandateView | null;
+  mandate_sha256?: string | null;
   grant_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
+/**
+ * What sending a message returns (#905): its place in the conversation and
+ * the turn it started, not the transcript. The BFF routes read the
+ * conversation once after a send, since the chat components render whole
+ * conversations.
+ */
+export interface GrantSentMessageView {
+  id: string;
+  status: GrantConversationView["status"];
+  message: { index: number; role: "user" | "assistant"; at: string } | null;
+  message_count: number;
+  mandate_sha256: string | null;
+  turn: { state: "replying" | "idle" | "failed"; error: string | null };
+  grant_id: string | null;
+}
+
 export async function startGrantConversation(
   externalId: string,
   message: string
-): Promise<GrantConversationView> {
-  const r = await accountFetch<{ conversation: GrantConversationView }>(
+): Promise<GrantSentMessageView> {
+  const r = await accountFetch<{ conversation: GrantSentMessageView }>(
     "/grant-conversations",
     { method: "POST", body: { message }, actingUser: externalId }
   );
@@ -743,8 +761,8 @@ export async function continueGrantConversation(
   externalId: string,
   conversationId: string,
   message: string
-): Promise<GrantConversationView> {
-  const r = await accountFetch<{ conversation: GrantConversationView }>(
+): Promise<GrantSentMessageView> {
+  const r = await accountFetch<{ conversation: GrantSentMessageView }>(
     `/grant-conversations/${pathSegment(conversationId)}/messages`,
     { method: "POST", body: { message }, actingUser: externalId }
   );
@@ -755,7 +773,7 @@ export async function fundGrantConversation(
   externalId: string,
   conversationId: string,
   budgetOwls: number
-): Promise<{ conversation: GrantConversationView; grant_id: string }> {
+): Promise<{ grant_id: string; conversation: { id: string; status: string } }> {
   return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
     method: "POST",
     body: { budget_owls: budgetOwls },
