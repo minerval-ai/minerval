@@ -2398,7 +2398,7 @@ export const grants = pgTable(
     isPlatform: boolean("is_platform").notNull().default(false),
     // Optional spend rate: at most this much metered cost per UTC day
     // (0 = no rate cap, pace bounded by escrow alone). Shared mandate
-    // infrastructure — Minerval's General assessment mandate paces itself
+    // infrastructure — Minerval's General mandate paces itself
     // with this, and any funder can set one on their own mandate.
     dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
       .notNull()

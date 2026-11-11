@@ -1538,8 +1538,25 @@ prizes, AI Economics) were seeded before this path existed
 (`scripts/seed-platform-mandates.ts`), with their text written in code.
 General and Governance are seeded with a starting operating policy and
 officers' limit, and General with its two lookouts; a re-seed never
-overwrites a policy the Grantmaker has since written. Re-founding them
-through a conversation is a follow-up.
+overwrites a policy the Grantmaker has since written. The seed finds each
+row by its key (`mandate.seed_key`), so a mandate can be renamed in the
+file. Changing one takes a pull request to the file, then the seed run
+against production (`--update-mandate <key>`, as a one-off task with the
+API's credentials): the merge is the platform's approval, so a changed
+title or objective is applied and recorded as a terms version.
+`--replace-policy --note "<why>"` also writes the file's operating policy
+and lookout briefs over the live ones, through the versioned path, for
+when the platform as funder changes what the mandate is for; the
+Grantmaker revises from there. Re-founding them through a conversation
+is a follow-up.
+
+**General is a maintenance mandate.** Its money is the platform's, and
+it buys what no topical funder would: consistency sweeps, curation,
+audits that come to it, work someone is waiting on, passes where
+something under a published verdict changed, and the unassessed premises
+of published verdicts. It does not pay to extend coverage; first
+assessments are for the mandates and readers whose scope they are. Its
+operating policy gives that upkeep first claim on the day's rate.
 
 ## Mandates are public
 

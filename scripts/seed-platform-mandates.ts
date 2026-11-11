@@ -2,10 +2,14 @@
  * Seed the platform's own mandates, the ones Minerval sets up and runs,
  * which take pride of place on the public /mandates page.
  *
- * The load-bearing one is GENERAL ASSESSMENT: the mandate whose escrow is
- * however many dollars Minerval allocates to expanding and maintaining the
- * graph (Minerval buys owls at $1 per owl, at cost; the $4 price is what
- * users pay, and the margin funds this escrow). It spends the way every
+ * The load-bearing one is GENERAL MAINTENANCE (policy 'general'; titled
+ * "General assessment" until the upkeep rewrite): the mandate whose escrow
+ * is however many dollars Minerval allocates to keeping the graph sound
+ * (Minerval buys owls at $1 per owl, at cost; the $4 price is what users
+ * pay, and the margin funds this escrow). It pays for the work whose value
+ * is spread across the whole graph, which no topical funder buys: sweeps,
+ * curation, audits, waiting work, passes where something changed. Extending
+ * coverage is for the mandates and readers who care about a region. It spends the way every
  * mandate does: its program officers commission work under an OPERATING
  * POLICY written in prose, which its Grantmaker revises as the record of
  * what its money did accumulates, and its lookouts watch the graph for
@@ -21,9 +25,12 @@
  * prizes mandate's escrow is the only source of its prizes and the only
  * money this seed puts behind them.
  *
- * Idempotent: re-running tops nothing up and never duplicates. It matches
- * on mandate TITLE, so changing a budget here never alters an existing
- * row; the money flags below are the only path that changes one.
+ * Idempotent: re-running tops nothing up and never duplicates. It finds a
+ * mandate by its KEY (stored on the row as mandate.seed_key), falling back
+ * to its title or a title it had before (previousTitles) for a row seeded
+ * before keys were stored, so a mandate can be renamed here. Changing a
+ * budget here never alters an existing row; the money flags below are the
+ * only path that changes one.
  *
  * Local:  DATABASE_URL=… npm run seed:platform-mandates
  * Prod:   the DB is private, so run it as a one-off ECS task on the API's own
@@ -42,7 +49,19 @@
  *                            Grantmaker has since written. Adds any seeded
  *                            lookout it lacks. Records the revision.
  *                            Works for every key here (mathematics and
- *                            mathematics-prizes included).
+ *                            mathematics-prizes included). A changed title
+ *                            or objective is applied and recorded as a
+ *                            terms version: the merged PR that changed this
+ *                            file is the platform's approval of its terms.
+ *   --replace-policy         with --update-mandate: also write this file's
+ *                            operating policy over the one in force, and
+ *                            this file's briefs onto the seeded lookouts
+ *                            (by title). For when the platform, as funder,
+ *                            changes what the mandate is for: the Grantmaker
+ *                            revises from the new policy afterwards, as
+ *                            before. Every version is kept
+ *                            (mandate_policy_versions). Needs --note.
+ *   --note "<why>"           the public reason recorded with --replace-policy.
  *   --mandate <key>          the mandate a money flag applies to; defaults
  *                            to the --update-mandate key when both are given.
  *   --daily-owls N           set the mandate's daily rate.
@@ -58,6 +77,8 @@ import { owlsToMicroUsd } from "../src/services/owl.js";
 interface PlatformMandate {
   key: string;
   title: string;
+  /** Titles the row may still carry from before a rename, for finding it. */
+  previousTitles?: string[];
   objective: string;
   scopeQuery: string | null;
   strategy: string;
@@ -321,70 +342,117 @@ function mandates(): PlatformMandate[] {
   return [
     {
       key: "general-assessment",
-      title: "General assessment",
+      title: "General maintenance",
+      previousTitles: ["General assessment"],
       objective:
-        "Assess the most important claims across the whole graph, wherever " +
-        "they are. This is Minerval's own standing mandate: its budget is " +
-        "the money the platform allocates to expanding and maintaining the " +
-        "graph. It pays for the work that keeps the graph sound and current " +
-        "(fresh passes where something changed, curation, consistency " +
-        "sweeps, work on requests) under a written operating policy that " +
-        "its Grantmaker revises as the record of what its money did grows.",
+        "Keep the graph sound. This is Minerval's own standing mandate: its " +
+        "budget is the money the platform puts into the graph's upkeep, and " +
+        "it buys the work whose value is spread across the whole graph and " +
+        "which no topical funder would buy for its own region: consistency " +
+        "sweeps, curation, audits, work someone is waiting on, and fresh " +
+        "passes where something a published verdict rests on has changed. " +
+        "It does not pay to extend coverage. First assessments are for the " +
+        "mandates and readers who care about those claims, with one " +
+        "exception: an unassessed premise that a published verdict already " +
+        "rests on, which is a defect in what the graph already says.",
       scopeQuery: null,
       strategy:
-        "Watch the whole graph for what needs doing: claims whose evidence " +
-        "or premises moved, messages left waiting on nodes, contested and " +
-        "important claims gone stale, curation and consistency problems. " +
-        "Commission each piece of work whole, at a budget set at the high " +
-        "end of what the costing skill says it costs, and let the agents " +
-        "doing it petition when it turns out to need more.",
+        "Fund the upkeep first, every day: the consistency sweeps that are " +
+        "due, every curation with a concrete concern, the audits that come " +
+        "here, and the requests and messages someone is waiting on. Then " +
+        "reassess where something changed under a verdict, and assess the " +
+        "unassessed premises of published verdicts. Leave new coverage to " +
+        "the mandates whose scope it is. Commission each piece of work " +
+        "whole, at the high end of what the costing skill says it costs, " +
+        "and let the agents doing it petition when it needs more.",
       operatingPolicy: {
         mission:
-          "Keep the graph sound and current where it matters most. The graph's " +
-          "worth is in its most important and most contested claims being " +
-          "assessed on the evidence as it stands; spend on what moves that.",
+          "Keep the graph sound: coherent, free of duplicates and conflations, " +
+          "honestly governed, and current where something under a verdict " +
+          "has changed. This mandate pays for upkeep whose value is spread " +
+          "across the whole graph, which no topical funder buys. It does not " +
+          "pay to extend coverage: a first assessment of a new claim, however " +
+          "important, is for a mandate whose scope it is or a reader who " +
+          "wants it, unless a published verdict already rests on that claim.",
         priorities:
-          "First, work someone is waiting on: a message left on a node that no " +
-          "pass has read, a request a keeper filed, a curation an agent asked " +
-          "for. Second, claims whose evidence or premises changed since their " +
-          "last pass, and consistency flags. Third, important claims gone " +
-          "stale with nothing new. Prefer the claim whose answer more of the " +
-          "graph rests on. A pass that would only re-affirm a recent, " +
-          "uncontested verdict is not worth commissioning.",
+          "These are standing orders: fund each one whenever it appears and " +
+          "the day has room, in this order.\n" +
+          "1. Curation. Commission every curation whose concern names " +
+          "something concrete: a duplicate or counterpart, a conflation of " +
+          "two claims, a wrong kind, a broken or missing link, a split. A " +
+          "Steward's escalation and a consistency sweep's request are concrete " +
+          "by default. A reconcile candidate is worth it at similarity 0.95 " +
+          "or more, or where either claim has dependents. Decline only a " +
+          "curation whose concern names nothing, and say so in the reason.\n" +
+          "2. Audits put before this mandate. They come here when the " +
+          "Governance mandate is the audit's subject, or when no Governance " +
+          "mandate is active. Fund them all; decline only one that duplicates " +
+          "an audit open or finished in the last week, and name it.\n" +
+          "3. Consistency flags. The pass a flag asks for, when its expected " +
+          "gain is 0.3 or more, or the primary has dependents or importance " +
+          "0.5 or more.\n" +
+          "4. Waiting work: a request the graph's own agents can meet, and a " +
+          "message on a node that no pass has read in more than a day.\n" +
+          "5. Reassessment driven by change: a premise changed status, a " +
+          "source was retracted, a contribution was accepted. Age alone is " +
+          "not a reason this mandate pays for.\n" +
+          "6. An unassessed premise that a published verdict rests on, where " +
+          "the parent's importance is 0.35 or more.\n" +
+          "Decline, with the reason, a first assessment of a node no " +
+          "published verdict rests on: say it is for a topical mandate or a " +
+          "reader. Do not back a row someone already commissioned, and never " +
+          "both variants of one row. Consistency sweeps are not yours to " +
+          "decide: the mandate funds the due ones itself from the day, as it " +
+          "funds its own review passes.",
         budgets:
-          "Read the costing skill for what each kind of work costs and set the " +
-          "budget at the high end of its range: a run that has what it needs " +
-          "finishes the work, and what it does not spend comes back. Use the " +
-          "strong tier where the claim is contested and important, or a " +
-          "standard pass already failed to settle it.",
+          "Set each budget at the high end of the costing skill's range; what " +
+          "a run does not spend comes back.\n" +
+          "- Curate: 0.5 owls. Audit: 0.75. A request: its quote, or the " +
+          "scoping pass's price where it has none.\n" +
+          "- Assess or reassess, standard: 1.0. Strong: 4.0, only where a " +
+          "consistency flag or a failed standard pass says the standard tier " +
+          "will not settle it. A strong pass funded below 4.0 cannot read its " +
+          "sources whole.\n" +
+          "- Upkeep (priorities 1 to 4) has first claim on the day's rate. " +
+          "Passes under priorities 5 and 6 together take at most half of it, " +
+          "so curation, audits and flags that arrive late in the day still " +
+          "find room; when nothing under 1 to 4 is waiting, they may take " +
+          "what is left.",
         petitions:
-          "Grant a petition when the agent's plan is concrete and the work it " +
-          "describes falls under the mission. Refuse, with the reason, when it " +
-          "asks for depth the claim's importance does not warrant. Grant a " +
-          "follow-up rather than more budget when the remaining work is a " +
-          "different job from the one the run was commissioned for.",
+          "Answer on money only, never on what the run should conclude. Grant " +
+          "a petition when the agent names what the extra buys and the work " +
+          "falls under the mission; up to double the original budget. A " +
+          "Curator or Audit Agent that names the claims or decisions it still " +
+          "has to read has given a sufficient reason. Grant a follow-up rather " +
+          "than more budget when the remaining work is a different job. " +
+          "Refuse requests for breadth on nodes of importance below 0.35, and " +
+          "say the run should conclude on what it has.",
         delegation:
           "Officers decide up to their limit. Send the Grantmaker anything " +
           "larger, anything that would commit more than a third of today's " +
-          "rate at once, and anything this policy does not settle.",
+          "rate at once, proof attempts and bounties, regrants, any item " +
+          "whose brief asks for a particular result, and anything this " +
+          "policy does not settle.",
         officer_limit_owls: 5,
         officer_limit_reason:
-          "Five owls covers a strong pass on most claims; larger commitments " +
-          "are rare enough to deserve the Grantmaker's judgment.",
+          "Five owls covers a strong pass and many times an ordinary curation " +
+          "or audit; larger commitments are rare enough to deserve the " +
+          "Grantmaker's judgment.",
       },
       lookouts: [
         {
           title: "Known problems",
           brief:
-            "Follow the whole graph's change stream for things that need work: " +
-            "a message arrived on a node and is waiting to be read, a premise " +
-            "a claim rests on changed status, a consistency flag was raised, a " +
-            "request was filed, a run finished and named work it could not do. " +
-            "Commission a fresh pass where the change plausibly alters the " +
-            "claim's assessment and the claim matters; raise to the officers " +
-            "what is larger than your limit or unclear. Leave alone changes " +
-            "that already have a pass commissioned or running, and routine " +
-            "re-affirmations.",
+            "Follow the whole graph's change stream for upkeep that needs doing: " +
+            "a premise a published verdict rests on changed status, a source " +
+            "was retracted, a consistency flag was raised, a curation or " +
+            "request was filed, a message arrived on a node and is waiting, a " +
+            "run finished and named work it could not do. Commission a fresh " +
+            "pass where the change plausibly alters a verdict that matters; " +
+            "raise to the officers what is larger than your limit or unclear. " +
+            "New claims needing a first assessment are not this mandate's " +
+            "unless a published verdict rests on them. Leave alone changes that " +
+            "already have work commissioned or running.",
           heartbeatHours: 24,
           triggers: ["graph"],
           commissionLimitOwls: 3,
@@ -392,13 +460,15 @@ function mandates(): PlatformMandate[] {
         {
           title: "Upkeep",
           brief:
-            "Once a day, query the graph (query_sql) for important or contested " +
-            "claims whose current assessment is older than their importance " +
-            "warrants, open curation requests, and unanswered messages older " +
-            "than a day. Raise what deserves a pass to the officers with a " +
-            "suggested budget and why; commission the clear cases within your " +
-            "limit. Do not commission a pass on a claim that has one " +
-            "commissioned or running.",
+            "Once a day, query the graph (query_sql) for upkeep nobody has " +
+            "paid for: curate and audit rows open on the ledger, oldest first; " +
+            "consistency flags whose pass has not run; requests with no work " +
+            "commissioned; messages on nodes unread for more than a day; and " +
+            "unassessed claims that a published verdict rests on. Commission " +
+            "the clear cases within your limit and raise the rest to the " +
+            "officers with a suggested budget and why. Do not commission work " +
+            "that has a commission or is running, and do not commission a pass " +
+            "for age alone.",
           heartbeatHours: 24,
           triggers: [],
           commissionLimitOwls: 3,
@@ -424,8 +494,8 @@ function mandates(): PlatformMandate[] {
         "overturns, bad-faith flags, suspensions, anomalies the monitors " +
         "raise, and the periodic sweeps over recent decisions. This is " +
         "Minerval's own standing mandate for audit, kept apart from the " +
-        "General assessment mandate so that audits never compete with " +
-        "assessments for the same day's budget, and so that the platform " +
+        "General mandate so that audits never compete with other upkeep " +
+        "for the same day's budget, and so that the platform " +
         "lane, whose allocation judgments are themselves audited, is never " +
         "the party deciding whether an audit of it runs.",
       scopeQuery: null,
@@ -506,6 +576,7 @@ function mandateJson(m: PlatformMandate, notes: string): Record<string, unknown>
     objective: m.objective,
     scope_claim_id: null,
     scope_query: m.scopeQuery,
+    seed_key: m.key,
     plan: { strategy: m.strategy, items: [] },
     expected_cost_owls: m.budgetOwls,
     notes,
@@ -549,6 +620,9 @@ interface Args {
   dailyOwls: number | null;
   topUpOwls: number | null;
   topUpBatch: string;
+  /** With updateMandate: write the seeded operating policy and lookout briefs over the live ones. */
+  replacePolicy: boolean;
+  note: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -559,6 +633,8 @@ function parseArgs(argv: string[]): Args {
     dailyOwls: null,
     topUpOwls: null,
     topUpBatch: new Date().toISOString().slice(0, 10),
+    replacePolicy: false,
+    note: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -592,11 +668,23 @@ function parseArgs(argv: string[]): Args {
       case "--top-up-batch":
         args.topUpBatch = next();
         break;
+      case "--replace-policy":
+        args.replacePolicy = true;
+        break;
+      case "--note":
+        args.note = next().trim() || null;
+        break;
       default:
         throw new Error(`unknown argument ${a}`);
     }
   }
   if (args.mandate === null) args.mandate = args.updateMandate;
+  if (args.replacePolicy && !args.updateMandate) {
+    throw new Error("--replace-policy needs --update-mandate <key>");
+  }
+  if (args.replacePolicy && !args.note) {
+    throw new Error("--replace-policy needs --note \"<why>\": it is the public record of the change");
+  }
   if ((args.dailyOwls !== null || args.topUpOwls !== null) && !args.mandate) {
     throw new Error("--daily-owls and --top-up-owls need --mandate <key>");
   }
@@ -680,19 +768,34 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
 
 interface ExistingMandate {
   id: string;
+  name: string;
   budget_job_id: string;
   mandate: Record<string, unknown> | null;
   plan: { strategy?: string; items?: unknown[] } | null;
 }
 
-async function findExisting(m: PlatformMandate): Promise<ExistingMandate> {
+/**
+ * The platform row a seeded mandate is: by its stored key, else (a row
+ * seeded before keys were stored) by its title or a title it had before.
+ * The key wins, so a rename in this file finds the row it renames.
+ */
+async function lookUp(m: PlatformMandate): Promise<ExistingMandate | null> {
   const [existing] = await rawQuery<ExistingMandate>(
-    `SELECT id, budget_job_id, mandate, plan FROM grants
-      WHERE is_platform = true AND name = $1`,
-    [m.title]
+    `SELECT id, name, budget_job_id, mandate, plan FROM grants
+      WHERE is_platform = true
+        AND (mandate->>'seed_key' = $1
+             OR (mandate->>'seed_key' IS NULL AND name = ANY($2::text[])))
+      ORDER BY (mandate->>'seed_key' = $1) DESC NULLS LAST, created_at ASC
+      LIMIT 1`,
+    [m.key, [m.title, ...(m.previousTitles ?? [])]]
   );
+  return existing ?? null;
+}
+
+async function findExisting(m: PlatformMandate): Promise<ExistingMandate> {
+  const existing = await lookUp(m);
   if (!existing) {
-    throw new Error(`no platform mandate "${m.title}" exists to update; run the seed first`);
+    throw new Error(`no platform mandate "${m.title}" (key ${m.key}) exists to update; run the seed first`);
   }
   return existing;
 }
@@ -767,6 +870,15 @@ async function updateMandateText(m: PlatformMandate, args: Args, platformId: str
   await withTransaction(async (tx) => {
     // The money first, so the note records only what actually happened.
     const revisions: string[] = [`The mandate text was revised on ${today} by the platform.`];
+    const before = {
+      title: (existing.mandate?.title as string | undefined) ?? existing.name,
+      objective: (existing.mandate?.objective as string | undefined) ?? null,
+    };
+    const termsChanged = before.title !== m.title || before.objective !== m.objective;
+    if (before.title !== m.title) revisions.push(`It was renamed from "${before.title}" to "${m.title}".`);
+    if (args.replacePolicy) {
+      revisions.push(`Its operating policy was replaced by the platform: ${args.note}`);
+    }
     if (args.mandate === m.key) {
       revisions.push(...(await applyMoney(m, existing, args, platformId, tx)));
     }
@@ -778,12 +890,14 @@ async function updateMandateText(m: PlatformMandate, args: Args, platformId: str
       // the strategy and whatever items the row already carries.
       plan: { strategy: m.strategy, items: existing.plan?.items ?? [] },
       expected_cost_owls: existing.mandate?.expected_cost_owls ?? m.budgetOwls,
-      // The Grantmaker's operating policy, once written, is its own.
+      // The Grantmaker's operating policy, once written, is its own;
+      // --replace-policy writes over it below, through the versioned path.
       ...(existing.mandate?.operating_policy ? { operating_policy: existing.mandate.operating_policy } : {}),
     };
     await tx.query(
       `UPDATE grants
           SET mandate = $2::jsonb,
+              name = $7,
               skills = $3,
               scope_query = $4,
               plan = jsonb_set(COALESCE(plan, '{}'::jsonb), '{strategy}', to_jsonb($5::text)),
@@ -799,14 +913,91 @@ async function updateMandateText(m: PlatformMandate, args: Args, platformId: str
         m.scopeQuery,
         m.strategy,
         m.allocationPolicy ? JSON.stringify(m.allocationPolicy) : null,
+        m.title,
       ]
     );
+    // The terms as approved: the merged change to this file is the
+    // platform's approval, so the amendment is applied and recorded, not
+    // left awaiting an approver (mandate-terms-service.ts).
+    if (termsChanged) {
+      await tx.query(
+        `INSERT INTO mandate_policy_versions (grant_id, part, content, note, author)
+         VALUES ($1, 'terms', $2::jsonb, $3, 'platform')`,
+        [
+          existing.id,
+          JSON.stringify({ before, after: { title: m.title, objective: m.objective } }),
+          args.note ?? `Revised by the platform in scripts/seed-platform-mandates.ts on ${today}.`,
+        ]
+      );
+    }
   });
+  if (args.replacePolicy) await replacePolicy(m, existing.id, args.note!);
   await ensureLookouts(m, existing.id);
   console.log(
     `~ ${m.title} updated (${existing.id}): text, skills [${m.skills.join(", ")}], ` +
       `policy keys ${m.allocationPolicy ? Object.keys(m.allocationPolicy).join(", ") : "(none)"}`
   );
+}
+
+/**
+ * --replace-policy: the seeded operating policy written over the one in
+ * force, through the same versioned path the Grantmaker writes it by, and
+ * the seeded lookouts' briefs, triggers, heartbeats and limits onto the
+ * lookouts of the same title. The Grantmaker owns both from then on.
+ */
+async function replacePolicy(m: PlatformMandate, grantId: string, note: string): Promise<void> {
+  if (!m.operatingPolicy) throw new Error(`${m.title} has no seeded operating policy to write`);
+  const { writeOperatingPolicy, POLICY_SECTIONS } = await import("../src/services/operating-policy-service.js");
+  const op = m.operatingPolicy;
+  const content = POLICY_SECTIONS.filter((sec) => op[sec]?.trim())
+    .map((sec) => `### ${sec}\n${op[sec]!.trim()}`)
+    .join("\n\n");
+  const written = await writeOperatingPolicy({
+    grantId,
+    content,
+    note,
+    author: "platform",
+    ...(op.officer_limit_owls != null ? { officerLimitOwls: op.officer_limit_owls } : {}),
+    ...(op.review_pass_owls != null ? { reviewPassOwls: op.review_pass_owls } : {}),
+  });
+  if (!written.ok) throw new Error(`writing the operating policy failed: ${written.message}`);
+  // writeOperatingPolicy takes the note as each figure's reason; the seed
+  // states its own.
+  if (op.officer_limit_reason || op.review_pass_reason) {
+    await rawQuery(
+      `UPDATE grants
+          SET mandate = jsonb_set(mandate, '{operating_policy}',
+                (mandate->'operating_policy') || $2::jsonb)
+        WHERE id = $1`,
+      [
+        grantId,
+        JSON.stringify({
+          ...(op.officer_limit_reason ? { officer_limit_reason: op.officer_limit_reason } : {}),
+          ...(op.review_pass_reason ? { review_pass_reason: op.review_pass_reason } : {}),
+        }),
+      ]
+    );
+  }
+  console.log(`~ ${m.title}: operating policy replaced`);
+
+  if (!m.lookouts?.length) return;
+  const { updateLookout } = await import("../src/services/lookout-service.js");
+  for (const l of m.lookouts) {
+    const [existing] = await rawQuery<{ id: string }>(
+      `SELECT id FROM lookouts WHERE grant_id = $1 AND title = $2 AND status <> 'retired'`,
+      [grantId, l.title]
+    );
+    if (!existing) continue; // ensureLookouts creates it
+    const r = await updateLookout({
+      grantId,
+      lookoutId: existing.id,
+      brief: l.brief,
+      heartbeatHours: l.heartbeatHours,
+      triggers: l.triggers,
+      commissionLimitOwls: l.commissionLimitOwls,
+    });
+    console.log(r.ok ? `  ~ lookout "${l.title}" brief replaced` : `  ! lookout "${l.title}": ${r.message}`);
+  }
 }
 
 /** The money flags alone (--mandate without --update-mandate): the text stays. */
@@ -889,11 +1080,7 @@ async function main() {
   }
 
   for (const m of all) {
-    const [existing] = await rawQuery<{ id: string }>(
-      `SELECT id FROM grants
-        WHERE is_platform = true AND name = $1`,
-      [m.title]
-    );
+    const existing = await lookUp(m);
     if (existing) {
       console.log(`= ${m.title} already exists (${existing.id})`);
     } else {
