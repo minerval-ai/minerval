@@ -396,6 +396,19 @@ can make pages too, and the Assistant's call runs without a card (private,
 free, earlier text kept). Deleting takes the signed-in session and is not a
 tool.
 
+**The extension.** The browser extension's chat tab is the Assistant
+(`extension/lib/api.ts`). A question opens a conversation with `page` set:
+the address and title of the page being read and the passages the
+extension marked on it, which the Assistant is told came from the page,
+with a section of the prompt for the narrow panel in place of the site's.
+The extension reads the conversation until the turn is idle, shows what the
+reply cost, and can stop it. It holds only an API key, so it cannot release
+a held action: the reply says one is waiting and links to the conversation
+on minerval.ai, which is the same conversation. The older
+`POST /extension/chat`, with its own flat price and prompt, is kept for
+installed versions of the extension that still call it and can be removed
+once they have updated.
+
 **Other doors.** Node pages and `/mandates` carry an ask box that opens
 `/ask` with the question written and, from a node, the node named to the
 Assistant. The box sends nothing: the question is sent from the Ask page,

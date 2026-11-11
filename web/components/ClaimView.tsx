@@ -50,6 +50,17 @@ function InstanceCard({ inst }: { inst: Instance }) {
         {inst.source_type && inst.source_type !== "unknown" && (
           <span className="tag">{inst.source_type.replace(/_/g, " ")}</span>
         )}
+        {/* A stake recorded for this source on this claim (§9): a fact
+            about the source, shown so the reader knows it was noticed. */}
+        {inst.source_interest && (
+          <span
+            className="tag"
+            style={{ whiteSpace: "normal" }}
+            title={`${inst.source_interest.stake} What this source says is evidence, and the Steward weighs it knowing the stake.`}
+          >
+            interest recorded · {inst.source_interest.party}
+          </span>
+        )}
         {/* This score is the Extractor's, not the Matcher's: it says
             "this passage states a genuine, well-formed claim", not how
             well the passage matches the canonical form (#160). */}

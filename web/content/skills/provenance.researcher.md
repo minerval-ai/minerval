@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 8)
+# Method skill: Provenance (version 9)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -82,6 +82,9 @@ is, in `source_kind` on the reading and `to_source_kind` on the edge: the
 kind recorded on a source decides whether it reads on the claim page as
 where the story begins or as untraced. Where two documents are one
 voice, record the relation with `provenance_record_source_relationship`.
+Where a source you read has a stake in the claim that the map does not
+show, record it with `record_source_interest`, as a fact about the source;
+what it means for the claim is the Steward's to weigh.
 When the first window of a source lists a retraction or correction, say so
 in its reading. Record as you go rather than at the end. Every reading and edge hangs on an
 instance, so where you find a source that asserts, denies or poses the

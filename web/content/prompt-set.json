@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "hash": "d837e7afcb81ec6fad2453482e3ee64e765f0654e1fe401ffa40b7811804b7b4",
+  "hash": "9109ccb8c3fac0ff6b8edc7034f3bce4328225cd53406426b7e57a71d093cee2",
   "constitution": {
-    "hash": "b24cc4c0387ac1856f463bc9f3c0ee627c2ff34f74d41e6e878996f33721c95f",
+    "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
   },
   "roles": [
@@ -24,7 +24,7 @@
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "484d981882ff33a8a1b6c01bc1de6c56b9578d1c98e328d80408cf6c58417df2"
+        "399ec2cffa796a597e20337427ea9d30a45c6e801e57895b35429b8585e47366"
       ]
     },
     {
@@ -101,7 +101,7 @@
       "name": "question-steward",
       "source_path": "src/llm/prompts/question-steward.ts",
       "blocks": [
-        "2e864cd04ea1aed0f835934433383e22abc3517fea513a345db463eb6c1660e7"
+        "1cba543a877c02ae7b95057a2f0337ed0616a412a9a6b64360e8a65a3f2eb429"
       ]
     },
     {
@@ -139,8 +139,8 @@
     },
     {
       "name": "provenance",
-      "version": 8,
-      "hash": "8d672bee3fc5e51ff3b2d5a3e057ecb3374a0ee0187abd2c9b57238309d96d2c"
+      "version": 9,
+      "hash": "6dcf8325b85b4d9cf054a937644b015cd650d4cd59eaf78a58d647ced967901d"
     },
     {
       "name": "search",

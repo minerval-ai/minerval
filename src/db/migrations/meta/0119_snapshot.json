@@ -1,5 +1,5 @@
 {
-  "id": "03a4524c-cb0f-4ae2-a619-d7bdf40e364f",
+  "id": "9a693613-fad0-4bd7-9ad1-654e247f6eeb",
   "prevId": "75feaca2-1350-4048-8144-9eb1b4ce5b54",
   "version": "7",
   "dialect": "postgresql",
@@ -1507,6 +1507,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "private_reasons": {
+          "name": "private_reasons",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
         },
         "created_at": {
           "name": "created_at",
@@ -16562,12 +16569,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "ck_sources_source_type": {
-          "name": "ck_sources_source_type",
-          "value": "\"sources\".\"source_type\" IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.taggings": {

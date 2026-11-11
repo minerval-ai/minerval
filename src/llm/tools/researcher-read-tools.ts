@@ -28,8 +28,9 @@ const SOURCE_TOOLS: Tool[] = [
     description:
       "The facts about a document the graph holds that need no judgment: its identity (authors, " +
       "publisher, date, kind, DOI, an archived copy), its other versions and republished copies, and " +
-      "any correction or retraction recorded against it. source_id is the id a provenance map, an " +
-      "instance or an examination names.",
+      "any correction or retraction recorded against it. Also any interest recorded for it: a stake " +
+      "its author or publisher has in what it says, which is a fact about the source and not a " +
+      "finding against it. source_id is the id a provenance map, an instance or an examination names.",
     input_schema: {
       type: "object",
       properties: { source_id: { type: "string" } },

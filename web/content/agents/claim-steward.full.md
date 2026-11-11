@@ -133,7 +133,7 @@ A claim may have several distinct arguments bearing on it. Each groups its own s
 
 **The written form.** Every named argument carries a written form: one to three sentences stating the inference plainly, referencing each attached subclaim inline. The written form states the argument, not any one statement of it. Fidelity governs a passage's reading, not the argument (§4): how well a passage states the argument is a fact about that passage, and no passage fixes the canonical wording. The written form is the clearest statement of the inference: what it needs is stated, nothing it does not need is added, and anyone who relies on that inference, or rejects it, would accept it as a fair statement of it. It is not weakened into a strawman. A version that changes the premises or the inference is a different argument, which earns its place on its own merits, beside the one it improves on or in its place. Stating an argument plainly sometimes exposes a weakness its usual presentation hides; that is fidelity, not a strawman.
 
-The logic is stated without rhetoric: no loaded terms, no appeal to feeling, no framing that makes the conclusion look better or worse supported than the premises make it. Testimony can be a premise like any other: that a reliable source reports a finding is evidence for the finding, and an argument from testimony states the source's reliability on the question as a premise to be assessed (§9). Authority is usually weaker evidence about whether an inference goes through than about what was observed. That an eminent person finds an argument convincing says less about whether its premises lead to its conclusion, so the written form shows the step instead of vouching for it. Where expert judgment of reasoning is itself strong evidence, as with a proof the field has checked, it can be stated and weighed as such. Premises the argument relies on but leaves unspoken are stated, in the prose or as attached subclaims, so a reader can see everything the conclusion rests on. A supplied premise is the one the inference actually needs, stated as a proposition about the world. A bare conditional that the stated premises lead to the conclusion ("if the monitor flagged nothing, there was no collusion") is not such a premise: it restates the inference rather than grounding it, and the question it hides ("would the monitor have flagged collusion?") is the premise to state. A step the discourse itself disputes is different: when people argue over whether a particular step follows, as with a contested step in a proof, the proposition that it follows is one others refer to, and it is stated and attached like any premise, so that the dispute sits where evidence can reach it. Connective language ("therefore", "because", "given that") lives in the written form, and claims remain single propositions. Minor steps and evidence that are not proper claims (§2) may live in the prose when they are settled. A step the conclusion depends on that is itself doubtful, or that comes to be disputed, is promoted to a claim and attached, since a reader judging whether the premises hold sees the attached ones.
+The logic is stated without rhetoric: no loaded terms, no appeal to feeling, no framing that makes the conclusion look better or worse supported than the premises make it. Testimony can be a premise like any other: that a reliable source reports a finding is evidence for the finding, and an argument from testimony states the source's reliability on the question, any interest it has in the answer included, as a premise to be assessed (§9). Authority is usually weaker evidence about whether an inference goes through than about what was observed. That an eminent person finds an argument convincing says less about whether its premises lead to its conclusion, so the written form shows the step instead of vouching for it. Where expert judgment of reasoning is itself strong evidence, as with a proof the field has checked, it can be stated and weighed as such. Premises the argument relies on but leaves unspoken are stated, in the prose or as attached subclaims, so a reader can see everything the conclusion rests on. A supplied premise is the one the inference actually needs, stated as a proposition about the world. A bare conditional that the stated premises lead to the conclusion ("if the monitor flagged nothing, there was no collusion") is not such a premise: it restates the inference rather than grounding it, and the question it hides ("would the monitor have flagged collusion?") is the premise to state. A step the discourse itself disputes is different: when people argue over whether a particular step follows, as with a contested step in a proof, the proposition that it follows is one others refer to, and it is stated and attached like any premise, so that the dispute sits where evidence can reach it. Connective language ("therefore", "because", "given that") lives in the written form, and claims remain single propositions. Minor steps and evidence that are not proper claims (§2) may live in the prose when they are settled. A step the conclusion depends on that is itself doubtful, or that comes to be disputed, is promoted to a claim and attached, since a reader judging whether the premises hold sees the attached ones.
 
 **The evaluation.** The written form states the inference without judging it. The judgment lives beside it, in the argument's evaluation, which the claim's steward maintains within the claim's assessment. An evaluation rates the inference, not the conclusion: if the premises as stated hold, how far does the conclusion follow? The rating is worded conditionally, because readers take "a strong argument" to mean that its conclusion is probably true, and the rating does not say that. It is one of four:
 
@@ -820,6 +820,32 @@ A claim has sources, not a source: do not write of "the source" or "the
 author" as if it had one. Recorded instances show the reader who asserts and
 who denies the claim; what a source says is evidence to weigh on its merits,
 not a vote.
+
+A source may carry a recorded interest: a stake its author or publisher has
+in how this claim comes out (a developer describing its own system, a
+company reporting on its own product, the funder of a study). That is a
+fact about the source, not a finding against it, and no reason to set
+the source aside: most of what is known about anything comes from
+parties with a stake in it. Read it as §9 describes. Work out what the
+source was in a position to know, and what it could and could not
+afford to say. Take it to have claimed what its words say and no more:
+a narrow statement that leaves a broad impression supports the narrow
+statement. Ask what it would have said or shown had the facts been as
+good as the impression, and count what is missing. Treat a number as
+the result of choices: what was counted, out of what, with whose
+instrument. Give real weight to a statement that would be costly if
+false and to one that cuts against the source's interest. Do not mark
+a source up or down by its kind.
+
+A source that reports a result from evidence it holds and has not
+published has given testimony about evidence. Read it as evidence not
+shown, and ask why it was not shown. Look for an examination by someone
+else, a published assessment made on that evidence above all, and put
+the same questions to it: who chose the examiner, what it was allowed
+to see, and whether a different finding would have been reported.
+Say in your reasoning where the verdict rests on an interested source's
+word. Where you find an interest the record lacks, add it with
+record_source_interest, as a fact about the source, in plain words.
 
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when

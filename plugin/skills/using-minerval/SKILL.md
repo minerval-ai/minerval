@@ -24,9 +24,12 @@ description: >-
   through the API it can do here. Suits work the site does not render
   or run: code, the user's own files, long agentic jobs, rich outputs.
 - **Browser extension** (Chrome Web Store, "Minerval"): marks claims on
-  the page being read by what the graph holds. Analysing a page needs an
-  API key pasted into its settings; passages the graph already recorded
-  from a page show without one.
+  the page being read by what the graph holds, and its Chat tab is the
+  Assistant, told which page it was opened from. Analysing a page and
+  chat need an API key pasted into its settings; passages the graph
+  already recorded from a page show without one. A held action cannot
+  be run from the extension: it links to the conversation on
+  minerval.ai.
 - **Claude Code / Cowork plugin**: the MCP connection plus
   `/minerval:check`, `/minerval:claim`, `/minerval:factcheck-diff`,
   `/minerval:contribute`, `/minerval:report`, and a fact-checker
@@ -57,6 +60,7 @@ description: >-
 | `/claims/:id/map`, `/claims/:id/history` | The decomposition as a map; every past assessment |
 | `/claims/:id/prize/claim`, `/claims/:id/attempts/:attemptId` | Claim an open prize on a formal statement; one solver attempt |
 | `/arguments/:id`, `/sources/:id` | One argument with its evaluation and instances; one source with what was read from it |
+| `/runs/:id`, `/runs/:id/steps/:seq` | One agent run, linked as "the run" beside a verdict: its setup by version and its steps; one step in full. A run that read private data is withheld, with the reasons (`get_run`, `list_run_steps`, `get_run_step`) |
 | `/requests`, `/requests/:id` | Open requests for work, each fundable |
 | `/mandates`, `/mandates/:id` | Public mandates; one mandate's plan, spend, policy and decisions, with a box to back it |
 | `/findings`, `/findings/:id`, `/tags` | What the administrators noted in their work; topics |

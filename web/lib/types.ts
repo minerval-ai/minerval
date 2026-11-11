@@ -229,6 +229,17 @@ export type InstanceSupport =
   | "unclear";
 export type QuoteCheck = "verbatim" | "normalized_match" | "not_found" | "no_stored_content";
 
+// A stake recorded for a source (§9): who has it and what it is. A fact
+// about the source, never a finding against it: what the source says is
+// evidence, and each claim's Steward weighs it knowing the stake. `claim_id`
+// is null when the record holds for the source as a whole.
+export interface SourceInterest {
+  party: string;
+  stake: string;
+  claim_id: string | null;
+  recorded_at: string;
+}
+
 export interface InstanceReading {
   support: InstanceSupport;
   deployment: string | null;
@@ -322,6 +333,10 @@ export interface Instance {
   // The Steward's reading of this source (#286); null or absent until one
   // has been recorded.
   reading?: InstanceReading | null;
+  // The interest recorded for this instance's source on this claim: the
+  // claim's own record where there is one, else the source-wide one. Null or
+  // absent when none is recorded.
+  source_interest?: SourceInterest | null;
   // The Steward's chosen position (1 first); null follows the default order.
   // The API already serves instances in reading order, so the page renders
   // them as they come and never re-sorts by when they were recorded.
@@ -1396,7 +1411,7 @@ export type StoryStanding = "origin" | "untraced" | "derived";
 export type StoryBasis = "steward" | "primary_source_kind" | "upstream" | "none";
 
 export interface StoryNode {
-  source: { id: string; title: string; url: string | null; source_type: string };
+  source: { id: string; title: string; url: string | null; source_type: string; interest?: SourceInterest | null };
   instance_ids: string[];
   /** When the source said it, partial ISO-8601; absent from an API that predates it. */
   date?: string | null;
@@ -1454,6 +1469,8 @@ export interface SourceFacts {
     note: string | null;
     detected_by: string;
   }>;
+  /** Current interest records, the source-wide one first; absent from an API that predates them. */
+  interests?: SourceInterest[];
 }
 
 export type SourceSegmentKind = "section" | "passage" | "table" | "note" | "reference";

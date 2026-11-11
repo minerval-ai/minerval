@@ -40,6 +40,7 @@ import {
   type SourceKind,
 } from "../schemas/common.js";
 import { sourceContentHash } from "./source-content.js";
+import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
 
 export class SourceMapError extends Error {
   constructor(message: string) {
@@ -1103,12 +1104,21 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
  * The instances of a claim as the provenance tools present them: with ids,
  * the source's id and whether it has stored text, and any reading already
  * recorded. Built for the Steward's read tool. Only instances that belong
- * to the claim; the caller orders them (orderClaimInstances).
+ * to the claim; the caller orders them (orderClaimInstances). Each source
+ * carries the interest recorded for it on this claim (§9), or null: the
+ * claim's own record where there is one, else the source-wide one.
  */
 export async function listInstancesForMapping(claimId: string): Promise<
   Array<{
     instance_id: string;
-    source: { id: string; title: string; url: string | null; source_type: string; has_stored_text: boolean };
+    source: {
+      id: string;
+      title: string;
+      url: string | null;
+      source_type: string;
+      has_stored_text: boolean;
+      interest: SourceInterestView | null;
+    };
     verbatim_text: string;
     context: string | null;
     stance: string;
@@ -1146,6 +1156,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
       WHERE ci.claim_id = $1 AND ci.detached_at IS NULL`,
     [claimId]
   );
+  const interests = await interestsForClaim(claimId, rows.map((r) => r.source_id));
   return rows.map((r) => ({
     instance_id: r.id,
     source: {
@@ -1154,6 +1165,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
       url: r.url,
       source_type: r.source_type,
       has_stored_text: r.has_stored_text,
+      interest: interests.get(r.source_id) ?? null,
     },
     verbatim_text: r.verbatim_text,
     context: r.context,

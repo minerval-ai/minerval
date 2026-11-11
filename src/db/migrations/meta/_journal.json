@@ -838,8 +838,22 @@
     {
       "idx": 119,
       "version": "7",
-      "when": 1794423434047,
-      "tag": "0119_source_kinds",
+      "when": 1794422362522,
+      "tag": "0119_session_private_reasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1794423133370,
+      "tag": "0120_source_interests",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1794424293326,
+      "tag": "0121_source_kinds",
       "breakpoints": true
     }
   ]

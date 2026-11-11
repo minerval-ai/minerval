@@ -565,7 +565,7 @@
       "name": "provenance",
       "displayName": "Provenance",
       "description": "How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.",
-      "version": 8,
+      "version": 9,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -657,7 +657,7 @@
       "tools": [
         {
           "name": "provenance_get_map",
-          "description": "Everything recorded about what this claim's support rests on: each instance with its id, its source's id and whether the graph holds the source's text, any reading already recorded for it, and the documents it has been recorded as drawing on; the relations among the documents involved; and the current source map summary, if one has been written. Call it before any provenance work, and take instance and source ids from it. Nothing it returns is a score.",
+          "description": "Everything recorded about what this claim's support rests on: each instance with its id, its source's id and whether the graph holds the source's text, any interest recorded for the source on this claim, any reading already recorded for the instance, and the documents it has been recorded as drawing on; the relations among the documents involved; and the current source map summary, if one has been written. Call it before any provenance work, and take instance and source ids from it. Nothing it returns is a score.",
           "roles": [
             "claim-steward",
             "audit-agent",
@@ -676,7 +676,7 @@
         },
         {
           "name": "provenance_read_source",
-          "description": "Read a source's text, in windows. Returns the stored copy reduced to readable text; when the graph holds no copy, fetches the document through the guarded path ingestion uses and stores it, so the quote check and later reads see the same text you read. A URL not yet in the graph is recorded as a source first. Page with offset; each call returns at most max_chars (default 12,000). This is how you open a source and read it whole (constitution section 9) rather than trusting an excerpt. The first window also carries what is known about the document without judgment: authors, publisher, date, DOI, an archived copy, other versions, and any correction, retraction, or expression of concern with its date and notice.",
+          "description": "Read a source's text, in windows. Returns the stored copy reduced to readable text; when the graph holds no copy, fetches the document through the guarded path ingestion uses and stores it, so the quote check and later reads see the same text you read. A URL not yet in the graph is recorded as a source first. Page with offset; each call returns at most max_chars (default 12,000). This is how you open a source and read it whole (constitution section 9) rather than trusting an excerpt. The first window also carries what is known about the document without judgment: authors, publisher, date, DOI, an archived copy, other versions, any correction, retraction, or expression of concern with its date and notice, and any interest recorded for the source.",
           "roles": [
             "claim-steward",
             "audit-agent",
@@ -1127,9 +1127,52 @@
               "note"
             ]
           }
+        },
+        {
+          "name": "record_source_interest",
+          "description": "Record that a source has an interest: a stake its author or publisher has in what the source says, as with a developer describing its own system, a company reporting on its own product, or the funder of a study. This is a fact about the source, not a finding against it. What the source says is still evidence, and each claim's Steward weighs it knowing the stake (constitution section 9). The record is shown with the source wherever the source is cited: on the source's page, beside its instances on a claim's page, and on each instance's source in provenance_get_map and get_claim_instances. Look there first, and record an interest the record lacks or states wrongly. Records are not edited: a new record for the same source and scope replaces the earlier one for readers, and the earlier one is kept as history.",
+          "roles": [
+            "claim-steward",
+            "researcher"
+          ],
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "description": "The source, from provenance_get_map or get_claim_instances."
+              },
+              "party": {
+                "type": "string",
+                "description": "Who has the stake, as a name: the company, the lab, the funder, the author. At most 200 characters."
+              },
+              "stake": {
+                "type": "string",
+                "description": "What the party stands to gain or lose by what the source says, in one or two plain sentences in the graph's voice, with how the stake is known where that is not obvious. What the stake means for the claim belongs in your reasoning, not here. At most 1,000 characters, because the text is shown beside the source wherever it is cited."
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "claim",
+                  "source"
+                ],
+                "description": "'claim': the stake is in how the claim you are working on comes out, and the record holds for that claim alone. 'source': the stake holds for whatever this source says about the party's own affairs, on any claim, as with a lab's own system card or a company's page about its own product. On a claim that has a record of its own for the source, that record is the one shown; on every other claim the source-wide record is."
+              },
+              "claim_id": {
+                "type": "string",
+                "description": "The claim, for scope 'claim'. Defaults to the claim of the current run; required only outside one."
+              }
+            },
+            "required": [
+              "source_id",
+              "party",
+              "stake",
+              "scope"
+            ]
+          }
         }
       ],
-      "bodyChars": 22267
+      "bodyChars": 23565
     },
     {
       "name": "search",
