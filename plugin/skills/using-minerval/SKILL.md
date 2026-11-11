@@ -60,6 +60,7 @@ description: >-
 | `/claims/:id/map`, `/claims/:id/history` | The decomposition as a map; every past assessment |
 | `/claims/:id/prize/claim`, `/claims/:id/attempts/:attemptId` | Claim an open prize on a formal statement; one solver attempt |
 | `/arguments/:id`, `/sources/:id` | One argument with its evaluation and instances; one source with what was read from it |
+| `/runs/:id`, `/runs/:id/steps/:seq` | One agent run, linked as "the run" beside a verdict: its setup by version and its steps; one step in full. A run that read private data is withheld, with the reasons (`get_run`, `list_run_steps`, `get_run_step`) |
 | `/requests`, `/requests/:id` | Open requests for work, each fundable |
 | `/mandates`, `/mandates/:id` | Public mandates; one mandate's plan, spend, policy and decisions, with a box to back it |
 | `/findings`, `/findings/:id`, `/tags` | What the administrators noted in their work; topics |

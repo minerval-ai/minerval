@@ -55,7 +55,7 @@ import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { createFigureTools } from "../tools/figure-tools.js";
-import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
+import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
@@ -69,6 +69,7 @@ import { randomUUID } from "node:crypto";
 import { runBudgetLeft } from "../run-funding.js";
 import {
   resumeMessages,
+  sessionPrivateReasons,
   suspendSession,
   takeReadySession,
 } from "../../services/session-service.js";
@@ -797,6 +798,11 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
     : [{ role: "user" as const, content: userMessage }];
+  // A resumed pass continues the paused run's transcript, with what arrived:
+  // it takes on that run's private reasons (llm/run-visibility.ts).
+  if (resumed) {
+    for (const r of sessionPrivateReasons(resumed.session, resumed.replies)) markCurrentRunPrivate(r);
+  }
   let transcript: Parameters<NonNullable<Parameters<typeof toolUseLoop>[0]["onEnd"]>>[0] | null = null;
 
   await runWithUsageContext({ session }, () => withSkills([], () => toolUseLoop({

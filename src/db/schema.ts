@@ -5549,6 +5549,10 @@ export const agentSessions = pgTable(
     // after its run ended): [{grantId, microUsd}], each placed on the pass
     // that resumes it, beside what the paused run had left.
     extraFunding: jsonb("extra_funding").notNull().default([]),
+    // Why the paused run's transcript was private (llm/run-visibility.ts).
+    // The transcript is the resumed run's opening, so the resumed run takes
+    // these reasons on; nothing a run read is made public by resuming it.
+    privateReasons: text("private_reasons").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
