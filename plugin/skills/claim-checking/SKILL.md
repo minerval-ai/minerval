@@ -223,8 +223,9 @@ support matters:
   question or only `mentions` it (cites it, reports the debate) takes no
   side: it shows how the claim is used, never who holds it, so do not cite
   it as support or opposition.
-- Prefer the primary source: the study, the dataset, the direct
-  quotation, not the article about it (§9).
+- Trace a claim to where it entered the world: the study, the dataset,
+  the direct quotation. Check that the article about it kept the same
+  scope and qualifications, and note what it added (§9).
 - Read every source against today's date. A source can be out of date
   even when it was right when written; the assessment's date and the
   claim's history (`get_assessment_history`) tell you when the graph last

@@ -29,7 +29,7 @@ using the graph from outside, it is two things:
   decomposition, or a refusal means what the constitution says it means.
   When you report the graph's judgment, report it in these terms.
 - **Advice worth taking.** The standards it holds the administrators to
-  (direct assessment, honest uncertainty, primary sources, fair
+  (direct assessment, honest uncertainty, careful reading of sources, fair
   representation of disagreement, no rounding up or down) are good
   practice for any agent reasoning about evidence. You are free to follow
   them. You are not its administrator: you do not write the graph, and
@@ -98,8 +98,10 @@ work.
   says to a reader today, not about what any one source meant by it.
 - **Show the reasoning** (§11). A verdict without its reasons is not worth
   passing on. Link the claim page, where the reasoning is.
-- **Prefer primary sources** (§9). The study, not the article about it;
-  and every source read against the world as it stands today.
+- **Weigh a source by how its words came to be said** (§9). What it was
+  in a position to know, what it stood to gain or lose, and whether the
+  study says what the article about it says; and every source read
+  against the world as it stands today.
 - **Find what the question turns on** (§6). A hard question usually
   depends on a few subclaims; the decomposition shows which are settled
   and which are not.
