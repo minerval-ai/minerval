@@ -27,6 +27,8 @@ import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { actionUnavailable } from "../llm/tools/feature-tools.js";
+import type { FeaturesConfig } from "../features.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
@@ -346,10 +348,17 @@ const PARTITION_RE = /^[a-z0-9][a-z0-9-]*$/;
  * missing claim blocks the item there, with the reason). A claim_ref must
  * name a propose item among `items` or in `knownRefs`, the refs of the plan
  * these items are joining (extend_plan, adjust_plan).
+ *
+ * An item whose kind belongs to a feature this deployment has switched off
+ * (llm/tools/feature-tools.ts, ACTION_FEATURES) is refused here, with the
+ * reason: nothing could carry the work out, and a plan that held it would
+ * open a row that spends on a pass that cannot proceed. `config` is the
+ * deployment's unless a test passes one.
  */
 export function validatePlanItems(
   items: readonly PlanItem[],
-  knownRefs: readonly string[] = []
+  knownRefs: readonly string[] = [],
+  config?: FeaturesConfig
 ): string | null {
   const refs = new Set(knownRefs);
   for (const item of items) {
@@ -365,6 +374,8 @@ export function validatePlanItems(
     if (!PLAN_ACTIONS.has(item.action)) {
       return `unknown plan action "${String(item.action)}" (one of ${[...PLAN_ACTIONS].join(", ")})`;
     }
+    const unavailable = actionUnavailable(item.action, config);
+    if (unavailable) return `${unavailable}. Leave it out of the plan.`;
     if (typeof item.rationale !== "string" || !item.rationale.trim()) {
       return `${item.action} item needs a rationale`;
     }

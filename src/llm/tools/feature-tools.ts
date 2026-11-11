@@ -9,6 +9,10 @@
  *
  * tests/unit/features.test.ts fails when a name here is not a tool any
  * family or skill defines.
+ *
+ * Beside the tools, the kinds of work that belong to a feature
+ * (ACTION_FEATURES): work a plan can ask for that only the feature's tools
+ * and workers can carry out.
  */
 import { featureOn, type FeatureName, type FeaturesConfig } from "../../features.js";
 
@@ -54,4 +58,36 @@ export function withoutOffFeatureTools<T extends { name: string }>(
     const feature = toolFeature(tool.name);
     return feature === null || featureOn(feature, config);
   });
+}
+
+/**
+ * The kinds of work that belong to a feature: a plan item's `action`, which
+ * is also the kind of the ledger row it opens. With the feature off nothing
+ * can carry the work out (no Lean tools for a formalize pass, no solver for
+ * an attempt), so a plan is not allowed to ask for it: the item is refused
+ * where the agent proposes it (grant-service.ts, validatePlanItems), and one
+ * a plan already holds opens no row (action-service.ts, materializePlanItem).
+ * The kind stays in the plan tools' schema and descriptions, which are the
+ * same text in every deployment, as a tool with a field about a feature does.
+ *
+ * Only kinds a plan can ask for are listed. A `prize_review` row is opened
+ * by the prize-claim service alone, behind the prize routes, which are not
+ * mounted while prizes are off.
+ */
+export const ACTION_FEATURES: Readonly<Record<string, FeatureName>> = {
+  formalize: "mathematics",
+  attempt_proof: "mathematics",
+};
+
+/**
+ * Why work of this kind cannot run in this deployment, as a clause the
+ * caller completes for whoever asked ("formalize is not available in this
+ * deployment: mathematics is switched off"), or null when it can: the kind
+ * belongs to no feature, or its feature is on.
+ */
+export function actionUnavailable(kind: string, config?: FeaturesConfig): string | null {
+  if (!Object.hasOwn(ACTION_FEATURES, kind)) return null;
+  const feature = ACTION_FEATURES[kind]!;
+  if (featureOn(feature, config)) return null;
+  return `${kind} is not available in this deployment: ${feature} is switched off`;
 }
