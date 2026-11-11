@@ -557,6 +557,21 @@ intake review, is never fetched. It runs in two stages,
   facts are looked up again then. A lease in `platform_flags`
   (`source_sweep_lease`) lets one task sweep at a time.
 
+A retraction, correction or expression of concern recorded against a
+source is also a reason to look again at what rests on it. The first time
+either watcher records one (the Crossref poll, or the facts lookup above,
+which asks Crossref about the document's DOI), the Steward of every active
+node with the source attached, or resting on it through recorded
+provenance, gets one `source_event` message naming the notice and the path
+(`src/services/source-notice-service.ts`, which holds the list of kinds).
+The message spends nothing: the node becomes a candidate, and its pass runs
+when someone commissions it (docs/allocation.md, "Node inboxes and
+messages"). A node whose Steward is reading the document when the lookup
+runs is not sent the message: the read's result lists the notice. Every
+recorded notice, of any kind, is on the source's page and is counted for a
+judgment made against the source before it (`since_assessed.source_events`):
+that is the record, and the message is the prompt.
+
 #### Source provenance: what the support rests on
 
 A count of a claim's instances treats every appearance as one independent

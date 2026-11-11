@@ -241,7 +241,7 @@ describe("retractionPollTick", () => {
     expect(state.stewards.map((m) => m.claimId)).toEqual(["c-1", "c-9", "c-8"]);
     expect(state.stewards.every((m) => m.trigger === "source_event")).toBe(true);
     const c1 = state.stewards[0]!.context as string;
-    expect(c1).toContain("expression of concern notice");
+    expect(c1).toContain("Crossref records an expression of concern notice");
     expect(c1).toContain("dated 2026-09-10");
     expect(c1).toContain("https://doi.org/10.1/notice");
     // Both of c-1's sources are named in its one message.
