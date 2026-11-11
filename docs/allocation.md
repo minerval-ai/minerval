@@ -764,7 +764,10 @@ ledger's own p80 of scoping passes, or `est_request_scope_cost_owls`)
 that finds out what the work would involve and returns a quote. The quote
 becomes the budget and opens the full work; a scoping pass that answers
 the request, or finds it cannot or should not be met, records that
-outcome instead. One variant is open at a time.
+outcome instead. A quote prices only work a Researcher has the means to
+do: a request that needs a GPU, a model API, a lab or new data is
+reported `cannot_be_met` with who could do it, or quoted for its desk part
+alone. One variant is open at a time.
 
 **Who pays.** Whether a request is worth its budget is a judgment, made by
 whoever pays. A fresh request row is put in front of the General mandate's
@@ -774,6 +777,21 @@ commissions it with `POST /requests/:id/contribute` (MCP
 `fund_request_work`) at the budget they choose. Once one commission is on
 the row, another payer is charged nothing. The row runs at once, and what
 the run does not spend comes back.
+
+**Below the quote.** The budget is the payer's choice, so a commission
+below the request's budget is placed, not refused: a stage of a large
+request is a fair thing to buy, and a quote is an estimate. What the
+mechanism owes is that nobody is misled by it (#885). The commissioning
+call says plainly that the budget is below the quote, on every path
+(`commissionAction`: `fund_request`, an officer's `commission`, a reader's
+`fund_request_work`), and lists the earlier runs on the request that were
+funded below theirs with how each ended, so a third starved run is a
+choice and not an accident. The run is told it is funded below the quote
+and does one part of the plan properly. Its entries in the request's work
+log carry what it was funded at and what the work was quoted at
+(`request_work.budget_micro_usd`, `quote_micro_usd`), shown as "funded at
+$2.00 of a $5.00 quote" to funders, to the keeper and to the next run, so
+a starved partial result is never taken for what the work can find.
 
 **Closing.** A request closed while its row is open cancels the row and
 returns every unspent commission: a reader's owls to their balance, a

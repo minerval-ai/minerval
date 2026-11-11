@@ -104,6 +104,9 @@ export async function allocateToClaimAssessment(input: {
   };
 }
 
+/** A request's quote and what a payer of its full work is told about it (#885). */
+export type RequestQuoteStanding = { quoteMicroUsd: number; underQuote: boolean; note: string };
+
 export type RequestAllocateResult =
   | {
       ok: true;
@@ -113,6 +116,8 @@ export type RequestAllocateResult =
       variant: "scope" | "full";
       /** Always true now: a commission is whole, so the work runs. */
       covered: boolean;
+      /** For the full work: its quote and what the payer is told of it. */
+      quote?: RequestQuoteStanding;
     }
   | {
       ok: false;
@@ -186,11 +191,19 @@ export async function allocateToRequest(input: {
     backingOwls: microUsdToOwls(budget),
     variant: row.variant,
     covered: true,
+    ...(result.quote ? { quote: result.quote } : {}),
   };
 }
 
 export type MandateRequestAllocateResult =
-  | { ok: true; placedMicroUsd: number; variant: "scope" | "full"; status: "commissioned" | "already_commissioned" }
+  | {
+      ok: true;
+      placedMicroUsd: number;
+      variant: "scope" | "full";
+      status: "commissioned" | "already_commissioned";
+      /** For the full work: its quote and what the payer is told of it (#885). */
+      quote?: RequestQuoteStanding;
+    }
   | { ok: false; code: "REQUEST_NOT_FOUND" | "CLOSED" | "COVERED" | "NO_ROOM" | "BAD_AMOUNT"; message: string };
 
 /**
@@ -223,6 +236,7 @@ export async function allocateMandateToRequest(input: {
     placedMicroUsd: result.status === "commissioned" ? Math.round(input.microUsd) : 0,
     variant: row.variant,
     status: result.status,
+    ...(result.status === "commissioned" && result.quote ? { quote: result.quote } : {}),
   };
 }
 

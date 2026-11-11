@@ -7,13 +7,14 @@ description: >-
   worth doing is a separate judgment.
 metadata:
   minerval:
-    version: 5
+    version: 6
     since_epoch: 2026-09-domain-skills
     changelog:
       3: Consistency sweeps are on cost_sheet and fundable as plan items (#831), so the Grantmaker prices one by its partition's size.
       2: The Dispute Arbitrator gets cost_sheet, so a request it files on overturning a propose_request is priced the way the Reviewer prices one.
       4: "Work is commissioned whole: budget a commission at the high end of the cost range, since what the run does not spend comes back, and petition when a run turns out to need more. The Grantmaker's list counts the officers' sittings and drops funding part of a request."
       5: "survey_scope is retired: query_sql counts the subclaims a deepen would release across a subtree."
+      6: "A request's work runs at the budget its payer gives, not at the quote (#885): fund it at the quote, or below it only to buy a stage, and read a run's funding mark before its outcome. A scoping quote prices only work a Researcher has the means to do."
     kind: method
 ---
 
@@ -110,9 +111,15 @@ work:
 - **requests**: a request's budget is the price of the work. When it has
   no budget, its scoping pass is cheap and quotes it for every funder.
   You weigh what meeting the request would change in your territory
-  against that price, and commission it whole or not at all. A request
-  that came back partly met, with a stated remainder, is a fresh decision
-  at the new price.
+  against that price, and commission it at that price or not at all. The
+  run works to the budget you give it, and nothing raises a smaller one to
+  the quote: below the quote the run is told so, does one part of the
+  plan, and is marked on the request's work log ("funded at $2.00 of a
+  $5.00 quote"). Do that only when one stage is what you mean to buy. A
+  request that came back partly met, with a stated remainder, is a fresh
+  decision at the new price; when the run that returned it carries that
+  mark, it stopped for want of budget, so do not read it as what the work
+  can find, and do not buy another run the same size.
 - **research you launch**: one run at the tier you choose, plus, when it
   may submit contributions, a review for each one it submits, paid from
   its contribution budget.
@@ -150,13 +157,22 @@ work needs and what they charge, and judge how many research steps it
 takes. The full work runs on the tier the task message names, not one you
 choose, so price each step on that tier's line of cost_sheet. Then build
 the quote from the steps, as above, and report it in budget_quote_usd
-with the plan it prices in plan.
+with the plan it prices in plan. Quote only what the run that takes the
+request up can do, which is what a Researcher can do: read, search,
+query the graph, and compute in a sandbox with no network. Work that
+needs a GPU, a model API, a training run, a lab or new data collected
+from people is not a Researcher's at any price: report cannot_be_met
+with what it needs and who could do it, or quote the desk part alone and
+say plainly what the quote leaves out.
 Spend on scoping only what the quote needs; a scoping run that drifts into
 doing the work spends the scoping budget on work no one has yet agreed to
 fund.
 
-**Taking up a request.** Your ceiling is the request's budget, and the
-spend line after every turn shows where you stand against it. Plan the
+**Taking up a request.** Your ceiling is the budget whoever commissioned
+the run gave it, usually the request's budget; the task message says when
+it is less than the work was quoted at, and then the job is one part of
+the plan done properly, not the whole done thinly. The spend line after
+every turn shows where you stand against it. Plan the
 work so the most decisive part is done first; if the ceiling comes before
 the end, report what you established as partly met, and state in
 remaining_budget_usd what the rest would cost, priced the same way.

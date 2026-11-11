@@ -244,5 +244,60 @@ describe("running a funded request", () => {
       ["Researcher", "negative"],
     ]);
     expect(work.map((w) => w.summary).join(" ")).not.toMatch(/mandate|fund/i);
+    // Funded at its quote: the log carries both figures and no mark.
+    expect(work.at(-1)).toMatchObject({ budget_usd: 2, quote_usd: 2, funding: null });
+  });
+
+  it("tells the payer a budget is below the quote, runs it, and marks the work (#885)", async () => {
+    const id = await file({ budgetUsd: 5 });
+    const reader = await seedUser("under-quote funder");
+    await creditOwls(reader, 10 * OWL);
+    // Not refused: the budget is the payer's choice. The result says where it stands.
+    const placed = await allocateToRequest({ userId: reader, requestId: id, owls: 2 });
+    expect(placed).toMatchObject({ ok: true, variant: "full", quote: { quoteMicroUsd: 5 * OWL, underQuote: true } });
+    if (!placed.ok) throw new Error("expected a commission");
+    expect(placed.quote!.note).toContain("the work is quoted at $5.00 and this commission gives it $2.00");
+    expect(placed.quote!.note).not.toContain("earlier run");
+
+    researcher.billed = 1.9 * OWL;
+    researcher.report = { answer: "Read the abstracts only.", request_outcome: "partly_met", remaining_budget_usd: 3 };
+    expect(await runOnly(id)).toMatchObject({ status: "processed", kind: "request", ok: true });
+    // The run was told what the work is quoted at, beside its own ceiling.
+    const { runResearcher } = await import("../../src/llm/agents/researcher.js");
+    const call = vi.mocked(runResearcher).mock.calls.at(-1)![0];
+    expect(call.quoteMicroUsd).toBe(5 * OWL);
+    expect(call.run.ceiling_micro_usd).toBe(2 * OWL);
+
+    const work = (await getRequest(id))!.work;
+    expect(work.map((w) => [w.outcome, w.budget_usd, w.quote_usd, w.funding])).toEqual([
+      [null, 2, 5, "funded at $2.00 of a $5.00 quote"],
+      ["partly_met", 2, 5, "funded at $2.00 of a $5.00 quote"],
+    ]);
+    // The next run's brief, and the keeper's, read the mark with the outcome.
+    const { requestBrief } = await import("../../src/services/request-service.js");
+    expect(requestBrief((await getRequest(id))!)).toContain(
+      "Researcher (partly_met; funded at $2.00 of a $5.00 quote): Read the abstracts only."
+    );
+
+    // The keeper prices the rest; the next payer is shown the starved run
+    // whichever side of the new quote its budget falls on.
+    await setRequestBudget({ requestId: id, budgetUsd: 3 });
+    const funder = await seedUser("under-quote mandate");
+    const mandate = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 20 * OWL });
+    await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [mandate.grantId]);
+    const again = await allocateMandateToRequest({ grantId: mandate.grantId, requestId: id, microUsd: 3 * OWL });
+    expect(again).toMatchObject({ ok: true, status: "commissioned", quote: { quoteMicroUsd: 3 * OWL, underQuote: false } });
+    if (!again.ok) throw new Error("expected a commission");
+    expect(again.quote!.note).toContain("The work is quoted at $3.00; this budget covers it.");
+    expect(again.quote!.note).toContain("One earlier run on this request was funded below its quote: $2.00 of $5.00 (partly_met)");
+  });
+
+  it("says nothing of a quote on a scoping pass, which has none", async () => {
+    const id = await file();
+    const reader = await seedUser("scope funder");
+    await creditOwls(reader, 5 * OWL);
+    const placed = await allocateToRequest({ userId: reader, requestId: id, owls: 1 });
+    expect(placed).toMatchObject({ ok: true, variant: "scope" });
+    expect(placed.ok && placed.quote).toBeUndefined();
   });
 });

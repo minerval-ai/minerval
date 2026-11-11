@@ -156,6 +156,11 @@ export function RequestView({ r }: { r: RequestItem }) {
                   <span className={styles.workWhen}>{fmtDate(w.at)}</span>
                 </div>
                 <p>{w.summary}</p>
+                {w.funding && (
+                  <p className={styles.funded}>
+                    This run was {w.funding}, so it could do only part of the work.
+                  </p>
+                )}
                 {w.funded_by && (
                   <p className={styles.funded}>
                     Funded by {w.funded_by}. The funder chose to fund the work and had no say in how

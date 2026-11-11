@@ -452,6 +452,12 @@ export interface ResearcherInput {
    * (#732), which the quote must price.
    */
   fullWork?: { tier: string; model: string; effort: string | null } | null;
+  /**
+   * For a run taking up a request: what the full work was priced at (the
+   * request's budget when the run started). The run's own ceiling may be
+   * below it, and the task message says so when it is (#885).
+   */
+  quoteMicroUsd?: number | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
   /** For a scoping run on a request bearing on one document alone (#865): the document the full work reviews. */
@@ -637,6 +643,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     requestNodes: requestNodes.map(({ id, text, kind }) => ({ id, text, kind })),
     priorRun: input.priorRun ?? null,
     fullWork: input.fullWork ?? null,
+    quoteUsd: input.quoteMicroUsd ? input.quoteMicroUsd / 1_000_000 : null,
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
       : null,

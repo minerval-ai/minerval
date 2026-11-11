@@ -11,6 +11,7 @@ import { z } from "zod";
 import { REQUEST_STATES } from "../schemas/kinds.js";
 import { getRequest, listRequests } from "../services/request-service.js";
 import { allocateToRequest } from "../services/allocation-service.js";
+import { microUsdToOwls } from "../services/owl.js";
 
 const listRequestsParams = z.object({
   // One state, or "live" for every request still open to work.
@@ -87,6 +88,13 @@ export const REQUEST_SCHEMA = {
           summary: { type: "string" },
           at: { type: "string", format: "date-time" },
           funded_by: { type: "string", nullable: true },
+          // The agent run that did the work, for GET /runs/:run_id.
+          run_id: { type: "string", format: "uuid", nullable: true },
+          // On a run of the full work: what it was funded at and what the
+          // work was quoted at then; funding says so when it was below.
+          budget_usd: { type: "number", nullable: true },
+          quote_usd: { type: "number", nullable: true },
+          funding: { type: "string", nullable: true },
         },
       },
     },
@@ -194,7 +202,10 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
         tags: ["requests"],
         summary:
           "Commission the work on this request with a budget of owls: it runs at " +
-          "once, and what it does not spend comes back",
+          "once, and what it does not spend comes back. The run works to the budget you give, " +
+          "not to the request's quote (budget_usd): a budget below the quote is accepted, the " +
+          "response says so (below_quote, note), and the run does only part of the work and is " +
+          "marked on the request's work log as funded below its quote",
         params: {
           type: "object",
           properties: { request_id: { type: "string", format: "uuid" } },
@@ -228,6 +239,14 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
           backing_owls: result.backingOwls,
           variant: result.variant,
           covered: result.covered,
+          // The full work's quote, and whether this budget is below it (#885).
+          ...(result.quote
+            ? {
+                quote_owls: microUsdToOwls(result.quote.quoteMicroUsd),
+                below_quote: result.quote.underQuote,
+                note: result.quote.note,
+              }
+            : {}),
         });
       },
     }

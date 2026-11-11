@@ -747,6 +747,10 @@ export interface RequestWork {
   summary: string;
   at: string;
   funded_by?: string | null;
+  /** Set when the run was funded below what the work was quoted at: "funded at $2.00 of a $5.00 quote". */
+  funding?: string | null;
+  /** The agent run that did the work. */
+  run_id?: string | null;
 }
 
 /** Something someone could do that would improve what the graph knows (Part VIII, Requests). */
