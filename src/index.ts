@@ -156,8 +156,10 @@ async function main() {
     .catch((err) => app.log.error({ err }, "filling source page hashes failed"));
 
   // The source backfill (#507) fills the facts and segments of sources
-  // stored before either existed, in one pass. Each tick claims its batch
-  // by moving a cursor under a row lock, so every task may run it.
+  // that lack them, fetching the page of a source an agent cited without
+  // opening: one pass over what is stored, then a standing sweep of what is
+  // cited afterwards. The pass claims its batch by moving a cursor under a
+  // row lock and the sweep runs under a lease, so every task may run it.
   pollers.push(startSourceBackfill({ logger }));
 
   // Lookout triggers (docs/allocation.md, "Lookouts"): the daily Crossref

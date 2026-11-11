@@ -501,13 +501,30 @@ dated `source_events` a watcher recorded against it: corrections,
 retractions, expressions of concern), and **segments**, the document's
 sections and passages, each instance anchored to the passage its quote sits
 in (#507). Both are filled once, on ingest and when `provenance_read_source`
-first fetches a document (`refreshSourceFactsOnce`, `segmentSourceOnce`). A
-source stored before they existed is filled by the source backfill
-(`src/workers/source-backfill.ts`): one pass over such sources in id order,
-`SOURCE_BACKFILL_PER_TICK` a tick (default 20, every
-`SOURCE_BACKFILL_INTERVAL_SECONDS`, default 120), its cursor in
-`platform_flags` so concurrent tasks take different batches. Deleting the
-flag row starts a new pass at the next restart.
+first fetches a document (`refreshSourceFactsOnce`, `segmentSourceOnce`).
+Most of a page's facts are in its own metadata, so both need the document's
+text, and a source an agent cites by URL without opening it (recording an
+instance, an argument passage, a reading or an upstream edge) is created
+with none. The source backfill (`src/workers/source-backfill.ts`) fills
+what those two paths miss. For a source with a URL and no stored text that
+something in the graph cites, it fetches and stores the page exactly as
+`provenance_read_source` would (`fetchAndStoreSource`), and the facts and
+segments follow; a source nothing cites, such as a submission awaiting
+intake review, is never fetched. It runs in two stages,
+`SOURCE_BACKFILL_PER_TICK` sources a tick (default 20, every
+`SOURCE_BACKFILL_INTERVAL_SECONDS`, default 120), one source at a time:
+
+- **The pass** covers what is already stored: once over the sources missing
+  facts, segments or (cited) text, in id order, its cursor in
+  `platform_flags` so concurrent tasks take different batches and a source
+  that yields nothing is passed over rather than retaken. Deleting the flag
+  row (`source_backfill_fetch`) starts a new pass.
+- **The sweep** covers what is cited afterwards: once the pass is done, each
+  tick takes the cited sources whose facts were never checked. Each leaves
+  marked as checked whatever the fetch found, so it is taken once; a page
+  that could not be fetched is fetched when an agent next opens it, and its
+  facts are looked up again then. A lease in `platform_flags`
+  (`source_sweep_lease`) lets one task sweep at a time.
 
 #### Source provenance: what the support rests on
 

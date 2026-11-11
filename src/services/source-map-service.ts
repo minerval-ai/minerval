@@ -320,6 +320,29 @@ async function findSource(ref: { sourceId?: string; url?: string }): Promise<Sou
 }
 
 /**
+ * Fetch a source's document through the guarded path ingestion uses, store
+ * the copy where none is held, and fill what follows from having the text:
+ * the facts the page states about itself and its segments (#507). Shared by
+ * provenance_read_source and the source backfill, so a document an agent
+ * opened and one the graph fetched for its facts are stored the same way.
+ * Throws when the fetch fails; the facts and segments never fail it.
+ */
+export async function fetchAndStoreSource(
+  source: { id: string; url: string },
+  fetch: (url: string) => Promise<string> = (u) => fetchPublicUrl(u)
+): Promise<string> {
+  const raw = sanitizeStoredText(await fetch(source.url));
+  await rawQuery(
+    `UPDATE sources SET raw_content = $2, retrieved_at = now()
+      WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
+    [source.id, raw]
+  );
+  await refreshSourceFactsOnce(source.id, { newText: true });
+  await segmentSourceOnce(source.id);
+  return raw;
+}
+
+/**
  * The readable text of a source, windowed. A source with no stored copy is
  * fetched through the same guarded path ingestion uses and the copy is
  * stored, so the next read and the quote check see the same text the agent
@@ -360,18 +383,8 @@ export async function readSourceContent(input: {
         `Source "${source.title}" has no stored text and no URL to fetch it from.`
       );
     }
-    const fetcher = input.fetch ?? ((u: string) => fetchPublicUrl(u));
-    raw = sanitizeStoredText(await fetcher(source.url));
+    raw = await fetchAndStoreSource({ id: source.id, url: source.url }, input.fetch);
     origin = "fetched";
-    await rawQuery(
-      `UPDATE sources SET raw_content = $2, retrieved_at = now()
-        WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
-      [source.id, raw]
-    );
-    // A document first opened here gets its facts looked up like one that
-    // came in through extraction (#507). Never fails the read.
-    await refreshSourceFactsOnce(source.id);
-    await segmentSourceOnce(source.id);
   }
   return {
     source: { id: source.id, url: source.url, title: source.title, source_type: source.source_type },

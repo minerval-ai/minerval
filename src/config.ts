@@ -1123,11 +1123,13 @@ const configSchema = z.object({
   // this many such reports, oldest first. 0 disables the worker.
   reportEmbeddingBackfillPerTick: z.coerce.number().default(20),
   reportEmbeddingBackfillIntervalSeconds: z.coerce.number().default(300),
-  // The source backfill (#507): one pass over the sources stored before
-  // source facts and segments existed, filling each once. Every source it
-  // takes costs up to two outside lookups (Crossref for a DOI, the Wayback
-  // Machine for an archived copy), so a tick takes at most this many, to
-  // stay a polite client of both. 0 disables the worker.
+  // The source backfill (#507): fills the facts and segments of sources that
+  // lack them, each once: one pass over those already stored, then a sweep
+  // of the sources cited since. Every source it takes costs up to three
+  // outside requests (the page itself when the source is cited and has no
+  // stored text, Crossref for a DOI, the Wayback Machine for an archived
+  // copy), so a tick takes at most this many, one at a time, to stay a
+  // polite client of all three. 0 disables the worker.
   sourceBackfillPerTick: z.coerce.number().default(20),
   sourceBackfillIntervalSeconds: z.coerce.number().default(120),
   // GitHub issue filing for agent reports: every report written on first

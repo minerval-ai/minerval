@@ -4,13 +4,24 @@
  * exactly once, the facts view shows versions and copies the right way
  * round, and the retraction join finds a source by its recorded DOI.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+
+// refreshSourceFactsOnce takes no fetch of its own; its archive lookup fails
+// here instead of reaching the network, and a failed lookup leaves the fact null.
+vi.mock("../../src/services/url-guard.js", async (orig) => ({
+  ...(await orig<typeof import("../../src/services/url-guard.js")>()),
+  fetchPublicUrl: vi.fn(async (url: string) => {
+    throw new Error(`no network in tests: ${url}`);
+  }),
+}));
+
 import { rawQuery } from "../../src/db/client.js";
 import {
   getSourceFacts,
   recordSourceEvent,
   refreshSourceFacts,
+  refreshSourceFactsOnce,
 } from "../../src/services/source-facts-service.js";
 import { sourcesForDois, type DoiCheck } from "../../src/services/source-watch-service.js";
 
@@ -83,6 +94,28 @@ describe("refreshSourceFacts", () => {
       title: "Given title", publisher: "Daily Paper", authors: ["A Reporter"],
       archived_url: "https://web.archive.org/web/1/x", source_type: "unknown",
     });
+  });
+});
+
+describe("refreshSourceFactsOnce", () => {
+  it("looks once, and again when the text has just arrived", async () => {
+    // Checked while it had no text: the URL was cited, the page not yet fetched.
+    const id = await seedSource({});
+    await refreshSourceFactsOnce(id);
+    const checked = (await getSourceFacts(id))!.source;
+    expect(checked.facts_checked_at).not.toBeNull();
+    expect(checked.authors).toEqual([]);
+
+    await rawQuery(`UPDATE sources SET raw_content = $2 WHERE id = $1`, [
+      id,
+      `<html><head><meta name="author" content="A Reporter"><meta property="article:published_time" content="2024-03-02T10:00:00Z"></head></html>`,
+    ]);
+    // Already checked, and nothing says the text is new: left alone.
+    await refreshSourceFactsOnce(id);
+    expect((await getSourceFacts(id))!.source.authors).toEqual([]);
+
+    await refreshSourceFactsOnce(id, { newText: true });
+    expect((await getSourceFacts(id))!.source).toMatchObject({ authors: ["A Reporter"], published_date: "2024-03-02" });
   });
 });
 
