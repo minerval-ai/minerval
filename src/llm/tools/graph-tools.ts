@@ -3,6 +3,7 @@ type Tool = Anthropic.Tool;
 import { findSimilarClaims } from "../../services/search-service.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { rawQuery } from "../../db/client.js";
+import { resolveClaimId } from "../../services/claim-alias-service.js";
 
 export interface ToolResult {
   success: boolean;
@@ -105,7 +106,10 @@ async function executeGraphToolInner(
     }
 
     case "get_parent_claims": {
-      const claimId = input.claim_id as string;
+      // A merged id reads its survivor's parents (#884): the merge moved the
+      // edges there, so the absorbed row has none to show.
+      const resolution = await resolveClaimId(input.claim_id as string);
+      const claimId = resolution?.id ?? (input.claim_id as string);
       const rows = await rawQuery<{
         parent_id: string;
         parent_text: string;
@@ -122,7 +126,12 @@ async function executeGraphToolInner(
       );
       return {
         success: true,
-        data: { child_claim_id: claimId, parents: rows, count: rows.length },
+        data: {
+          ...(resolution?.resolvedFrom ? { resolved_from: resolution.resolvedFrom } : {}),
+          child_claim_id: claimId,
+          parents: rows,
+          count: rows.length,
+        },
       };
     }
 

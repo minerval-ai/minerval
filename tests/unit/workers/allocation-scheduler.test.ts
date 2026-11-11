@@ -10,6 +10,8 @@ const { state } = vi.hoisted(() => ({
   state: {
     dueClaims: [] as Array<{ id: string; days_old: number }>,
     reconciles: 0,
+    orderLooks: 0,
+    tends: 0,
     priorityRuns: 0,
     selfFunds: 0,
     followUpSweeps: 0,
@@ -37,6 +39,17 @@ vi.mock("../../../src/services/action-service.js", () => ({
   reconcileActions: vi.fn(async () => {
     state.reconciles++;
     return { assessEnsured: 2, cancelled: 0 };
+  }),
+  materializeStandingOrders: vi.fn(async () => {
+    state.orderLooks++;
+    return 0;
+  }),
+}));
+
+vi.mock("../../../src/services/mandate-lifecycle-service.js", () => ({
+  tendMandates: vi.fn(async () => {
+    state.tends++;
+    return { paused: 0, completed: 0 };
   }),
 }));
 
@@ -98,6 +111,8 @@ beforeEach(() => {
   resetAllocationScheduler();
   state.dueClaims = [];
   state.reconciles = 0;
+  state.orderLooks = 0;
+  state.tends = 0;
   state.priorityRuns = 0;
   state.selfFunds = 0;
   state.followUpSweeps = 0;
@@ -122,6 +137,10 @@ describe("allocationSchedulerTick", () => {
       stalenessEnqueued: 2,
     });
     expect(state.reconciles).toBe(1);
+    // The sweep's reconcile placed the plans' standing orders itself; the
+    // mandates no agent ends are tended on top of it.
+    expect(state.orderLooks).toBe(0);
+    expect(state.tends).toBe(1);
     expect(state.selfFunds).toBe(1);
     expect(state.followUpSweeps).toBe(1);
     // The reconcile-candidate scan runs each sweep, under the governing
@@ -152,6 +171,11 @@ describe("allocationSchedulerTick", () => {
       stalenessEnqueued: 0,
     });
     expect(state.priorityRuns).toBe(1);
+    // Between sweeps a tick still asks for the standing orders again and
+    // tends the mandates (#849): room that opens is used within minutes.
+    expect(state.orderLooks).toBe(1);
+    expect(state.tends).toBe(2);
+    expect(state.reconciles).toBe(1);
 
     const later = await allocationSchedulerTick(1_000_000 + 7 * 3_600_000);
     expect(later.prioritiesRefreshed).toBe(3);
@@ -166,5 +190,7 @@ describe("allocationSchedulerTick", () => {
       stalenessEnqueued: 0,
     });
     expect(state.priorityRuns).toBe(0);
+    expect(state.orderLooks).toBe(0);
+    expect(state.tends).toBe(0);
   });
 });

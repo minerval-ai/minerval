@@ -138,6 +138,10 @@ export interface Assessment {
   model?: string | null;
   // The agent run that wrote this verdict (/runs/:id); null when unlinked.
   run_id?: string | null;
+  // The retired label ("contested", "unsupported") a migration carried this
+  // status over from (#524, #848). Set only until the node is re-judged: the
+  // status is provisional, not a finding. Null/absent otherwise.
+  relabeled_from?: string | null;
   // Funding disclosure (§19): present when this assessment was paid work —
   // a user's assessment order or a named grant. Stamped mechanically by the
   // API; absent for ordinary system work.
@@ -428,7 +432,20 @@ export interface ClaimSeed {
   seeded_by: { id: string; text: string } | null;
 }
 
+// The claim a read was addressed to when it has been merged into another
+// (#884): the API answers with the survivor's record and says so here.
+// `stance_relation` is `opposed` when the absorbed claim was the survivor's
+// negation, so the survivor's verdict reads the other way round for it.
+export interface ResolvedFrom {
+  id: string;
+  canonical_form: string;
+  stance_relation: "same" | "opposed" | null;
+  merged_at: string | null;
+}
+
 export interface ClaimDetail {
+  // Present when the id asked for was merged into this claim (#884).
+  resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
   assessment: Assessment | null;
   subclaim_count: number;
@@ -1756,4 +1773,6 @@ export interface ClaimCard {
   assessed_at: string | null;
   updated_at: string;
   page_url: string;
+  /** Null unless the id asked for was merged into another node (#884). */
+  resolved_from?: ResolvedFrom | null;
 }

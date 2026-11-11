@@ -31,7 +31,7 @@ const { state, queries } = vi.hoisted(() => ({
     // The Steward standing of the claims a test names (#834): its queue
     // state and, when it parked, the failure recorded against it.
     stewardState: "done" as string,
-    stewardError: null as string | null,
+    stewardErrorReason: null as string | null,
     stewardAttempts: 0,
     // The action row `groupLedger` finds by id, for an item that already
     // carries an action_id.
@@ -53,7 +53,7 @@ vi.mock("../../../src/db/client.js", () => ({
           id,
           state: "active",
           steward_state: state.stewardState,
-          steward_error: state.stewardError,
+          steward_error_reason: state.stewardErrorReason,
           steward_attempts: state.stewardAttempts,
           published: state.publishedFor.has(id),
         },
@@ -98,6 +98,20 @@ vi.mock("../../../src/workers/steward-direct.js", () => ({
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueSteward: vi.fn(async () => {}),
 }));
+// A stewarding item's pass is a standing order the mandate commissions
+// (#849); the commission's own SQL runs in tests/db/standing-orders.test.ts.
+vi.mock("../../../src/services/standing-order-service.js", () => ({
+  HELD_BEHIND_EARLIER: "held behind an earlier item",
+  orderTier: (variant: unknown) => (variant === "standard" ? "standard" : "strong"),
+  placeStandingOrder: vi.fn(async () => ({
+    state: "placed",
+    actionId: "act-1",
+    budgetMicroUsd: 1_500_000,
+    tier: "strong",
+  })),
+  releaseStandingOrder: vi.fn(async () => 0),
+  orderChildPasses: vi.fn(async () => ({ children: [], waiting: null, blocked: null })),
+}));
 vi.mock("../../../src/services/report-service.js", () => ({
   raiseIssue: vi.fn(async () => ({ acknowledged: true })),
 }));
@@ -136,7 +150,7 @@ beforeEach(() => {
   state.lastAttemptFinishedAt = null;
   state.dueLookouts = [];
   state.stewardState = "done";
-  state.stewardError = null;
+  state.stewardErrorReason = null;
   state.stewardAttempts = 0;
   state.rowById = null;
 });
@@ -412,9 +426,9 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     },
   ];
 
-  it("states the park and its error, and does not ask for another item", async () => {
+  it("states the park and the class of its error, and does not ask for another item", async () => {
     state.stewardState = "error";
-    state.stewardError = "boom: null reference in decomposition";
+    state.stewardErrorReason = "model_refusal";
     state.stewardAttempts = 3;
     state.rowById = ROW;
     state.grant.plan.items = parkedItem();
@@ -424,28 +438,47 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     expect(ledger?.status).toBe("cancelled");
     expect(ledger?.reason).toContain("parked this claim as 'error'");
     expect(ledger?.reason).toContain("3 failed passes");
-    expect(ledger?.reason).toContain("boom: null reference in decomposition");
+    // The explanation is public: it carries the fixed class, which is all
+    // the reconciler reads (#846).
+    expect(ledger?.reason).toContain("Reason: the model refused the request.");
     expect(ledger?.reason).not.toContain("add another item");
-    // Nothing is queued while the claim is parked: the pass would fail the
-    // same way, and the lanes would retire the row again.
+    // Nothing is queued or commissioned while the claim is parked: the
+    // pass would fail the same way, and the lanes would retire the row
+    // again. The order's budget is taken back off the retired row (#849).
     expect(enqueueSteward).not.toHaveBeenCalled();
+    const orders = await import("../../../src/services/standing-order-service.js");
+    expect(orders.placeStandingOrder).not.toHaveBeenCalled();
+    expect(orders.releaseStandingOrder).toHaveBeenCalledWith("g-1", CLAIM_A);
   });
 
-  it("opens a fresh row once the park has cleared, rather than reading cancelled forever", async () => {
+  it("orders the pass afresh once the park has cleared, rather than reading cancelled forever", async () => {
     state.stewardState = "done";
+    // The retired row, reopened by the commission the order places.
+    state.rowById = { ...ROW, status: "open" };
+    state.grant.plan.items = [
+      { ...parkedItem()[0]!, ledger: { ...parkedItem()[0]!.ledger, status: "cancelled" }, budget_owls: 2 },
+    ];
+    const orders = await import("../../../src/services/standing-order-service.js");
+    (orders.placeStandingOrder as unknown as { mockClear: () => void }).mockClear();
     state.rowById = ROW;
-    state.grant.plan.items = parkedItem();
-    const { enqueueSteward } = await import("../../../src/services/queue-service.js");
+    const reopened = { ...ROW, status: "open" };
+    (orders.placeStandingOrder as unknown as { mockImplementationOnce: (f: () => Promise<unknown>) => void })
+      .mockImplementationOnce(async () => {
+        state.rowById = reopened;
+        return { state: "placed", actionId: ROW.id, budgetMicroUsd: 2_000_000, tier: "strong" };
+      });
     await reconcileActions();
-    expect(enqueueSteward).toHaveBeenCalledWith(
-      expect.objectContaining({ claimId: CLAIM_A, trigger: "mandate_plan" })
+    // The mandate commissions the pass, at the item's budget and the
+    // strong tier a plan item buys when it names none; the brief says the
+    // kind of pass and nothing about who paid.
+    expect(orders.placeStandingOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ grantId: "g-1", claimId: CLAIM_A, tier: "strong", budgetMicroUsd: 2_000_000 })
     );
-    // ensureAssessActions reopens the retired row for the funded pass
-    // (its kind is a bound parameter, so match the group).
-    const opened = queries.filter(
-      (x) => x.q.includes("INSERT INTO actions") && x.params[1] === `assess:${CLAIM_A}`
-    );
-    expect(opened.length).toBeGreaterThan(0);
-    expect(opened[0]!.params[0]).toBe("reassess");
+    const brief = (orders.placeStandingOrder as unknown as { mock: { calls: Array<[{ brief: string }]> } }).mock
+      .calls[0]![0].brief;
+    expect(brief).toBe("A funded mandate scheduled a reassess pass on this claim.");
+    const ledger = ledgerOf(0) as { status: string; order?: { budget_owls: number; tier: string } };
+    expect(ledger.status).toBe("open");
+    expect(ledger.order).toMatchObject({ budget_owls: 2, tier: "strong" });
   });
 });

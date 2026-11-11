@@ -162,6 +162,14 @@ describe("a plan around a node the graph does not hold (#656)", () => {
       expect(p.items[1]!.claim_id).toBeUndefined();
       expect(p.items[1]!.ledger!.status).toBe("waiting");
       expect(p.scope).toBeNull();
+      // Nothing is commissioned for a node that does not exist yet (#849).
+      const ordersOf = () =>
+        rawQuery<{ claim_id: string }>(
+          `SELECT claim_id FROM action_allocations
+            WHERE grant_id = $1 AND commissioned_by = 'plan' AND released_at IS NULL`,
+          [grantId]
+        );
+      expect(await ordersOf()).toHaveLength(0);
 
       // Accepted: the Matcher mints the node under its own wording.
       fake.canonical = `${c.text} (canonical)`;
@@ -177,6 +185,12 @@ describe("a plan around a node the graph does not hold (#656)", () => {
       expect(p.items[1]!.claim_id).toBe(nodeId);
       expect(p.items[1]!.ledger!.exclusion_group).toBe(`assess:${nodeId}`);
       expect(outcomes[1]!.claim_id).toBe(nodeId);
+      // ...and its pass is commissioned from the mandate the moment the
+      // node exists, once.
+      expect(p.items[1]!.ledger!.status).toBe("open");
+      expect(p.items[1]!.ledger!.order).toBeTruthy();
+      await materializePlanItems(grantId);
+      expect(await ordersOf()).toEqual([{ claim_id: nodeId }]);
       expect(p.scope).toBe(nodeId);
 
       // The public view shows what was proposed and what it became.

@@ -72,7 +72,11 @@ the scope; a mandate told to "map the nutrition literature" reaches its
 planner with no scope claim at all, and the planner's job is to find the
 sources and propose them as ingest items. The plan carries every kind of
 work a mandate can fund, is validated like any other, and is held to the
-escrow at the same estimate the funder was quoted. The three modes of a
+escrow at the same estimate the funder was quoted. The planning pass works
+to the platform's default for a Grantmaker's pass
+(`DEFAULT_REVIEW_PASS_BUDGET_OWLS`, 5), since it runs before the mandate
+has an operating policy to name its own figure, and its briefing says so
+("What a pass works to", below). The three modes of a
 mandate's Grantmaker (the granting conversation, the planning pass, the
 review pass) share one toolbox (llm/tools/mandate-tools.ts).
 
@@ -114,12 +118,15 @@ with a budget and a mission would need:
   the same request funding the owner's chat carries;
 - **grow its own plan** (extend_plan): append the ingest/assess items it
   discovered; each is priced, escrow-bounded, and executes through the
-  ledger;
-- **pace itself** (set_daily_rate) and **chain passes**
-  (continue_review): a pass that has more to do runs another immediately,
-  funded out of the mandate's day like the rest of its work, and the
-  briefing says what the day has left: cost discipline lives in the
-  money the agent can see, never in narrowed affordances;
+  ledger, a stewarding item as a standing order the mandate commissions
+  (below, "A plan item is a standing order");
+- **pace itself** (set_daily_rate), **add to the pass in hand**
+  (add_to_pass_budget) and **chain passes** (continue_review): a pass
+  that has more to do adds to its own budget from the escrow, or ends and
+  runs another immediately; both are funded out of the mandate's day like
+  the rest of its work, and the briefing says what the day has left: cost
+  discipline lives in the money the agent can see, never in narrowed
+  affordances;
 - **tell the funder** (note_to_funder): what only the funder can decide
   (a move above the pass's cap, a bounty confirmation, a top-up), kept on
   the mandate and shown in the funder's chat and grant_overview;
@@ -132,12 +139,79 @@ with a budget and a mission would need:
   every lookout the mandate funds, its precision, and every flag raised
   since the last pass.
 
-Every pass is metered under a cap; the refusal duties that govern mandate
+Every pass is metered to a budget; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
 on the mandate's public page. Known gap, deliberately next: a bulk
 ingestion primitive ("ingest what this listing/feed points to") so a
 discovered index becomes a program of work in one plan item instead of an
 enumeration.
+
+### What a pass works to
+
+The payer sets it (#820). A mandate pays for its own deliberation, so the
+budget of a review pass is a figure in the mandate's operating policy,
+`review_pass_owls`, written by its Grantmaker with a reason
+(`write_operating_policy`), beside the officers' limit. While the policy
+names none the pass works to `DEFAULT_REVIEW_PASS_BUDGET_OWLS` (5, the
+figure a Curator run, an Audit run and a paid assessment work to); the
+planning pass always does. A decomposition is the exception it always
+was: its passes are paid from its Grantmaker share, half for the opening
+plan and what is left for each review. One function states all of this,
+`reviewPassBudgetMicroUsd` (src/services/action-service.ts), and every site
+that opens or reopens the row writes its figure as the row's estimate: the
+reconcile sweep, the wake on new events, and continue_review. Before, the
+row carried the public assessment price cap, a deployment constant that
+knows nothing about the mandate, and a pass spent most of it on its
+opening turn (the Grantmaker's instructions, some seventy tool schemas and
+the briefing) before it could survey or value anything.
+
+The money path is the one every self-funded row takes. `fundGrantSelfActions`
+places the budget on the row from the escrow, counted whole against the
+day's rate while the pass runs; settlement spends what the pass metered and
+frees the rest. Two things are particular to the Grantmaker's own passes:
+
+- **A pass the day or the escrow cannot fund in full starts short.** Other
+  self-funded work waits for room. A review or planning pass is started
+  with what there is, and its row's estimate lowered to that, when it is at
+  least `REVIEW_PASS_FLOOR_OWLS` (1); below the floor it waits. The reason
+  for starting short is that the pass is the only thing that can fix what
+  keeps it from running (the rate, the figure, a note to the funder). The
+  reason for the floor is that a pass started with less than its opening
+  turn costs spends it reading the briefing, decides nothing, and is opened
+  again, so the mandate would pay for nothing repeatedly. A short pass is
+  told so in its briefing with the figures: what the policy names, what it
+  was started with, where the day's rate and the escrow stand, and the
+  floor. `write_operating_policy` also says, when the figure is set, if it
+  is more than the daily rate or the uncommitted escrow.
+- **A pass can add to its own budget** (`add_to_pass_budget`): the amount is
+  placed from the mandate onto the running review row by `placeCommission`,
+  the path a granted petition takes, so the day's rate and the escrow are
+  checked under the mandate's lock and a refusal carries the figures
+  (`OVER_DAILY_RATE`, `OVER_ESCROW`); then the run's ceiling rises
+  (`creditRunBudget`). It adds to the mandate's one live placement on the
+  row, so settlement is unchanged. A decomposition's passes are not offered
+  it: the share is their bound.
+
+continue_review stays, described for what it costs: it ends the pass and
+opens another at the pass budget, which starts from the workspace and pays
+for the opening turn again. It is the right tool when a fresh context is
+worth that (a long pass whose every further turn re-reads a large
+transcript, work that divides into stages); for a pass that only needs more
+money, add_to_pass_budget does the same without the second opening turn.
+
+The briefing's budget line states the figure, whose it is (the policy's,
+with its reason, or the platform's default and why), that it is held
+against today's rate while the pass runs, that the opening turn is paid
+from it, and how to add to it (src/llm/prompts/pass-budget.ts). The line
+other agents get, that a budget is "set at the high end of what work like
+this usually costs", is true of a commission budgeted from the costing
+skill and was never true of these passes, so they do not get it.
+
+The opening turn itself is not made cheaper here. Passes are thirty
+minutes or more apart (`WAKE_AFTER_MINUTES`), past the provider's prompt
+cache, so every pass reads its prompt and tool list uncached; shrinking
+that is a matter of restructuring the prompt and the tool list, which this
+change does not attempt.
 
 ## Regrants: mandates fund mandates, as peers
 
@@ -164,6 +238,20 @@ the unspent part of allocations not yet released; then **regranted**
 and the **prize** term (below). Spent, held, regranted and prizes are its
 committed money, and the escrow less committed is what **remains**, so
 the figures add up to the escrow in every report (#849).
+
+The operations view (`get_mandate_allocation`, `allocation_report`, the
+mandate's page) breaks the last thirty days down by kind of work, and
+every allocation of the mandate's is in it: a row per kind and
+**funding**, `commissioned` for the runs an agent, a plan item or the
+funder chose and budgeted, `self_funded` for the mandate's own upkeep
+covered at its estimate (planning and review passes, lookout and
+correspondent runs, planned ingests and sweeps). The table used to show
+commissions alone, so a mandate could spend most of its day on review
+passes and lookouts and see none of it there. A run's overage counts with
+the run. What the mandate's job metered outside the ledger altogether (in
+practice the Grantmaker's chat with the funder) is in `spent` and in no
+kind's row, so the view states it on its own, `outside_ledger_owls`: it
+draws on the escrow and is not held to the daily rate.
 
 ## Lookouts: cheap standing watch
 
@@ -495,11 +583,15 @@ checks, new subclaims, reports, flags, plan items, review passes,
 lookout runs or lookout ingests per run or per day: an agent spends its budget across its
 tools as the work warrants, and a run that needs more petitions the
 mandate paying for it (below, "Petitions") and gets the answer in the
-run. What stays is short, and each item is told to the
+run; a Grantmaker's review pass, whose payer is its own mandate, adds to
+its budget itself (add_to_pass_budget) under the same checks. What stays
+is short, and each item is told to the
 agent with its reason: a turn guard far above any real run (it halts a
 loop that has stopped spending, not work), the escrow-fraction limits on
 autonomous money moves (they stand against injected text, not cost), the
-researcher's wall-clock cap (its launcher's run waits on it), and the
+researcher's wall-clock cap (its launcher's run waits on it), the floor
+below which a Grantmaker's pass is not started short (a pass that cannot
+pay for its opening turn buys nothing, and would be bought again), and the
 operator's daily circuit breakers on solver and researcher spend.
 
 ## Consistency sweeps: reading assessments against each other
@@ -837,13 +929,88 @@ kinds of payer:
   petition is later routed along. The run's own ceiling falls by the same
   amount.
 
-A row that already has a commission or is running is not paid for twice:
-the brief joins the node's inbox at no cost and the result says so.
+Work that already has a commission or is running is not paid for twice:
+the brief joins the node's inbox at no cost and the result says so. That
+is asked of the row's whole **exclusion group**, since a group is an
+exclusive set: one of its variants runs, and that run closes the others.
+A commission on a node's standard pass is the node's commission, and a
+second payer asking for the strong one is told so and charged nothing; so
+with a sweep's two readers, and so for a mandate's self-funding, which
+does not cover a variant whose sibling is already paid for or running.
+The check is made again behind a lock on the group as the money is
+placed, so payers who look at the same moment do not both pay (#849: one
+node carried a mandate's budget on both its variants, which counted twice
+against the day).
+
+A pass can be commissioned by its node (`commission` with `target`) or by
+its row (`action_id`); the two are the same act. A pass needs its node
+queued to run, so a commission by row id queues the node and reopens the
+row at that row's tier. It used to place the money on the row alone, and
+where the node was not queued the executor retired the row with the
+budget still held on it. A commission stranded that way still pays for
+the node's next pass: asking again finds it, queues the node, and charges
+nothing.
 
 A commission pins the variant its payer chose (standard or strong). A pass
 runs on the strong model where its payer judged the node contested and
 important, or a standard pass already failed to settle it. Paid orders
 (`POST /claims/:id/order`) always get the strong model.
+
+### A plan item is a standing order
+
+An `assess`, `reassess` or `deepen` item of a mandate's plan is an order
+for a Steward pass, and the mandate commissions it
+(`src/services/standing-order-service.ts`, from the plan materializer):
+whole, from its escrow and within its daily rate, at the item's
+`budget_owls` or, naming none, the row's estimate, on the item's
+`variant` (standard or strong; strong when it names none, which is what
+a plan item has always bought and what a paid order gets). The
+allocation's `commissioned_by` is `plan`, and it shows in the mandate's
+commissions like any other. Before this, an item only queued the node
+and opened its rows; nothing placed money on them, so an item read
+"open" for weeks and ran only if someone else happened to pay (#849).
+
+`commission` is now-or-refused: its caller is in a turn and reads the
+refusal. A plan item has no turn to come back in, so the mechanism keeps
+asking for it:
+
+- an order today's rate cannot cover reads `waiting`, with the budget,
+  what the day has left and the rate, and is placed by the first look that
+  finds the room. Orders are placed in plan order: once the rate has
+  turned one away, the later ones wait behind it, so the plan's order is
+  its priority and the items that have started form its opening run;
+- an order the escrow cannot cover beside the budgets held by work that
+  is waiting or running reads `waiting` too, with what is free and what is
+  held, since held budgets return what they do not spend;
+- an order that could never fit reads `blocked`, with the figures: a
+  budget above the whole daily rate, or above what the escrow could cover
+  with every held budget returned. Only its author can change that (the
+  budget, the variant, the rate, a top-up);
+- a node whose pass someone already paid for is not paid for again: the
+  item is met when that pass finishes, and nothing is posted to the node's
+  inbox on its account;
+- once placed, an order is found again on every later look and never
+  placed twice, and its brief reaches the node's inbox once.
+
+The scheduler looks at every plan with an order still in motion on each
+of its ticks (`STANDING_ORDER_RETRY_MINUTES`, 15) as well as on the full
+sweep, and a plan is materialized the moment it goes live (funded,
+approved, a decomposition's plan drafted) and at the start of every
+review pass. Every limit here is money the Grantmaker sees, and an item
+that is not running says which one and by how much.
+
+A `deepen` item is two things: the pass on its node, and a pass on each
+of the node's direct children that is waiting for one, at the same budget
+and tier under the same rate and escrow. It releases the node's deferred
+children (the stubs the importance brake held out) and orders them, most
+important first, each once per item, and looks again after the node's
+own pass has run, which is when the children that pass minted exist. It
+goes one level; deeper is another item, by the Grantmaker's judgment.
+
+When the Steward parks a node after repeated failures, the item reads
+cancelled with the failure, and its order's budget goes back to the
+escrow; so too when the pass an item asked for ran on another lane (a
+reader's order) before its own money was used.
 
 **A mandate's own upkeep is self-funded.** Its planning pass, review
 passes, lookout and correspondent runs, the ingest items its plan names,
@@ -920,7 +1087,11 @@ budget each kind of work), petitions (how to answer them), and delegation
 (what to send the Grantmaker). It carries the **officers' limit**, the most
 an officer may commit in one decision, with the reason the Grantmaker gives
 for it, which the officers are told (`DEFAULT_OFFICER_LIMIT_OWLS`, 5, when
-the policy sets none). It is stored on the mandate
+the policy sets none), and the **review-pass budget**, what each of the
+Grantmaker's own review passes works to, with its reason, which each pass
+is told (`review_pass_owls`; `DEFAULT_REVIEW_PASS_BUDGET_OWLS`, 5, when the
+policy sets none; "What a pass works to", above). Either figure can be set
+alone, leaving the prose as it is. It is stored on the mandate
 (`grants.mandate.operating_policy`), every version is kept
 (`mandate_policy_versions`), and it is shown on the mandate's page.
 
@@ -1177,20 +1348,27 @@ Design principles, in force in the implementation:
   mandate is active, waits on the review, and is done when the proposal is
   a node;
   `assess` / `reassess` / `deepen` need an active claim (or, by
-  `claim_ref`, the proposal that will become one), queue it for its
-  Steward and open its assess group once per item (a finished pass stays
-  finished, whichever lane ran it: the mandate's direct steward lane closes
-  the row it ran, and a pass that ran elsewhere while the row sat open
-  reads done from the assessment's date; an `assess` item on a claim that
-  already carries an assessment reads done, `reassess` being the ask for a
-  fresh pass; `deepen` also releases the claim's deferred subclaims; a row
-  retired because the claim parked as `error` reads cancelled with the
-  park's own failure named, since another item would be retired the same
-  way — the park is reported to maintainers instead (#834), and the item
-  opens a fresh row once it clears);
+  `claim_ref`, the proposal that will become one, and are commissioned
+  once it is a node) and are standing orders the mandate commissions,
+  once per item ("A plan item is a standing order", above: `open` is a
+  pass paid for and waiting its turn, `waiting` an order the rate or the
+  escrow has no room for yet, `blocked` one that could never fit; a
+  finished pass stays finished, whoever paid for it: a pass that ran
+  elsewhere while the row sat open reads done from the assessment's date;
+  an `assess` item on a claim that already carries an assessment reads
+  done, `reassess` being the ask for a fresh pass; `deepen` also releases
+  the claim's deferred subclaims and orders a pass on each; a row retired
+  because the claim parked as `error` reads cancelled with the class
+  of the park's failure named (never its raw text, #846) and the order's
+  budget returned, since another item would
+  be retired the same way — the park is reported to maintainers instead
+  (#834), a commission on the node buys another attempt, and the item
+  orders a fresh pass once the park clears);
   `ingest` needs a url and executes in plan order, one group per url and
   focus (an ingest item the cursor passed before its row ran stays funded
-  and reads from its row);
+  and reads from its row; the cursor marks the plan's started prefix, the
+  items `adjust_plan` keeps, and moves past the last item whose work has
+  run, is running, or has the mandate's commission on it);
   `formalize` needs an active claim with no
   published statement whose recorded domains carry the Steward's
   `publish_formalization` tool, else it is blocked (a run would be
@@ -1213,6 +1391,30 @@ Design principles, in force in the implementation:
   it never touches importance or an assessment.
 
 Direct `POST /grants` creation remains for service/operator tooling only.
+A mandate made there under the mechanical `deepen` policy has no plan and
+no Grantmaker judgment in it: its work is a pass on every node in its
+scope that is waiting for one, the queued before the deferred, the most
+important first. Those passes are commissions from the mandate too, on
+the strong tier, within its rate and escrow, placed by the scheduler
+(`src/services/mandate-lifecycle-service.ts`); when the scope has none
+left and none of its money is on live work it completes and refunds,
+unless a bounty is held against its escrow.
+
+**There is no direct steward lane.** A plan's claim items and `deepen`
+mandates used to run on a lane of their own (`workers/grant-pipeline.ts`):
+Steward passes started straight from the plan, metered to the mandate's
+job with no allocation, given the whole uncommitted escrow as their
+budget, and never held to the daily rate. That is how a mandate with a
+rate of 25 owls a day could show 48 allocated in one (#849). Every pass a
+mandate pays for is now a commission, so it has a budget its payer chose,
+counts against the rate while it runs, and appears in the ledger and the
+operations view. What the lane did besides running passes moved with it:
+finishing a mandate no agent ends (a `deepen` mandate with nothing left
+in scope; a decomposition whose Grantmaker share is spent and whose plan
+has no item in motion) and pausing one whose escrow is spent
+(`mandate-lifecycle-service.ts`, on the scheduler's tick). The pause now
+counts only money that is gone (spent, regranted, held for prizes), never
+budgets held by live work, which return what they do not spend.
 
 ## Who funds a mandate
 
@@ -1252,14 +1454,20 @@ is a mandate, funded and started in one step
   it, so it is neutral by construction.
 - **Paying is the approval.** Its Grantmaker drafts the plan, which always
   opens with the pass on the claim, and the plan runs at once on the
-  ledger.
+  ledger: each item's pass is commissioned from the escrow as the plan is
+  drafted, like any plan's standing orders. It has no daily rate, so the
+  escrow is the bound, and an order waits while earlier passes hold the
+  escrow and is placed as they settle.
 - **The Grantmaker gets a tenth.** Its own passes (planning, and the
   reviews that pick up the subclaims each pass mints) share 10% of the
   budget (`mandate.grantmaker_share_owls`), each pass budgeted from what
   is left of the share and told so; planning takes half. No review opens
   once the share is spent.
-- **It finishes.** When the share is spent and none of its work is still
-  open or running on the ledger, it completes and the rest refunds.
+- **It finishes.** When the share is spent, no item of its plan is still
+  in motion (waiting, commissioned or running) and none of its work is
+  open or running on the ledger, it completes and the rest refunds. An
+  order the escrow could no longer cover is blocked, not in motion: a
+  decomposition that has bought all the passes its money reaches is done.
 - **Its funder is "a reader".** Buying depth on one claim declares no
   stake in it.
 - **The floor is money.** Below 5 owls the Grantmaker's tenth could not pay
@@ -1508,7 +1716,9 @@ and legitimate — but the unit economics must stay visible
 4. Every money number (caps, budgets, commissions, spend, decisions and
    their reasons) is inspectable by anyone.
 5. Bounded spending everywhere: escrows, daily rates and per-run budgets
-   bound what runs, so a producer may raise candidates freely (flags,
+   bound what runs (every pass a mandate pays for is a commission or its
+   own covered upkeep, on the ledger and inside its rate; no lane spends
+   a mandate's money beside it), so a producer may raise candidates freely (flags,
    curation requests, reassessments, plan items) without cascading
    spend. Money, not a count, is the bound wherever money can be.
 5a. An agent is told every constraint it works under, before it starts

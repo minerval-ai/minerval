@@ -228,7 +228,8 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
         success: true,
         message:
           `That node already has a pass commissioned or underway (${res.ageMinutes} minutes ago). Your brief ` +
-          `went to its inbox instead, at no cost. Commission again after it finishes if it doesn't cover what you need.`,
+          `went to its inbox instead, at no cost. Commission again after it finishes if it doesn't cover what you need.` +
+          (res.parked ? ` ${res.parked.note}` : ""),
       });
     }
     debitRunBudget(budget);
@@ -238,7 +239,8 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
       message:
         `Commissioned a ${res.tier} pass on ${String(input.target)} with a budget of ${owls(budget)} owls from your budget` +
         (after !== null ? `; you have ${owls(after)} left` : "") +
-        `. It runs on its own; its outcome is recorded on the node.`,
+        `. It runs on its own; its outcome is recorded on the node.` +
+        (res.parked ? ` ${res.parked.note}` : ""),
     });
   }
 

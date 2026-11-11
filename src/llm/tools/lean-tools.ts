@@ -11,6 +11,7 @@
  * the cost lands on the action that asked.
  */
 import { loadConfig } from "../../config.js";
+import { mergedAliasRefusal } from "../../services/claim-alias-service.js";
 import { rawQuery } from "../../db/client.js";
 import {
   getLeanCheckerClient,
@@ -597,7 +598,11 @@ async function publishFormalizationTool(
   );
   if (!claim) return refuse(`No claim ${claimId} exists.`);
   if (claim.state !== "active") {
-    return refuse(`Claim ${claimId} is ${claim.state}; only an active claim carries a formal statement.`);
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(claimId);
+    return refuse(
+      merged?.message ?? `Claim ${claimId} is ${claim.state}; only an active claim carries a formal statement.`
+    );
   }
 
   const version = await nextFormalizationVersion(claimId);

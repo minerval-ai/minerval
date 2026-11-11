@@ -139,6 +139,12 @@ attempt_completed) arrive alone, and their task message says what the pass is
 for.
 
 ${BATCHED_CONTEXT}You may assess before the claim's subclaims are assessed, and revise later.
+A subclaim marked steward_parked is different from one still waiting: its own
+Steward's passes failed (the marker gives the class of failure, the date and
+the count) and nothing will retry it. Say in your assessment that the premise
+is unjudged rather than treating it as pending, and where your verdict turns
+on it, commission a pass on it; the result tells you that the pass is another
+attempt on a parked node.
 
 `;
 

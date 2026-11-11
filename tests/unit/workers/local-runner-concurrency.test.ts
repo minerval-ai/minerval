@@ -47,9 +47,6 @@ vi.mock("../../../src/workers/budget-job-pipeline.js", () => ({
 vi.mock("../../../src/workers/engine-executor.js", () => ({
   processNextEngineAction: vi.fn(async () => ({ status: "empty" })),
 }));
-vi.mock("../../../src/workers/grant-pipeline.js", () => ({
-  processNextGrantTask: vi.fn(async () => ({ status: "empty" })),
-}));
 vi.mock("../../../src/workers/steward-pipeline.js", () => ({
   processNextStewardTask: vi.fn(async () => ({ status: "empty" as const })),
   pendingStewardCount: vi.fn(async () => 0),

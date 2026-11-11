@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 27407,
-    "fullChars": 120404,
+    "roleChars": 27821,
+    "fullChars": 120818,
     "skills": [
       {
         "name": "costing",
@@ -164,8 +164,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 10908,
-    "fullChars": 103905,
+    "roleChars": 12122,
+    "fullChars": 105119,
     "skills": [
       {
         "name": "costing",
@@ -316,8 +316,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.2",
     "hasConstitution": true,
-    "roleChars": 18884,
-    "fullChars": 111881,
+    "roleChars": 20565,
+    "fullChars": 113562,
     "skills": [
       {
         "name": "costing",

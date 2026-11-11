@@ -11,6 +11,7 @@
  *    enqueues the parent's Steward to adopt it.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
 import { ZodError } from "zod";
 import {
@@ -46,7 +47,7 @@ import {
 import { claimTypeEnum } from "../../schemas/common.js";
 import { NODE_KINDS, type QuantityDefinitionInput } from "../../schemas/kinds.js";
 import { knownDomains } from "../prompts/skills.js";
-import { DEFINITION_PROPERTIES } from "./kind-tools.js";
+import { DEFINITION_PROPERTIES, ESTIMATE_SCHEMA } from "./kind-tools.js";
 
 const RELATION_ENUM = RELATION_TYPES;
 const CLAIM_TYPES = claimTypeEnum.options;
@@ -235,15 +236,57 @@ export function getCuratorToolDefinitions(): Tool[] {
     {
       name: "reassign_instance",
       description:
-        "Move a source instance from its current claim to another. Used when " +
-        "redistributing instances across the two claims of a split.",
+        "Put a source's passage on the node it is about (a claim, a quantity or a " +
+        "question): the one operation for redistributing instances in a split (§4, §5). " +
+        "By default the instance moves. With copy, it stays where it is and a second " +
+        "instance of the same passage (same source, text, context, speaker, date) is " +
+        "recorded on the target: for a passage that states several nodes' content, " +
+        "such as one sentence giving four figures, copied to each node with what it " +
+        "says about that node. A copy starts unread: the readings and provenance " +
+        "recorded on the original stay with it. The stance is read into the target's " +
+        "kind (a claim's instance on a question asks it). A claim target takes " +
+        "stance_relation; a quantity target needs stated; a question target may take " +
+        "answer_claim_id. A move drops the instance's argument, answer and page " +
+        "position, which belonged to the old node. A copy onto a claim that already " +
+        "has an instance from the same source and speaker is refused, naming it; a " +
+        "quantity holds each figure a source gives. Logged with your reasoning and " +
+        "reversible: returns the event_id that reverse_reconciliation takes, which " +
+        "puts a moved instance back as it was and detaches a copy.",
       input_schema: {
         type: "object" as const,
         properties: {
-          instance_id: { type: "string", description: "The instance UUID to move" },
-          to_claim_id: { type: "string", description: "The claim to move it to" },
+          instance_id: { type: "string", description: "The instance UUID to move or copy" },
+          to_claim_id: { type: "string", description: "The node (claim, quantity or question) it belongs on" },
+          copy: {
+            type: "boolean",
+            description:
+              "true to leave the instance where it is and record the same passage on the target as well. Default false (move).",
+          },
+          stance_relation: {
+            type: "string",
+            enum: ["same", "opposed"],
+            description:
+              "For a claim target. 'opposed' when the target is worded as the denial of " +
+              "what the instance was recorded against, so the source that affirmed the " +
+              "one denies the other: affirms and denies flip, poses and mentions stay. " +
+              "Default 'same'. Refused on a quantity or a question.",
+          },
+          stated: {
+            ...ESTIMATE_SCHEMA,
+            description:
+              "Required for a quantity target: the figure this passage states for that " +
+              "quantity, as the source gives it, never your own estimate. Its Steward can " +
+              "correct it with record_estimate. " +
+              ESTIMATE_SCHEMA.description,
+          },
+          answer_claim_id: {
+            type: "string",
+            description:
+              "For a question target, optional: the node in its answer set that this passage gives as its answer.",
+          },
+          reasoning: { type: "string", description: "Why the passage belongs on that node, and what it says about it" },
         },
-        required: ["instance_id", "to_claim_id"],
+        required: ["instance_id", "to_claim_id", "reasoning"],
       },
     },
     {
@@ -394,11 +437,33 @@ export function getCuratorToolDefinitions(): Tool[] {
   ];
 }
 
+/**
+ * The Curator's operations that write onto a node it names, with the input
+ * fields that carry the ids: checked for merged nodes before the write
+ * (#884). Merging into an absorbed node would hang a chain off a dead row,
+ * and an edge, a link or an instance placed on one would never be read.
+ * Removals and reversals are left alone: they take things off, by record.
+ */
+const MERGED_TARGET_KEYS: Record<string, readonly string[]> = {
+  merge_claims: ["survivor_id", "loser_id"],
+  complete_quantity_definition: ["claim_id"],
+  reclassify_claim: ["claim_id"],
+  add_relationship_edge: ["parent_id", "child_id"],
+  reassign_instance: ["to_claim_id"],
+  link_claims: ["claim_id", "other_claim_id"],
+  suggest_edge_to_steward: ["parent_id", "child_id"],
+};
+
 export async function executeCuratorTool(
   toolName: string,
   input: Record<string, unknown>
 ): Promise<string> {
   try {
+    const mergedKeys = MERGED_TARGET_KEYS[toolName];
+    if (mergedKeys) {
+      const merged = await mergedInputRefusal(input, mergedKeys);
+      if (merged) return JSON.stringify({ success: false, message: merged });
+    }
     switch (toolName) {
       case "merge_claims": {
         // Strict on purpose (#182): 'opposed' flips every moved stance, so a
@@ -634,11 +699,54 @@ export async function executeCuratorTool(
       }
 
       case "reassign_instance": {
-        const { reassigned, eventId } = await reassignInstance({
+        const reasoning = String(input.reasoning ?? "").trim();
+        if (!reasoning) {
+          return JSON.stringify({
+            success: false,
+            reassigned: false,
+            message: "Say why the passage belongs on that node (reasoning). Nothing was changed.",
+          });
+        }
+        const relation = input.stance_relation === undefined ? "same" : String(input.stance_relation);
+        if (relation !== "same" && relation !== "opposed") {
+          return JSON.stringify({
+            success: false,
+            reassigned: false,
+            message: `stance_relation must be "same" or "opposed"; got "${relation}". Nothing was changed.`,
+          });
+        }
+        const answerClaimId =
+          typeof input.answer_claim_id === "string" && input.answer_claim_id.trim()
+            ? input.answer_claim_id.trim()
+            : null;
+        const result = await reassignInstance({
           instanceId: String(input.instance_id),
           toClaimId: String(input.to_claim_id),
+          copy: input.copy === true,
+          reasoning,
+          stanceRelation: relation,
+          stated: input.stated,
+          answerClaimId,
         });
-        return JSON.stringify({ success: reassigned, reassigned, ...(eventId ? { event_id: eventId } : {}) });
+        if (!result.reassigned) {
+          return JSON.stringify({
+            success: false,
+            reassigned: false,
+            message: `Nothing was changed: ${result.reason ?? "the instance could not be reassigned"}.`,
+          });
+        }
+        return JSON.stringify({
+          success: true,
+          reassigned: true,
+          mode: result.mode,
+          instance_id: result.instanceId,
+          stance: result.stance,
+          message:
+            result.mode === "copy"
+              ? `Copied the passage onto ${String(input.to_claim_id)} as instance ${result.instanceId} (stance: ${result.stance}); the original stays where it was. The copy has no reading yet.`
+              : `Moved the instance to ${String(input.to_claim_id)} (stance: ${result.stance}).`,
+          ...(result.eventId ? { event_id: result.eventId } : {}),
+        });
       }
 
       case "link_claims": {

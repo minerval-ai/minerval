@@ -25,6 +25,11 @@
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import {
+  STEWARD_ERROR_REASON_LABELS,
+  stewardErrorReasonOf,
+  type StewardErrorReason,
+} from "./steward-park-reason.js";
+import {
   cascadeSeries,
   classifyMonotonicity,
   mergeAgentRollups,
@@ -312,7 +317,8 @@ SELECT ru.day,
  ORDER BY created_at DESC
  LIMIT $1::int`,
 
-  queue_error_parked: `SELECT id, text, importance, steward_error, steward_attempts, stewarded_at
+  queue_error_parked: `SELECT id, text, importance, COALESCE(steward_error_reason, 'other') AS reason,
+       steward_attempts, stewarded_at
   FROM claims
  WHERE state = 'active' AND steward_state = 'error'
  ORDER BY importance DESC, stewarded_at DESC NULLS LAST
@@ -597,7 +603,12 @@ export interface QueueHealthReport {
   states: { pending: number; running: number; done: number; error: number; deferred: number };
   oldestPending: { claimId: string; text: string; importance: number; enqueuedAt: string; ageSeconds: number } | null;
   snapshots: SnapshotTrend;
-  errorParked: Array<{ claimId: string; text: string; importance: number; error: string | null; attempts: number; stewardedAt: string | null }>;
+  /**
+   * `reason` is the public class of the failure (steward-park-reason.ts),
+   * never the raw error text, which can name internal hosts, roles and
+   * request ids and stays in logs and the service-scoped report (#846).
+   */
+  errorParked: Array<{ claimId: string; text: string; importance: number; reason: StewardErrorReason; reasonLabel: string; attempts: number; stewardedAt: string | null }>;
 }
 
 /**
@@ -611,7 +622,7 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
     rawQuery<{ steward_state: string; n: number }>(MONITOR_SQL.queue_states),
     rawQuery<{ id: string; text: string; importance: number; enqueued_at: Date; age_seconds: number }>(MONITOR_SQL.queue_oldest_pending),
     rawQuery<{ period_key: string | null; steward_pending: number; created_at: Date }>(MONITOR_SQL.queue_snapshots, [t.snapshotPoints]),
-    rawQuery<{ id: string; text: string; importance: number; steward_error: string | null; steward_attempts: number; stewarded_at: Date | null }>(
+    rawQuery<{ id: string; text: string; importance: number; reason: string; steward_attempts: number; stewarded_at: Date | null }>(
       MONITOR_SQL.queue_error_parked,
       [t.limit]
     ),
@@ -622,7 +633,7 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
   return {
     signal: "queue_health",
     description:
-      "Steward lane by state, oldest pending age, queue-depth snapshot trend, and error-parked claims.",
+      "Steward lane by state, oldest pending age, queue-depth snapshot trend, and error-parked claims with the class of their failure.",
     thresholds: { snapshotPoints: t.snapshotPoints, limit: t.limit },
     states: counts,
     oldestPending: o
@@ -635,7 +646,8 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
       claimId: p.id,
       text: p.text,
       importance: p.importance,
-      error: p.steward_error,
+      reason: stewardErrorReasonOf(p.reason),
+      reasonLabel: STEWARD_ERROR_REASON_LABELS[stewardErrorReasonOf(p.reason)],
       attempts: p.steward_attempts,
       stewardedAt: iso(p.stewarded_at),
     })),

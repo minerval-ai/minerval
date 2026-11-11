@@ -10,12 +10,13 @@ import {
   ASSESS_GROUP,
   actionBudgetMicroUsd,
   completeAction,
+  reconcileActions,
 } from "../../src/services/action-service.js";
-import { commissionNodePass, grantDayUseMicroUsd } from "../../src/services/commission-service.js";
+import { commissionAction, commissionNodePass, grantDayUseMicroUsd } from "../../src/services/commission-service.js";
 import { grantCommittedMicroUsd } from "../../src/services/regrant-service.js";
 import { executeNotifySteward } from "../../src/llm/tools/notify-steward.js";
 import { withPassBudget } from "../../src/llm/usage-context.js";
-import { OWL, creditOwls, owlBalance, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, creditOwls, owlBalance, seedAction, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 async function standardRow(claimId: string): Promise<{ id: string; cost: number }> {
   const [r] = await rawQuery<{ id: string; cost: string }>(
@@ -94,6 +95,52 @@ describe("commissions", () => {
     expect(n!.n).toBe(1);
     const bodies = await rawQuery<{ body: string }>(`SELECT body FROM node_messages WHERE node_id = $1 ORDER BY created_at`, [claim]);
     expect(bodies.map((r) => r.body)).toEqual(["first", "second"]);
+  });
+
+  it("queues the node when a pass is commissioned by its row's id, so the money is never left on a row nothing runs (#849)", async () => {
+    const funder = await seedUser("by-id funder");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
+    // An assessed node that is not queued: its row stands open until the
+    // sweep retires it, and an officer may be handed its id meanwhile.
+    const claim = await seedClaim("by id");
+    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
+    const row = await seedAction({ group: ASSESS_GROUP(claim), claimId: claim, costMicroUsd: OWL });
+    const res = await commissionAction({
+      payer: { kind: "grant", grantId },
+      actionId: row,
+      budgetMicroUsd: 2 * OWL,
+      brief: "The 2023 replication.",
+      commissionedBy: "program_officer",
+    });
+    expect(res).toMatchObject({ ok: true, status: "commissioned", kind: "assess" });
+    const [c] = await rawQuery<{ steward_state: string }>(`SELECT steward_state FROM claims WHERE id = $1`, [claim]);
+    expect(c!.steward_state).toBe("pending");
+    const [m] = await rawQuery<{ body: string; paid: boolean }>(`SELECT body, paid FROM node_messages WHERE node_id = $1`, [claim]);
+    expect(m).toEqual({ body: "The 2023 replication.", paid: true });
+    // The sweep that used to retire the row and strand the money leaves it.
+    await reconcileActions();
+    const [a] = await rawQuery<{ status: string }>(`SELECT status FROM actions WHERE id = $1`, [row]);
+    expect(a!.status).toBe("open");
+
+    // A row the sweep already retired is the same ask.
+    const stale = await seedClaim("by id, retired");
+    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [stale]);
+    const retired = await seedAction({ group: ASSESS_GROUP(stale), claimId: stale, costMicroUsd: OWL, status: "cancelled" });
+    const second = await commissionAction({ payer: { kind: "grant", grantId }, actionId: retired, budgetMicroUsd: OWL, commissionedBy: "program_officer" });
+    expect(second).toMatchObject({ ok: true, status: "commissioned" });
+    const [a2] = await rawQuery<{ status: string }>(`SELECT status FROM actions WHERE id = $1`, [retired]);
+    expect(a2!.status).toBe("open");
+
+    // A commission stranded on a retired group (placed before this fix)
+    // pays for the node's next pass: asking again queues the node, at no cost.
+    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [stale]);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE exclusion_group = $1`, [ASSESS_GROUP(stale)]);
+    const third = await commissionNodePass({ payer: { kind: "grant", grantId }, claimId: stale, budgetMicroUsd: OWL, brief: "again", commissionedBy: "program_officer" });
+    expect(third).toMatchObject({ ok: true, status: "already_commissioned" });
+    const [c3] = await rawQuery<{ steward_state: string }>(`SELECT steward_state FROM claims WHERE id = $1`, [stale]);
+    expect(c3!.steward_state).toBe("pending");
+    const live = await rawQuery(`SELECT 1 FROM action_allocations WHERE exclusion_group = $1 AND released_at IS NULL`, [ASSESS_GROUP(stale)]);
+    expect(live).toHaveLength(1);
   });
 
   it("lets a running agent pay from its own budget, keeping the mandate as payer and recording the chain", async () => {

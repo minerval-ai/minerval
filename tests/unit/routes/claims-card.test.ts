@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
 
 // The claims route module pulls in the whole read stack; stub the service
 // imports so registering the routes needs no database.
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal)
+);
 vi.mock("../../../src/services/claim-service.js", () => ({
   getClaimById: vi.fn(),
   listClaims: mocks.listClaims,
@@ -110,6 +114,7 @@ const CARD_KEYS = [
   "assessed_at",
   "updated_at",
   "page_url",
+  "resolved_from",
 ];
 
 beforeEach(() => {
@@ -137,6 +142,7 @@ describe("GET /claims/:claim_id/card", () => {
       assessed_at: "2026-09-30T12:00:00.000Z",
       updated_at: "2026-10-02T08:00:00.000Z",
       page_url: `https://minerval.ai/claims/${A}`,
+      resolved_from: null,
     });
     expect(Object.keys(res.json())).toEqual(CARD_KEYS);
   });

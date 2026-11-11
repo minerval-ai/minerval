@@ -18,6 +18,7 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { resolveClaimId, type ResolvedFrom } from "./claim-alias-service.js";
 
 /**
  * The most ids one batch read takes: the list route's largest page. A
@@ -65,6 +66,14 @@ export interface ClaimCard {
   updated_at: string;
   /** The node's public page. */
   page_url: string;
+  /**
+   * Null unless the id asked for was merged into another node (#884): then
+   * the card is the survivor's, under the survivor's id, and this says
+   * which id was asked, its wording, how it stood to the survivor
+   * (`stance_relation`: after an `opposed` merge the judgment shown is of
+   * the opposite of what the id stated) and when it was merged.
+   */
+  resolved_from: ResolvedFrom | null;
 }
 
 interface CardRow {
@@ -105,18 +114,39 @@ function toCard(row: CardRow): ClaimCard {
     assessed_at: row.assessed_at ? iso(row.assessed_at) : null,
     updated_at: iso(row.updated_at),
     page_url: claimPageUrl(row.id),
+    resolved_from: null,
   };
 }
 
 /**
- * Cards for the given node ids, in one query, keyed by id. An id the graph
- * does not hold is simply not in the map: the caller decides how to say so.
+ * Cards for the given node ids, keyed by the id asked. An id the graph does
+ * not hold is simply not in the map: the caller decides how to say so. An
+ * id that was merged into another node answers, under the id asked, with
+ * its survivor's card and `resolved_from` (#884). Aliases are rare, so each
+ * costs its own resolution rather than widening the one query every read
+ * pays for.
+ */
+export async function getClaimCards(ids: string[]): Promise<Map<string, ClaimCard>> {
+  const cards = await readCards(ids);
+  for (const [id, card] of cards) {
+    if (card.state !== "merged") continue;
+    const resolution = await resolveClaimId(id);
+    if (!resolution?.resolvedFrom) continue;
+    const survivor =
+      cards.get(resolution.id) ?? (await readCards([resolution.id])).get(resolution.id);
+    if (survivor) cards.set(id, { ...survivor, resolved_from: resolution.resolvedFrom });
+  }
+  return cards;
+}
+
+/**
+ * The rows' own cards, in one query however many are asked for.
  *
  * Each kind's judgment is read from the table that kind keeps (`assessments`
  * holds verdicts on propositions only), at most one current row each by
  * partial unique index, so the joins never multiply a node.
  */
-export async function getClaimCards(ids: string[]): Promise<Map<string, ClaimCard>> {
+async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
   if (ids.length === 0) return new Map();
   const rows = await rawQuery<CardRow>(
     `SELECT c.id, c.kind, c.text, c.state, c.contestation, c.updated_at,

@@ -31,7 +31,8 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { runBudget, withAgent, withSkills } from "../usage-context.js";
+import { planningPassBudgetBasis } from "../prompts/pass-budget.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -59,7 +60,7 @@ import {
   type PlanItem,
 } from "../../services/grant-service.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
-import { microUsdToOwls } from "../../services/owl.js";
+import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { grantmakerShareLeftMicroUsd } from "../../services/action-service.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
@@ -230,7 +231,15 @@ async function runGrantorImpl(input: {
     `workspace, then call submit_plan with the items in execution order: as ` +
     `many as the escrow and the mission warrant, since the review passes ` +
     `can grow the program later.\n\n` +
-    turnBudgetLine(PLANNING_MAX_TURNS);
+    turnBudgetLine(PLANNING_MAX_TURNS, {
+      basis: planningPassBudgetBasis({
+        ceilingMicroUsd: runBudget()?.ceilingMicroUsd ?? null,
+        defaultMicroUsd: owlsToMicroUsd(config.defaultReviewPassBudgetOwls ?? 5),
+        fromShare: shareOwls > 0,
+        floorOwls: config.reviewPassFloorOwls ?? 1,
+        escrowMicroUsd: Number(grant.budget_micro_usd),
+      }),
+    });
 
   let plan: GrantorPlan | null = null;
 

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { loadClaim, loadClaimEvents } from "@/lib/data";
+import { mergedRedirectPath } from "@/lib/merged";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { ClaimTimeline, summarizeEvents } from "@/components/claim/ClaimTimeline";
 import styles from "@/components/claim/timeline.module.css";
@@ -37,6 +39,9 @@ export default async function ClaimHistoryPage({
     loadClaim(id),
     loadClaimEvents(id),
   ]);
+  // A merged claim's history address leads to its survivor's (#884).
+  const survivorPath = mergedRedirectPath(detail, id, "/history");
+  if (survivorPath) redirect(survivorPath);
 
   if (!detail) {
     return (

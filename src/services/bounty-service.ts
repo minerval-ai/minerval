@@ -49,6 +49,7 @@ import {
   reserveActionPredicateSql,
 } from "./prize-commitment.js";
 import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export { HOLDING_BOUNTY_STATUSES, PRIZE_RESERVE_JOB_KIND, isHoldingBountyStatus };
 
@@ -399,7 +400,9 @@ export async function bindableFormalization(
     [claimId]
   );
   if (!claim || claim.state !== "active") {
-    return { ok: false, code: "CLAIM_NOT_FOUND", message: "claim not found or not active" };
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(claimId);
+    return { ok: false, code: "CLAIM_NOT_FOUND", message: merged?.message ?? "claim not found or not active" };
   }
   const [f] = await r.query<{ id: string; review_period_ends_at: Date | null }>(
     `SELECT id, review_period_ends_at FROM claim_formalizations

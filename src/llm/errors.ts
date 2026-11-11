@@ -45,7 +45,7 @@ export class LlmBudgetExceededError extends Error {
  * every Steward call. The pipeline treated that transient billing outage as a
  * permanent poison-claim failure and parked 81 of 142 claims as `error`, and
  * nothing re-drove them once credit was restored. These failures — billing/credit
- * lapses, rate limits, overloads, 5xx, and network drops — are exactly as
+ * lapses, rejected credentials, rate limits, overloads, 5xx, and network drops — are exactly as
  * transient as the internal budget tracker's `LlmBudgetExceededError` and must be
  * requeued, not parked.
  *
@@ -59,10 +59,21 @@ export function isTransientApiError(err: unknown): boolean {
   // HTTP status carried by Anthropic.APIError (and most fetch-layer errors).
   const status = (err as { status?: unknown })?.status;
   if (typeof status === "number") {
-    // 402/403 credit & billing, 408 timeout, 409 conflict, 429 rate limit,
-    // 5xx server errors, 529 overloaded — all retryable. 400/401/404/422 are
-    // genuine request errors and are NOT retried here.
+    // 401 credentials, 402/403 credit & billing, 408 timeout, 409 conflict,
+    // 429 rate limit, 5xx server errors, 529 overloaded — all retryable.
+    // 400/404/422 are genuine request errors and are NOT retried here.
+    //
+    // 401 (#846): a rejected API key is the deployment's fault, never the
+    // work's. One 30-second credential outage parked 103 claims as 'error'
+    // while this read 401 as genuine. Nothing here can loop on it: a 401 is
+    // answered before any tokens are billed, and the first transient failure
+    // in a Steward lane or the engine executor ends that drain, after which
+    // the runner backs off (RunnerGovernor, local-runner.ts: 5 s doubling
+    // to 5 minutes, concurrency halved toward one) until a drain ends
+    // cleanly. So bad credentials cost one free call per backoff, and no
+    // claim is parked for them.
     if (
+      status === 401 ||
       status === 402 ||
       status === 403 ||
       status === 408 ||
@@ -79,6 +90,7 @@ export function isTransientApiError(err: unknown): boolean {
   if (typeof name === "string") {
     // SDK connection/timeout error classes carry no numeric status.
     if (
+      name === "AuthenticationError" ||
       name === "APIConnectionError" ||
       name === "APIConnectionTimeoutError" ||
       name === "InternalServerError" ||
@@ -98,6 +110,12 @@ export function isTransientApiError(err: unknown): boolean {
     message.includes("credit balance") ||
     message.includes("billing") ||
     message.includes("insufficient_quota") ||
+    // A rejected credential (#846), as the provider words it in the error
+    // body; the stored text of a park carries no status to read.
+    message.includes("authentication_error") ||
+    message.includes("invalid x-api-key") ||
+    message.includes("api key is invalid") ||
+    message.includes("invalid api key") ||
     message.includes("rate limit") ||
     message.includes("rate_limit") ||
     message.includes("overloaded") ||

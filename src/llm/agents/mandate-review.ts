@@ -31,7 +31,9 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { getUsageContext, runBudget, withAgent, withSkills } from "../usage-context.js";
+import { reviewPassBudgetBasis } from "../prompts/pass-budget.js";
+import { reviewPassBudget, type OperatingPolicy } from "../../services/operating-policy-service.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
@@ -67,8 +69,9 @@ import { createResearchTools } from "../tools/research-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
 import {
+  REVIEW_GROUP,
   grantmakerShareLeftMicroUsd,
-  materializeOpenProposals,
+  materializeLivePlan,
   materializePlanItems,
 } from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
@@ -129,6 +132,79 @@ export interface MandateReviewResult {
   continueRequested: boolean;
 }
 
+/**
+ * add_to_pass_budget: more of the mandate's own escrow onto the review row
+ * this pass is running on, through placeCommission, the path a granted
+ * petition takes (petition-service.ts), so the day's rate and the escrow
+ * are checked under the mandate's lock and a refusal carries the figures.
+ * The run's ceiling rises by what was placed, and the row settles as it
+ * always does: what the pass metered is spent, the rest is freed.
+ */
+export async function addToPassBudget(
+  grantId: string,
+  input: Record<string, unknown>,
+  fromShare: boolean
+): Promise<string> {
+  if (fromShare) {
+    return JSON.stringify({
+      success: false,
+      problem: "This mandate's passes are paid from its Grantmaker share, which is their bound; there is no adding to it.",
+    });
+  }
+  const askedOwls = Number(input.owls);
+  const reason = String(input.reason ?? "").trim();
+  if (!Number.isFinite(askedOwls) || !(askedOwls > 0)) {
+    return JSON.stringify({ success: false, problem: "owls must be a number above zero." });
+  }
+  if (!reason) return JSON.stringify({ success: false, problem: "reason is required: it is recorded with the money." });
+  const budget = getUsageContext().passBudget;
+  const actionId = budget?.funding?.actionId;
+  if (!budget || !actionId) {
+    return JSON.stringify({
+      success: false,
+      problem: "This pass is not running on a ledger row with a budget, so there is nothing to add to.",
+    });
+  }
+  const micro = owlsToMicroUsd(askedOwls);
+  const { placeCommission } = await import("../../services/commission-service.js");
+  const { creditRunBudget } = await import("../run-funding.js");
+  const placed = await placeCommission({
+    group: REVIEW_GROUP(grantId),
+    actionId,
+    claimId: null,
+    payer: { kind: "grant", grantId },
+    budget: micro,
+    commissionedBy: "review_pass",
+    brief: null,
+    reason,
+  });
+  if (!placed.ok) {
+    return JSON.stringify({
+      success: false,
+      code: placed.code,
+      problem:
+        placed.message +
+        (placed.code === "OVER_DAILY_RATE"
+          ? " Ask for what is left, or raise the rate with set_daily_rate if the mission warrants it."
+          : placed.code === "OVER_ESCROW"
+            ? " Ask for what is left; more escrow is the funder's to add (note_to_funder)."
+            : ""),
+    });
+  }
+  creditRunBudget(micro);
+  const left = Math.max(0, budget.microUsd - budget.meter.billedMicroUsd);
+  return JSON.stringify({
+    success: true,
+    added_owls: microUsdToOwls(micro),
+    budget_owls: microUsdToOwls(budget.microUsd),
+    left_owls: microUsdToOwls(left),
+    note:
+      `Added. This pass's budget is now ${microUsdToOwls(budget.microUsd)} owls, with ` +
+      `${microUsdToOwls(left)} left; the addition is held against today's rate like the rest, and what you ` +
+      `do not spend is freed when the pass ends.`,
+  });
+}
+
 export function runMandateReview(
   input: Parameters<typeof runMandateReviewImpl>[0]
 ): ReturnType<typeof runMandateReviewImpl> {
@@ -143,9 +219,10 @@ async function runMandateReviewImpl(input: {
   // Anchors the two-pass closure rule: a close request is only
   // confirmable by a pass that STARTED after it was recorded.
   const passStartedAt = new Date();
-  // A plan's proposals (#656) are brought up to date before the plan is
-  // read: a decided proposal is what woke this pass.
-  await materializeOpenProposals(input.grantId);
+  // The plan is brought up to date before it is read: a decided proposal
+  // (#656) may be what woke this pass, and a standing order that was
+  // waiting for room (#849) is asked for again.
+  await materializeLivePlan(input.grantId);
   const [grant] = await rawQuery<{
     id: string;
     name: string;
@@ -211,6 +288,8 @@ async function runMandateReviewImpl(input: {
   // (§19); delegate_research and fund_request refuse past the uncommitted
   // budget, and the move caps below are for money leaving the mandate.
   const researchTools = createResearchTools({ requestedBy: "grantmaker", grantId: grant.id });
+  // A decomposition's Grantmaker share, in owls (0 for every other mandate).
+  const shareOwls = Number(grant.mandate?.grantmaker_share_owls ?? 0);
   const tools: Tool[] = [
     ...reportTools.definitions, ...findingTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
@@ -249,7 +328,9 @@ async function runMandateReviewImpl(input: {
       description:
         "Append new items to your mandate's plan: sources you found that should be ingested, claims that " +
         "need passes, a claim, quantity or question the graph does not hold yet with the passes you want on it. Each item is priced and bounded by your escrow, and " +
-        "executes through the ledger like everything else. Appends only; " +
+        "executes through the ledger like everything else: a pass you plan " +
+        "is commissioned from this mandate, within its daily rate, as soon " +
+        "as the rate and escrow have the room. Appends only; " +
         "already-planned work stays. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
         "standing (open, running, done, cancelled, waiting, blocked) with " +
@@ -325,15 +406,43 @@ async function runMandateReviewImpl(input: {
         "deciding what to ingest next.",
       input_schema: { type: "object" as const, properties: {}, required: [] },
     },
+    // Not offered to a decomposition: its passes are bounded by the
+    // Grantmaker share, and its briefing says so.
+    ...(shareOwls > 0
+      ? []
+      : [
+          {
+            name: "add_to_pass_budget",
+            description:
+              "Add to this pass's budget from your mandate's escrow, so the pass can finish what it is doing. " +
+              "The amount is placed on this pass the way a granted petition is placed on a run: it is held " +
+              "against today's rate and the escrow at once, and what the pass does not spend is freed when it " +
+              "ends. It is refused, with the figures, when today's rate or the uncommitted escrow has less than " +
+              "you ask for; ask for what is left, or raise the rate with set_daily_rate if the mission " +
+              "warrants it. This is the cheap way to carry on: continue_review starts a new pass, which pays " +
+              "for the opening turn again. If you keep adding, your policy's review_pass_owls is set too low.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                owls: { type: "number", description: "How much to add, in owls." },
+                reason: { type: "string", description: "One line, recorded: what the money is for." },
+              },
+              required: ["owls", "reason"],
+            },
+          },
+        ]),
     {
       name: "continue_review",
       description:
         "Declare this pass finished but the work not: another review pass " +
-        "runs right away, funded from your escrow out of today's room under " +
+        "runs right away, at your review-pass budget, funded from your escrow out of today's room under " +
         "your daily rate, the same room your assessments and lookouts draw " +
-        "on (the briefing says what is left). Use it when the mission genuinely needs more passes " +
-        "today, such as enumerating a large source backlog or a territory " +
-        "survey in progress. Update your workspace first so the next pass starts " +
+        "on (the briefing says what is left). The new pass starts from your workspace with none of this " +
+        "one's context, and pays for its opening turn (instructions, tool list, briefing) again. So when " +
+        "this pass only needs more money, use add_to_pass_budget; use this when a fresh start is worth " +
+        "that cost: this pass's context has grown long enough that each further turn is expensive, or the " +
+        "work divides into stages that each read cleanly from the workspace. " +
+        "Update your workspace first so the next pass starts " +
         "where this one stopped.",
       input_schema: {
         type: "object" as const,
@@ -487,7 +596,6 @@ async function runMandateReviewImpl(input: {
   const REVIEW_PASS_MAX_TURNS = RUN_TURN_GUARD;
   // A decomposition's passes share a tenth of its budget: say so, and what
   // is left of it (claim-mandate-service.ts).
-  const shareOwls = Number(grant.mandate?.grantmaker_share_owls ?? 0);
   const shareLeft = shareOwls > 0
     ? await grantmakerShareLeftMicroUsd({ id: grant.id, mandate: { grantmaker_share_owls: shareOwls } })
     : null;
@@ -548,8 +656,9 @@ async function runMandateReviewImpl(input: {
     `Do what the mandate needs this pass and skip what doesn't need doing; ` +
     `your spending lever is the operating policy your program officers carry out ` +
     `(write_operating_policy) and direct commissions (commission). Before finishing, update your workspace so ` +
-    `the next pass starts where this one stopped; call continue_review if ` +
-    `the mission needs another pass today. Finish with a short note, at most ` +
+    `the next pass starts where this one stopped. If this pass runs low with work in hand, ` +
+    (shareOwls > 0 ? `` : `add to its budget (add_to_pass_budget); `) +
+    `call continue_review when a fresh pass from your workspace is the better way on. Finish with a short note, at most ` +
     `${REVIEW_NOTE_MAX_CHARS} characters, recorded on the mandate's public page: ` +
     `what you did and why.\n\n` +
     shareNote +
@@ -561,6 +670,19 @@ async function runMandateReviewImpl(input: {
     `${microUsdToOwls(moveCapPassMicro)} owls (regrants + spawns), ` +
     `${microUsdToOwls(moveCapDayMicro)} per day. Larger moves belong to ` +
     `the funder: ask with note_to_funder.`;
+
+  // What this pass's budget is and who set it (#820), for the budget line.
+  const budgetBasis = reviewPassBudgetBasis({
+    ceilingMicroUsd: runBudget()?.ceilingMicroUsd ?? null,
+    figure: reviewPassBudget(
+      (grant.mandate as { operating_policy?: OperatingPolicy | null } | null)?.operating_policy
+    ),
+    fromShare: shareOwls > 0,
+    floorOwls: config.reviewPassFloorOwls ?? 1,
+    dailyRateMicroUsd: Number(grant.daily_budget_micro_usd),
+    dayUsedMicroUsd: today.allocatedMicroUsd,
+    escrowFreeMicroUsd: Number(grant.budget_micro_usd) - committed,
+  });
 
   let planItemsAdded = 0;
   let continueRequested = false;
@@ -605,7 +727,7 @@ async function runMandateReviewImpl(input: {
 
   const result = await withSkills([], () => toolUseLoop({
     initialMessages: [
-      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}${skillLoader.pointerNote}` },
+      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS, { basis: budgetBasis })}${skillLoader.pointerNote}` },
     ],
     tools: [webSearch.tool, ...availableTools, ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
     system,
@@ -795,13 +917,17 @@ async function runMandateReviewImpl(input: {
         const pipeline = await getMandatePipeline(grant.id);
         return JSON.stringify({ sources: pipeline.length, pipeline });
       }
+      if (name === "add_to_pass_budget") {
+        return addToPassBudget(grant.id, toolInput, shareOwls > 0);
+      }
       if (name === "continue_review") {
         continueRequested = true;
         return JSON.stringify({
           success: true,
           note:
-            "Another pass runs after this one, paid from what is left of " +
-            "today's rate. Make sure your workspace is current, then finish.",
+            "Another pass runs after this one at your review-pass budget, paid from what is left of " +
+            "today's rate; if the day or the escrow cannot cover that budget it starts with what there is, " +
+            "and not at all below the floor your briefing states. Make sure your workspace is current, then finish.",
         });
       }
       if (name === "complete_mandate") {

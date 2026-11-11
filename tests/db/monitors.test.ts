@@ -41,11 +41,11 @@ const T: MonitorThresholds = {
   limit: 1000,
 };
 
-async function claim(label: string, opts: { stewardState?: string; importance?: number; error?: string } = {}): Promise<string> {
+async function claim(label: string, opts: { stewardState?: string; importance?: number; error?: string; reason?: string } = {}): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO claims (text, steward_state, importance, steward_error)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [`monitor test ${label} ${randomUUID()}`, opts.stewardState ?? "done", opts.importance ?? 0.5, opts.error ?? null]
+    `INSERT INTO claims (text, steward_state, importance, steward_error, steward_error_reason)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [`monitor test ${label} ${randomUUID()}`, opts.stewardState ?? "done", opts.importance ?? 0.5, opts.error ?? null, opts.reason ?? null]
   );
   return row!.id;
 }
@@ -368,7 +368,11 @@ describe("queue health", () => {
        VALUES ('steward', 'structure_and_assess', $1, false, now() - make_interval(days => 3))`,
       [pending]
     );
-    const parked = await claim("parked", { stewardState: "error", importance: 0.95, error: "boom" });
+    // The raw text names things no public page should: a request id, a role.
+    const raw = 'permission denied for table claims (role "minerval_app"), request_id req_011CSecret';
+    const parked = await claim("parked", { stewardState: "error", importance: 0.95, error: raw, reason: "database_fault" });
+    // A park from before the column was written reads 'other'.
+    const unclassified = await claim("parked-old", { stewardState: "error", importance: 0.94, error: "boom" });
     await rawQuery(
       `INSERT INTO queue_depth_snapshots (period_key, steward_pending, detail, created_at)
        VALUES ($1, 5, '{}', now() - interval '2 hours'), ($2, 9, '{}', now() - interval '1 hour')`,
@@ -380,7 +384,13 @@ describe("queue health", () => {
     expect(report.states.error).toBeGreaterThanOrEqual(1);
     expect(report.oldestPending).not.toBeNull();
     expect(report.oldestPending!.ageSeconds).toBeGreaterThanOrEqual(3 * 86_400 - 5);
-    expect(report.errorParked.some((p) => p.claimId === parked && p.error === "boom")).toBe(true);
+    const row = report.errorParked.find((p) => p.claimId === parked)!;
+    expect(row).toMatchObject({ reason: "database_fault", reasonLabel: "a database fault" });
+    expect(report.errorParked.find((p) => p.claimId === unclassified)!.reason).toBe("other");
+    // Only the class is published (#846): never the raw error text.
+    expect(JSON.stringify(report)).not.toContain("req_011CSecret");
+    expect(JSON.stringify(report)).not.toContain("minerval_app");
+    expect(row).not.toHaveProperty("error");
     expect(report.snapshots.points.length).toBeGreaterThanOrEqual(2);
   });
 });

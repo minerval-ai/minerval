@@ -49,6 +49,23 @@ skill bundles it in full, and the section numbers below point into it.
   already hold ids for. An unassessed claim comes back with null judgment
   fields, which is the graph being silent, not an error; ids the graph does
   not hold come back in `not_found`. Free.
+- **An id that was merged**: the graph merges duplicate claims, and a claim
+  with its own negation (constitution §5). The absorbed claim's id keeps
+  working: any read of it (`get_claim`, a card, `get_decomposition`,
+  `get_dependents`, `cite_claim` and the other reads of one claim) returns
+  the surviving claim under the survivor's id, with `resolved_from` naming
+  the id you asked for, its wording, when it was merged, and
+  `stance_relation`. Read `stance_relation` before you report anything:
+  `same` means your id stated the survivor's proposition; `opposed` means it
+  was the survivor's negation, so the verdict you are looking at is about
+  the opposite of what your id said (a survivor that is `well_supported`
+  means the claim you asked about is not). Report the survivor's wording
+  with the survivor's verdict, say that the claim you were asked about was
+  merged into it, and use the survivor's id and `page_url` from then on. A
+  write addressed to a merged id (a contribution, an order, funding) is
+  refused and names the survivor; restate it for the survivor rather than
+  resending it. An id that names nothing at all is an error, not a merge:
+  copy ids exactly from a result, never retype them.
 - **Less of any read**: the tools generated from the REST API's read routes
   (`list_claims`, `cite_claim`, `get_assessment_history`, the cards and the
   rest) take `fields`, a comma-separated list of dotted paths such as
@@ -138,6 +155,10 @@ skill bundles it in full, and the section numbers below point into it.
   either side. Don't round it up to "probably true" or down to "unproven,
   so false". In text you write, hedge it or cite the claim page; don't
   assert it as settled.
+- **A status with `relabeled_from` set is provisional, not a finding.** A
+  migration carried it over from a retired label (`contested`,
+  `unsupported`) and the claim has not been re-judged since; its summary
+  may still argue for the old label. Say so if you report it.
 - **Settled is settled.** A `verified` claim with high confidence should
   be reported plainly, without manufactured balance. Withholding a
   well-supported verdict out of even-handedness is a failure too (§1).
@@ -160,6 +181,12 @@ conclusion everyone otherwise accepts, or a definitional choice that
 splits the two sides (§1, §6). Name that crux for your user. "This turns
 on whether X, which the evidence does not yet settle" is more useful than
 "it's disputed".
+
+A subclaim with no status is usually just waiting its turn. One marked
+`steward_parked` is not: the graph tried to assess it and the passes
+failed (`reason` gives the class of failure, `since` the date), and it
+will stay unjudged until someone commissions a pass on it. Say so when a
+verdict rests on such a premise: the parent was judged without it.
 
 `get_claim` with `include: ["arguments"]` shows the named arguments and
 the Steward's `evaluation` of each (§7). Its `verdict` rates the

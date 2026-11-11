@@ -40,6 +40,7 @@ vi.mock("../../../src/llm/tools/graph-read-tools.js", () => ({
       input_schema: { type: "object" },
     })),
   executeGraphReadTool: vi.fn(async (name: string) => JSON.stringify({ read: name })),
+  claimReadMiss: () => null,
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({

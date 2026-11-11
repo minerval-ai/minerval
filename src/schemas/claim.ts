@@ -97,6 +97,10 @@ export const assessmentResponse = z.object({
   reasoning_trace: z.string(),
   subclaim_summary: z.record(z.string(), z.unknown()),
   assessed_at: z.string(),
+  // The retired label (contested, unsupported) migration 0066 carried the
+  // status over from; it has not been re-judged, so treat it as provisional,
+  // not a finding (#848). null otherwise.
+  relabeled_from: z.string().nullable().optional(),
 });
 
 export const searchResultItem = z.object({
@@ -158,6 +162,17 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     estimate: z.unknown().nullable().optional(),
     unit: z.unknown().nullable().optional(),
     standing: z.string().nullable().optional(),
+    // Present only on a node with no judgment whose Steward passes failed
+    // and parked it (#846): it will not be judged on its own. The reason is
+    // a fixed public class, never the raw error.
+    steward_parked: z
+      .object({
+        reason: z.string(),
+        reason_label: z.string(),
+        since: z.string().nullable(),
+        failed_passes: z.number(),
+      })
+      .optional(),
     children: z.array(treeNodeResponse),
     // Set (true) only on a repeated occurrence of a shared subclaim: the graph
     // is a DAG, and the node's children are rendered at its first occurrence
@@ -194,6 +209,7 @@ export interface TreeNode {
   estimate?: unknown | null;
   unit?: unknown | null;
   standing?: string | null;
+  steward_parked?: { reason: string; reason_label: string; since: string | null; failed_passes: number };
   children: TreeNode[];
   subtree_collapsed?: boolean;
   children_truncated?: boolean;

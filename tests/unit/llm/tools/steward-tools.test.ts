@@ -11,6 +11,10 @@ const { insertedValues, updatedValues } = vi.hoisted(() => ({
 // and so the relationship insert (no .returning()) is awaitable. Capture every
 // inserted row so tests can assert on the claim's steward_state (the #98 gate),
 // and every update .set() payload so tests can assert on set_claim_importance.
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal)
+);
 vi.mock("../../../../src/db/client.js", () => {
   const values = (row: Record<string, unknown>) => {
     insertedValues.push(row);

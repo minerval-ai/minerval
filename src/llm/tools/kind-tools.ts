@@ -21,6 +21,7 @@
  * can act on. `executeKindTool` returns null for a name it does not own.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { mergedAliasRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
 import { ZodError } from "zod";
 import { rawQuery, withTransaction } from "../../db/client.js";
@@ -92,7 +93,7 @@ export interface KindToolContext {
 // Schemas the tools share
 // ---------------------------------------------------------------------------
 
-const ESTIMATE_SCHEMA = {
+export const ESTIMATE_SCHEMA = {
   type: "object",
   description:
     "A value at the precision the evidence supports (§10). form is one of: distribution " +
@@ -817,7 +818,10 @@ async function existingOrNew(
 ): Promise<{ id: string; created: boolean } | { error: string }> {
   const existing = str(input[idField]);
   if (existing) {
-    if (!(await nodeKind(existing))) return { error: `No active node ${existing}.` };
+    if (!(await nodeKind(existing))) {
+      // A merged node names its survivor (#884).
+      return { error: (await mergedAliasRefusal(existing))?.message ?? `No active node ${existing}.` };
+    }
     return { id: existing, created: false };
   }
   const text = str(input.new_text);

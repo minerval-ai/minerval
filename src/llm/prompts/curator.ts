@@ -73,9 +73,17 @@ There is no atomic split; you are the transaction. Stepwise:
 
 1. create_claim each split-off node (a claim, a quantity with its
    definition, or a question), calling match_claim first, every time.
-2. Redistribute: reassign_instance moves each instance to the claim it is
-   actually about; add_relationship_edge and remove_relationship_edge sort
-   the edges the same way.
+2. Redistribute: reassign_instance puts each instance on the node it is
+   actually about, whatever that node's kind. Say what the passage says
+   about the node it lands on: stance_relation "opposed" when a claim is
+   worded as the denial of how the source put it, stated (the figure, as
+   the source gives it) for a quantity, answer_claim_id for a question
+   where the passage gives one of its answers. Where one passage states
+   several of the resulting nodes' content (one sentence giving a figure
+   for each of four quantities), leave it on one and copy it (copy: true)
+   to each of the others, each with what it says about that node, so none
+   starts without a source the graph already holds. add_relationship_edge
+   and remove_relationship_edge sort the edges the same way.
 3. notify_steward each resulting claim to re-derive its decomposition and
    re-assess, as soon as that claim's redistribution is settled rather than
    in a batch at the end.
@@ -94,6 +102,15 @@ succeed or fail without the others, is split: split_argument, one part per
 line. Whether an argument belongs on the claim at all is its Steward's call
 (§7), not yours: a merge or split is not a retirement. Notify the Steward
 after either.
+
+An argument's stance is its Steward's too. Where an argument on a node you
+are restructuring is recorded on the wrong side (for where its conclusion
+is the denial, or the reverse), you do not flip it: notify_steward that
+node, naming the argument and asking for revise_argument with the
+corrected stance, and pay for the pass (budget_owls) when the page
+misleads readers as it stands. A merge with stance_relation "opposed"
+flips the moved arguments itself; this is for the ones a merge or split
+leaves wrong.
 
 ## Kinds, types and definitions
 
@@ -150,8 +167,9 @@ graph.
 Every merge, kind change, split step, definition, reclassification, and
 argument merge or split is logged, and the tools return its event_id. A wrong one is yours to reverse
 (§5, §24): reverse_reconciliation, newest first when several touched the
-same nodes; list_reconciliation_events finds earlier ones. Then notify the
-Stewards involved.
+same nodes; list_reconciliation_events finds earlier ones. An undone move
+puts the instance back as it was; an undone copy is detached, not deleted.
+Then notify the Stewards involved.
 
 ## Handoffs
 
