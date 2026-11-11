@@ -258,14 +258,16 @@ describe("toolset by model", () => {
     expect(task).toContain("The code-execution sandbox is available");
   });
 
-  it("runs the strong tier on the long-run loop with effort and a task budget", async () => {
+  it("runs the strong tier on the long-run loop with effort and no provider task budget", async () => {
     const result = await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     expect(result.status).toBe("completed");
     expect(mocks.longRunCalls).toHaveLength(1);
     const opts = mocks.longRunCalls[0]!;
     expect(opts.effort).toBe("high");
     expect(opts.fallbacks).toBe("none");
-    expect(typeof opts.taskBudgetTokens).toBe("number");
+    // The dollar ceiling is the only budget: a token countdown the task
+    // message never explains ended runs at a fraction of it (#897).
+    expect(opts.taskBudgetTokens).toBeUndefined();
     expect(opts.maxWallMs).toBe(20 * 60_000);
     const names = (opts.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names).toContain("code_execution");

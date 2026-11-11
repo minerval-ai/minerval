@@ -124,8 +124,12 @@ export interface StructuredRequest {
 export interface LongRunRequest extends ToolCompleteRequest {
   effort?: EffortLevel;
   /**
-   * Advisory token budget for the whole task (`output_config.task_budget`), so
-   * the model paces itself instead of being cut off. Minimum 20,000.
+   * Advisory token budget for the whole task (`output_config.task_budget`):
+   * a countdown the model sees, which counts what it generates and every
+   * tool result it reads. Minimum 20,000. No agent sets it: a run's budget
+   * is its dollar ceiling, and a token count beside it has to be sized for
+   * what the run reads and explained in its task message
+   * (instrument-harness.ts, #897).
    */
   taskBudgetTokens?: number;
   /**

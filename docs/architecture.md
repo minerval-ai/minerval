@@ -1197,8 +1197,8 @@ load-bearing ones cheaply.
 
 **Tiers.** The launcher chooses from three, named for the role rather than
 the vendor (`RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`,
-`RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort` and
-the task budget, for work where the best model class pays, such as a
+`RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort`,
+for work where the best model class pays, such as a
 replication. Standard runs the ordinary loop on a Claude model. Cheap runs
 the ordinary loop on the cheap tier, and is the right choice for reading and
 mapping a large literature economically. A tier carries the code-execution
@@ -1320,7 +1320,7 @@ The spend is metered under the launcher's usage context, so it lands on the
 claim and the job that funded the launching run, appears in `llm_usage`
 under agent `researcher`, and is added to the launcher's own cost meter, so
 the launching action is charged for it. The shared pieces of this harness,
-the stop reasons, the reminder fraction, the task budget, and the container
+the stop reasons, the reminder fraction, and the container
 metering, live in `src/llm/instrument-harness.ts` and serve the solver too.
 
 **Budget legibility.** A model told "$2.00" does not know what that buys:
@@ -1334,8 +1334,13 @@ tokens; a model priced by its provider per call (the cheap tier) gets no
 up-front figure. After every turn, on both loops, the model sees a spend
 line read from the meter: what it has spent of what, and about how many
 turns remain at its last turn's cost. The line replaces the turn counter on
-the ordinary loop (`toolUseLoop`'s `turnNote`) and rides beside the
-provider's task-budget countdown on the long-run loop.
+the ordinary loop (`toolUseLoop`'s `turnNote`) and is the reminder on the
+long-run loop. It is the only budget a run is shown. The long-run loop once
+also sent the provider's task budget, a token countdown sized from the
+ceiling; it counts every tool result the model reads at the output price,
+so a run that read a few pages saw it run out at a fraction of its dollars
+and reported that its "working context" was gone (#897, #885). Nothing
+sends one now.
 
 **The record.** Each launch is a `research_runs` row: the brief, the model
 and tier, the ceiling, the spend, the turns, how the run ended (a run that

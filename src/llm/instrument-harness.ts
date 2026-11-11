@@ -25,21 +25,17 @@ export const STOP_CANCELLED = "cancelled";
 /** The wrap-up notice goes out at this fraction of the ceiling. */
 export const REMINDER_FRACTION = 0.85;
 
-/**
- * The model-facing pacing signal: the provider's task budget, a running
- * token countdown the model sees, sized from the dollar ceiling. The
- * fraction leaves room for the input side of every turn (history at
- * cache-read rates), checker time, and container time; the dollar ceiling
- * binds either way. The provider's minimum is 20,000 tokens.
- */
-export const TASK_BUDGET_FRACTION = 0.6;
-export const TASK_BUDGET_MIN_TOKENS = 20_000;
-export function taskBudgetTokens(ceilingMicroUsd: number, model: string): number {
-  const outputPerMtok = ratesForModel(model).outputPerMtok;
-  const usd = Math.max(0, ceilingMicroUsd) / 1_000_000;
-  const tokens = Math.floor((usd * TASK_BUDGET_FRACTION * 1_000_000) / outputPerMtok);
-  return Math.max(TASK_BUDGET_MIN_TOKENS, tokens);
-}
+// No provider task budget (`output_config.task_budget`) is sent on either
+// instrument. The solver and the researcher once sent one, sized at 60% of
+// the dollar ceiling at the model's output price, from before runs were
+// shown their dollars (#613). The provider's countdown counts what the
+// model generates and every tool result it reads, so a run that reads pages
+// (input-priced, a fifth of the output price) ran it down at a small
+// fraction of its dollars, and the model, shown a token countdown nothing
+// in its task message explained, wrapped up early and reported that its
+// working context had run out (#897, #885). The dollar ceiling is the
+// budget, stated in the task message and after every turn (spendLine), and
+// a token count on top of it is a limit the agent was never told.
 
 /**
  * A guard on the loop, not a budget: the dollar ceiling ends every run

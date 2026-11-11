@@ -180,7 +180,7 @@ each:
 | S3 attachment storage | Postgres `bytea` is adequate at v1 volumes. | Two days: bucket, gateway endpoint, presign routes, backfill. |
 | Virus scanning of uploads | Files are stored, never rendered; served with `nosniff` and a sandboxing CSP. | One day. |
 | A larger `campaign` solver variant (a budget of several thousand owls with server-side compaction) | No live cost series yet. | One day plus a cost prior. |
-| Server-side compaction in the solver loop | An attempt at today's ceilings fits the context window; the provider's task budget (the token countdown) is already in use. | One day once confirmed against the installed SDK. |
+| Server-side compaction in the solver loop | An attempt at today's ceilings fits the context window. | One day once confirmed against the installed SDK. |
 | Managed Agents session for the solver | Transcript would live outside the trace tables. | Three days once the checker is a service. |
 | MCP `claim_prize` tool | Thin once the JSON route exists; waits for the first paid prize. | Half a day. |
 | Second-opinion checker | Optional insurance; Minerval's checker is the arbiter. | One day, following the Elicit adapter. |
@@ -1373,13 +1373,11 @@ select.
   `reminder` hook appends the dollar spend line to every turn (what is
   spent, of what, and about how many turns remain at the last turn's rate,
   the same line the researcher sees) and a wrap-up notice at 85 percent.
-  Beside it the provider's task budget (beta `task-budgets-2026-03-13`) gives
-  a token countdown the model sees as it works, sized from the ceiling at
-  60 percent of the ceiling's dollars at the model's output price (a 150-owl
-  ceiling on the strong model is 1.8 million tokens; the provider's floor is
-  20,000), leaving the rest for history at cache-read rates, checker time,
-  and container time. The task budget is advisory and the dollar ceiling is
-  binding. There is no wall-clock budget and no turn budget: every turn
+  No provider task budget is sent: the token countdown it shows the
+  model counts every tool result read as well as what is generated, was
+  never explained in the task message, and ended researcher runs at a
+  fraction of their dollars (#897), so the dollar ceiling is the one budget
+  the solver sees. There is no wall-clock budget and no turn budget: every turn
   re-reads the history, so no turn is free and the ceiling ends every
   attempt; the loop keeps a large fixed guard against a harness bug that
   spent nothing, not shown to the model and not configurable. Clock time

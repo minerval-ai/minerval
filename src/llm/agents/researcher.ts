@@ -51,7 +51,6 @@ import {
   meterCodeExecution,
   meterMicroUsd,
   spendLine,
-  taskBudgetTokens,
   turnUsedCodeExecution,
 } from "../instrument-harness.js";
 import {
@@ -853,8 +852,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         if (await readResearcherPaused()) return { stop: STOP_PAUSED };
         return undefined;
       };
-      // The spend line rides on every turn's user message, beside the
-      // provider's own task-budget countdown.
+      // The spend line rides on every turn's user message. The dollar
+      // ceiling is the run's only budget: no provider task budget is sent
+      // (instrument-harness.ts says why).
       const reminder = (): string => turnNote();
       const afterTurn = async (state: LongRunLoopState, result: ToolCompletionResult) => {
         const served = result.servedModel ?? result.model;
@@ -873,7 +873,6 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         system,
         model,
         effort: (run.effort as "medium" | "high" | "max" | null) ?? "high",
-        taskBudgetTokens: taskBudgetTokens(ceiling, model),
         fallbacks: "none",
         maxIterations: Math.min(MAX_TURNS_GUARD, maxTurns),
         maxWallMs,

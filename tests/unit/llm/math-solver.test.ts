@@ -158,10 +158,8 @@ import {
   SOLVER_STOP_CEILING,
   SOLVER_MAX_TURNS_GUARD,
   SOLVER_STOP_PAUSED,
-  SOLVER_TASK_BUDGET_MIN_TOKENS,
   SOLVER_TOOL_DESCRIPTIONS,
   WRAP_UP_NOTICE,
-  solverTaskBudgetTokens,
   runMathSolver,
   validateSolverReport,
 } from "../../../src/llm/agents/math-solver.js";
@@ -279,7 +277,8 @@ describe("runMathSolver: the run shape", () => {
     expect((o.tools as unknown[])[7]).toBe(REPORT_TOOL);
     expect(o.fallbacks).toBe("none");
     expect(o.effort).toBe("max");
-    expect(o.taskBudgetTokens).toBe(solverTaskBudgetTokens(CEILING, "claude-opus-5-5"));
+    // The dollar ceiling is the only budget: no provider token countdown (#897).
+    expect(o.taskBudgetTokens).toBeUndefined();
     expect(o.model).toBe("claude-opus-5-5");
     // No clock or turn budget: the guard is the loop's, not the attempt's.
     expect(o.maxIterations).toBe(SOLVER_MAX_TURNS_GUARD);
@@ -697,15 +696,3 @@ describe("validateSolverReport", () => {
   });
 });
 
-describe("solverTaskBudgetTokens", () => {
-  it("sizes the token countdown from the dollar ceiling at the model's output price, never below the provider minimum", () => {
-    // $150 ceiling, 60 percent of it at $20 per million output tokens: 4.5M tokens.
-    expect(solverTaskBudgetTokens(150_000_000, "claude-opus-5-5")).toBe(4_500_000);
-    // A pricier model gets fewer tokens for the same dollars.
-    expect(solverTaskBudgetTokens(150_000_000, "claude-opus-5")).toBe(3_600_000);
-    expect(solverTaskBudgetTokens(150_000_000, "claude-fable-5-1")).toBe(1_800_000);
-    // A tiny ceiling still meets the provider's floor.
-    expect(solverTaskBudgetTokens(100_000, "claude-opus-5-5")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
-    expect(solverTaskBudgetTokens(0, "claude-opus-5-5")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
-  });
-});
