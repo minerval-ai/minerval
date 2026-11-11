@@ -1,7 +1,8 @@
 /**
  * What examination a node has had (#543): `coverage`, derived from the
  * judgment in force, the sources it was recorded against and the readings
- * of them, and served on the read of one node and on every row of a tree.
+ * of them, and served whole on the read of one node and in a short form on
+ * every row of a tree.
  */
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -10,7 +11,9 @@ import { rawQuery } from "../../src/db/client.js";
 import {
   COVERAGE_UNEXAMINED_NOTE,
   coverage,
+  coverageRow,
   summarizeCoverage,
+  type CoverageSummary,
 } from "../../src/services/coverage-service.js";
 import { recordJudgmentInputs } from "../../src/services/judgment-inputs-service.js";
 import { recordInstanceReading } from "../../src/services/source-map-service.js";
@@ -24,9 +27,13 @@ import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import type { TreeNode } from "../../src/schemas/claim.js";
 import { seedClaim } from "./helpers.js";
 
-const NOT_EXAMINED = { examined: false, on: [] };
-const PUBLIC = { examined: true, on: ["public_evidence"] };
-const NOT_SHOWN = { examined: true, on: ["public_evidence", "evidence_not_shown"] };
+const NOT_EXAMINED: CoverageSummary = { examined: false, on: [] };
+const PUBLIC: CoverageSummary = { examined: true, on: ["public_evidence"] };
+const NOT_SHOWN: CoverageSummary = { examined: true, on: ["public_evidence", "evidence_not_shown"] };
+// The same three on a row of a list, which names only what goes beyond public evidence.
+const ROW_NOT_EXAMINED = { examined: false };
+const ROW_PUBLIC = { examined: true };
+const ROW_NOT_SHOWN = { examined: true, on: ["evidence_not_shown"] };
 
 async function seedSource(): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
@@ -72,6 +79,8 @@ async function assess(claimId: string, opts: { record?: boolean; status?: string
 }
 
 const one = async (id: string) => (await summarizeCoverage([id])).get(id);
+/** What a row of a list must carry for a node: the short form of its own read. */
+const row = async (id: string) => coverageRow(await one(id));
 
 async function claimsApp() {
   const app = Fastify();
@@ -328,22 +337,37 @@ describe("coverage for many nodes at once, and on the rows of a tree", () => {
     expect((await summarizeCoverage([])).size).toBe(0);
   });
 
-  it("is on every node of the tree, the same as the read of that node, without the note", async () => {
+  it("has a short form for a row: examined, and only what goes beyond public evidence", () => {
+    expect(coverageRow(NOT_EXAMINED)).toEqual(ROW_NOT_EXAMINED);
+    expect(coverageRow(PUBLIC)).toEqual(ROW_PUBLIC);
+    expect(coverageRow(NOT_SHOWN)).toEqual(ROW_NOT_SHOWN);
+    // No `on` key at all where there is nothing beyond public evidence.
+    expect("on" in coverageRow(PUBLIC)!).toBe(false);
+    expect("on" in coverageRow(NOT_EXAMINED)!).toBe(false);
+    // A value the vocabulary gains later is listed the same way. The cast
+    // stands in for a word that is not in the vocabulary yet.
+    const later = { examined: true, on: ["public_evidence", "sealed_evidence"] } as unknown as CoverageSummary;
+    expect(coverageRow(later)).toEqual({ examined: true, on: ["sealed_evidence"] });
+    expect(coverageRow(undefined)).toBeUndefined();
+  });
+
+  it("is on every node of the tree in the short form, saying what the read of that node says", async () => {
     const t = await seedTree();
     const tree = (await getClaimTree(t.parent))!;
     const nodes = flatten(tree);
     expect(nodes.size).toBe(7);
     for (const [id, node] of nodes) {
-      expect(node.coverage).toEqual(await one(id));
+      expect(node.coverage).toEqual(await row(id));
       expect(node.coverage && "note" in node.coverage).toBe(false);
     }
     // The status field alone cannot say this: a judged quantity and an
     // unjudged question both carry a null status.
-    expect(nodes.get(t.quantity)).toMatchObject({ assessment_status: null, coverage: PUBLIC });
-    expect(nodes.get(t.question)).toMatchObject({ assessment_status: null, coverage: NOT_EXAMINED });
+    expect(nodes.get(t.quantity)).toMatchObject({ assessment_status: null, coverage: ROW_PUBLIC });
+    expect(nodes.get(t.question)).toMatchObject({ assessment_status: null, coverage: ROW_NOT_EXAMINED });
     // A seed does not make a node examined.
-    expect(nodes.get(t.never)).toMatchObject({ seed_credence: 0.8, coverage: NOT_EXAMINED });
-    expect(nodes.get(t.notShown)!.coverage).toEqual(NOT_SHOWN);
+    expect(nodes.get(t.never)).toMatchObject({ seed_credence: 0.8, coverage: ROW_NOT_EXAMINED });
+    expect(nodes.get(t.notShown)!.coverage).toEqual(ROW_NOT_SHOWN);
+    expect(nodes.get(t.plain)!.coverage).toEqual(ROW_PUBLIC);
   });
 
   it("is on get_decomposition's nodes, on get_claim's subclaims and on the tree of GET /claims/:claim_id", async () => {
@@ -351,19 +375,23 @@ describe("coverage for many nodes at once, and on the rows of a tree", () => {
 
     const walked = JSON.parse((await executeGraphReadTool("get_decomposition", { claim_id: t.parent }))!);
     const fromTool = flatten(walked.tree as TreeNode);
-    expect(fromTool.get(t.never)!.coverage).toEqual(NOT_EXAMINED);
-    expect(fromTool.get(t.notShown)!.coverage).toEqual(NOT_SHOWN);
-    expect(fromTool.get(t.deep)!.coverage).toEqual(NOT_EXAMINED);
+    expect(fromTool.get(t.never)!.coverage).toEqual(ROW_NOT_EXAMINED);
+    expect(fromTool.get(t.notShown)!.coverage).toEqual(ROW_NOT_SHOWN);
+    expect(fromTool.get(t.deep)!.coverage).toEqual(ROW_NOT_EXAMINED);
+    // The root of the walk is a row too: the short form, not the full object.
+    expect(walked.tree.coverage).toEqual(ROW_PUBLIC);
 
+    // The read of one node keeps the full object, beside rows in the short form.
     const view = await getClaim(t.parent, ["subclaims"]);
     expect(view.coverage).toEqual(PUBLIC);
     const rows = new Map<string, { coverage: unknown }>(
       (view.subclaims as Array<{ id: string; coverage: unknown }>).map((r) => [r.id, r])
     );
     expect(rows.size).toBe(5);
-    for (const [id, row] of rows) expect(row.coverage).toEqual(await one(id));
-    expect(rows.get(t.quantity)!.coverage).toEqual(PUBLIC);
-    expect(rows.get(t.never)!.coverage).toEqual(NOT_EXAMINED);
+    for (const [id, r] of rows) expect(r.coverage).toEqual(await row(id));
+    expect(rows.get(t.quantity)!.coverage).toEqual(ROW_PUBLIC);
+    expect(rows.get(t.never)!.coverage).toEqual(ROW_NOT_EXAMINED);
+    expect(rows.get(t.notShown)!.coverage).toEqual(ROW_NOT_SHOWN);
 
     const app = await claimsApp();
     const res = await app.inject({ url: `/claims/${t.parent}` });
@@ -371,7 +399,8 @@ describe("coverage for many nodes at once, and on the rows of a tree", () => {
     const body = res.json();
     expect(body.coverage).toEqual(PUBLIC);
     const served = flatten(body.tree as TreeNode);
-    for (const [id, node] of served) expect(node.coverage).toEqual(await one(id));
-    expect(served.get(t.never)!.coverage).toEqual(NOT_EXAMINED);
+    for (const [id, node] of served) expect(node.coverage).toEqual(await row(id));
+    expect(served.get(t.never)!.coverage).toEqual(ROW_NOT_EXAMINED);
+    expect(served.get(t.notShown)!.coverage).toEqual(ROW_NOT_SHOWN);
   });
 });

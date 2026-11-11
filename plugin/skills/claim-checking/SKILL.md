@@ -192,7 +192,9 @@ on whether X, which the evidence does not yet settle" is more useful than
 
 Every node of the tree carries `coverage`, and so does `get_claim`:
 `examined` says whether the graph has a judgment of the node in force, and
-`on` what that judgment was made on. `examined: false` means the graph has
+`on` what that judgment was made on. On a node of the tree `on` lists only
+what goes beyond public evidence, and is left out when nothing does;
+`get_claim` lists everything. `examined: false` means the graph has
 not looked at that part, which is silence and not a finding either way
 (see "Silence and gaps" below). An assessed `unknown` is examined: the
 evidence was looked at and found insufficient. A quantity or a question

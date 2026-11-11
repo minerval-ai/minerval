@@ -141,10 +141,12 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     seed_credence: z.number().nullable().optional(),
     // What examination the node has had (#543, coverage-service.ts): whether
     // a judgment of it is in force, for any kind, and what that judgment was
-    // made on. `examined: false` is not a finding either way. Optional so
-    // older payloads parse, and absent when the read of it failed.
+    // made on. `examined: false` is not a finding either way. A node of a
+    // tree carries the short form: `on` lists only what goes beyond public
+    // evidence and is left out when nothing does. Optional so older payloads
+    // parse, and absent when the read of it failed.
     coverage: z
-      .object({ examined: z.boolean(), on: z.array(z.string()) })
+      .object({ examined: z.boolean(), on: z.array(z.string()).optional() })
       .optional(),
     argument_id: uuidSchema.nullable(),
     argument_name: z.string().nullable(),
@@ -204,7 +206,7 @@ export interface TreeNode {
   assessment_confidence: number | null;
   assessment_credence?: number | null;
   seed_credence?: number | null;
-  coverage?: { examined: boolean; on: string[] };
+  coverage?: { examined: boolean; on?: string[] };
   argument_id: string | null;
   argument_name: string | null;
   argument_stance: string | null;

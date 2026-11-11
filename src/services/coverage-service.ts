@@ -56,33 +56,46 @@ export const COVERAGE_EVIDENCE = ["public_evidence", "evidence_not_shown"] as co
 export type CoverageEvidence = (typeof COVERAGE_EVIDENCE)[number];
 
 /**
- * The field as a row of a list carries it (a node of a tree, a subclaim):
- * `on` is empty exactly when `examined` is false.
+ * What the record says of one node: whether it is examined, and everything
+ * its judgment in force was made on. `on` is empty exactly when `examined`
+ * is false. Both forms the reads serve are made from this.
  */
-export interface CoverageRow {
+export interface CoverageSummary {
   examined: boolean;
   on: CoverageEvidence[];
 }
 
 /**
- * The field on a read of one node: the same object, with `note` on a node
+ * The field on a read of one node: the summary whole, with `note` on a node
  * that has not been examined and on no other.
  */
-export type Coverage = CoverageRow & { note?: string };
+export type Coverage = CoverageSummary & { note?: string };
+
+/**
+ * The field on one row of a list (a node of a tree, a subclaim), kept as
+ * small as the fact allows. `examined` is always there, since a row that
+ * said nothing would be read as nothing being wrong. `on` lists only what
+ * the judgment was made on beyond public evidence, and is left out when
+ * there is nothing beyond it.
+ */
+export interface CoverageRow {
+  examined: boolean;
+  on?: Exclude<CoverageEvidence, "public_evidence">[];
+}
 
 export const COVERAGE_UNEXAMINED_NOTE =
   "No judgment of this node is in force. That is not a finding either way.";
 
-const UNEXAMINED: CoverageRow = { examined: false, on: [] };
+const UNEXAMINED: CoverageSummary = { examined: false, on: [] };
 
 /**
  * The coverage of each of `nodeIds`, in one query. Every id asked for has an
  * entry, keyed as the database writes a uuid (lower case): a node with no
  * judgment in force (or an id no node has) is not examined.
  */
-export async function summarizeCoverage(nodeIds: readonly string[]): Promise<Map<string, CoverageRow>> {
+export async function summarizeCoverage(nodeIds: readonly string[]): Promise<Map<string, CoverageSummary>> {
   const ids = [...new Set(nodeIds.map((id) => id.toLowerCase()))];
-  const out = new Map<string, CoverageRow>(ids.map((id) => [id, { ...UNEXAMINED, on: [] }]));
+  const out = new Map<string, CoverageSummary>(ids.map((id) => [id, { ...UNEXAMINED, on: [] }]));
   if (ids.length === 0) return out;
   const rows = await rawQuery<{ node_id: string; evidence_not_shown: boolean }>(
     // An instance counts when it was attached as the judgment was written:
@@ -125,9 +138,26 @@ export async function summarizeCoverage(nodeIds: readonly string[]): Promise<Map
  * as nothing being wrong. Undefined when the summary could not be read: the
  * key is then left off, and absent is "not said", never "examined".
  */
-export function coverage(row: CoverageRow | undefined): Coverage | undefined {
-  if (!row) return undefined;
-  return row.examined ? row : { ...row, note: COVERAGE_UNEXAMINED_NOTE };
+export function coverage(summary: CoverageSummary | undefined): Coverage | undefined {
+  if (!summary) return undefined;
+  return summary.examined ? summary : { ...summary, note: COVERAGE_UNEXAMINED_NOTE };
+}
+
+/**
+ * `coverage` on one row of a list. A tree is read constantly by agents that
+ * pay for every key in context, and for most nodes the fact is one of two:
+ * not examined, or examined on public evidence and nothing else. So a row
+ * says `examined`, and names what the judgment was made on only where that
+ * goes beyond public evidence; a value added to the vocabulary later is
+ * listed the same way. Undefined when the summary could not be read, so the
+ * key is left off the row.
+ */
+export function coverageRow(summary: CoverageSummary | undefined): CoverageRow | undefined {
+  if (!summary) return undefined;
+  const beyond = summary.on.filter(
+    (e): e is Exclude<CoverageEvidence, "public_evidence"> => e !== "public_evidence"
+  );
+  return beyond.length > 0 ? { examined: summary.examined, on: beyond } : { examined: summary.examined };
 }
 
 /**
@@ -146,11 +176,12 @@ export const COVERAGE_DESCRIPTION =
   "finding either way. A status of `unknown` is a judgment, so the node is examined. " +
   "`evidence_not_shown` is listed only for a judgment whose inputs were recorded";
 
-/** The same for a row of a list, which carries no `note`. */
+/** The same for a row of a list, where the short form is served. */
 export const COVERAGE_ROW_DESCRIPTION =
-  "what examination the node has had: `examined` is whether a judgment of it is in force (a " +
-  "claim's assessment, a quantity's estimate, a question's assessment), and false means it " +
-  "has not been examined, which is not a finding either way; `on` lists what that " +
-  "judgment was made on, `public_evidence`, and `evidence_not_shown` when a source it was " +
-  "recorded against had been read as reporting a result from evidence it has not published, " +
-  "and is empty when `examined` is false";
+  "what examination the node has had, kept short: `examined` is whether a judgment of it is " +
+  "in force (a claim's assessment, a quantity's estimate, a question's assessment), and false " +
+  "means it has not been examined, which is not a finding either way; on a row, `on` lists " +
+  "only what the judgment was made on beyond public evidence (`evidence_not_shown` when a " +
+  "source it was recorded against had been read as reporting a result from evidence it has " +
+  "not published), and is left out when there is nothing beyond it; get_claim on the node " +
+  "lists everything";

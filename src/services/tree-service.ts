@@ -13,7 +13,7 @@ import {
   liveBountySql,
   type LeanCheckSummary,
 } from "./formalization-service.js";
-import { summarizeCoverage, type CoverageRow } from "./coverage-service.js";
+import { coverageRow, summarizeCoverage, type CoverageSummary } from "./coverage-service.js";
 
 /**
  * The mathematics fields every node carries (docs/mathematics.md §8.3): the
@@ -484,7 +484,7 @@ function assembleTree(
   root: TreeRootRow,
   childEdges: Map<string, TreeEdgeRow[]>,
   truncatedParents: Set<string>,
-  covered: Map<string, CoverageRow> | null
+  covered: Map<string, CoverageSummary> | null
 ): TreeNode {
   const expanded = new Set<string>();
 
@@ -510,7 +510,8 @@ function assembleTree(
       assessment_confidence: node.assessment_confidence,
       assessment_credence: node.assessment_credence,
       seed_credence: node.seed_credence,
-      ...(covered?.has(node.id) ? { coverage: covered.get(node.id) } : {}),
+      // The short form (coverage-service.ts): the tree is paid for per key.
+      ...(covered?.has(node.id) ? { coverage: coverageRow(covered.get(node.id)) } : {}),
       argument_id: edge?.argument_id ?? null,
       argument_name: edge?.argument_name ?? null,
       argument_stance: edge?.argument_stance ?? null,

@@ -223,7 +223,8 @@ read is free, an agent which signals allocation turns on.
   - `"arguments"`: each argument with its written form, its current
     evaluation, and the check record behind a machine-checked one.
   - `"subclaims"`: the direct subclaims, one row per argument each serves,
-    with the edge's reasoning, their standing and their `coverage`, and `subclaims_assessed`. `get_decomposition`
+    with the edge's reasoning, their standing and their `coverage` (the short form, as on a
+    node of `get_decomposition`), and `subclaims_assessed`. `get_decomposition`
     walks deeper.
   - `"provenance"`: the instances, each with its `stance` (`affirms`,
     `denies`, `poses` an open question, or `mentions`: it cites the claim or
@@ -295,9 +296,11 @@ read is free, an agent which signals allocation turns on.
   it, with each passage's `reading`). Served at `GET /arguments/:id` too.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
-  Each node carries `coverage` (`examined` and `on`, as on `get_claim`,
-  without the note), so the parts of a case that were never examined are
-  told apart from the parts examined and found sound. A quantity or a
+  Each node carries `coverage` in a short form, so the parts of a case that
+  were never examined are told apart from the parts examined and found
+  sound: `examined`, and `on` listing only what the judgment was made on
+  beyond public evidence (`["evidence_not_shown"]`), left out when there is
+  nothing beyond it; `get_claim` on the node lists everything. A quantity or a
   question carries no assessment status whether judged or not; `coverage`
   says it for every kind.
 - **`get_dependents`** `{claim_id, max_depth?}` — the walk up: everything

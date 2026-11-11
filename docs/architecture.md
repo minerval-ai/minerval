@@ -384,12 +384,17 @@ by the time the judgment was written (the reading is taken from
 `GET /claims/:claim_id` and `get_claim` carry it beside the judgment, with a
 `note` on a node not examined saying that this is not a finding either way,
 and every node of a decomposition tree and every row of `get_claim`'s
-`subclaims` carries it without the note, so a reader of a parent sees which
-parts under it were never looked at. A quantity or a question never carries
-an assessment status, judged or not, so on those rows `coverage` is the one
-field that says it for every kind. Two further values wait for things the
-public graph does not have: evidence held at a private label, and a judgment
-held from the public copy. They are added as words in `on`.
+`subclaims` carries it in a short form, so a reader of a parent sees which
+parts under it were never looked at: on a row there is no note, and `on`
+lists only what the judgment was made on beyond public evidence and is left
+out when there is nothing beyond it (`{examined: false}`, `{examined: true}`,
+`{examined: true, on: ["evidence_not_shown"]}`), because a tree is read
+constantly and most of its nodes have nothing more to say. A quantity or a
+question never carries an assessment status, judged or not, so on those rows
+`coverage` is the one field that says it for every kind. Two further values
+wait for things the public graph does not have: evidence held at a private
+label, and a judgment held from the public copy. They are added as words in
+`on`, and on a row are listed like `evidence_not_shown`.
 A request put to a party and refused is not derivable: a request records
 whom it is addressed to (`addressed_to`), but its `declined` state and
 outcome are the keeper's or the Researcher's refusal of the request itself,

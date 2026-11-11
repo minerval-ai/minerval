@@ -75,6 +75,12 @@ describe("isExamined", () => {
     expect(isExamined(PUBLIC, false)).toBe(true);
   });
 
+  it("reads the short form a node of a tree carries, with or without `on`", () => {
+    expect(isExamined({ examined: false }, true)).toBe(false);
+    expect(isExamined({ examined: true }, false)).toBe(true);
+    expect(isExamined({ examined: true, on: ["evidence_not_shown"] }, false)).toBe(true);
+  });
+
   it("falls back to what the caller can tell when the field is absent", () => {
     expect(isExamined(undefined, true)).toBe(true);
     expect(isExamined(null, false)).toBe(false);

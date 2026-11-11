@@ -34,9 +34,10 @@ export function notExaminedLine(kind: CoverageKind, opts: { afterLead?: boolean 
 }
 
 /**
- * Whether the node has been examined, for a node of a tree or a whole read.
- * `coverage` decides when the API serves it; `judged` is what the caller can
- * tell from the judgment fields it holds, for an API that predates the field.
+ * Whether the node has been examined, for a node of a tree (which carries
+ * the short form, with or without `on`) or a whole read. `coverage` decides
+ * when the API serves it; `judged` is what the caller can tell from the
+ * judgment fields it holds, for an API that predates the field.
  */
 export function isExamined(coverage: CoverageRow | null | undefined, judged: boolean): boolean {
   return coverage ? coverage.examined : judged;

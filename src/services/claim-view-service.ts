@@ -51,6 +51,7 @@ import {
   COVERAGE_DESCRIPTION,
   COVERAGE_ROW_DESCRIPTION,
   coverage,
+  coverageRow,
   summarizeCoverage,
 } from "./coverage-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
@@ -655,7 +656,7 @@ async function listDirectSubclaims(claimId: string) {
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,
     assessment_credence: sc.child_credence,
-    ...(covered ? { coverage: covered.get(sc.child_id.toLowerCase()) } : {}),
+    ...(covered ? { coverage: coverageRow(covered.get(sc.child_id.toLowerCase())) } : {}),
     argument_id: sc.argument_id,
     argument_name: sc.argument_name,
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),

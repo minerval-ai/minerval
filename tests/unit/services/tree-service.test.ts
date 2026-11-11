@@ -8,7 +8,8 @@ vi.mock("../../../src/db/client.js", () => ({
 // What examination each node has had (#543) is read in a query of its own,
 // through its own service. Mocked here so that the counts below stay counts
 // of the walk's queries; tests/db/coverage.test.ts reads the real thing.
-vi.mock("../../../src/services/coverage-service.js", () => ({
+vi.mock("../../../src/services/coverage-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/coverage-service.js")>()),
   summarizeCoverage: vi.fn(),
 }));
 
@@ -235,7 +236,7 @@ describe("tree-service", () => {
       expect(d3.children).toHaveLength(0);
     });
 
-    it("puts each node's coverage on it, read once for the whole tree (#543)", async () => {
+    it("puts each node's coverage on it in the short form, read once for the whole tree (#543)", async () => {
       mockRawQuery.mockResolvedValueOnce([rootRow("root", { assessment_status: "supported" })]);
       mockRawQuery.mockResolvedValueOnce([edgeRow("root", "judged"), edgeRow("root", "never")]);
       mockRawQuery.mockResolvedValueOnce([]);
@@ -251,12 +252,10 @@ describe("tree-service", () => {
 
       expect(mockCoverage).toHaveBeenCalledTimes(1);
       expect([...mockCoverage.mock.calls[0]![0]].sort()).toEqual(["judged", "never", "root"]);
-      expect(tree!.coverage).toEqual({ examined: true, on: ["public_evidence"] });
-      expect(tree!.children[0]!.coverage).toEqual({
-        examined: true,
-        on: ["public_evidence", "evidence_not_shown"],
-      });
-      expect(tree!.children[1]!.coverage).toEqual({ examined: false, on: [] });
+      // A row names what the judgment was made on only beyond public evidence.
+      expect(tree!.coverage).toEqual({ examined: true });
+      expect(tree!.children[0]!.coverage).toEqual({ examined: true, on: ["evidence_not_shown"] });
+      expect(tree!.children[1]!.coverage).toEqual({ examined: false });
     });
 
     it("serves the tree without coverage when that read fails, never a guess", async () => {

@@ -240,7 +240,7 @@ const errorEnvelope = {
 
 // What examination a node has had (#543, services/coverage-service.ts), as
 // GET /claims/:claim_id serves it beside the judgment, for every node,
-// judged or not. Each node of `tree` carries the same object without `note`.
+// judged or not. Each node of `tree` carries the short form (coverageRow).
 const coverageSchema = {
   type: "object",
   description: "On every node: " + COVERAGE_DESCRIPTION + ".",
