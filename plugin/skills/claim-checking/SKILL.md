@@ -39,6 +39,23 @@ skill bundles it in full, and the section numbers below point into it.
   record and its counts; ask for what else you need with `include`
   (`arguments`, `provenance`, `dependents`, `related`, `findings`, …). It is
   the same tool the graph's own agents read nodes with.
+- **Only where a claim stands**: `get_claim_card`, or `get_claim_cards` for
+  up to 100 claims in one call. A card is the judgment whole and nothing
+  else: the claim's text, kind and state, its status with its confidence (a
+  question's `standing`, a quantity's `estimate` and `unit`), its
+  `contestation`, when it was last assessed and last changed, and its
+  `page_url`. Prefer it to `get_claim` when you will report or cite the
+  verdict and do not need the reasoning, and for a list of claims you
+  already hold ids for. An unassessed claim comes back with null judgment
+  fields, which is the graph being silent, not an error; ids the graph does
+  not hold come back in `not_found`. Free.
+- **Less of any read**: the tools generated from the REST API's read routes
+  (`list_claims`, `cite_claim`, `get_assessment_history`, the cards and the
+  rest) take `fields`, a comma-separated list of dotted paths such as
+  `results.id,results.text,results.assessment_status,results.assessment_confidence`,
+  and return only those. Use it to keep a large read out of your context. Trim what you
+  carry, never what you report: if you will report a status, keep its
+  confidence and the claim's `contestation` in the paths you ask for.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
 - **What changed since you last looked**: `list_graph_changes`, narrowed with
@@ -104,6 +121,11 @@ skill bundles it in full, and the section numbers below point into it.
   actively a claim is disputed is its `contestation` (0..1), reported
   separately. A highly contested claim can be `verified`; an uncontested
   one can be `inconclusive`.
+- **A status travels with its confidence and its contestation.** A card
+  (`get_claim_card`) carries all three for that reason. Asking a tool for
+  fewer `fields` is a way to read less, not a way to say less: a status
+  reported without the confidence and contestation that go with it has been
+  rounded.
 - **`inconclusive` and `doubtful` are findings, not failures.**
   `inconclusive` means the evidence was examined and does not come down on
   either side. Don't round it up to "probably true" or down to "unproven,

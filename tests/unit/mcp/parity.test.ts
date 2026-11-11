@@ -130,6 +130,37 @@ describe("MCP parity with the REST API", () => {
     expect(schema.required).toEqual(expect.arrayContaining(["id", "ground", "content"]));
   });
 
+  // Partial responses (src/server/plugins/partial-response.ts): a tool
+  // generated from a GET route takes the route's `fields`, so an agent can
+  // ask for less exactly as a REST caller can. The exceptions are the
+  // exports that are not JSON objects; a new one belongs in that plugin's
+  // UNCOVERED_ROUTES, and here.
+  it("gives every tool generated from a GET route an optional fields input, exports aside", () => {
+    const without: string[] = [];
+    for (const route of app.routeCatalog) {
+      const key = routeKey(route.method, route.url);
+      const tool = ROUTE_TOOLS[key];
+      if (!tool) continue;
+      const input = routeInput(route);
+      const fields = (input.schema.shape as Record<string, { isOptional(): boolean }>).fields;
+      if (route.method !== "GET") {
+        expect(fields, key).toBeUndefined();
+        continue;
+      }
+      if (!fields) without.push(tool.name);
+      else {
+        expect(input.query).toContain("fields");
+        expect(fields.isOptional(), key).toBe(true);
+      }
+    }
+    expect(without.sort()).toEqual([
+      "export_claim_mira",
+      "export_claim_nanopub",
+      "export_claim_scasp",
+      "get_formalization_lean",
+    ]);
+  });
+
   it("registers every tool under a unique name, native tools included", async () => {
     const server = buildMcpServer({
       auth: {

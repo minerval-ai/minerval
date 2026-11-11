@@ -71,6 +71,11 @@ beforeAll(async () => {
   app = Fastify();
   await registerAuth(app);
   await registerQuota(app);
+  // As in buildApp: before the catalog, so GET tools take `fields`.
+  const { registerPartialResponse } = await import(
+    "../../../src/server/plugins/partial-response.js"
+  );
+  await registerPartialResponse(app);
   await registerRouteCatalog(app);
 
   // GET /users/me → get_account: an account route behind requireUser.
@@ -244,6 +249,38 @@ describe("route tools", () => {
     expect(parseText(appeal)).toEqual({
       received: { contribution_id: "c-1", appeal_reasoning: "The reviewer misread the source." },
       user: "contrib-1",
+    });
+    await client.close();
+  });
+
+  it("takes fields on a tool generated from a GET route, and prunes the result", async () => {
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const schemaOf = (name: string) =>
+      tools.find((t) => t.name === name)!.inputSchema as {
+        properties: Record<string, { type?: string }>;
+        required?: string[];
+      };
+    const history = schemaOf("get_assessment_history");
+    expect(history.properties.fields?.type).toBe("string");
+    expect(history.required ?? []).not.toContain("fields");
+    // A tool generated from a POST route does not take it.
+    expect(schemaOf("submit_appeal").properties.fields).toBeUndefined();
+
+    const pruned = await client.callTool({
+      name: "get_assessment_history",
+      arguments: { claim_id: CLAIM_ID, limit: 5, fields: "limit" },
+    });
+    expect(parseText(pruned)).toEqual({ limit: 5 });
+
+    const malformed = await client.callTool({
+      name: "get_assessment_history",
+      arguments: { claim_id: CLAIM_ID, fields: "limit..x" },
+    });
+    expect(malformed.isError).toBe(true);
+    expect(parseText(malformed).error).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 400,
     });
     await client.close();
   });

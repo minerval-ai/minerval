@@ -8,6 +8,7 @@ import { registerAuth } from "./plugins/auth.js";
 import { registerQuota } from "./plugins/quota.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerRouteCatalog } from "./plugins/route-catalog.js";
+import { registerPartialResponse } from "./plugins/partial-response.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
 import { argumentRoutes } from "../routes/arguments.js";
@@ -71,6 +72,9 @@ export async function buildApp() {
   await registerAuth(app);
   await registerQuota(app);
   await registerErrorHandler(app);
+  // `fields=` on GET routes. Before the catalog, so the catalog (and the MCP
+  // tools built from it) records each GET route with `fields` in its schema.
+  await registerPartialResponse(app);
   // Before any route: MCP builds its route tools from the catalog.
   await registerRouteCatalog(app);
 

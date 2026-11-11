@@ -98,7 +98,7 @@ export MINERVAL_FACTCHECK_HOOK=1
 ## Metering
 
 Tool tiers mirror the API (see [docs/mcp.md](../docs/mcp.md)): reads
-(`search_claims`, `get_claim`, `get_decomposition`,
+(`search_claims`, `get_claim`, `get_claim_card`, `get_decomposition`,
 `get_contribution_status`, `get_text_analysis`) are free; agentic calls
 (`match_claim`, `extract_claims`, `assess_text`) run models and spend owls
 from your balance (capped per call, settled to metered cost), and the last
