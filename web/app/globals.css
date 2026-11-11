@@ -645,6 +645,12 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .reasoning-detail[open] > summary::before { transform: rotate(90deg); }
 .reasoning-detail > summary:hover { color: var(--ink-soft); }
 .reasoning-detail .reasoning { margin-top: 0.6rem; margin-bottom: 0; }
+/* Retired arguments under the decomposition (#541): folded away, quiet. */
+.retired-arguments { margin: 1rem 0 0.6rem; }
+.retired-arguments-note { font-family: var(--sans); font-size: 0.78rem; color: var(--muted); margin: 0.4rem 0 0.3rem; }
+.retired-arguments-list { list-style: none; margin: 0; padding: 0; font-size: 0.92rem; }
+.retired-arguments-list li { margin: 0.3rem 0; line-height: 1.45; }
+.retired-arguments-stance, .retired-arguments-reason { font-family: var(--sans); font-size: 0.78rem; color: var(--muted); }
 
 /* subclaim summary chips */
 .summary-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }

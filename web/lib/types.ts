@@ -193,6 +193,16 @@ export interface ClaimCore {
   updated_at: string;
 }
 
+export interface RetiredArgumentItem {
+  id: string;
+  name: string | null;
+  stance: Stance;
+  retired_at: string | null;
+  reason: string | null;
+  // The argument it was merged into, when the Curator merged it (§5).
+  merged_into: string | null;
+}
+
 export interface ArgumentItem {
   id: string;
   name?: string | null;
@@ -492,6 +502,9 @@ export interface ClaimDetail {
   seed?: ClaimSeed | null;
   tree?: TreeNode;
   arguments?: ArgumentItem[];
+  // Arguments its Steward retired or the Curator merged away (#741, #541),
+  // each with its reason; their pages keep the record.
+  retired_arguments?: RetiredArgumentItem[];
   instances?: Instance[];
   // Source provenance (#286): the Steward's account of what the support
   // rests on, the dependencies recorded between instances and the documents
