@@ -26,6 +26,10 @@
  *     only makes it a candidate a mandate's lookouts can see; it spends
  *     nothing.
  *
+ * Between sweeps, on every tick (STANDING_ORDER_RETRY_MINUTES apart by
+ * default), the plans' standing orders are asked for again and the mandates
+ * no agent ends are tended (betweenSweeps).
+ *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
  * is harmless (every job is idempotent).
  */
@@ -35,7 +39,9 @@ import { sweepSessions } from "../services/session-service.js";
 import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
-import { reconcileActions } from "../services/action-service.js";
+import { materializeStandingOrders, reconcileActions } from "../services/action-service.js";
+import { tendMandates } from "../services/mandate-lifecycle-service.js";
+import { STANDING_ORDER_RETRY_MINUTES } from "../services/standing-order-service.js";
 import { scanReconcileCandidates } from "../services/curation-service.js";
 import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
@@ -53,6 +59,36 @@ export function resetAllocationScheduler(): void {
   lastSweepAt = Number.NEGATIVE_INFINITY;
 }
 
+/**
+ * The mandates no agent ends are tended (mandate-lifecycle-service.ts):
+ * a `deepen` mandate's scope ordered, a spent escrow paused, a finished
+ * mandate completed and refunded. No models run here.
+ */
+async function tend(): Promise<void> {
+  await tendMandates().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] mandate upkeep failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+}
+
+/**
+ * A tick between full sweeps: the standing orders of mandates' plans are
+ * asked for again and brought up to date, and the mandates are tended. This
+ * is where the direct steward lane's every-tick work went when its passes
+ * became commissions (#849): room that opens in a day's rate or an escrow
+ * is used at the scheduler's next tick (STANDING_ORDER_RETRY_MINUTES), not
+ * at the next six-hour sweep.
+ */
+async function betweenSweeps(): Promise<void> {
+  await materializeStandingOrders().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] standing orders failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+  await tend();
+}
+
 /** One scheduler pass; exported separately so tests can drive the clock. */
 export async function allocationSchedulerTick(
   now: number = Date.now()
@@ -65,7 +101,10 @@ export async function allocationSchedulerTick(
   };
   if (config.allocationSweepIntervalHours <= 0) return result;
   const intervalMs = config.allocationSweepIntervalHours * 3_600_000;
-  if (now - lastSweepAt < intervalMs) return result;
+  if (now - lastSweepAt < intervalMs) {
+    await betweenSweeps();
+    return result;
+  }
   lastSweepAt = now;
 
   // 1. The ledger catches up with the graph. A failure here is the one the
@@ -111,6 +150,9 @@ export async function allocationSchedulerTick(
   // plan items and their agents' runs (the drains also do this
   // opportunistically between sweeps).
   await fundGrantSelfActions().catch(() => 0);
+  // The sweep above placed the plans' standing orders (reconcileActions);
+  // the mandates no agent ends are tended on top of it.
+  await tend();
   // Follow-ups granted to runs that have since ended, which the lanes'
   // settle hooks missed (petition-service.ts).
   await sweepFollowUps().catch(() => 0);
@@ -163,7 +205,7 @@ export function startAllocationScheduler(options: {
   intervalMs?: number;
   logger: { info: (...a: unknown[]) => void; error: (...a: unknown[]) => void };
 }): { stop: () => void } {
-  const interval = options.intervalMs ?? 15 * 60_000;
+  const interval = options.intervalMs ?? STANDING_ORDER_RETRY_MINUTES * 60_000;
   let busy = false;
 
   const tick = async () => {

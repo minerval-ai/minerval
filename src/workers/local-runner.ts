@@ -24,7 +24,6 @@ import { handleArbitrationMessage } from "./arbitration-pipeline.js";
 import { processNextStewardTask, pendingStewardCount } from "./steward-pipeline.js";
 import { processNextOrderTask } from "./order-pipeline.js";
 import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
-import { processNextGrantTask } from "./grant-pipeline.js";
 import { processNextEngineAction } from "./engine-executor.js";
 import { processNextPrizeCheck } from "./prize-check-pipeline.js";
 import { runPrizeWindowCloser } from "./prize-window-closer.js";
@@ -55,7 +54,6 @@ export interface RunnerEvent {
     | "steward"
     | "order"
     | "budgetJob"
-    | "grant"
     | "engine"
     | "prizeCheck"
     | "prizeWindow";
@@ -285,7 +283,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         // A settlement, not a model run — loop for the next unit of work.
         continue;
       }
-      // 'empty' — fall through to the grant lane.
+      // 'empty' — fall through to the next lane.
     }
 
     // 4. The engine executor: covered planning / mandate-review / ingest /
@@ -315,7 +313,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         });
         continue;
       }
-      // 'empty' — fall through to the grant lane.
+      // 'empty' — fall through to the next lane.
     }
 
     // 4b. The prize-check lane (docs/mathematics.md §8.4), two-step so a
@@ -382,38 +380,9 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       }
     }
 
-    // 5. Grantmaker mandates: funded steward passes over plan claim items,
-    //    one unit per pass so they interleave with everything else.
-    {
-      const startedAt = now();
-      const g = await processNextGrantTask({ model: opts.stewardModel });
-      if (g.status === "budget") {
-        if (surfaceBudget) checkBudget();
-        return { ...budgetFlag(), processed, errors, capped: false };
-      }
-      if (g.status === "transient") {
-        return { ...budgetFlag(), processed, errors, capped: true, stoppedOnTransient: true };
-      }
-      if (g.status === "processed" || g.status === "planned") {
-        seq++;
-        stewardProcessed++;
-        if (g.ok) processed.grant = (processed.grant ?? 0) + 1;
-        else errors.grant = (errors.grant ?? 0) + 1;
-        opts.onEvent?.({
-          seq,
-          queue: "grant",
-          message: { grantId: g.grantId, claimId: g.claimId },
-          ok: !!g.ok,
-          error: g.error,
-          durationMs: now() - startedAt,
-        });
-        continue;
-      }
-      if (g.status === "paused" || g.status === "completed") {
-        continue;
-      }
-      // 'empty' — fall through to the background drain.
-    }
+    // 5. (A mandate's plan items used to run here, on a direct steward lane
+    //    of their own. They are commissions on the ledger now, #849, and
+    //    run with every other covered pass in step 6.)
 
     // 6. No in-memory, order, or funded work — one background Steward task
     //    (highest priority pending), leaving the rest as stubs when capped.
