@@ -1,6 +1,7 @@
-// The Grantmaker replies in the background: sending a message returns the
-// conversation at once with turn.state "replying", and the reply lands in
-// the transcript when the turn finishes (a drafting turn can take minutes).
+// The Grantmaker replies in the background: sending a message returns at
+// once with the message's place and turn.state "replying" (not the
+// transcript, #905), and the reply lands in the conversation when the turn
+// finishes (a drafting turn can take minutes).
 // The chats read the conversation until the turn is done, showing the
 // reply as it forms (turn.partial).
 

@@ -200,10 +200,15 @@ conversation.
 1. `start_grant_conversation` with a first message saying what your user
    cares about, why, and roughly what they want to spend. Free. Nothing
    runs until a draft is funded.
-2. The reply is not in the response. Read the conversation with
-   `get_grant_conversation` every 20 to 30 seconds until `turn.state` is
-   `idle` (a drafting turn can take minutes). Never resend a message; it is
-   already saved.
+2. The reply is not in the response, and neither is the transcript: a
+   send returns your message's place (`message_count`), the draft's hash
+   (`mandate_sha256`) and `turn.state`. Get the reply with
+   `get_grant_conversation` passing `after` = `message_count`,
+   `mandate_sha256`, and `wait: 25`. It answers when the turn ends, or
+   after 25 seconds, with only the new messages, and the draft only if the
+   reply changed it (otherwise `mandate_unchanged: true`). Repeat with the
+   same values while `turn.state` is `replying` (a drafting turn can take
+   minutes). Never resend a message; it is already saved.
 3. Answer its questions with `send_grant_message`. Expect it to survey the
    graph, push back, and quote costs in owls from live estimates. When it
    disagrees with your user's instinct about what would be valuable, take
