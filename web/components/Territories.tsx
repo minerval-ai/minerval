@@ -3,7 +3,7 @@ import { territoryHref, type Territory } from "@/lib/territories";
 import type { PrizeListItem, SearchResultItem } from "@/lib/types";
 import { STATUS } from "@/lib/ontology";
 import { formatOwls } from "@/lib/format";
-import { StatusBadge, Unassessed } from "./Assessment";
+import { StandingBadge, StatusBadge, Unassessed } from "./Assessment";
 import styles from "./Territories.module.css";
 
 // The "What's mapped so far" overview shown on /claims before a search (#206):
@@ -24,26 +24,45 @@ function TerritoryCard({ t }: { t: Territory }) {
   // list; an anchored one fronts its anchor and opens the map.
   const claimId = s?.leadId ?? t.anchorId;
   const mapHref = territoryHref(t);
+  // A question-anchored card leads with the question itself: no quotation
+  // marks (it is asked, not asserted), and its standing where a claim's
+  // status would sit. Without live data there is no badge, as for a claim:
+  // "unassessed" would be a guess.
+  const isQuestion = s?.isQuestion ?? t.anchorKind === "question";
 
   return (
     <article className={styles.card}>
-      <div className={styles.kicker}>{t.kicker ?? "Investigation"}</div>
+      <div className={styles.kicker}>{t.kicker ?? (isQuestion ? "Question" : "Investigation")}</div>
       <h3 className={styles.name}>{t.name}</h3>
-      <p className={styles.question}>{t.question}</p>
-      <p className={styles.core}>
-        <span className={styles.quote}>&ldquo;</span>
-        {coreText}
-        <span className={styles.quote}>&rdquo;</span>
-        {s?.coreStatus && (
-          <>
-            {" "}
-            <StatusBadge status={s.coreStatus} linkTo={mapHref} />
-          </>
-        )}{" "}
-        <Link className={styles.open} href={`/claims/${claimId}`} title="open this claim">
-          ↗&#xFE0E;
-        </Link>
-      </p>
+      {t.question && <p className={styles.question}>{t.question}</p>}
+      {isQuestion ? (
+        <p className={styles.core}>
+          {coreText}{" "}
+          {s && (
+            <>
+              <StandingBadge standing={s.coreStanding ?? null} linkTo={mapHref} />{" "}
+            </>
+          )}
+          <Link className={styles.open} href={`/claims/${claimId}`} title="open this question">
+            ↗&#xFE0E;
+          </Link>
+        </p>
+      ) : (
+        <p className={styles.core}>
+          <span className={styles.quote}>&ldquo;</span>
+          {coreText}
+          <span className={styles.quote}>&rdquo;</span>
+          {s?.coreStatus && (
+            <>
+              {" "}
+              <StatusBadge status={s.coreStatus} linkTo={mapHref} />
+            </>
+          )}{" "}
+          <Link className={styles.open} href={`/claims/${claimId}`} title="open this claim">
+            ↗&#xFE0E;
+          </Link>
+        </p>
+      )}
 
       <div className={styles.spacer} />
 
@@ -90,7 +109,7 @@ export function Territories({ territories }: { territories: Territory[] }) {
     <section className={styles.section}>
       <div className={styles.head}>
         <h2>What&rsquo;s mapped so far</h2>
-        <span className={styles.aside}>each card opens on its core claim&rsquo;s map, or its domain&rsquo;s list</span>
+        <span className={styles.aside}>each card opens on the map of its question or core claim</span>
       </div>
       <div className={styles.grid}>
         {territories.map((t) => (

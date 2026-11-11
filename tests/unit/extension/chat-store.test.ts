@@ -73,6 +73,42 @@ describe("extension tab chat", () => {
     expect(chat.mock.calls[0]![0].messages).toEqual([{ role: "user", content: "Is it true?" }]);
   });
 
+  it("continues the same Assistant conversation, and keeps what the reply carried", async () => {
+    const first = vi.fn(async (_input, _onText, onConversation: (id: string) => void) => {
+      onConversation("c1");
+      return {
+        reply: "ok",
+        citations: [],
+        conversation_id: "c1",
+        cost_micro_usd: 50_000,
+        waiting: 1,
+        pages: ["p1"],
+      } as ChatResponse;
+    });
+    await (await askInTab({ tabId: 3, page: PAGE, question: "one", context }, first)).answer;
+    expect(first.mock.calls[0]![0].conversationId).toBeNull();
+    const stored = await readTabChat(3, PAGE);
+    expect(stored.conversationId).toBe("c1");
+    expect(stored.messages[1]).toEqual({
+      role: "assistant",
+      content: "ok",
+      citations: [],
+      cost: 50_000,
+      waiting: 1,
+      pages: ["p1"],
+    });
+
+    const second = vi.fn(async () => ({ reply: "again", citations: [], conversation_id: "c1" }) as ChatResponse);
+    await (await askInTab({ tabId: 3, page: PAGE, question: "two", context }, second)).answer;
+    expect(second.mock.calls[0]![0].conversationId).toBe("c1");
+
+    // "New" drops the tab's record, so the next question opens another.
+    await clearTabChat(3);
+    const third = vi.fn(async () => ({ reply: "fresh", citations: [] }) as ChatResponse);
+    await (await askInTab({ tabId: 3, page: PAGE, question: "three", context }, third)).answer;
+    expect(third.mock.calls[0]![0].conversationId).toBeNull();
+  });
+
   it("sends the earlier turns with the next question", async () => {
     const reply = async () => ({ reply: "ok", citations: [] });
     await (await askInTab({ tabId: 1, page: PAGE, question: "one", context }, reply)).answer;
