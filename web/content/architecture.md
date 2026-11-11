@@ -681,7 +681,11 @@ the disagreement rather than the evidence and let a verdict be avoided;
 evidence would exist if the claim were true, `unknown` where it would not be
 expected). Migration 0066 relabeled existing rows provisionally
 (`contested` to `inconclusive`, `unsupported` to `unknown`) and queued the
-affected claims for a fresh Steward pass.
+affected claims for a fresh Steward pass. Migration 0111 (#848) records the
+retired label in `assessments.relabeled_from`; the claim view, the API and
+`public_read.assessments` carry it, and the claim page says the status was
+carried over and not yet re-judged. A Steward never writes it, so a re-judged
+claim's new assessment carries NULL.
 
 How actively a claim is disputed is not a status. It is the claim's
 `contestation` (0..1, set by the Steward with importance), served on the
@@ -832,7 +836,15 @@ These act through tools over the life of a claim and the graph:
   mandate) commission the row, and one run reads every concern waiting on
   the anchor. Every structural
   operation lands in an append-only reconciliation log with enough payload to
-  reverse it, and the Curator never overrides a Steward's verdict. It also
+  reverse it, and the Curator never overrides a Steward's verdict. In a
+  split, `reassign_instance` is the one operation that puts a passage on the
+  node it is about, whatever the node's kind: it moves the instance or, for
+  a passage that states several nodes' content, copies it (same source and
+  passage, no readings carried over), with what the passage says about that
+  node (`stance_relation` for a claim, `stated` for a quantity,
+  `answer_claim_id` for a question). An argument recorded on the wrong side
+  is not the Curator's to flip: it asks the node's Steward, who has
+  `revise_argument`. It also
   corrects a node created as the wrong kind (`change_node_kind`, reversible),
   merges a claim that only states a value into its quantity, and keeps the
   requests that bear on several nodes or on none.
@@ -1299,9 +1311,10 @@ result. A Steward pays from its pass's budget: every lane that runs a
 Steward sets one on the usage context (`withPassBudget` in
 `src/llm/usage-context.ts`), namely the allocations covering a ledger
 action, what is left of the background daily budget on the fallback lane,
-the cap a buyer was quoted for a paid order, the remaining budget of the
-job funding a money trigger or a deep decomposition, and a mandate's
-uncommitted budget. What is left is that budget less the pass's metered
+the cap a buyer was quoted for a paid order, and the remaining budget of
+the job funding a money trigger or a deep decomposition. (A mandate's plan
+items are commissions on ledger actions, so a pass they buy works to the
+allocation covering it.) What is left is that budget less the pass's metered
 spend, the research it already launched included; a pass with no budget is
 not offered `delegate_research`. A Grantmaker pays from its mandate's
 uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
@@ -1603,7 +1616,7 @@ money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
 
 Failures are classified before they are counted. Transient API errors (rate
-limits, server errors, network, exhausted budget) requeue the claim untouched
+limits, server errors, network, exhausted budget, rejected credentials) requeue the claim untouched
 and do not count as attempts. The continuous runner answers them by slowing
 down, not stopping: a drain that ends on one halves the live concurrency
 (never below one) and pauses every slot for a backoff that doubles with each
@@ -1614,7 +1627,24 @@ Either way, healthy claims are never poisoned.
 Only genuine logic errors count toward the retry cap, after which the claim
 parks in an error state for inspection. The distinction exists because an
 earlier incident parked dozens of production claims over what turned out to be
-a billing hiccup.
+a billing hiccup, and a later one parked a hundred over thirty seconds of
+rejected credentials (#846). A model refusal parks on the first failure: it
+follows the claim and the model, the provider's fallback chain has already
+been tried, and two more passes buy the same refusal.
+
+A park is not retried on its own (#846). The error is stored twice: its raw
+text (`claims.steward_error`), for logs and the service-scoped report, and a
+fixed class beside it (`steward_error_reason`: `credentials_fault`,
+`model_refusal`, `database_fault`, `tool_failure`, `provider_error`,
+`other`), which is all any public surface shows, since the raw text can name
+internal hosts, roles and request ids. A parked node with no judgment is
+marked `steward_parked` wherever its parent's subclaims are listed
+(`get_claim`, `get_decomposition`), so a parent's Steward knows the premise
+will not be judged on its own. Messages still reach a parked node's inbox
+but leave it parked; only a commission returns it to the queue, and the
+commission's result says since when it was parked, after how many failures,
+why, and that the money buys another attempt. A maintainer resets parks by
+error text or id with `scripts/recover-parked-stewards.ts`.
 
 ---
 

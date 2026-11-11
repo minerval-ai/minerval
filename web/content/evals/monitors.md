@@ -397,9 +397,15 @@ SELECT date_trunc('day', created_at) AS day,
 `error`, `deferred`); the oldest pending claim and how long since its last
 non-coalesced enqueue; the `queue_depth_snapshots` trend over the last 48
 points (earliest, latest, delta, least-squares slope per hour); and the
-claims parked in `error` with their last error, most important first —
-the #97 failure mode (81 of 142 parked with nothing surfacing it) kept
-visible. A park no longer waits to be read here: the lane that parks a
+claims parked in `error` with the class of their last error, most
+important first — the #97 failure mode (81 of 142 parked with nothing
+surfacing it) kept visible. The class is one of a few fixed words
+(`credentials_fault`, `model_refusal`, `database_fault`, `tool_failure`,
+`provider_error`, `other`); the raw error text can name internal hosts,
+roles and request ids, so it stays in logs and the service-scoped report
+(#846). A parked claim is not retried on its own: a commission on it buys
+another attempt, and `scripts/recover-parked-stewards.ts` resets parks by
+error text or id. A park no longer waits to be read here: the lane that parks a
 claim files it on the agents' own channel as it happens
 (`reportStewardPark`, #834), blocking when it retired funded ledger rows
 unrun.
@@ -437,7 +443,8 @@ SELECT period_key, steward_pending, created_at
 ```
 
 ```sql
-SELECT id, text, importance, steward_error, steward_attempts, stewarded_at
+SELECT id, text, importance, COALESCE(steward_error_reason, 'other') AS reason,
+       steward_attempts, stewarded_at
   FROM claims
  WHERE state = 'active' AND steward_state = 'error'
  ORDER BY importance DESC, stewarded_at DESC NULLS LAST

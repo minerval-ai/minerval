@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "201f39716f6aa553a4baae6f2888da16e08ff2759617ed530bbd07ec402e6a45",
+  "hash": "7e4e2f1fd23430ba3251c6ae519635d26fdd2492ba44d134bfdd7d431399c5d3",
   "constitution": {
     "hash": "a0f849d02707f59443470b598ea64ca3607596a0cb9731230cec8506254649bc",
     "source_path": "admin_constitution.md"
@@ -17,7 +17,7 @@
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "668e813c6c5a7443666271c462b49b4b716b70076c979c29d9e20b6deea1883d"
+        "a4f7d5044cdda30f672f95352b6e4f4ef00555e88d199b5cf40391b7d706ef5b"
       ]
     },
     {
@@ -31,7 +31,7 @@
       "name": "contribution-reviewer",
       "source_path": "src/llm/prompts/contribution-reviewer.ts",
       "blocks": [
-        "82e10320c3b934d53cd96e3879381b88d10011317db2861a06421776de525d0d"
+        "000ba42b2410b0b6a88a6237e1aceb34f542e0c7baf6b781245bcdd3418397e2"
       ]
     },
     {
@@ -45,7 +45,7 @@
       "name": "curator",
       "source_path": "src/llm/prompts/curator.ts",
       "blocks": [
-        "d39d47dd9cf22aa2263e1454e8b8877a20289942e33b2cfe4b9c394635767156"
+        "3c2dc3456465ac7dc2c39c708f801cebbc66c7e318a7b61711d02ba5c7f3e796"
       ]
     },
     {
@@ -66,7 +66,7 @@
       "name": "grantmaker",
       "source_path": "src/llm/prompts/grantmaker.ts",
       "blocks": [
-        "6f6e6c6337b3b38cda4281af30e4b0b92c475ebdbe615caa30fc57d47a6ab3eb"
+        "72b171f58b143c5020673e19420f38ae016377119c5ef6e338ad96eeff1d7960"
       ]
     },
     {
@@ -101,14 +101,14 @@
       "name": "researcher",
       "source_path": "src/llm/prompts/researcher.ts",
       "blocks": [
-        "71c8573d950a9f9cdc141da3cab441f1672fc32a7ab5bb7f316c65962105a17c"
+        "da9b13ce1fc9ce41d5e4944e7f32435776f17dea95b60f77410ec04b26b64c2a"
       ]
     },
     {
       "name": "researcher",
       "source_path": "src/llm/prompts/researcher.ts",
       "blocks": [
-        "a680c8ce0d0a4edbcfa1a73c608a4cdbaf9e5a43281013f19df7627e14e4c8da"
+        "f161a497df8490d05093de845ba607d1d207d2ccd4882d48d4d88b63872f3169"
       ]
     },
     {
@@ -122,8 +122,8 @@
   "skills": [
     {
       "name": "costing",
-      "version": 5,
-      "hash": "a9584982ad7a4f3e6afb3a7642f6453f4ae8efe164b4005e8dc393207660e3ce"
+      "version": 7,
+      "hash": "0ca8baac750108a5e92bc61d85fea0e5c694c90752967d973b90249f3399d20c"
     },
     {
       "name": "mathematics",
@@ -142,8 +142,8 @@
     },
     {
       "name": "sql",
-      "version": 2,
-      "hash": "55fce67ec2a7e78fdfe4ff839e8914304769dc538282eda105e253165d8dbd94"
+      "version": 6,
+      "hash": "bf6a3b33f1771c21ce81baae32989777d29b59f46e4c9565c09d2a1dd70a3c86"
     }
   ]
 }

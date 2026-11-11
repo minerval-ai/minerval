@@ -16,10 +16,16 @@ unknown.
 
 - `nodes`: id, kind (claim, quantity, question), text, claim_type, state,
   merged_into, importance, contestation, steward_state, stewarded_at,
-  proposed_by_person, tags (array of slugs), created_at, updated_at
+  proposed_by_person, tags (array of slugs), created_at, updated_at,
+  steward_park_reason (null unless steward_state is 'error': the node is
+  parked after failed Steward passes and will not be assessed until someone
+  commissions a pass on it; one of credentials_fault, model_refusal,
+  database_fault, tool_failure, provider_error, other)
 - `assessments`: id, node_id, status, confidence, credence, marginal_yield,
   is_current, assessed_at, trigger, summary, reasoning_head (the first 500
-  characters)
+  characters), relabeled_from (the retired label, contested or
+  unsupported, a migration carried the status over from; set until the
+  node is re-judged, so such a status is provisional, not a finding)
 - `edges`: id, parent_id, child_id, relation, reasoning, created_at
 - `arguments`: id, node_id, name, stance, shows, description, created_at,
   retired_at
@@ -58,6 +64,12 @@ unknown.
   filed (join `contributions`), and node_id the node it became or landed
   on once accepted. An item with node_ref and no node_id is waiting on the
   proposal whose proposal_ref that is.
+  An `assess`, `reassess` or `deepen` item is a
+  standing order its mandate commissions: once placed, its money is the
+  row in `commissions` on that action_id with commissioned_by `plan`. A
+  ledger_status of `waiting` on one is an order the mandate's daily rate
+  or escrow has no room for yet, and `blocked` one that could never fit;
+  ledger_reason gives the figures.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at
@@ -116,6 +128,7 @@ WITH RECURSIVE sub(id) AS (
   SELECT $1::uuid
   UNION SELECT e.child_id FROM edges e JOIN sub ON e.parent_id = sub.id)
 SELECT n.id, n.text, n.importance, n.contestation, n.steward_state,
+       n.steward_park_reason,
        a.status, now()::date - a.assessed_at::date AS days_since_assessed,
        a.marginal_yield,
        (SELECT count(*) FROM edges e JOIN nodes c ON c.id = e.child_id
@@ -123,6 +136,26 @@ SELECT n.id, n.text, n.importance, n.contestation, n.steward_state,
   FROM sub JOIN nodes n USING (id)
   LEFT JOIN assessments a ON a.node_id = n.id AND a.is_current
  WHERE n.state = 'active'
+ ORDER BY n.importance DESC LIMIT 100;
+```
+
+Statuses carried over from a retired label and not yet re-judged, most
+important first, with the reassessment open on each and the budget already
+committed to it. Price what is left with the cost query above (kind
+`reassess`):
+
+```sql
+SELECT n.id, n.text, n.importance, a.status, a.relabeled_from, a.assessed_at,
+       r.open_reassess, r.committed_owls
+  FROM assessments a JOIN nodes n ON n.id = a.node_id
+  LEFT JOIN LATERAL (
+    SELECT count(DISTINCT l.action_id) AS open_reassess,
+           coalesce(sum(c.budget_owls - c.spent_owls)
+                      FILTER (WHERE c.settled_at IS NULL), 0) AS committed_owls
+      FROM ledger l LEFT JOIN commissions c USING (action_id)
+     WHERE l.target_node_id = n.id AND l.kind = 'reassess'
+       AND l.status IN ('open', 'running')) r ON true
+ WHERE a.is_current AND a.relabeled_from IS NOT NULL AND n.state = 'active'
  ORDER BY n.importance DESC LIMIT 100;
 ```
 
