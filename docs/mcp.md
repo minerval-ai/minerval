@@ -436,8 +436,11 @@ read of a claim, use a card.
   setup by version; a run that read private data answers `public: false`
   with its reasons and nothing else), `list_run_steps` (its steps as
   one-line summaries, a page at a time, filterable by kind or tool),
-  `get_run_step` (one step in full). An assessment's `run_id` names the run
-  that wrote it.
+  `get_run_step` (one step in full, with its hash and the hash of the step
+  before it), `verify_run_log` (whether the run's stored steps still chain
+  to the seal it closed with, and where they first do not; see
+  [run-log.md](run-log.md)). An assessment's `run_id` names the run that
+  wrote it.
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.

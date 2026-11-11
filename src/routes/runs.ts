@@ -7,10 +7,13 @@
  * service key alone must not open private runs.
  *
  *   GET /runs/:run_id                 the run: agent, times, outcome, steps
- *     counted and recorded, cost, commit, and its setup with part versions.
+ *     counted and recorded, cost, commit, its setup with part versions, and
+ *     the seal on its log.
  *   GET /runs/:run_id/steps           its steps as one-line summaries, a page
  *     at a time (after = the last seq read), filterable by kind or tool.
- *   GET /runs/:run_id/steps/:seq      one step in full.
+ *   GET /runs/:run_id/steps/:seq      one step in full, with its hashes.
+ *   GET /runs/:run_id/verify          whether the stored steps still chain
+ *     to the run's seal (docs/run-log.md).
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isDirectService, presentsCredentials } from "../server/plugins/auth.js";
@@ -20,6 +23,7 @@ import {
   getRunStep,
   getRunSummary,
   listRunSteps,
+  verifyRunLog,
 } from "../services/run-view-service.js";
 
 const RUN_ID = { type: "string", pattern: "^[0-9a-fA-F-]{36}$" } as const;
@@ -56,6 +60,26 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       const run = await getRunSummary(request.params.run_id, { isService: isService(request) });
       if (!run) return notFound(reply, request, "Run");
       return reply.send(run);
+    },
+  });
+
+  app.get<{ Params: { run_id: string } }>("/:run_id/verify", {
+    schema: {
+      tags: ["runs"],
+      summary:
+        "Check a run's log against its seal: every step carries the hash of the one before " +
+        "it, and a run that closed with every step written is sealed with the last hash. " +
+        "Answers whether the stored steps still chain to that seal, and where they first " +
+        "do not. get_run_step serves each step's content and hashes, so the check can be " +
+        "repeated outside",
+      params: { type: "object", properties: { run_id: RUN_ID }, required: ["run_id"] },
+      querystring: { type: "object", properties: { ...includePrivate } },
+    },
+    preHandler: [optionalAuth],
+    handler: async (request, reply) => {
+      const check = await verifyRunLog(request.params.run_id, { isService: isService(request) });
+      if (!check) return notFound(reply, request, "Run");
+      return reply.send(check);
     },
   });
 

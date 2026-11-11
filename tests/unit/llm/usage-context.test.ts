@@ -3,11 +3,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   finish: vi.fn(),
+  seal: vi.fn(),
+  record: false,
 }));
 
 vi.mock("../../../src/services/trace-service.js", () => ({
   startAgentRun: mocks.start,
   finishAgentRun: mocks.finish,
+  sealAgentRun: mocks.seal,
+  recordMode: () => mocks.record,
+  RunLogError: class RunLogError extends Error {},
 }));
 
 import {
@@ -22,6 +27,8 @@ const fakeTrace = () => ({ runId: "run-1", seq: { n: 0 }, ready: Promise.resolve
 beforeEach(() => {
   mocks.start.mockReset().mockReturnValue(null);
   mocks.finish.mockReset();
+  mocks.seal.mockReset().mockResolvedValue(true);
+  mocks.record = false;
 });
 
 describe("withAgent without tracing", () => {
@@ -85,6 +92,54 @@ describe("withAgent with tracing", () => {
     mocks.start.mockReturnValue(trace);
     expect(withAgent("steward", () => "done")).toBe("done");
     expect(mocks.finish).toHaveBeenCalledWith(trace, "ok");
+  });
+});
+
+// RUN_LOG_MODE=record (#552): the run is not finished until its log is.
+describe("withAgent in record mode", () => {
+  it("holds the result until the log is sealed", async () => {
+    mocks.record = true;
+    const trace = fakeTrace();
+    mocks.start.mockReturnValue(trace);
+    let sealed = false;
+    mocks.seal.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      sealed = true;
+      return true;
+    });
+    const result = await withAgent("steward", async () => 42);
+    expect(sealed).toBe(true);
+    expect(result).toBe(42);
+    expect(mocks.seal).toHaveBeenCalledWith(trace, "ok");
+    expect(mocks.finish).not.toHaveBeenCalled();
+  });
+
+  it("fails the run when its log could not be written whole", async () => {
+    mocks.record = true;
+    mocks.start.mockReturnValue(fakeTrace());
+    mocks.seal.mockResolvedValue(false);
+    await expect(withAgent("steward", async () => 42)).rejects.toThrow();
+  });
+
+  it("closes the log and rethrows the work's own error", async () => {
+    mocks.record = true;
+    const trace = fakeTrace();
+    mocks.start.mockReturnValue(trace);
+    mocks.seal.mockResolvedValue(false);
+    await expect(
+      withAgent("steward", async () => {
+        throw new Error("kaput");
+      })
+    ).rejects.toThrow("kaput");
+    expect(mocks.seal).toHaveBeenCalledWith(trace, "error", expect.any(Error));
+  });
+
+  it("does not wait in best-effort mode", async () => {
+    const trace = fakeTrace();
+    mocks.start.mockReturnValue(trace);
+    await withAgent("steward", async () => 1);
+    expect(mocks.finish).toHaveBeenCalledWith(trace, "ok");
+    expect(mocks.seal).not.toHaveBeenCalled();
   });
 });
 

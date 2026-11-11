@@ -106,7 +106,9 @@ skill bundles it in full, and the section numbers below point into it.
   `list_run_steps` show what that run was given and did, step by step,
   when the run is public; a run that read private data is withheld, with
   the reasons. Read the run when a verdict surprises you, before you
-  dispute it.
+  dispute it. A run that closed with every step written is sealed
+  (`sealed_at`, `log_hash`), and `verify_run_log` checks that its steps
+  still chain to that seal; an unsealed run's log may be missing steps.
 - When an assessment carries `developer_disclosure`, the claim names the
   developer of the model that assessed it. Pass that on with the verdict
   ("assessed by Claude Opus 5.5, made by Anthropic, which the claim names").

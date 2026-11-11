@@ -14,6 +14,7 @@
  * then its steps as one-line summaries with a cursor, then any step in full.
  */
 import { rawQuery } from "../db/client.js";
+import { chainChecker, RUN_LOG_FORMAT, type ChainedStep, type ChainProblem } from "./run-log.js";
 import type { SetupRecord } from "./setup-split.js";
 
 const REPO_URL = "https://github.com/minerval-ai/minerval";
@@ -34,6 +35,8 @@ interface RunRow {
   wrote_to_graph: boolean;
   commit_sha: string | null;
   private_reasons: string[];
+  log_hash: string | null;
+  sealed_at: Date | null;
 }
 
 export interface RunSetupPartView {
@@ -63,6 +66,14 @@ export interface RunSummary {
   cost_usd: number;
   /** The setup of the run's first prompt step, with part versions resolved. */
   setup: (Omit<SetupRecord, "parts"> & { parts: RunSetupPartView[] }) | null;
+  /**
+   * The seal on the run's log (services/run-log.ts): the hash its chain of
+   * steps reached, and when the run closed with every step written. Both
+   * null on a run still open, on one that lost a step, and on runs from
+   * before steps were chained. verifyRunLog checks the steps against it.
+   */
+  log_hash: string | null;
+  sealed_at: string | null;
   /** Whether the run is public; false only in a service read of a private run. */
   public: boolean;
   private_reasons: string[];
@@ -87,6 +98,8 @@ export interface StepSummary {
   chars: number;
   /** Tools called (assistant) or whose results these are (tool_results). */
   tools: string[];
+  /** The step's hash in the run's chain; null on steps recorded before the chain. */
+  hash: string | null;
 }
 
 /**
@@ -99,7 +112,7 @@ export interface StepSummary {
 async function loadRun(runId: string): Promise<RunRow | null> {
   const rows = await rawQuery<RunRow>(
     `SELECT id, agent, claim_id, started_at, finished_at, outcome, error, steps, skills,
-            wrote_to_graph, commit_sha, private_reasons
+            wrote_to_graph, commit_sha, private_reasons, log_hash, sealed_at
        FROM agent_runs
       WHERE id = COALESCE(
               (SELECT id FROM agent_runs WHERE id = $1),
@@ -177,6 +190,8 @@ export async function getRunSummary(
     model_calls: Number(usage[0]?.calls ?? 0),
     cost_usd: Number(usage[0]?.cost ?? 0),
     setup: setup ? { ...setup, parts } : null,
+    log_hash: run.log_hash,
+    sealed_at: run.sealed_at ? new Date(run.sealed_at).toISOString() : null,
     public: run.private_reasons.length === 0,
     private_reasons: run.private_reasons,
   };
@@ -261,8 +276,8 @@ export async function listRunSteps(
   const out: StepSummary[] = [];
   let cursor = opts.after ?? -1;
   for (;;) {
-    const rows = await rawQuery<{ seq: number; kind: string; content: unknown; created_at: Date; chars: number }>(
-      `SELECT seq, kind, content, created_at, length(content::text) AS chars
+    const rows = await rawQuery<{ seq: number; kind: string; content: unknown; created_at: Date; chars: number; hash: string | null }>(
+      `SELECT seq, kind, content, created_at, length(content::text) AS chars, hash
          FROM agent_steps
         WHERE run_id = $1 AND seq > $2 AND ($3::text IS NULL OR kind = $3)
         ORDER BY seq LIMIT $4`,
@@ -272,7 +287,7 @@ export async function listRunSteps(
       cursor = r.seq;
       const { summary, tools } = summarizeStep(r.kind, r.content);
       if (opts.tool && !tools.includes(opts.tool)) continue;
-      out.push({ seq: r.seq, kind: r.kind, created_at: new Date(r.created_at).toISOString(), summary, chars: r.chars, tools });
+      out.push({ seq: r.seq, kind: r.kind, created_at: new Date(r.created_at).toISOString(), summary, chars: r.chars, tools, hash: r.hash });
       if (out.length === limit) return { steps: out, next_after: r.seq };
     }
     if (rows.length < limit || !opts.tool) {
@@ -286,18 +301,113 @@ export async function getRunStep(
   runId: string,
   seq: number,
   opts: { isService?: boolean } = {}
-): Promise<({ seq: number; kind: string; created_at: string; content: unknown }) | WithheldRun | null> {
+): Promise<
+  | { seq: number; kind: string; created_at: string; content: unknown; prev_hash: string | null; hash: string | null }
+  | WithheldRun
+  | null
+> {
   if (!/^[0-9a-f-]{36}$/i.test(runId) || !Number.isInteger(seq)) return null;
   const run = await loadRun(runId);
   if (!run) return null;
   if (!servable(run, opts.isService ?? false)) return withheld(run);
   // The agent run's own id from here on: `runId` may have named a research run.
   runId = run.id;
-  const rows = await rawQuery<{ seq: number; kind: string; content: unknown; created_at: Date }>(
-    `SELECT seq, kind, content, created_at FROM agent_steps WHERE run_id = $1 AND seq = $2 LIMIT 1`,
+  const rows = await rawQuery<{
+    seq: number; kind: string; content: unknown; created_at: Date; prev_hash: string | null; hash: string | null;
+  }>(
+    `SELECT seq, kind, content, created_at, prev_hash, hash
+       FROM agent_steps WHERE run_id = $1 AND seq = $2 ORDER BY created_at LIMIT 1`,
     [runId, seq]
   );
   const r = rows[0];
   if (!r) return null;
-  return { seq: r.seq, kind: r.kind, created_at: new Date(r.created_at).toISOString(), content: r.content };
+  return {
+    seq: r.seq,
+    kind: r.kind,
+    created_at: new Date(r.created_at).toISOString(),
+    content: r.content,
+    prev_hash: r.prev_hash,
+    hash: r.hash,
+  };
+}
+
+// --- checking the log -------------------------------------------------------
+
+const VERIFY_PAGE = 25;
+
+export interface RunLogCheck {
+  run_id: string;
+  format: typeof RUN_LOG_FORMAT;
+  /** Whether the run closed with every step written, and with which hash. */
+  sealed: boolean;
+  sealed_at: string | null;
+  log_hash: string | null;
+  /** Steps the run counted at its close, steps recorded, and steps whose chain was recomputed. */
+  steps_counted: number;
+  steps_recorded: number;
+  steps_checked: number;
+  /** The hash the recomputed chain reaches. */
+  head: string;
+  /**
+   * True when every recorded step follows from the one before it and, for a
+   * sealed run, the chain ends at the sealed hash with no step missing. An
+   * unsealed run can be intact so far and still be incomplete.
+   */
+  intact: boolean;
+  /** The first thing wrong, when something is. */
+  problem: ChainProblem | null;
+}
+
+/**
+ * Recompute the run's hash chain from its stored steps and compare it with
+ * the stored hashes and the seal (services/run-log.ts). This is the server
+ * checking its own rows: it catches a step altered, dropped or added after
+ * the seal. Anyone can repeat it from the steps get_run_step serves, which
+ * carry the same content and hashes. Null when no run has this id; a
+ * withheld notice when the run is not public.
+ */
+export async function verifyRunLog(
+  runId: string,
+  opts: { isService?: boolean } = {}
+): Promise<RunLogCheck | WithheldRun | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(runId)) return null;
+  const run = await loadRun(runId);
+  if (!run) return null;
+  if (!servable(run, opts.isService ?? false)) return withheld(run);
+  // A page of steps at a time: a long run's content is large.
+  const checker = chainChecker(run.id);
+  let recorded = 0;
+  let after = -1;
+  for (let ok = true; ok; ) {
+    const page = await rawQuery<ChainedStep>(
+      `SELECT seq, kind, content, prev_hash, hash FROM agent_steps
+        WHERE run_id = $1 AND seq > $2 ORDER BY seq, created_at LIMIT $3`,
+      [run.id, after, VERIFY_PAGE]
+    );
+    for (const step of page) {
+      after = step.seq;
+      if (!(ok = checker.push(step))) break;
+    }
+    if (page.length < VERIFY_PAGE) break;
+  }
+  const counts = await rawQuery<{ n: string }>(
+    `SELECT count(*)::text AS n FROM agent_steps WHERE run_id = $1`,
+    [run.id]
+  );
+  recorded = Number(counts[0]?.n ?? 0);
+  const sealed = run.log_hash != null && run.sealed_at != null;
+  const check = checker.finish(sealed ? { logHash: run.log_hash!, stepsCounted: run.steps } : null);
+  return {
+    run_id: run.id,
+    format: RUN_LOG_FORMAT,
+    sealed,
+    sealed_at: run.sealed_at ? new Date(run.sealed_at).toISOString() : null,
+    log_hash: run.log_hash,
+    steps_counted: run.steps,
+    steps_recorded: recorded,
+    steps_checked: check.steps_checked,
+    head: check.head,
+    intact: check.problem === null,
+    problem: check.problem,
+  };
 }
