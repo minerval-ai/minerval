@@ -25,13 +25,23 @@ function files(dir: string): string[] {
 function definedTools(): Map<string, string> {
   const found = new Map<string, string>();
   const dirs = ["src/llm/tools", "src/llm/agents", "src/services"].map((d) => join(ROOT, d));
+  // A tool's name may be a constant (name: WAIT_FOR_ANSWERS): resolve every
+  // `const NAME = "snake_case"` in the source so those are found too.
+  const constants = new Map<string, string>();
+  for (const file of files(join(ROOT, "src"))) {
+    for (const m of readFileSync(file, "utf8").matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*=\s*"([a-z_][a-z0-9_]*)"/g)) {
+      constants.set(m[1]!, m[2]!);
+    }
+  }
   for (const file of dirs.flatMap(files)) {
     const text = readFileSync(file, "utf8");
-    for (const m of text.matchAll(/name:\s*"([a-z_][a-z0-9_]*)"/g)) {
+    for (const m of text.matchAll(/name:\s*(?:"([a-z_][a-z0-9_]*)"|([A-Z][A-Z0-9_]*)\b)/g)) {
+      const name = m[1] ?? constants.get(m[2]!);
+      if (!name) continue;
       const after = text.slice(m.index! + m[0].length, m.index! + m[0].length + 6000);
-      const next = after.search(/name:\s*"/);
+      const next = after.search(/name:\s*["A-Z]/);
       const own = next === -1 ? after : after.slice(0, next);
-      if (/input_schema|inputSchema/.test(own)) found.set(m[1]!, relative(ROOT, file));
+      if (/input_schema|inputSchema/.test(own)) found.set(name, relative(ROOT, file));
     }
   }
   // Skill tools are declared in each skill's tools.json.
