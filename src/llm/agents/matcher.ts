@@ -8,7 +8,11 @@ import { findSimilarClaims, keywordClaimSearch } from "../../services/search-ser
 import { SIMILAR_CLAIMS_FLOOR } from "../tools/graph-tools.js";
 import { loadConfig } from "../../config.js";
 import { getUsageContext, runBudget, withAgent, withPassBudget, withSkills } from "../usage-context.js";
-import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
+import {
+  claimReadMiss,
+  executeGraphReadTool,
+  getGraphReadToolDefinitions,
+} from "../tools/graph-read-tools.js";
 import { createReportTools } from "../tools/report-tools.js";
 import {
   MATCHED_INSTANCE_STANCES,
@@ -251,6 +255,63 @@ async function matchClaimImpl(input: {
     return candidates.length === 1 ? candidates[0]! : null;
   };
 
+  // The same repair for the Matcher's reads (#884). A get_claim on a retyped
+  // id answered "not found", and the Matcher, sure a search had returned
+  // that id, filed the miss as a fault in the graph and judged its leading
+  // candidate on wording alone. An id is read as given first: one a search
+  // returned is right by construction, and the prompt can carry ids no
+  // search returned. Only when that read finds no node is the id resolved
+  // against this run's retrieved ids, by the one rule above, so a repair
+  // needs exactly one candidate. A repaired read says so and names both
+  // ids; a miss that cannot be repaired lists what the searches returned.
+  const RETRIEVED_TEXT_CHARS = 160;
+  const retrievedHits = (): Array<{ id: string; canonical_form: string }> => {
+    const byId = new Map<string, string>();
+    for (const entry of searchLog) {
+      for (const hit of entry.results) {
+        if (byId.has(hit.id)) continue;
+        const text = hit.canonical_form;
+        byId.set(hit.id, text.length > RETRIEVED_TEXT_CHARS ? `${text.slice(0, RETRIEVED_TEXT_CHARS - 1)}…` : text);
+      }
+    }
+    return [...byId].map(([id, canonical_form]) => ({ id, canonical_form }));
+  };
+  const readNode = async (name: string, toolInput: Record<string, unknown>): Promise<string> => {
+    const first = (await executeGraphReadTool(name, toolInput)) ?? `Error: Unknown tool: ${name}`;
+    if (claimReadMiss(first) === null) return first;
+    const requested = toolInput.claim_id;
+    const repaired = resolveRetrievedId(requested);
+    if (repaired !== null && repaired !== requested) {
+      const second = await executeGraphReadTool(name, { ...toolInput, claim_id: repaired });
+      if (second !== null && claimReadMiss(second) === null) {
+        return JSON.stringify({
+          id_corrected: {
+            requested_id: requested,
+            resolved_id: repaired,
+            note:
+              `No node has the id you asked for. It begins like exactly one id this run's ` +
+              `searches returned, ${repaired}, and that node is the one shown here. Check it ` +
+              `is the node you meant, and use ${repaired} from now on.`,
+          },
+          ...(JSON.parse(second) as Record<string, unknown>),
+        });
+      }
+    }
+    const hits = retrievedHits();
+    return JSON.stringify({
+      code: "CLAIM_NOT_FOUND",
+      error:
+        `No node has the id ${JSON.stringify(requested ?? "")}. It is not an id this run's ` +
+        `searches returned, and it does not begin like exactly one of them, so it was not ` +
+        `corrected. Nothing is missing from the graph: this is what a retyped id looks like. ` +
+        (hits.length > 0
+          ? `retrieved_ids lists every id your searches have returned; copy the one you meant exactly.`
+          : `No search in this run has returned an id yet: search, then copy an id exactly from a result.`),
+      requested_id: requested ?? null,
+      retrieved_ids: hits,
+    });
+  };
+
   // A submitted decision is accepted only when it is whole. The schema marks
   // is_match required, but not every provider enforces tool schemas: GLM 5.3
   // Flash on OpenRouter has submitted decisions whose reasoning names the
@@ -385,7 +446,7 @@ async function matchClaimImpl(input: {
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
           if (MATCHER_READS.has(name)) {
-            return (await executeGraphReadTool(name, toolInput)) ?? `Error: Unknown tool: ${name}`;
+            return readNode(name, toolInput);
           }
           if (name === "submit_match_decision") {
             const defect = decisionDefect(toolInput);

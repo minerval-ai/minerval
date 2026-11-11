@@ -263,7 +263,10 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("get_claim", { claim_id: "gone" }))!
       );
 
-      expect(out.error).toBe("claim not found");
+      expect(out.code).toBe("CLAIM_NOT_FOUND");
+      // Said so an agent does not file the miss as a fault in the graph (#884).
+      expect(out.error).toContain('No node has the id "gone"');
+      expect(out.error).toContain("Copy the id exactly from a tool result");
     });
 
     it("answers a malformed id with a tool error, not a thrown query error", async () => {

@@ -100,6 +100,41 @@ export function getArgumentToolDefinition(): Tool {
   };
 }
 
+/**
+ * What a read answers when no node has the id it was given (#884). A model
+ * that retypes a uuid can splice two ids into one that names nothing; told
+ * only "claim not found", it has filed the miss as a fault in the graph. The
+ * text says what happened and what to do, and `code` lets a dispatcher (the
+ * Matcher's read repair) tell a miss from any other error without reading
+ * prose.
+ */
+export const CLAIM_READ_MISS_CODES = ["CLAIM_NOT_FOUND", "INVALID_CLAIM_ID"] as const;
+export type ClaimReadMissCode = (typeof CLAIM_READ_MISS_CODES)[number];
+
+export function claimNotFoundError(claimId: unknown): { code: ClaimReadMissCode; error: string } {
+  return {
+    code: "CLAIM_NOT_FOUND",
+    error:
+      `No node has the id ${JSON.stringify(claimId ?? "")}. Nothing is missing from the graph: ` +
+      `this id names no claim, quantity or question, which is what a retyped or shortened id ` +
+      `looks like. Copy the id exactly from a tool result (a search hit, another node's view) ` +
+      `and read again.`,
+  };
+}
+
+/** The miss a read's JSON result carries, or null when it is anything else. */
+export function claimReadMiss(result: string | null): ClaimReadMissCode | null {
+  if (!result) return null;
+  try {
+    const code = (JSON.parse(result) as { code?: unknown } | null)?.code;
+    return (CLAIM_READ_MISS_CODES as readonly unknown[]).includes(code)
+      ? (code as ClaimReadMissCode)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function optionalNumber(raw: unknown): number | undefined {
   const n = Number(raw);
   return raw == null || !Number.isFinite(n) ? undefined : n;
@@ -130,12 +165,14 @@ export async function executeGraphReadTool(
     // error it can recover from, not a query error that ends its run
     // (Postgres rejects the malformed uuid with 22P02).
     if ((err as { code?: string } | null)?.code === "22P02") {
-      return JSON.stringify({
-        error:
-          name === "get_argument"
-            ? "argument_id must be a full argument id (a uuid) exactly as a tool result gave it"
-            : "claim_id must be a full claim id (a uuid) exactly as a tool result gave it",
-      });
+      return JSON.stringify(
+        name === "get_argument"
+          ? { error: "argument_id must be a full argument id (a uuid) exactly as a tool result gave it" }
+          : {
+              code: "INVALID_CLAIM_ID" satisfies ClaimReadMissCode,
+              error: "claim_id must be a full claim id (a uuid) exactly as a tool result gave it",
+            }
+      );
     }
     throw err;
   }
@@ -151,7 +188,7 @@ async function executeGraphReadToolUnchecked(
       dependentsLimit: optionalNumber(input.dependents_limit),
       dependentsOffset: optionalNumber(input.dependents_offset),
     });
-    return JSON.stringify(view ?? { error: "claim not found" });
+    return JSON.stringify(view ?? claimNotFoundError(input.claim_id));
   }
   if (name === "get_argument") {
     const view = await getArgumentView(String(input.argument_id ?? ""), {
@@ -163,5 +200,5 @@ async function executeGraphReadToolUnchecked(
   }
   const result = await runGraphRead(name, input);
   if (!result) return null;
-  return JSON.stringify(result.ok ? result.payload : { error: "claim not found" });
+  return JSON.stringify(result.ok ? result.payload : claimNotFoundError(input.claim_id));
 }
