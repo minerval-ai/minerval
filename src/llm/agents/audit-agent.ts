@@ -23,6 +23,7 @@ import {
   getActiveSkillToolDefinitions,
   isSkillTool,
 } from "../tools/skill-tools.js";
+import { withoutOffFeatureTools } from "../tools/feature-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -87,7 +88,8 @@ async function runAuditImpl(input: {
 
   const tools = [
     ...getGovernanceToolDefinitions(),
-    ...getAuditToolDefinitions(),
+    // Less the prize tools while the prizes feature is off (src/features.ts).
+    ...withoutOffFeatureTools(getAuditToolDefinitions()),
     ...getSpendToolDefinitions(),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),

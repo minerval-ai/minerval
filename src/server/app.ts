@@ -2,6 +2,7 @@ import crypto from "crypto";
 import Fastify from "fastify";
 import formbody from "@fastify/formbody";
 import { loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 import { registerSwagger } from "./plugins/swagger.js";
 import { registerCors } from "./plugins/cors.js";
 import { registerAuth } from "./plugins/auth.js";
@@ -133,15 +134,25 @@ export async function buildApp() {
   await app.register(runRoutes, { prefix: "/runs" });
   await app.register(requestRoutes, { prefix: "/requests" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
+  // The route groups of a feature are mounted only while it is on
+  // (src/features.ts). A route that is not mounted is not an MCP tool
+  // either: the tools are built from the catalog of mounted routes.
+  //
   // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,
   // /prize-claims, /bounties, /lean-checks, and /attachments,
   // so they register without a prefix (docs/mathematics.md §11.1).
-  await app.register(formalizationsRoutes);
-  await app.register(attemptsRoutes);
-  await app.register(prizesRoutes);
+  if (featureOn("mathematics", config)) {
+    await app.register(formalizationsRoutes);
+    await app.register(attemptsRoutes);
+  }
+  if (featureOn("prizes", config)) {
+    await app.register(prizesRoutes);
+  }
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);
-  await app.register(extensionRoutes, { prefix: "/extension" });
+  if (featureOn("extension", config)) {
+    await app.register(extensionRoutes, { prefix: "/extension" });
+  }
 
   return app;
 }

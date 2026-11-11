@@ -5,8 +5,12 @@
  * a route was added (or renamed) without deciding its MCP side: add it to
  * ROUTE_TOOLS in src/mcp/route-tools.ts, or, if MCP genuinely should not
  * have it, to MCP_EXCLUDED_ROUTES with the reason.
+ *
+ * The app is built twice: with every feature on, which is what the tables
+ * decide, and with every feature off (src/features.ts), to check that a
+ * feature's routes and tools go together and nothing else goes with them.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import {
   MCP_EXCLUDED_PREFIXES,
@@ -212,5 +216,169 @@ describe("MCP parity with the REST API", () => {
       expect(listed?.description).toBeTruthy();
     }
     await client.close();
+  });
+});
+
+/**
+ * The same app with every feature switched off (src/features.ts). A
+ * feature's routes are not mounted, so the tools generated from them are
+ * gone, and so are its hand-written tools; every other route and tool is
+ * exactly as it was.
+ */
+describe("with every feature switched off", () => {
+  // Whose route each of these is, by its URL. The tables above say nothing
+  // about features, so this is the test's own statement of the three.
+  const FEATURE_ROUTES: Record<string, RegExp> = {
+    extension: /^\/extension(\/|$)/,
+    mathematics: /\/formalization|^\/lean-checks\/|\/attempts(\/|$)/,
+    prizes: /priz|\/bount|^\/attachments\//,
+  };
+  const featureOf = (key: string): string | null => {
+    const url = key.slice(key.indexOf(" ") + 1);
+    return Object.keys(FEATURE_ROUTES).find((name) => FEATURE_ROUTES[name]!.test(url)) ?? null;
+  };
+  const AUTH = {
+    method: "api_key" as const,
+    userId: "u",
+    apiKeyId: "k",
+    contributorExternalId: "x:u",
+    isService: false,
+    isSession: false,
+  };
+
+  let offApp: FastifyInstance;
+  let offKeys: string[];
+  let allTools: string[];
+  let offTools: string[];
+  let client: Client;
+  let savedFeaturesOff: string | undefined;
+
+  beforeAll(async () => {
+    // The tools with everything on, from the app built at the top.
+    const full = buildMcpServer({ auth: AUTH, requestId: "r", app });
+    allTools = Object.keys(
+      (full as unknown as { _registeredTools: Record<string, unknown> })._registeredTools
+    );
+
+    // Config is cached in its module, and the app, the features and the MCP
+    // server all read it: a second build needs its own copies of all of them.
+    savedFeaturesOff = process.env.FEATURES_OFF;
+    process.env.FEATURES_OFF = "extension,mathematics,prizes";
+    vi.resetModules();
+    const { buildApp } = await import("../../../src/server/app.js");
+    const mcp = await import("../../../src/mcp/server.js");
+    offApp = await buildApp();
+    await offApp.ready();
+    offKeys = offApp.routeCatalog.map((r) => routeKey(r.method, r.url));
+
+    const server = mcp.buildMcpServer({ auth: AUTH, requestId: "r", app: offApp });
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    client = new Client({ name: "parity-test-features-off", version: "0.0.0" });
+    await client.connect(clientSide);
+    offTools = (await client.listTools()).tools.map((t) => t.name);
+  });
+
+  afterAll(async () => {
+    if (savedFeaturesOff === undefined) delete process.env.FEATURES_OFF;
+    else process.env.FEATURES_OFF = savedFeaturesOff;
+    await client?.close();
+    await offApp?.close();
+  });
+
+  it("finds each feature's routes in the full app", () => {
+    for (const name of Object.keys(FEATURE_ROUTES)) {
+      expect(keys.filter((key) => featureOf(key) === name).length, name).toBeGreaterThan(3);
+    }
+    // The ones the features are known by.
+    for (const key of [
+      "POST /extension/analyze",
+      "GET /claims/:claim_id/formalization",
+      "GET /claims/:claim_id/formalization.lean",
+      "GET /lean-checks/:id",
+      "POST /admin/attempts/:id/cancel",
+      "GET /operator/prizes",
+      "POST /bounties/:id/confirm",
+      "GET /claims/:id/bounty",
+    ]) {
+      expect(keys, key).toContain(key);
+      expect(featureOf(key), key).not.toBeNull();
+    }
+  });
+
+  it("mounts none of the features' routes", () => {
+    expect(offKeys.filter((key) => featureOf(key) !== null)).toEqual([]);
+  });
+
+  it("still mounts every other route", () => {
+    expect(offKeys.length).toBeGreaterThan(100);
+    expect([...offKeys].sort()).toEqual(keys.filter((key) => featureOf(key) === null).sort());
+  });
+
+  it("offers none of the features' tools, generated or hand-written", () => {
+    const gone = keys.filter((key) => featureOf(key) !== null);
+    const generated = gone.flatMap((key) => (ROUTE_TOOLS[key] ? [ROUTE_TOOLS[key]!.name] : []));
+    expect(generated.length).toBeGreaterThan(10);
+    for (const name of generated) expect(offTools, name).not.toContain(name);
+
+    // A hand-written tool goes when every route it covers is a feature's:
+    // get_claim also covers the formalization read, and stays.
+    const mounted = new Set(offKeys);
+    const native = [...new Set(Object.values(NATIVE_TOOL_ROUTES).flat())];
+    const orphaned = native.filter(
+      (name) =>
+        !Object.entries(NATIVE_TOOL_ROUTES).some(
+          ([key, names]) => names.includes(name) && mounted.has(key)
+        )
+    );
+    expect(orphaned.sort()).toEqual(["get_bounty_terms", "get_page_analysis"]);
+    for (const name of orphaned) {
+      expect(allTools, name).toContain(name);
+      expect(offTools, name).not.toContain(name);
+    }
+  });
+
+  it("still offers every other tool", () => {
+    const gone = new Set([
+      ...keys
+        .filter((key) => featureOf(key) !== null)
+        .flatMap((key) => (ROUTE_TOOLS[key] ? [ROUTE_TOOLS[key]!.name] : [])),
+      "get_bounty_terms",
+      "get_page_analysis",
+    ]);
+    expect([...offTools].sort()).toEqual(allTools.filter((name) => !gone.has(name)).sort());
+    expect(offTools).toEqual(
+      expect.arrayContaining(["get_claim", "search_claims", "list_features", "get_prompt_set"])
+    );
+  });
+
+  it("says so in GET /setup/features and in list_features", async () => {
+    const expected = [
+      { name: "extension", on: false },
+      { name: "mathematics", on: false },
+      { name: "prizes", on: false },
+    ];
+    const res = await offApp.inject({ method: "GET", url: "/setup/features" });
+    expect(res.statusCode).toBe(200);
+    const served = res.json() as { features: Array<{ name: string; on: boolean; description: string }> };
+    expect(served.features.map(({ name, on }) => ({ name, on }))).toEqual(expected);
+    for (const feature of served.features) expect(feature.description.length).toBeGreaterThan(60);
+
+    const result = await client.callTool({ name: "list_features", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+    const listed = JSON.parse(text) as { features: Array<{ name: string; on: boolean }> };
+    expect(listed.features.map(({ name, on }) => ({ name, on }))).toEqual(expected);
+  });
+
+  it("reports every feature on in the full app", async () => {
+    const res = await app.inject({ method: "GET", url: "/setup/features" });
+    expect(res.statusCode).toBe(200);
+    const served = res.json() as { features: Array<{ name: string; on: boolean }> };
+    expect(served.features.map(({ name, on }) => ({ name, on }))).toEqual([
+      { name: "extension", on: true },
+      { name: "mathematics", on: true },
+      { name: "prizes", on: true },
+    ]);
   });
 });

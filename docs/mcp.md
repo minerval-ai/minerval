@@ -114,7 +114,9 @@ Every REST route is decided in `src/mcp/route-tools.ts`, in exactly one of:
 `tests/unit/mcp/parity.test.ts` builds the real app and fails when a route is
 undecided, decided twice, or a table names a route that no longer exists. So
 adding a REST route means adding its MCP side in the same change: usually one
-line in `ROUTE_TOOLS`.
+line in `ROUTE_TOOLS`. A route behind a feature that is switched off
+(docs/architecture.md, "Features") is not mounted and is therefore not a
+tool; `list_features` says which features a deployment has.
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
@@ -462,7 +464,10 @@ read of a claim, use a card.
   its text when public, and the version before it to compare against),
   `get_prompt_set` (the prompt set this deployment runs: one hash over the
   constitution, every role prompt and every skill, with each one's own hash,
-  to check a run's setup against).
+  to check a run's setup against), `list_features` (the optional parts of
+  the product, each with whether this deployment has it on and what
+  switching it off removes; a tool this document names that the deployment
+  does not list belongs to a feature that is off).
 - **Agent runs:** `get_run` (a run's agent, times, outcome, cost, commit and
   setup by version; a run that read private data answers `public: false`
   with its reasons and nothing else), `list_run_steps` (its steps as
