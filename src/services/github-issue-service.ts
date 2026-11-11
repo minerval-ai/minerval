@@ -28,9 +28,11 @@
  *     the network.
  *
  * External-origin reports (the MCP surface) are testimony from someone
- * else's agent, and their bodies are not filed unless
- * GITHUB_ISSUES_INCLUDE_EXTERNAL is on: an outside caller must not be able
- * to write into the maintainers' tracker by default.
+ * else's agent, and are filed only where GITHUB_ISSUES_INCLUDE_EXTERNAL is
+ * on (production turns it on, infra/lib/api-stack.ts): an outside caller
+ * does not write into a tracker unless the deployment chose that. When
+ * filed they carry origin/external, and their text has its @mentions
+ * broken (quietMentions) so a caller cannot make the App notify people.
  *
  * Labels: every issue carries GITHUB_ISSUES_LABEL (agent-generated) plus
  * kind/… and severity/…, and origin/external where that applies. Missing
@@ -190,6 +192,14 @@ function fence(text: string): string {
 }
 
 /**
+ * Break @mentions in text an outside caller wrote, so filing it notifies
+ * nobody: "@name" becomes "@ name". Internal reports are left as written.
+ */
+export function quietMentions(text: string, origin: string): string {
+  return origin === "external" ? text.replace(/@(?=[A-Za-z0-9])/g, "@ ") : text;
+}
+
+/**
  * The issue body: the report's metadata as a table, its body as written,
  * and its context refs as a list. Ids only, as the report itself: the
  * write-time caps in report-service are what keep a report from becoming a
@@ -201,6 +211,11 @@ export function renderIssueBody(row: AgentReportRow): string {
     ["Severity", row.severity],
     ["Agent", row.model ? `${row.agent} (${row.model})` : row.agent],
     ["Origin", row.origin],
+    // The contributor an outside caller's report is attributed to (the id
+    // of its public profile, GET /contributors/:id). Agents' reports have none.
+    ...(row.reporter_contributor_id
+      ? [["Reporter", `contributor \`${row.reporter_contributor_id}\``] as [string, string]]
+      : []),
     ["Surface", row.surface ? `\`${row.surface}\`` : "—"],
     ["First seen", iso(row.first_seen_at)],
     ["Report id", `\`${row.id}\``],
@@ -225,7 +240,7 @@ export function renderIssueBody(row: AgentReportRow): string {
     : "";
 
   return (
-    `${table}\n\n### Report\n\n${fence(row.body || "_(no body)_")}` +
+    `${table}\n\n### Report\n\n${quietMentions(fence(row.body || "_(no body)_"), row.origin)}` +
     refList +
     attributionLine +
     `\n\n---\n_Filed automatically by \`raise_issue\` (the agents' own channel for ` +
@@ -411,7 +426,7 @@ export async function syncSightingToIssue(
       await githubRequest("POST", `${issuePath}/comments`, {
         body:
           heading +
-          (sync.account ? `\n\n${fence(sync.account)}` : "") +
+          (sync.account ? `\n\n${quietMentions(fence(sync.account), row.origin)}` : "") +
           (where.length ? `\n\n_${where.join(", ")}._` : ""),
       });
     }

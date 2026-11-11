@@ -1147,9 +1147,10 @@ const configSchema = z.object({
   githubIssuesRepo: z.string().default(""),
   githubIssuesLabel: z.string().default("agent-generated"),
   githubApiBaseUrl: z.string().default("https://api.github.com"),
-  // External (MCP) reports are testimony from someone else's agent; their
-  // bodies are not filed to GitHub unless this is on, so an outside caller
-  // cannot write into the maintainers' tracker by default.
+  // External (MCP) reports are testimony from someone else's agent; they
+  // are not filed to GitHub unless this is on, so an outside caller cannot
+  // write into a tracker the deployment did not open to them. Production
+  // turns it on (infra/lib/api-stack.ts); filed ones carry origin/external.
   githubIssuesIncludeExternal: z
     .string()
     .transform((s) => s === "true")
