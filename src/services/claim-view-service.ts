@@ -17,6 +17,7 @@ import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
+import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import {
   getArgumentsForClaim,
@@ -40,6 +41,12 @@ import { getClaimSourceMap, getSourceMapSummary } from "./source-map-service.js"
 import { listRelatedClaims } from "./claim-link-service.js";
 import { listFindings } from "./finding-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
+import {
+  STEWARD_PARKED_DESCRIPTION,
+  stewardParkSelectSql,
+  stewardParkedField,
+  type StewardParkRow,
+} from "./steward-park-reason.js";
 
 /** The optional sections of the view, in the order the description gives them. */
 export const CLAIM_VIEW_INCLUDES = [
@@ -76,7 +83,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "reasoning (its `id`, which a finding cites; a status, a confidence that the status is the right reading " +
   "of the evidence, and a credence that the claim is true where one number " +
   "is honest, else null, and `marginal_yield`, how much another pass " +
-  "would add); the kind's record, since a quantity or a " +
+  "would add; `relabeled_from`, when set, names the retired label " +
+  "(contested, unsupported) a migration carried the status over from: it " +
+  "has not been re-judged, so treat it as provisional, not a finding); the kind's record, since a quantity or a " +
   "question has no `assessment` (`quantity`: definition, the graph's " +
   "estimate with its work and marginal_yield (`assessed.id` is what a " +
   "finding cites), the figures sources state, readings and cuts; " +
@@ -99,14 +108,18 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`unplaced_argument_passages` passages where sources reason about the " +
   "claim that matched none of its arguments at ingestion), `subclaims` (the direct " +
   "subclaims, one row per argument each serves, with the edge's reasoning " +
-  "and their standing and credence), " +
+  "and their standing and credence. " +
+  STEWARD_PARKED_DESCRIPTION +
+  "), " +
   "`provenance` (the instances with their readings, and the edges among " +
   "their sources), `dependents` (one page ranked by importance, with " +
   "`dependents_total`), `related` (lateral see-also links, never " +
   "dependencies, with their standing and credence), `findings` (the " +
   "newest findings already noted on the node, with `findings_note` when " +
   "there are more), " +
-  "`proofs` (every Lean check record). Free.";
+  "`proofs` (every Lean check record). " +
+  RESOLVED_FROM_DESCRIPTION +
+  " Free.";
 
 export const CLAIM_VIEW_INCLUDE_DESCRIPTION =
   "Sections to add to the base view; none by default. Ask for the ones " +
@@ -134,6 +147,7 @@ export function formatClaimViewAssessment(
     marginalYield?: number | null;
     model?: string | null;
     runId?: string | null;
+    relabeledFrom?: string | null;
   } | null
 ) {
   if (!a) return null;
@@ -160,6 +174,10 @@ export function formatClaimViewAssessment(
     // The run that wrote this verdict (GET /runs/:id); null when written
     // outside a traced run or before runs were linked.
     run_id: a.runId ?? null,
+    // The retired label (contested, unsupported) a migration carried this
+    // status over from (0066, #524); not yet re-judged, so the status is
+    // provisional, not a finding (#848). null otherwise.
+    relabeled_from: a.relabeledFrom ?? null,
   };
 }
 
@@ -189,9 +207,14 @@ function iso(d: Date | string | null | undefined): string | null {
  * throws the database's own error (22P02), which callers translate.
  */
 export async function getClaimView(
-  claimId: string,
+  requestedId: string,
   opts: ClaimViewOptions = {}
 ): Promise<Record<string, unknown> | null> {
+  // A merged id resolves to its survivor (#884, constitution §5): the view
+  // below is the survivor's, and `resolved_from` says which id was asked.
+  const resolution = await resolveClaimId(requestedId);
+  if (!resolution) return null;
+  const claimId = resolution.id;
   const claim = await getClaimById(claimId);
   if (!claim) return null;
   const include = new Set(opts.include ?? []);
@@ -253,6 +276,8 @@ export async function getClaimView(
       : null;
 
   const payload: Record<string, unknown> = {
+    // First, so a reader meets it before the verdict it qualifies.
+    ...(resolution.resolvedFrom ? { resolved_from: resolution.resolvedFrom } : {}),
     claim: {
       id: claim.id,
       kind,
@@ -543,13 +568,14 @@ async function listDirectSubclaims(claimId: string) {
     child_kind: string;
     child_estimate: unknown | null;
     child_standing: string | null;
-  }>(
+  } & StewardParkRow>(
     `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             a.claim_credence AS child_credence,
             am.argument_id, arg.name AS argument_name,
-            c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
+            c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing,
+            ${stewardParkSelectSql("c", "a.id IS NULL AND qe.claim_id IS NULL AND qa.claim_id IS NULL")}
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.child_claim_id
      LEFT JOIN assessments a ON a.claim_id = cr.child_claim_id AND a.is_current = true
@@ -578,5 +604,7 @@ async function listDirectSubclaims(claimId: string) {
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),
     ...(sc.child_kind === "quantity" ? { estimate: sc.child_estimate } : {}),
     ...(sc.child_kind === "question" ? { standing: sc.child_standing } : {}),
+    // Unjudged and parked (#846): this premise will not be judged on its own.
+    ...stewardParkedField(sc),
   }));
 }

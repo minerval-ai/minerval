@@ -21,15 +21,32 @@ function usd(micro: number): string {
   return `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
 }
 
+export interface BudgetLineOptions {
+  canSpend?: boolean;
+  /**
+   * What the figure is and who set it, as one or more whole sentences, for
+   * a run whose budget is not a costing-skill estimate of the work: a
+   * Grantmaker's own pass, budgeted by its mandate's policy (#820). It
+   * replaces the "high end of what work like this usually costs" sentence,
+   * which is only true of a budget set that way.
+   */
+  basis?: string;
+}
+
 /** The budget sentence alone, or "" when the run has no budget. */
-export function runBudgetSentence(opts: { canSpend?: boolean } = {}): string {
+export function runBudgetSentence(opts: BudgetLineOptions = {}): string {
   const budget = runBudget();
   if (!budget) return "";
   return (
-    `This run has a budget of ${usd(budget.ceilingMicroUsd)}, from ${budget.source}. It is ` +
-    `set at the high end of what work like this usually costs, so most runs finish well ` +
-    `inside it: spend what the work warrants, and what you leave goes back to whoever paid, ` +
-    `for other work. It is metered at real cost, model tokens and any paid tool; paid ` +
+    `This run has a budget of ${usd(budget.ceilingMicroUsd)}, from ${budget.source}. ` +
+    (opts.basis
+      ? `${opts.basis.trim()} Spend what the work warrants, and what you leave goes back to whoever paid, ` +
+        `for other work. `
+      : `It is ` +
+        `set at the high end of what work like this usually costs, so most runs finish well ` +
+        `inside it: spend what the work warrants, and what you leave goes back to whoever paid, ` +
+        `for other work. `) +
+    `It is metered at real cost, model tokens and any paid tool; paid ` +
     `tools say what they cost and decline a call the remaining budget cannot cover.` +
     (opts.canSpend
       ? ` If doing this properly needs more, ask with petition_mandate and you will get the ` +
@@ -38,7 +55,7 @@ export function runBudgetSentence(opts: { canSpend?: boolean } = {}): string {
   );
 }
 
-export function turnBudgetLine(maxTurns: number, opts: { canSpend?: boolean } = {}): string {
+export function turnBudgetLine(maxTurns: number, opts: BudgetLineOptions = {}): string {
   const budget = runBudgetSentence(opts);
   const turns =
     `you have up to ${maxTurns} tool-use turns in this run, the one ` +

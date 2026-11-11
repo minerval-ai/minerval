@@ -163,7 +163,12 @@ the budget and pays it in full, the run starts at once, and what it does
 not spend comes back. `order_assessment` buys a strong-model pass on a
 claim up to a quoted cap. `fund_claim_assessment` commissions the claim's
 next assessment at a budget your user chooses; if a pass is already
-commissioned or running, nothing is charged. `fund_deep_decomposition` (5 owls or
+commissioned or running, nothing is charged. If the claim is parked (its
+Steward's earlier passes failed; `get_decomposition` marks such a claim
+`steward_parked`, with the class of failure), the result carries a `note`
+saying since when, after how many failures and why, and that the money buys
+another attempt, not a guaranteed verdict: tell your user before they pay
+again. `fund_deep_decomposition` (5 owls or
 more) funds a mandate on the claim: a fresh pass on it first, then the
 claims that bear on it, most consequential first, with a tenth of the
 budget for the Grantmaker that plans the work and the rest refunded when
@@ -234,8 +239,11 @@ say in how it is stewarded. `get_mandate_allocation` shows how a mandate
 spends: its escrow (spent, held by running work, regranted, held for
 prizes, and what remains, which add up to the escrow), the operating policy
 its Grantmaker wrote for the program officers who decide what to pay for,
-what it commissioned and how those runs used their budgets, and the
-decisions behind them. A mandate's objective changes
+what it paid for by kind and how those runs used their budgets (`kinds`:
+the runs it commissioned, and separately its own upkeep, such as its
+Grantmaker's review passes and its lookouts' runs, marked `self_funded`),
+what it spent outside the ledger (`outside_ledger_owls`, mostly the
+Grantmaker's conversation with the funder), and the decisions behind them. A mandate's objective changes
 only with its funder's agreement, and every other funder is told; any
 funder may take back their share of the uncommitted money at any time
 with `withdraw_from_mandate`, again only on your user's go-ahead.

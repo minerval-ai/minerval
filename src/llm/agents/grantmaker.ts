@@ -470,8 +470,12 @@ async function runGrantmakerTurnImpl(input: {
   const adjustTool: Tool = {
     name: "adjust_plan",
     description:
-      "Replace the not-yet-executed remainder of the grant's plan with new " +
-      "items (already-executed items are immutable history). Use this when " +
+      "Replace the not-yet-started remainder of the grant's plan with new " +
+      "items. Items are kept up to the last one whose work has started (it " +
+      "ran, is running, or has this mandate's commission on it): those are " +
+      "history, and a pass already commissioned runs. What follows, " +
+      "including an order still waiting for room in the daily rate, is " +
+      "replaced. Use this when " +
       "the funder and you agree the mandate's remaining budget should be " +
       "spent differently. Same item rules as propose_mandate; the same " +
       "refusal duties apply. Does not change the budget.",
@@ -867,9 +871,17 @@ export function getManagementReadToolDefinitions(): Tool[] {
         "the operating policy in force and the officers' limit, the escrow " +
         "(spent, held by running work, regranted, held for prizes, and what " +
         "remains; the five add up to the escrow, counted as grant_overview " +
-        "counts them) and today's use of the daily rate, what the mandate commissioned in " +
-        "the last 30 days by kind and run by run (budget, spent, state, " +
-        "reason), its officers' and your recent decisions, the petitions it " +
+        "counts them) and today's use of the daily rate, what the mandate paid for in " +
+        "the last 30 days by kind (kinds: one row per kind and funding, " +
+        "commissioned for the runs you, your officers, your lookouts or a " +
+        "plan item chose and budgeted, self_funded for the mandate's own " +
+        "upkeep covered at its estimate: review and planning passes, " +
+        "lookout and correspondent runs, planned ingests and sweeps), its " +
+        "commissions run by run (budget, spent, state, reason; a plan " +
+        "item's reads commissioned_by plan), outside_ledger_owls (the part " +
+        "of spent metered to the mandate outside the ledger, mostly this " +
+        "chat with the funder: in no kind's row and not held to the daily " +
+        "rate), its officers' and your recent decisions, the petitions it " +
         "heard, and what waits in its inbox. Use this for 'where is the " +
         "money going and why' questions; query_sql reaches further back.",
       input_schema: {

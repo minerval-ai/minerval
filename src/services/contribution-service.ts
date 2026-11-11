@@ -16,6 +16,7 @@ import {
   contributors,
   type NewContribution,
 } from "../db/schema.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 /**
  * The review cost a submission reserves against its run's budget until its
@@ -100,7 +101,8 @@ export async function submitMandateContribution(input: {
   if (!allowed.includes(type)) return { success: false, message: `contribution_type must be one of ${allowed.join(", ")}.` };
   if (content.length < 40) return { success: false, message: "content must say what you found and what it rests on." };
   const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
-  if (!node) return { success: false, message: `No active node ${claimId}.` };
+  // A merged node names its survivor (#884).
+  if (!node) return { success: false, message: (await mergedAliasRefusal(claimId))?.message ?? `No active node ${claimId}.` };
   const structural = await checkStructuralProposal(type, claimId, input.input);
   if (!structural.ok) return { success: false, message: structural.message };
   const argumentTarget = await checkArgumentTarget({
@@ -303,7 +305,13 @@ async function checkStructuralProposal(
     const mergeTarget = text(input.merge_target_claim_id);
     const [other] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [mergeTarget]);
     if (!other || mergeTarget === claimId) {
-      return { ok: false, message: "propose_merge needs merge_target_claim_id: the other active node, which this one duplicates." };
+      const merged = await mergedAliasRefusal(mergeTarget);
+      return {
+        ok: false,
+        message:
+          merged?.message ??
+          "propose_merge needs merge_target_claim_id: the other active node, which this one duplicates.",
+      };
     }
     return { ok: true, mergeTarget, proposedText: null };
   }
@@ -362,7 +370,13 @@ export async function submitGrantContribution(input: {
     if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim, question or quantity, not an essay." };
   } else if (!unanchoredRequest) {
     const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
-    if (!node) return { success: false, message: `No active node ${claimId || "(none given)"}; ${type} is about an existing node.` };
+    if (!node) {
+      const merged = await mergedAliasRefusal(claimId);
+      return {
+        success: false,
+        message: merged?.message ?? `No active node ${claimId || "(none given)"}; ${type} is about an existing node.`,
+      };
+    }
   }
   const structural = await checkStructuralProposal(type, claimId, input.input);
   if (!structural.ok) return { success: false, message: structural.message };

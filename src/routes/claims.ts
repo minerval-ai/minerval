@@ -48,6 +48,7 @@ import { leanChecksByArgument } from "../services/formalization-service.js";
 import { claimTypeEnum, uuidSchema } from "../schemas/common.js";
 import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../services/tag-service.js";
 import { CLAIM_CARDS_MAX_IDS, getClaimCard, getClaimCards } from "../services/claim-card-service.js";
+import { RESOLVED_FROM_SCHEMA } from "../services/claim-alias-service.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -183,6 +184,14 @@ export const assessmentSchema = {
     model: { type: "string", nullable: true },
     // The run that wrote the verdict (GET /runs/:id).
     run_id: { type: "string", nullable: true },
+    relabeled_from: {
+      type: "string",
+      nullable: true,
+      description:
+        "The retired label (contested, unsupported) migration 0066 carried this status over from (#524). " +
+        "Set only until the claim is re-judged: the status has not been judged under its current label, " +
+        "so treat it as provisional, not a finding. null otherwise.",
+    },
     // Developer disclosure (#534): present when the claim names the
     // developer of the model that assessed it; absent otherwise.
     developer_disclosure: {
@@ -271,6 +280,8 @@ export const claimCardSchema = {
       description: "When the node itself last changed.",
     },
     page_url: { type: "string", description: "The node's public page." },
+    // Null unless the id asked for was merged into another node (#884).
+    resolved_from: RESOLVED_FROM_SCHEMA,
   },
   required: [
     "id",
@@ -286,6 +297,7 @@ export const claimCardSchema = {
     "assessed_at",
     "updated_at",
     "page_url",
+    "resolved_from",
   ],
 } as const;
 
@@ -295,7 +307,10 @@ const CARD_NOTE =
   "question's `standing`, a quantity's `estimate` and `unit`), its " +
   "`contestation`, when it was last assessed and last changed, and its " +
   "`page_url`. Every key is always present. An unassessed node is not an " +
-  "error: its judgment fields are null.";
+  "error: its judgment fields are null. `resolved_from` is null unless the " +
+  "id you asked for was merged into another node: then the card is the " +
+  "survivor's, and where `resolved_from.stance_relation` is `opposed` its " +
+  "judgment is of the opposite of what your id stated.";
 
 /**
  * Parse `ids=<uuid>,<uuid>,...`: distinct ids in the order first given.
@@ -1658,6 +1673,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           allocated_owls: result.allocatedOwls,
           unspent_owls: result.unspentOwls,
           covered: result.covered,
+          // A parked claim: the reader is told this buys another attempt (#846).
+          ...(result.note ? { note: result.note } : {}),
         });
       },
     }
@@ -2099,7 +2116,7 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
   };
 }
 
-export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null }) {
+export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null; relabeledFrom?: string | null }) {
   return {
     id: a.id,
     status: a.status,
@@ -2120,6 +2137,9 @@ export function formatAssessment(a: { id: string; status: string; confidence: nu
     // The run that wrote this verdict (GET /runs/:id); null when written
     // outside a traced run or before runs were linked.
     run_id: a.runId ?? null,
+    // The retired label (contested, unsupported) migration 0066 carried this
+    // status over from; not yet re-judged, so provisional (#848). null otherwise.
+    relabeled_from: a.relabeledFrom ?? null,
   };
 }
 

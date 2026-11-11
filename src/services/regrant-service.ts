@@ -43,6 +43,11 @@ export interface GrantEscrowBreakdown {
    * share accounts for. Ledger runs metered to the job are in both
    * llm_usage and the shares, and count once. */
   spent: number;
+  /** The part of `spent` that no allocation share accounts for: metered
+   * to the mandate's job outside the ledger (the Grantmaker's chat with
+   * the funder, a run's overage on a row no mandate allocation covered).
+   * It draws on the escrow and is not held to the daily rate. */
+  outsideLedger: number;
   /** Unspent remainders of allocations not yet released: money held by
    * commissioned work that is waiting or running. */
   held: number;
@@ -126,7 +131,8 @@ export async function grantEscrowBreakdown(
   const held = Number(row?.outstanding ?? 0);
   const regrants = Number(row?.regrants ?? 0);
   const prizes = Number(row?.prizes ?? 0);
-  return { spent, held, regrants, prizes, committed: spent + held + regrants + prizes };
+  const outsideLedger = Number(row?.nonledger ?? 0);
+  return { spent, outsideLedger, held, regrants, prizes, committed: spent + held + regrants + prizes };
 }
 
 export interface RegrantEdge {

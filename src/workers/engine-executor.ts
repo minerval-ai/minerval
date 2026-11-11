@@ -81,6 +81,7 @@ import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.
 import { loadConfig } from "../config.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
+import type { OperatingPolicy } from "../services/operating-policy-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
 import { renderResearchReport } from "../services/research-commission-service.js";
@@ -118,6 +119,7 @@ import {
   closeRequestActions,
   ensureCurateAction,
   grantmakerShareLeftMicroUsd,
+  reviewPassBudgetMicroUsd,
   ensureRequestActions,
   largestActionFunder,
   actionFunderGrants,
@@ -1466,7 +1468,11 @@ async function runGrantAgentAction(
     scope_query: string | null;
     status: string;
     budget_micro_usd: number;
-    mandate: { origin?: string; grantmaker_share_owls?: number | null } | null;
+    mandate: {
+      origin?: string;
+      grantmaker_share_owls?: number | null;
+      operating_policy?: OperatingPolicy | null;
+    } | null;
   }>(
     `SELECT g.id, g.funder_user_id, g.budget_job_id, g.name,
             g.scope_claim_id, g.scope_query, g.status, j.budget_micro_usd, g.mandate
@@ -1523,24 +1529,43 @@ async function runGrantAgentAction(
         }`
       )
     );
+    // A decomposition's plan is live as drafted: its standing orders are
+    // placed now, not a sweep later (a no-op for a plan awaiting approval).
+    if (action.kind === "grant_planning") {
+      const { materializeLivePlan } = await import("../services/action-service.js");
+      await materializeLivePlan(grant.id);
+    }
     // A mandate whose passes have a share of their own reopens a review only
     // while the share holds something.
     const share = await grantmakerShareLeftMicroUsd(grant).catch(() => null);
     if (continueRequested && (!share || share.leftMicroUsd > 0)) {
-      // The agent judged one pass wasn't enough: reopen its review action
-      // so the next drain iteration funds and runs another out of the
-      // mandate's day (fundGrantSelfActions).
-      if (share) {
-        await rawQuery(`UPDATE actions SET cost_est_micro_usd = $2 WHERE id = $1`, [
-          action.id,
-          Math.max(1, Math.round(share.leftMicroUsd)),
-        ]).catch(() => {});
+      // The agent judged a fresh pass the better way on: reopen its review
+      // action at the pass budget as it stands now, so the next drain
+      // iteration funds and runs another out of the mandate's day
+      // (fundGrantSelfActions). The policy is read fresh: this pass may
+      // have changed its own figure.
+      // The pass itself is done and settled: a failure here leaves the row
+      // closed for the sweep to reopen on its cadence, and is not the run's.
+      try {
+        const [now] = await rawQuery<{ mandate: typeof grant.mandate }>(
+          `SELECT mandate FROM grants WHERE id = $1`,
+          [grant.id]
+        );
+        const estimate = await reviewPassBudgetMicroUsd(
+          { id: grant.id, mandate: now?.mandate ?? grant.mandate },
+          "review",
+          share
+        );
+        await rawQuery(
+          `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
+            WHERE id = $1 AND status = 'done'`,
+          [action.id, estimate]
+        );
+      } catch (err) {
+        console.error(
+          `[engine] continue_review could not reopen ${action.id}: ${err instanceof Error ? err.message : err}`
+        );
       }
-      await rawQuery(
-        `UPDATE actions SET status = 'open', updated_at = now()
-          WHERE id = $1 AND status = 'done'`,
-        [action.id]
-      ).catch(() => {});
     }
     return {
       status: "processed",

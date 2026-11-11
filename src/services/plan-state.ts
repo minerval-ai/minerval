@@ -60,9 +60,9 @@ export function planItemState(
   cursor: number
 ): PlanItemState {
   // The ledger is the record of what ran: an ingest item the cursor passed
-  // before its row closed (the direct steward lane moves the cursor past a
-  // claim item and takes any ingest item before it along) still reads from
-  // its row, so "done" means the work ran and nothing else.
+  // before its row closed (the cursor moves past the last item whose work
+  // has started, and takes any ingest item before it along) still reads
+  // from its row, so "done" means the work ran and nothing else.
   if (item.ledger) return FROM_LEDGER[item.ledger.status] ?? "queued";
   // Not yet materialized (a fresh append before its first sweep, or an item
   // executed before the ledger recorded plan work): the positional reading.

@@ -3,8 +3,7 @@
  *
  * `steward_state = 'running'` is the lock and `stewarded_at` its lease. Every
  * lane claims the row with a guarded UPDATE (steward-pipeline.ts,
- * order-pipeline.ts, budget-job-pipeline.ts, grant-pipeline.ts,
- * steward-direct.ts); this module holds what they share:
+ * order-pipeline.ts, budget-job-pipeline.ts, steward-direct.ts); this module holds what they share:
  *
  *  - the release: a message that arrived mid-run (`steward_requeued`) turns
  *    the row back into 'pending' instead of the lane's own end state, so the
@@ -16,6 +15,7 @@
  *    leaving them locked until the lease runs out.
  */
 import { rawQuery } from "../db/client.js";
+import { LlmRefusalError } from "../llm/errors.js";
 
 /** A 'running' claim whose lease is older than this is a dead run's. */
 export const STEWARD_LEASE_STALE_MINUTES = 15;
@@ -56,29 +56,61 @@ export function unservedTrigger(
 /**
  * After this many genuine (non-transient) failures a claim parks as 'error',
  * so no lane keeps paying for a pass that fails the same way every time.
- * Transient failures (API budget/credit/429/5xx/network) never count.
+ * Transient failures (API budget/credit/credentials/429/5xx/network) never
+ * count. A park is not retried automatically: only a commission (a payer who
+ * is told what it buys, commission-service.ts) or a maintainer
+ * (scripts/recover-parked-stewards.ts) returns the claim to the queue.
  */
 export const MAX_STEWARD_ATTEMPTS = 3;
 
 /**
- * The SET fragment that ends a genuinely failed run: the attempt counted and
- * the error recorded (`error`, a SQL expression), and the row back to `state`
- * (a SQL expression, the lane's state for a retry) until the count reaches
- * MAX_STEWARD_ATTEMPTS, then 'error'. A message that arrived mid-run still
- * turns the row 'pending', as on any release; its pass counts as one more
- * attempt if it fails too. The RHS reads the row's values before the update.
+ * Does this failure park the claim at once, whatever its attempt count?
+ *
+ * A model refusal does (#846). A refusal follows the claim and the model,
+ * not chance: by the time LlmRefusalError is thrown the provider's fallback
+ * chain has already been tried on the same request (llm/errors.ts), and all
+ * eleven claims that refused in July 2026 refused on every one of their three
+ * attempts. Two more passes buy the same refusal, each at whatever the pass
+ * had spent before it was refused. Parking on the first leaves the retry to
+ * someone who can change what is tried: a commission at another tier, or a
+ * maintainer.
  */
-export function stewardFailureSet(state: string, error: string): string {
+export function parksAtOnce(err: unknown): boolean {
+  return err instanceof LlmRefusalError;
+}
+
+/**
+ * The SET fragment that ends a genuinely failed run: the attempt counted and
+ * the error recorded (`error`, a SQL expression) with its public class
+ * (`reason`, a SQL expression; steward-park-reason.ts), and the row back to
+ * `state` (a SQL expression, the lane's state for a retry) until the count
+ * reaches MAX_STEWARD_ATTEMPTS or the failure parks at once (`parkNow`, a SQL
+ * boolean expression; parksAtOnce), then 'error'. A message that arrived
+ * mid-run still turns the row 'pending', as on any release; its pass counts
+ * as one more attempt if it fails too. The RHS reads the row's values before
+ * the update.
+ */
+export function stewardFailureSet(
+  state: string,
+  error: string,
+  reason: string,
+  parkNow: string = "false"
+): string {
   return `steward_state = CASE
                 WHEN steward_state <> 'running' THEN steward_state
                 WHEN steward_requeued THEN 'pending'
-                WHEN steward_attempts + 1 >= ${MAX_STEWARD_ATTEMPTS} THEN 'error'
+                WHEN steward_attempts + 1 >= ${MAX_STEWARD_ATTEMPTS} OR ${parkNow} THEN 'error'
                 ELSE ${state}
               END,
               steward_requeued = false,
               steward_error = ${error},
+              steward_error_reason = ${reason},
               steward_attempts = steward_attempts + 1`;
 }
+
+/** What a successful pass clears: the error, its class and the attempt count. */
+export const STEWARD_SUCCESS_CLEAR_SET =
+  "steward_error = NULL, steward_error_reason = NULL, steward_attempts = 0";
 
 /**
  * A claim parks as 'error' inside one SQL statement whose CASE may or may
@@ -100,11 +132,13 @@ export async function reportStewardPark(
     const [row] = await rawQuery<{
       steward_state: string;
       steward_error: string | null;
+      steward_error_reason: string | null;
       steward_attempts: number;
       text: string;
       retired_backing_micro_usd: string | number;
     }>(
-      `SELECT c.steward_state, c.steward_error, c.steward_attempts, c.text,
+      `SELECT c.steward_state, c.steward_error, c.steward_error_reason,
+              c.steward_attempts, c.text,
               COALESCE((
                 SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
                   FROM action_allocations al
@@ -130,14 +164,19 @@ export async function reportStewardPark(
       title: `claim ${claimId} parked as error by the Steward`,
       body:
         `The Steward parked this claim as 'error' after ` +
-        `${row.steward_attempts} genuine failures (lane: ${lane}), which ` +
+        `${row.steward_attempts} genuine failure${row.steward_attempts === 1 ? "" : "s"} ` +
+        `(lane: ${lane}; class: ${row.steward_error_reason ?? "other"}), which ` +
         `takes it out of every lane's candidate set: its assess/reassess ` +
         `ledger rows are retired unrun and any funded item on it reads ` +
-        `cancelled until the error is addressed.` +
+        `cancelled until the error is addressed. It is not retried on its ` +
+        `own: a commission on the node buys another attempt, and ` +
+        `scripts/recover-parked-stewards.ts resets parks by error text or id.` +
         (backing > 0
           ? ` ${(backing / 1_000_000).toFixed(2)} USD of unspent backing is ` +
             `sitting on those retired rows.`
           : "") +
+        // The raw text: this report is service-scoped, which is where it
+        // belongs. Public surfaces show only the class (#846).
         `\n\nClaim: ${row.text.slice(0, 300)}\n\nLast error: ${
           (row.steward_error ?? "(none recorded)").slice(0, 1500)
         }`,

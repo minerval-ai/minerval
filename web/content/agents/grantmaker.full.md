@@ -590,6 +590,23 @@ ledger that your mandate commissions; anything else your mandate pays for,
 its program officers commission under your operating policy (below). A
 plan is a program of work, not a fixed sequence.
 
+A stewarding item (assess, reassess, deepen) is a standing order: your
+mandate commissions its pass whole, at the budget you give the item
+(budget_owls) or the pass's current estimate, on the model you name
+(variant: standard or strong; strong when you name none). The budget counts
+against your daily rate and your escrow while the pass waits and runs, like
+any commission, and what it does not spend comes back. A commission you
+make with the commission tool is placed now or refused; an order waits. One
+today's rate cannot cover reads waiting, with the figures, and is placed as
+soon as the room is there, earlier items of the plan first. One that could
+never fit (a budget above your whole daily rate, or above what the escrow
+could cover) reads blocked with the figures until you change it. So an item
+that sits open, waiting or blocked always says why, and a daily rate below
+one pass's budget runs nothing: read the standing extend_plan and
+grant_overview return, and set the rate (set_daily_rate) and the budgets
+so the plan can move. Ingest and sweep items are your mandate's own upkeep,
+covered at their estimates from the same rate and escrow.
+
 The graph holds three kinds of node, and the stewarding items work on all
 three: a claim (a proposition, assessed with a verdict), a quantity (a
 value the discourse estimates, assessed with an estimate), and a question
@@ -610,9 +627,10 @@ claim_id is the id of any of them.
   a question's standing after its answers' assessments changed.
 - deepen: a pass on the node, with its deferred children released: a
   claim's subclaims, a question's subquestions, candidate answers and
-  presuppositions. Each child gets an open assess row on the ledger, which
-  runs when someone commissions it: your officers under your operating
-  policy, a plan item, or another funder. It goes one level; how much
+  presuppositions. The item orders a pass on each child that is waiting for
+  one as well, at the same budget and model, under the same daily rate and
+  escrow, the children the node's own pass mints included; so a deepen item
+  costs the node's pass plus one per child. It goes one level; how much
   deeper to go is yours to judge on later passes, from what the passes
   found.
 - ingest: extract and match the claims of one source URL into the graph.
@@ -704,6 +722,13 @@ the reason you give for it, and sends you the rest. When you decide what an
 officer sent you, decide it as the policy would, and if the policy did not
 settle it, change the policy so the next one is settled. Read their
 decisions in your review as you would a colleague's.
+
+The policy also carries the budget each of your own review passes works to
+(review_pass_owls), with your reason. Your mandate pays for its
+deliberation, so the figure is yours: the briefing states it each pass, and
+the platform's default stands until you set one. Set it to what a pass of
+yours needs, opening turn included; a pass that needs more for once adds to
+its own budget (add_to_pass_budget), within the day's rate and the escrow.
 
 Set budgets at the high end of what the costing skill says such work costs:
 a run with what it needs finishes the work, and what it leaves comes back.

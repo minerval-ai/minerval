@@ -29,7 +29,7 @@ import { funderDisclosure, getPublicMandate } from "../../src/services/mandate-s
 import { getFundingLabelForJob } from "../../src/services/grant-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 import { processNextEngineAction } from "../../src/workers/engine-executor.js";
-import { processNextGrantTask } from "../../src/workers/grant-pipeline.js";
+import { tendMandates } from "../../src/services/mandate-lifecycle-service.js";
 
 async function grant(id: string) {
   const [g] = await rawQuery<{
@@ -137,6 +137,18 @@ describe("the Grantmaker's tenth", () => {
       ["reassess", claimId],
       ["assess", sub],
     ]);
+    // The plan runs at once: each item's pass is commissioned from the
+    // escrow as the plan is drafted, with no sweep to wait for (#849).
+    const placed = await rawQuery<{ claim_id: string; commissioned_by: string }>(
+      `SELECT claim_id, commissioned_by FROM action_allocations
+        WHERE grant_id = $1 AND commissioned_by IS NOT NULL AND released_at IS NULL
+        ORDER BY created_at`,
+      [funded.grantId]
+    );
+    expect(placed).toEqual([
+      { claim_id: claimId, commissioned_by: "plan" },
+      { claim_id: sub, commissioned_by: "plan" },
+    ]);
 
     // With the tenth unspent, a review row opens, priced at what is left.
     await reconcileActions();
@@ -173,8 +185,7 @@ describe("the Grantmaker's tenth", () => {
        VALUES ('grant_planning', $1, 'standard', $2, 'planned', 1, 'done', $3)`,
       [PLANNING_GROUP(funded.grantId), funded.grantId, 0.5 * OWL]
     );
-    const result = await processNextGrantTask();
-    expect(result).toMatchObject({ status: "completed", grantId: funded.grantId });
+    await tendMandates();
     expect((await grant(funded.grantId)).status).toBe("completed");
     // Nothing was metered to the job itself, so the whole escrow returns.
     expect(await owlBalance(reader)).toBe(5 * OWL);

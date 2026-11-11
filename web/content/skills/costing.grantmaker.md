@@ -1,4 +1,4 @@
-# Method skill: Costing (version 6)
+# Method skill: Costing (version 7)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -77,12 +77,18 @@ it as an estimate, and say what it buys. What to count for each kind of
 work:
 
 - **assess and reassess**: one Steward pass each, on the standard or the
-  strong tier.
-- **deepen**: one pass on the node. The children it releases get open
-  rows of their own, each a pass when you fund it; get_decomposition shows
-  how many are waiting, and query_sql counts them across a subtree. Price the first level from
-  that, and keep room for the levels after it, since nobody knows the
-  size of the tree in advance.
+  strong tier. A plan item is a standing order for that pass: your mandate
+  commissions it at the item's budget_owls, or at the pass's estimate when
+  the item names none, on the strong tier unless the item's variant says
+  standard. Price the item at that budget; what the pass does not spend
+  comes back.
+- **deepen**: one pass on the node, and one on each of its children that
+  is waiting for a pass (the stubs it releases, and the ones the node's own
+  pass mints), each at the item's budget and tier. get_decomposition shows
+  how many are waiting, and query_sql counts them across a subtree. Price
+  the item as the node plus that first level, and keep room for the levels
+  after it, which are further items, since nobody knows the size of the
+  tree in advance.
 - **ingest**: one ingestion per source. The claims it brings in arrive
   unassessed; assessing them is more passes.
 - **formalize and attempt_proof**: their own lines. An attempt at the max
@@ -111,7 +117,14 @@ work:
   about thirty times a month.
 - **contributions you submit**: a review each.
 - **your own passes**: the planning pass, each review pass on your
-  cadence, and the granting conversation.
+  cadence, and the granting conversation. A review pass works to the
+  figure your operating policy names (`review_pass_owls`, with your
+  reason; the platform's default until you set one), held against the
+  day's rate while it runs and settled to what it spent. Every pass pays
+  first for its opening turn, your instructions, tool list and briefing,
+  so a figure near that cost buys no work; a pass that needs more for
+  once adds to its own budget (`add_to_pass_budget`), which is cheaper
+  than a second pass.
 - **your officers**: each sitting on the mandate's inbox is a program
   officer run, and a run of yours on what it escalates; both are
   commissioned from the mandate and give back what they do not spend.
@@ -119,4 +132,9 @@ work:
 - **petitions**: what your officers grant to runs that turned out to need
   more. Keep room for it in proportion to how hard the work is to foresee.
 
-The daily rate decides how fast the budget is spent, not how much.
+The daily rate decides how fast the budget is spent, not how much. Every
+budget the mandate commissions, a plan item's included, is held against
+the day's rate until its run settles, so set the rate above the largest
+single budget you plan: an order larger than the whole rate can never be
+placed and reads blocked, and one the day has no room left for waits for
+room, in plan order.

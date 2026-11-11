@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { loadClaim } from "@/lib/data";
+import { redirect } from "next/navigation";
+import { loadClaim, loadMergedFrom } from "@/lib/data";
+import { mergedFromParam, mergedRedirectPath } from "@/lib/merged";
 import { claimPreview, describePreview, truncateText } from "@/lib/preview";
 import { ClaimMargins } from "@/components/claim/ClaimMargins";
+import { MergedFromNote } from "@/components/claim/MergedFromNote";
 import { PageHead } from "@/components/PageHead";
 
 // What a pasted link to this page unfurls into: the claim as the title, and
@@ -32,9 +35,19 @@ export async function generateMetadata({
   };
 }
 
-export default async function ClaimPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClaimPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ merged_from?: string | string[] }>;
+}) {
   const { id } = await params;
   const { detail, source } = await loadClaim(id);
+  // A claim that was merged into another keeps its address (#884): the
+  // reader lands on the survivor's page, which says where they came from.
+  const survivorPath = mergedRedirectPath(detail, id);
+  if (survivorPath) redirect(survivorPath);
   if (!detail) {
     // Reader-facing, so plain language either way; the fixture case (no API
     // configured, e.g. a local design preview) gets one extra sentence of
@@ -61,5 +74,14 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
       </div>
     );
   }
-  return <ClaimMargins detail={detail} source={source} />;
+  const mergedFrom = await loadMergedFrom(
+    detail.claim.id,
+    mergedFromParam((await searchParams).merged_from),
+  );
+  return (
+    <>
+      {mergedFrom && <MergedFromNote from={mergedFrom} />}
+      <ClaimMargins detail={detail} source={source} />
+    </>
+  );
 }

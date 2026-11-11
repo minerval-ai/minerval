@@ -29,6 +29,7 @@ import {
 } from "./action-service.js";
 import { getFundingLabelForJob } from "./grant-service.js";
 import { enqueueSteward } from "./queue-service.js";
+import { mergedAliasRefusals } from "./claim-alias-service.js";
 
 export class RequestError extends Error {
   constructor(message: string) {
@@ -104,7 +105,7 @@ export async function fileRequest(input: {
       );
       const found = new Set(live.map((r) => r.id));
       const missing = claimIds.filter((id) => !found.has(id));
-      if (missing.length > 0) throw new RequestError(`No active node ${missing.join(", ")}`);
+      if (missing.length > 0) throw new RequestError(await noActiveNodeMessage(missing));
     }
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO requests
@@ -375,7 +376,7 @@ export async function setRequestTargets(input: {
       );
       const found = new Set(live.map((r) => r.id));
       const missing = claimIds.filter((id) => !found.has(id));
-      if (missing.length > 0) throw new RequestError(`No active node ${missing.join(", ")}`);
+      if (missing.length > 0) throw new RequestError(await noActiveNodeMessage(missing));
     }
     await tx.query(`DELETE FROM request_targets WHERE request_id = $1`, [input.requestId]);
     for (const claimId of claimIds) {
@@ -877,4 +878,17 @@ export async function listRequests(opts: {
     params
   );
   return { items: await assemble(rows), total: count?.n ?? 0 };
+}
+
+/**
+ * Why a request cannot bear on these ids. A node that was merged names its
+ * survivor (#884), so the filer can address the request to it.
+ */
+async function noActiveNodeMessage(missing: string[]): Promise<string> {
+  const merged = await mergedAliasRefusals(missing);
+  const gone = missing.filter((id) => !merged.has(id));
+  return [
+    ...[...merged.values()].map((m) => m.message),
+    ...(gone.length > 0 ? [`No active node ${gone.join(", ")}`] : []),
+  ].join(" ");
 }

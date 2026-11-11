@@ -15,6 +15,7 @@
  *  - the Curator: curator_change.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { mergedAliasRefusals } from "../../services/claim-alias-service.js";
 import { rawQuery } from "../../db/client.js";
 import {
   enqueueSteward,
@@ -138,6 +139,8 @@ interface Notified {
   paid_owls?: number;
   /** Set when the node already had a pass paid for: the message joined it, at no cost. */
   joined_paid_pass?: boolean;
+  /** Set when the node is parked (#846): what a paid pass on it buys, or that an unpaid note will wait. */
+  note?: string;
 }
 
 interface Refused {
@@ -196,12 +199,21 @@ export async function executeNotifySteward(
   const found =
     wellFormed.length === 0
       ? []
-      : await rawQuery<{ id: string; kind: string }>(
-          `SELECT id, kind FROM claims WHERE id = ANY($1::uuid[])`,
+      : await rawQuery<{ id: string; kind: string; steward_state: string }>(
+          `SELECT id, kind, steward_state FROM claims WHERE id = ANY($1::uuid[])`,
           [wellFormed]
         );
   const kindOf = new Map(found.map((r) => [r.id, r.kind]));
+  const parkedIds = new Set(found.filter((r) => r.steward_state === "error").map((r) => r.id));
+  // A merged node has no Steward to read a notice (#884): refused, naming
+  // the survivor, whose Steward is the one to tell.
+  const merged = await mergedAliasRefusals(wellFormed.filter((id) => kindOf.has(id)));
   const targets = wellFormed.filter((id) => {
+    const alias = merged.get(id);
+    if (alias) {
+      refused.push({ id, reason: alias.message });
+      return false;
+    }
     if (kindOf.has(id)) return true;
     refused.push({
       id,
@@ -258,11 +270,23 @@ export async function executeNotifySteward(
         });
         if (res.ok && res.status === "commissioned") {
           debitRunBudget(budgetMicro);
-          notified.push({ id, kind: kindOf.get(id)!, trigger, paid_owls: microUsdToOwls(budgetMicro) });
+          notified.push({
+            id,
+            kind: kindOf.get(id)!,
+            trigger,
+            paid_owls: microUsdToOwls(budgetMicro),
+            ...(res.parked ? { note: res.parked.note } : {}),
+          });
           continue;
         }
         if (res.ok && res.status === "already_commissioned") {
-          notified.push({ id, kind: kindOf.get(id)!, trigger, joined_paid_pass: true });
+          notified.push({
+            id,
+            kind: kindOf.get(id)!,
+            trigger,
+            joined_paid_pass: true,
+            ...(res.parked ? { note: res.parked.note } : {}),
+          });
           continue;
         }
       }
@@ -271,7 +295,20 @@ export async function executeNotifySteward(
     // The message goes whole into the target's inbox, which tells its
     // Steward who wrote and how the two nodes are joined (inbox-service.ts).
     await enqueueSteward({ claimId: id, trigger, context: message, sender: from });
-    notified.push({ id, kind: kindOf.get(id)!, trigger });
+    notified.push({
+      id,
+      kind: kindOf.get(id)!,
+      trigger,
+      // A note does not un-park a node (queue-service.ts): say so, rather
+      // than let the sender wait on a pass that will not come.
+      ...(parkedIds.has(id)
+        ? {
+            note:
+              "This node is parked: its Steward's passes failed and nothing retries it. Your note waits " +
+              "in its inbox until someone commissions a pass on it (a paid message does).",
+          }
+        : {}),
+    });
   }
 
   // A question this session waits on: each message carries the session's id,

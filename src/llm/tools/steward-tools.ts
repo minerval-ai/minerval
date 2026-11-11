@@ -5,6 +5,7 @@
  * add decomposition edges, log decisions, and notify dependent stewards.
  */
 import type Anthropic from "@anthropic-ai/sdk";
+import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
 import { eq, and } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../../db/client.js";
@@ -1297,7 +1298,10 @@ export function getStewardToolDefinitions(): Tool[] {
         "not yours; raise it and let the Curator adjudicate. The concern goes on the " +
         "ledger as a curation request: curation is funded work, so it runs when a " +
         "mandate judges it worth buying, and one run reads every concern waiting on " +
-        "the claim. Name the other claim when you know it.",
+        "the claim. Name the other claim when you know it. An argument " +
+        "recorded on the wrong side of your claim is not one of these: its stance " +
+        "is yours to correct with revise_argument, and the Curator, which never " +
+        "flips an argument's stance itself, would send it back to you.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -1330,6 +1334,20 @@ export function getStewardToolDefinitions(): Tool[] {
   ];
 }
 
+/**
+ * The Steward's writes that name a node other than (or as well as) its own,
+ * with the input fields that carry the ids: checked for merged nodes before
+ * the write (#884).
+ */
+const MERGED_TARGET_KEYS: Record<string, readonly string[]> = {
+  record_claim_instance: ["claim_id"],
+  add_relationship_edge: ["parent_id", "child_id"],
+  add_related_claim: ["claim_id", "other_claim_id"],
+  add_decomposition_edge: ["parent_id", "claim_id"],
+  add_parent_claim: ["claim_id"],
+  propose_parent_edge: ["claim_id", "parent_id"],
+};
+
 export async function executeStewardTool(
   toolName: string,
   input: Record<string, unknown>,
@@ -1355,6 +1373,14 @@ export async function executeStewardTool(
     // refused with the route that reaches it (#757).
     const notOwn = await ownershipRefusal(toolName, input);
     if (notOwn) return notOwn;
+    // A write that names a merged node is refused and told the survivor
+    // (#884). These tools checked only that the other node existed, so an
+    // edge, a link or an instance could land on an absorbed row.
+    const mergedKeys = MERGED_TARGET_KEYS[toolName];
+    if (mergedKeys) {
+      const merged = await mergedInputRefusal(input, mergedKeys);
+      if (merged) return JSON.stringify({ success: false, message: merged });
+    }
     switch (toolName) {
       case "update_claim_assessment": {
         const claimId = input.claim_id as string;

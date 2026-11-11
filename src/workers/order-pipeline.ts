@@ -24,7 +24,7 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
-import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
+import { STEWARD_SUCCESS_CLEAR_SET, stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import {
@@ -239,7 +239,7 @@ export async function processNextOrderTask(
 
     await releaseClaim(order.claim_id, "done");
     await rawQuery(
-      `UPDATE claims SET steward_error = NULL, steward_attempts = 0 WHERE id = $1`,
+      `UPDATE claims SET ${STEWARD_SUCCESS_CLEAR_SET} WHERE id = $1`,
       [order.claim_id]
     );
     await rawQuery(

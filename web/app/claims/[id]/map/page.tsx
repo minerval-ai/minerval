@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { loadClaim } from "@/lib/data";
+import { mergedRedirectPath } from "@/lib/merged";
 import { GraphView } from "@/components/graph/GraphView";
 import { PageHead } from "@/components/PageHead";
 
@@ -30,6 +32,9 @@ export default async function ClaimMapPage({
 }) {
   const { id } = await params;
   const { detail, source } = await loadClaim(id);
+  // A merged claim's map address leads to its survivor's (#884).
+  const survivorPath = mergedRedirectPath(detail, id, "/map");
+  if (survivorPath) redirect(survivorPath);
   if (!detail) {
     // Same plain-language treatment as the claim page's not-found state (#195).
     return (

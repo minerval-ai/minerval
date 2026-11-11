@@ -20,8 +20,9 @@
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { hybridSearch } from "./search-service.js";
-import { getClaimById } from "./claim-service.js";
+import { resolveClaimId } from "./claim-alias-service.js";
 import { getClaimTree, getTransitiveDependents } from "./tree-service.js";
+import { STEWARD_PARKED_DESCRIPTION } from "./steward-park-reason.js";
 import { attachClaimTags, resolveTagBySlug } from "./tag-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
 import { NODE_KINDS } from "../schemas/kinds.js";
@@ -69,6 +70,11 @@ function claimPageUrl(claimId: string): string {
 // ---- definitions -------------------------------------------------------------
 
 const FREE = " Free.";
+/** The walks resolve a merged id as get_claim does (#884), which says in full what that means. */
+const MERGED_ID_NOTE =
+  " An id that was merged into another node walks from the survivor, and " +
+  "`resolved_from` says so: where its `stance_relation` is `opposed`, the " +
+  "survivor states the opposite of what your id stated (see get_claim).";
 
 export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefinition[] {
   const caller = audience === "caller";
@@ -143,8 +149,10 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "(requires, supports, contradicts, and so on) and grouped into a named " +
         "argument where one exists, and each node carries its own assessment " +
         "status, so a disputed subclaim under a well-supported parent marks " +
-        "where the disagreement lives. For what rests ON a claim, use " +
-        "get_dependents." +
+        "where the disagreement lives. " +
+        STEWARD_PARKED_DESCRIPTION +
+        " For what rests ON a claim, use get_dependents." +
+        MERGED_ID_NOTE +
         (caller ? FREE : ""),
       input_schema: {
         type: "object",
@@ -171,6 +179,7 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "is not the same as being important: a settled claim can carry much " +
         "and still need little attention (constitution §19). The mirror of " +
         "get_decomposition." +
+        MERGED_ID_NOTE +
         (caller ? FREE : ""),
       input_schema: {
         type: "object",
@@ -299,11 +308,16 @@ async function walk(
   input: Record<string, unknown>,
   direction: "down" | "up"
 ): Promise<GraphReadResult> {
-  const claimId = String(input.claim_id ?? "");
-  const claim = await getClaimById(claimId);
-  if (!claim) return NOT_FOUND;
+  // A merged id walks from its survivor (#884), as get_claim reads it.
+  const resolution = await resolveClaimId(String(input.claim_id ?? ""));
+  if (!resolution) return NOT_FOUND;
+  const claimId = resolution.id;
   const depth = clampInt(input.max_depth, 1, MAX_TREE_DEPTH, DEFAULT_TREE_DEPTH);
-  const base = { claim_id: claimId, page_url: claimPageUrl(claimId) };
+  const base = {
+    ...(resolution.resolvedFrom ? { resolved_from: resolution.resolvedFrom } : {}),
+    claim_id: claimId,
+    page_url: claimPageUrl(claimId),
+  };
   return {
     ok: true,
     payload:

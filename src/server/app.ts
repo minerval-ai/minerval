@@ -10,6 +10,7 @@ import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerRouteCatalog } from "./plugins/route-catalog.js";
 import { registerPartialResponse } from "./plugins/partial-response.js";
 import { registerPublicRead } from "./plugins/public-read.js";
+import { registerClaimAliasResolution } from "./plugins/claim-alias.js";
 import { registerAnonymousRateLimit } from "./plugins/anonymous-rate-limit.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
@@ -79,6 +80,10 @@ export async function buildApp() {
   // `fields=` on GET routes. Before the catalog, so the catalog (and the MCP
   // tools built from it) records each GET route with `fields` in its schema.
   await registerPartialResponse(app);
+  // A merged id on /claims/:claim_id resolves to its survivor on reads and
+  // is refused on writes (#884). After `fields=`, so `resolved_from` is
+  // served whatever a caller trims the response to.
+  await registerClaimAliasResolution(app);
   // Before any route: MCP builds its route tools from the catalog.
   await registerRouteCatalog(app);
   // Before any route too: it classifies each route as it registers and

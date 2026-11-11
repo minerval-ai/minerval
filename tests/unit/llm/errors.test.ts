@@ -21,13 +21,25 @@ describe("isTransientApiError", () => {
   });
 
   it("treats retryable HTTP statuses as transient", () => {
-    for (const status of [402, 408, 409, 429, 500, 502, 503, 529]) {
+    for (const status of [401, 402, 408, 409, 429, 500, 502, 503, 529]) {
       expect(isTransientApiError(Object.assign(new Error("x"), { status }))).toBe(true);
     }
   });
 
+  it("treats rejected credentials as the deployment's fault, by status, class or stored text (#846)", () => {
+    expect(isTransientApiError(Object.assign(new Error("x"), { status: 401 }))).toBe(true);
+    expect(isTransientApiError(Object.assign(new Error("x"), { name: "AuthenticationError" }))).toBe(true);
+    // What the August 2026 outage left in claims.steward_error: text only.
+    expect(isTransientApiError(new Error("401 authentication_error: API key is invalid"))).toBe(true);
+    expect(
+      isTransientApiError(
+        new Error('401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}')
+      )
+    ).toBe(true);
+  });
+
   it("treats client request errors as NOT transient", () => {
-    for (const status of [400, 401, 404, 422]) {
+    for (const status of [400, 404, 422]) {
       expect(
         isTransientApiError(Object.assign(new Error("bad request"), { status }))
       ).toBe(false);

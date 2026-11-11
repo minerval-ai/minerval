@@ -122,6 +122,10 @@ export const claims = pgTable(
     // historical migrations that wrote it still apply.
     stewardContext: text("steward_context"),
     stewardError: text("steward_error"),
+    // The class of steward_error, one of a few fixed words safe to publish
+    // (steward-park-reason.ts). steward_error is raw text for logs and the
+    // service-scoped report; every public surface shows this instead (#846).
+    stewardErrorReason: text("steward_error_reason"),
     // While 'running' this is the run's lease: set when a lane claims the row
     // and refreshed by the run's heartbeat, so only a dead run goes stale
     // (steward-lease.ts).
@@ -490,6 +494,13 @@ export const assessments = pgTable(
     assessedAt: timestamp("assessed_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The retired status this row carried before migration 0066 relabeled
+    // it (#524, #848): 'contested' (now inconclusive) or 'unsupported' (now
+    // unknown). Backfilled by migration 0112 from the note 0066 appended to
+    // reasoning_trace. A Steward never writes it, so a node clears it when it
+    // is re-judged; set on a current row, it means the status is provisional,
+    // not a finding. NULL on every other row.
+    relabeledFrom: text("relabeled_from"),
   },
   (table) => [
     uniqueIndex("idx_assessments_current")

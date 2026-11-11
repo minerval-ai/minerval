@@ -30,8 +30,8 @@
  *    whose lease is >15m old (crashed worker) is reclaimable.
  *
  * Failure handling (#97): a failed Steward run is classified, not blindly parked.
- * Budget-tracker and transient API/infra failures (billing/credit outage, 429,
- * 5xx, network) return the claim to 'pending' untouched — they are not the
+ * Budget-tracker and transient API/infra failures (billing/credit outage,
+ * rejected credentials, 429, 5xx, network) return the claim to 'pending' untouched — they are not the
  * claim's fault. Only genuine logic errors count against `steward_attempts`, and
  * a claim parks as 'error' only after MAX_STEWARD_ATTEMPTS of them. A run of
  * consecutive transient failures trips a circuit breaker that stops the drain,
@@ -57,9 +57,12 @@ import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
 type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
+import { classifyStewardFailure } from "../services/steward-park-reason.js";
 import {
   MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
+  STEWARD_SUCCESS_CLEAR_SET,
+  parksAtOnce,
   reportStewardPark,
   stewardReleaseSet,
   withStewardLease,
@@ -343,7 +346,7 @@ async function runStewardOnClaim(
     await rawQuery(
       `UPDATE claims
           SET ${stewardReleaseSet("'done'")},
-              steward_error = NULL, steward_attempts = 0
+              ${STEWARD_SUCCESS_CLEAR_SET}
         WHERE id = $1`,
       [task.id]
     );
@@ -386,9 +389,12 @@ async function runStewardOnClaim(
     }
 
     // Genuine logic error. Count the attempt; requeue for a retry until the cap,
-    // then park as 'error' so the drain stops spinning on a poison claim.
+    // then park as 'error' so the drain stops spinning on a poison claim. A
+    // model refusal parks on the first (parksAtOnce says why). The public
+    // class of the error is stored beside its raw text (#846).
     const nextAttempts = attempts + 1;
-    if (nextAttempts >= MAX_STEWARD_ATTEMPTS) {
+    const reason = classifyStewardFailure(err);
+    if (nextAttempts >= MAX_STEWARD_ATTEMPTS || parksAtOnce(err)) {
       // Same mid-run rule as the success path: a message that arrived during
       // this run survives the park. The attempt counter is still recorded, so
       // a genuinely poisoned claim converges to 'error' anyway after its
@@ -396,9 +402,10 @@ async function runStewardOnClaim(
       await rawQuery(
         `UPDATE claims
             SET ${stewardReleaseSet("'error'")},
-                steward_error = $2, steward_attempts = $3
+                steward_error = $2, steward_attempts = $3,
+                steward_error_reason = $4
           WHERE id = $1`,
-        [task.id, msg, nextAttempts]
+        [task.id, msg, nextAttempts, reason]
       );
       // A parked claim is out of the candidate set; retire its group so
       // the executor stops re-picking a covered-but-poisoned action.
@@ -410,7 +417,7 @@ async function runStewardOnClaim(
         ).catch(() => {});
       }
       console.error(
-        `[steward] claim ${task.id} parked as error after ${nextAttempts} attempts: ${msg}`
+        `[steward] claim ${task.id} parked as error (${reason}) after ${nextAttempts} attempt(s): ${msg}`
       );
       // A park retires funded rows unrun, so it is surfaced to maintainers
       // rather than left for whoever next reads queue health (#834).
@@ -419,9 +426,10 @@ async function runStewardOnClaim(
       await rawQuery(
         `UPDATE claims
             SET steward_state = 'pending', steward_requeued = false,
-                steward_error = $2, steward_attempts = $3, updated_at = now()
+                steward_error = $2, steward_attempts = $3,
+                steward_error_reason = $4, updated_at = now()
           WHERE id = $1`,
-        [task.id, msg, nextAttempts]
+        [task.id, msg, nextAttempts, reason]
       );
       console.warn(
         `[steward] claim ${task.id} failed (attempt ${nextAttempts}/${MAX_STEWARD_ATTEMPTS}); requeued: ${msg}`

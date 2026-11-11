@@ -20,6 +20,7 @@ import {
   withOwlBalanceLock,
 } from "./owl-ledger-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 /**
  * Escrow owls into a job behind the balance guard: the hold is written only
@@ -65,10 +66,12 @@ export async function createDeepDecompositionJob(input: {
     [input.claimId]
   );
   if (!claim) {
+    // A merged node names its survivor (#884).
+    const merged = await mergedAliasRefusal(input.claimId);
     return {
       ok: false,
       code: "CLAIM_NOT_FOUND",
-      message: "Claim not found or not active",
+      message: merged?.message ?? "Claim not found or not active",
     };
   }
 

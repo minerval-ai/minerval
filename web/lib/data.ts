@@ -1,6 +1,6 @@
 import { cache } from "react";
 import {
-  apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
+  apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimCard, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
   fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
   fetchTag, fetchTags,
 } from "./api";
@@ -12,7 +12,7 @@ import {
 } from "./fixtures";
 import type {
   ArgumentPage, AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
-  RequestItem, SearchResultItem, SourcePage, TagSummary,
+  RequestItem, ResolvedFrom, SearchResultItem, SourcePage, TagSummary,
 } from "./types";
 import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
@@ -62,6 +62,22 @@ export const loadClaim = cache(async (
     return { detail: getClaim(id), source: "fixture" };
   }
 });
+
+// The "merged from" line's facts (#884): what the claim at `aliasId` was,
+// when a reader was redirected from its address to `survivorId`'s page. Read
+// from the alias's card, which the API answers with the survivor's card and
+// `resolved_from`; null unless that card really is this survivor's, so a
+// hand-written `merged_from` in a URL shows nothing. Offline there are no
+// merged claims.
+export async function loadMergedFrom(
+  survivorId: string,
+  aliasId: string | null,
+): Promise<ResolvedFrom | null> {
+  if (!aliasId || !apiConfigured()) return null;
+  const card = await fetchClaimCard(aliasId).catch(() => null);
+  if (!card?.resolved_from || card.id !== survivorId) return null;
+  return card.resolved_from;
+}
 
 // Offline stand-in for the API's search, which also matches by meaning:
 // every word of the query somewhere in what the request asks, why, or what

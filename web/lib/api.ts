@@ -484,6 +484,8 @@ export async function fetchContributorProfile(
 
 export interface OperationsKindRow {
   kind: string;
+  /** commissioned: an agent, a plan item or the funder chose the run and its budget; self_funded: the mandate's own upkeep. */
+  funding: "commissioned" | "self_funded";
   runs: number;
   running: number;
   budget_owls: number;
@@ -518,9 +520,12 @@ export interface MandateAllocationView {
   title: string;
   operating_policy: string;
   officer_limit: { owls: number; reason: string };
+  review_pass?: { owls: number; reason: string };
   budget: {
     escrow_owls: number;
     spent_owls: number;
+    /** The part of spent_owls metered outside the ledger: in no kind's row, not held to the daily rate. */
+    outside_ledger_owls: number;
     daily_rate_owls: number;
     used_today_owls: number;
     held_owls: number;

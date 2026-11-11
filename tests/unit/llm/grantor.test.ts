@@ -47,6 +47,7 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
 }));
 vi.mock("../../../src/services/owl.js", () => ({
   microUsdToOwls: (micro: number) => micro / 1_000_000,
+  owlsToMicroUsd: (owls: number) => Math.round(owls * 1_000_000),
 }));
 vi.mock("../../../src/llm/prompts/grantmaker.js", () => ({
   getGrantmakerSystemPromptBlocks: () => ["ROLE"],

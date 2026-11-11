@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// No node in these tests is a merged alias (#884): ids resolve to themselves.
+vi.mock("../../../../src/services/claim-alias-service.js", async (importOriginal) =>
+  (await import("../../../../tests/unit/claim-alias-mock.js")).passthroughClaimAlias(importOriginal)
+);
 vi.mock("../../../../src/services/reconciliation-service.js", () => ({
   mergeClaims: vi.fn(async () => ({
     survivorId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -35,6 +39,7 @@ import {
   setQuantityDefinition,
   reclassifyClaim,
   reverseReconciliation,
+  reassignInstance,
 } from "../../../../src/services/reconciliation-service.js";
 import { enqueueSteward } from "../../../../src/services/queue-service.js";
 import { addRelationshipEdge } from "../../../../src/services/reconciliation-service.js";
@@ -255,5 +260,120 @@ describe("curator add_relationship_edge (#658)", () => {
     );
     expect(out.success).toBe(false);
     expect(out.message).toMatch(/Unknown relation "causes"\. Use one of: requires/);
+  });
+});
+
+describe("curator reassign_instance (#828, #815)", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const I = "11111111-1111-4111-8111-111111111111";
+
+  it("offers copy, stance_relation, the figure for a quantity, and an answer, and requires reasoning", () => {
+    const tool = getCuratorToolDefinitions().find((t) => t.name === "reassign_instance")!;
+    const schema = tool.input_schema as unknown as {
+      properties: Record<string, { enum?: string[]; required?: string[] }>;
+      required: string[];
+    };
+    expect(Object.keys(schema.properties)).toEqual(
+      expect.arrayContaining(["instance_id", "to_claim_id", "copy", "stance_relation", "stated", "answer_claim_id", "reasoning"])
+    );
+    expect(schema.properties.stance_relation!.enum).toEqual(["same", "opposed"]);
+    // The figure takes the shape record_estimate takes.
+    expect(schema.properties.stated!.required).toEqual(["form"]);
+    expect(schema.required).toEqual(["instance_id", "to_claim_id", "reasoning"]);
+  });
+
+  it("passes the whole call through and reports where the passage now is", async () => {
+    vi.mocked(reassignInstance).mockResolvedValueOnce({
+      reassigned: true,
+      mode: "copy",
+      instanceId: "new-instance",
+      stance: "states",
+      eventId: "evt-copy",
+    });
+    const out = JSON.parse(
+      await executeCuratorTool("reassign_instance", {
+        instance_id: I,
+        to_claim_id: NODE,
+        copy: true,
+        stated: { form: "point", central: 42 },
+        reasoning: "the sentence gives game two as 42",
+      })
+    );
+    expect(reassignInstance).toHaveBeenCalledWith({
+      instanceId: I,
+      toClaimId: NODE,
+      copy: true,
+      reasoning: "the sentence gives game two as 42",
+      stanceRelation: "same",
+      stated: { form: "point", central: 42 },
+      answerClaimId: null,
+    });
+    expect(out).toMatchObject({
+      success: true,
+      mode: "copy",
+      instance_id: "new-instance",
+      stance: "states",
+      event_id: "evt-copy",
+    });
+  });
+
+  it("defaults to a move, and passes 'opposed' through", async () => {
+    vi.mocked(reassignInstance).mockResolvedValueOnce({
+      reassigned: true,
+      mode: "move",
+      instanceId: I,
+      stance: "denies",
+      eventId: "evt-move",
+    });
+    const out = JSON.parse(
+      await executeCuratorTool("reassign_instance", {
+        instance_id: I,
+        to_claim_id: NODE,
+        stance_relation: "opposed",
+        answer_claim_id: " ",
+        reasoning: "worded as the denial",
+      })
+    );
+    expect(vi.mocked(reassignInstance).mock.calls[0]![0]).toMatchObject({
+      copy: false,
+      stanceRelation: "opposed",
+      answerClaimId: null,
+    });
+    expect(out).toMatchObject({ success: true, mode: "move", stance: "denies" });
+  });
+
+  it("the Curator is told to copy a passage several nodes share, and that an argument's stance is its Steward's", async () => {
+    const { getCuratorSystemPrompt } = await import("../../../../src/llm/prompts/curator.js");
+    const prompt = getCuratorSystemPrompt().replace(/\s+/g, " ");
+    expect(prompt).toContain("copy it (copy: true) to each of the others");
+    expect(prompt).toContain("you do not flip it: notify_steward that node, naming the argument and asking for revise_argument");
+    const { getStewardToolDefinitions } = await import("../../../../src/llm/tools/steward-tools.js");
+    const escalate = getStewardToolDefinitions().find((t) => t.name === "escalate_to_curator")!;
+    expect(escalate.description).toContain("yours to correct with revise_argument");
+  });
+
+  it("asks for reasoning and a valid stance_relation before writing, and relays a refusal", async () => {
+    const noReason = JSON.parse(await executeCuratorTool("reassign_instance", { instance_id: I, to_claim_id: NODE }));
+    expect(noReason.success).toBe(false);
+    const hedged = JSON.parse(
+      await executeCuratorTool("reassign_instance", {
+        instance_id: I,
+        to_claim_id: NODE,
+        stance_relation: "mostly opposed",
+        reasoning: "r",
+      })
+    );
+    expect(hedged.success).toBe(false);
+    expect(reassignInstance).not.toHaveBeenCalled();
+
+    vi.mocked(reassignInstance).mockResolvedValueOnce({
+      reassigned: false,
+      reason: "claim X already has an instance from this source: abc",
+    });
+    const refused = JSON.parse(
+      await executeCuratorTool("reassign_instance", { instance_id: I, to_claim_id: NODE, copy: true, reasoning: "r" })
+    );
+    expect(refused).toMatchObject({ success: false, reassigned: false });
+    expect(refused.message).toContain("already has an instance from this source: abc");
   });
 });

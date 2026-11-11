@@ -143,7 +143,7 @@ async function main(): Promise<void> {
     console.log(`  snapshots (${s.points.length}): earliest ${s.earliest ?? "—"} → latest ${s.latest ?? "—"} (Δ ${s.delta ?? "—"}, ${num(s.slopePerHour)}/h)`);
     if (qh.errorParked.length) {
       console.log(`  error-parked (${qh.errorParked.length}):`);
-      console.log(table(["claim", "imp", "attempts", "error"], qh.errorParked.map((p) => [p.claimId.slice(0, 8), num(p.importance), String(p.attempts), (p.error ?? "").slice(0, 70)])));
+      console.log(table(["claim", "imp", "attempts", "reason"], qh.errorParked.map((p) => [p.claimId.slice(0, 8), num(p.importance), String(p.attempts), p.reason])));
     }
 
     console.log(`\n--- agents (24h / 7d)`);

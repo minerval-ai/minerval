@@ -11,6 +11,8 @@ interface SelfActionRow {
   action_id: string;
   claim_id: string | null;
   grant_id: string;
+  kind?: string;
+  cost_est?: number;
   needed: number;
   headroom: number;
   day_room: number | null;
@@ -34,6 +36,7 @@ const { state } = vi.hoisted(() => ({
       actionId: string | null;
       amount: number;
     }>,
+    estimates: [] as Array<{ actionId: string; estimate: number }>,
   },
 }));
 
@@ -67,6 +70,10 @@ const { handleQuery } = vi.hoisted(() => ({
       });
       return [{ id: `al-${state.placed.length}` }];
     }
+    if (q.includes("UPDATE actions SET cost_est_micro_usd")) {
+      state.estimates.push({ actionId: params[0] as string, estimate: params[1] as number });
+      return [];
+    }
     return [];
   },
 }));
@@ -78,7 +85,7 @@ vi.mock("../../../src/db/client.js", () => ({
   ),
 }));
 
-import { fundGrantSelfActions } from "../../../src/services/allocation-service.js";
+import { fundGrantSelfActions, shortPassFunding } from "../../../src/services/allocation-service.js";
 
 beforeEach(() => {
   state.grant = {
@@ -91,6 +98,7 @@ beforeEach(() => {
   state.committed = { shares: 0, outstanding: 0, nonledger: 0, regrants: 0 };
   state.selfActions = [];
   state.placed = [];
+  state.estimates = [];
 });
 
 describe("fundGrantSelfActions (deliberation pays its own way)", () => {
@@ -117,6 +125,54 @@ describe("fundGrantSelfActions (deliberation pays its own way)", () => {
     state.selfActions = [selfRow({ needed: 150_000, day_room: 40_000 })];
     expect(await fundGrantSelfActions()).toBe(0);
     expect(state.placed).toEqual([]);
+  });
+
+  // #820: the Grantmaker's own pass starts short rather than not at all,
+  // since it is the one thing that can fix what keeps it from running.
+  it("starts a review pass with what the day has left, and lowers its estimate to that", async () => {
+    state.selfActions = [
+      selfRow({ kind: "mandate_review", cost_est: 5_000_000, needed: 5_000_000, day_room: 3_000_000 }),
+    ];
+    expect(await fundGrantSelfActions()).toBe(1);
+    expect(state.placed).toEqual([{ group: "review:g1", actionId: "a-review", amount: 3_000_000 }]);
+    expect(state.estimates).toEqual([{ actionId: "a-review", estimate: 3_000_000 }]);
+  });
+
+  it("starts a planning pass with what the escrow has left", async () => {
+    state.selfActions = [
+      selfRow({
+        kind: "grant_planning", exclusion_group: "planning:g1", action_id: "a-plan",
+        cost_est: 5_000_000, needed: 5_000_000, headroom: 2_000_000, day_room: null,
+      }),
+    ];
+    expect(await fundGrantSelfActions()).toBe(1);
+    expect(state.placed[0]!.amount).toBe(2_000_000);
+    expect(state.estimates).toEqual([{ actionId: "a-plan", estimate: 2_000_000 }]);
+  });
+
+  it("leaves a pass waiting when less than the floor can be found", async () => {
+    state.selfActions = [
+      selfRow({ kind: "mandate_review", cost_est: 5_000_000, needed: 5_000_000, day_room: 400_000 }),
+    ];
+    expect(await fundGrantSelfActions()).toBe(0);
+    expect(state.placed).toEqual([]);
+    expect(state.estimates).toEqual([]);
+  });
+
+  it("funds other work whole or not at all", async () => {
+    state.selfActions = [
+      selfRow({ kind: "ingest", exclusion_group: "ingest:u1", cost_est: 5_000_000, needed: 5_000_000, day_room: 3_000_000 }),
+    ];
+    expect(await fundGrantSelfActions()).toBe(0);
+  });
+
+  it("leaves a fully funded pass's estimate alone", async () => {
+    state.selfActions = [
+      selfRow({ kind: "mandate_review", cost_est: 5_000_000, needed: 5_000_000, day_room: 9_000_000 }),
+    ];
+    expect(await fundGrantSelfActions()).toBe(1);
+    expect(state.placed[0]!.amount).toBe(5_000_000);
+    expect(state.estimates).toEqual([]);
   });
 
   it("draws the shared room down across several self-actions in one pass", async () => {
@@ -152,5 +208,20 @@ describe("fundGrantSelfActions (deliberation pays its own way)", () => {
       selfRow({ grant_id: "g2", action_id: "a2", exclusion_group: "review:g2", day_room: 150_000 }),
     ];
     expect(await fundGrantSelfActions()).toBe(2);
+  });
+});
+
+describe("shortPassFunding", () => {
+  const floorMicroUsd = 1_000_000;
+  it("places the room there is when the pass would start at or above the floor", () => {
+    expect(shortPassFunding({ costEstMicroUsd: 5_000_000, neededMicroUsd: 5_000_000, roomMicroUsd: 1_000_000, floorMicroUsd })).toBe(1_000_000);
+  });
+  it("counts what already backs the row toward the floor", () => {
+    expect(shortPassFunding({ costEstMicroUsd: 5_000_000, neededMicroUsd: 4_200_000, roomMicroUsd: 300_000, floorMicroUsd })).toBe(300_000);
+  });
+  it("is null with no room, and below the floor", () => {
+    expect(shortPassFunding({ costEstMicroUsd: 5_000_000, neededMicroUsd: 5_000_000, roomMicroUsd: 0, floorMicroUsd })).toBeNull();
+    expect(shortPassFunding({ costEstMicroUsd: 5_000_000, neededMicroUsd: 5_000_000, roomMicroUsd: -10, floorMicroUsd })).toBeNull();
+    expect(shortPassFunding({ costEstMicroUsd: 5_000_000, neededMicroUsd: 5_000_000, roomMicroUsd: 999_999, floorMicroUsd })).toBeNull();
   });
 });

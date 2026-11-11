@@ -7,9 +7,10 @@
  * mandate name stamped on funded assessments via funded_by_job_id).
  *
  * Zero ceremony for small funders: pick a claim, a policy, and a budget —
- * three inputs — and the grant worker does the rest. Large funders use the
+ * three inputs — and the ledger does the rest. Large funders use the
  * 'agent' policy: a grantor agent surveys the scope, proposes an allocation
- * plan, and NOTHING runs until the funder approves it (grant-pipeline.ts).
+ * plan, and NOTHING runs until the funder approves it. The approved plan's
+ * items run as commissions from the mandate (standing-order-service.ts).
  *
  * Money buys position and coverage, never epistemic standing: grant runs
  * are ordinary Steward runs under the same constitution, their funding is
@@ -25,6 +26,7 @@ import type { PlanItemLedger } from "./action-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
+import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
@@ -45,11 +47,16 @@ export interface PlanItem {
   /**
    * assess        — one Steward pass on a node (first assessment). Any
    *                 kind: a claim's verdict, a quantity's estimate, a
-   *                 question's standing.
-   * reassess      — a fresh pass on an already-assessed node.
-   * deepen        — a pass on the node, with its direct deferred children
+   *                 question's standing. A standing order: the mandate
+   *                 commissions the pass whole (standing-order-service.ts),
+   *                 at `budget_owls` or the row's estimate, on `variant`
+   *                 (strong when it names none).
+   * reassess      — a fresh pass on an already-assessed node; a standing
+   *                 order like assess.
+   * deepen        — a pass on the node, and its direct deferred children
    *                 released into the queue (a question's subquestions,
-   *                 answers, and presuppositions included); one level.
+   *                 answers, and presuppositions included) with a pass
+   *                 commissioned on each child waiting for one; one level.
    * ingest        — extract + match one source URL into the graph, metered
    *                 to the grant's escrow (the ingestion-pipeline primitive).
    * formalize     — write and publish the claim's formal statement
@@ -112,8 +119,17 @@ export interface PlanItem {
    * ingest-focus-service.ts). Absent = the whole document.
    */
   focus?: string;
-  /** attempt_proof: standard or max; sweep: standard or strong. */
+  /**
+   * attempt_proof: standard or max; sweep: standard or strong;
+   * assess/reassess/deepen: the Steward's tier, standard or strong (strong
+   * when absent).
+   */
   variant?: "standard" | "max" | "strong";
+  /**
+   * assess/reassess/deepen: the budget of each pass the item commissions,
+   * in owls. Absent = the row's estimate for the tier.
+   */
+  budget_owls?: number;
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
   /**
@@ -154,15 +170,37 @@ export const PLAN_KIND_RULES =
   "wait for the review, take the node's id when it is accepted, and are " +
   "priced and run like any other item from then on. " +
   "assess/reassess/deepen: an active node of any kind (claim, quantity, " +
-  "or question; claim_id is the node's id, or claim_ref a proposal's ref); the item queues the node for " +
-  "its Steward and opens (or keeps) its assess group, once per item " +
-  "(a finished pass stays finished, whichever lane ran it; add another " +
-  "item for another pass). The pass records the kind's assessment: a " +
+  "or question; claim_id is the node's id, or claim_ref a proposal's ref). The item is a standing " +
+  "order for one Steward pass: your mandate commissions it whole, like a " +
+  "commission you make yourself, at budget_owls or, naming none, the " +
+  "pass's current estimate (cost_sheet), on the variant you name, " +
+  "standard or strong (strong when you name none, as a paid order gets). " +
+  "The budget is held against your daily rate and escrow while the pass " +
+  "waits and runs, and what it does not spend comes back. Unlike " +
+  "`commission`, which is placed now or refused, an order waits for " +
+  "room: one today's rate cannot cover reads waiting, with the figures, " +
+  "and is placed as soon as the rate has the room, earlier items of the " +
+  "plan first (so put first what matters most; a large budget early in " +
+  "the plan holds the smaller ones behind it until it fits). One the " +
+  "escrow cannot cover beside the budgets running work holds waits the " +
+  "same way. One that could never fit, a budget above your whole daily " +
+  "rate or above what the escrow could cover with every running budget " +
+  "returned, reads blocked with the figures until you change the budget, " +
+  "the variant, the rate, or the escrow is topped up. A node that " +
+  "already has a pass paid for, by anyone, is not paid for twice: the " +
+  "item is met when that pass finishes. Once per item: a finished pass " +
+  "stays finished, whoever paid for it; add another item for another " +
+  "pass. The pass records the kind's assessment: a " +
   "claim's verdict, a quantity's estimate, a question's standing and best " +
   "answer. assess on a node that already carries one reads done: reassess " +
   "is the ask for a fresh pass. deepen also releases the node's deferred " +
-  "children into the queue: a claim's subclaims, a question's " +
-  "subquestions, candidate answers and presuppositions. " +
+  "children into the queue (a claim's subclaims, a question's " +
+  "subquestions, candidate answers and presuppositions) and orders a pass " +
+  "on each child that is waiting for one, at the same budget and variant, " +
+  "under the same rate and escrow, including the children the node's own " +
+  "pass mints; so price a deepen item as the node's pass plus one per " +
+  "child. It goes one level. If the Steward parks a node after repeated " +
+  "failures, the item reads cancelled and its budget is back in your escrow. " +
   "ingest: an http(s) url; executes in plan order from your escrow. An " +
   "optional focus scopes it: the extractor reads the whole document but " +
   "proposes only the claims bearing on the focus (premises those claims " +
@@ -257,7 +295,16 @@ export const PLAN_ITEM_SCHEMA = {
       description:
         "attempt_proof: the solver's effort variant, standard or max. " +
         "sweep, optional: the reader, standard or strong; omit for the " +
-        "marginal-return rule.",
+        "marginal-return rule. assess, reassess, deepen, optional: the " +
+        "Steward's model, standard or strong; omit for strong.",
+    },
+    budget_owls: {
+      type: "number",
+      description:
+        "assess, reassess, deepen, optional: the budget of each pass the " +
+        "item commissions, in owls, held against your daily rate and " +
+        "escrow until the pass settles. Omit for the pass's current " +
+        "estimate on its variant (cost_sheet).",
     },
     is_calibration: {
       type: "boolean",
@@ -354,6 +401,20 @@ export function validatePlanItems(
       if (item.variant !== undefined && item.variant !== null && item.variant !== "standard" && item.variant !== "strong") {
         return `a sweep item's variant is standard or strong (got: ${String(item.variant)})`;
       }
+    }
+    if (item.action === "assess" || item.action === "reassess" || item.action === "deepen") {
+      if (item.variant !== undefined && item.variant !== null && item.variant !== "standard" && item.variant !== "strong") {
+        return `${item.action === "assess" ? "an" : "a"} ${item.action} item's variant is standard or strong (got: ${String(item.variant)})`;
+      }
+      if (
+        item.budget_owls !== undefined && item.budget_owls !== null &&
+        !(typeof item.budget_owls === "number" && Number.isFinite(item.budget_owls) && item.budget_owls > 0)
+      ) {
+        return `${item.action === "assess" ? "an" : "a"} ${item.action} item's budget_owls is a number of owls above zero (got: ${String(item.budget_owls)}); omit it for the pass's estimate`;
+      }
+    }
+    if (item.action === "propose" || item.action === "ingest" || item.action === "sweep") {
+      // Checked above.
     } else if (item.claim_ref && !item.claim_id) {
       if (!refs.has(item.claim_ref)) {
         return `${item.action} item's claim_ref "${String(item.claim_ref)}" names no propose item in this plan`;
@@ -398,6 +459,9 @@ export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
       ...(focus ? { focus } : {}),
       ...(partition ? { partition } : {}),
       ...(it.variant ? { variant: it.variant } : {}),
+      ...(["assess", "reassess", "deepen"].includes(it.action) && Number(it.budget_owls) > 0
+        ? { budget_owls: Number(it.budget_owls) }
+        : {}),
       ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
       ...(it.lifetime_cap_owls !== undefined ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) } : {}),
     };
@@ -441,10 +505,12 @@ export async function createGrant(input: {
       [input.scopeClaimId]
     );
     if (!claim) {
+      // A merged node names its survivor (#884).
+      const merged = await mergedAliasRefusal(input.scopeClaimId);
       return {
         ok: false,
         code: "CLAIM_NOT_FOUND",
-        message: "Scope claim not found or not active",
+        message: merged?.message ?? "Scope claim not found or not active",
       };
     }
   }
@@ -503,7 +569,7 @@ export async function createGrant(input: {
   return { ok: true, grant: grant! };
 }
 
-/** Approve a grantor agent's proposed plan; execution starts next tick. */
+/** Approve a grantor agent's proposed plan; its work is commissioned at once. */
 export async function approveGrantPlan(input: {
   grantId: string;
   funderUserId: string;
@@ -532,6 +598,10 @@ export async function approveGrantPlan(input: {
     .set({ status: "active", updatedAt: new Date() })
     .where(eq(grants.id, grant.id))
     .returning();
+  // The plan is live: its proposals are filed and its standing orders placed
+  // now, not a sweep later (never throws; the sweep retries).
+  const { materializeLivePlan } = await import("./action-service.js");
+  await materializeLivePlan(grant.id);
   return { ok: true, grant: updated! };
 }
 
