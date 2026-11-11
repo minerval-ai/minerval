@@ -9,6 +9,8 @@ import {
 } from "../../auth";
 import { isSafeRelativePath } from "../../lib/safe-redirect";
 import { PageHead } from "../../components/PageHead";
+import { loadFeatures } from "../../lib/data";
+import { featureOn } from "../../lib/features";
 
 export const metadata: Metadata = { title: "Sign in · Minerval" };
 
@@ -28,6 +30,9 @@ export default async function SignInPage({
 
   const anyOauth = githubEnabled() || googleEnabled();
   const devLogin = devLoginEnabled();
+  // The extension is named among what an account is for only where this
+  // deployment has it.
+  const extensionOn = featureOn(await loadFeatures(), "extension");
 
   return (
     <div className="col">
@@ -35,8 +40,8 @@ export default async function SignInPage({
         title="Sign in"
         lede={
           <>
-            One account serves both roles: <em>consumer</em> (API keys, usage,
-            the coming browser extension) and <em>contributor</em> (challenges,
+            One account serves both roles: <em>consumer</em> (API keys, usage
+            {extensionOn && <>, the coming browser extension</>}) and <em>contributor</em> (challenges,
             evidence, reputation). Reading the graph never requires an account.
           </>
         }

@@ -5,7 +5,12 @@ import { getDb } from "../db/client.js";
 import { assessmentsInForce } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
 import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
-import { getJudgmentInputs } from "../services/judgment-inputs-service.js";
+import {
+  SINCE_ASSESSED_DESCRIPTION,
+  getJudgmentInputs,
+  sinceAssessed,
+  summarizeJudgmentChanges,
+} from "../services/judgment-inputs-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
@@ -25,6 +30,7 @@ import {
   addArgument,
   getArgumentsForClaim,
   getEvaluationStateForClaim,
+  getRetiredArgumentsForClaim,
 } from "../services/argument-service.js";
 import { createClaimProposal } from "../services/intake-service.js";
 import { assembleClaimCitation } from "../services/citation-service.js";
@@ -228,6 +234,31 @@ const errorEnvelope = {
         request_id: { type: "string" },
       },
     },
+  },
+} as const;
+
+// What has changed under a node's judgment in force since it was written
+// (#566, services/judgment-inputs-service.ts), as GET /claims/:claim_id
+// serves it beside the judgment. Absent on a node with no judgment in force.
+const sinceAssessedSchema = {
+  type: "object",
+  nullable: true,
+  description:
+    "Present on a node with a judgment in force (a claim's assessment, a quantity's estimate, " +
+    "a question's assessment): " +
+    SINCE_ASSESSED_DESCRIPTION +
+    "; `note` then says so in words. " +
+    "GET /claims/:claim_id/judgment-inputs (get_judgment_inputs) names the premises and sources.",
+  properties: {
+    recorded: { type: "boolean" },
+    changed: { type: "boolean", nullable: true },
+    note: { type: "string" },
+    premises_rejudged: { type: "integer" },
+    premises_added: { type: "integer" },
+    premises_removed: { type: "integer" },
+    sources_added: { type: "integer" },
+    sources_removed: { type: "integer" },
+    source_events: { type: "integer" },
   },
 } as const;
 
@@ -620,6 +651,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               claim: claimSchema,
               assessment: assessmentSchema,
+              since_assessed: sinceAssessedSchema,
               subclaim_count: { type: "integer" },
               // Steward-seeded prior (#285): the parent claim's Steward's
               // preliminary credence/note, served only while this claim has
@@ -642,6 +674,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               },
               tree: { type: "object", nullable: true, additionalProperties: true },
               arguments: { type: "array", nullable: true },
+              // Arguments its Steward retired or the Curator merged away
+              // (#741, #541), deep only: the record, each with its reason and
+              // its own page. Empty when there are none.
+              retired_arguments: looseArray,
               instances: { type: "array", nullable: true },
               // Source provenance (#286), deep only: the Steward's account of
               // what the support rests on (null until written; shown to
@@ -754,7 +790,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           return [];
         });
 
-        const [quantity, thresholdOf, question, nodeRequests, waiting] = await Promise.all([
+        const [quantity, thresholdOf, question, nodeRequests, waiting, changes] = await Promise.all([
           claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
           claim.kind === "claim" ? getThresholdOf(claim_id) : null,
           claim.kind === "question" ? getQuestionDetail(claim_id) : null,
@@ -767,11 +803,23 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           }),
           // A read failure loses the list, never the page.
           waitingMessages(claim_id).catch(() => []),
+          // What has changed under the judgment in force (#566). A failure
+          // loses the field, never the page: absent is "not said", which a
+          // reader cannot mistake for "unchanged".
+          summarizeJudgmentChanges([claim.id]).catch((err) => {
+            console.error(
+              `[claims] changes since the judgment failed for ${claim_id}: ${err instanceof Error ? err.message : err}`
+            );
+            return null;
+          }),
         ]);
+        const since = sinceAssessed(changes?.get(claim.id));
 
         const response: Record<string, unknown> = {
           claim: formatClaim(claim),
           assessment: assessment ? formatAssessment(assessment) : null,
+          // Beside the judgment it qualifies, whichever kind keeps it.
+          ...(since ? { since_assessed: since } : {}),
           subclaim_count: subclaimCount,
           ...extras,
           quantity,
@@ -888,6 +936,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             evaluation: evalByArgument.get(a.id)?.content ?? null,
             shows: a.shows ?? null,
             lean_check: checkByArgument.get(a.id) ?? null,
+          }));
+          // Retired arguments keep their pages (§7: retiring preserves the
+          // name, page and record); the claim page lists them apart.
+          const retired = await getRetiredArgumentsForClaim(claim_id);
+          response.retired_arguments = retired.map((a) => ({
+            id: a.id,
+            name: a.name,
+            stance: a.stance,
+            retired_at: a.retiredAt?.toISOString() ?? null,
+            reason: a.retiredReason,
+            merged_into: a.mergedInto ?? null,
           }));
 
           // The instances the claim carries, in the order a reader sees

@@ -193,6 +193,16 @@ export interface ClaimCore {
   updated_at: string;
 }
 
+export interface RetiredArgumentItem {
+  id: string;
+  name: string | null;
+  stance: Stance;
+  retired_at: string | null;
+  reason: string | null;
+  // The argument it was merged into, when the Curator merged it (§5).
+  merged_into: string | null;
+}
+
 export interface ArgumentItem {
   id: string;
   name?: string | null;
@@ -459,17 +469,42 @@ export interface ResolvedFrom {
   merged_at: string | null;
 }
 
+/**
+ * What has changed under a node's judgment in force since it was written
+ * (#566): counts of the premises judged again, added or removed, the sources
+ * added or removed, and the notices (corrections, retractions) on its
+ * sources. `recorded: false` means the judgment predates the record, so
+ * nothing is known either way and the counts are absent; `note` says so.
+ */
+export interface SinceAssessed {
+  recorded: boolean;
+  changed: boolean | null;
+  note?: string;
+  premises_rejudged?: number;
+  premises_added?: number;
+  premises_removed?: number;
+  sources_added?: number;
+  sources_removed?: number;
+  source_events?: number;
+}
+
 export interface ClaimDetail {
   // Present when the id asked for was merged into this claim (#884).
   resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
   assessment: Assessment | null;
+  // Beside the judgment, whichever kind keeps it; absent when the node has
+  // none in force or the API predates the field.
+  since_assessed?: SinceAssessed | null;
   subclaim_count: number;
   // Steward-seeded prior (#285); absent when the claim is assessed, unseeded,
   // or the API predates the field.
   seed?: ClaimSeed | null;
   tree?: TreeNode;
   arguments?: ArgumentItem[];
+  // Arguments its Steward retired or the Curator merged away (#741, #541),
+  // each with its reason; their pages keep the record.
+  retired_arguments?: RetiredArgumentItem[];
   instances?: Instance[];
   // Source provenance (#286): the Steward's account of what the support
   // rests on, the dependencies recorded between instances and the documents

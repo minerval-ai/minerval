@@ -221,3 +221,56 @@ describe("the pass note says what the node has (#883)", () => {
     }
   });
 });
+
+describe("a pass on a judged node opens with what changed under the judgment (#566)", () => {
+  const PREMISE = "bbbbbbbb-0000-4000-8000-000000000001";
+
+  /** The node has an assessment with a record, and one premise judged again since. */
+  async function withJudgedNode<T>(fn: () => Promise<T>): Promise<T> {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    vi.mocked(rawQuery).mockImplementation((async (sql: string) => {
+      if (sql.includes("FROM premise_rows")) {
+        return [{ node_id: PREMISE, relation: "requires", judged_against: "j1", in_force_now: "j2", state: "rejudged" }];
+      }
+      if (sql.includes("FROM source_rows") || sql.includes("FROM event_rows")) return [];
+      if (sql.includes("FROM judged")) {
+        return [{ kind: "assessment", id: "j0", assessed_at: new Date("2026-10-02T00:00:00Z"), inputs_recorded: true }];
+      }
+      if (sql.includes("SELECT id FROM claims")) return [{ id: CLAIM_ID }];
+      if (sql.includes("text AS name FROM claims")) return [{ id: PREMISE, name: "The trial was randomized" }];
+      if (sql.includes("FROM assessments_in_force")) return [{ one: 1 }];
+      return [];
+    }) as typeof rawQuery);
+    try {
+      return await fn();
+    } finally {
+      vi.mocked(rawQuery).mockImplementation((async () => []) as typeof rawQuery);
+    }
+  }
+
+  it("names the premise judged again, after the task", async () => {
+    const message = await withJudgedNode(async () => (await run("claim")).initialMessages[0]!.content);
+    const task = message.indexOf("The claim has a current assessment.");
+    const note = message.indexOf("What has changed in the graph under the current assessment since it was recorded on 2026-10-02:");
+    expect(task).toBeGreaterThan(-1);
+    expect(note).toBeGreaterThan(task);
+    expect(message).toContain(`- ${PREMISE} "The trial was randomized" (requires)`);
+  });
+
+  it("leaves it out of a formalization pass, which is not about the assessment", async () => {
+    const message = await withJudgedNode(async () => {
+      mocks.claim = { id: CLAIM_ID, importance: 0.5, domains: [], kind: "claim" };
+      await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, () =>
+        runClaimSteward({ trigger: "formalize", claimId: CLAIM_ID, context: "" })
+      );
+      return (mocks.loopOptions.at(-1) as unknown as LoopOptions).initialMessages[0]!.content;
+    });
+    expect(message).not.toContain("What has changed in the graph");
+  });
+
+  it("says nothing on a node with no judgment", async () => {
+    const message = (await run("claim")).initialMessages[0]!.content;
+    expect(message).not.toContain("What has changed in the graph");
+    expect(message).not.toContain("Since the current assessment");
+  });
+});

@@ -349,7 +349,23 @@ retraction on one of its sources. `GET /claims/:claim_id/judgment-inputs`
 verdict: a premise judged again to the same status still counts, and whether
 that warrants a reassessment is for the Steward and the Grantmaker. A
 judgment written before the record existed has `inputs_recorded` false and
-is reported as not recorded, never as unchanged. The older
+is reported as not recorded, never as unchanged.
+
+Nobody should have to ask claim by claim to learn that something moved, so
+the same fact is carried where each reader already looks, as counts under
+the name `since_assessed` (`summarizeJudgmentChanges`, one query for any
+number of nodes, built from the same SQL as the detailed read): on
+`GET /claims/:claim_id` and `get_claim` beside the judgment, on every
+`search_claims` hit and on the Grantmaker's `claims_from_source` rows (in a
+short form there, because a list is read constantly and most rows have
+nothing to say: counts that are zero are left out, and a node with no
+judgment carries no key), and
+on the claim page as one line under the assessment when something changed.
+A Steward starting a pass on a node it has already judged is told what
+changed in its task message, by claim id and text
+(`src/llm/agents/steward-changes-note.ts`); `get_claim` with
+`include: ["judgment_inputs"]` gives agents the whole record. None of this
+enters the allocation formula or any policy number. The older
 `subclaim_summary` column was meant as this snapshot, was never filled, and
 is always `{}`. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
@@ -2084,6 +2100,14 @@ could not proceed.
 `GET /setup/features` (`list_features` on MCP) reports each feature with
 whether it is on and what switching it off removes. That is how the web app
 and outside agents learn what a deployment has.
+
+The web app reads that list on the server (`web/lib/features.ts`) and leaves
+out what belongs to a feature that is off. Its links, panels, badges and
+filters are not rendered, the fields a core route still carries about it are
+not shown, and a page that exists only for it (the prize listing, the prize
+rules, a proof attempt's report) answers "not found". If the list cannot be
+read, the web app shows everything, so a passing error never hides part of a
+site that has it.
 
 ---
 

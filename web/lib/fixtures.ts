@@ -100,6 +100,18 @@ const FLAGSHIP: ClaimDetail = {
   // only offline data exercising the written-form (#129) and evaluation
   // (#173) surfaces. The threshold claim's children below stay ungrouped, so
   // the Basis rendering path is exercised too.
+  // A retired argument (#541): listed apart under the decomposition, with
+  // its reason and a link to its page (fixtures-argument.ts).
+  retired_arguments: [
+    {
+      id: "arg-headline-print",
+      name: "The headline print alone",
+      stance: "for",
+      retired_at: "2024-11-02T14:30:00Z",
+      reason: "Restates the direct-measurement argument without the threshold it needs; that argument states it in full.",
+      merged_into: null,
+    },
+  ],
   arguments: [
     {
       id: "arg-direct",

@@ -8,6 +8,7 @@ import type {
   AssessmentStatus, ClaimDetail, ClaimType, RelationType, TreeNode,
 } from "@/lib/types";
 import type { DataSource } from "@/lib/data";
+import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import {
   CLAIM_TYPE_LABEL, RELATION, STATUS, STATUS_ORDER,
   claimTypeMeta, decompositionNote, statusMeta,
@@ -260,15 +261,21 @@ function BedStrip({ bed }: { bed: ClaimBits["bedrock"] }) {
 }
 
 export function GraphView({
-  initialDetail, source, embed = false,
+  initialDetail, source, embed = false, features = ALL_FEATURES_ON,
 }: {
   initialDetail: ClaimDetail;
   source: DataSource;
+  /** Which optional parts this deployment has on. The claims arrive without
+      the marks of a feature that is off (lib/data.ts, loadClaim); this is for
+      the legend, which would otherwise explain marks no claim can wear. */
+  features?: Features;
   /** Contained mode for the home page: no toolbar/trail, fixed-height stage,
       and no URL or global-keyboard side effects. */
   embed?: boolean;
 }) {
   CACHE.set(initialDetail.claim.id, initialDetail);
+  const mathematicsOn = featureOn(features, "mathematics");
+  const prizesOn = featureOn(features, "prizes");
 
   const router = useRouter();
   // The embedded live map links out on click; the offline sample keeps walking
@@ -730,7 +737,7 @@ export function GraphView({
                   Not in the eyebrow: a prize next to the importance figure
                   would read as importance. */}
               {focusMarks.checked && (
-                <MachineChecked kind={focusMarks.checked} size="sm" align="start" />
+                <MachineChecked kind={focusMarks.checked} size="sm" align="start" rules={prizesOn} />
               )}
               {focusMarks.prizeMicroUsd != null && (
                 <span className={styles.focusPrize} title={MAP_KEY.prize}>
@@ -1255,19 +1262,39 @@ export function GraphView({
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedFact}`} />verified fact</span>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedOpen}`} />unsettled</span>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedValue}`} />value premise</span>
-          <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedTheorem}`} />theorem</span>
+          {/* a theorem is a leaf whose proof a machine has checked, so the
+              mark exists only where mathematics is on */}
+          {mathematicsOn && (
+            <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedTheorem}`} />theorem</span>
+          )}
         </span>
         <span className={styles.legendRule} />
-        {/* mathematics (§8.3): the prize ring and the check glyph */}
-        <span className={styles.legendGroup}>
-          <Term gloss={MAP_KEY.prize} href={DEFINED_IN.prize} source={RULES_SOURCE} className={styles.legendItem}>
-            <span className={`${styles.legendClaim} ${styles.prized}`} aria-hidden />prize
-          </Term>
-          <Term gloss={MAP_KEY.checked} href={DEFINED_IN.machineChecked} source={RULES_SOURCE} className={styles.legendItem}>
-            <span className={`${styles.legendGlyph} ${styles.checkMark}`}>⊢</span>machine-checked
-          </Term>
-        </span>
-        <span className={styles.legendRule} />
+        {/* mathematics (§8.3): the prize ring and the check glyph, each only
+            where its feature is on, and the group only where either is */}
+        {(mathematicsOn || prizesOn) && (
+          <>
+            <span className={styles.legendGroup}>
+              {prizesOn && (
+                <Term gloss={MAP_KEY.prize} href={DEFINED_IN.prize} source={RULES_SOURCE} className={styles.legendItem}>
+                  <span className={`${styles.legendClaim} ${styles.prized}`} aria-hidden />prize
+                </Term>
+              )}
+              {/* the term is defined in the prize rules, a page that exists
+                  only where prizes are on */}
+              {mathematicsOn && (
+                <Term
+                  gloss={MAP_KEY.checked}
+                  href={prizesOn ? DEFINED_IN.machineChecked : undefined}
+                  source={RULES_SOURCE}
+                  className={styles.legendItem}
+                >
+                  <span className={`${styles.legendGlyph} ${styles.checkMark}`}>⊢</span>machine-checked
+                </Term>
+              )}
+            </span>
+            <span className={styles.legendRule} />
+          </>
+        )}
         <span className={styles.legendGroup}>
           <Term gloss={RELATION.supports.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
             <span className={styles.legendEdge} style={{ borderColor: "color-mix(in srgb, var(--st-supported) 70%, transparent)" }} /><span className="rel-supports">supports</span>
