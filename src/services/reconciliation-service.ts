@@ -9,12 +9,16 @@
  * the prior structure without erasing history). `reverseReconciliation`
  * undoes a logged event.
  */
-import { getDb, rawQuery, withTransaction } from "../db/client.js";
+import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
 import { insertRelationshipEdge } from "./relationship-service.js";
-import { quantityDefinitionSchema, type QuantityDefinitionInput } from "../schemas/kinds.js";
+import {
+  quantityDefinitionSchema,
+  quantityEstimateSchema,
+  type QuantityDefinitionInput,
+} from "../schemas/kinds.js";
 import {
   linkClaims as insertClaimLink,
   unlinkClaims as deleteClaimLinks,
@@ -223,13 +227,13 @@ async function restoreKindRefs(loserId: string, survivorId: string, m: Partial<K
 async function logEvent(
   operation: string,
   reasoning: string,
-  payload: unknown
+  payload: unknown,
+  tx?: TxQuery
 ): Promise<string | undefined> {
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
-     VALUES ($1, $2, $3::jsonb, 'curator') RETURNING id`,
-    [operation, reasoning, JSON.stringify(payload)]
-  );
+  const sql = `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
+     VALUES ($1, $2, $3::jsonb, 'curator') RETURNING id`;
+  const params = [operation, reasoning, JSON.stringify(payload)];
+  const rows = tx ? await tx.query<{ id: string }>(sql, params) : await rawQuery<{ id: string }>(sql, params);
   return rows[0]?.id;
 }
 
@@ -1179,30 +1183,237 @@ async function reinsertLinks(links: ClaimLinkRow[]): Promise<void> {
   }
 }
 
-/** Move a source instance to another claim. Logs a reversible `reassign_instance` event. */
+/** What a reassigned instance carried before, as logged for the reversal. */
+interface InstancePrior {
+  claim_id: string;
+  stance: string;
+  stated_estimate: unknown;
+  argument_id: string | null;
+  answer_claim_id: string | null;
+  display_rank: number | null;
+}
+
+export interface ReassignInstanceResult {
+  reassigned: boolean;
+  /** Why nothing was written, when `reassigned` is false. */
+  reason?: string;
+  mode?: "move" | "copy";
+  /** The instance now on the target: the moved row, or the new copy. */
+  instanceId?: string;
+  /** The stance it carries there. */
+  stance?: string;
+  eventId?: string;
+}
+
+/**
+ * Put a source's passage on another node (§4, §5): move the instance there,
+ * or, with `copy`, leave it where it is and record a second instance of the
+ * same passage on the target. One operation for every kind of target:
+ *
+ *  - The stance is read into the target kind's vocabulary (KIND_STANCE_MAP),
+ *    as a kind change does.
+ *  - A claim target takes `stanceRelation`: "opposed" when the target is
+ *    worded as the denial of what the instance was recorded against, which
+ *    flips affirms and denies and leaves poses and mentions alone.
+ *  - A quantity target takes `stated`, the figure the passage gives for
+ *    that quantity, since a figure recorded against another node says
+ *    nothing about this one. Several figures from one source are allowed.
+ *  - A question target may take `answerClaimId`, the answer in its answer
+ *    set that the passage gives.
+ *
+ * A move clears what pointed into the old node (its argument, its answer,
+ * its place in the page order). A copy starts unread: the readings and
+ * provenance edges recorded on the original are judgments about the passage
+ * against the original's node, and stay with it. A copy onto a claim that
+ * already holds an instance from the same source and speaker is refused, as
+ * record_claim_instance refuses one. Logs a reversible `reassign_instance`
+ * event.
+ */
 export async function reassignInstance(input: {
   instanceId: string;
   toClaimId: string;
-}): Promise<{ reassigned: boolean; eventId?: string }> {
-  // Capture the prior owner first, so the move is reversible.
-  const [before] = await rawQuery<{ claim_id: string }>(
-    `SELECT claim_id FROM claim_instances WHERE id = $1`,
-    [input.instanceId]
-  );
-  if (!before || before.claim_id === input.toClaimId) return { reassigned: false };
+  copy?: boolean;
+  reasoning?: string;
+  stanceRelation?: "same" | "opposed";
+  stated?: unknown;
+  answerClaimId?: string | null;
+}): Promise<ReassignInstanceResult> {
+  const copy = input.copy === true;
+  const mode = copy ? "copy" : "move";
+  const refuse = (reason: string): ReassignInstanceResult => ({ reassigned: false, reason });
 
-  // A rank orders instances within one claim, so it does not travel.
-  await rawQuery(`UPDATE claim_instances SET claim_id = $1, display_rank = NULL WHERE id = $2`, [
-    input.toClaimId,
-    input.instanceId,
-  ]);
+  return withTransaction(async (tx) => {
+    // The prior state is captured first, under a lock, so the operation is
+    // reversible against exactly what it found.
+    const [before] = await tx.query<
+      InstancePrior & {
+        source_id: string;
+        verbatim_text: string;
+        context: string | null;
+        summary_context: string | null;
+        speaker: string | null;
+        publication: string | null;
+        source_date: string | null;
+        link: string | null;
+        segment_id: string | null;
+      }
+    >(
+      `SELECT claim_id, stance, stated_estimate, argument_id, answer_claim_id, display_rank,
+              source_id, verbatim_text, context, summary_context, speaker, publication,
+              source_date, link, segment_id
+         FROM claim_instances WHERE id = $1 FOR UPDATE`,
+      [input.instanceId]
+    );
+    if (!before) return refuse(`instance ${input.instanceId} not found`);
+    if (!copy && before.claim_id === input.toClaimId) {
+      return refuse("the instance is already on that node; nothing to move");
+    }
 
-  const eventId = await logEvent("reassign_instance", "split: instance moved", {
-    instance_id: input.instanceId,
-    from_claim_id: before.claim_id,
-    to_claim_id: input.toClaimId,
+    const [target] = await tx.query<{ kind: string; state: string }>(
+      `SELECT kind, state FROM claims WHERE id = $1`,
+      [input.toClaimId]
+    );
+    if (!target) return refuse(`node ${input.toClaimId} not found`);
+    if (target.state !== "active") {
+      return refuse(`node ${input.toClaimId} is ${target.state}, not active`);
+    }
+
+    const opposed = input.stanceRelation === "opposed";
+    if (opposed && target.kind !== "claim") {
+      return refuse(
+        `stance_relation "opposed" applies to a claim, which a source affirms or denies; ` +
+          `${input.toClaimId} is a ${target.kind}`
+      );
+    }
+    const statedGiven = input.stated !== undefined && input.stated !== null;
+    if (target.kind === "quantity" && !statedGiven) {
+      return refuse(
+        `${input.toClaimId} is a quantity: give stated, the figure this passage states for it ` +
+          `(form "none" with the reason when the passage gives no figure)`
+      );
+    }
+    if (target.kind !== "quantity" && statedGiven) {
+      return refuse(`stated is a figure for a quantity; ${input.toClaimId} is a ${target.kind}`);
+    }
+    let stated: unknown = null;
+    if (statedGiven) {
+      const parsed = quantityEstimateSchema.safeParse(input.stated);
+      if (!parsed.success) {
+        const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "stated"}: ${i.message}`);
+        return refuse(`stated is not a figure: ${issues.join("; ")}`);
+      }
+      stated = parsed.data;
+    }
+    const answerClaimId = input.answerClaimId || null;
+    if (answerClaimId) {
+      if (target.kind !== "question") {
+        return refuse(`answer_claim_id names an answer to a question; ${input.toClaimId} is a ${target.kind}`);
+      }
+      const [inSet] = await tx.query<{ id: string }>(
+        `SELECT id FROM claim_relationships
+          WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'answers'`,
+        [input.toClaimId, answerClaimId]
+      );
+      if (!inSet) {
+        return refuse(`node ${answerClaimId} is not in the answer set of question ${input.toClaimId}`);
+      }
+    }
+
+    // The stance on the target: the target kind's vocabulary first, then
+    // what the caller said about this passage and this node.
+    let stance = KIND_STANCE_MAP[target.kind]?.[before.stance] ?? before.stance;
+    if (target.kind === "quantity") stance = "states";
+    else if (answerClaimId) stance = "answers";
+    else if (opposed) stance = stance === "affirms" ? "denies" : stance === "denies" ? "affirms" : stance;
+
+    // One instance per (claim, source, speaker), as record_claim_instance
+    // keeps it: an unattributed row on either side matches any voice. A
+    // detached one counts, since a copy would silently overturn the judgment
+    // that detached it. A quantity holds each figure a source gives, and a
+    // question each asking and answering, so neither is deduplicated.
+    if (copy && target.kind === "claim") {
+      const [existing] = await tx.query<{ id: string; stance: string; detached_at: Date | null }>(
+        `SELECT id, stance, detached_at FROM claim_instances
+          WHERE claim_id = $1 AND source_id = $2
+            AND ($3::text IS NULL OR speaker IS NULL OR lower(speaker) = lower($3::text))
+          ORDER BY COALESCE(lower(speaker) = lower($3::text), false) DESC,
+                   (detached_at IS NULL) DESC, created_at
+          LIMIT 1`,
+        [input.toClaimId, before.source_id, before.speaker]
+      );
+      if (existing) {
+        return refuse(
+          `claim ${input.toClaimId} already has an instance from this source` +
+            `${before.speaker ? ` and speaker (${before.speaker})` : ""}: ${existing.id} ` +
+            `(stance: ${existing.stance}${existing.detached_at ? ", detached by its Steward" : ""}); ` +
+            `nothing was copied`
+        );
+      }
+    }
+
+    const statedJson = stated === null ? null : JSON.stringify(stated);
+    let instanceId = input.instanceId;
+    if (copy) {
+      const [row] = await tx.query<{ id: string }>(
+        `INSERT INTO claim_instances
+           (claim_id, source_id, verbatim_text, context, summary_context, stance, stated_estimate,
+            answer_claim_id, speaker, publication, source_date, link, segment_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, 'curator')
+         RETURNING id`,
+        [
+          input.toClaimId,
+          before.source_id,
+          before.verbatim_text,
+          before.context,
+          before.summary_context,
+          stance,
+          statedJson,
+          answerClaimId,
+          before.speaker,
+          before.publication,
+          before.source_date,
+          before.link,
+          before.segment_id,
+        ]
+      );
+      instanceId = row!.id;
+    } else {
+      // The argument, the answer and the rank each point into the old node,
+      // so none of them travels; a figure is restated or dropped.
+      await tx.query(
+        `UPDATE claim_instances
+            SET claim_id = $1, stance = $3, stated_estimate = $4::jsonb,
+                argument_id = NULL, answer_claim_id = $5, display_rank = NULL
+          WHERE id = $2`,
+        [input.toClaimId, input.instanceId, stance, statedJson, answerClaimId]
+      );
+    }
+
+    const prior: InstancePrior = {
+      claim_id: before.claim_id,
+      stance: before.stance,
+      stated_estimate: before.stated_estimate ?? null,
+      argument_id: before.argument_id,
+      answer_claim_id: before.answer_claim_id,
+      display_rank: before.display_rank,
+    };
+    const eventId = await logEvent(
+      "reassign_instance",
+      input.reasoning?.trim() || (copy ? "split: instance copied" : "split: instance moved"),
+      {
+        mode,
+        instance_id: instanceId,
+        copied_from_instance_id: copy ? input.instanceId : null,
+        from_claim_id: before.claim_id,
+        to_claim_id: input.toClaimId,
+        stance_relation: opposed ? "opposed" : "same",
+        stance,
+        prior,
+      },
+      tx
+    );
+    return { reassigned: true, mode, instanceId, stance, eventId };
   });
-  return { reassigned: true, eventId };
 }
 
 /**
@@ -1232,7 +1443,13 @@ export async function reverseReconciliation(
   }
 
   const p = event.payload;
-  const nodes = eventNodeIds(p ?? {});
+  // A copied instance leaves the node it was copied from as it was, so a
+  // copy neither waits on later operations there nor holds up earlier ones:
+  // one passage copied to each node of a split is undone one copy at a time.
+  const isCopy = (payload: Record<string, unknown>) => payload.mode === "copy";
+  const nodes = eventNodeIds(p ?? {}).filter(
+    (n) => !(isCopy(p ?? {}) && n === p.from_claim_id && n !== p.to_claim_id)
+  );
   if (nodes.length > 0) {
     // "Later" is decided in SQL against the event's own stored timestamp,
     // never a value round-tripped through JavaScript: a JS Date keeps
@@ -1246,8 +1463,10 @@ export async function reverseReconciliation(
           AND e.created_at > (SELECT created_at FROM reconciliation_events WHERE id = $1)
           AND e.reversed = false AND e.operation <> 'reverse'
           AND e.payload::text LIKE ANY($2::text[])
+          AND NOT (e.operation = 'reassign_instance' AND e.payload->>'mode' = 'copy'
+                   AND NOT (e.payload->>'to_claim_id' = ANY($3::text[])))
         ORDER BY e.created_at DESC`,
-      [eventId, nodes.map((n) => `%${n}%`)]
+      [eventId, nodes.map((n) => `%${n}%`), nodes]
     );
     if (later.length > 0) {
       return {
@@ -1438,10 +1657,45 @@ export async function reverseReconciliation(
     }
 
     case "reassign_instance": {
-      await rawQuery(`UPDATE claim_instances SET claim_id = $1 WHERE id = $2`, [
-        p.from_claim_id as string,
-        p.instance_id as string,
-      ]);
+      const instanceId = p.instance_id as string;
+      const prior = p.prior as InstancePrior | undefined;
+      if (p.mode === "copy") {
+        // The copy is detached, never deleted: readings and provenance
+        // edges recorded since may reference it, and the record of what
+        // happened is permanent (§5).
+        await rawQuery(
+          `UPDATE claim_instances
+              SET detached_at = now(), detached_reason = $2, detached_by = 'curator', display_rank = NULL
+            WHERE id = $1 AND detached_at IS NULL`,
+          [instanceId, `The copy that created it was undone (reconciliation event ${eventId}).`]
+        );
+      } else if (prior) {
+        // The argument and the answer come back only while they still exist.
+        await rawQuery(
+          `UPDATE claim_instances
+              SET claim_id = $2, stance = $3, stated_estimate = $4::jsonb,
+                  argument_id = (SELECT id FROM arguments WHERE id = $5),
+                  answer_claim_id = (SELECT id FROM claims WHERE id = $6),
+                  display_rank = $7
+            WHERE id = $1`,
+          [
+            instanceId,
+            prior.claim_id,
+            prior.stance,
+            prior.stated_estimate == null ? null : JSON.stringify(prior.stated_estimate),
+            prior.argument_id,
+            prior.answer_claim_id,
+            prior.display_rank,
+          ]
+        );
+      } else {
+        // An event logged before the payload recorded the prior state: the
+        // move changed the owner alone.
+        await rawQuery(`UPDATE claim_instances SET claim_id = $1 WHERE id = $2`, [
+          p.from_claim_id as string,
+          instanceId,
+        ]);
+      }
       break;
     }
 
