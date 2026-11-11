@@ -84,6 +84,8 @@ export interface AssistantCitation {
   estimate: Record<string, unknown> | null;
   unit: Record<string, unknown> | null;
   contestation: number | null;
+  confidence: number | null;
+  assessed_at: string | null;
   url: string;
 }
 
@@ -105,6 +107,26 @@ export interface AssistantMessage {
   cards?: AssistantCard[];
   /** Set when the run ended before the reply was finished. */
   stopped?: "user" | "balance";
+}
+
+/** One thing a running turn did: the tool, and what it was pointed at. */
+export interface AssistantActivity {
+  tool: string;
+  about: string | null;
+}
+
+const ACTIVITY_KEPT = 12;
+
+/** The argument that says what a call was about, cut short. */
+function aboutOf(input: Record<string, unknown>): string | null {
+  for (const key of ["query", "q", "title", "text", "claim", "task", "message", "url", "name", "slug", "sql"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      const line = value.replace(/\s+/g, " ").trim();
+      return line.length > 90 ? `${line.slice(0, 90)}…` : line;
+    }
+  }
+  return null;
 }
 
 export interface AssistantUser {
@@ -175,6 +197,8 @@ async function hydrateCitations(reply: string): Promise<AssistantCitation[]> {
       estimate: card.estimate,
       unit: card.unit,
       contestation: card.contestation,
+      confidence: card.assessment_confidence,
+      assessed_at: card.assessed_at,
       url: card.page_url,
     });
   }
@@ -382,6 +406,7 @@ async function claimTurn(
       turnError: null,
       turnPartial: null,
       turnNote: null,
+      turnActivity: null,
       turnCostMicroUsd: 0,
       stopRequested: false,
       updatedAt: startedAt,
@@ -477,13 +502,17 @@ async function runTurn(
   let flushed = "";
   let note: string | null = null;
   let flushedNote: string | null = null;
+  const activity: AssistantActivity[] = [];
+  let flushedActivity = 0;
+  let steps = 0;
   const flush = () => {
-    if (partial === flushed && note === flushedNote) return;
+    if (partial === flushed && note === flushedNote && steps === flushedActivity) return;
     flushed = partial;
     flushedNote = note;
+    flushedActivity = steps;
     void db
       .update(assistantConversations)
-      .set({ turnPartial: partial, turnNote: note })
+      .set({ turnPartial: partial, turnNote: note, turnActivity: activity })
       .where(holdsTurn)
       .catch((err) => console.error(`[assistant] saving the partial reply on ${convo.id} failed:`, err));
   };
@@ -591,6 +620,13 @@ async function runTurn(
         onNote: (text) => {
           note = text;
         },
+        onTool: (tool, toolInput) => {
+          if (tool === "note_progress") return;
+          steps += 1;
+          activity.push({ tool, about: aboutOf(toolInput) });
+          // The page shows the latest steps; the reply keeps the full count.
+          if (activity.length > ACTIVITY_KEPT) activity.shift();
+        },
       })
     );
     clearInterval(partialTimer);
@@ -621,6 +657,7 @@ async function runTurn(
         turnHeartbeatAt: null,
         turnPartial: null,
         turnNote: null,
+        turnActivity: null,
         stopRequested: false,
         updatedAt: new Date(),
       })
@@ -634,6 +671,7 @@ async function runTurn(
         turnHeartbeatAt: null,
         turnPartial: null,
         turnNote: null,
+        turnActivity: null,
         stopRequested: false,
         turnError: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
         updatedAt: new Date(),
@@ -842,6 +880,7 @@ function serializeTurn(convo: AssistantConversation, now = Date.now()) {
         error: null,
         partial: convo.turnPartial || null,
         note: convo.turnNote || null,
+        activity: (convo.turnActivity ?? []) as AssistantActivity[],
         cost_micro_usd: convo.turnCostMicroUsd,
         stopping: convo.stopRequested,
       };
@@ -852,11 +891,19 @@ function serializeTurn(convo: AssistantConversation, now = Date.now()) {
       error: "The Assistant's turn was interrupted (the server restarted) before it replied",
       partial: null,
       note: null,
+      activity: [] as AssistantActivity[],
       cost_micro_usd: convo.turnCostMicroUsd,
       stopping: false,
     };
   }
-  const idle = { started_at: null, partial: null, note: null, cost_micro_usd: 0, stopping: false };
+  const idle = {
+    started_at: null,
+    partial: null,
+    note: null,
+    activity: [] as AssistantActivity[],
+    cost_micro_usd: 0,
+    stopping: false,
+  };
   return convo.turnError
     ? { state: "failed" as const, error: convo.turnError, ...idle }
     : { state: "idle" as const, error: null, ...idle };

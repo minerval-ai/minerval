@@ -1183,6 +1183,8 @@ export interface AssistantCitationView {
   status: string | null;
   standing: string | null;
   contestation: number | null;
+  confidence?: number | null;
+  assessed_at?: string | null;
   url: string;
 }
 
@@ -1247,6 +1249,8 @@ export interface AssistantConversationView extends AssistantSummaryView {
     error: string | null;
     partial: string | null;
     note: string | null;
+    /** What the running turn has done so far, newest last. */
+    activity: Array<{ tool: string; about: string | null }>;
     cost_micro_usd: number;
     stopping: boolean;
   };

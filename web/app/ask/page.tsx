@@ -4,12 +4,9 @@ import { auth } from "../../auth";
 import {
   accountApiConfigured,
   getAssistantHome,
-  listPages,
   type AssistantHome,
-  type PageSummaryView,
 } from "../../lib/account-api";
 import { PageHead } from "@/components/PageHead";
-import { OwlMark } from "../../components/OwlMark";
 import { AssistantConversation } from "./AssistantConversation";
 
 export const metadata: Metadata = {
@@ -19,12 +16,19 @@ export const metadata: Metadata = {
 };
 export const dynamic = "force-dynamic";
 
-function owls(microUsd: number): string {
-  return Number((microUsd / 1_000_000).toFixed(2)).toString();
-}
+const LEDE = (
+  <>
+    The Assistant works for you. It reads the graph, says what the graph holds and where its own
+    view differs, and can propose, contribute and commission work with your account when you say
+    so. It has every tool your own agent would have <Link href="/docs">over MCP</Link>, and
+    nothing more. Its work is charged in owls at what it costs, as it runs; anything that spends
+    owls on the graph or publishes under your name waits for you.
+  </>
+);
 
-// The Assistant (#646): an agent that works for the signed-in user. ?node=
-// opens the conversation from a node's page, which the Assistant is told.
+// A new conversation with the Assistant (#646). ?node= opens it from a node's
+// page, which the Assistant is told; ?q= carries a question written on
+// another page's ask box, not yet sent.
 export default async function AskPage({
   searchParams,
 }: {
@@ -34,107 +38,46 @@ export default async function AskPage({
   const session = await auth();
 
   let home: AssistantHome | null = null;
-  let pages: PageSummaryView[] = [];
   if (session?.externalId && accountApiConfigured()) {
-    try {
-      home = await getAssistantHome(session.externalId);
-      pages = await listPages(session.externalId).catch(() => []);
-    } catch {
-      // rendered below as the Assistant being unavailable
-    }
+    home = await getAssistantHome(session.externalId).catch(() => null);
   }
   // Where signing in returns to: the question written on another page.
   const here = `/ask${
     node || q ? `?${new URLSearchParams({ ...(q ? { q } : {}), ...(node ? { node } : {}) })}` : ""
   }`;
 
+  if (!session?.externalId || !home) {
+    return (
+      <div className="col account">
+        <PageHead title="Ask" lede={LEDE} />
+        {!session?.externalId ? (
+          <p className="order-line">
+            <Link href={`/signin?callbackUrl=${encodeURIComponent(here)}`}>Sign in</Link> to talk
+            to the Assistant. Searching and reading the graph need no account.
+          </p>
+        ) : (
+          <p className="order-line">The Assistant is not available right now.</p>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="col account">
-      <PageHead
-        title="Ask"
-        lede={
-          <>
-            The Assistant works for you. It reads the graph, says what the graph holds and
-            where its own view differs, and can propose, contribute and commission work with
-            your account when you say so. It has every tool your own agent would have{" "}
-            <Link href="/docs">over MCP</Link>, and nothing more. Its work is charged in owls
-            at what it costs, as it runs; anything that spends owls on the graph or publishes
-            under your name waits for you.
-          </>
-        }
-      />
-      {!session?.externalId ? (
-        <p className="order-line">
-          <Link href={`/signin?callbackUrl=${encodeURIComponent(here)}`}>Sign in</Link> to talk to the Assistant.
-          Searching and reading the graph need no account.
-        </p>
-      ) : !home ? (
-        <p className="order-line">The Assistant is not available right now.</p>
-      ) : (
-        <>
-          <AssistantConversation
-            initial={null}
-            models={home.models}
-            balanceMicroUsd={home.balance_micro_usd}
-            allowedAlways={home.allowed_kinds.always}
-            kindLabels={home.allowed_kinds.labels}
-            {...(node && /^[0-9a-f-]{36}$/i.test(node) ? { nodeId: node } : {})}
-            {...(q ? { question: q.slice(0, 2000) } : {})}
-          />
-          {pages.length > 0 && (
-            <>
-              <h2>Your pages</h2>
-              <table className="account-table">
-                <thead>
-                  <tr>
-                    <th>Page</th>
-                    <th>Saved</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pages.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <Link href={`/ask/pages/${p.id}`}>{p.title}</Link>
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>{p.saved_at.slice(0, 10)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-          {home.conversations.length > 0 && (
-            <>
-              <h2>Your conversations</h2>
-              <table className="account-table">
-                <thead>
-                  <tr>
-                    <th>Conversation</th>
-                    <th>Cost</th>
-                    <th>Last active</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {home.conversations.map((c) => (
-                    <tr key={c.id}>
-                      <td>
-                        <Link href={`/ask/c/${c.id}`}>{c.title}</Link>
-                        {c.turn_state === "replying" && <span className="tag"> working</span>}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <OwlMark size={13} className="owl-mark" />
-                        {owls(c.spent_micro_usd)}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>{c.updated_at.slice(0, 10)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-        </>
-      )}
-    </div>
+    <AssistantConversation
+      // A different question or node is a different new conversation.
+      key={here}
+      initial={null}
+      models={home.models}
+      balanceMicroUsd={home.balance_micro_usd}
+      allowedAlways={home.allowed_kinds.always}
+      kindLabels={home.allowed_kinds.labels}
+      {...(node && /^[0-9a-f-]{36}$/i.test(node) ? { nodeId: node } : {})}
+      {...(q ? { question: q.slice(0, 2000) } : {})}
+    >
+      <div className="ask-welcome">
+        <h2>What do you want to know or do?</h2>
+        <p>{LEDE}</p>
+      </div>
+    </AssistantConversation>
   );
 }

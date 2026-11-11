@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_conversations" ADD COLUMN "turn_activity" jsonb;
