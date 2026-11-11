@@ -56,6 +56,14 @@ export interface CommissionInput {
   commissionedBy: string;
   /** How the brief reaches the node's inbox. */
   message?: { trigger: StewardMessage["trigger"]; sender?: MessageSender };
+  /**
+   * What to do when the node already has a pass commissioned or running.
+   * "brief" (the default) sends the brief to its inbox at no cost; "leave"
+   * sends nothing, for a caller that asks again on a schedule (a plan
+   * item's standing order, retried each sweep) and would otherwise post the
+   * same message every time.
+   */
+  ifLive?: "brief" | "leave";
 }
 
 /**
@@ -116,29 +124,45 @@ interface LiveRow {
   commissioned_at: string | null;
 }
 
-/** An open or running pass on the node that already has money behind it. */
-async function liveCommission(claimId: string): Promise<LiveRow | null> {
-  const [row] = await rawQuery<LiveRow>(
+type Query = <T>(text: string, params?: unknown[]) => Promise<T[]>;
+
+/**
+ * The work already paid for in one exclusion group: a row of it running, or
+ * a live commission anywhere in it, on whichever variant. A group is an
+ * exclusive set (one of its variants runs, and that run closes the others),
+ * so a commission on any variant is the group's commission: a second payer
+ * on a sibling variant would hold money against a run that can never happen
+ * (#849). The row's own status is not asked. A commission left on a group
+ * the executor retired (its node was not queued) still pays for the node's
+ * next pass, and a caller that finds it queues the node instead of paying
+ * twice.
+ */
+async function groupLive(q: Query, group: string): Promise<LiveRow | null> {
+  const [row] = await q<LiveRow>(
     `SELECT a.id AS action_id, a.status,
             (SELECT MAX(al.created_at) FROM action_allocations al
-              WHERE al.exclusion_group = a.exclusion_group
+              WHERE al.exclusion_group = $1
                 AND al.released_at IS NULL
-                AND al.spent_micro_usd < al.amount_micro_usd
-                AND (al.action_id IS NULL OR al.action_id = a.id)) AS commissioned_at
+                AND al.spent_micro_usd < al.amount_micro_usd) AS commissioned_at
        FROM actions a
-      WHERE a.exclusion_group = $1 AND a.status IN ('open', 'running')
+      WHERE a.exclusion_group = $1
         AND (a.status = 'running'
              OR EXISTS (SELECT 1 FROM action_allocations al
-                         WHERE al.exclusion_group = a.exclusion_group
+                         WHERE al.exclusion_group = $1
                            AND al.released_at IS NULL
                            AND al.commissioned_by IS NOT NULL
                            AND al.spent_micro_usd < al.amount_micro_usd
                            AND (al.action_id IS NULL OR al.action_id = a.id)))
       ORDER BY (a.status = 'running') DESC
       LIMIT 1`,
-    [ASSESS_GROUP(claimId)]
+    [group]
   );
   return row ?? null;
+}
+
+/** A node's pass that already has money behind it, or is running. */
+export async function liveNodeCommission(claimId: string): Promise<LiveRow | null> {
+  return groupLive(rawQuery, ASSESS_GROUP(claimId));
 }
 
 /** The variant row a commission pins to. */
@@ -190,29 +214,36 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
   }
 
   const message = input.message ?? { trigger: "mandate_plan" as const };
+  const group = ASSESS_GROUP(input.claimId);
 
-  const live = await liveCommission(input.claimId);
-  if (live) {
-    await enqueueSteward({
-      claimId: input.claimId,
-      trigger: message.trigger,
-      context: input.brief,
-      sender: message.sender,
-      // The pass already paid for is the parked node's retry.
-      unpark: true,
-    });
+  // Already paid for: the brief joins the node's inbox at no cost, which
+  // also queues the node, so a commission stranded on a retired row runs.
+  const already = async (live: LiveRow): Promise<CommissionResult> => {
+    if (input.ifLive !== "leave") {
+      await enqueueSteward({
+        claimId: input.claimId,
+        trigger: message.trigger,
+        context: input.brief,
+        sender: message.sender,
+        // The pass already paid for is the parked node's retry (#846).
+        unpark: true,
+      });
+    }
     const age = live.commissioned_at
       ? Math.max(0, Math.round((Date.now() - new Date(live.commissioned_at).getTime()) / 60_000))
       : 0;
     return { ok: true, status: "already_commissioned", actionId: live.action_id, ageMinutes: age, ...parked };
-  }
+  };
+
+  const live = await groupLive(rawQuery, group);
+  if (live) return already(live);
 
   await ensureAssessActions(input.claimId);
   const row = await variantRow(input.claimId, input.tier ?? "standard");
   if (!row) return { ok: false, code: "NOT_FOUND", message: "The node has no open pass to commission." };
 
-  const placed = await placeCommission({
-    group: ASSESS_GROUP(input.claimId),
+  const placed = await placeExclusive({
+    group,
     actionId: row.id,
     claimId: input.claimId,
     payer: input.payer,
@@ -221,6 +252,8 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     brief: input.brief,
     reason: input.reason ?? null,
   });
+  // Another payer's commission landed between the look above and the lock.
+  if ("live" in placed) return already(placed.live);
   if (!placed.ok) return placed;
 
   // The brief is the pass's message, marked paid, and the node becomes a
@@ -245,8 +278,12 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
 
 /**
  * Pay for any open row on the ledger whole: an ingest, a curation, an audit,
- * work on a request, a formalization. A row already paid for or running is
- * left as it is.
+ * work on a request, a formalization. Work already paid for or running is
+ * left as it is, and that is asked of the row's whole exclusion group, since
+ * one run closes every variant in it. A node's assess or reassess row is a
+ * Steward pass, and goes through commissionNodePass at the row's tier: the
+ * pass needs its node queued to run, and a commission placed on the row
+ * alone sat on a row the executor retired, its money held (#849).
  */
 export async function commissionAction(input: {
   payer: CommissionPayer;
@@ -255,6 +292,8 @@ export async function commissionAction(input: {
   brief?: string | null;
   reason?: string | null;
   commissionedBy: string;
+  /** For a Steward pass: how the brief reaches the node's inbox. */
+  message?: CommissionInput["message"];
 }): Promise<
   | {
       ok: true;
@@ -279,25 +318,45 @@ export async function commissionAction(input: {
     exclusion_group: string;
     claim_id: string | null;
     status: string;
-    commissioned: boolean;
     variant: string;
     target_ref: string | null;
     cost_est_micro_usd: string;
   }>(
-    `SELECT a.id, a.kind, a.exclusion_group, a.claim_id, a.status, a.variant, a.target_ref, a.cost_est_micro_usd,
-            EXISTS (SELECT 1 FROM action_allocations al
-                     WHERE al.exclusion_group = a.exclusion_group AND al.released_at IS NULL
-                       AND al.commissioned_by IS NOT NULL AND al.spent_micro_usd < al.amount_micro_usd
-                       AND (al.action_id IS NULL OR al.action_id = a.id)) AS commissioned
+    `SELECT a.id, a.kind, a.exclusion_group, a.claim_id, a.status, a.variant, a.target_ref, a.cost_est_micro_usd
        FROM actions a WHERE a.id = $1`,
     [input.actionId]
   );
   if (!row) return { ok: false, code: "NOT_FOUND", message: "No ledger row has that id." };
-  if (row.status === "running" || row.commissioned) return { ok: true, status: "already_commissioned", kind: row.kind };
+  // A Steward pass, named by its row. A row the sweep retired because its
+  // node was not queued (cancelled) is the same ask: commissioning queues
+  // the node and reopens the row. A finished row's pass has run.
+  if (
+    (row.kind === "assess" || row.kind === "reassess") &&
+    row.claim_id &&
+    ["open", "running", "cancelled"].includes(row.status)
+  ) {
+    const res = await commissionNodePass({
+      payer: input.payer,
+      claimId: row.claim_id,
+      budgetMicroUsd: budget,
+      tier: row.variant === "strong" ? "strong" : "standard",
+      brief: input.brief?.trim() || "A pass on this node was commissioned.",
+      reason: input.reason ?? undefined,
+      commissionedBy: input.commissionedBy,
+      message: input.message,
+    });
+    if (!res.ok) return res;
+    return res.status === "commissioned"
+      ? { ok: true, status: "commissioned", allocationId: res.allocationId, kind: row.kind }
+      : { ok: true, status: "already_commissioned", kind: row.kind };
+  }
+  if (await groupLive(rawQuery, row.exclusion_group)) {
+    return { ok: true, status: "already_commissioned", kind: row.kind };
+  }
   if (row.status !== "open") {
     return { ok: false, code: "NOT_FOUND", message: `That row is ${row.status}; only open work can be commissioned.` };
   }
-  const placed = await placeCommission({
+  const placed = await placeExclusive({
     group: row.exclusion_group,
     actionId: row.id,
     claimId: row.claim_id,
@@ -307,6 +366,7 @@ export async function commissionAction(input: {
     brief: input.brief ?? null,
     reason: input.reason ?? null,
   });
+  if ("live" in placed) return { ok: true, status: "already_commissioned", kind: row.kind };
   if (!placed.ok) return placed;
   // A request's full row costs the request's budget, its quote. The budget
   // stays the payer's choice (action-service.ts actionBudgetMicroUsd), so a
@@ -326,7 +386,23 @@ type Placed = { ok: true; allocationId: string } | Extract<CommissionResult, { o
  * mandate's per-mandate lock (the allocator's), a person's balance lock, or
  * the paying run's allocations held FOR UPDATE.
  */
-export async function placeCommission(input: {
+export async function placeCommission(input: PlaceInput): Promise<Placed> {
+  // Not exclusive, so never "live": more money on work already paid for (a
+  // granted petition's top-up, a paused session's held grant).
+  return place(input, false) as Promise<Placed>;
+}
+
+/**
+ * Place a fresh commission, unless the group already has one or is running:
+ * the check commissionNodePass and commissionAction make before they call,
+ * made again behind a lock on the group, so two payers who looked at the
+ * same moment do not both pay for one run.
+ */
+function placeExclusive(input: PlaceInput): Promise<Placed | { ok: false; live: LiveRow }> {
+  return place(input, true);
+}
+
+interface PlaceInput {
   group: string;
   actionId: string;
   claimId: string | null;
@@ -335,9 +411,17 @@ export async function placeCommission(input: {
   commissionedBy: string;
   brief: string | null;
   reason: string | null;
-}): Promise<Placed> {
+}
+
+async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { ok: false; live: LiveRow }> {
   const { payer, budget } = input;
   const owls = (micro: number) => microUsdToOwls(micro);
+  // Taken after the payer's own lock in every path, so the order is fixed.
+  const liveInGroup = async (tx: TxQuery): Promise<LiveRow | null> => {
+    if (!exclusive) return null;
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended('commission-group:' || $1, 0))`, [input.group]);
+    return groupLive((text, params) => tx.query(text, params), input.group);
+  };
 
   if (payer.kind === "grant") {
     return withTransaction(async (tx) => {
@@ -345,6 +429,8 @@ export async function placeCommission(input: {
         `SELECT pg_advisory_xact_lock(hashtextextended('mandate-allocator:' || $1, 0))`,
         [payer.grantId]
       );
+      const live = await liveInGroup(tx);
+      if (live) return { ok: false, live } as const;
       const [g] = await tx.query<{ budget_job_id: string; daily: number; escrow: number; status: string; job_status: string }>(
         `SELECT g.budget_job_id, g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow,
                 g.status, j.status AS job_status
@@ -398,6 +484,8 @@ export async function placeCommission(input: {
   if (payer.kind === "user") {
     const { withOwlBalanceLock } = await import("./owl-ledger-service.js");
     const id = await withOwlBalanceLock(payer.userId, async (tx) => {
+      const live = await liveInGroup(tx);
+      if (live) return { live };
       const debit = await tx.query<{ id: string }>(
         `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id)
          SELECT $1, $2, 'claim_contribution', $3
@@ -418,12 +506,15 @@ export async function placeCommission(input: {
     if (!id) {
       return { ok: false, code: "INSUFFICIENT_OWLS", message: `A budget of ${owls(budget)} owls is more than your balance.` };
     }
+    if (typeof id !== "string") return { ok: false, live: id.live };
     return { ok: true, allocationId: id };
   }
 
   // A running agent paying from its own budget: move the amount from the
   // allocations paying for that run onto the new one, payer by payer.
   return withTransaction(async (tx) => {
+    const live = await liveInGroup(tx);
+    if (live) return { ok: false, live } as const;
     const sources = await tx.query<{ id: string; grant_id: string | null; user_id: string | null; unspent: number }>(
       `SELECT al.id, al.grant_id, al.user_id,
               (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent

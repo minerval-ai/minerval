@@ -35,6 +35,7 @@ import {
   resetCostEstimateCache,
 } from "../../src/services/cost-estimate-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
+import { commissionAction } from "../../src/services/commission-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 
 async function seedClaim(label: string, importance = 0.5): Promise<string> {
@@ -520,5 +521,57 @@ describe("a mandate's sweep plan items (#831)", () => {
     await finishSweep({ sweepId: run, status: "done", claimsInScope: 3, flagsRaised: 0 });
     const after = await materializePlanItems(grantId, [0]);
     expect(after[0]!.ledger.status).toBe("done");
+  });
+
+  it("pays for one variant of a partition's exclusive pair, whoever asks and however (#849)", async () => {
+    await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true`);
+    await rawQuery(`DELETE FROM action_allocations WHERE exclusion_group LIKE 'consistency:%'`);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE kind = 'consistency_sweep'`);
+    resetAllocationPolicyCache();
+    const tagId = await seedTag("exclusive-region");
+    const [{ slug }] = await rawQuery<{ slug: string }>(`SELECT slug FROM tags WHERE id = $1`, [tagId]);
+    const claims = [await seedClaim("x1"), await seedClaim("x2"), await seedClaim("x3")];
+    for (const id of claims) await assess(id, { status: "supported", when: new Date(Date.now() - 3_600_000) });
+    await tag(tagId, claims);
+
+    // One mandate's plan names the strong reader...
+    const planner = await seedGrantWithJob({ funderId: await seedUser("excl-planner"), budgetMicroUsd: 50_000_000 });
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      planner.grantId,
+      JSON.stringify({ strategy: "s", items: [{ action: "sweep", partition: slug, variant: "strong", rationale: "r" }] }),
+    ]);
+    await materializePlanItems(planner.grantId);
+    const rows = await rawQuery<{ id: string; variant: string }>(
+      `SELECT id, variant FROM actions WHERE exclusion_group = $1`,
+      [`consistency:${tagId}`]
+    );
+    const standard = rows.find((r) => r.variant === "standard")!.id;
+    const strong = rows.find((r) => r.variant === "strong")!.id;
+
+    // ...and another's officer commissions the standard one first.
+    const other = await seedGrantWithJob({ funderId: await seedUser("excl-officer"), budgetMicroUsd: 50_000_000 });
+    const first = await commissionAction({
+      payer: { kind: "grant", grantId: other.grantId },
+      actionId: standard,
+      budgetMicroUsd: 1_000_000,
+      commissionedBy: "program_officer",
+    });
+    expect(first).toMatchObject({ ok: true, status: "commissioned" });
+
+    // The plan's variant is not funded beside it, and a commission on it charges nothing.
+    await fundGrantSelfActions();
+    const again = await commissionAction({
+      payer: { kind: "grant", grantId: planner.grantId },
+      actionId: strong,
+      budgetMicroUsd: 1_000_000,
+      commissionedBy: "grantmaker",
+    });
+    expect(again).toMatchObject({ ok: true, status: "already_commissioned" });
+    const live = await rawQuery<{ action_id: string; grant_id: string }>(
+      `SELECT action_id, grant_id FROM action_allocations
+        WHERE exclusion_group = $1 AND released_at IS NULL`,
+      [`consistency:${tagId}`]
+    );
+    expect(live).toEqual([{ action_id: standard, grant_id: other.grantId }]);
   });
 });

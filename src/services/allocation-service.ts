@@ -485,8 +485,8 @@ export async function fundGrantSelfActions(): Promise<number> {
                       OR (COALESCE(item->>'variant', '') NOT IN ('standard', 'strong')
                           AND a.variant = ${SWEEP_RULE_VARIANT_SQL}))))
          -- Any open ingest row a plan item names, wherever the cursor
-         -- stands: the direct steward lane can move the cursor past an
-         -- ingest item before its row ran (#427), and an open row is by
+         -- stands: the cursor can move past an ingest item before its
+         -- row ran (#427), and an open row is by
          -- definition unexecuted (nothing reopens a closed ingest row).
          OR (a.kind = 'ingest' AND EXISTS (
               SELECT 1
@@ -524,6 +524,17 @@ export async function fundGrantSelfActions(): Promise<number> {
                        WHERE al.exclusion_group = a.exclusion_group
                          AND al.released_at IS NULL
                          AND (al.action_id IS NULL OR al.action_id = a.id)), 0)
+        -- A group is an exclusive set: one of its variants runs. A row
+        -- whose sibling variant is already paid for (a commission on it, or
+        -- another funder's coverage) or running is not funded as well, or
+        -- two budgets would be held for one run (#849).
+        AND NOT EXISTS (SELECT 1 FROM actions sib
+                         WHERE sib.exclusion_group = a.exclusion_group AND sib.id <> a.id
+                           AND (sib.status = 'running'
+                                OR EXISTS (SELECT 1 FROM action_allocations al
+                                            WHERE al.action_id = sib.id
+                                              AND al.released_at IS NULL
+                                              AND al.spent_micro_usd < al.amount_micro_usd)))
       ORDER BY a.created_at ASC
       LIMIT 100`,
     [

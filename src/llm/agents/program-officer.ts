@@ -101,8 +101,13 @@ export const COMMISSION_FOR_MANDATE: Tool = {
     "The brief reaches the node's Steward as a message; it may not name the " +
     "mandate or describe its mission. Runs count against today's rate as they " +
     "spend and are released as they finish; an entry the day or the escrow " +
-    "can't cover is refused and named. A node that already has a pass paid " +
-    "for gets your brief in its inbox, at no cost.",
+    "can't cover is refused and named. Work is paid for once: where a run " +
+    "is already commissioned or under way, on any variant of the same work " +
+    "(a node's standard and strong pass, a sweep's two readers), nothing " +
+    "more is spent. A node that already has a pass paid for gets your " +
+    "brief in its inbox, at no cost. A pass named by its row's action_id " +
+    "is commissioned on that row's tier and queues its node, like one " +
+    "named by target.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -636,6 +641,8 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
           brief: String(e.brief ?? ""),
           reason: String(e.reason ?? ""),
           commissionedBy: ctx.decidedBy === "officer" ? "program_officer" : "grantmaker",
+          // A Steward pass named by its row reaches the node as one named by target does.
+          message: { trigger: "mandate_plan", sender: { kind: "mandate" } },
         });
         const item = e.item ? ctx.labels.get(String(e.item))?.item : undefined;
         if (r.ok) {

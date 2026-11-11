@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { rawQuery } from "../../src/db/client.js";
-import { commissionAction } from "../../src/services/commission-service.js";
+import { commissionAction, commissionNodePass } from "../../src/services/commission-service.js";
 import { seedUser, seedClaim, seedGrantWithJob, seedAction, OWL } from "./helpers.js";
 
 async function seedMandateWithRows(opts: { dailyBudgetMicroUsd: number }) {
@@ -62,5 +62,35 @@ describe("commissions from one mandate", () => {
       [grantId]
     );
     expect(live.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("CONCURRENCY: two mandates commissioning one node at once pay for one pass, on one variant (#849)", async () => {
+    const claimId = await seedClaim("commission-race-shared");
+    const payers: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const { grantId } = await seedGrantWithJob({ funderId: await seedUser(`race-payer-${i}`), budgetMicroUsd: 10 * OWL });
+      payers.push(grantId);
+    }
+    // The four look at the same moment; the lock on the group lets one in.
+    const results = await Promise.all(
+      payers.map((grantId, i) =>
+        commissionNodePass({
+          payer: { kind: "grant", grantId },
+          claimId,
+          budgetMicroUsd: 100_000,
+          tier: i % 2 === 0 ? "standard" : "strong",
+          brief: `brief ${i}`,
+          commissionedBy: "program_officer",
+        })
+      )
+    );
+    expect(results.filter((r) => r.ok && r.status === "commissioned")).toHaveLength(1);
+    expect(results.filter((r) => r.ok && r.status === "already_commissioned")).toHaveLength(3);
+    const live = await rawQuery<{ amount: string }>(
+      `SELECT amount_micro_usd AS amount FROM action_allocations
+        WHERE exclusion_group = $1 AND released_at IS NULL`,
+      [`assess:${claimId}`]
+    );
+    expect(live.map((r) => Number(r.amount))).toEqual([100_000]);
   });
 });
