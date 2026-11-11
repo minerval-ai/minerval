@@ -11,6 +11,8 @@ const nextConfig = {
   // Ensure the vendored verbatim content ships in the serverless bundle.
   outputFileTracingIncludes: {
     "/docs/**": ["./content/**/*"],
+    // The fonts the link-preview cards are set in (lib/og/card.tsx).
+    "/{claims,findings}/**": ["./lib/og/fonts/*.woff"],
   },
   // Embeds (/embed/*: the claim card page and its badge) exist to be shown on
   // other people's sites, so they alone may be framed from anywhere, and no
