@@ -13,6 +13,7 @@ import {
   liveBountySql,
   type LeanCheckSummary,
 } from "./formalization-service.js";
+import { summarizeCoverage, type CoverageRow } from "./coverage-service.js";
 
 /**
  * The mathematics fields every node carries (docs/mathematics.md §8.3): the
@@ -271,7 +272,16 @@ export async function getClaimTree(
     frontier = next;
   }
 
-  return assembleTree(root, childEdges, truncatedParents);
+  // What examination each node has had (#543), for the whole tree in one
+  // query. A node's status field alone does not say it: a quantity and a
+  // question never carry one, judged or not. A failure loses the field, never
+  // the tree: absent is "not said", never "examined".
+  const covered = await summarizeCoverage([...visited]).catch((err) => {
+    console.error(`[tree] coverage failed for ${claimId}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  });
+
+  return assembleTree(root, childEdges, truncatedParents, covered);
 }
 
 export interface DependentClaim {
@@ -473,7 +483,8 @@ export async function getSubclaimCount(claimId: string): Promise<number> {
 function assembleTree(
   root: TreeRootRow,
   childEdges: Map<string, TreeEdgeRow[]>,
-  truncatedParents: Set<string>
+  truncatedParents: Set<string>,
+  covered: Map<string, CoverageRow> | null
 ): TreeNode {
   const expanded = new Set<string>();
 
@@ -499,6 +510,7 @@ function assembleTree(
       assessment_confidence: node.assessment_confidence,
       assessment_credence: node.assessment_credence,
       seed_credence: node.seed_credence,
+      ...(covered?.has(node.id) ? { coverage: covered.get(node.id) } : {}),
       argument_id: edge?.argument_id ?? null,
       argument_name: edge?.argument_name ?? null,
       argument_stance: edge?.argument_stance ?? null,

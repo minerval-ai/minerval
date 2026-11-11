@@ -204,6 +204,12 @@ read is free, an agent which signals allocation turns on.
   (`kind`, canonical form, type, state, importance, contestation, tags,
   page link, `steward_state` and `stewarded_at`), `assessment` (its `id`,
   status, confidence, credence, reasoning, `run_id`), the kind's record,
+  `coverage` (what examination the node has had: `examined`, whether a
+  judgment of it is in force, and `on`, what that judgment was made on:
+  `public_evidence`, and `evidence_not_shown` when a source it was recorded
+  against had been read as reporting a result from evidence it has not
+  published; on a node not examined `on` is empty and `note` says that this
+  is not a finding either way),
   `since_assessed` on a node with a judgment in force (what has changed
   under that judgment since it was written, as counts: premises judged
   again, added or removed, sources added or removed, notices on its
@@ -217,7 +223,7 @@ read is free, an agent which signals allocation turns on.
   - `"arguments"`: each argument with its written form, its current
     evaluation, and the check record behind a machine-checked one.
   - `"subclaims"`: the direct subclaims, one row per argument each serves,
-    with the edge's reasoning and their standing, and `subclaims_assessed`. `get_decomposition`
+    with the edge's reasoning, their standing and their `coverage`, and `subclaims_assessed`. `get_decomposition`
     walks deeper.
   - `"provenance"`: the instances, each with its `stance` (`affirms`,
     `denies`, `poses` an open question, or `mentions`: it cites the claim or
@@ -289,6 +295,11 @@ read is free, an agent which signals allocation turns on.
   it, with each passage's `reading`). Served at `GET /arguments/:id` too.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
+  Each node carries `coverage` (`examined` and `on`, as on `get_claim`,
+  without the note), so the parts of a case that were never examined are
+  told apart from the parts examined and found sound. A quantity or a
+  question carries no assessment status whether judged or not; `coverage`
+  says it for every kind.
 - **`get_dependents`** `{claim_id, max_depth?}` — the walk up: everything
   that rests on the claim, ranked by importance, with each one's distance.
   Being load-bearing is not being important (constitution §19).

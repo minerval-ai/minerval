@@ -139,6 +139,13 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     // was minted. Present only while the node has NO current assessment (the
     // node still reads as unassessed); a hint for scan surfaces, not a verdict.
     seed_credence: z.number().nullable().optional(),
+    // What examination the node has had (#543, coverage-service.ts): whether
+    // a judgment of it is in force, for any kind, and what that judgment was
+    // made on. `examined: false` is not a finding either way. Optional so
+    // older payloads parse, and absent when the read of it failed.
+    coverage: z
+      .object({ examined: z.boolean(), on: z.array(z.string()) })
+      .optional(),
     argument_id: uuidSchema.nullable(),
     argument_name: z.string().nullable(),
     argument_stance: stanceEnum.nullable(),
@@ -197,6 +204,7 @@ export interface TreeNode {
   assessment_confidence: number | null;
   assessment_credence?: number | null;
   seed_credence?: number | null;
+  coverage?: { examined: boolean; on: string[] };
   argument_id: string | null;
   argument_name: string | null;
   argument_stance: string | null;

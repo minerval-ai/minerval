@@ -14,6 +14,7 @@ import {
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+import { COVERAGE_DESCRIPTION, COVERAGE_EVIDENCE, coverage, summarizeCoverage } from "../services/coverage-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
@@ -234,6 +235,19 @@ const errorEnvelope = {
         request_id: { type: "string" },
       },
     },
+  },
+} as const;
+
+// What examination a node has had (#543, services/coverage-service.ts), as
+// GET /claims/:claim_id serves it beside the judgment, for every node,
+// judged or not. Each node of `tree` carries the same object without `note`.
+const coverageSchema = {
+  type: "object",
+  description: "On every node: " + COVERAGE_DESCRIPTION + ".",
+  properties: {
+    examined: { type: "boolean" },
+    on: { type: "array", items: { type: "string", enum: [...COVERAGE_EVIDENCE] } },
+    note: { type: "string" },
   },
 } as const;
 
@@ -651,6 +665,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               claim: claimSchema,
               assessment: assessmentSchema,
+              coverage: coverageSchema,
               since_assessed: sinceAssessedSchema,
               subclaim_count: { type: "integer" },
               // Steward-seeded prior (#285): the parent claim's Steward's
@@ -790,7 +805,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           return [];
         });
 
-        const [quantity, thresholdOf, question, nodeRequests, waiting, changes] = await Promise.all([
+        const [quantity, thresholdOf, question, nodeRequests, waiting, changes, covered] = await Promise.all([
           claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
           claim.kind === "claim" ? getThresholdOf(claim_id) : null,
           claim.kind === "question" ? getQuestionDetail(claim_id) : null,
@@ -812,12 +827,25 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             );
             return null;
           }),
+          // What examination the node has had (#543). A failure loses the
+          // field, never the page: absent is "not said", never "examined".
+          summarizeCoverage([claim.id]).catch((err) => {
+            console.error(
+              `[claims] coverage failed for ${claim_id}: ${err instanceof Error ? err.message : err}`
+            );
+            return null;
+          }),
         ]);
         const since = sinceAssessed(changes?.get(claim.id));
+        const examination = coverage(covered?.get(claim.id));
 
         const response: Record<string, unknown> = {
           claim: formatClaim(claim),
           assessment: assessment ? formatAssessment(assessment) : null,
+          // Beside the judgment, and present where there is none: it is
+          // what says a quantity or a question has not been judged, which a
+          // null assessment alone does not.
+          ...(examination ? { coverage: examination } : {}),
           // Beside the judgment it qualifies, whichever kind keeps it.
           ...(since ? { since_assessed: since } : {}),
           subclaim_count: subclaimCount,
