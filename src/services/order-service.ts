@@ -211,7 +211,45 @@ export async function getOpenOrderForClaim(
   return order ?? null;
 }
 
-export function serializeOrder(o: AssessmentOrder) {
+/**
+ * What each finished order cost in the end: its ceiling, less the unused
+ * part the meter settlement returned (and any refund). Only orders that are
+ * done and were charged have a cost; the rest are absent from the map. The
+ * settlement and the refund are found by the idempotency keys the order
+ * pipeline and cancelOrder write them under.
+ */
+export async function orderCostsMicroUsd(
+  orders: AssessmentOrder[]
+): Promise<Map<string, number>> {
+  const settled = orders.filter((o) => o.status === "done" && o.chargeEntryId !== null);
+  const costs = new Map<string, number>();
+  if (settled.length === 0) return costs;
+  const keys = settled.flatMap((o) => [`settle:order:${o.id}`, `refund:order:${o.id}`]);
+  const rows = await rawQuery<{ idempotency_key: string; amount_micro_usd: number }>(
+    `SELECT idempotency_key, amount_micro_usd
+       FROM owl_ledger
+      WHERE idempotency_key = ANY($1::text[])`,
+    [keys]
+  );
+  const returned = new Map<string, number>();
+  for (const r of rows) {
+    const orderId = r.idempotency_key.slice(r.idempotency_key.lastIndexOf(":") + 1);
+    returned.set(orderId, (returned.get(orderId) ?? 0) + Number(r.amount_micro_usd));
+  }
+  for (const o of settled) {
+    costs.set(o.id, Math.max(0, Number(o.priceMicroUsd) - (returned.get(o.id) ?? 0)));
+  }
+  return costs;
+}
+
+/** Orders as the API lists them, each finished one with what it cost. */
+export async function serializeOrders(orders: AssessmentOrder[]) {
+  const costs = await orderCostsMicroUsd(orders);
+  return orders.map((o) => serializeOrder(o, costs.get(o.id)));
+}
+
+export function serializeOrder(o: AssessmentOrder, costMicroUsd?: number) {
+
   return {
     id: o.id,
     claim_id: o.claimId,
@@ -220,6 +258,9 @@ export function serializeOrder(o: AssessmentOrder) {
     // The quoted cap, not a fixed price — the settled charge can be less.
     price_cap_owls: microUsdToOwls(Number(o.priceMicroUsd)),
     charged: o.chargeEntryId !== null,
+    // What a finished order cost once its unused part was returned; null
+    // while it is open, and where the cost was not looked up.
+    cost_owls: costMicroUsd === undefined ? null : microUsdToOwls(costMicroUsd),
     error: o.error,
     created_at: o.createdAt?.toISOString(),
     started_at: o.startedAt?.toISOString() ?? null,

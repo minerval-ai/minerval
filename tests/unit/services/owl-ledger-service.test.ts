@@ -48,6 +48,7 @@ import {
   refundChargeForContribution,
   ensureFreeGrants,
   settleMeteredCharge,
+  settledChargeRef,
 } from "../../../src/services/owl-ledger-service.js";
 
 beforeEach(() => {
@@ -231,5 +232,19 @@ describe("refundChargeForContribution", () => {
     ]);
     mocks.insertReturns.push([]); // duplicate idempotency key → no row
     expect(await refundChargeForContribution("contrib-1")).toBe(false);
+  });
+});
+
+describe("settledChargeRef", () => {
+  const id = "0b69afe6-5ffd-4496-b388-030e7d538466";
+  it("reads the charge a settlement key names", () => {
+    expect(settledChargeRef(`settle:${id}`)).toEqual({ entryId: id });
+    expect(settledChargeRef(`settle:order:${id}`)).toEqual({ orderId: id });
+  });
+  it("answers null for keys that name no charge", () => {
+    expect(settledChargeRef(null)).toBeNull();
+    expect(settledChargeRef("settle:al-user")).toBeNull();
+    expect(settledChargeRef(`refund:order:${id}`)).toBeNull();
+    expect(settledChargeRef(`stripe:${id}`)).toBeNull();
   });
 });

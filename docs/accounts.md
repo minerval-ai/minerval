@@ -559,11 +559,27 @@ handler lands.
 
 ## Dashboard
 
-`/account` on the web app: profile, owl balance with the caps list, pack
-purchase flow (when billing is enabled) and the itemized owl history, key
-management (create/name/revoke — plaintext shown exactly once), usage by
-day / agent / key (cost observability), and contributor standing including
-owls earned. `/signin` lists whichever providers are configured.
+`/account` on the web app. Four figures head the page: the owl balance,
+what is still held in escrow by running work, the metered cost of the last
+30 days, and contributor standing. Under them:
+
+- **Owl history**, read by piece of work: each hold is shown with what was
+  returned from it, as one line and its cost, and a day's repeated small
+  charges (the Assistant's) as one line. The ledger entry by entry is one
+  click away (`/account?history=entries`). The folding is done in the web
+  app (`web/lib/owl-history.ts`) from `GET /billing/ledger`, whose returns
+  carry `settles_entry_id`, the charge they return part of; it changes no
+  amount. Beside the history: pack purchase (when billing is enabled) and
+  the caps list.
+- **Funded work**: open jobs with spend against budget, by their grant's
+  name; ordered assessments by claim, with what each cost (`cost_owls` on
+  `GET /orders`: the cap less what the settlement returned).
+- **Usage**: cost by day and by agent, drawn (cost observability).
+- **API keys**: create/name/revoke (plaintext shown exactly once), each key
+  with its calls and cost in the window.
+- **Contributions**: recent decisions and standing, including owls earned.
+
+`/signin` lists whichever providers are configured.
 
 ## Operational notes
 
