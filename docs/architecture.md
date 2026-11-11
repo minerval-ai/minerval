@@ -2097,6 +2097,22 @@ for with `mathematics` off ends the way it does with no checker configured:
 the run is told the formal tools are unavailable and why, and logs that it
 could not proceed.
 
+Because the prompts do not change, each agent run is told in its brief
+instead. One generated passage heads the first task message of the run
+(`src/llm/features-off-note.ts`), naming the features that are off here in
+words an agent would know them by, and saying that their tools are not
+offered and that what its instructions and skills say about them does not
+apply in this deployment. The LLM client adds it (`src/llm/client.ts`), so
+every agent is told without its own code knowing of it; a call that is not
+an agent's run is sent as given, and so is every call in a deployment with
+nothing off, where there is no passage at all. The passage is outside the
+role text that the prompt set hashes (`GET /setup/prompt-set`), so the
+prompt set is the same in every deployment and "this run used the published
+prompts" stays a comparison of hashes. The run's log records the passage
+with the message it heads, and its setup lists the features that were off
+for the run (`setup.featuresOff`, an empty list when none was;
+docs/run-log.md).
+
 `GET /setup/features` (`list_features` on MCP) reports each feature with
 whether it is on and what switching it off removes. That is how the web app
 and outside agents learn what a deployment has.
