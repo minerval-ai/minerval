@@ -64,6 +64,11 @@ export interface TreeNode {
   // assessment — the node still reads as unassessed; a confident seed merely
   // tints it in scan surfaces (hatched, preliminary-styled, never a verdict).
   seed_credence?: number | null;
+  // What examination the node has had (#543), in the short form a row
+  // carries: whether a judgment of it is in force, whatever its kind, and
+  // what that judgment was made on beyond public evidence. Optional while
+  // API deploys race the frontend.
+  coverage?: CoverageRow;
   argument_id: string | null;
   argument_name: string | null;
   argument_stance: Stance | null;
@@ -491,11 +496,39 @@ export interface SinceAssessed {
   source_events?: number;
 }
 
+/**
+ * What examination a node has had (#543), read from the record and never set
+ * by hand, as a read of one node serves it. `examined` is whether a judgment
+ * of the node is in force; false is not a finding either way, and `note`
+ * then says so. `on` lists what that judgment was made on:
+ * `public_evidence`, and `evidence_not_shown` when a source it was made
+ * against had been read as reporting a result from evidence it has not
+ * published. The list may gain values, so it is typed as strings.
+ */
+export interface Coverage {
+  examined: boolean;
+  on: string[];
+  note?: string;
+}
+
+/**
+ * The same on a node of a tree, in the API's short form: `on` lists only
+ * what the judgment was made on beyond public evidence, and is absent when
+ * there is nothing beyond it.
+ */
+export interface CoverageRow {
+  examined: boolean;
+  on?: string[];
+}
+
 export interface ClaimDetail {
   // Present when the id asked for was merged into this claim (#884).
   resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
   assessment: Assessment | null;
+  // Beside the judgment and present where there is none; absent when the API
+  // predates the field.
+  coverage?: Coverage | null;
   // Beside the judgment, whichever kind keeps it; absent when the node has
   // none in force or the API predates the field.
   since_assessed?: SinceAssessed | null;

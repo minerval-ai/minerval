@@ -36,6 +36,16 @@ vi.mock("../../src/llm/agents/assistant.js", () => ({
   }),
 }));
 
+// The small model that names a conversation: scripted, so no test calls out.
+const namer = vi.hoisted(() => ({ reply: "Eggs and heart disease" as string | Error }));
+vi.mock("../../src/llm/client.js", async (original) => ({
+  ...(await original<typeof import("../../src/llm/client.js")>()),
+  complete: vi.fn(async () => {
+    if (namer.reply instanceof Error) throw namer.reply;
+    return { content: namer.reply, model: "test", usage: {}, stopReason: "end_turn" };
+  }),
+}));
+
 vi.mock("../../src/llm/agents/grantmaker.js", () => ({
   runGrantmakerTurn: vi.fn(async () => ({ reply: "What is the question you want worked?" })),
 }));
@@ -77,6 +87,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  namer.reply = "Eggs and heart disease";
   agent.script = null;
   agent.inputs = [];
   resetGrantConversationRateLimiter();
@@ -131,6 +142,10 @@ describe("assistant conversations", () => {
     const gate = new Promise<void>((r) => (release = r));
     script(async (input) => {
       input.onNote?.("Reading the decomposition");
+      (input as unknown as { onTool?: (tool: string, args: Record<string, unknown>) => void }).onTool?.(
+        "search_claims",
+        { query: "eggs and heart disease" }
+      );
       await input.charge(250_000);
       await gate;
       await input.charge(400_000);
@@ -141,7 +156,13 @@ describe("assistant conversations", () => {
 
     await new Promise((r) => setTimeout(r, 1_300));
     const mid = await read(convo.id, u.id);
-    expect(mid.turn).toMatchObject({ state: "replying", note: "Reading the decomposition", cost_micro_usd: 250_000 });
+    expect(mid.turn).toMatchObject({
+      state: "replying",
+      note: "Reading the decomposition",
+      // What the turn is doing, so a long reply is not a still page.
+      activity: [{ tool: "search_claims", about: "eggs and heart disease" }],
+      cost_micro_usd: 250_000,
+    });
 
     release();
     await settleAssistantTurns();
@@ -270,6 +291,38 @@ describe("assistant conversations", () => {
     expect(await deleteAssistantConversation(convo.id, other.id)).toBe(false);
     expect(await deleteAssistantConversation(convo.id, u.id)).toBe(true);
     expect(await getAssistantConversation(convo.id, u.id)).toBeNull();
+  });
+});
+
+describe("a conversation's name", () => {
+  it("is written by a small model from the first message, in place of its opening words", async () => {
+    const u = await user("named");
+    namer.reply = '"Egg consumption and heart risk."\n';
+    const convo = await start(u, "Where does the question of eggs and heart disease stand right now?");
+    // Until the name arrives, the opening words stand in.
+    expect(convo.title).toBe("Where does the question of eggs and heart disease stand right now?");
+    await settleAssistantTurns();
+    expect((await read(convo.id, u.id)).title).toBe("Egg consumption and heart risk");
+
+    // A later message does not rename it.
+    namer.reply = "Something else";
+    await addAssistantMessage({ app, user: u, conversationId: convo.id, message: "And cholesterol?" });
+    await settleAssistantTurns();
+    expect((await read(convo.id, u.id)).title).toBe("Egg consumption and heart risk");
+  });
+
+  it("stays the opening words when the model fails or says nothing usable", async () => {
+    const u = await user("unnamed");
+    namer.reply = new Error("model unavailable");
+    const failed = await start(u, "A short opening");
+    await settleAssistantTurns();
+    expect((await read(failed.id, u.id)).title).toBe("A short opening");
+    expect((await read(failed.id, u.id)).turn.state).toBe("idle");
+
+    namer.reply = "x".repeat(200);
+    const long = await start(u, "Another opening");
+    await settleAssistantTurns();
+    expect((await read(long.id, u.id)).title).toBe("Another opening");
   });
 });
 

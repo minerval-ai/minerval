@@ -370,6 +370,36 @@ enters the allocation formula or any policy number. The older
 is always `{}`. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
 
+A status says what the evidence shows. What evidence was looked at, and
+whether any was, is a separate fact, served as `coverage` (#543,
+`src/services/coverage-service.ts`). It is read from the record at read time
+and nobody sets it: `examined` is whether the node has a judgment in force,
+of whichever kind, so a node with a seed, sources and readings but no
+judgment is not examined, and a node judged `unknown` is; `on` lists what
+the judgment in force was made on, from a fixed vocabulary:
+`public_evidence`, and `evidence_not_shown` when a source the judgment was
+recorded against (`judgment_inputs`) had been read as `evidence_not_shown`
+by the time the judgment was written (the reading is taken from
+`claim_instance_reading_log`, which keeps every reading with its time).
+`GET /claims/:claim_id` and `get_claim` carry it beside the judgment, with a
+`note` on a node not examined saying that this is not a finding either way,
+and every node of a decomposition tree and every row of `get_claim`'s
+`subclaims` carries it in a short form, so a reader of a parent sees which
+parts under it were never looked at: on a row there is no note, and `on`
+lists only what the judgment was made on beyond public evidence and is left
+out when there is nothing beyond it (`{examined: false}`, `{examined: true}`,
+`{examined: true, on: ["evidence_not_shown"]}`), because a tree is read
+constantly and most of its nodes have nothing more to say. A quantity or a
+question never carries an assessment status, judged or not, so on those rows
+`coverage` is the one field that says it for every kind. Two further values
+wait for things the public graph does not have: evidence held at a private
+label, and a judgment held from the public copy. They are added as words in
+`on`, and on a row are listed like `evidence_not_shown`.
+A request put to a party and refused is not derivable: a request records
+whom it is addressed to (`addressed_to`), but its `declined` state and
+outcome are the keeper's or the Researcher's refusal of the request itself,
+and nothing records that the party declined or did not answer.
+
 ### Node kinds: quantities and questions
 
 A node in the graph is one of three kinds (constitution §2, §7a), recorded in
@@ -564,7 +594,10 @@ sections and passages, each instance anchored to the passage its quote sits
 in (#507). Both are filled once, on ingest and when `provenance_read_source`
 first fetches a document (`refreshSourceFactsOnce`, `segmentSourceOnce`).
 Most of a page's facts are in its own metadata, so both need the document's
-text, and a source an agent cites by URL without opening it (recording an
+text. Where the URL cited is a rendering that carries no metadata, an arXiv
+PDF or full-text HTML page, the lookup reads the facts from the paper's
+abstract page instead (`factsPageUrl`), and a paper on arXiv is recorded as a
+preprint from its address alone (`kindFromUrl`). And a source an agent cites by URL without opening it (recording an
 instance, an argument passage, a reading or an upstream edge) is created
 with none. The source backfill (`src/workers/source-backfill.ts`) fills
 what those two paths miss. For a source with a URL and no stored text that

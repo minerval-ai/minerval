@@ -32,6 +32,7 @@ import {
   summarizeJudgmentChanges,
   type JudgmentChangeSummary,
 } from "./judgment-inputs-service.js";
+import { COVERAGE_ROW_DESCRIPTION } from "./coverage-service.js";
 
 /** Who is reading: an outside caller over MCP, or one of the graph's agents. */
 export type GraphReadAudience = "caller" | "agent";
@@ -159,7 +160,9 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "(requires, supports, contradicts, and so on) and grouped into a named " +
         "argument where one exists, and each node carries its own assessment " +
         "status, so a disputed subclaim under a well-supported parent marks " +
-        "where the disagreement lives. " +
+        "where the disagreement lives. Each node also carries `coverage`, " +
+        COVERAGE_ROW_DESCRIPTION +
+        ". " +
         STEWARD_PARKED_DESCRIPTION +
         " For what rests ON a claim, use get_dependents." +
         MERGED_ID_NOTE +
