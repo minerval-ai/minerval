@@ -1481,6 +1481,7 @@ Model choice follows the value of the judgment, not a single default:
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5.5 |
 | Claim Steward (standard pass) · Curator · Audit Agent | Claude Opus 5.5 |
 | Claim Steward (strong pass, money triggers) · Dispute Arbitrator · Grantmaker | Claude Fable 5.2 |
+| Assistant | Claude Fable 5.2 (`ASSISTANT_MODEL`); the user may pick Claude Opus 5.5 for a conversation (`ASSISTANT_STANDARD_MODEL`) |
 | Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`), fallbacks off |
 | Researcher (`researcher`) | Chosen per launch by the administrator: Claude Fable 5.2 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
 
@@ -1945,6 +1946,18 @@ route an account can call is also a tool (docs/mcp.md). Clients authenticate wit
 `/mcp` resource, handing sign-in and consent to the web app — which is what
 lets hosted clients such as Claude.ai connect. Every call is attributed to an
 account either way.
+
+### The Assistant
+
+`/ask` is an agent that works for the signed-in user (docs/accounts.md,
+"The Assistant"). It is the graph's first agent that is not an
+administrator: it holds no role under the constitution and writes nothing
+to the graph itself. Its tools are the MCP server's, opened in process for
+its user, so everything it does goes through the same public doors as any
+account's agent: a proposal goes to the Contribution Reviewer, a mandate is
+designed with the Grantmaker. Its work is charged to the user's balance as
+it runs, with no cap, and calls that spend owls on the graph or publish
+under the user's name wait for the user unless they have allowed that kind.
 
 ---
 

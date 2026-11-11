@@ -38,6 +38,7 @@ export interface Classification {
 
 /** Agents whose inputs are public by construction; any other agent starts private. */
 export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
+  assistant: { reads: "private", why: "a user's private conversation with their own agent" },
   audit: { reads: "private", why: "audit contexts can carry operator data, such as a prize claim's checker errors" },
   consistency_checker: { reads: "public", why: "a region of the public graph" },
   contribution_reviewer: { reads: "public", why: "a contribution's id; contributions are public" },
@@ -91,6 +92,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   decide_prize_claim: { reads: "public", why: "the run's own decision, which goes on the public prize record" },
   decline: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   decline_mandate: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  delegate: { reads: "private", why: "a copy's report on a user's private task" },
   delegate_research: { reads: "private", why: "research reports, notebooks and Grantmaker briefs, which the claim page leaves out" },
   detach_claim_instance: { reads: "public", why: "confirms the run's own write to public graph records" },
   elicit_search_papers: { reads: "public", why: "third-party search over published papers and trials" },
@@ -169,6 +171,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   merge_arguments: { reads: "public", why: "confirms the run's own write to public graph records" },
   merge_claims: { reads: "public", why: "confirms the run's own write to public graph records" },
   note_finding: { reads: "public", why: "published findings, public on GET /findings" },
+  note_progress: { reads: "public", why: "confirms the run's own progress line; the output carries nothing beyond the run's input" },
   note_to_funder: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   notebook_read: { reads: "private", why: "a run's notebook, unpublished (solver) or not served (researcher)" },
   notebook_write: { reads: "private", why: "a run's notebook, unpublished (solver) or not served (researcher)" },

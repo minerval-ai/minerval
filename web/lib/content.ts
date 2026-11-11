@@ -15,7 +15,7 @@ export interface AgentMeta {
   key: string;
   name: string;
   stage: number;
-  group: "processing" | "governance";
+  group: "processing" | "governance" | "instruments" | "assistant";
   tagline: string;
   invokedWhen: string;
   model: string;

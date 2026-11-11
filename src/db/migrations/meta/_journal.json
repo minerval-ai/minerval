@@ -813,6 +813,13 @@
       "when": 1794413703916,
       "tag": "0115_judgment_inputs",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1794414604220,
+      "tag": "0116_assistant",
+      "breakpoints": true
     }
   ]
 }

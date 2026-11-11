@@ -8,6 +8,7 @@ export default function AgentsIndex() {
   const agents = getAgentIndex();
   const processing = agents.filter((a) => a.group === "processing");
   const governance = agents.filter((a) => a.group === "governance");
+  const assistant = agents.filter((a) => a.group === "assistant");
 
   return (
     <div className="col-wide">
@@ -38,6 +39,14 @@ export default function AgentsIndex() {
         and the system audits itself.
       </p>
       <AgentList agents={governance} />
+
+      <h2>Working for you · not an administrator</h2>
+      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".82rem", marginTop: "-.3rem" }}>
+        The <Link href="/ask">Assistant</Link> works for one signed-in user with the tools
+        their account has. It is given the Constitution to read the graph by, and holds no
+        role under it.
+      </p>
+      <AgentList agents={assistant} />
     </div>
   );
 }

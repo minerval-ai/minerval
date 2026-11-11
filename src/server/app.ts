@@ -42,6 +42,7 @@ import { correspondentRoutes } from "../routes/correspondents.js";
 import { consistencyRoutes } from "../routes/consistency.js";
 import { grantRoutes } from "../routes/grants.js";
 import { grantConversationRoutes } from "../routes/grant-conversations.js";
+import { assistantRoutes } from "../routes/assistant.js";
 import { mandateRoutes } from "../routes/mandates.js";
 import { platformMandateRoutes } from "../routes/platform-mandates.js";
 import { reportRoutes } from "../routes/reports.js";
@@ -117,6 +118,8 @@ export async function buildApp() {
   await app.register(grantConversationRoutes, {
     prefix: "/grant-conversations",
   });
+  // The Assistant (#646): a user's conversations with their own agent.
+  await app.register(assistantRoutes, { prefix: "/assistant" });
   await app.register(mandateRoutes, { prefix: "/mandates" });
   // Operator-key routes for platform mandates (#529): fund a pinned draft,
   // and mint the key that holds the platform's granting conversations.

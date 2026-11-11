@@ -125,6 +125,11 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   },
   "GET /mandates/:id/lookouts/:lookoutId": { name: "get_mandate_lookout" },
 
+  // ---- the Assistant (#646): reads of the account's own conversations ----
+  "GET /assistant/conversations": { name: "list_assistant_conversations" },
+  "GET /assistant/conversations/:id": { name: "get_assistant_conversation" },
+  "GET /assistant/allowance": { name: "get_assistant_allowance" },
+
   // ---- correspondents (#563) ----
   "GET /correspondents": { name: "list_correspondents" },
   "GET /correspondents/:id": { name: "get_correspondent" },
@@ -244,6 +249,15 @@ const PRIZE_FILING =
   "documents and one-time codes sent to the owner's session; deferred until " +
   "the first prize has been paid (docs/mcp.md).";
 
+const ASSISTANT_CONVERSATION =
+  "The Assistant is the account's own agent on the site, given this same " +
+  "tool list; an MCP client is itself the conversation, with the tools in hand.";
+const ASSISTANT_GATE =
+  "Releases an action the Assistant prepared, or widens what it may do " +
+  "without asking. The Assistant's tools are this MCP list, so a tool here " +
+  "would let it press its own button; the route also requires a signed-in " +
+  "dashboard session.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "GET /health": "A load-balancer liveness probe, not an affordance.",
@@ -304,6 +318,13 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "the server never learns which page a reader is on. An MCP caller is " +
     "authenticated and names its page anyway, so get_page_analysis takes " +
     "the URL directly.",
+  "POST /assistant/conversations": ASSISTANT_CONVERSATION,
+  "POST /assistant/conversations/:id/messages": ASSISTANT_CONVERSATION,
+  "POST /assistant/conversations/:id/stop": ASSISTANT_CONVERSATION,
+  "PATCH /assistant/conversations/:id": ASSISTANT_CONVERSATION,
+  "DELETE /assistant/conversations/:id": ASSISTANT_CONVERSATION,
+  "POST /assistant/conversations/:id/held/:action_id": ASSISTANT_GATE,
+  "PUT /assistant/allowance": ASSISTANT_GATE,
   "POST /extension/chat":
     "The extension's chat over the page open in the browser; an MCP client " +
     "is itself the conversation, with the graph tools in hand.",

@@ -72,6 +72,10 @@ tools (#620). Each triggers on its own description:
 - `commissioning-research` — when the user wants to fund work on the graph:
   acting in good faith, which mandates are appropriate, the Grantmaker
   conversation, what is public, what money buys.
+- `using-minerval` — when the user asks how to do something in Minerval:
+  the surfaces, the site page by page, connecting over MCP, owls.
+- `writing-from-the-graph` — when making a document from what the graph
+  holds: facts about importance, pinned citations, and requests.
 - `minerval-constitution` — the constitution every administrator works
   under, bundled in full, with a guide to reading it from outside.
 - `administrator-skills` — the administrators' own skills and role prompts,

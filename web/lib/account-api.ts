@@ -691,6 +691,8 @@ export interface GrantConversationMessage {
   role: "user" | "assistant";
   content: string;
   at: string;
+  /** Set on a message the funder's Assistant wrote for them. */
+  via?: "assistant";
 }
 
 export interface GrantMandateView {
@@ -1150,6 +1152,192 @@ export async function requestPrizeClaimCode(
   return accountFetch(`/prize-claims/${pathSegment(prizeClaimId)}/code`, {
     method: "POST",
     body: { purpose },
+    actingUser: externalId,
+  });
+}
+
+// --- the Assistant (#646) ----------------------------------------------------
+
+export interface AssistantCitationView {
+  id: string;
+  kind: string;
+  text: string;
+  status: string | null;
+  standing: string | null;
+  contestation: number | null;
+  url: string;
+}
+
+export type AssistantCardView =
+  | { type: "held"; id: string }
+  | { type: "grant_conversation"; id: string };
+
+export interface AssistantMessageView {
+  role: "user" | "assistant";
+  content: string;
+  at: string;
+  citations?: AssistantCitationView[];
+  worked?: Array<{ tool: string; count: number }>;
+  cost_micro_usd?: number;
+  cards?: AssistantCardView[];
+  stopped?: "user" | "balance";
+}
+
+export interface AssistantHeldActionView {
+  id: string;
+  tool: string;
+  /** What the tool does, in a few words. */
+  label: string;
+  kind: string;
+  kind_label: string;
+  input: Record<string, unknown>;
+  status: "held" | "running" | "done" | "declined" | "failed";
+  ran_without_asking: boolean;
+  result: { ok?: boolean; text?: string } | null;
+  created_at: string;
+  decided_at: string | null;
+}
+
+export interface AssistantModelView {
+  id: string;
+  name: string;
+  default: boolean;
+}
+
+export interface AssistantSummaryView {
+  id: string;
+  title: string;
+  spent_micro_usd: number;
+  turn_state: "replying" | "idle" | "failed";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssistantConversationView extends AssistantSummaryView {
+  model: string;
+  models: AssistantModelView[];
+  messages: AssistantMessageView[];
+  held_actions: AssistantHeldActionView[];
+  allowed_kinds: {
+    conversation: string[];
+    always: string[];
+    labels: Record<string, string>;
+  };
+  turn: {
+    state: "replying" | "idle" | "failed";
+    error: string | null;
+    partial: string | null;
+    note: string | null;
+    cost_micro_usd: number;
+    stopping: boolean;
+  };
+  balance_micro_usd: number;
+}
+
+export interface AssistantHome {
+  conversations: AssistantSummaryView[];
+  models: AssistantModelView[];
+  balance_micro_usd: number;
+  allowed_kinds: { always: string[]; labels: Record<string, string> };
+}
+
+export function getAssistantHome(externalId: string): Promise<AssistantHome> {
+  return accountFetch("/assistant/conversations", { actingUser: externalId });
+}
+
+type AssistantConvo = { conversation: AssistantConversationView };
+
+export async function startAssistantConversation(
+  externalId: string,
+  input: { message: string; model?: string; node_id?: string }
+): Promise<AssistantConversationView> {
+  const r = await accountFetch<AssistantConvo>("/assistant/conversations", {
+    method: "POST",
+    body: input,
+    actingUser: externalId,
+  });
+  return r.conversation;
+}
+
+export async function getAssistantConversation(
+  externalId: string,
+  id: string
+): Promise<AssistantConversationView> {
+  const r = await accountFetch<AssistantConvo>(
+    `/assistant/conversations/${pathSegment(id)}`,
+    { actingUser: externalId }
+  );
+  return r.conversation;
+}
+
+export async function sendAssistantMessage(
+  externalId: string,
+  id: string,
+  message: string
+): Promise<AssistantConversationView> {
+  const r = await accountFetch<AssistantConvo>(
+    `/assistant/conversations/${pathSegment(id)}/messages`,
+    { method: "POST", body: { message }, actingUser: externalId }
+  );
+  return r.conversation;
+}
+
+export function stopAssistantTurn(
+  externalId: string,
+  id: string
+): Promise<{ stopping: boolean }> {
+  return accountFetch(`/assistant/conversations/${pathSegment(id)}/stop`, {
+    method: "POST",
+    body: {},
+    actingUser: externalId,
+  });
+}
+
+export async function setAssistantModel(
+  externalId: string,
+  id: string,
+  model: string
+): Promise<AssistantConversationView> {
+  const r = await accountFetch<AssistantConvo>(
+    `/assistant/conversations/${pathSegment(id)}`,
+    { method: "PATCH", body: { model }, actingUser: externalId }
+  );
+  return r.conversation;
+}
+
+export function deleteAssistantConversation(
+  externalId: string,
+  id: string
+): Promise<{ deleted: boolean }> {
+  return accountFetch(`/assistant/conversations/${pathSegment(id)}`, {
+    method: "DELETE",
+    actingUser: externalId,
+  });
+}
+
+export async function decideAssistantHeldAction(
+  externalId: string,
+  id: string,
+  actionId: string,
+  body: {
+    decision: "run" | "decline";
+    allow?: { scope: "conversation" | "always" };
+  }
+): Promise<AssistantConversationView> {
+  const r = await accountFetch<AssistantConvo>(
+    `/assistant/conversations/${pathSegment(id)}/held/${pathSegment(actionId)}`,
+    { method: "POST", body, actingUser: externalId }
+  );
+  return r.conversation;
+}
+
+export function setAssistantAllowance(
+  externalId: string,
+  kinds: string[]
+): Promise<{ kinds: string[]; labels: Record<string, string> }> {
+  return accountFetch("/assistant/allowance", {
+    method: "PUT",
+    body: { kinds },
     actingUser: externalId,
   });
 }
