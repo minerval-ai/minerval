@@ -5,6 +5,7 @@ import { eq, sql, desc, inArray } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { enqueueContribution } from "./queue-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { getRequest } from "./request-service.js";
 import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
@@ -142,8 +143,8 @@ export async function submitMandateContribution(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
          (claim_id, contributor_id, contribution_type, content, evidence_urls, grant_id, funded_by_job_id, research_run_id,
-          merge_target_claim_id, proposed_canonical_form, argument_id, merge_target_argument_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+          merge_target_claim_id, proposed_canonical_form, argument_id, merge_target_argument_id, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [
         claimId,
         grant.funder_user_id,
@@ -157,6 +158,7 @@ export async function submitMandateContribution(input: {
         structural.proposedText,
         argumentTarget.argumentId,
         argumentTarget.mergeTargetArgumentId,
+        currentLabel(),
       ]
     );
     const after = { ...budget, committedMicroUsd: budget.committedMicroUsd + estimate, submitted: budget.submitted + 1 };
@@ -426,8 +428,9 @@ export async function submitGrantContribution(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
          (claim_id, contributor_id, contribution_type, content, proposed_canonical_form,
-          evidence_urls, grant_id, funded_by_job_id, merge_target_claim_id, argument_id, merge_target_argument_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+          evidence_urls, grant_id, funded_by_job_id, merge_target_claim_id, argument_id, merge_target_argument_id,
+          sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [
         intake || unanchoredRequest ? null : claimId,
         grant.funder_user_id,
@@ -440,6 +443,7 @@ export async function submitGrantContribution(input: {
         structural.mergeTarget,
         argumentTarget.argumentId,
         argumentTarget.mergeTargetArgumentId,
+        currentLabel(),
       ]
     );
     return { success: true as const, id: row!.id, left: left - estimate };
@@ -488,6 +492,8 @@ export async function createContribution(input: {
     proposedCanonicalForm: input.proposedCanonicalForm ?? null,
     grantId: input.grantId ?? null,
     fundedByJobId: input.fundedByJobId ?? null,
+    // The review this starts runs at the submitter's label (src/labels.ts).
+    sensitivityLabel: currentLabel(),
   };
 
   const [contribution] = await db
@@ -572,6 +578,8 @@ export async function createAppeal(input: {
       originalReviewId: input.originalReviewId,
       appellantId: input.appellantId,
       appealReasoning: input.appealReasoning,
+      // The arbitration this asks for runs at the appellant's label (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 

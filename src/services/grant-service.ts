@@ -27,6 +27,7 @@ import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
@@ -525,6 +526,7 @@ export async function createGrant(input: {
       claimId: input.scopeClaimId ?? null,
       budgetMicroUsd: 0,
       status: "running",
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 

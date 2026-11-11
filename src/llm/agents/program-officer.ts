@@ -19,7 +19,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { runWithUsageContext, withAgent, withPassBudget, withSkills } from "../usage-context.js";
+import { currentLabel, runWithUsageContext, withAgent, withPassBudget, withSkills } from "../usage-context.js";
 import { getProgramOfficerSystemPromptBlocks } from "../prompts/program-officer.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { getGraphReadToolDefinitions, executeGraphReadTool } from "../tools/graph-read-tools.js";
@@ -456,20 +456,29 @@ async function buildBrief(
 // Running
 // ---------------------------------------------------------------------------
 
-/** Open (or reopen) a sitting's ledger row and commission it from the mandate. */
+/**
+ * Open (or reopen) a sitting's ledger row and commission it from the mandate.
+ *
+ * The sitting runs here, in the caller's context, as soon as the row is
+ * claimed: no executor picks this row up later. So the row records the label
+ * the sitting runs at (src/labels.ts), the caller's, and a row left open by
+ * a sitting that could not be funded takes this one's.
+ */
 async function commissionSitting(grant: GrantRow, role: Role): Promise<string | null> {
   const config = loadConfig();
   const group = role === "officer" ? OFFICER_GROUP(grant.id) : ESCALATION_GROUP(grant.id);
   const kind = role === "officer" ? "officer_run" : "grantmaker_decision";
   const budget = owlsToMicroUsd(role === "officer" ? config.officerRunBudgetOwls : config.grantmakerDecisionBudgetOwls);
   const [row] = await rawQuery<{ id: string; status: string }>(
-    `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-     VALUES ($1, $2, 'standard', $3, $4, $5)
+    `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ($1, $2, 'standard', $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET status = CASE WHEN actions.status = 'running' THEN actions.status ELSE 'open' END,
+           sensitivity_label = CASE WHEN actions.status = 'running'
+                                    THEN actions.sensitivity_label ELSE EXCLUDED.sensitivity_label END,
            updated_at = now()
      RETURNING id, status`,
-    [kind, group, grant.id, role === "officer" ? "Program officer sitting" : "Grantmaker deciding escalations", budget]
+    [kind, group, grant.id, role === "officer" ? "Program officer sitting" : "Grantmaker deciding escalations", budget, currentLabel()]
   );
   if (!row || row.status === "running") return null;
   const placed = await placeCommission({

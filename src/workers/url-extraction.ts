@@ -26,7 +26,7 @@ import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
 import { enqueueClaimPipeline, requestAudit } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
@@ -47,7 +47,10 @@ import { recordArgumentPassages } from "../services/argument-passage-service.js"
  * Extraction + matching are user-initiated agentic work, so the LLM calls in
  * here are metered against the account that submitted the source (#70): the
  * job row carries the attribution and we restore it into the usage context
- * for the duration of the run.
+ * for the duration of the run. The job row carries the label of the work
+ * that submitted the source too (src/labels.ts), and the extraction runs at
+ * it, so the sources and claims it records, and the claims it sends on to
+ * be onboarded, keep that label.
  */
 export async function handleUrlExtraction(
   message: UrlExtractionMessage
@@ -55,15 +58,17 @@ export async function handleUrlExtraction(
   const job = await getJobById(message.jobId);
   let billedMicroUsd: number;
   try {
-    ({ billedMicroUsd } = await runWithUsageContext(
-      {
-        userId: job?.userId ?? null,
-        apiKeyId: job?.apiKeyId ?? null,
-        // A grant-funded ingestion meters against the grant's budget job so
-        // the spend draws down the escrow, not the submitter's balance.
-        jobId: message.meterJobId ?? message.jobId,
-      },
-      () => withCostMeter(() => processUrlExtraction(message))
+    ({ billedMicroUsd } = await runAtLabel(job?.sensitivityLabel, `job ${message.jobId}`, () =>
+      runWithUsageContext(
+        {
+          userId: job?.userId ?? null,
+          apiKeyId: job?.apiKeyId ?? null,
+          // A grant-funded ingestion meters against the grant's budget job so
+          // the spend draws down the escrow, not the submitter's balance.
+          jobId: message.meterJobId ?? message.jobId,
+        },
+        () => withCostMeter(() => processUrlExtraction(message))
+      )
     ));
   } catch (err) {
     // A failed extraction must still terminate the ledger ingest action —

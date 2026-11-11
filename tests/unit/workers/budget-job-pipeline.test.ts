@@ -89,6 +89,7 @@ function job(overrides: Partial<NonNullable<typeof state.job>> = {}) {
     claim_id: "root-1",
     budget_micro_usd: 40_000_000, // 10 owls
     checkpoint: null,
+    sensitivity_label: "public",
     ...overrides,
   };
 }

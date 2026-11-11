@@ -51,6 +51,13 @@ reaching its seal. The public graph has one label, `public`, so every run
 there records `"label": "public"`; a run logged before labels existed has
 no `label` in its setup and was public.
 
+A run takes its label from the work that started it. The row that work
+waited in (a job, a ledger action, an order, a contribution, a paused
+session) was stamped with the label of the run or request that created it,
+and the worker that picks the row up opens the run at that label. So the
+label in a run's setup is the label of whatever asked for the run, through
+however many hand-overs, and never something the agent chose.
+
 ## Checking a log
 
 `GET /runs/:run_id/verify` (`verify_run_log` on MCP) recomputes the chain

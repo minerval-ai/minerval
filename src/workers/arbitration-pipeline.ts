@@ -14,15 +14,21 @@ import type { ArbitrationMessage } from "../services/queue-service.js";
 import { runArbitration } from "../llm/agents/dispute-arbitrator.js";
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
 import {
   MAX_REVIEW_ATTEMPTS,
   REVIEW_RECLAIM_MINUTES,
 } from "./contribution-pipeline.js";
 
-async function claimWork(message: ArbitrationMessage): Promise<boolean> {
+/**
+ * Claim the row the arbitration is for. Returns the claimed row, with the
+ * label the arbitration runs at (src/labels.ts): the appeal's for an appeal,
+ * the contribution's for a reviewer's escalation. Null when there is nothing
+ * to claim.
+ */
+async function claimWork(message: ArbitrationMessage): Promise<{ id: string; sensitivity_label: string } | null> {
   if (message.appealId) {
-    const rows = await rawQuery<{ id: string }>(
+    const rows = await rawQuery<{ id: string; sensitivity_label: string }>(
       `UPDATE appeals
           SET claimed_at = now(),
               arbitration_attempts = arbitration_attempts + 1
@@ -31,12 +37,12 @@ async function claimWork(message: ArbitrationMessage): Promise<boolean> {
           AND (claimed_at IS NULL
                OR claimed_at < now() - interval '${REVIEW_RECLAIM_MINUTES} minutes')
           AND arbitration_attempts < ${MAX_REVIEW_ATTEMPTS}
-        RETURNING id`,
+        RETURNING id, sensitivity_label`,
       [message.appealId]
     );
-    return rows.length > 0;
+    return rows[0] ?? null;
   }
-  const rows = await rawQuery<{ id: string }>(
+  const rows = await rawQuery<{ id: string; sensitivity_label: string }>(
     `UPDATE contributions
         SET review_claimed_at = now(),
             review_attempts = review_attempts + 1
@@ -45,10 +51,10 @@ async function claimWork(message: ArbitrationMessage): Promise<boolean> {
         AND (review_claimed_at IS NULL
              OR review_claimed_at < now() - interval '${REVIEW_RECLAIM_MINUTES} minutes')
         AND review_attempts < ${MAX_REVIEW_ATTEMPTS}
-      RETURNING id`,
+      RETURNING id, sensitivity_label`,
     [message.contributionId]
   );
-  return rows.length > 0;
+  return rows[0] ?? null;
 }
 
 async function releaseClaim(message: ArbitrationMessage): Promise<void> {
@@ -101,16 +107,22 @@ async function disputeSubject(
 export async function handleArbitrationMessage(
   message: ArbitrationMessage
 ): Promise<void> {
-  if (!(await claimWork(message))) return; // resolved, in flight, or parked
+  const claimed = await claimWork(message);
+  if (!claimed) return; // resolved, in flight, or parked
 
   try {
     const userId = await disputeSubject(message);
-    await runWithUsageContext({ userId }, () =>
-      runArbitration({
-        contributionId: message.contributionId,
-        trigger: message.trigger,
-        appealId: message.appealId,
-      })
+    await runAtLabel(
+      claimed.sensitivity_label,
+      message.appealId ? `appeal ${message.appealId}` : `escalated contribution ${message.contributionId}`,
+      () =>
+        runWithUsageContext({ userId }, () =>
+          runArbitration({
+            contributionId: message.contributionId,
+            trigger: message.trigger,
+            appealId: message.appealId,
+          })
+        )
     );
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) await releaseClaim(message);

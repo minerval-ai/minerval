@@ -45,7 +45,7 @@ const { state, record } = vi.hoisted(() => {
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     if (q.trimStart().startsWith("UPDATE") && q.includes("RETURNING")) {
-      return [{ id: params[0] }];
+      return [{ id: params[0], sensitivity_label: "public" }];
     }
     if (q.includes("contributor_id") && q.includes("FROM contributions")) {
       return [{ contributor_id: state.contributorId, funded_by_job_id: state.fundedByJobId }];

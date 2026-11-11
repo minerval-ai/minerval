@@ -31,8 +31,20 @@ const { state } = vi.hoisted(() => ({
     lookoutRuns: 0,
     lookoutFail: null as null | Error,
     lookoutStamps: [] as Array<Record<string, unknown>>,
+    // The label each handler was opened at, and the label in force when a
+    // row was claimed, a document submitted, or an agent run.
+    openedAt: [] as unknown[],
+    labelsInside: [] as Array<{ at: string; label: string }>,
   },
 }));
+
+/** Record the label in force, read from the real context the executor set. */
+async function noteLabel(at: string): Promise<void> {
+  const real = await vi.importActual<typeof import("../../../src/llm/usage-context.js")>(
+    "../../../src/llm/usage-context.js"
+  );
+  state.labelsInside.push({ at, label: real.currentLabel() });
+}
 
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
@@ -76,7 +88,10 @@ vi.mock("../../../src/services/action-service.js", () => ({
   materializeLivePlan: vi.fn(async (grantId: string) => {
     state.livePlans.push(grantId);
   }),
-  claimAction: vi.fn(async () => true),
+  claimAction: vi.fn(async () => {
+    await noteLabel("claim");
+    return true;
+  }),
   releaseAction: vi.fn(async (id: string) => {
     state.released.push(id);
   }),
@@ -104,6 +119,7 @@ vi.mock("../../../src/services/allocation-service.js", () => ({
 
 vi.mock("../../../src/llm/agents/grantor.js", () => ({
   runGrantor: vi.fn(async () => {
+    await noteLabel("grantor");
     state.grantorRuns++;
     return { strategy: "s", items: [] };
   }),
@@ -111,6 +127,7 @@ vi.mock("../../../src/llm/agents/grantor.js", () => ({
 
 vi.mock("../../../src/llm/agents/mandate-review.js", () => ({
   runMandateReview: vi.fn(async () => {
+    await noteLabel("mandate_review");
     state.reviewRuns++;
     return state.reviewResult;
   }),
@@ -118,6 +135,7 @@ vi.mock("../../../src/llm/agents/mandate-review.js", () => ({
 
 vi.mock("../../../src/llm/agents/lookout.js", () => ({
   runLookout: vi.fn(async () => {
+    await noteLabel("lookout");
     state.lookoutRuns++;
     if (state.lookoutFail) throw state.lookoutFail;
     return { note: "nothing to report", flagsRaised: 2, ingestsProposed: 0, notesLeft: 0, eventsConsumed: 1 };
@@ -132,13 +150,21 @@ vi.mock("../../../src/services/lookout-service.js", () => ({
 
 vi.mock("../../../src/services/source-service.js", () => ({
   submitSource: vi.fn(async (input: { url: string }, _attribution: unknown, scope: unknown) => {
+    await noteLabel("submit");
     state.submitted.push(input.url);
     state.submittedScopes.push(scope);
     return { sourceId: "s-1", jobId: "j-1" };
   }),
 }));
 
-vi.mock("../../../src/llm/usage-context.js", () => ({
+vi.mock("../../../src/llm/usage-context.js", async (importOriginal) => ({
+  // The executor opens each row's handler at the row's label. This is the
+  // real one, so a row without a label is refused as it is in production.
+  runAtLabel: async (label: string | undefined, work: string, fn: () => unknown) => {
+    state.openedAt.push(label);
+    const real = await importOriginal<typeof import("../../../src/llm/usage-context.js")>();
+    return real.runAtLabel(label, work, fn);
+  },
   runBudget: () => null,
   budgetRefusal: () => null,
   runWithUsageContext: (_ctx: unknown, fn: () => Promise<unknown>) => fn(),
@@ -168,6 +194,7 @@ const action = (over: Record<string, unknown>) => ({
   target_ref: "g-1",
   cost_est_micro_usd: 1_000_000,
   coverage_micro_usd: 1_000_000,
+  sensitivity_label: "public",
   ...over,
 });
 
@@ -211,6 +238,39 @@ beforeEach(() => {
   state.lookoutRuns = 0;
   state.lookoutFail = null;
   state.lookoutStamps = [];
+  state.openedAt = [];
+  state.labelsInside = [];
+});
+
+// A run works at the label of the work that started it (src/labels.ts). The
+// executor has one place where a row becomes a run, whatever its kind.
+describe("the label a ledger row is run at", () => {
+  it("is the row's, for the claim and for everything its handler does, whatever the kind", async () => {
+    for (const over of [
+      { kind: "grant_planning" },
+      { kind: "mandate_review", exclusion_group: "review:g-1" },
+      { kind: "ingest", exclusion_group: "ingest:https://example.org/p", target_ref: "https://example.org/p" },
+      { kind: "lookout_run", exclusion_group: "lookout:l-1", target_ref: "l-1" },
+    ]) {
+      state.openedAt = [];
+      state.labelsInside = [];
+      state.grant = { ...state.grant, status: over.kind === "grant_planning" ? "planning" : "active" };
+      state.action = action({ ...over, sensitivity_label: "internal" });
+      await processNextEngineAction();
+      expect(state.openedAt, over.kind).toEqual(["internal"]);
+      expect(state.labelsInside.length, over.kind).toBeGreaterThan(1);
+      expect(new Set(state.labelsInside.map((l) => l.label)), over.kind).toEqual(new Set(["internal"]));
+    }
+  });
+
+  it("is never assumed: a row read without its label is not claimed and nothing runs", async () => {
+    const { MissingLabelError } = await import("../../../src/labels.js");
+    state.action = action({ sensitivity_label: undefined });
+    await expect(processNextEngineAction()).rejects.toBeInstanceOf(MissingLabelError);
+    expect(state.labelsInside).toEqual([]);
+    expect(state.grantorRuns).toBe(0);
+    expect(state.completed).toEqual([]);
+  });
 });
 
 describe("processNextEngineAction", () => {

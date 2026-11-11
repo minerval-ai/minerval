@@ -23,7 +23,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { STEWARD_SUCCESS_CLEAR_SET, stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -42,6 +42,8 @@ interface OrderRow {
   contribution_id: string | null;
   price_micro_usd: number;
   charge_entry_id: string | null;
+  /** The label the order was placed at; the pass it buys runs at it (src/labels.ts). */
+  sensitivity_label: string;
 }
 
 export type OrderDrainStatus =
@@ -116,10 +118,19 @@ export async function processNextOrderTask(
          FOR UPDATE SKIP LOCKED
       )
       RETURNING id, user_id, claim_id, contribution_id, price_micro_usd,
-                charge_entry_id`
+                charge_entry_id, sensitivity_label`
   );
   if (orders.length === 0) return { status: "empty" };
   const order = orders[0]!;
+  // The pass runs at the label of the order that buys it (src/labels.ts).
+  return runAtLabel(order.sensitivity_label, `assessment order ${order.id}`, () =>
+    dispatchOrder(order, model)
+  );
+}
+
+/** Charge, run and settle one order this dispatcher has claimed. */
+async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProcessResult> {
+  const config = loadConfig();
 
   // Claim the claim's queue slot so the background lane can't double-run it.
   // (A slot stuck 'running' >15m is a crashed worker, reclaimable like the

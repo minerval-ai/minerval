@@ -19,6 +19,7 @@ import { assessmentOrders, claims, type AssessmentOrder } from "../db/schema.js"
 import { capMicroUsd, microUsdToOwls } from "./owl.js";
 import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export type OrderCreateResult =
   | { ok: true; order: AssessmentOrder }
@@ -109,6 +110,8 @@ export async function createOrder(input: {
       // this assessment can cost. The dispatcher charges it at run start and
       // settles the unused fraction back once the meter has the real cost.
       priceMicroUsd,
+      // The pass the order buys runs at this (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .onConflictDoNothing()
     .returning();

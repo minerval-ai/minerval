@@ -10,6 +10,7 @@
  * date; writes due prize tranches; and surfaces what the operator must see.
  */
 import { rawQuery } from "../db/client.js";
+import { runAtLabel } from "../llm/usage-context.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import {
   challengePauseState,
@@ -32,11 +33,27 @@ export interface WindowCloserStats {
   stewardRuns: number;
 }
 
-async function stewardContext(prizeClaimId: string): Promise<{ jobId?: string; userId: string; claimId: string } | null> {
+/**
+ * What the Steward's pass on a prize claim runs under: the reserve job, the
+ * platform, the claim, and the label the claim's contribution was filed at
+ * (src/labels.ts), as in the prize-check worker.
+ */
+async function stewardContext(
+  prizeClaimId: string
+): Promise<{ jobId?: string; userId: string; claimId: string; label: string | undefined } | null> {
   const pc = await getPrizeClaimById(prizeClaimId);
   if (!pc) return null;
   const job = await getReserveJob(pc.bounty_id);
-  return { ...(job ? { jobId: job.id } : {}), userId: await getPlatformAccountId(), claimId: pc.claim_id };
+  const [filed] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM contributions WHERE id = $1`,
+    [pc.contribution_id]
+  );
+  return {
+    ...(job ? { jobId: job.id } : {}),
+    userId: await getPlatformAccountId(),
+    claimId: pc.claim_id,
+    label: filed?.sensitivity_label,
+  };
 }
 
 /** Promote every window that has elapsed and is otherwise ready. */
@@ -54,14 +71,16 @@ export async function promoteElapsedWindows(opts: { model?: string } = {}): Prom
     const ctx = await stewardContext(row.id);
     if (!ctx) continue;
     try {
-      await invokeStewardDirect({
-        trigger: "prize_window_closed",
-        claimId: ctx.claimId,
-        context: `prize claim ${row.id}: the challenge window closed without a successful challenge; confirm the assessment that was provisional (get_prize_claim).`,
-        jobId: ctx.jobId,
-        userId: ctx.userId,
-        ...(opts.model ? { model: opts.model } : {}),
-      });
+      await runAtLabel(ctx.label, `prize claim ${row.id}`, () =>
+        invokeStewardDirect({
+          trigger: "prize_window_closed",
+          claimId: ctx.claimId,
+          context: `prize claim ${row.id}: the challenge window closed without a successful challenge; confirm the assessment that was provisional (get_prize_claim).`,
+          jobId: ctx.jobId,
+          userId: ctx.userId,
+          ...(opts.model ? { model: opts.model } : {}),
+        })
+      );
       stewardRuns++;
     } catch (err) {
       console.error("[prize-window] steward invocation failed:", err instanceof Error ? err.message : err);
@@ -101,14 +120,16 @@ export async function voidUpheldChallenges(opts: { model?: string } = {}): Promi
     const ctx = await stewardContext(row.prize_claim_id);
     if (!ctx) continue;
     try {
-      await invokeStewardDirect({
-        trigger: "prize_claim_voided",
-        claimId: ctx.claimId,
-        context: `prize claim ${row.prize_claim_id}: voided after an upheld challenge (${ground}); reassess without the provisional acceptance (get_prize_claim).`,
-        jobId: ctx.jobId,
-        userId: ctx.userId,
-        ...(opts.model ? { model: opts.model } : {}),
-      });
+      await runAtLabel(ctx.label, `prize claim ${row.prize_claim_id}`, () =>
+        invokeStewardDirect({
+          trigger: "prize_claim_voided",
+          claimId: ctx.claimId,
+          context: `prize claim ${row.prize_claim_id}: voided after an upheld challenge (${ground}); reassess without the provisional acceptance (get_prize_claim).`,
+          jobId: ctx.jobId,
+          userId: ctx.userId,
+          ...(opts.model ? { model: opts.model } : {}),
+        })
+      );
       stewardRuns++;
     } catch (err) {
       console.error("[prize-window] steward invocation failed:", err instanceof Error ? err.message : err);

@@ -34,6 +34,8 @@ const state = vi.hoisted(() => ({
   stewardCalls: [] as Array<Record<string, unknown>>,
   stewardThrows: null as null | Error,
   solverContexts: [] as Array<Record<string, unknown>>,
+  // The label in force when the solver ran and when the Steward was invoked.
+  labelsSeen: [] as Array<{ at: string; label: string }>,
   sweeps: 0,
   orphans: [] as string[],
 }));
@@ -106,10 +108,11 @@ vi.mock("../../../src/services/attempt-service.js", async (importOriginal) => {
   };
 });
 vi.mock("../../../src/llm/agents/math-solver.js", async () => {
-  const { getUsageContext } = await import("../../../src/llm/usage-context.js");
+  const { getUsageContext, currentLabel } = await import("../../../src/llm/usage-context.js");
   return {
     runMathSolver: vi.fn(async () => {
       const ctx = getUsageContext();
+      state.labelsSeen.push({ at: "solver", label: currentLabel() });
       state.solverContexts.push({ jobId: ctx.jobId, userId: ctx.userId, claimId: ctx.claimId });
       if (ctx.meter) ctx.meter.billedMicroUsd += state.solverCost;
       if (state.solverThrows) throw state.solverThrows;
@@ -119,6 +122,8 @@ vi.mock("../../../src/llm/agents/math-solver.js", async () => {
 });
 vi.mock("../../../src/workers/steward-direct.js", () => ({
   invokeStewardDirect: vi.fn(async (input: Record<string, unknown>) => {
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.labelsSeen.push({ at: "steward", label: currentLabel() });
     state.stewardCalls.push(input);
     if (state.stewardThrows) throw state.stewardThrows;
     return { model: "strong", billedMicroUsd: 0 };
@@ -209,6 +214,7 @@ beforeEach(() => {
     target_ref: null,
     cost_est_micro_usd: 150_000_000,
     coverage_micro_usd: 150_000_000,
+    sensitivity_label: "public",
     updated_at: new Date(),
   };
   state.claim = { id: CLAIM_ID, text: "n + 0 = n", state: "active" };
@@ -240,11 +246,37 @@ beforeEach(() => {
   state.stewardCalls = [];
   state.stewardThrows = null;
   state.solverContexts = [];
+  state.labelsSeen = [];
   state.sweeps = 0;
   state.orphans = [];
   logger.info.mockReset();
   logger.warn.mockReset();
   logger.error.mockReset();
+});
+
+// A run works at the label of the work that started it (src/labels.ts).
+describe("the label an attempt is run at", () => {
+  it("is its ledger row's, for the solver's run and for the Steward's pass on the outcome", async () => {
+    state.action = { ...state.action!, sensitivity_label: "internal" };
+    await processNextSolverAction({ logger });
+    expect(state.labelsSeen).toEqual([
+      { at: "solver", label: "internal" },
+      { at: "steward", label: "internal" },
+    ]);
+  });
+
+  it("is public for a public row", async () => {
+    await processNextSolverAction({ logger });
+    expect(state.labelsSeen.map((l) => l.label)).toEqual(["public", "public"]);
+  });
+
+  it("is never assumed: a row read without its label is not claimed and no attempt opens", async () => {
+    const { MissingLabelError } = await import("../../../src/labels.js");
+    state.action = { ...state.action!, sensitivity_label: undefined };
+    await expect(processNextSolverAction({ logger })).rejects.toBeInstanceOf(MissingLabelError);
+    expect(state.claimed).toEqual([]);
+    expect(state.labelsSeen).toEqual([]);
+  });
 });
 
 describe("processNextSolverAction", () => {

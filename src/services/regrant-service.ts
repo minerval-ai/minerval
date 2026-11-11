@@ -18,6 +18,7 @@
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /** Total this grant has regranted to others (net of returned shares). */
 export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
@@ -345,10 +346,10 @@ export async function spawnFundedMandate(input: {
   // The new grant starts with an EMPTY budget job; the regrant below is
   // its entire initial funding, so a failed regrant leaves nothing live.
   const [job] = await rawQuery<{ id: string }>(
-    `INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status)
-     VALUES ($1, 'grant', 0, 'running')
+    `INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status, sensitivity_label)
+     VALUES ($1, 'grant', 0, 'running', $2)
      RETURNING id`,
-    [source.funder_user_id]
+    [source.funder_user_id, currentLabel()]
   );
   const mandate = {
     title: input.title,

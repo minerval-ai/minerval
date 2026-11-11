@@ -52,7 +52,7 @@ import {
   releaseAction,
   type RunnableAction,
 } from "../services/action-service.js";
-import { runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
+import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
@@ -151,7 +151,13 @@ export async function processNextStewardTask(
     return { status: pending > 0 ? "budget" : "empty" };
   }
   if (action) {
-    return runCoveredAction(action, opts);
+    // The pass runs at the label of the ledger row that pays for it, which
+    // is the label of the work that opened the row (src/labels.ts). The
+    // bookkeeping after the run is inside too, so a follow-up it commissions
+    // carries the same label.
+    return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () =>
+      runCoveredAction(action, opts)
+    );
   }
 
   // Fallback mode (no ACTIVE General mandate): direct budgeted runs on the
@@ -167,6 +173,10 @@ export async function processNextStewardTask(
     const pending = await pendingStewardCount();
     return { status: pending > 0 ? "budget" : "empty" };
   }
+  // This lane picks a claim, not a piece of work: no row here says what
+  // label the pending pass was asked for at, so its run opens with none and
+  // writes as public. A deployment with more than one label must not turn
+  // the lane on until the claim's pending slot carries a label.
   // The fallback lane IS unattributed work, so the breaker applies: don't
   // even claim a task if it is already spent this window.
   try {
@@ -219,7 +229,7 @@ async function runCoveredAction(
   opts: { model?: string }
 ): Promise<StewardProcessResult> {
   const config = loadConfig();
-  if (!action.claim_id || !(await claimAction(action.id))) {
+  if (!action.claim_id || !(await claimAction(action.id, action.sensitivity_label))) {
     // Raced by another worker (or a malformed row); the next pass decides.
     return { status: "empty" };
   }

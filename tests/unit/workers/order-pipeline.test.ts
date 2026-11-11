@@ -122,6 +122,7 @@ function order(overrides: Partial<(typeof state.orders)[number]> = {}) {
     contribution_id: null,
     price_micro_usd: 1_000_000,
     charge_entry_id: null,
+    sensitivity_label: "public",
     ...overrides,
   };
 }

@@ -57,7 +57,7 @@ import {
   type SubmitCheckInput,
 } from "../services/lean-checker-client.js";
 import { meterExternalUsage } from "../services/usage-service.js";
-import { getUsageContext, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { getUsageContext, runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { runContributionReview } from "../llm/agents/contribution-reviewer.js";
 import { recordLeanCheck } from "../services/formalization-service.js";
 import { claimAction, completeAction } from "../services/action-service.js";
@@ -235,11 +235,22 @@ async function findReviewAction(prizeClaimId: string): Promise<string | null> {
   return row?.id ?? null;
 }
 
-/** The usage context a prize review runs under: the reserve job, the platform, the claim. */
-async function reviewContext(pc: PrizeClaimRow): Promise<{ jobId: string | null; userId: string; claimId: string }> {
+/**
+ * The usage context a prize review runs under: the reserve job, the platform,
+ * the claim, and the label (src/labels.ts). A prize claim is filed as a
+ * contribution, and every run this lane opens for it, on whichever tick and
+ * from whichever sweep, works at the label that contribution was filed at.
+ */
+async function reviewContext(
+  pc: PrizeClaimRow
+): Promise<{ jobId: string | null; userId: string; claimId: string; label: string | undefined }> {
   const job = await getReserveJob(pc.bounty_id);
   const userId = await getPlatformAccountId();
-  return { jobId: job?.id ?? null, userId, claimId: pc.claim_id };
+  const [filed] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM contributions WHERE id = $1`,
+    [pc.contribution_id]
+  );
+  return { jobId: job?.id ?? null, userId, claimId: pc.claim_id, label: filed?.sensitivity_label };
 }
 
 /** After the Reviewer admits, the Steward runs directly on `prize_claim` (§6.4). */
@@ -250,16 +261,18 @@ export async function runStewardOnAdmitted(
   const pc = await getPrizeClaimById(prizeClaimId);
   if (!pc || pc.status !== "in_review") return 0;
   const ctx = await reviewContext(pc);
-  const { billedMicroUsd } = await invokeStewardDirect({
-    trigger: "prize_claim",
-    claimId: pc.claim_id,
-    context:
-      opts.context ??
-      `prize claim ${pc.id}: the checker accepted a ${pc.direction} and the Reviewer admitted it; judge fidelity with get_prize_claim and decide with decide_prize_claim.`,
-    jobId: ctx.jobId ?? undefined,
-    userId: ctx.userId,
-    ...(opts.model ? { model: opts.model } : {}),
-  });
+  const { billedMicroUsd } = await runAtLabel(ctx.label, `prize claim ${pc.id}`, () =>
+    invokeStewardDirect({
+      trigger: "prize_claim",
+      claimId: pc.claim_id,
+      context:
+        opts.context ??
+        `prize claim ${pc.id}: the checker accepted a ${pc.direction} and the Reviewer admitted it; judge fidelity with get_prize_claim and decide with decide_prize_claim.`,
+      jobId: ctx.jobId ?? undefined,
+      userId: ctx.userId,
+      ...(opts.model ? { model: opts.model } : {}),
+    })
+  );
   // The direct invocation meters under its own scoped meter, which shadows
   // the worker's; add its cost here so the prize_review action consumes
   // the Steward's run from the reserve too, not only the check and the
@@ -496,12 +509,14 @@ async function landVerdict(pc: PrizeClaimRow, record: CheckRecord, opts: PrizeCh
   const actionId = await findReviewAction(pc.id);
   const ctx = await reviewContext(pc);
   let outcome: PrizeCheckResult = { status: "processed", prizeClaimId: pc.id, checkId: record.check_id };
-  const { billedMicroUsd } = await runWithUsageContext(
-    { jobId: ctx.jobId, userId: ctx.userId, claimId: ctx.claimId, agent: "prize_check" },
-    () =>
-      withCostMeter(async () => {
-        outcome = { ...outcome, ...(await applyVerdict(pc, record, opts)) };
-      })
+  const { billedMicroUsd } = await runAtLabel(ctx.label, `prize claim ${pc.id}`, () =>
+    runWithUsageContext(
+      { jobId: ctx.jobId, userId: ctx.userId, claimId: ctx.claimId, agent: "prize_check" },
+      () =>
+        withCostMeter(async () => {
+          outcome = { ...outcome, ...(await applyVerdict(pc, record, opts)) };
+        })
+    )
   );
   // A requeued error keeps the action running for the next landing; every
   // other outcome closes it.
@@ -692,12 +707,14 @@ export async function recoverPendingPrizeReview(opts: PrizeCheckTickOptions = {}
   const actionId = await findReviewAction(pc.id);
   const ctx = await reviewContext(pc);
   let after = "checked";
-  const { billedMicroUsd } = await runWithUsageContext(
-    { jobId: ctx.jobId, userId: ctx.userId, claimId: ctx.claimId, agent: "prize_check" },
-    () =>
-      withCostMeter(async () => {
-        after = await reviewAndInvoke(pc, opts);
-      })
+  const { billedMicroUsd } = await runAtLabel(ctx.label, `prize claim ${pc.id}`, () =>
+    runWithUsageContext(
+      { jobId: ctx.jobId, userId: ctx.userId, claimId: ctx.claimId, agent: "prize_check" },
+      () =>
+        withCostMeter(async () => {
+          after = await reviewAndInvoke(pc, opts);
+        })
+    )
   );
   if (after !== "checked") await settleAction(actionId, billedMicroUsd, ctx.jobId);
   return { status: "processed", prizeClaimId: pc.id, verdict: "review_recovered", outcome: after };

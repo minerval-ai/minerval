@@ -38,6 +38,9 @@ const state = vi.hoisted(() => ({
   sendBackNote: null as null | string,
   staleInReview: [] as Array<{ id: string }>,
   pendingReview: [] as Array<{ id: string; contribution_id: string }>,
+  // The label the prize claim's contribution was filed at (null: the row is not found).
+  filedLabel: "public" as string | null,
+  stewardLabels: [] as string[],
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -47,6 +50,9 @@ vi.mock("../../../src/db/client.js", () => ({
     if (sql.includes("SELECT statement_source, pin_id")) return [{ statement_source: "namespace Minerval.S00000000_v1\ndef Statement : Prop := True\nend Minerval.S00000000_v1", pin_id: "mathlib-v4.33.0" }];
     if (sql.includes("mode = 'attempt' AND submission_sha256")) return state.attemptMatch ? [{ id: "lc-attempt" }] : [];
     if (sql.includes("FROM actions WHERE kind = 'prize_review'")) return [{ id: "act-1" }];
+    if (sql.includes("SELECT sensitivity_label FROM contributions")) {
+      return state.filedLabel ? [{ sensitivity_label: state.filedLabel }] : [];
+    }
     if (sql.includes("WHERE status = 'checking' ORDER BY updated_at")) {
       return state.claim && state.claim.status === "checking" ? [{ id: state.claim.id }] : [];
     }
@@ -141,6 +147,8 @@ vi.mock("../../../src/llm/agents/contribution-reviewer.js", () => ({
 }));
 vi.mock("../../../src/workers/steward-direct.js", () => ({
   invokeStewardDirect: vi.fn(async (input: Record<string, unknown>) => {
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.stewardLabels.push(currentLabel());
     state.steward.push(input);
     return { model: "strong", billedMicroUsd: 1_000 };
   }),
@@ -208,7 +216,62 @@ beforeEach(() => {
   state.sendBackNote = null;
   state.staleInReview = [];
   state.pendingReview = [];
+  state.filedLabel = "public";
+  state.stewardLabels = [];
   resetInFlightChecksForTests();
+});
+
+// A run works at the label of the work that started it (src/labels.ts). A
+// prize claim is filed as a contribution, and every run this lane opens for
+// it works at the label that contribution was filed at.
+describe("the label a prize claim's runs work at", () => {
+  it("is the filing's, for the Reviewer and the Steward when a check lands", async () => {
+    state.filedLabel = "internal";
+    state.reviewerAdmits = true;
+    await processNextPrizeCheck({ client: new FakeLeanCheckerClient() });
+    expect(state.reviewerCtx).toMatchObject({ label: "internal", jobId: "job-reserve" });
+    expect(state.stewardLabels).toEqual(["internal"]);
+  });
+
+  it("is the filing's on each sweep that runs outside any landing", async () => {
+    state.filedLabel = "internal";
+    state.claim = queuedClaim({ status: "in_review", audit_outcome: "send_back" });
+    state.sentBack = [{ id: "pc-1", claim_id: "claim-1" }];
+    await processNextPrizeCheck({ client: new FakeLeanCheckerClient() });
+    expect(state.stewardLabels).toEqual(["internal"]);
+
+    state.stewardLabels = [];
+    state.sentBack = [];
+    state.claim = queuedClaim({ status: "in_review" });
+    state.staleInReview = [{ id: "pc-1" }];
+    await processNextPrizeCheck({ client: new FakeLeanCheckerClient() });
+    expect(state.stewardLabels).toEqual(["internal"]);
+
+    state.stewardLabels = [];
+    state.staleInReview = [];
+    state.claim = queuedClaim({ status: "checked" });
+    state.pendingReview = [{ id: "pc-1", contribution_id: "co-1" }];
+    state.reviewerAdmits = true;
+    await processNextPrizeCheck({ client: new FakeLeanCheckerClient() });
+    expect(state.reviewerCtx).toMatchObject({ label: "internal" });
+    expect(state.stewardLabels).toEqual(["internal"]);
+  });
+
+  it("is never assumed: with no filing to read it from, neither the Reviewer nor the Steward runs", async () => {
+    state.filedLabel = null;
+    state.claim = queuedClaim({ status: "checked" });
+    state.pendingReview = [{ id: "pc-1", contribution_id: "co-1" }];
+    state.reviewerAdmits = true;
+    await processNextPrizeCheck({ client: new FakeLeanCheckerClient() });
+    expect(state.reviewerRuns).toBe(0);
+    expect(state.steward).toEqual([]);
+
+    state.claim = queuedClaim({ status: "in_review" });
+    state.pendingReview = [];
+    state.staleInReview = [{ id: "pc-1" }];
+    await processNextPrizeCheck({ client: new FakeLeanCheckerClient() });
+    expect(state.steward).toEqual([]);
+  });
 });
 
 describe("caps", () => {

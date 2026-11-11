@@ -22,6 +22,7 @@ import { emitClaimEvent } from "./claim-events-service.js";
 import { retireFormalization } from "./formalization-service.js";
 import type { PrizeClaimStatus, PrizeClaimSummary } from "./claim-extras-types.js";
 import { asRunner, type Runner } from "./query-runner.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   PLATFORM_EXTERNAL_ID,
   PRIZE_RULES_VERSION,
@@ -827,11 +828,11 @@ export async function fundPrizeReviewAction(
   estimateMicroUsd: number
 ): Promise<{ actionId: string; allocated: number }> {
   const [action] = await r.query<{ id: string }>(
-    `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, status)
-     VALUES ('prize_review', $1, 'standard', $2, $3, $4, $5, 'open')
+    `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, status, sensitivity_label)
+     VALUES ('prize_review', $1, 'standard', $2, $3, $4, $5, 'open', $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE SET updated_at = now()
      RETURNING id`,
-    [`prize_review:${claim.id}`, claim.claim_id, claim.id, `Review prize claim ${claim.id.slice(0, 8)}`, Math.max(1, Math.round(estimateMicroUsd))]
+    [`prize_review:${claim.id}`, claim.claim_id, claim.id, `Review prize claim ${claim.id.slice(0, 8)}`, Math.max(1, Math.round(estimateMicroUsd)), currentLabel()]
   );
   const { job, room } = await reserveRoomMicroUsd(claim.bounty_id, r);
   const allocated = Math.min(room, Math.max(0, Math.round(estimateMicroUsd)));
@@ -970,9 +971,9 @@ export async function filePrizeClaim(input: FilePrizeClaimInput): Promise<FiledP
     const [b] = await tx.query<{ status: string }>(`SELECT status FROM bounties WHERE id = $1 FOR SHARE`, [bounty.id]);
     if (!b || b.status !== "open") return null;
     const [contribution] = await tx.query<{ id: string; submitted_at: Date }>(
-      `INSERT INTO contributions (claim_id, contributor_id, contribution_type, content, evidence_urls, review_status)
-       VALUES ($1, $2, 'claim_prize', $3, $4, 'checking') RETURNING id, submitted_at`,
-      [input.claimId, c.id, content, links]
+      `INSERT INTO contributions (claim_id, contributor_id, contribution_type, content, evidence_urls, review_status, sensitivity_label)
+       VALUES ($1, $2, 'claim_prize', $3, $4, 'checking', $5) RETURNING id, submitted_at`,
+      [input.claimId, c.id, content, links, currentLabel()]
     );
     for (const a of attachments) {
       await insertAttachment({ ...a, contributionId: contribution!.id, ownerId: c.id, visibility: "restricted" }, tx);
@@ -1667,9 +1668,10 @@ export async function challengePrizeClaim(input: {
   }
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO contributions
-       (claim_id, contributor_id, contribution_type, content, evidence_urls, review_status, challenged_prize_claim_id)
-     VALUES ($1, $2, 'challenge', $3, $4, 'pending', $5) RETURNING id`,
-    [pc.claim_id, input.contributorId, `[ground: ${input.ground}] ${input.content.trim()}`, input.evidenceUrls ?? [], pc.id]
+       (claim_id, contributor_id, contribution_type, content, evidence_urls, review_status, challenged_prize_claim_id,
+        sensitivity_label)
+     VALUES ($1, $2, 'challenge', $3, $4, 'pending', $5, $6) RETURNING id`,
+    [pc.claim_id, input.contributorId, `[ground: ${input.ground}] ${input.content.trim()}`, input.evidenceUrls ?? [], pc.id, currentLabel()]
   );
   await rawQuery(
     `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'prize_claim:challenged', $2, $3)`,

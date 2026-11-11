@@ -5,6 +5,7 @@ import { refreshQueuePriority } from "./priority-service.js";
 import { ensureAssessActions, ensureAuditAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 import { postMessage, type MessageSender } from "./inbox-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -18,6 +19,15 @@ function getSqsClient(): SQSClient {
 export interface ClaimPipelineMessage {
   claimId: string;
   jobId: string;
+  /**
+   * The label of the work that enqueued this (src/labels.ts), stamped by
+   * enqueueClaimPipeline; the worker onboards the claim at it. The other
+   * queues' messages point at a row that carries the label (a job, a
+   * contribution, an appeal). This one has to carry it, because a Steward
+   * that mints a subclaim enqueues with no job row behind it, and between
+   * the enqueue and the worker the message is all that stands for the work.
+   */
+  label: string;
 }
 
 export interface UrlExtractionMessage {
@@ -185,9 +195,10 @@ export function getLocalQueue<T extends keyof typeof localQueues>(
 }
 
 export async function enqueueClaimPipeline(
-  message: ClaimPipelineMessage
+  work: Omit<ClaimPipelineMessage, "label">
 ): Promise<void> {
   const config = loadConfig();
+  const message: ClaimPipelineMessage = { ...work, label: currentLabel() };
 
   if (!config.sqsClaimPipelineQueue) {
     // Local dev: push to in-memory queue

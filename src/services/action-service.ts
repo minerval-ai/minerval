@@ -21,6 +21,7 @@
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
@@ -185,6 +186,21 @@ export const COVERAGE_SQL = `
                AND al.released_at IS NULL
                AND (al.action_id IS NULL OR al.action_id = a.id)), 0)`;
 
+/**
+ * What an upsert that can reopen a finished row does with the row's label
+ * (SQL fragment for its SET list; src/labels.ts). Every producer below
+ * stamps a new row with the label of the work that opens it (currentLabel),
+ * and the executors run a row at its label. But a group's row is reused for
+ * the group's next piece of work, so the label has to follow the work: a
+ * row that is open or running keeps the label of the work already waiting
+ * on it, and a finished row opened again takes the label of the work that
+ * reopens it. Without this a claim first assessed at one label would have
+ * every later pass run at that label, whatever asked for it.
+ */
+export const LABEL_ON_REOPEN_SQL = `sensitivity_label = CASE
+             WHEN actions.status IN ('open', 'running') THEN actions.sensitivity_label
+             ELSE EXCLUDED.sensitivity_label END`;
+
 // ---------------------------------------------------------------------------
 // Producers: keep the ledger's open rows in sync with the graph's state.
 // Idempotent upserts, called from enqueue paths and the scheduler sweep.
@@ -221,11 +237,12 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
   for (const [variant, cost] of variants) {
     await rawQuery(
       `INSERT INTO actions
-         (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
              kind = EXCLUDED.kind,
+             ${LABEL_ON_REOPEN_SQL},
              -- One row per (group, variant), holding the claim's CURRENT
              -- potential action: a done/superseded/cancelled row reopens
              -- when fresh work is wanted (the next pass), a running row is
@@ -233,7 +250,7 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
              status = CASE WHEN actions.status = 'running'
                            THEN actions.status ELSE 'open' END,
              updated_at = now()`,
-      [kind, group, variant, claimId, label, Math.round(cost)]
+      [kind, group, variant, claimId, label, Math.round(cost), currentLabel()]
     );
   }
 }
@@ -256,10 +273,11 @@ export async function ensureCurateAction(anchorClaimId: string): Promise<string 
   const cost = await estimateLedgerKindCostMicroUsd("curate");
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO actions
-       (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd)
-     VALUES ('curate', $1, 'standard', $2, $3, $4)
+       (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ('curate', $1, 'standard', $2, $3, $4, $5)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           ${LABEL_ON_REOPEN_SQL},
            status = CASE WHEN actions.status = 'running'
                          THEN actions.status ELSE 'open' END,
            updated_at = now()
@@ -269,6 +287,7 @@ export async function ensureCurateAction(anchorClaimId: string): Promise<string 
       anchorClaimId,
       `Curate around: ${claim.text.slice(0, 280)}`,
       Math.max(1, Math.round(cost)),
+      currentLabel(),
     ]
   );
   return row?.id ?? null;
@@ -294,10 +313,11 @@ export async function ensureRequestCurateAction(requestId: string): Promise<stri
   const cost = await estimateLedgerKindCostMicroUsd("curate");
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO actions
-       (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
-     VALUES ('curate', $1, 'standard', NULL, $2, $3, $4)
+       (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ('curate', $1, 'standard', NULL, $2, $3, $4, $5)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           ${LABEL_ON_REOPEN_SQL},
            status = CASE WHEN actions.status = 'running'
                          THEN actions.status ELSE 'open' END,
            updated_at = now()
@@ -307,6 +327,7 @@ export async function ensureRequestCurateAction(requestId: string): Promise<stri
       requestId,
       `Judge work returned on a request: ${req.ask.slice(0, 260)}`,
       Math.max(1, Math.round(cost)),
+      currentLabel(),
     ]
   );
   return row?.id ?? null;
@@ -330,8 +351,8 @@ export async function ensureAuditAction(input: {
   const cost = await estimateLedgerKindCostMicroUsd("audit");
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO actions
-       (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
-     VALUES ('audit', $1, 'standard', $2, $3, $4, $5)
+       (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ('audit', $1, 'standard', $2, $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE SET updated_at = now()
      RETURNING id`,
     [
@@ -340,6 +361,7 @@ export async function ensureAuditAction(input: {
       input.auditRunId,
       `Audit: ${input.auditType.replace(/_/g, " ")} (${input.triggeredBy.replace(/_/g, " ")})`,
       Math.max(1, Math.round(cost)),
+      currentLabel(),
     ]
   );
   await rawQuery(`UPDATE audit_runs SET action_id = $2 WHERE id = $1`, [
@@ -374,16 +396,17 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
   const label = `${variant === "scope" ? "Scope the request" : "Take up the request"}: ${req.ask.slice(0, 260)}`;
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO actions
-       (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-     VALUES ('request', $1, $2, $3, $4, $5)
+       (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+     VALUES ('request', $1, $2, $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
            label = EXCLUDED.label,
+           ${LABEL_ON_REOPEN_SQL},
            status = CASE WHEN actions.status = 'running'
                          THEN actions.status ELSE 'open' END,
            updated_at = now()
      RETURNING id`,
-    [group, variant, requestId, label, Math.max(1, Math.round(cost))]
+    [group, variant, requestId, label, Math.max(1, Math.round(cost)), currentLabel()]
   );
   // Once a budget exists the scoping pass has nothing left to answer.
   if (variant === "full") {
@@ -492,10 +515,11 @@ export async function reconcileActions(): Promise<{
     if (g.status === "planning") {
       await rawQuery(
         `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-         VALUES ('grant_planning', $1, 'standard', $2, $3, $4)
+           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+         VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
          ON CONFLICT (exclusion_group, variant) DO UPDATE
            SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+               sensitivity_label = EXCLUDED.sensitivity_label,
                updated_at = now()
            -- A grant still in 'planning' with a closed planning action
            -- wants a fresh run (a failed write, a pushed-back plan).
@@ -505,6 +529,7 @@ export async function reconcileActions(): Promise<{
           g.id,
           `Planning run for the mandate "${g.name}"`,
           await reviewPassBudgetMicroUsd(g, "planning", share),
+          currentLabel(),
         ]
       );
     }
@@ -526,10 +551,11 @@ export async function reconcileActions(): Promise<{
     } else if (g.status === "active") {
       await rawQuery(
         `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-         VALUES ('mandate_review', $1, 'standard', $2, $3, $4)
+           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+         VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
          ON CONFLICT (exclusion_group, variant) DO UPDATE
            SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+               sensitivity_label = EXCLUDED.sensitivity_label,
                updated_at = now()
            WHERE actions.status IN ('done', 'superseded', 'cancelled')
              AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
@@ -538,6 +564,7 @@ export async function reconcileActions(): Promise<{
           g.id,
           `Mandate review for "${g.name}"`,
           await reviewPassBudgetMicroUsd(g, "review", share),
+          currentLabel(),
         ]
       );
     }
@@ -593,13 +620,14 @@ export async function reconcileActions(): Promise<{
   for (const l of dueLookouts) {
     await rawQuery(
       `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-       VALUES ('lookout_run', $1, 'standard', $2, $3, $4)
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('lookout_run', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost]
+      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, currentLabel()]
     );
   }
 
@@ -625,13 +653,14 @@ export async function reconcileActions(): Promise<{
   for (const c of dueCorrespondents) {
     await rawQuery(
       `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-       VALUES ('correspondent_run', $1, 'standard', $2, $3, $4)
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('correspondent_run', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost]
+      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, currentLabel()]
     );
   }
 
@@ -835,10 +864,11 @@ async function reconcileConsistencySweeps(): Promise<void> {
     for (const variant of ["standard", "strong"] as const) {
       await rawQuery(
         `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-         VALUES ('consistency_sweep', $1, $2, $3, $4, $5)
+           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+         VALUES ('consistency_sweep', $1, $2, $3, $4, $5, $6)
          ON CONFLICT (exclusion_group, variant) DO UPDATE
            SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+               ${LABEL_ON_REOPEN_SQL},
                updated_at = now()
            WHERE actions.status IN ('done', 'superseded', 'cancelled')
               OR (actions.status = 'open'
@@ -849,6 +879,7 @@ async function reconcileConsistencySweeps(): Promise<void> {
           ref,
           `Consistency sweep${variant === "strong" ? " (strong)" : ""}: ${p.label}`,
           consistencySweepPrice(variant, p.assessed, perNode[variant]).microUsd,
+          currentLabel(),
         ]
       );
     }
@@ -868,19 +899,20 @@ export async function ensureFormalizeAction(
 ): Promise<void> {
   await rawQuery(
     `INSERT INTO actions
-       (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd)
+       (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd, sensitivity_label)
      SELECT 'formalize', $1, 'standard', c.id,
-            'Formalize: ' || left(c.text, 280), $3
+            'Formalize: ' || left(c.text, 280), $3, $4
        FROM claims c
       WHERE c.id = $2 AND c.state = 'active'
         AND NOT EXISTS (SELECT 1 FROM claim_formalizations f
                          WHERE f.claim_id = c.id AND f.status = 'published')
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           sensitivity_label = EXCLUDED.sensitivity_label,
            status = 'open', updated_at = now()
        WHERE actions.status IN ('done', 'cancelled', 'superseded')
          AND actions.updated_at < now() - make_interval(hours => ${FORMALIZE_RETRY_HOURS})`,
-    [FORMALIZE_GROUP(claimId), claimId, Math.round(costEstMicroUsd)]
+    [FORMALIZE_GROUP(claimId), claimId, Math.round(costEstMicroUsd), currentLabel()]
   );
 }
 
@@ -979,9 +1011,9 @@ export async function ensureAttemptActions(
   for (const variant of ATTEMPT_VARIANTS) {
     await rawQuery(
       `INSERT INTO actions
-         (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
+         (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
        SELECT 'attempt_proof', $1, $2, c.id, $3,
-              'Attempt ' || $4::text || ' (' || $2 || '): ' || left(c.text, 260), $5
+              'Attempt ' || $4::text || ' (' || $2 || '): ' || left(c.text, 260), $5, $7
          FROM claims c
         WHERE c.id = $6 AND c.state = 'active'
        ON CONFLICT (exclusion_group, variant) DO NOTHING`,
@@ -992,6 +1024,7 @@ export async function ensureAttemptActions(
         String(n),
         Math.round(costs[variant]),
         claimId,
+        currentLabel(),
       ]
     );
   }
@@ -1507,14 +1540,15 @@ async function materializePlanItem(
     if (focus) await recordIngestFocus(group, item.url, focus);
     await rawQuery(
       `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-       VALUES ('ingest', $1, 'standard', $2, $3, $4)
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('ingest', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO NOTHING`,
       [
         group,
         item.url,
         focus ? `Ingest ${item.url} (focus: ${focus.slice(0, 120)})` : `Ingest ${item.url}`,
         o.ctx.ingestCostMicroUsd,
+        currentLabel(),
       ]
     );
     const row = await groupLedger({ group });
@@ -1857,10 +1891,11 @@ async function materializeSweepItem(
     // the partition's current size, as the platform lane does.
     await rawQuery(
       `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-       VALUES ('consistency_sweep', $1, $2, $3, $4, $5)
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('consistency_sweep', $1, $2, $3, $4, $5, $6)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')
             OR (actions.status = 'open'
@@ -1871,6 +1906,7 @@ async function materializeSweepItem(
         ref,
         `Consistency sweep${variant === "strong" ? " (strong)" : ""}: ${partition.label}`,
         consistencySweepPrice(variant, partition.assessed, perNode[variant]).microUsd,
+        currentLabel(),
       ]
     );
   }
@@ -2221,6 +2257,8 @@ export interface RunnableAction {
   /** True when a commission pays for it: it runs at exactly the budget its payer chose. */
   commissioned?: boolean;
   updated_at: Date;
+  /** The label of the work that opened the row; the executor runs it at this (src/labels.ts). */
+  sensitivity_label: string;
 }
 
 /**
@@ -2250,7 +2288,7 @@ export async function nextRunnableAction(
 ): Promise<RunnableAction | null> {
   const rows = await rawQuery<RunnableAction>(
     `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
-            a.target_ref, a.cost_est_micro_usd, a.updated_at,
+            a.target_ref, a.cost_est_micro_usd, a.updated_at, a.sensitivity_label,
             ${COVERAGE_SQL} AS coverage_micro_usd,
             ${COMMISSIONED_SQL} AS commissioned
        FROM actions a
@@ -2289,13 +2327,20 @@ export async function nextRunnableAction(
   return winners[0]!;
 }
 
-/** Atomically move an open action to running. False if someone else won. */
-export async function claimAction(actionId: string): Promise<boolean> {
+/**
+ * Atomically move an open action to running. False if someone else won.
+ *
+ * An executor passes the label it read with the row and is about to run at.
+ * The claim then also fails if the row has since finished and been reopened
+ * by work at another label, so a run never starts at a label its row no
+ * longer has.
+ */
+export async function claimAction(actionId: string, atLabel?: string): Promise<boolean> {
   const rows = await rawQuery<{ id: string }>(
     `UPDATE actions SET status = 'running', updated_at = now()
-      WHERE id = $1 AND status = 'open'
+      WHERE id = $1 AND status = 'open'${atLabel === undefined ? "" : " AND sensitivity_label = $2"}
       RETURNING id`,
-    [actionId]
+    atLabel === undefined ? [actionId] : [actionId, atLabel]
   );
   return rows.length > 0;
 }

@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { jobs } from "../db/schema.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /**
  * Attribution for per-token metering (#70): which account/key requested this
@@ -25,6 +26,8 @@ export async function createJob(
       input,
       userId: attribution?.userId ?? null,
       apiKeyId: attribution?.apiKeyId ?? null,
+      // The worker that picks the job up runs at this (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning();
   return job!;

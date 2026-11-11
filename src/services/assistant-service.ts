@@ -35,7 +35,7 @@ import {
   type AssistantHeldAction,
 } from "../db/schema.js";
 import { loadConfig } from "../config.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
 import { runAssistantTurn, type AssistantToolUse } from "../llm/agents/assistant.js";
 import {
   getAssistantContext,
@@ -247,6 +247,9 @@ async function recordHeld(input: {
       tool: input.tool,
       kind: input.kind,
       input: input.input,
+      // The Assistant's turn made this call, so it carries the turn's label
+      // (src/labels.ts) to whenever the user presses.
+      sensitivityLabel: currentLabel(),
       ...(input.ran
         ? {
             status: input.ran.isError ? "failed" : "done",
@@ -318,8 +321,13 @@ export async function decideHeldAction(input: {
   const account = await openAccountTools(input.app, assistantAuth(input.user), `held:${claimed.id}`);
   let result: AccountToolResult;
   try {
-    result = await runWithUsageContext({ userId: input.user.id }, () =>
-      account.call(claimed.tool, claimed.input as Record<string, unknown>)
+    // The call is the one the Assistant made in its turn, run now. It runs
+    // at the label that turn worked at, so an order, a job or a mandate it
+    // creates is the turn's work and not the public work of a bare request.
+    result = await runAtLabel(claimed.sensitivityLabel, `held action ${claimed.id}`, () =>
+      runWithUsageContext({ userId: input.user.id }, () =>
+        account.call(claimed.tool, claimed.input as Record<string, unknown>)
+      )
     );
   } catch (err) {
     result = { isError: true, text: err instanceof Error ? err.message : String(err) };

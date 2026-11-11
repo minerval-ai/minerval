@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { claims } from "../db/schema.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import type { ClaimPipelineMessage } from "../services/queue-service.js";
+import { runAtLabel } from "../llm/usage-context.js";
 
 /**
  * Claim onboarding dispatcher.
@@ -20,10 +21,20 @@ import type { ClaimPipelineMessage } from "../services/queue-service.js";
  * Spend is bounded by money, not by decomposition depth: the Steward lane
  * runs only what the action ledger funds (steward-pipeline.ts); the rest
  * waits.
+ *
+ * The hand-over happens at the label the message was enqueued at
+ * (src/labels.ts), so the claim's first pass is opened on the ledger at the
+ * label of the work that made the claim. A message with no label is refused.
  */
 export async function handleClaimPipeline(
   message: ClaimPipelineMessage
 ): Promise<void> {
+  return runAtLabel(message.label, `the claim pipeline message for claim ${message.claimId}`, () =>
+    onboardClaim(message)
+  );
+}
+
+async function onboardClaim(message: ClaimPipelineMessage): Promise<void> {
   const db = getDb();
 
   const [claim] = await db

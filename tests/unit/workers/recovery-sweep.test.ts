@@ -24,7 +24,7 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     state.queries.push({ q, params });
     if (q.trimStart().startsWith("UPDATE") && q.includes("RETURNING")) {
-      return state.claimGranted ? [{ id: params[0] }] : [];
+      return state.claimGranted ? [{ id: params[0], sensitivity_label: "public" }] : [];
     }
     if (q.includes("review_status = 'pending'")) return state.pendingRows;
     if (q.includes("review_status = 'escalated'")) return state.escalatedRows;
