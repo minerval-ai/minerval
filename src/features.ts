@@ -21,6 +21,14 @@ interface FeatureDefinition {
   name: string;
   /** One sentence: what the feature is, and what switching it off removes. */
   description: string;
+  /**
+   * The feature as an agent would recognize it in its own instructions,
+   * skills and tools: a short phrase, lower case, no full stop. A run in a
+   * deployment with the feature off is told so by this phrase
+   * (src/llm/features-off-note.ts). `description` is written for whoever
+   * runs the deployment and names routes and workers an agent never sees.
+   */
+  agentPhrase: string;
   /** Features this one cannot run without: off when any of them is off. */
   requires: readonly string[];
 }
@@ -34,6 +42,7 @@ export const FEATURES = [
       "switching it off removes the /extension routes, the get_page_analysis " +
       "tool, and the fill of page hashes on older sources that lets the " +
       "extension find pages the graph has read.",
+    agentPhrase: "the browser extension and its page analysis",
     requires: [],
   },
   {
@@ -44,6 +53,8 @@ export const FEATURES = [
       "Lean-check and attempt routes and their tools, the agents' Lean and " +
       "proof-attempt tools, and the solver worker, and switches prizes off " +
       "with it.",
+    agentPhrase:
+      "formal statements in Lean, the Lean checker and the solver's proof attempts",
     requires: [],
   },
   {
@@ -53,6 +64,7 @@ export const FEATURES = [
       "mathematics; switching it off removes the prize, prize-claim and " +
       "bounty routes and their tools, the agents' bounty and prize-claim " +
       "tools, and the prize-check and window-closing lanes of the runner.",
+    agentPhrase: "prizes and bounties for machine-checked proofs",
     requires: ["mathematics"],
   },
 ] as const satisfies readonly FeatureDefinition[];
@@ -118,6 +130,15 @@ export interface FeaturesConfig {
 /** Whether a feature is on in this deployment. */
 export function featureOn(name: FeatureName, config: FeaturesConfig = loadConfig()): boolean {
   return featureOnGiven(name, config?.featuresOff);
+}
+
+/**
+ * The features that are off in this deployment, in the list's order: those
+ * FEATURES_OFF names, and those that need one of them (prizes, when
+ * mathematics is off). Empty when everything is on.
+ */
+export function offFeatures(config: FeaturesConfig = loadConfig()): FeatureName[] {
+  return FEATURE_NAMES.filter((name) => !featureOnGiven(name, config?.featuresOff));
 }
 
 export interface FeatureState {
