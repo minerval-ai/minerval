@@ -981,7 +981,11 @@ than findings.
 
 The far end of the channel is GitHub. Every report written on first
 sighting is filed as an issue in `GITHUB_ISSUES_REPO`, labelled
-`agent-generated` with its kind and severity (`github-issue-service.ts`),
+`agent-generated` with its kind and severity (`github-issue-service.ts`).
+A report from an outside caller is filed only where
+`GITHUB_ISSUES_INCLUDE_EXTERNAL` is on, as it is in production; it then
+carries `origin/external` as well, and the @mentions in its text are
+broken so that filing it notifies nobody. Issues are
 written as the minerval-agents GitHub App: `github-app-auth.ts` signs a
 JWT with the App's private key and exchanges it for an hourly installation
 token, so the service never holds a long-lived credential (a plain

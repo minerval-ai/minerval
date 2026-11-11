@@ -298,6 +298,14 @@ describe("fileIssueForReport", () => {
     expect((body as { labels: string[] }).labels).toContain("origin/external");
   });
 
+  it("breaks @mentions in an external report's text, and only there", async () => {
+    const body = "cc @octocat and @org/team, mail a@b.co";
+    expect(renderIssueBody({ ...ROW, body })).toContain("cc @octocat and @org/team");
+    const external = renderIssueBody({ ...ROW, origin: "external", body });
+    expect(external).toContain("cc @ octocat and @ org/team, mail a@ b.co");
+    expect(external).not.toMatch(/@[A-Za-z0-9]/);
+  });
+
   it("never throws: a GitHub failure is logged and leaves the row unrecorded", async () => {
     mocks.fetch.mockImplementation(async (_url: string, init: RequestInit) =>
       init.method === "POST" && String(_url).endsWith("/issues")

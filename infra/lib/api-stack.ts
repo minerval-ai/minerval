@@ -313,6 +313,9 @@ export class ApiStack extends cdk.Stack {
         // ids plus the private key secret below (github-app-auth.ts). The
         // installation id is the App's installation on the minerval-ai org.
         GITHUB_ISSUES_REPO: "minerval-ai/minerval",
+        // Reports from outside callers (the MCP raise_issue) are filed too,
+        // labelled origin/external, so they are seen where the rest are.
+        GITHUB_ISSUES_INCLUDE_EXTERNAL: "true",
         GITHUB_APP_ID: "4911585",
         GITHUB_APP_INSTALLATION_ID: "160924398",
       },
