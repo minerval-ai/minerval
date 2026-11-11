@@ -153,6 +153,18 @@ source's share of the target's unspent budget flows back to its escrow,
 pro rata with user contributors), and buys the source NO say over the
 target's judgment — money moves between mandates; command never does.
 
+**One reading of a mandate's money.** Every report of a mandate's escrow
+(the public summary, `get_mandate_allocation` and `allocation_report`,
+`grant_overview`, the review briefing) reads the same terms
+(`grantEscrowBreakdown`, src/services/regrant-service.ts), the ones its
+headroom checks add up: **spent** is the allocation shares its runs
+consumed plus whatever its job metered that no share accounts for (a
+ledger run metered to the job is in both and counts once); **held** is
+the unspent part of allocations not yet released; then **regranted**
+and the **prize** term (below). Spent, held, regranted and prizes are its
+committed money, and the escrow less committed is what **remains**, so
+the figures add up to the escrow in every report (#849).
+
 ## Lookouts: cheap standing watch
 
 A review pass is judgment at mandate scale: it wakes when the mandate's
