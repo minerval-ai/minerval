@@ -428,7 +428,10 @@ read of a claim, use a card.
 - **The setups agents run under:** `list_setup_parts` (every version of the
   constitution, each role prompt and each tool, with the commit it first ran
   under; filter by kind, name or hash), `get_setup_part` (one version, with
-  its text when public, and the version before it to compare against).
+  its text when public, and the version before it to compare against),
+  `get_prompt_set` (the prompt set this deployment runs: one hash over the
+  constitution, every role prompt and every skill, with each one's own hash,
+  to check a run's setup against).
 - **Agent runs:** `get_run` (a run's agent, times, outcome, cost, commit and
   setup by version; a run that read private data answers `public: false`
   with its reasons and nothing else), `list_run_steps` (its steps as

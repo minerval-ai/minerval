@@ -160,7 +160,8 @@ function recordPromptStep(step: {
   } catch (err) {
     console.error("[trace] failed to split setup:", err instanceof Error ? err.message : err);
   }
-  recordAgentStep(trace, "prompt", {
+  // Everything but the prompt set's hash is fixed here, as it was given.
+  const content = {
     setup,
     model: step.model,
     effort: step.effort ?? null,
@@ -170,7 +171,19 @@ function recordPromptStep(step: {
     initialMessages: step.initialMessages,
     tools,
     ...(step.schemaName ? { schemaName: step.schemaName, schema: step.schema ?? null } : {}),
-  });
+  };
+  // The prompt set is built from every role's prompt module, so it loads
+  // lazily like the registry above: the step's sequence number is claimed
+  // now, and the step is written once the hash is known (at once, after the
+  // first run in a process). A manifest that cannot be built leaves null.
+  const withPromptSet = import("../services/prompt-set.js")
+    .then((m) => m.getPromptSet().hash)
+    .catch((err) => {
+      console.error("[trace] failed to build the prompt set:", err instanceof Error ? err.message : err);
+      return null;
+    })
+    .then((hash) => (setup ? { ...content, setup: { ...setup, promptSet: hash } } : content));
+  recordAgentStep(trace, "prompt", withPromptSet);
 }
 
 /**

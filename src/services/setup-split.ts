@@ -27,6 +27,13 @@ export interface SplitPart {
 /** A run's setup as recorded on its prompt step: references, plus the settings. */
 export interface SetupRecord {
   commit: string | null;
+  /**
+   * The hash of the prompt set the running code builds (services/
+   * prompt-set.ts), added by the client when it records the step. Absent on
+   * runs recorded before it was stamped; null when the manifest could not
+   * be built.
+   */
+  promptSet?: string | null;
   model: string;
   effort: string | null;
   maxTokens: number | null;

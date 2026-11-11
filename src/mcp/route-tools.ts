@@ -171,6 +171,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- the setups agent runs ran under: constitution, role prompts, tools ----
   "GET /setup/parts": { name: "list_setup_parts" },
   "GET /setup/parts/:kind/:name/:version": { name: "get_setup_part" },
+  "GET /setup/prompt-set": { name: "get_prompt_set" },
   "GET /runs/:run_id": {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",

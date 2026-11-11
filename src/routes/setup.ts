@@ -7,11 +7,18 @@
  *     first seen, and its source file at that commit. No text.
  *   GET /setup/parts/:kind/:name/:version    one version, with its text when
  *     the part is public (the constitution, role prompts matching the code).
+ *   GET /setup/prompt-set                    the prompt set this deployment's
+ *     code builds: one hash over the constitution, every role prompt and
+ *     every skill, with the hash of each (services/prompt-set.ts).
  */
 import type { FastifyInstance } from "fastify";
+import { loadConfig } from "../config.js";
+import { getPromptSet } from "../services/prompt-set.js";
 import { getSetupPart, listSetupParts } from "../services/setup-service.js";
 
 const KINDS = ["constitution", "role", "tool"] as const;
+
+const HASH = { type: "string", pattern: "^[0-9a-f]{64}$" } as const;
 
 const PART_SCHEMA = {
   type: "object",
@@ -59,6 +66,57 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       });
       return reply.send({ parts });
     },
+  });
+
+  app.get("/prompt-set", {
+    schema: {
+      tags: ["setup"],
+      summary:
+        "The prompt set this deployment runs: one hash over the constitution, every role " +
+        "prompt and every skill, with each one's own hash. A run names the prompt set it " +
+        "ran under (get_run, setup.promptSet), and its role part's hash is one of these " +
+        "when the run was given the published prompt",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            format: { type: "integer" },
+            hash: HASH,
+            // The commit the running code was built from, when it is known.
+            commit: { type: "string", nullable: true },
+            constitution: {
+              type: "object",
+              properties: { hash: HASH, source_path: { type: "string" } },
+            },
+            roles: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  source_path: { type: "string" },
+                  // The role's system blocks in order, hashed as a run's role parts are.
+                  blocks: { type: "array", items: HASH },
+                },
+              },
+            },
+            skills: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  version: { type: "integer" },
+                  hash: HASH,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    handler: async (_request, reply) =>
+      reply.send({ ...getPromptSet(), commit: loadConfig().gitSha ?? null }),
   });
 
   app.get<{ Params: { kind: string; name: string; version: number } }>(

@@ -1,0 +1,149 @@
+{
+  "format": 1,
+  "hash": "201f39716f6aa553a4baae6f2888da16e08ff2759617ed530bbd07ec402e6a45",
+  "constitution": {
+    "hash": "a0f849d02707f59443470b598ea64ca3607596a0cb9731230cec8506254649bc",
+    "source_path": "admin_constitution.md"
+  },
+  "roles": [
+    {
+      "name": "audit-agent",
+      "source_path": "src/llm/prompts/audit-agent.ts",
+      "blocks": [
+        "a5c95d4271722f9cc5080c5d99a2e1ddc74c68329989b50bd47d778b7c0daba4"
+      ]
+    },
+    {
+      "name": "claim-steward",
+      "source_path": "src/llm/prompts/claim-steward.ts",
+      "blocks": [
+        "668e813c6c5a7443666271c462b49b4b716b70076c979c29d9e20b6deea1883d"
+      ]
+    },
+    {
+      "name": "consistency-checker",
+      "source_path": "src/llm/prompts/consistency-checker.ts",
+      "blocks": [
+        "43ba9dc70909dd92f13e9999a49dbbce0f22409a86f042964dc45bbc975f81f3"
+      ]
+    },
+    {
+      "name": "contribution-reviewer",
+      "source_path": "src/llm/prompts/contribution-reviewer.ts",
+      "blocks": [
+        "82e10320c3b934d53cd96e3879381b88d10011317db2861a06421776de525d0d"
+      ]
+    },
+    {
+      "name": "correspondent",
+      "source_path": "src/llm/prompts/correspondent.ts",
+      "blocks": [
+        "d7dcb39e7721ecb39ab2c82c5917e81e70a5fa5b1c82fa3c1fc637e9b6a44a6a"
+      ]
+    },
+    {
+      "name": "curator",
+      "source_path": "src/llm/prompts/curator.ts",
+      "blocks": [
+        "d39d47dd9cf22aa2263e1454e8b8877a20289942e33b2cfe4b9c394635767156"
+      ]
+    },
+    {
+      "name": "dispute-arbitrator",
+      "source_path": "src/llm/prompts/dispute-arbitrator.ts",
+      "blocks": [
+        "b5a22f82d69eea74837a5a93a5eda69439ea0da6ecfe086fd0e12c6cc5b01732"
+      ]
+    },
+    {
+      "name": "extractor",
+      "source_path": "src/llm/prompts/extractor.ts",
+      "blocks": [
+        "0e563e22752da6cb1d058af419431df00c31af9fdc486bf7a21077da5e7b433f"
+      ]
+    },
+    {
+      "name": "grantmaker",
+      "source_path": "src/llm/prompts/grantmaker.ts",
+      "blocks": [
+        "6f6e6c6337b3b38cda4281af30e4b0b92c475ebdbe615caa30fc57d47a6ab3eb"
+      ]
+    },
+    {
+      "name": "lookout",
+      "source_path": "src/llm/prompts/lookout.ts",
+      "blocks": [
+        "27108c2c2dcde6ebe46ed9e6b30e62be4bcc03d3158f548d428a40d56dc4e82b"
+      ]
+    },
+    {
+      "name": "matcher",
+      "source_path": "src/llm/prompts/matcher.ts",
+      "blocks": [
+        "aa056c05094416015fb18c83482228d9bea6f1f373cdb611b5aa21ccce4ca63e"
+      ]
+    },
+    {
+      "name": "math-solver",
+      "source_path": "src/llm/prompts/math-solver.ts",
+      "blocks": [
+        "61d7dc7ced59ac6b0cb7c9eb61c38c53d8d62c41f19326d1f4da22045b70e8f2"
+      ]
+    },
+    {
+      "name": "question-steward",
+      "source_path": "src/llm/prompts/question-steward.ts",
+      "blocks": [
+        "2e864cd04ea1aed0f835934433383e22abc3517fea513a345db463eb6c1660e7"
+      ]
+    },
+    {
+      "name": "researcher",
+      "source_path": "src/llm/prompts/researcher.ts",
+      "blocks": [
+        "71c8573d950a9f9cdc141da3cab441f1672fc32a7ab5bb7f316c65962105a17c"
+      ]
+    },
+    {
+      "name": "researcher",
+      "source_path": "src/llm/prompts/researcher.ts",
+      "blocks": [
+        "a680c8ce0d0a4edbcfa1a73c608a4cdbaf9e5a43281013f19df7627e14e4c8da"
+      ]
+    },
+    {
+      "name": "tagger",
+      "source_path": "src/llm/prompts/tagger.ts",
+      "blocks": [
+        "e3b20147935fa9f6560de62fcd7b0e2e5122036bba909e90a5e422b96628ec35"
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "costing",
+      "version": 5,
+      "hash": "a9584982ad7a4f3e6afb3a7642f6453f4ae8efe164b4005e8dc393207660e3ce"
+    },
+    {
+      "name": "mathematics",
+      "version": 7,
+      "hash": "8e3c9931bf89efcc9e35dadea53a326eafc2e1e065a8ca728ff8765d674ac70c"
+    },
+    {
+      "name": "provenance",
+      "version": 6,
+      "hash": "50566f8ad97d03d7fe7264df4a2052cc4362a28d6a293710e68f52264d9873c1"
+    },
+    {
+      "name": "search",
+      "version": 2,
+      "hash": "8418e4191f1b262159f6e1b02f52246222c41bc461ff045a570d7195b4aeb443"
+    },
+    {
+      "name": "sql",
+      "version": 2,
+      "hash": "55fce67ec2a7e78fdfe4ff839e8914304769dc538282eda105e253165d8dbd94"
+    }
+  ]
+}
