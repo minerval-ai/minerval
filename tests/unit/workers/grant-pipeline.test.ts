@@ -23,7 +23,8 @@ const { state, stewardRuns, grantorRuns, completions } = vi.hoisted(() => ({
       steward_trigger: string | null;
       steward_context: string | null;
     }>,
-    specificTargets: {} as Record<string, boolean>,
+    /** true, or the steward_trigger the 'done' row still carries. */
+    specificTargets: {} as Record<string, boolean | string>,
     grantUpdates: [] as Array<{ sql: string; params: unknown[] }>,
     claimUpdates: [] as Array<{ sql: string; params: unknown[] }>,
     stewardError: null as Error | null,
@@ -48,14 +49,15 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.includes("prior.prior_state") && q.includes("'15 minutes'")) {
       // claimSpecificTarget
       const claimId = params[0] as string;
-      if (state.specificTargets[claimId]) {
+      const stored = state.specificTargets[claimId];
+      if (stored) {
         delete state.specificTargets[claimId];
         return [
           {
             id: claimId,
             prior_state: "done",
             decomposition_status: "complete",
-            steward_trigger: null,
+            steward_trigger: typeof stored === "string" ? stored : null,
             steward_context: null,
           },
         ];
@@ -303,6 +305,17 @@ describe("processNextGrantTask", () => {
     expect(cursorWrite).toBeDefined();
     // No assess row existed for the claim: nothing to close.
     expect(completions).toEqual([]);
+  });
+
+  it("runs a plan item on a done claim under the lane's trigger, not the stale stored one (#883)", async () => {
+    state.grant = grant({
+      policy: "agent",
+      status: "active",
+      plan: state.plan,
+    });
+    state.specificTargets["p-1"] = "structure_and_assess";
+    await processNextGrantTask();
+    expect(stewardRuns.at(-1)).toMatchObject({ claimId: "p-1", trigger: "user_order" });
   });
 
   it("closes the claim's open assess row as done after a direct run, at zero metered cost (#427)", async () => {

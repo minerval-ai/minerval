@@ -32,6 +32,7 @@ import {
   reportStewardPark,
   stewardFailureSet,
   stewardReleaseSet,
+  unservedTrigger,
   withStewardLease,
 } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
@@ -364,7 +365,7 @@ export async function processNextGrantTask(
   const virgin = target.decomposition_status === "pending";
   const trigger = virgin
     ? "structure_and_assess"
-    : (target.steward_trigger ?? "user_order");
+    : unservedTrigger(target.prior_state, target.steward_trigger, "user_order");
   // Which mandate pays, its name and its kind stay out of the run context on
   // purpose: the Steward serves the graph, not the funder, and must never
   // see anything that could color its work; nothing funder-authored may
