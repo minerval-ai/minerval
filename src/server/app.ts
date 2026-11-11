@@ -10,6 +10,7 @@ import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerRouteCatalog } from "./plugins/route-catalog.js";
 import { registerPartialResponse } from "./plugins/partial-response.js";
 import { registerPublicRead } from "./plugins/public-read.js";
+import { registerAnonymousRateLimit } from "./plugins/anonymous-rate-limit.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
 import { argumentRoutes } from "../routes/arguments.js";
@@ -73,6 +74,8 @@ export async function buildApp() {
   await registerAuth(app);
   await registerQuota(app);
   await registerErrorHandler(app);
+  // The per-address limit on requests with no recognised credential.
+  await registerAnonymousRateLimit(app);
   // `fields=` on GET routes. Before the catalog, so the catalog (and the MCP
   // tools built from it) records each GET route with `fields` in its schema.
   await registerPartialResponse(app);

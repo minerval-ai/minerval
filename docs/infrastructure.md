@@ -132,8 +132,8 @@ The API's **public reads** are a second, deliberate browser-facing surface: any 
 embed claim data by calling `https://api.claimgraph.io` straight from the page.
 
 ```
-Any browser, any site ──HTTPS──> api.claimgraph.io (Cloudflare: cache + anonymous rate limit)
-                                     └──> AWS ALB :443 ──> ECS Fargate :3000
+Any browser, any site ──HTTPS──> api.claimgraph.io (Cloudflare: cache)
+                                     └──> AWS ALB :443 ──> ECS Fargate :3000 (anonymous rate limit)
 ```
 
 - **CORS** (`src/server/plugins/cors.ts`): every response answers
@@ -153,8 +153,12 @@ Any browser, any site ──HTTPS──> api.claimgraph.io (Cloudflare: cache + 
   open only if it has no gating hook; when in doubt it is not cached. `/health`, `/mcp`,
   `/oauth/*` and `/.well-known/*` are left as their routes set them.
 
-Both need the two Cloudflare rules in "Caching and the anonymous rate limit" below to take
-effect at the edge.
+- **Anonymous rate limit** (`src/server/plugins/anonymous-rate-limit.ts`): requests with
+  no credential the API recognises are limited to 300 requests per minute per IP address,
+  counted by each API instance.
+
+The cache policy needs the Cloudflare rule in "Caching and the anonymous rate limit" below
+to take effect at the edge; the rate limit needs nothing outside the API.
 
 ## Configuration that makes it work
 
@@ -176,59 +180,79 @@ effect at the edge.
 
 ## Caching and the anonymous rate limit
 
-Two rules on the `claimgraph.io` zone, both set by hand in the Cloudflare dashboard
-(Cloudflare configuration is not in this repo; `infra/` is AWS only). Until they exist the
-origin's headers still reach browsers, but the edge reports `cf-cache-status: DYNAMIC` and
-nothing limits anonymous traffic.
+### The Cloudflare cache rule
 
-Both rules turn on the same test, **does the request carry a credential**: any of the
-headers `x-api-key`, `authorization`, `x-operator-key`, `x-acting-user`, or `cookie`. The
-origin applies the same test (`carriesCredential` in `src/server/plugins/public-read.ts`);
-keep the two lists the same.
+One rule on the `claimgraph.io` zone, set by hand in the Cloudflare dashboard (Cloudflare
+configuration is not in this repo; `infra/` is AWS only). Cloudflare does not cache JSON by
+default, so without it the origin's headers still reach browsers but the edge reports
+`cf-cache-status: DYNAMIC` on every read.
 
-1. **Cache Rule** (Caching → Cache Rules), "API public reads". Cloudflare does not cache
-   JSON by default, so the rule makes the API's GET responses eligible and leaves the
-   decision to the origin's headers.
-   - *When*: hostname equals `api.claimgraph.io`, method equals `GET`, and the request
-     carries **no** credential header.
-   - *Then*: Cache eligibility **Eligible for cache**; Edge TTL **Use cache-control header
-     if present, bypass cache if not**; Browser TTL **Respect origin TTL**. Leave the cache
-     key at its default (the query string is part of it, which the reads need).
-   - The "no credential header" condition is not optional. Cloudflare keys the cache on the
-     URL alone, and some open routes answer a keyed caller differently (`/runs/:id`,
-     `/contributions?mine=true`, `/mandates/:id`, the prize reads). Without it a caller
-     with a key would be handed the anonymous copy. Credentialed responses are
-     `private, no-store`, so they are never stored either way; the condition is what keeps
-     them from being *served* from the store.
-   - Check: `curl -sI https://api.claimgraph.io/prizes/rules` twice should show
-     `cf-cache-status: MISS` then `HIT`; the same with `-H 'x-api-key: anything'` should
-     show `BYPASS` or `DYNAMIC` and `cache-control: private, no-store`.
+**Cache Rule** (Caching → Cache Rules), "API public reads". It makes the API's GET
+responses eligible and leaves the decision to the origin's headers.
 
-2. **Rate limiting rule** (Security → WAF → Rate limiting rules), "API anonymous reads".
-   - *When*: hostname equals `api.claimgraph.io` and the request carries **no** credential
-     header.
-   - *Rate*: 300 requests per minute, counted per IP address, cache hits included.
-   - *Then*: block for the rest of the period with a custom response, status `429`,
-     content type `application/json`, body:
+- *When* (as an expression):
 
-     ```json
-     {"error":{"code":"ANONYMOUS_RATE_LIMITED","message":"Requests without credentials are limited to 300 requests per minute per IP address. An anonymous caller has no account or budget to bound its use, so a count per address stands in for one. Wait a minute and retry, or present an API key: requests with a key are not subject to this limit."}}
-     ```
+  ```
+  (http.host eq "api.claimgraph.io"
+   and http.request.method eq "GET"
+   and not any(http.request.headers.names[*] in {"x-api-key" "authorization" "x-operator-key" "x-acting-user" "cookie"}))
+  ```
 
-   The limit is per address and counted, where everything else on the platform is bounded by
-   an account's budget, because an anonymous caller has no account or budget for money to
-   bound. It is generous on purpose: it exists to stop one address from monopolising the
-   origin, not to shape ordinary embedding. It is enforced here and not in the API because
-   the API's own limiter (`src/server/plugins/quota.ts`) is in memory per task and does not
-   hold across instances.
+- *Then*: Cache eligibility **Eligible for cache**; Edge TTL **Use cache-control header if
+  present, bypass cache if not**; Browser TTL **Respect origin TTL**. Leave the cache key at
+  its default (the query string is part of it, which the reads need).
+- The "no credential header" condition is not optional. Cloudflare keys the cache on the
+  URL alone, and some open routes answer a keyed caller differently (`/runs/:id`,
+  `/contributions?mine=true`, `/mandates/:id`, the prize reads). Without it a caller with a
+  key would be handed the anonymous copy. Credentialed responses are `private, no-store`,
+  so they are never stored either way; the condition is what keeps them from being *served*
+  from the store. The header list is the origin's own test for "carries a credential"
+  (`carriesCredential` in `src/server/plugins/public-read.ts`); keep the two the same.
+- Check, with GET requests (`curl -I` would send HEAD):
 
-   The figure is stated to callers in three places that must agree with this rule: the
-   OpenAPI description at `/docs` (read from `ANONYMOUS_RATE_LIMIT_PER_MINUTE`, default in
-   `src/config.ts`), `docs/architecture.md` ("The API"), and the 429 body above. To change
-   it, change the rule, the body, the default, and both docs together;
-   `tests/unit/server/public-read.test.ts` fails if the docs and the default disagree.
+  ```sh
+  curl -s -D - -o /dev/null https://api.claimgraph.io/prizes/rules | grep -iE 'cf-cache-status|cache-control'
+  curl -s -D - -o /dev/null -H 'x-api-key: anything' https://api.claimgraph.io/prizes/rules | grep -iE 'cf-cache-status|cache-control'
+  ```
 
-The web app is unaffected by both rules: its server-side calls carry the service key
+  The first, run twice, should show `cf-cache-status: MISS` then `HIT`. The second should
+  show `BYPASS` or `DYNAMIC` and `cache-control: private, no-store`.
+
+### The anonymous rate limit
+
+Enforced by the API itself (`src/server/plugins/anonymous-rate-limit.ts`), not at
+Cloudflare: 300 requests per minute per IP address for requests that present no credential
+the API recognises.
+
+- **Why a count.** Everything else on the platform is bounded by an account's budget. An
+  anonymous caller has no account or budget for money to bound, so a count per address
+  stands in for one. It is generous on purpose: it exists to stop one address from
+  monopolising the origin, not to shape ordinary embedding.
+- **Who is counted.** A request is exempt only when its credential is recognised: a live
+  API key, an env key, the operator key, a live OAuth token, or an in-process MCP dispatch.
+  A made-up key is counted like no key, so adding a header does not switch the limit off.
+  CORS preflights and `/health` are not counted, and neither is keyless local development.
+- **How callers are told.** Every counted response carries `RateLimit-Policy: 300;w=60`.
+  Past the limit the answer is `429` with `Retry-After`, `cache-control: no-store`, and the
+  error code `ANONYMOUS_RATE_LIMITED` with a message that restates the limit and the
+  reason. The OpenAPI description at `/docs` and `docs/architecture.md` ("The API") state
+  the same figure, all from `ANONYMOUS_RATE_LIMIT_PER_MINUTE` (default in `src/config.ts`);
+  `tests/unit/server/public-read.test.ts` fails if the docs and the default disagree.
+- **Per instance.** Each API task counts on its own, in memory, so with several tasks
+  behind the load balancer an address can reach each one's limit: the effective ceiling is
+  300 times the task count (1 to 4 today). Reads the edge answers from its cache never
+  reach the API and are not counted. The limit is a floor on what one address may ask, not
+  an exact quota.
+- **The address** is Cloudflare's `cf-connecting-ip`, which Cloudflare sets itself. A
+  caller that reached the load balancer directly, around Cloudflare, could forge it.
+- **Why not at Cloudflare.** Exempting recognised credentials needs the request headers,
+  and Cloudflare's rate limiting rules only read headers with Advanced Rate Limiting, which
+  this zone's plan does not include. A rule without that exemption would count the web
+  app's own server-side calls (a few Vercel addresses) and keyed API and MCP traffic. If
+  the plan ever includes it, an edge rule can sit in front of this one; the two do not
+  conflict.
+
+The web app is unaffected by both: its server-side calls carry the service key
 (`MINERVAL_API_KEY` on Vercel), so they bypass the cache and are not counted. If that key
 were ever unset, the whole site would read anonymously from Vercel's few addresses and
 share one allowance.

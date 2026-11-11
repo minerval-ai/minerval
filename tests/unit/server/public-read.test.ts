@@ -123,6 +123,20 @@ describe("a public read", () => {
     expect(res.headers.vary).toBe("Authorization, X-API-Key");
   });
 
+  it("answers HEAD with the headers the GET would carry", async () => {
+    const get = await app.inject({ url: "/open" });
+    const head = await app.inject({ method: "HEAD", url: "/open" });
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe("");
+    expect(head.headers["cache-control"]).toBe(PUBLIC_POLICY);
+    expect(head.headers.etag).toBe(get.headers.etag);
+    expect(head.headers.vary).toBe(get.headers.vary);
+
+    const keyed = await app.inject({ method: "HEAD", url: "/open", headers: { "x-api-key": "anything" } });
+    expect(keyed.headers["cache-control"]).toBe(NO_STORE);
+    expect(keyed.headers.etag).toBeUndefined();
+  });
+
   it("answers If-None-Match with a 304 and no body", async () => {
     const first = await app.inject({ url: "/open" });
     const etag = first.headers.etag as string;
@@ -364,6 +378,28 @@ describe("the real app", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["cache-control"]).toBe(NO_STORE);
     expect(res.headers.etag).toBeUndefined();
+  });
+
+  it("tells an anonymous caller the rate limit it is under, and a keyed one nothing", async () => {
+    const anonymous = await app.inject({ url: "/prizes/rules", headers: { origin: "https://embedder.example" } });
+    expect(anonymous.headers["ratelimit-policy"]).toBe("300;w=60");
+    // A script on another site can read it.
+    expect(String(anonymous.headers["access-control-expose-headers"])).toMatch(/RateLimit-Policy/i);
+
+    const keyed = await app.inject({ url: "/prizes/rules", headers: { "x-api-key": "env-service-key" } });
+    expect(keyed.headers["ratelimit-policy"]).toBeUndefined();
+
+    const health = await app.inject({ url: "/health" });
+    expect(health.headers["ratelimit-policy"]).toBeUndefined();
+  });
+
+  it("answers HEAD on a public read with the GET's headers", async () => {
+    const get = await app.inject({ url: "/prizes/rules" });
+    const head = await app.inject({ method: "HEAD", url: "/prizes/rules" });
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe("");
+    expect(head.headers["cache-control"]).toBe(PUBLIC_POLICY);
+    expect(head.headers.etag).toBe(get.headers.etag);
   });
 
   it("classifies every route outside the excluded surfaces", () => {

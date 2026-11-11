@@ -24,12 +24,17 @@ export function apiDescription(): string {
       "answered fresh.",
     "",
     "**Anonymous rate limit.** Requests without credentials are limited to " +
-      `${config.anonymousRateLimitPerMinute} requests per minute per IP address, ` +
-      "enforced at the edge; past it the answer is `429` with a body that " +
-      "restates the limit. The reason: an account's use is bounded by its " +
-      "budget, and an anonymous caller has no account or budget to bound it, " +
-      "so a count per address is the only measure there is. Requests that " +
-      "present an API key are not subject to this limit.",
+      `${config.anonymousRateLimitPerMinute} requests per minute per IP address. ` +
+      "Every counted response says so in `RateLimit-Policy: " +
+      `${config.anonymousRateLimitPerMinute};w=60\`; past the limit the answer ` +
+      "is `429` with `Retry-After` and a body that restates the limit. The " +
+      "reason: an account's use is bounded by its budget, and an anonymous " +
+      "caller has no account or budget to bound it, so a count per address is " +
+      "the only measure there is. Requests that present a valid API key are " +
+      "not subject to this limit; an unrecognised key is counted like no key. " +
+      "Each API instance counts on its own, and reads answered from the edge " +
+      "cache are not counted, so the limit is a floor on what one address may " +
+      "ask, not an exact quota.",
   ].join("\n");
 }
 

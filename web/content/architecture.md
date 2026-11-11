@@ -1755,10 +1755,15 @@ be about a minute behind the graph; a request that presents a key is never
 cached and is always answered fresh.
 
 Requests without credentials are limited to 300 requests per minute per IP
-address, and past that the answer is a 429 that restates the limit. Everything
-else here is bounded by an account's budget; an anonymous caller has no account
-or budget to bound it, so a count per address is the only measure there is.
-Requests that present a key are not subject to this limit.
+address. Every counted response says so in a `RateLimit-Policy: 300;w=60`
+header, and past the limit the answer is a 429 with `Retry-After` and a body
+that restates the limit. Everything else here is bounded by an account's
+budget; an anonymous caller has no account or budget to bound it, so a count
+per address is the only measure there is. Requests that present a valid key
+are not subject to this limit; an unrecognised key is counted like no key.
+Each API instance counts on its own and reads answered from the edge cache
+are not counted, so the limit is a floor on what one address may ask, not an
+exact quota.
 
 **The claim card.** `GET /claims/:claim_id/card` answers with the graph's
 judgment of one node, whole, in a small fixed shape for a site that embeds

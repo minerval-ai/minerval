@@ -36,5 +36,8 @@ export async function registerCors(app: FastifyInstance): Promise<void> {
     origin: restrictedCorsOrigins() ?? "*",
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+    // So a script on another site can read the limit it works under and how
+    // long to wait past it (src/server/plugins/anonymous-rate-limit.ts).
+    exposedHeaders: ["RateLimit-Policy", "Retry-After"],
   });
 }
