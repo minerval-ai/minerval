@@ -546,7 +546,9 @@ that a tool which is not a read must be classified there as held for the
 user or as running without asking, with the reason;
 `tests/unit/llm/assistant-tools.test.ts` fails until it is. Its own
 conversations are readable over MCP (`list_assistant_conversations`,
-`get_assistant_conversation`, `get_assistant_allowance`). Writing to one is
+`get_assistant_conversation`, `get_assistant_allowance`), and pages are
+saved and read there (`save_page`, `list_pages`, `get_page`); deleting a
+page is excluded, as the user's own act. Writing to one is
 excluded (an agent that wants an agent can delegate to its own), and so is
 releasing a held action or changing what is allowed, which need the signed-in
 user so that the Assistant cannot press its own cards.

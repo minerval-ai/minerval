@@ -323,6 +323,16 @@ export default async function AccountPage({
         </section>
       )}
 
+      {/* ------------------------------------------------ the Assistant */}
+      <section>
+        <h2>Assistant</h2>
+        <p>
+          An agent that works for you with this account&rsquo;s tools, charged in owls at what
+          its work costs. Its conversations, the pages it saved for you, and what it may do
+          without asking are on <a href="/ask">the Ask page →</a>
+        </p>
+      </section>
+
       {/* ------------------------------------------------ grants */}
       <section>
         <h2>Grants</h2>

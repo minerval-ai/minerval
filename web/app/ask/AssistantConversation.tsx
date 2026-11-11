@@ -3,17 +3,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { OwlMark } from "../../components/OwlMark";
-import { StandingBadge, StatusBadge } from "../../components/Assessment";
-import { statusMeta } from "../../lib/ontology";
+import { Cited, Owls, Prose } from "./prose";
 import {
   MandateProposal,
   type MandateView,
 } from "../../components/account/MandateProposal";
 import type {
-  AssistantCitationView,
   AssistantConversationView,
   AssistantHeldActionView,
   AssistantMessageView,
@@ -34,96 +29,6 @@ import type {
 type Convo = AssistantConversationView;
 
 const POLL_MS = 1_500;
-const CITE_RE = /(\s*)\[claim:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi;
-
-/** Micro-USD of metered cost as owls (one owl covers $1.00). */
-function owls(microUsd: number): string {
-  const n = Math.max(0, microUsd) / 1_000_000;
-  if (n > 0 && n < 0.01) return "under 0.01";
-  return Number(n.toFixed(2)).toString();
-}
-
-function Owls({ microUsd }: { microUsd: number }) {
-  return (
-    <span className="ask-owls">
-      <OwlMark size={13} className="owl-mark" />
-      {owls(microUsd)}
-    </span>
-  );
-}
-
-/**
- * The reply's markdown with each [claim:<uuid>] turned into a numbered link.
- * A marker whose node the graph does not hold is dropped.
- */
-function withCitations(content: string, citations: AssistantCitationView[]): string {
-  const number = new Map(citations.map((c, i) => [c.id, i + 1]));
-  return content.replace(CITE_RE, (_m, space: string, id: string) => {
-    const n = number.get(id.toLowerCase());
-    return n ? `${space}[${n}](/claims/${id.toLowerCase()} "cite")` : "";
-  });
-}
-
-function Prose({
-  content,
-  citations = [],
-}: {
-  content: string;
-  citations?: AssistantCitationView[];
-}) {
-  const byId = new Map(citations.map((c) => [c.id, c]));
-  const components: Components = {
-    a: ({ href, title, children }) => {
-      const cited = title === "cite" && href ? byId.get(href.replace("/claims/", "")) : undefined;
-      if (cited) {
-        const meta = cited.kind === "claim" ? statusMeta(cited.status) : null;
-        return (
-          <Link
-            href={href!}
-            className={`ask-cite${meta ? ` ${meta.cls}` : ""}`}
-            title={`${cited.text}${meta ? ` (${meta.label})` : ""}`}
-          >
-            {children}
-            {meta && <span aria-hidden>{meta.glyph}</span>}
-          </Link>
-        );
-      }
-      const external = !!href && /^https?:\/\//.test(href);
-      return (
-        <a href={href} {...(external ? { target: "_blank", rel: "noreferrer" } : {})}>
-          {children}
-        </a>
-      );
-    },
-  };
-  return (
-    <div className="ask-prose">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {withCitations(content, citations)}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function Cited({ citations }: { citations: AssistantCitationView[] }) {
-  if (citations.length === 0) return null;
-  return (
-    <ol className="ask-cited">
-      {citations.map((c) => (
-        <li key={c.id}>
-          <Link href={`/claims/${c.id}`}>{c.text}</Link>{" "}
-          {c.kind === "claim" ? (
-            <StatusBadge status={c.status} />
-          ) : c.kind === "question" ? (
-            <StandingBadge standing={c.standing} />
-          ) : (
-            <span className="tag kind">{c.kind}</span>
-          )}
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 /** A tool's input as the person would check it: one line per field. */
 function InputFields({ input }: { input: Record<string, unknown> }) {
@@ -345,6 +250,34 @@ function GrantThread({ id }: { id: string }) {
   );
 }
 
+/** A page the Assistant saved, as a link to it. A deleted page shows nothing. */
+function PageCard({ id }: { id: string }) {
+  const [title, setTitle] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/assistant/pages/${id}`, { cache: "no-store" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) return setMissing(true);
+        setTitle(((await res.json()) as { page: { title: string } }).page.title);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+  if (missing) return null;
+  return (
+    <aside className="ask-card">
+      <p className="sc">Saved as a page</p>
+      <p className="ask-card-title">
+        <Link href={`/ask/pages/${id}`}>{title ?? "Open the page"}</Link>
+      </p>
+    </aside>
+  );
+}
+
 function ReplyFoot({ message }: { message: AssistantMessageView }) {
   const parts: ReactNode[] = [];
   if (message.stopped) {
@@ -379,6 +312,7 @@ export function AssistantConversation({
   allowedAlways,
   kindLabels,
   nodeId,
+  question,
 }: {
   initial: Convo | null;
   models: AssistantModelView[];
@@ -387,10 +321,12 @@ export function AssistantConversation({
   kindLabels: Record<string, string>;
   /** The node whose page the conversation is being opened from, if any. */
   nodeId?: string;
+  /** A question written on another page's ask box, not yet sent. */
+  question?: string;
 }) {
   const router = useRouter();
   const [convo, setConvo] = useState<Convo | null>(initial);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(question ?? "");
   const [model, setModel] = useState(
     initial?.model ?? models.find((m) => m.default)?.id ?? models[0]?.id ?? ""
   );
@@ -552,6 +488,8 @@ export function AssistantConversation({
                         onChange={setConvo}
                       />
                     )
+                  ) : card.type === "page" ? (
+                    <PageCard key={card.id} id={card.id} />
                   ) : (
                     <GrantThread key={card.id} id={card.id} />
                   )
@@ -610,6 +548,7 @@ export function AssistantConversation({
             placeholder={convo ? "Reply to the Assistant…" : "What do you want to know or do?"}
             disabled={sending || replying}
             aria-label="Your message"
+            autoFocus={!!question}
           />
           <button
             className="order-button"

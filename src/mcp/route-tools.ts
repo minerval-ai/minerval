@@ -129,6 +129,9 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /assistant/conversations": { name: "list_assistant_conversations" },
   "GET /assistant/conversations/:id": { name: "get_assistant_conversation" },
   "GET /assistant/allowance": { name: "get_assistant_allowance" },
+  "POST /pages": { name: "save_page" },
+  "GET /pages": { name: "list_pages" },
+  "GET /pages/:id": { name: "get_page" },
 
   // ---- correspondents (#563) ----
   "GET /correspondents": { name: "list_correspondents" },
@@ -325,6 +328,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /assistant/conversations/:id": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/held/:action_id": ASSISTANT_GATE,
   "PUT /assistant/allowance": ASSISTANT_GATE,
+  "DELETE /pages/:id":
+    "A page is its user's to throw away: deleting takes the signed-in dashboard session, so " +
+    "nothing an agent reads can have it delete what the user keeps.",
   "POST /extension/chat":
     "The extension's chat over the page open in the browser; an MCP client " +
     "is itself the conversation, with the graph tools in hand.",

@@ -97,6 +97,8 @@ export const RUNS_WITHOUT_ASKING: Readonly<Record<string, string>> = {
   start_grant_conversation:
     "Free and private to the user; nothing runs or is charged until a drafted mandate is funded, which is held.",
   send_grant_message: "As start_grant_conversation: free and private, and funding the draft is held.",
+  save_page:
+    "Private to the user and free; it publishes nothing, and replacing a page keeps the earlier text.",
   raise_issue: "A report to Minerval's maintainers about the tools; free, and it touches no claim.",
   query_sql: "A read; priced by database time past a free daily allowance, which its description states.",
   match_claim: "A private analysis, metered and charged as its description states; it writes nothing.",

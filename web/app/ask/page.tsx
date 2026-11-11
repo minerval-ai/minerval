@@ -4,7 +4,9 @@ import { auth } from "../../auth";
 import {
   accountApiConfigured,
   getAssistantHome,
+  listPages,
   type AssistantHome,
+  type PageSummaryView,
 } from "../../lib/account-api";
 import { PageHead } from "@/components/PageHead";
 import { OwlMark } from "../../components/OwlMark";
@@ -26,19 +28,25 @@ function owls(microUsd: number): string {
 export default async function AskPage({
   searchParams,
 }: {
-  searchParams: Promise<{ node?: string }>;
+  searchParams: Promise<{ node?: string; q?: string }>;
 }) {
-  const { node } = await searchParams;
+  const { node, q } = await searchParams;
   const session = await auth();
 
   let home: AssistantHome | null = null;
+  let pages: PageSummaryView[] = [];
   if (session?.externalId && accountApiConfigured()) {
     try {
       home = await getAssistantHome(session.externalId);
+      pages = await listPages(session.externalId).catch(() => []);
     } catch {
       // rendered below as the Assistant being unavailable
     }
   }
+  // Where signing in returns to: the question written on another page.
+  const here = `/ask${
+    node || q ? `?${new URLSearchParams({ ...(q ? { q } : {}), ...(node ? { node } : {}) })}` : ""
+  }`;
 
   return (
     <div className="col account">
@@ -57,7 +65,7 @@ export default async function AskPage({
       />
       {!session?.externalId ? (
         <p className="order-line">
-          <Link href="/signin?callbackUrl=/ask">Sign in</Link> to talk to the Assistant.
+          <Link href={`/signin?callbackUrl=${encodeURIComponent(here)}`}>Sign in</Link> to talk to the Assistant.
           Searching and reading the graph need no account.
         </p>
       ) : !home ? (
@@ -71,7 +79,31 @@ export default async function AskPage({
             allowedAlways={home.allowed_kinds.always}
             kindLabels={home.allowed_kinds.labels}
             {...(node && /^[0-9a-f-]{36}$/i.test(node) ? { nodeId: node } : {})}
+            {...(q ? { question: q.slice(0, 2000) } : {})}
           />
+          {pages.length > 0 && (
+            <>
+              <h2>Your pages</h2>
+              <table className="account-table">
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th>Saved</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pages.map((p) => (
+                    <tr key={p.id}>
+                      <td>
+                        <Link href={`/ask/pages/${p.id}`}>{p.title}</Link>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>{p.saved_at.slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
           {home.conversations.length > 0 && (
             <>
               <h2>Your conversations</h2>
