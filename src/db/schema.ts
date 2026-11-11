@@ -490,6 +490,13 @@ export const assessments = pgTable(
     assessedAt: timestamp("assessed_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The retired status this row carried before migration 0066 relabeled
+    // it (#524, #848): 'contested' (now inconclusive) or 'unsupported' (now
+    // unknown). Backfilled by migration 0111 from the note 0066 appended to
+    // reasoning_trace. A Steward never writes it, so a node clears it when it
+    // is re-judged; set on a current row, it means the status is provisional,
+    // not a finding. NULL on every other row.
+    relabeledFrom: text("relabeled_from"),
   },
   (table) => [
     uniqueIndex("idx_assessments_current")

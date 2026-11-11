@@ -76,7 +76,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "reasoning (its `id`, which a finding cites; a status, a confidence that the status is the right reading " +
   "of the evidence, and a credence that the claim is true where one number " +
   "is honest, else null, and `marginal_yield`, how much another pass " +
-  "would add); the kind's record, since a quantity or a " +
+  "would add; `relabeled_from`, when set, names the retired label " +
+  "(contested, unsupported) a migration carried the status over from: it " +
+  "has not been re-judged, so treat it as provisional, not a finding); the kind's record, since a quantity or a " +
   "question has no `assessment` (`quantity`: definition, the graph's " +
   "estimate with its work and marginal_yield (`assessed.id` is what a " +
   "finding cites), the figures sources state, readings and cuts; " +
@@ -134,6 +136,7 @@ export function formatClaimViewAssessment(
     marginalYield?: number | null;
     model?: string | null;
     runId?: string | null;
+    relabeledFrom?: string | null;
   } | null
 ) {
   if (!a) return null;
@@ -160,6 +163,10 @@ export function formatClaimViewAssessment(
     // The run that wrote this verdict (GET /runs/:id); null when written
     // outside a traced run or before runs were linked.
     run_id: a.runId ?? null,
+    // The retired label (contested, unsupported) a migration carried this
+    // status over from (0066, #524); not yet re-judged, so the status is
+    // provisional, not a finding (#848). null otherwise.
+    relabeled_from: a.relabeledFrom ?? null,
   };
 }
 

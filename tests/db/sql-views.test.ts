@@ -7,6 +7,7 @@
  * only a reviewed list of columns.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
 import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import {
@@ -28,7 +29,7 @@ const PASSWORD = "dbtest-sql";
  */
 const REVIEWED_COLUMNS: Record<string, string[]> = {
   nodes: ["id", "kind", "text", "claim_type", "state", "merged_into", "importance", "contestation", "steward_state", "stewarded_at", "proposed_by_person", "tags", "created_at", "updated_at"],
-  assessments: ["id", "node_id", "status", "confidence", "credence", "marginal_yield", "is_current", "assessed_at", "trigger", "summary", "reasoning_head"],
+  assessments: ["id", "node_id", "status", "confidence", "credence", "marginal_yield", "is_current", "assessed_at", "trigger", "summary", "reasoning_head", "relabeled_from"],
   edges: ["id", "parent_id", "child_id", "relation", "reasoning", "created_at"],
   arguments: ["id", "node_id", "name", "stance", "shows", "description", "created_at", "retired_at"],
   tags: ["slug", "name", "description", "status", "node_count"],
@@ -90,6 +91,24 @@ describe("read-only SQL", () => {
     expect(res.columns).toEqual(["id", "text"]);
     expect(res.rows).toHaveLength(1);
     expect(res.rows[0]![0]).toBe(id);
+  });
+
+  it("runs the sql skill's relabeled-status backlog query (#848)", async () => {
+    // The recipe as the skill states it, so a renamed column fails here.
+    const skill = readFileSync(new URL("../../skills/sql/SKILL.md", import.meta.url), "utf8");
+    const recipe = skill.split("```sql").map((b) => b.split("```")[0]!).find((b) => b.includes("relabeled_from IS NOT NULL"));
+    expect(recipe).toBeTruthy();
+    const id = await seedClaim("relabeled backlog");
+    await rawQuery(`UPDATE claims SET importance = 1 WHERE id = $1`, [id]);
+    await rawQuery(
+      `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, relabeled_from)
+       VALUES ($1, 'inconclusive', 0.6, 'carried over', 'contested')`,
+      [id]
+    );
+    const res = await runReadOnlyQuery(recipe!, [], { audience: "agent" });
+    expect(res.columns).toEqual(["id", "text", "importance", "status", "relabeled_from", "assessed_at", "open_reassess", "committed_owls"]);
+    const row = res.rows.find((r) => r[0] === id);
+    expect(row?.[4]).toBe("contested");
   });
 
   it("refuses what isn't a single SELECT, before anything runs", async () => {

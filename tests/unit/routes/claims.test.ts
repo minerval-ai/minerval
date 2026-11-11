@@ -28,7 +28,14 @@ describe("formatAssessment", () => {
       model: "claude-opus-5-5",
       // The run that wrote it (#553); null here, as base names none.
       run_id: null,
+      // Not carried over from a retired label (#848).
+      relabeled_from: null,
     });
+  });
+
+  it("carries the retired label a migration relabeled the status from (#848)", () => {
+    expect(formatAssessment({ ...base, status: "inconclusive", relabeledFrom: "contested" }).relabeled_from).toBe("contested");
+    expect(formatAssessment({ ...base, relabeledFrom: null }).relabeled_from).toBeNull();
   });
 
   it("keeps the model null for legacy rows that predate the column (#294)", () => {

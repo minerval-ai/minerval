@@ -183,6 +183,14 @@ export const assessmentSchema = {
     model: { type: "string", nullable: true },
     // The run that wrote the verdict (GET /runs/:id).
     run_id: { type: "string", nullable: true },
+    relabeled_from: {
+      type: "string",
+      nullable: true,
+      description:
+        "The retired label (contested, unsupported) migration 0066 carried this status over from (#524). " +
+        "Set only until the claim is re-judged: the status has not been judged under its current label, " +
+        "so treat it as provisional, not a finding. null otherwise.",
+    },
     // Developer disclosure (#534): present when the claim names the
     // developer of the model that assessed it; absent otherwise.
     developer_disclosure: {
@@ -2099,7 +2107,7 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
   };
 }
 
-export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null }) {
+export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null; relabeledFrom?: string | null }) {
   return {
     id: a.id,
     status: a.status,
@@ -2120,6 +2128,9 @@ export function formatAssessment(a: { id: string; status: string; confidence: nu
     // The run that wrote this verdict (GET /runs/:id); null when written
     // outside a traced run or before runs were linked.
     run_id: a.runId ?? null,
+    // The retired label (contested, unsupported) migration 0066 carried this
+    // status over from; not yet re-judged, so provisional (#848). null otherwise.
+    relabeled_from: a.relabeledFrom ?? null,
   };
 }
 

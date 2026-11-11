@@ -138,6 +138,10 @@ export interface Assessment {
   model?: string | null;
   // The agent run that wrote this verdict (/runs/:id); null when unlinked.
   run_id?: string | null;
+  // The retired label ("contested", "unsupported") a migration carried this
+  // status over from (#524, #848). Set only until the node is re-judged: the
+  // status is provisional, not a finding. Null/absent otherwise.
+  relabeled_from?: string | null;
   // Funding disclosure (§19): present when this assessment was paid work —
   // a user's assessment order or a named grant. Stamped mechanically by the
   // API; absent for ordinary system work.

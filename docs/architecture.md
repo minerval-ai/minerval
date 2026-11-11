@@ -681,7 +681,11 @@ the disagreement rather than the evidence and let a verdict be avoided;
 evidence would exist if the claim were true, `unknown` where it would not be
 expected). Migration 0066 relabeled existing rows provisionally
 (`contested` to `inconclusive`, `unsupported` to `unknown`) and queued the
-affected claims for a fresh Steward pass.
+affected claims for a fresh Steward pass. Migration 0111 (#848) records the
+retired label in `assessments.relabeled_from`; the claim view, the API and
+`public_read.assessments` carry it, and the claim page says the status was
+carried over and not yet re-judged. A Steward never writes it, so a re-judged
+claim's new assessment carries NULL.
 
 How actively a claim is disputed is not a status. It is the claim's
 `contestation` (0..1, set by the Steward with importance), served on the

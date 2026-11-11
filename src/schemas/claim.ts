@@ -97,6 +97,10 @@ export const assessmentResponse = z.object({
   reasoning_trace: z.string(),
   subclaim_summary: z.record(z.string(), z.unknown()),
   assessed_at: z.string(),
+  // The retired label (contested, unsupported) migration 0066 carried the
+  // status over from; it has not been re-judged, so treat it as provisional,
+  // not a finding (#848). null otherwise.
+  relabeled_from: z.string().nullable().optional(),
 });
 
 export const searchResultItem = z.object({

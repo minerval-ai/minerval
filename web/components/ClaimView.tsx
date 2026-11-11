@@ -284,6 +284,14 @@ export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fi
               this claim rather than by each subclaim's own status. */}
         </div>
       )}
+      {/* A status a migration carried over from a retired label (0066,
+          #524) and no Steward has re-judged (#848): provisional, and its
+          summary may still argue for the old label, so say so by the badge. */}
+      {assessment?.relabeled_from && (
+        <p className="assess-relabeled" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
+          Status carried over from the retired label &lsquo;{assessment.relabeled_from}&rsquo;; not yet re-judged.
+        </p>
+      )}
 
       {/* A claim about which side of a figure a quantity lies: where the
           quantity's estimate puts the value, against this claim's credence. */}

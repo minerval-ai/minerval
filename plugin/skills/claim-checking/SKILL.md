@@ -136,6 +136,10 @@ skill bundles it in full, and the section numbers below point into it.
   either side. Don't round it up to "probably true" or down to "unproven,
   so false". In text you write, hedge it or cite the claim page; don't
   assert it as settled.
+- **A status with `relabeled_from` set is provisional, not a finding.** A
+  migration carried it over from a retired label (`contested`,
+  `unsupported`) and the claim has not been re-judged since; its summary
+  may still argue for the old label. Say so if you report it.
 - **Settled is settled.** A `verified` claim with high confidence should
   be reported plainly, without manufactured balance. Withholding a
   well-supported verdict out of even-handedness is a failure too (§1).

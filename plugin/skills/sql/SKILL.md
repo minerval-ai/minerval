@@ -27,7 +27,9 @@ unknown.
   proposed_by_person, tags (array of slugs), created_at, updated_at
 - `assessments`: id, node_id, status, confidence, credence, marginal_yield,
   is_current, assessed_at, trigger, summary, reasoning_head (the first 500
-  characters)
+  characters), relabeled_from (the retired label, contested or
+  unsupported, a migration carried the status over from; set until the
+  node is re-judged, so such a status is provisional, not a finding)
 - `edges`: id, parent_id, child_id, relation, reasoning, created_at
 - `arguments`: id, node_id, name, stance, shows, description, created_at,
   retired_at
@@ -123,6 +125,26 @@ WITH RECURSIVE sub(id) AS (
 SELECT n.id, n.text, a.status
   FROM sub JOIN nodes n USING (id)
   LEFT JOIN assessments a ON a.node_id = n.id AND a.is_current;
+```
+
+Statuses carried over from a retired label and not yet re-judged, most
+important first, with the reassessment open on each and the budget already
+committed to it. Price what is left with the cost query above (kind
+`reassess`):
+
+```sql
+SELECT n.id, n.text, n.importance, a.status, a.relabeled_from, a.assessed_at,
+       r.open_reassess, r.committed_owls
+  FROM assessments a JOIN nodes n ON n.id = a.node_id
+  LEFT JOIN LATERAL (
+    SELECT count(DISTINCT l.action_id) AS open_reassess,
+           coalesce(sum(c.budget_owls - c.spent_owls)
+                      FILTER (WHERE c.settled_at IS NULL), 0) AS committed_owls
+      FROM ledger l LEFT JOIN commissions c USING (action_id)
+     WHERE l.target_node_id = n.id AND l.kind = 'reassess'
+       AND l.status IN ('open', 'running')) r ON true
+ WHERE a.is_current AND a.relabeled_from IS NOT NULL AND n.state = 'active'
+ ORDER BY n.importance DESC LIMIT 100;
 ```
 
 **What is not here.** Only public data: no emails, keys, balances or
