@@ -33,6 +33,10 @@ vi.mock("../../../src/services/grant-conversation-service.js", () => ({
   getConversation: vi.fn(),
   listConversations: vi.fn(),
   serializeConversation: vi.fn(),
+  serializeConversationSummary: vi.fn(),
+  serializeSentMessage: vi.fn(),
+  getConversationAfterTurn: vi.fn(),
+  MAX_TURN_WAIT_SECONDS: 25,
 }));
 
 const CONVO = "c0c0c0c0-0000-4000-8000-000000000001";

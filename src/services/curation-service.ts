@@ -145,7 +145,7 @@ export async function requestCuration(
     // Priced and offered to the funders now, not at the next sweep.
     if (actionId) {
       const { fundCurationNow } = await import("./maintenance-funding.js");
-      await fundCurationNow(actionId);
+      await fundCurationNow(actionId, { requestId: inserted[0]!.id });
     }
   }
   return {

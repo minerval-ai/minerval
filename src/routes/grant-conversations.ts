@@ -17,15 +17,27 @@
  * answered at once with the conversation, its turn "replying"; the
  * Grantmaker's reply follows in the background (a drafting turn can take
  * minutes), and callers read the conversation until the turn is idle.
+ * Writes return what they changed, not the conversation, and a read can
+ * wait for the turn and leave out what the caller holds (#905).
  */
 
-/** How a caller gets the reply, stated on every route that starts a turn. */
+/**
+ * How a caller gets the reply, stated on every route that starts a turn.
+ * Each read returns only what the caller lacks (#905): a caller following
+ * this never re-reads the transcript or an unchanged draft.
+ */
 const TURN_PROTOCOL =
-  "Returns at once, before the Grantmaker replies: the conversation comes " +
-  "back with your message saved and turn.state \"replying\". Read it with " +
-  "GET /grant-conversations/:id (MCP: get_grant_conversation) every 20-30 " +
-  "seconds until turn.state is \"idle\", when the last message is the " +
-  "reply (a drafting turn can take several minutes), or \"failed\", when " +
+  "Returns at once, before the Grantmaker replies, with your message's " +
+  "place in the conversation (message.index, message_count), the draft's " +
+  "hash (mandate_sha256) and turn.state \"replying\"; not the transcript, " +
+  "which you already hold. To get the reply, call GET " +
+  "/grant-conversations/:id (MCP: get_grant_conversation) with " +
+  "after=<message_count>, mandate_sha256=<the hash> and wait=25: it " +
+  "returns when the turn ends, or after 25 seconds, with only the messages " +
+  "after the ones you have, and the draft only if the reply changed it " +
+  "(otherwise mandate_unchanged: true). Repeat with the same values while " +
+  "turn.state is \"replying\" (a drafting turn can take several minutes). " +
+  "At \"idle\" the new messages end with the reply; at \"failed\", " +
   "turn.error says why and a short follow-up asks again. Never resend the " +
   "same message: it is already saved. One turn runs at a time; a message " +
   "sent while one runs is refused with TURN_IN_PROGRESS and not saved.";
@@ -35,9 +47,12 @@ import {
   startConversation,
   addMessage,
   fundConversationMandate,
-  getConversation,
   listConversations,
   serializeConversation,
+  serializeConversationSummary,
+  serializeSentMessage,
+  getConversationAfterTurn,
+  MAX_TURN_WAIT_SECONDS,
 } from "../services/grant-conversation-service.js";
 import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
 
@@ -76,20 +91,23 @@ export async function grantConversationRoutes(
       }
       return reply
         .code(201)
-        .send({ conversation: serializeConversation(result.conversation) });
+        .send({ conversation: serializeSentMessage(result.conversation) });
     },
   });
 
   app.get("/", {
     schema: {
       tags: ["grants"],
-      summary: "List the authenticated user's granting conversations",
+      summary:
+        "List the authenticated user's granting conversations: id, status, " +
+        "draft title, message count and turn state for each (read one with " +
+        "GET /grant-conversations/:id for its messages and draft)",
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
       const rows = await listConversations(request.auth!.userId!);
       return reply.send({
-        conversations: rows.map(serializeConversation),
+        conversations: rows.map(serializeConversationSummary),
       });
     },
   });
@@ -120,29 +138,82 @@ export async function grantConversationRoutes(
     },
   });
 
-  app.get<{ Params: { id: string } }>("/:id", {
+  app.get<{
+    Params: { id: string };
+    Querystring: { after?: number; mandate_sha256?: string; wait?: number };
+  }>("/:id", {
     schema: {
       tags: ["grants"],
       summary:
-        "Get one granting conversation: transcript, drafted mandate, status, " +
-        "and turn.state (\"replying\" while the Grantmaker is still answering)",
+        "Get one granting conversation: messages, drafted mandate, status, " +
+        "and turn.state (\"replying\" while the Grantmaker is still " +
+        "answering); after, mandate_sha256 and wait return only what you " +
+        "lack, once the turn ends",
+      description:
+        "With no parameters, the whole conversation. To follow a turn, pass " +
+        "what your last read or send returned: after=<message_count> returns " +
+        "only the messages after those, mandate_sha256=<hash> leaves the " +
+        "draft out (mandate_unchanged: true) while it still hashes the " +
+        "same, and wait=<seconds> (at most " +
+        `${MAX_TURN_WAIT_SECONDS}) holds the read until the running turn ` +
+        "ends or the time is up. message_count and mandate_sha256 come back " +
+        "on every read. To check only the turn, fields=conversation.turn.state.",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
       },
+      querystring: {
+        type: "object",
+        properties: {
+          after: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "How many messages you already hold (message_count from your " +
+              "last read or send); only later messages are returned",
+          },
+          mandate_sha256: {
+            type: "string",
+            pattern: "^[0-9a-f]{64}$",
+            description:
+              "The draft hash from your last read or send; the draft is " +
+              "left out while it is unchanged",
+          },
+          wait: {
+            type: "integer",
+            minimum: 0,
+            maximum: MAX_TURN_WAIT_SECONDS,
+            description:
+              "Seconds to wait for a running turn to end before answering " +
+              `(at most ${MAX_TURN_WAIT_SECONDS}); returns at once when no turn runs`,
+          },
+        },
+      },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const convo = await getConversation(
+      const { after, mandate_sha256, wait } = request.query;
+      let gone = false;
+      request.raw.once("close", () => {
+        gone = true;
+      });
+      const convo = await getConversationAfterTurn(
         request.params.id,
-        request.auth!.userId!
+        request.auth!.userId!,
+        wait ?? 0,
+        () => gone
       );
       if (!convo) {
         return reply
           .code(404)
           .send({ error: "Conversation not found", code: "NOT_FOUND" });
       }
-      return reply.send({ conversation: serializeConversation(convo) });
+      return reply.send({
+        conversation: serializeConversation(convo, {
+          after,
+          mandateSha256: mandate_sha256,
+        }),
+      });
     },
   });
 
@@ -181,7 +252,7 @@ export async function grantConversationRoutes(
             .send({ error: result.message, code: result.code });
         }
         return reply.code(202).send({
-          conversation: serializeConversation(result.conversation),
+          conversation: serializeSentMessage(result.conversation),
         });
       },
     }
@@ -193,7 +264,8 @@ export async function grantConversationRoutes(
       schema: {
         tags: ["grants"],
         summary:
-          "Fund the drafted mandate: escrow the budget and start the grant",
+          "Fund the drafted mandate: escrow the budget and start the grant " +
+          "(returns the new grant_id; read it with GET /grants/:id)",
         params: {
           type: "object",
           properties: { id: { type: "string", format: "uuid" } },
@@ -235,8 +307,11 @@ export async function grantConversationRoutes(
             .send({ error: result.message, code: result.code });
         }
         return reply.send({
-          conversation: serializeConversation(result.conversation),
           grant_id: result.grantId,
+          conversation: {
+            id: result.conversation.id,
+            status: result.conversation.status,
+          },
         });
       },
     }

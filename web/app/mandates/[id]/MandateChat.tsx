@@ -110,10 +110,18 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
         setError(data.error ?? "The Grantmaker could not be reached.");
         setDraft(message);
       } else {
-        // Saved; the reply follows in the background.
-        setConvo(data.conversation);
+        // Saved; the reply follows in the background. A send returns the
+        // message's place and the turn, not the transcript (#905), so the
+        // chat shows its own copy until the first read brings the saved one.
+        const sent = data.conversation as Pick<ConversationView, "id" | "turn">;
+        const pending: ConversationView = {
+          id: sent.id,
+          turn: sent.turn,
+          messages: [...(convo?.messages ?? []), optimistic],
+        };
+        setConvo(pending);
         const done = await waitForReply<ConversationView>(
-          data.conversation,
+          pending,
           setConvo,
           () => !mounted.current
         );

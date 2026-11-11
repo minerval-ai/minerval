@@ -95,10 +95,24 @@ export function GrantConversation({
           c ? { ...c, messages: c.messages.filter((m) => m !== optimistic) } : c
         );
       } else {
-        // Saved; the reply follows in the background.
-        setConvo(data.conversation);
+        // Saved; the reply follows in the background. A send returns the
+        // message's place and the turn, not the transcript (#905), so the
+        // chat shows its own copy until the first read brings the saved one.
+        const sent = data.conversation as Pick<
+          ConversationView,
+          "id" | "status" | "grant_id" | "turn"
+        >;
+        const pending: ConversationView = {
+          id: sent.id,
+          status: sent.status,
+          grant_id: sent.grant_id,
+          turn: sent.turn,
+          mandate: convo?.mandate ?? null,
+          messages: [...(convo?.messages ?? []), optimistic],
+        };
+        setConvo(pending);
         const done = await waitForReply<ConversationView>(
-          data.conversation,
+          pending,
           setConvo,
           () => !mounted.current
         );
