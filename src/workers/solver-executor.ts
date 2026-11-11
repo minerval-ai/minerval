@@ -17,12 +17,15 @@
  * releases the action; after spend the action completes with the metered
  * amount and the attempt records `failed` or `budget`. The formalization is
  * re-read at report time and the attempt marked `stale_formalization` if it
- * changed under the run. The loop exits when SOLVER_ENABLED is false.
+ * changed under the run. The loop exits when SOLVER_ENABLED is false, and
+ * the solver does not run at all while the mathematics feature is switched
+ * off (src/features.ts): the process says so and exits.
  */
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { rawQuery, closeDb } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { runMathSolver, type MathSolverResult } from "../llm/agents/math-solver.js";
@@ -137,6 +140,11 @@ export function stewardContextLine(attempt: AttemptRow): string {
   );
 }
 
+/** What the solver says when it refuses to run with mathematics off. */
+export const MATHEMATICS_OFF =
+  "the mathematics feature is switched off in this deployment (FEATURES_OFF), " +
+  "and the solver is part of it";
+
 /**
  * Take the next covered `attempt_proof` action, if any, and run it to a
  * closed attempt. Exposed for tests and for a harness; the process loop
@@ -147,6 +155,9 @@ export async function processNextSolverAction(
 ): Promise<SolverProcessResult> {
   const logger = opts.logger ?? consoleLogger;
   const config = loadConfig();
+  if (!featureOn("mathematics", config)) {
+    return { status: "disabled", error: MATHEMATICS_OFF };
+  }
   if (!config.solverEnabled) return { status: "disabled" };
 
   try {
@@ -440,7 +451,7 @@ export async function runSolverWorker(opts: SolverWorkerOptions = {}): Promise<{
       continue;
     }
     if (r.status === "disabled") {
-      logger.info("SOLVER_ENABLED is false; exiting the loop");
+      logger.info(`${r.error ?? "SOLVER_ENABLED is false"}; exiting the loop`);
       return { ticks };
     }
     if (r.status === "transient") {
@@ -476,6 +487,11 @@ if (invokedDirectly) {
     await import("../load-env.js");
     assertSkillToolsRegistered();
     const config = loadConfig();
+    if (!featureOn("mathematics", config)) {
+      console.log(`[solver] not running: ${MATHEMATICS_OFF}`);
+      await closeDb();
+      process.exit(0);
+    }
     if (!config.solverEnabled) {
       console.log("[solver] SOLVER_ENABLED is false; nothing to do");
       await closeDb();

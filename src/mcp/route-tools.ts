@@ -13,6 +13,12 @@
  * in none of them (or a table names a route that no longer exists), so a new
  * route cannot reach REST alone by accident: adding one means choosing.
  *
+ * The tables decide every route the product has. A deployment that switches
+ * a feature off (src/features.ts) does not mount that feature's routes, so
+ * their generated tools are absent there: registerRouteTools walks the
+ * catalog of mounted routes. The hand-written tools of a feature are gated
+ * in server.ts.
+ *
  * A generated tool takes its input schema (the route's params, querystring,
  * and body, merged) and its description (the route's summary) from the
  * route, and runs by dispatching into the route in-process (dispatch.ts), so
@@ -181,6 +187,9 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /setup/parts": { name: "list_setup_parts" },
   "GET /setup/parts/:kind/:name/:version": { name: "get_setup_part" },
   "GET /setup/prompt-set": { name: "get_prompt_set" },
+  // What this deployment has switched on (src/features.ts): a route behind
+  // a feature that is off is not mounted, so it is not a tool here either.
+  "GET /setup/features": { name: "list_features" },
   "GET /runs/:run_id": {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",

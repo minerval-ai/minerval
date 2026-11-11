@@ -30,6 +30,7 @@ import { runPrizeWindowCloser } from "./prize-window-closer.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 
 export type LocalQueueName =
   | "claimPipeline"
@@ -164,6 +165,8 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
   let windowClosed = false;
   // The prize lanes run only where a checker is configured: without one no
   // statement publishes and no bounty binds (docs/mathematics.md §5.3).
+  // And only while the prizes feature is on, which needs mathematics
+  // (src/features.ts).
   const config = loadConfig();
   const singletonLanes = opts.singletonLanes ?? true;
   const surfaceBudget = opts.surfaceBudgetErrors ?? true;
@@ -171,6 +174,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
   const budgetFlag = () => (unattributedBudgetSpent ? { unattributedBudgetSpent: true } : {});
   const prizeLanesOn =
     singletonLanes &&
+    featureOn("prizes", config) &&
     typeof config.leanCheckerUrl === "string" &&
     config.leanCheckerUrl.trim().length > 0;
 

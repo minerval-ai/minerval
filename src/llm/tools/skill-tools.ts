@@ -43,6 +43,7 @@ import { registerPrizeTools } from "./prize-tools.js";
 import { registerProvenanceTools } from "./provenance-tools.js";
 import { registerCostingTools } from "./costing-tools.js";
 import { getResearchToolDefinitions } from "./research-tools.js";
+import { withoutOffFeatureTools } from "./feature-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -108,12 +109,20 @@ export function isSkillTool(name: string): boolean {
  * The tool definitions `skills` declare for `role`, in skill order. Agents
  * pass every skill (listSkills()): a skill's tools are in the toolset
  * whether or not the run loads its text.
+ *
+ * The tools of a feature that is switched off (feature-tools.ts) are left
+ * out: an agent is not offered them. `declared: true` keeps them, for the
+ * one caller that asks what a skill declares rather than what a run is
+ * offered (steward-direct.ts, deciding whether a claim is one a trigger is
+ * for).
  */
 export function getActiveSkillToolDefinitions(
   skills: readonly Skill[],
-  role: SkillRole
+  role: SkillRole,
+  opts: { declared?: boolean } = {}
 ): Tool[] {
-  return skills.flatMap((s) => getSkillToolDefinitions(s, role));
+  const declared = skills.flatMap((s) => getSkillToolDefinitions(s, role));
+  return opts.declared ? declared : withoutOffFeatureTools(declared);
 }
 
 /**

@@ -1,18 +1,8 @@
 /**
  * Create or update the two login roles read-only SQL runs as
- * (src/services/sql-service.ts): one for agents' queries, one for outside
- * callers'. Each is a member of minerval_sql, the group role migration 0091
- * grants SELECT on the public_read views and nothing else, so neither can
- * read a base table. Each has its own connection limit: a query opens a
- * fresh connection and closes it, so the limit is how many queries of that
- * audience can run at once, and a query past it is answered BUSY at once
- * rather than queued (Postgres error 53300).
- *
- * Roles are cluster-wide, so creating them on the primary creates them on
- * the read replica the queries actually run on.
- *
- * Idempotent: an existing role has its password, membership and limit set
- * again, which is also how a rotated secret is applied.
+ * (src/db/sql-roles.ts has the detail). The API does this itself at
+ * startup, after migrations, so this script is for applying a change
+ * without a deploy: a rotated secret, or a role someone dropped.
  *
  * Run with the primary's admin credentials (DB_HOST/DB_USERNAME/DB_PASSWORD
  * or DATABASE_URL) and the roles' own (SQL_AGENT_DB_USERNAME/PASSWORD,
@@ -24,30 +14,16 @@
  *     "command":["npm","run","ensure:sql-roles"]}]}'
  */
 import { rawQuery, closeDb } from "../src/db/client.js";
-
-/** How many queries of each audience may run at once. */
-const LIMITS = { agent: 4, caller: 4 } as const;
-
-const IDENT = /^[a-z_][a-z0-9_]{0,62}$/;
-
-async function ensureRole(user: string | undefined, password: string | undefined, limit: number): Promise<void> {
-  if (!user || !password) throw new Error("missing a role's username or password in the environment");
-  if (!IDENT.test(user)) throw new Error(`"${user}" is not a plain role name`);
-  const quoted = password.replace(/'/g, "''");
-  const [exists] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM pg_roles WHERE rolname = $1`, [user]);
-  if (Number(exists?.n ?? 0) === 0) {
-    await rawQuery(`CREATE ROLE ${user} LOGIN PASSWORD '${quoted}' CONNECTION LIMIT ${limit} IN ROLE minerval_sql`);
-    console.log(`+ role ${user} (connection limit ${limit})`);
-  } else {
-    await rawQuery(`ALTER ROLE ${user} WITH LOGIN PASSWORD '${quoted}' CONNECTION LIMIT ${limit}`);
-    await rawQuery(`GRANT minerval_sql TO ${user}`);
-    console.log(`~ role ${user} (connection limit ${limit})`);
-  }
-}
+import { ensureSqlRoles } from "../src/db/sql-roles.js";
 
 async function main() {
-  await ensureRole(process.env.SQL_AGENT_DB_USERNAME, process.env.SQL_AGENT_DB_PASSWORD, LIMITS.agent);
-  await ensureRole(process.env.SQL_CALLER_DB_USERNAME, process.env.SQL_CALLER_DB_PASSWORD, LIMITS.caller);
+  const lines = await ensureSqlRoles((text, params) => rawQuery(text, params), {
+    agentUser: process.env.SQL_AGENT_DB_USERNAME,
+    agentPassword: process.env.SQL_AGENT_DB_PASSWORD,
+    callerUser: process.env.SQL_CALLER_DB_USERNAME,
+    callerPassword: process.env.SQL_CALLER_DB_PASSWORD,
+  });
+  for (const line of lines) console.log(line);
 }
 
 main()

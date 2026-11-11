@@ -44,6 +44,7 @@ import { isLeanTool } from "../tools/lean-tools.js";
 import { sanitizeDomains } from "./skill-selection.js";
 import { getClaimById } from "../../services/claim-service.js";
 import { leanCheckerConfigured } from "../../services/lean-checker-client.js";
+import { featureOn } from "../../features.js";
 import {
   getFormalizationById,
   listFormalizations,
@@ -301,6 +302,17 @@ this pass, and the current assessment stands. Either way, log your decision.`,
 }
 
 /**
+ * Why a run has no formal tools, in the words the run is told: a deployment
+ * with mathematics switched off (src/features.ts) is treated as one with no
+ * checker, and the run is given the true reason of the two.
+ */
+function formalToolsAbsentReason(): string {
+  return featureOn("mathematics")
+    ? "no Lean checker is configured"
+    : "mathematics is switched off in this deployment";
+}
+
+/**
  * The trigger-specific task for the two formalization triggers
  * (docs/mathematics.md §5.4): the first pass drafts, elaborates, reviews,
  * and records `reviewed`; the second, in a fresh context, publishes or
@@ -320,7 +332,7 @@ async function formalizationTask(
       text: `This run was triggered to ${
         trigger === "formalize" ? "write" : "review"
       } the claim's formal statement, but the formal tools are unavailable this run
-(no Lean checker is configured). Do not record or publish anything: log with
+(${formalToolsAbsentReason()}). Do not record or publish anything: log with
 ${LOG} that the formalization could not proceed, and stop.`,
       concluding: `your log (${LOG}) that the formalization could not proceed`,
       nudge: {
@@ -620,7 +632,10 @@ async function runClaimStewardImpl(input: {
   const skillLoader = createSkillLoadTools("claim-steward", { domains: claimDomains });
   // The Lean tools are present only when a checker is configured
   // (docs/mathematics.md §6.2); without one the run is told the formal
-  // tools are unavailable and assesses on the informal evidence.
+  // tools are unavailable and assesses on the informal evidence. A
+  // deployment with mathematics switched off counts as having no checker
+  // (leanCheckerConfigured), and the list below already leaves out the
+  // tools of any feature that is off.
   const checkerConfigured = leanCheckerConfigured(config);
   const allSkillTools = getActiveSkillToolDefinitions(listSkills(), "claim-steward");
   const skillTools = checkerConfigured
@@ -719,7 +734,7 @@ a cent.`
 
   const skillsNote = `${skillLoader.pointerNote}${
     leanToolsWithheld
-      ? `\n\nThe formal tools are unavailable this run: no Lean checker is configured, so the lean_* tools and publish_formalization are absent. Assess on the informal evidence, and record in your reasoning trace that formal verification was unavailable.`
+      ? `\n\nThe formal tools are unavailable this run: ${formalToolsAbsentReason()}, so the lean_* tools and publish_formalization are absent. Assess on the informal evidence, and record in your reasoning trace that formal verification was unavailable.`
       : ""
   }`;
 
