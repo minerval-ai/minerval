@@ -10,6 +10,7 @@
  * wrong kind of node with a KindError (node-kind.ts).
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   quantityDefinitionSchema,
   quantityEstimateSchema,
@@ -75,8 +76,8 @@ export async function recordEstimate(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO quantity_estimates
          (claim_id, estimate, summary, work, model, funded_by_job_id, trigger, trigger_context,
-          marginal_yield)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          marginal_yield, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         input.claimId,
         JSON.stringify(estimate),
@@ -87,6 +88,9 @@ export async function recordEstimate(input: {
         input.trigger ?? null,
         input.triggerContext ?? null,
         input.marginalYield ?? null,
+        // The label of the run that wrote it (src/labels.ts), stamped from
+        // the usage context.
+        currentLabel(),
       ]
     );
     // What the estimate was made against, in the same transaction (#566).
