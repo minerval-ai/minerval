@@ -518,6 +518,7 @@ export interface MandateAllocationView {
   title: string;
   operating_policy: string;
   officer_limit: { owls: number; reason: string };
+  review_pass?: { owls: number; reason: string };
   budget: {
     escrow_owls: number;
     spent_owls: number;

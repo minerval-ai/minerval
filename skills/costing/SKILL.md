@@ -127,7 +127,14 @@ work:
   about thirty times a month.
 - **contributions you submit**: a review each.
 - **your own passes**: the planning pass, each review pass on your
-  cadence, and the granting conversation.
+  cadence, and the granting conversation. A review pass works to the
+  figure your operating policy names (`review_pass_owls`, with your
+  reason; the platform's default until you set one), held against the
+  day's rate while it runs and settled to what it spent. Every pass pays
+  first for its opening turn, your instructions, tool list and briefing,
+  so a figure near that cost buys no work; a pass that needs more for
+  once adds to its own budget (`add_to_pass_budget`), which is cheaper
+  than a second pass.
 - **your officers**: each sitting on the mandate's inbox is a program
   officer run, and a run of yours on what it escalates; both are
   commissioned from the mandate and give back what they do not spend.

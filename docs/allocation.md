@@ -72,7 +72,11 @@ the scope; a mandate told to "map the nutrition literature" reaches its
 planner with no scope claim at all, and the planner's job is to find the
 sources and propose them as ingest items. The plan carries every kind of
 work a mandate can fund, is validated like any other, and is held to the
-escrow at the same estimate the funder was quoted. The three modes of a
+escrow at the same estimate the funder was quoted. The planning pass works
+to the platform's default for a Grantmaker's pass
+(`DEFAULT_REVIEW_PASS_BUDGET_OWLS`, 5), since it runs before the mandate
+has an operating policy to name its own figure, and its briefing says so
+("What a pass works to", below). The three modes of a
 mandate's Grantmaker (the granting conversation, the planning pass, the
 review pass) share one toolbox (llm/tools/mandate-tools.ts).
 
@@ -115,11 +119,13 @@ with a budget and a mission would need:
 - **grow its own plan** (extend_plan): append the ingest/assess items it
   discovered; each is priced, escrow-bounded, and executes through the
   ledger;
-- **pace itself** (set_daily_rate) and **chain passes**
-  (continue_review): a pass that has more to do runs another immediately,
-  funded out of the mandate's day like the rest of its work, and the
-  briefing says what the day has left: cost discipline lives in the
-  money the agent can see, never in narrowed affordances;
+- **pace itself** (set_daily_rate), **add to the pass in hand**
+  (add_to_pass_budget) and **chain passes** (continue_review): a pass
+  that has more to do adds to its own budget from the escrow, or ends and
+  runs another immediately; both are funded out of the mandate's day like
+  the rest of its work, and the briefing says what the day has left: cost
+  discipline lives in the money the agent can see, never in narrowed
+  affordances;
 - **tell the funder** (note_to_funder): what only the funder can decide
   (a move above the pass's cap, a bounty confirmation, a top-up), kept on
   the mandate and shown in the funder's chat and grant_overview;
@@ -132,12 +138,79 @@ with a budget and a mission would need:
   every lookout the mandate funds, its precision, and every flag raised
   since the last pass.
 
-Every pass is metered under a cap; the refusal duties that govern mandate
+Every pass is metered to a budget; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
 on the mandate's public page. Known gap, deliberately next: a bulk
 ingestion primitive ("ingest what this listing/feed points to") so a
 discovered index becomes a program of work in one plan item instead of an
 enumeration.
+
+### What a pass works to
+
+The payer sets it (#820). A mandate pays for its own deliberation, so the
+budget of a review pass is a figure in the mandate's operating policy,
+`review_pass_owls`, written by its Grantmaker with a reason
+(`write_operating_policy`), beside the officers' limit. While the policy
+names none the pass works to `DEFAULT_REVIEW_PASS_BUDGET_OWLS` (5, the
+figure a Curator run, an Audit run and a paid assessment work to); the
+planning pass always does. A decomposition is the exception it always
+was: its passes are paid from its Grantmaker share, half for the opening
+plan and what is left for each review. One function states all of this,
+`reviewPassBudgetMicroUsd` (src/services/action-service.ts), and every site
+that opens or reopens the row writes its figure as the row's estimate: the
+reconcile sweep, the wake on new events, and continue_review. Before, the
+row carried the public assessment price cap, a deployment constant that
+knows nothing about the mandate, and a pass spent most of it on its
+opening turn (the Grantmaker's instructions, some seventy tool schemas and
+the briefing) before it could survey or value anything.
+
+The money path is the one every self-funded row takes. `fundGrantSelfActions`
+places the budget on the row from the escrow, counted whole against the
+day's rate while the pass runs; settlement spends what the pass metered and
+frees the rest. Two things are particular to the Grantmaker's own passes:
+
+- **A pass the day or the escrow cannot fund in full starts short.** Other
+  self-funded work waits for room. A review or planning pass is started
+  with what there is, and its row's estimate lowered to that, when it is at
+  least `REVIEW_PASS_FLOOR_OWLS` (1); below the floor it waits. The reason
+  for starting short is that the pass is the only thing that can fix what
+  keeps it from running (the rate, the figure, a note to the funder). The
+  reason for the floor is that a pass started with less than its opening
+  turn costs spends it reading the briefing, decides nothing, and is opened
+  again, so the mandate would pay for nothing repeatedly. A short pass is
+  told so in its briefing with the figures: what the policy names, what it
+  was started with, where the day's rate and the escrow stand, and the
+  floor. `write_operating_policy` also says, when the figure is set, if it
+  is more than the daily rate or the uncommitted escrow.
+- **A pass can add to its own budget** (`add_to_pass_budget`): the amount is
+  placed from the mandate onto the running review row by `placeCommission`,
+  the path a granted petition takes, so the day's rate and the escrow are
+  checked under the mandate's lock and a refusal carries the figures
+  (`OVER_DAILY_RATE`, `OVER_ESCROW`); then the run's ceiling rises
+  (`creditRunBudget`). It adds to the mandate's one live placement on the
+  row, so settlement is unchanged. A decomposition's passes are not offered
+  it: the share is their bound.
+
+continue_review stays, described for what it costs: it ends the pass and
+opens another at the pass budget, which starts from the workspace and pays
+for the opening turn again. It is the right tool when a fresh context is
+worth that (a long pass whose every further turn re-reads a large
+transcript, work that divides into stages); for a pass that only needs more
+money, add_to_pass_budget does the same without the second opening turn.
+
+The briefing's budget line states the figure, whose it is (the policy's,
+with its reason, or the platform's default and why), that it is held
+against today's rate while the pass runs, that the opening turn is paid
+from it, and how to add to it (src/llm/prompts/pass-budget.ts). The line
+other agents get, that a budget is "set at the high end of what work like
+this usually costs", is true of a commission budgeted from the costing
+skill and was never true of these passes, so they do not get it.
+
+The opening turn itself is not made cheaper here. Passes are thirty
+minutes or more apart (`WAKE_AFTER_MINUTES`), past the provider's prompt
+cache, so every pass reads its prompt and tool list uncached; shrinking
+that is a matter of restructuring the prompt and the tool list, which this
+change does not attempt.
 
 ## Regrants: mandates fund mandates, as peers
 
@@ -495,11 +568,15 @@ checks, new subclaims, reports, flags, plan items, review passes,
 lookout runs or lookout ingests per run or per day: an agent spends its budget across its
 tools as the work warrants, and a run that needs more petitions the
 mandate paying for it (below, "Petitions") and gets the answer in the
-run. What stays is short, and each item is told to the
+run; a Grantmaker's review pass, whose payer is its own mandate, adds to
+its budget itself (add_to_pass_budget) under the same checks. What stays
+is short, and each item is told to the
 agent with its reason: a turn guard far above any real run (it halts a
 loop that has stopped spending, not work), the escrow-fraction limits on
 autonomous money moves (they stand against injected text, not cost), the
-researcher's wall-clock cap (its launcher's run waits on it), and the
+researcher's wall-clock cap (its launcher's run waits on it), the floor
+below which a Grantmaker's pass is not started short (a pass that cannot
+pay for its opening turn buys nothing, and would be bought again), and the
 operator's daily circuit breakers on solver and researcher spend.
 
 ## Consistency sweeps: reading assessments against each other
@@ -920,7 +997,11 @@ budget each kind of work), petitions (how to answer them), and delegation
 (what to send the Grantmaker). It carries the **officers' limit**, the most
 an officer may commit in one decision, with the reason the Grantmaker gives
 for it, which the officers are told (`DEFAULT_OFFICER_LIMIT_OWLS`, 5, when
-the policy sets none). It is stored on the mandate
+the policy sets none), and the **review-pass budget**, what each of the
+Grantmaker's own review passes works to, with its reason, which each pass
+is told (`review_pass_owls`; `DEFAULT_REVIEW_PASS_BUDGET_OWLS`, 5, when the
+policy sets none; "What a pass works to", above). Either figure can be set
+alone, leaving the prose as it is. It is stored on the mandate
 (`grants.mandate.operating_policy`), every version is kept
 (`mandate_policy_versions`), and it is shown on the mandate's page.
 

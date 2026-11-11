@@ -96,6 +96,11 @@ export async function AllocationSection({ mandateId }: { mandateId: string }) {
         <summary>The operating policy</summary>
         <Markdown>{view.operating_policy}</Markdown>
         <p className="alloc-tail">Officers&rsquo; limit: {view.officer_limit.reason}</p>
+        {view.review_pass && (
+          <p className="alloc-tail">
+            Each review pass works to {owls(view.review_pass.owls)} owls: {view.review_pass.reason}
+          </p>
+        )}
       </details>
 
       <KindTiles view={view} />
