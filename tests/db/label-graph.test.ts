@@ -116,7 +116,8 @@ import { addArgument } from "../../src/services/argument-service.js";
 import { openAttempt, recordAttemptLeanCheck, type FormalizationRow } from "../../src/services/attempt-service.js";
 import { linkClaims } from "../../src/services/claim-link-service.js";
 import { proposeClaim } from "../../src/services/claim-service.js";
-import { getClaimView } from "../../src/services/claim-view-service.js";
+import { ARGUMENT_VIEW_INCLUDES } from "../../src/services/argument-view-service.js";
+import { CLAIM_VIEW_INCLUDES, getClaimView } from "../../src/services/claim-view-service.js";
 import { createClaimProposal, materializeAcceptedIntake } from "../../src/services/intake-service.js";
 import { scanReconcileCandidates } from "../../src/services/curation-service.js";
 import {
@@ -887,24 +888,29 @@ describe("what a reader is shown", () => {
     ]));
   });
 
-  it("has no agent's graph read, and no claim view at any depth, that carries it", async () => {
+  it("has no agent's graph read, and no section of the claim view, that carries it", async () => {
     const [claimId] = rows.claims!.params[0] as string[];
     const [argumentId] = rows.arguments!.params[0] as string[];
-    const reads: Array<[string, Record<string, unknown>]> = [
-      ["get_claim", { claim_id: claimId, information_depth: "deep" }],
-      ["get_decomposition", { claim_id: claimId }],
-      ["get_dependents", { claim_id: claimId }],
-      ["get_argument", { argument_id: argumentId }],
+    // A claim and an argument are read in sections, and a read that asks
+    // for none returns the head alone. Every section is asked for, so the
+    // arguments, the subclaims and what the judgment rested on are read.
+    const reads: Array<[string, Record<string, unknown>, string]> = [
+      ["get_claim", { claim_id: claimId, include: [...CLAIM_VIEW_INCLUDES] }, argumentId!],
+      ["get_decomposition", { claim_id: claimId }, claimId!],
+      ["get_dependents", { claim_id: claimId }, claimId!],
+      ["get_argument", { argument_id: argumentId, include: [...ARGUMENT_VIEW_INCLUDES] }, claimId!],
     ];
-    for (const [tool, input] of reads) {
+    for (const [tool, input, shows] of reads) {
       const out = await executeGraphReadTool(tool, input);
       expect(out, tool).not.toBeNull();
-      expect(out!.length, tool).toBeGreaterThan(20);
+      // The check means something only if the read returned the rows.
+      expect(out!, tool).toContain(shows);
       expect(carriesIt(out!), tool).toBe(false);
     }
-    for (const depth of ["cursory", "standard", "deep"] as const) {
-      const view = await getClaimView(claimId!, { informationDepth: depth });
-      expect(carriesIt(JSON.stringify(view)), depth).toBe(false);
+    // The view the API and MCP serve, bare and with each section on its own.
+    for (const include of [[], ...CLAIM_VIEW_INCLUDES.map((section) => [section])]) {
+      const view = await getClaimView(claimId!, { include });
+      expect(carriesIt(JSON.stringify(view)), include.join()).toBe(false);
     }
   });
 });
