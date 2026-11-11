@@ -382,6 +382,27 @@ describe("moving history breakpoint on the tool path", () => {
     expect(history).toEqual(before);
   });
 
+  it("sends an image a tool showed inside its tool_result, unaltered (#912)", async () => {
+    const image = { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } };
+    const history = loopHistory();
+    (history.at(-1)!.content as Array<Record<string, unknown>>)[0]!.content = [
+      { type: "text", text: '{"ok":true}' },
+      image,
+    ];
+
+    await anthropicAdapter.completeWithTools({ messages: history, tools: [TOOL], model: PLAIN, maxTokens: 64 });
+
+    // The breakpoint goes on the tool_result, never inside it.
+    expect(lastUserContent(sentParams())).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "t1",
+        content: [{ type: "text", text: '{"ok":true}' }, image],
+        cache_control: EPHEMERAL,
+      },
+    ]);
+  });
+
   it("turns a string user message into a cached text block", async () => {
     await anthropicAdapter.completeWithTools({
       messages: [{ role: "user", content: "go" }],
