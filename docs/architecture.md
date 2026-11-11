@@ -1776,6 +1776,40 @@ This site, a Next.js app at `minerval.ai`. It talks to the API server-side
 with a service key, forwarding the signed-in user's identity through an
 acting-user header, so browser traffic never carries API credentials.
 
+### Embeds
+
+A claim can be shown on another site with the graph's judgment of it. The
+web app serves every form of embed, each from one read of the claim card,
+so each reports the judgment whole: a claim's status with its verdict
+confidence, a question's standing with its confidence, or a quantity's
+estimate; dispute beside it when the claim's contestation reaches the
+thresholds the claim page uses; an unassessed node as unassessed. Every
+embed links to the claim's page and is dated, because embeds are cached and
+screenshotted.
+
+- **The card page**, `/embed/claims/<id>`: the card alone, with none of the
+  site's navigation, as one self-contained document that fetches nothing. It
+  follows the viewer's colour scheme unless `?theme=light` or `?theme=dark`
+  is given, fits widths from about 280px, says "as of" the date it was
+  served, and is marked `noindex`. It tells a framing page its height with a
+  `minerval:embed:height` message (`{type, id, height}`). `/embed/*` is the
+  only part of the site that declares it may be framed from any origin.
+- **The script embed**, `/embed.js`: a small dependency-free script that
+  replaces each `<blockquote class="minerval-claim" data-claim-id="<id>">`
+  holding a link to the claim's page with an iframe of the card page, and
+  keeps the iframe as tall as the card. `data-theme` passes through. Where
+  the script does not run, the quotation and its link remain.
+- **oEmbed**, `/oembed?url=<claim page URL>&format=json`: a `rich` response
+  whose `html` is the iframe, with `maxwidth` and `maxheight` honoured. A URL
+  that is not a claim page, or a claim the graph does not hold, is a 404;
+  `format=xml` is a 501.
+- **The badge**, `/embed/claims/<id>/badge.svg`: the judgment in one line as
+  a self-contained SVG for a README, e.g. `minerval | supported · 0.80 ·
+  disputed`, in the site's status colours, cached for ten minutes.
+
+A claim's page offers the three snippets under "Embed this claim", beside
+"Cite this claim".
+
 ### The browser extension
 
 The extension analyzes the page you are reading: captured text flows through

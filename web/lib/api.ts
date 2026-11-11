@@ -1,6 +1,7 @@
 import "server-only";
 import type {
   ArgumentPage,
+  ClaimCard,
   AttemptStats,
   AttemptSummary,
   ClaimCitationPayload,
@@ -398,6 +399,20 @@ export async function fetchAttempt(id: string): Promise<AttemptSummary | null> {
 // reader opens the cite panel, not with the page.
 export async function fetchClaimCitation(id: string): Promise<ClaimCitationPayload> {
   return apiGet<ClaimCitationPayload>(`/claims/${pathSegment(id)}/citation`);
+}
+
+// The claim card: the judgment whole, in one small shape (the API's
+// claim-card-service). The embed page, the badge and the oEmbed endpoint all
+// read it. Null when the graph holds no such node; an id that is not a
+// well-formed one (the API answers 400) is equally a node that does not
+// exist. Any other failure throws, so an outage is not shown as "not found".
+export async function fetchClaimCard(id: string): Promise<ClaimCard | null> {
+  try {
+    return await apiGet<ClaimCard>(`/claims/${pathSegment(id)}/card`);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 400)) return null;
+    throw err;
+  }
 }
 
 export async function fetchContribution(

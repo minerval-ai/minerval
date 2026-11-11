@@ -14,6 +14,26 @@ const nextConfig = {
     // The fonts the link-preview cards are set in (lib/og/card.tsx).
     "/{claims,findings}/**": ["./lib/og/fonts/*.woff"],
   },
+  // Embeds (/embed/*: the claim card page and its badge) exist to be shown on
+  // other people's sites, so they alone may be framed from anywhere, and no
+  // X-Frame-Options is sent for them. This sets no framing policy for the
+  // rest of the site. The card page inlines its styles and one small script
+  // and fetches nothing, and the policy holds it to that.
+  async headers() {
+    return [
+      {
+        source: "/embed/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; " +
+              "base-uri 'none'; form-action 'none'; frame-ancestors *",
+          },
+        ],
+      },
+    ];
+  },
   // The explainer pages moved from /about/* to /docs/* (#112); old URLs live on.
   async redirects() {
     return [
