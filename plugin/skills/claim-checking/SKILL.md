@@ -228,7 +228,11 @@ support matters:
 - Read every source against today's date. A source can be out of date
   even when it was right when written; the assessment's date and the
   claim's history (`get_assessment_history`) tell you when the graph last
-  looked.
+  looked. `get_judgment_inputs` says what has changed under a verdict since
+  it was written: premises judged again, added or removed, sources attached
+  or detached, and corrections or retractions on its sources. A verdict
+  written before that was recorded answers `recorded: false`, which means
+  unknown, not unchanged.
 - A document the support rests on has a page of its own.
   `get_source_examinations` gives what examinations of it covered and
   found, passage by passage, including reviews of the whole document for

@@ -7,8 +7,9 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../../db/client.js";
+import { recordJudgmentInputs } from "../../services/judgment-inputs-service.js";
 import {
   claims,
   assessments,
@@ -1460,16 +1461,6 @@ export async function executeStewardTool(
 
         const db = getDb();
 
-        // Carry over the current assessment's subclaim breakdown: a steward
-        // reassessment of status/confidence shouldn't wipe it. Filter on
-        // isCurrent so we read the active row (not an arbitrary historical one),
-        // and fall back to {} so the column is never null (it is notNull).
-        const [prev] = await db
-          .select({ subclaimSummary: assessments.subclaimSummary })
-          .from(assessments)
-          .where(and(eq(assessments.claimId, claimId), eq(assessments.isCurrent, true)))
-          .limit(1);
-
         // Mark previous assessment as non-current
         await db
           .update(assessments)
@@ -1477,7 +1468,7 @@ export async function executeStewardTool(
           .where(eq(assessments.claimId, claimId));
 
         // Insert new assessment
-        await db.insert(assessments).values({
+        const [written] = await db.insert(assessments).values({
           claimId,
           status,
           confidence,
@@ -1485,7 +1476,6 @@ export async function executeStewardTool(
           marginalYield,
           summary,
           reasoningTrace,
-          subclaimSummary: prev?.subclaimSummary ?? {},
           isCurrent: true,
           trigger: run.trigger ?? "steward_reassessment",
           triggerContext: run.context?.trim() ? run.context : null,
@@ -1504,7 +1494,23 @@ export async function executeStewardTool(
           // The run that wrote this verdict, so its transcript is one join
           // away; stamped from the usage context, never by the agent.
           runId: getUsageContext().runId ?? null,
-        });
+        }).returning({ id: assessments.id });
+
+        // What the verdict was made against: the nodes under the claim with
+        // their judgments in force, and its attached sources (#566). This
+        // write has no transaction, so a failure here leaves the verdict
+        // standing with inputs_recorded false, which readers report as "not
+        // recorded", rather than failing a verdict that is already written.
+        if (written?.id) {
+          try {
+            await recordJudgmentInputs(rawQuery, "assessment", written.id, claimId);
+          } catch (err) {
+            console.error(
+              "[steward] failed to record what an assessment was made against:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        }
 
         // Argument evaluations are derived within the assessment (issue #173),
         // so a fresh verdict makes every named argument's evaluation due: list
