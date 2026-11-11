@@ -285,10 +285,18 @@
   },
   {
     "name": "examination_outline",
-    "description": "The document you were launched to examine, divided by its own structure: each segment's id, kind (section, passage, table, note, reference), label, character span, and opening words, with the facets this examination checks and the coverage and findings recorded so far. Read the text of a segment with provenance_read_source at its char_start. Call it first; the recording tools take its segment ids.",
+    "description": "The document you were launched to examine, divided by its own structure: each segment's id, kind (section, passage, table, note, reference), label, character span, and opening words, with the facets this examination checks and the coverage and findings recorded so far. Read the text of a segment with provenance_read_source at its char_start. Call it first; the recording tools take its segment ids. add_facets names what you will check, as short labels: a document review asked for in a request starts with none, since the request is the brief and what is worth checking depends on the document; on any examination, add one when the document turns out to call for a check the brief did not name.",
     "input_schema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "add_facets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Facets to add to what this examination checks, as short labels (\"method\", \"data\", \"quotation\", \"attribution\", \"how it has been drawn on\" becomes how_it_has_been_drawn_on). Optional."
+        }
+      },
       "required": []
     },
     "roles": [
@@ -310,7 +318,7 @@
         },
         "facet": {
           "type": "string",
-          "description": "One of the facets this examination checks."
+          "description": "One of the facets this examination checks (examination_outline lists them, and add_facets adds one)."
         }
       },
       "required": [
@@ -334,7 +342,7 @@
         },
         "facet": {
           "type": "string",
-          "description": "One of the facets this examination checks."
+          "description": "One of the facets this examination checks (examination_outline lists them, and add_facets adds one)."
         },
         "statement": {
           "type": "string",

@@ -10,8 +10,9 @@
  *   add_subquestion, add_answer, remove_answer, set_answer_relation,
  *   update_question_assessment, record_question_instance.
  * - Request tools, for Stewards and the Curator: file_request,
- *   list_requests, revise_request, close_request; the Curator also has
- *   set_request_targets.
+ *   list_requests, revise_request, close_request, and get_source_context,
+ *   for judging whether a document deserves a review of its own (#865); the
+ *   Curator also has set_request_targets and list_documents_for_review.
  * - change_node_kind, for the Curator.
  *
  * The services (quantity-service, question-service, request-service,
@@ -56,6 +57,12 @@ import {
   setRequestTargets,
 } from "../../services/request-service.js";
 import { changeNodeKind } from "../../services/reconciliation-service.js";
+import {
+  DOCUMENT_REVIEW_ORDERS,
+  getSourceContext,
+  listDocumentsForReview,
+  type DocumentReviewOrder,
+} from "../../services/source-context-service.js";
 import {
   ANSWER_BASES,
   ANSWER_RELATIONS,
@@ -500,8 +507,14 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
         "asked for. why: what your judgment would become under its possible outcomes. " +
         "satisfied_by: what would satisfy it. A request asks for what would decide the matter " +
         "either way, never a particular result. It bears on nodes (claim_ids), sources " +
-        "(source_urls), or something the graph does not hold yet (bears_on_text). Look at the " +
-        "open requests first (list_requests) and join one that asks for the same thing. " +
+        "(source_ids, or source_urls for one the graph may not hold), or something the graph " +
+        "does not hold yet (bears_on_text). A request that bears on one document and on no node " +
+        "asks for a review of that document for its own sake: whoever takes it up reads it " +
+        "whole and records what it examined and found on the document's page, for every later " +
+        "reader. Whether a document deserves that is your judgment (get_source_context shows " +
+        "what the graph records about it); say in why what about the document makes it worth " +
+        "the cost. Look at the open requests first (list_requests, by claim_id or source_id) " +
+        "and join one that asks for the same thing. " +
         "budget_usd: what doing it should cost, if you can say (the costing skill says how to " +
         "estimate it); it is the price funders see and bounds the run that takes it up. Leave it " +
         "out when you cannot, and a cheap scoping pass will quote it before anyone pays for the work.",
@@ -514,6 +527,11 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
           who_could: { type: "string", description: "Who could do it and what it would take, where you know." },
           addressed_to: { type: "string", description: "A party it is put to; omit to leave it open to anyone." },
           claim_ids: { type: "array", items: { type: "string" } },
+          source_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Sources the graph holds, by id (from a provenance map, an instance, or get_source_context).",
+          },
           source_urls: { type: "array", items: { type: "string" } },
           bears_on_text: { type: "string" },
           budget_usd: { type: "number", description: "What doing it should cost, in USD; omit to have it scoped first." },
@@ -525,7 +543,8 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
       name: "list_requests",
       description:
         "List requests, newest first, or by relevance with q. Each comes with its keeper and the " +
-        "work done on it. Filters: claim_id (those bearing on a node), live: true (only those " +
+        "work done on it. Filters: claim_id (those bearing on a node), source_id (those bearing " +
+        "on a document), live: true (only those " +
         "still open to work), keeper (curator: those bearing on several nodes or on none; " +
         "steward: those bearing on one node), and q, a search of what requests ask and why by " +
         "meaning and by keyword, which is how to find one that asks for the same thing wherever " +
@@ -535,6 +554,7 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
         type: "object" as const,
         properties: {
           claim_id: { type: "string" },
+          source_id: { type: "string" },
           live: { type: "boolean" },
           keeper: { type: "string", enum: ["curator", "steward"] },
           q: { type: "string", description: "What to look for, in words." },
@@ -580,8 +600,50 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
         required: ["request_id", "state", "note"],
       },
     },
+    {
+      name: "get_source_context",
+      description:
+        "What the graph records about one document across all its uses: lineage (the documents " +
+        "it draws on and that draw on it, by relation and fidelity, and where a use departs from " +
+        "what it says), prominence (republished copies; the claims whose map it is in and where " +
+        "it stands in them; what the Stewards found reading it), reviews (reviews of it for its " +
+        "own sake, with the request each was asked in and how much of it each covered, " +
+        "examinations commissioned for a claim, and the requests bearing on it), and a dated " +
+        "history. The figures are inputs to judgment, not a score: read them when deciding " +
+        "whether a document deserves a review of its own, and before asking for one. By " +
+        "source_id, or url for a document the graph may hold.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          source_id: { type: "string" },
+          url: { type: "string" },
+        },
+      },
+    },
   ];
   if (role === "curator") {
+    tools.push({
+      name: "list_documents_for_review",
+      description:
+        "The documents the graph rests on, with the figures a reader would weigh in deciding " +
+        "whether one deserves a review for its own sake: how many documents draw on it and how " +
+        "many of those uses depart from what it says, its republished copies, the claims whose " +
+        "map it is in, its readings and whether they differ, how long its stored text is, the " +
+        "reviews it has had, and any live request bearing on it. order chooses which figure to " +
+        "sort by (drawn_on, divergent_uses, copies, claims, readings); each is a different reason " +
+        "a document may matter, and none decides it. unreviewed: true leaves out documents " +
+        "already reviewed. This lists; it files nothing. Read a document's context " +
+        "(get_source_context) before asking for its review with file_request.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          order: { type: "string", enum: [...DOCUMENT_REVIEW_ORDERS] },
+          unreviewed: { type: "boolean" },
+          limit: { type: "number", description: "At most 50; default 20." },
+          offset: { type: "number" },
+        },
+      },
+    });
     tools.push({
       name: "set_request_targets",
       description:
@@ -1146,16 +1208,23 @@ async function executeKindToolImpl(
     // ---- requests ----------------------------------------------------------
     case "file_request": {
       const sourceIds: string[] = [];
+      for (const id of ids(input.source_ids)) {
+        if (!UUID_RE.test(id)) return refuse(`source_id "${id}" is not a source id.`);
+        const [known] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE id = $1`, [id]);
+        if (!known) return refuse(`No source ${id} exists. Take source ids from a provenance map or get_source_context.`);
+        sourceIds.push(id);
+      }
       for (const url of ids(input.source_urls)) {
         const source = await sourceFor({ url });
         if ("error" in source) return refuse(source.error);
-        sourceIds.push(source.id);
+        if (!sourceIds.includes(source.id)) sourceIds.push(source.id);
       }
       const claimIds = ids(input.claim_ids);
       // Asked first, so a duplicate is visible before it is filed.
-      const open = claimIds.length
-        ? (await Promise.all(claimIds.map((c) => listRequests({ claimId: c, live: true, limit: 20 })))).flatMap((r) => r.items)
-        : [];
+      const open = [
+        ...(await Promise.all(claimIds.map((c) => listRequests({ claimId: c, live: true, limit: 20 })))).flatMap((r) => r.items),
+        ...(await Promise.all(sourceIds.map((sid) => listRequests({ sourceId: sid, live: true, limit: 20 })))).flatMap((r) => r.items),
+      ];
       const { id } = await fileRequest({
         ask: str(input.ask),
         why: str(input.why),
@@ -1173,10 +1242,14 @@ async function executeKindToolImpl(
       // tool, so it is asked to name the duplicate for the keeper (#746).
       const duplicateNote =
         ctx.role === "researcher"
-          ? ` Other open requests already bear on these nodes; if one asks for the same thing, name it in your report, and this request's keeper decides whether to close one of them.`
-          : ` Other open requests already bear on these nodes; if one asks for the same thing, close this one as moot and name it.`;
+          ? ` Other open requests already bear on these nodes or documents; if one asks for the same thing, name it in your report, and this request's keeper decides whether to close one of them.`
+          : ` Other open requests already bear on these nodes or documents; if one asks for the same thing, close this one as moot and name it.`;
+      const review =
+        claimIds.length === 0 && sourceIds.length === 1
+          ? " It bears on one document alone, so whoever takes it up reviews the document, and what they examine and find goes on its page."
+          : "";
       return ok(
-        `Request ${id} filed.` + (others.length ? duplicateNote : ""),
+        `Request ${id} filed.` + review + (others.length ? duplicateNote : ""),
         { request_id: id, ...(others.length ? { open_requests: others.map((r) => ({ id: r.id, ask: r.ask })) } : {}) }
       );
     }
@@ -1186,8 +1259,11 @@ async function executeKindToolImpl(
       const limit = Math.min(LIST_REQUESTS_MAX, Math.max(1, Number(input.limit) || 20));
       const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
       const keeper = input.keeper === "curator" || input.keeper === "steward" ? input.keeper : undefined;
+      const sourceId = optStr(input.source_id);
+      if (sourceId && !UUID_RE.test(sourceId)) return refuse(`source_id "${sourceId}" is not a source id.`);
       const { items, total } = await listRequests({
         claimId,
+        sourceId,
         live: input.live === true,
         keeper,
         q: optStr(input.q),
@@ -1214,6 +1290,46 @@ async function executeKindToolImpl(
           // never whether it was paid for (the public page discloses that).
           work: r.work.map(({ funded_by: _funded, ...w }) => w),
         })),
+      });
+    }
+
+    case "get_source_context": {
+      let sourceId = str(input.source_id);
+      if (!sourceId && str(input.url)) {
+        const [row] = await rawQuery<{ id: string }>(
+          `SELECT id FROM sources WHERE url = $1 ORDER BY retrieved_at LIMIT 1`,
+          [str(input.url)]
+        );
+        if (!row) return refuse(`The graph holds no source at ${str(input.url)}.`);
+        sourceId = row.id;
+      }
+      if (!UUID_RE.test(sourceId)) return refuse("Name the document: source_id, or url.");
+      const context = await getSourceContext(sourceId);
+      if (!context) return refuse(`No source ${sourceId} exists.`);
+      const HISTORY = 30;
+      return JSON.stringify({
+        success: true,
+        source_id: sourceId,
+        ...context,
+        history: context.history.slice(0, HISTORY),
+        ...(context.history.length > HISTORY ? { history_total: context.history.length } : {}),
+      });
+    }
+
+    case "list_documents_for_review": {
+      if (ctx.role !== "curator") return refuse("Only the Curator lists documents for review.");
+      const order = (DOCUMENT_REVIEW_ORDERS as readonly string[]).includes(str(input.order))
+        ? (str(input.order) as DocumentReviewOrder)
+        : "drawn_on";
+      const limit = Math.min(50, Math.max(1, Number(input.limit) || 20));
+      const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
+      const { documents } = await listDocumentsForReview({ order, unreviewed: input.unreviewed === true, limit, offset });
+      return JSON.stringify({
+        success: true,
+        order,
+        offset,
+        ...(documents.length === limit ? { next_offset: offset + limit } : {}),
+        documents,
       });
     }
 

@@ -672,6 +672,21 @@ export function requestBrief(request: RequestView): string {
     .join("\n");
 }
 
+/**
+ * The document a request asks to have reviewed (#865): the one source it
+ * bears on, when it bears on that source and on no node. A run that takes
+ * such a request up examines the document for its own sake, and its
+ * findings go on the document's page. A request that bears on a source and
+ * on nodes too is about those nodes; one on several sources is not one
+ * document's review. Null for every other request.
+ */
+export function documentUnderReview(
+  request: Pick<RequestView, "bears_on" | "bears_on_sources">
+): { id: string; title: string; url: string | null } | null {
+  if (request.bears_on.length > 0 || request.bears_on_sources.length !== 1) return null;
+  return request.bears_on_sources[0]!;
+}
+
 export async function getRequest(id: string): Promise<RequestView | null> {
   const rows = await rawQuery<RequestRowJoined>(`${REQUEST_SELECT} WHERE r.id = $1`, [id]);
   return (await assemble(rows))[0] ?? null;
@@ -689,6 +704,8 @@ export async function listRequests(opts: {
   state?: RequestState;
   live?: boolean;
   claimId?: string;
+  /** Keep the ones that bear on this document. */
+  sourceId?: string;
   /**
    * Who keeps it: the Curator (a request bearing on several nodes or on
    * none) or a node's Steward (#764), so the Curator can list what it keeps.
@@ -717,6 +734,10 @@ export async function listRequests(opts: {
   if (opts.claimId) {
     params.push(opts.claimId);
     where.push(`EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.claim_id = $${params.length})`);
+  }
+  if (opts.sourceId) {
+    params.push(opts.sourceId);
+    where.push(`EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.source_id = $${params.length})`);
   }
   // A search works as claim search does (search-service.ts): keyword OR
   // semantic match for recall, ranked by cosine similarity to the query,

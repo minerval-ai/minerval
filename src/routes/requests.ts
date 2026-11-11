@@ -16,6 +16,7 @@ const listRequestsParams = z.object({
   // One state, or "live" for every request still open to work.
   state: z.enum([...REQUEST_STATES, "live"]).optional(),
   claim_id: z.guid().optional(),
+  source_id: z.guid().optional(),
   keeper: z.enum(["curator", "steward"]).optional(),
   q: z.string().max(500).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -114,6 +115,7 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             state: { type: "string", enum: [...REQUEST_STATES, "live"] },
             claim_id: { type: "string", format: "uuid" },
+            source_id: { type: "string", format: "uuid", description: "Only requests bearing on this document" },
             keeper: {
               type: "string",
               enum: ["curator", "steward"],
@@ -146,6 +148,7 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
           state: params.state === "live" ? undefined : params.state,
           live: params.state === "live",
           claimId: params.claim_id,
+          sourceId: params.source_id,
           keeper: params.keeper,
           q: params.q,
           limit: params.limit,

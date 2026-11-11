@@ -195,6 +195,13 @@ support matters:
   even when it was right when written; the assessment's date and the
   claim's history (`get_assessment_history`) tell you when the graph last
   looked.
+- A document the support rests on has a page of its own.
+  `get_source_examinations` gives what examinations of it covered and
+  found, passage by passage, including reviews of the whole document for
+  its own sake; `get_source_context` shows how it has been copied and drawn
+  on, and where those uses depart from what it says. A finding is the
+  examination's statement about the document, not a verdict on it or on
+  the claim: report it as such, with what was not examined.
 - A source can overstate its evidence for a claim that is true, and
   faithfully report evidence for one that is false. Whether a source bears
   its assertion is a different judgment from whether the claim holds.
@@ -220,6 +227,11 @@ support matters:
   - **Missing evidence or a source the graph hasn't read**:
     `submit_source`, or `submit_contribution` with `support` or
     `challenge` and the evidence URLs.
+  - **A document that deserves a reading of its own**: a request bearing
+    on that document alone (`submit_contribution` proposing a request
+    that bears on its source) asks for a review of it, recorded on its page for
+    every later reader. Whether one is worth it is a judgment about the
+    document; say why in the request.
   - **A verdict you think is wrong**: `submit_contribution` with a
     `challenge` that engages the claim's recorded reasoning. Substance
     wins, not tone or volume; the reviewer answers either way (§13, §14).

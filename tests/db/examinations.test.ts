@@ -139,8 +139,9 @@ describe("examinations", () => {
     await expect(openExamination(base)).rejects.toThrow(ExaminationError);
     await expect(openExamination({ ...base, scope: "document", claimId: null, facets: [] })).rejects.toThrow(/facets is required/);
     await expect(openExamination({ ...base, scope: "document", claimId: null, facets: ["has space!"] })).rejects.toThrow(/short label/);
-    // A document review needs no claim.
-    const review = await openExamination({ ...base, scope: "document", trigger: "mandate", claimId: null, grantId: null });
+    // A document review needs no claim; one asked for in a request may start
+    // without facets (#865, tests/db/document-reviews.test.ts).
+    const review = await openExamination({ ...base, scope: "document", trigger: "request", claimId: null, grantId: null });
     expect(review.scope).toBe("document");
   });
 });

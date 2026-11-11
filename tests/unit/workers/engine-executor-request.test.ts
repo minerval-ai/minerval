@@ -6,13 +6,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * on several is told which nodes it may record on (#728); every run opens
  * with the latest earlier run's notebook and report (#730); a scoping run
  * is told the tier the full work runs on, and the plan it prices is
- * recorded with its quote (#732); and the work that comes back reaches
- * the request's keeper with the run that holds the full report (#718).
+ * recorded with its quote (#732); the work that comes back reaches the
+ * request's keeper with the run that holds the full report (#718); and a
+ * request bearing on one document alone is a review of it, its full work
+ * examining the document and its scoping told what it prices (#865).
  */
 
 const REQUEST = "d3333333-3333-4333-8333-333333333333";
 const NODE = "c1111111-1111-4111-8111-111111111111";
 const NODE2 = "c2222222-2222-4222-8222-222222222222";
+const SOURCE = "e4444444-4444-4444-8444-444444444444";
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -26,12 +29,15 @@ const { state } = vi.hoisted(() => ({
     work: [] as Array<Record<string, unknown>>,
     notified: [] as unknown[][],
     budgets: [] as unknown[],
+    reviews: [] as Array<Record<string, unknown>>,
+    linked: [] as unknown[][],
   },
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string) => {
     if (q.includes("SELECT id, text, domains, kind FROM claims")) return state.nodes;
+    if (q.includes("length(raw_content)")) return [{ chars: 41000, segments: "17" }];
     return [];
   }),
 }));
@@ -57,6 +63,8 @@ vi.mock("../../../src/services/request-service.js", () => ({
     return { id: "w" };
   }),
   requestBrief: () => "the request as filed",
+  documentUnderReview: (r: { bears_on: unknown[]; bears_on_sources: Array<Record<string, unknown>> }) =>
+    r.bears_on.length === 0 && r.bears_on_sources.length === 1 ? r.bears_on_sources[0] : null,
   setRequestBudget: vi.fn(async (b: unknown) => {
     state.budgets.push(b);
   }),
@@ -88,6 +96,20 @@ vi.mock("../../../src/services/research-run-service.js", async (importOriginal) 
     closeResearchRun: vi.fn(async () => null),
   };
 });
+vi.mock("../../../src/services/examination-service.js", () => ({
+  examinationForRequest: vi.fn(async (input: Record<string, unknown>) => {
+    state.reviews.push(input);
+    return {
+      id: "exam-review", scope: "document", trigger: "request", claim_id: null, grant_id: null,
+      source_id: input.sourceId, source_title: "The report", source_url: "https://x.org/r",
+      brief: input.brief, facets: [], requested_by: "request", request_id: input.requestId, created_at: "2026-01-01T00:00:00Z",
+    };
+  }),
+  getExaminationRow: vi.fn(async () => null),
+  linkResearchRun: vi.fn(async (...args: unknown[]) => {
+    state.linked.push(args);
+  }),
+}));
 vi.mock("../../../src/llm/agents/researcher.js", () => ({
   runResearcher: vi.fn(async (input: Record<string, unknown>) => {
     state.researcherInputs.push(input);
@@ -124,12 +146,12 @@ const action = (variant: "scope" | "full") => ({
   updated_at: new Date(),
 });
 
-const request = (bears: string[]) => ({
+const request = (bears: string[], sources: string[] = []) => ({
   id: REQUEST,
   ask: "Find the origin of the figure",
   state: "in_progress",
   bears_on: bears.map((id) => ({ id, text: "a node", kind: "claim" })),
-  bears_on_sources: [],
+  bears_on_sources: sources.map((id) => ({ id, title: "The report", url: "https://x.org/r" })),
   work: [],
 });
 
@@ -146,6 +168,8 @@ beforeEach(() => {
   state.work = [];
   state.notified = [];
   state.budgets = [];
+  state.reviews = [];
+  state.linked = [];
 });
 
 describe("a run taking up a request", () => {
@@ -219,5 +243,43 @@ describe("a scoping run", () => {
     const scoped = state.work.find((w) => String(w.summary).startsWith("Scoped at about $12.00"))!;
     expect(scoped.summary).toContain("Plan: 1. Search the registry. 2. Read the three surveys whole.");
     expect(state.budgets).toEqual([{ requestId: REQUEST, budgetUsd: 12 }]);
+  });
+});
+
+describe("a request bearing on one document alone (#865)", () => {
+  it("takes it up as a review of the document, linked to the run", async () => {
+    state.covered = action("full");
+    state.request = request([], [SOURCE]);
+    state.report = { answer: "Reviewed the methods and the survey.", request_outcome: "partly_met" };
+    await processNextEngineAction();
+    expect(state.reviews).toEqual([{ requestId: REQUEST, sourceId: SOURCE, brief: "the request as filed" }]);
+    expect(state.linked).toEqual([["exam-review", "run-new"]]);
+    const input = state.researcherInputs[0]!;
+    expect(input.claim).toBeNull();
+    expect(input.examination).toMatchObject({ id: "exam-review", source_id: SOURCE, scope: "document", facets: [] });
+  });
+
+  it("examines nothing when the request also bears on a node, or on several documents", async () => {
+    state.covered = action("full");
+    state.request = request([NODE], [SOURCE]);
+    state.nodes = [node(NODE)];
+    state.report = { answer: "x", request_outcome: "met" };
+    await processNextEngineAction();
+    state.covered = action("full");
+    state.request = request([], [SOURCE, "e5555555-5555-4555-8555-555555555555"]);
+    await processNextEngineAction();
+    expect(state.reviews).toEqual([]);
+    expect(state.researcherInputs.every((i) => i.examination === null)).toBe(true);
+  });
+
+  it("scopes it without examining, told what the full review would read", async () => {
+    state.covered = action("scope");
+    state.request = request([], [SOURCE]);
+    state.report = { answer: "Readable.", plan: "Read it.", request_outcome: "scoped", budget_quote_usd: 6.4 };
+    await processNextEngineAction();
+    expect(state.reviews).toEqual([]);
+    const input = state.researcherInputs[0]!;
+    expect(input.examination).toBeNull();
+    expect(input.documentReview).toEqual({ title: "The report", url: "https://x.org/r", chars: 41000, segments: 17 });
   });
 });
