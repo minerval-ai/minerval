@@ -124,9 +124,37 @@ Browser ──HTTPS──> minerval.ai (Vercel, Next.js)
                                         └──> AWS ALB :443 ──> ECS Fargate :3000
 ```
 
-The browser **never** talks to the API directly. `web/lib/api.ts` is `server-only`; React
-Server Components / route handlers call the API from Vercel's servers. Because it is
-server-to-server there is no CORS configuration to maintain.
+The **web app's** browser traffic never talks to the API directly. `web/lib/api.ts` is
+`server-only`; React Server Components / route handlers call the API from Vercel's servers
+with a service key, so no API credential ever reaches a page.
+
+The API's **public reads** are a second, deliberate browser-facing surface: any site may
+embed claim data by calling `https://api.claimgraph.io` straight from the page.
+
+```
+Any browser, any site ──HTTPS──> api.claimgraph.io (Cloudflare: cache + anonymous rate limit)
+                                     └──> AWS ALB :443 ──> ECS Fargate :3000
+```
+
+- **CORS** (`src/server/plugins/cors.ts`): every response answers
+  `access-control-allow-origin: *`. It is `*` and not the caller's origin reflected back
+  because Cloudflare does not key its cache on `Vary: Origin`: a reflected origin stored at
+  the edge would be served to the next site and its browser would refuse the response. `*`
+  is safe because no route reads a cookie; credentials travel only in the `x-api-key` and
+  `Authorization` headers. Setting `CORS_ORIGINS` (comma-separated, production only)
+  restricts the API to those origins; public reads then go out as `private` so no shared
+  cache keeps a reflected origin.
+- **Cache policy** (`src/server/plugins/public-read.ts`): a GET on an open route, asked
+  without credentials and answered 200, carries
+  `cache-control: public, max-age=60, stale-while-revalidate=300`
+  (`PUBLIC_READ_MAX_AGE_SECONDS`, `PUBLIC_READ_STALE_WHILE_REVALIDATE_SECONDS`) and a weak
+  `ETag`, and answers a matching `If-None-Match` with `304`. Every authenticated route, and
+  every response to a request that carried a credential, is `private, no-store`. A route is
+  open only if it has no gating hook; when in doubt it is not cached. `/health`, `/mcp`,
+  `/oauth/*` and `/.well-known/*` are left as their routes set them.
+
+Both need the two Cloudflare rules in "Caching and the anonymous rate limit" below to take
+effect at the edge.
 
 ## Configuration that makes it work
 
@@ -145,6 +173,65 @@ server-to-server there is no CORS configuration to maintain.
   `api.claimgraph.io` (see `infra/lib/api-stack.ts`). Cloudflare SSL/TLS mode for the
   claimgraph.io zone should be **Full (Strict)** so the Cloudflare→ALB leg is encrypted and
   validated. (It runs on Flexible only as a temporary fallback if the origin cert is absent.)
+
+## Caching and the anonymous rate limit
+
+Two rules on the `claimgraph.io` zone, both set by hand in the Cloudflare dashboard
+(Cloudflare configuration is not in this repo; `infra/` is AWS only). Until they exist the
+origin's headers still reach browsers, but the edge reports `cf-cache-status: DYNAMIC` and
+nothing limits anonymous traffic.
+
+Both rules turn on the same test, **does the request carry a credential**: any of the
+headers `x-api-key`, `authorization`, `x-operator-key`, `x-acting-user`, or `cookie`. The
+origin applies the same test (`carriesCredential` in `src/server/plugins/public-read.ts`);
+keep the two lists the same.
+
+1. **Cache Rule** (Caching → Cache Rules), "API public reads". Cloudflare does not cache
+   JSON by default, so the rule makes the API's GET responses eligible and leaves the
+   decision to the origin's headers.
+   - *When*: hostname equals `api.claimgraph.io`, method equals `GET`, and the request
+     carries **no** credential header.
+   - *Then*: Cache eligibility **Eligible for cache**; Edge TTL **Use cache-control header
+     if present, bypass cache if not**; Browser TTL **Respect origin TTL**. Leave the cache
+     key at its default (the query string is part of it, which the reads need).
+   - The "no credential header" condition is not optional. Cloudflare keys the cache on the
+     URL alone, and some open routes answer a keyed caller differently (`/runs/:id`,
+     `/contributions?mine=true`, `/mandates/:id`, the prize reads). Without it a caller
+     with a key would be handed the anonymous copy. Credentialed responses are
+     `private, no-store`, so they are never stored either way; the condition is what keeps
+     them from being *served* from the store.
+   - Check: `curl -sI https://api.claimgraph.io/prizes/rules` twice should show
+     `cf-cache-status: MISS` then `HIT`; the same with `-H 'x-api-key: anything'` should
+     show `BYPASS` or `DYNAMIC` and `cache-control: private, no-store`.
+
+2. **Rate limiting rule** (Security → WAF → Rate limiting rules), "API anonymous reads".
+   - *When*: hostname equals `api.claimgraph.io` and the request carries **no** credential
+     header.
+   - *Rate*: 300 requests per minute, counted per IP address, cache hits included.
+   - *Then*: block for the rest of the period with a custom response, status `429`,
+     content type `application/json`, body:
+
+     ```json
+     {"error":{"code":"ANONYMOUS_RATE_LIMITED","message":"Requests without credentials are limited to 300 requests per minute per IP address. An anonymous caller has no account or budget to bound its use, so a count per address stands in for one. Wait a minute and retry, or present an API key: requests with a key are not subject to this limit."}}
+     ```
+
+   The limit is per address and counted, where everything else on the platform is bounded by
+   an account's budget, because an anonymous caller has no account or budget for money to
+   bound. It is generous on purpose: it exists to stop one address from monopolising the
+   origin, not to shape ordinary embedding. It is enforced here and not in the API because
+   the API's own limiter (`src/server/plugins/quota.ts`) is in memory per task and does not
+   hold across instances.
+
+   The figure is stated to callers in three places that must agree with this rule: the
+   OpenAPI description at `/docs` (read from `ANONYMOUS_RATE_LIMIT_PER_MINUTE`, default in
+   `src/config.ts`), `docs/architecture.md` ("The API"), and the 429 body above. To change
+   it, change the rule, the body, the default, and both docs together;
+   `tests/unit/server/public-read.test.ts` fails if the docs and the default disagree.
+
+The web app is unaffected by both rules: its server-side calls carry the service key
+(`MINERVAL_API_KEY` on Vercel), so they bypass the cache and are not counted. If that key
+were ever unset, the whole site would read anonymously from Vercel's few addresses and
+share one allowance.
 
 ## Known drift: the ALB :443 listener
 

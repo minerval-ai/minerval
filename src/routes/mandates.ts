@@ -27,18 +27,19 @@ import {
 import { mandatePrizesBlock } from "../services/bounty-service.js";
 import { getLookout, listLookoutFlags, lookoutPrecision } from "../services/lookout-service.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
+import { optionalAuthHook } from "../server/optional-auth.js";
 
 export async function mandateRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
   // reads stay open (mandates are public).
-  const optionalAuth = async (
+  const optionalAuth = optionalAuthHook(async (
     request: FastifyRequest,
     reply: FastifyReply
   ) => {
     if (presentsCredentials(request)) {
       await app.authenticate(request, reply);
     }
-  };
+  });
 
   app.get<{ Querystring: { limit?: number } }>("/", {
     schema: {

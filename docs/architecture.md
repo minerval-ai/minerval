@@ -1730,6 +1730,20 @@ contributions (HTTP 202) for the Contribution Reviewer, and only direct
 service callers — internal seeding — keep the immediate path. Interactive OpenAPI documentation is served at `/docs` on the
 API host.
 
+The public reads are open to browsers anywhere, not only to this site: they
+answer `access-control-allow-origin: *`, so another site can embed claim data
+by calling the API from the page. A read asked without credentials may be
+reused for a short time (`cache-control: public, max-age=60,
+stale-while-revalidate=300`) and carries an `ETag`, so an anonymous reader can
+be about a minute behind the graph; a request that presents a key is never
+cached and is always answered fresh.
+
+Requests without credentials are limited to 300 requests per minute per IP
+address, and past that the answer is a 429 that restates the limit. Everything
+else here is bounded by an account's budget; an anonymous caller has no account
+or budget to bound it, so a count per address is the only measure there is.
+Requests that present a key are not subject to this limit.
+
 **The claim card.** `GET /claims/:claim_id/card` answers with the graph's
 judgment of one node, whole, in a small fixed shape for a site that embeds
 a claim or an agent that reports where one stands: `id`, `kind`, `text`,

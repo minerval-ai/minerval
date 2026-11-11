@@ -9,6 +9,7 @@ import { registerQuota } from "./plugins/quota.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerRouteCatalog } from "./plugins/route-catalog.js";
 import { registerPartialResponse } from "./plugins/partial-response.js";
+import { registerPublicRead } from "./plugins/public-read.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
 import { argumentRoutes } from "../routes/arguments.js";
@@ -77,6 +78,9 @@ export async function buildApp() {
   await registerPartialResponse(app);
   // Before any route: MCP builds its route tools from the catalog.
   await registerRouteCatalog(app);
+  // Before any route too: it classifies each route as it registers and
+  // attaches the cache policy (public reads cacheable, the rest no-store).
+  await registerPublicRead(app);
 
   // Routes
   await app.register(healthRoutes);

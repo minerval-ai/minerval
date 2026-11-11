@@ -14,6 +14,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isDirectService, presentsCredentials } from "../server/plugins/auth.js";
+import { optionalAuthHook } from "../server/optional-auth.js";
 import {
   STEP_KINDS,
   getRunStep,
@@ -30,9 +31,9 @@ function notFound(reply: FastifyReply, request: FastifyRequest, what: string) {
 }
 
 export async function runRoutes(app: FastifyInstance): Promise<void> {
-  const optionalAuth = async (request: FastifyRequest, reply: FastifyReply) => {
+  const optionalAuth = optionalAuthHook(async (request: FastifyRequest, reply: FastifyReply) => {
     if (presentsCredentials(request)) await app.authenticate(request, reply);
-  };
+  });
   const isService = (request: FastifyRequest) =>
     isDirectService(request.auth ?? null) &&
     (request.query as { include_private?: boolean }).include_private === true;
