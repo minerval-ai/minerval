@@ -73,7 +73,7 @@ export const CLAIM_VIEW_DESCRIPTION =
   "state, importance, contestation, tags, page_url, and Steward state: " +
   "`stewarded_at` null means no Steward has worked it yet, whatever " +
   "decomposition_status says); `assessment`, the current verdict with its " +
-  "reasoning (a status, a confidence that the status is the right reading " +
+  "reasoning (its `id`, which a finding cites; a status, a confidence that the status is the right reading " +
   "of the evidence, and a credence that the claim is true where one number " +
   "is honest, else null, and `marginal_yield`, how much another pass " +
   "would add); the kind's record, since a quantity or a " +
@@ -122,6 +122,7 @@ function claimPageUrl(claimId: string): string {
 
 export function formatClaimViewAssessment(
   a: {
+    id: string;
     status: string;
     confidence: number;
     claimCredence: number | null;
@@ -135,6 +136,9 @@ export function formatClaimViewAssessment(
 ) {
   if (!a) return null;
   return {
+    // The verdict's own id: what a finding cites (note_finding refs) so it
+    // still points at what it rested on after a reassessment (#890).
+    id: a.id,
     status: a.status,
     // Verdict confidence: how sure the Steward is of the status, not P(true).
     confidence: a.confidence,
