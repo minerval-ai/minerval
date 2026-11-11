@@ -40,6 +40,8 @@ export type AllocateResult =
       /** Always true now: a commission is whole, so the pass runs. */
       covered: boolean;
       actionId: string;
+      /** Set when the claim was parked: what this commission buys (#846). */
+      note?: string;
     }
   | {
       ok: false;
@@ -101,6 +103,7 @@ export async function allocateToClaimAssessment(input: {
     unspentOwls: microUsdToOwls(budget),
     covered: true,
     actionId: result.actionId,
+    ...(result.parked ? { note: result.parked.note } : {}),
   };
 }
 

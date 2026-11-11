@@ -137,6 +137,13 @@ export interface StewardMessage {
   sender?: MessageSender;
   /** True when the pass this message asks for was commissioned with it. */
   paid?: boolean;
+  /**
+   * Return a parked node ('error') to the queue. Only a commission sets it
+   * (commission-service.ts): a park is not retried on its own (#846), so any
+   * other message reaches a parked node's inbox and leaves it parked, to be
+   * read by the pass someone later commissions. A paid message un-parks too.
+   */
+  unpark?: boolean;
 }
 
 /**
@@ -277,6 +284,12 @@ export async function enqueueArbitration(
  * second Steward while the first was still writing. The row stays 'running'
  * with `steward_requeued` set, and the run's release (steward-lease.ts) turns
  * it into 'pending' for the next pass, which reads what arrived meanwhile.
+ * A message for a PARKED claim ('error') does not flip it to 'pending' either,
+ * unless it comes with a commission (`paid` or `unpark`, #846). It used to:
+ * every note, propagation and flag un-parked the node for one more attempt
+ * that nobody had decided to buy, and the node then read as merely waiting,
+ * its failures invisible to the parent resting on it. The message is still
+ * kept, for the pass a commission later buys.
  * The claim update is one statement, so concurrent enqueues cannot interleave.
  * Ordering is by the persisted `claims.importance` column, so the message
  * carries no importance of its own. Works identically in dev and prod — there
@@ -296,10 +309,11 @@ export async function enqueueSteward(
   // are one open slot that new messages coalesce into.
   const queued = `(steward_state = 'pending'
                    OR (steward_state = 'running' AND steward_requeued))`;
-  const rows = await rawQuery<{ prev_state: string; prev_requeued: boolean }>(
+  const rows = await rawQuery<{ prev_state: string; prev_requeued: boolean; new_state: string }>(
     `UPDATE claims
         SET steward_state = CASE
               WHEN steward_state = 'running' THEN 'running'
+              WHEN steward_state = 'error' AND NOT $3::boolean THEN 'error'
               ELSE 'pending'
             END,
             steward_requeued = (steward_state = 'running'),
@@ -317,9 +331,13 @@ export async function enqueueSteward(
       WHERE claims.id = prev.id
         AND state = 'active'
       RETURNING prev.prev_state AS prev_state,
-                prev.prev_requeued AS prev_requeued`,
-    [message.claimId, message.trigger]
+                prev.prev_requeued AS prev_requeued,
+                claims.steward_state AS new_state`,
+    [message.claimId, message.trigger, message.paid === true || message.unpark === true]
   );
+  // Still parked: the message is kept below, but the node is not a candidate,
+  // so its priority and ledger rows are left as the park left them.
+  const stillParked = rows[0]?.new_state === "error";
 
   // No row = the claim is missing or inactive; nothing was enqueued, so
   // there is no event to record and no message to keep.
@@ -332,15 +350,21 @@ export async function enqueueSteward(
       sender: message.sender,
       paid: message.paid,
     });
-    recordEnqueueEvent({
-      queue: "steward",
-      trigger: message.trigger,
-      claimId: message.claimId,
-      coalesced:
-        rows[0]!.prev_state === "pending" ||
-        (rows[0]!.prev_state === "running" && rows[0]!.prev_requeued),
-    });
+    // An enqueue event is an arrival in the queue; a message that left the
+    // node parked is not one.
+    if (!stillParked) {
+      recordEnqueueEvent({
+        queue: "steward",
+        trigger: message.trigger,
+        claimId: message.claimId,
+        coalesced:
+          rows[0]!.prev_state === "pending" ||
+          (rows[0]!.prev_state === "running" && rows[0]!.prev_requeued),
+      });
+    }
   }
+
+  if (stillParked) return;
 
   // Stamp the composite queue priority as the claim enters the lane, so the
   // drain's ordering is current the moment the slot exists. (Refreshed again

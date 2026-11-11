@@ -56,7 +56,8 @@ describe("enqueueSteward (#182 pending slot, inbox rows)", () => {
       sender: { kind: "curator" },
     });
     const params = vi.mocked(rawQuery).mock.calls[0]![1];
-    expect(params).toEqual(["22222222-2222-2222-2222-222222222222", "curator_change"]);
+    // The third parameter: whether this message may un-park the node (#846).
+    expect(params).toEqual(["22222222-2222-2222-2222-222222222222", "curator_change", false]);
     expect(postMessage).toHaveBeenCalledWith({
       nodeId: "22222222-2222-2222-2222-222222222222",
       trigger: "curator_change",
@@ -88,6 +89,49 @@ describe("enqueueSteward (#182 pending slot, inbox rows)", () => {
   it("still only enqueues active claims", async () => {
     const sql = await call();
     expect(sql).toContain("AND state = 'active'");
+  });
+});
+
+// A park is not retried on its own (#846): only a message that comes with a
+// commission returns a parked node to the queue. Any other is kept in the
+// inbox and leaves the node as it was.
+describe("enqueueSteward and a parked node (#846)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const base = {
+    claimId: "22222222-2222-2222-2222-222222222222",
+    trigger: "subclaim_change" as const,
+    context: "upstream credence moved",
+  };
+
+  it("leaves 'error' as 'error' unless the message may un-park", async () => {
+    await enqueueSteward(base);
+    const [sql, params] = vi.mocked(rawQuery).mock.calls[0]!;
+    expect(sql).toContain("WHEN steward_state = 'error' AND NOT $3::boolean THEN 'error'");
+    expect((params as unknown[])[2]).toBe(false);
+  });
+
+  it("lets a paid message, or a commission joining a paid pass, un-park", async () => {
+    await enqueueSteward({ ...base, paid: true });
+    await enqueueSteward({ ...base, unpark: true });
+    expect((vi.mocked(rawQuery).mock.calls[0]![1] as unknown[])[2]).toBe(true);
+    expect((vi.mocked(rawQuery).mock.calls[1]![1] as unknown[])[2]).toBe(true);
+  });
+
+  it("keeps the message but opens no ledger row and records no arrival while the node stays parked", async () => {
+    const { ensureAssessActions } = await import("../../../src/services/action-service.js");
+    vi.mocked(rawQuery).mockResolvedValueOnce([{ prev_state: "error", prev_requeued: false, new_state: "error" }]);
+    await enqueueSteward(base);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(recordEnqueueEvent).not.toHaveBeenCalled();
+    expect(ensureAssessActions).not.toHaveBeenCalled();
+
+    vi.mocked(rawQuery).mockResolvedValueOnce([{ prev_state: "error", prev_requeued: false, new_state: "pending" }]);
+    await enqueueSteward({ ...base, paid: true });
+    expect(recordEnqueueEvent).toHaveBeenCalledTimes(1);
+    expect(ensureAssessActions).toHaveBeenCalledTimes(1);
   });
 });
 

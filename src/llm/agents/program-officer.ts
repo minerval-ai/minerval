@@ -671,9 +671,10 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
           target,
           ok: true,
           message:
-            res.status === "commissioned"
+            (res.status === "commissioned"
               ? `Commissioned a ${res.tier} pass at ${owls(budget)} owls.`
-              : "That node already had a pass paid for; your brief joined its inbox, at no cost.",
+              : "That node already had a pass paid for; your brief joined its inbox, at no cost.") +
+            (res.parked ? ` ${res.parked.note}` : ""),
         });
       } else {
         results.push({ target, ok: false, message: res.message });

@@ -40,6 +40,12 @@ import { getClaimSourceMap, getSourceMapSummary } from "./source-map-service.js"
 import { listRelatedClaims } from "./claim-link-service.js";
 import { listFindings } from "./finding-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
+import {
+  STEWARD_PARKED_DESCRIPTION,
+  stewardParkSelectSql,
+  stewardParkedField,
+  type StewardParkRow,
+} from "./steward-park-reason.js";
 
 /** The optional sections of the view, in the order the description gives them. */
 export const CLAIM_VIEW_INCLUDES = [
@@ -101,7 +107,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`unplaced_argument_passages` passages where sources reason about the " +
   "claim that matched none of its arguments at ingestion), `subclaims` (the direct " +
   "subclaims, one row per argument each serves, with the edge's reasoning " +
-  "and their standing and credence), " +
+  "and their standing and credence. " +
+  STEWARD_PARKED_DESCRIPTION +
+  "), " +
   "`provenance` (the instances with their readings, and the edges among " +
   "their sources), `dependents` (one page ranked by importance, with " +
   "`dependents_total`), `related` (lateral see-also links, never " +
@@ -550,13 +558,14 @@ async function listDirectSubclaims(claimId: string) {
     child_kind: string;
     child_estimate: unknown | null;
     child_standing: string | null;
-  }>(
+  } & StewardParkRow>(
     `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             a.claim_credence AS child_credence,
             am.argument_id, arg.name AS argument_name,
-            c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
+            c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing,
+            ${stewardParkSelectSql("c", "a.id IS NULL AND qe.claim_id IS NULL AND qa.claim_id IS NULL")}
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.child_claim_id
      LEFT JOIN assessments a ON a.claim_id = cr.child_claim_id AND a.is_current = true
@@ -585,5 +594,7 @@ async function listDirectSubclaims(claimId: string) {
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),
     ...(sc.child_kind === "quantity" ? { estimate: sc.child_estimate } : {}),
     ...(sc.child_kind === "question" ? { standing: sc.child_standing } : {}),
+    // Unjudged and parked (#846): this premise will not be judged on its own.
+    ...stewardParkedField(sc),
   }));
 }

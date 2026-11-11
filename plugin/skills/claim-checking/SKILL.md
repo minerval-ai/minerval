@@ -163,6 +163,12 @@ splits the two sides (§1, §6). Name that crux for your user. "This turns
 on whether X, which the evidence does not yet settle" is more useful than
 "it's disputed".
 
+A subclaim with no status is usually just waiting its turn. One marked
+`steward_parked` is not: the graph tried to assess it and the passes
+failed (`reason` gives the class of failure, `since` the date), and it
+will stay unjudged until someone commissions a pass on it. Say so when a
+verdict rests on such a premise: the parent was judged without it.
+
 `get_claim` with `include: ["arguments"]` shows the named arguments and
 the Steward's `evaluation` of each (§7). Its `verdict` rates the
 inference, how far the conclusion follows if the premises hold (certain,

@@ -31,6 +31,7 @@ import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
 import { requestQuoteNote } from "./request-service.js";
+import { stewardPark, stewardParkNote, type StewardPark } from "./steward-park-reason.js";
 
 export type CommissionPayer =
   | { kind: "grant"; grantId: string }
@@ -56,6 +57,14 @@ export interface CommissionInput {
   message?: { trigger: StewardMessage["trigger"]; sender?: MessageSender };
 }
 
+/**
+ * Set when the node was parked ('error') as it was commissioned (#846): the
+ * Steward does not retry a park on its own, so this commission is the retry,
+ * and `note` says so in words for whoever paid. Every caller that reports a
+ * commission to an agent or a person passes the note on.
+ */
+export type CommissionedPark = StewardPark & { note: string };
+
 export type CommissionResult =
   | {
       ok: true;
@@ -64,6 +73,7 @@ export type CommissionResult =
       actionId: string;
       budgetMicroUsd: number;
       tier: CommissionTier;
+      parked?: CommissionedPark;
     }
   | {
       ok: true;
@@ -71,6 +81,7 @@ export type CommissionResult =
       status: "already_commissioned";
       actionId: string;
       ageMinutes: number;
+      parked?: CommissionedPark;
     }
   | {
       ok: false;
@@ -150,11 +161,28 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
   if (!(budget > 0)) {
     return { ok: false, code: "BAD_AMOUNT", message: "A commission needs a budget above zero." };
   }
-  const [claim] = await rawQuery<{ id: string }>(
-    `SELECT id FROM claims WHERE id = $1 AND state = 'active'`,
+  const [claim] = await rawQuery<{
+    id: string;
+    steward_state: string;
+    steward_error_reason: string | null;
+    stewarded_at: Date | null;
+    steward_attempts: number;
+  }>(
+    `SELECT id, steward_state, steward_error_reason, stewarded_at, steward_attempts
+       FROM claims WHERE id = $1 AND state = 'active'`,
     [input.claimId]
   );
   if (!claim) return { ok: false, code: "NOT_FOUND", message: "No active node has that id." };
+  // A parked node: this commission is its retry, and the payer is told (#846).
+  let parked: { parked?: CommissionedPark } = {};
+  if (claim.steward_state === "error") {
+    const park = stewardPark({
+      reason: claim.steward_error_reason,
+      since: claim.stewarded_at,
+      attempts: claim.steward_attempts,
+    });
+    parked = { parked: { ...park, note: stewardParkNote(park) } };
+  }
 
   const message = input.message ?? { trigger: "mandate_plan" as const };
 
@@ -165,11 +193,13 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
       trigger: message.trigger,
       context: input.brief,
       sender: message.sender,
+      // The pass already paid for is the parked node's retry.
+      unpark: true,
     });
     const age = live.commissioned_at
       ? Math.max(0, Math.round((Date.now() - new Date(live.commissioned_at).getTime()) / 60_000))
       : 0;
-    return { ok: true, status: "already_commissioned", actionId: live.action_id, ageMinutes: age };
+    return { ok: true, status: "already_commissioned", actionId: live.action_id, ageMinutes: age, ...parked };
   }
 
   await ensureAssessActions(input.claimId);
@@ -204,6 +234,7 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     actionId: row.id,
     budgetMicroUsd: budget,
     tier: row.variant,
+    ...parked,
   };
 }
 

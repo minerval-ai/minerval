@@ -1615,7 +1615,7 @@ money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
 
 Failures are classified before they are counted. Transient API errors (rate
-limits, server errors, network, exhausted budget) requeue the claim untouched
+limits, server errors, network, exhausted budget, rejected credentials) requeue the claim untouched
 and do not count as attempts. The continuous runner answers them by slowing
 down, not stopping: a drain that ends on one halves the live concurrency
 (never below one) and pauses every slot for a backoff that doubles with each
@@ -1626,7 +1626,24 @@ Either way, healthy claims are never poisoned.
 Only genuine logic errors count toward the retry cap, after which the claim
 parks in an error state for inspection. The distinction exists because an
 earlier incident parked dozens of production claims over what turned out to be
-a billing hiccup.
+a billing hiccup, and a later one parked a hundred over thirty seconds of
+rejected credentials (#846). A model refusal parks on the first failure: it
+follows the claim and the model, the provider's fallback chain has already
+been tried, and two more passes buy the same refusal.
+
+A park is not retried on its own (#846). The error is stored twice: its raw
+text (`claims.steward_error`), for logs and the service-scoped report, and a
+fixed class beside it (`steward_error_reason`: `credentials_fault`,
+`model_refusal`, `database_fault`, `tool_failure`, `provider_error`,
+`other`), which is all any public surface shows, since the raw text can name
+internal hosts, roles and request ids. A parked node with no judgment is
+marked `steward_parked` wherever its parent's subclaims are listed
+(`get_claim`, `get_decomposition`), so a parent's Steward knows the premise
+will not be judged on its own. Messages still reach a parked node's inbox
+but leave it parked; only a commission returns it to the queue, and the
+commission's result says since when it was parked, after how many failures,
+why, and that the money buys another attempt. A maintainer resets parks by
+error text or id with `scripts/recover-parked-stewards.ts`.
 
 ---
 

@@ -1,6 +1,11 @@
 import { rawQuery } from "../db/client.js";
 import type { TreeNode } from "../schemas/claim.js";
 import {
+  stewardParkSelectSql,
+  stewardParkedField,
+  type StewardParkRow,
+} from "./steward-park-reason.js";
+import {
   argumentLeanCheckLateralSql,
   checkedKindSql,
   formalExistsSql,
@@ -38,6 +43,17 @@ interface KindRowFields {
 }
 
 const NODE_KIND_SELECT_SQL = `c.kind AS node_kind, qe.estimate, qd.unit, qa.standing`;
+
+/**
+ * The parked marker (#846) for the tree's queries, which join the current
+ * judgment of each kind as `a`, `qe` and `qa`: set only on a node that has
+ * none of the three, so a parent's reader can tell a premise that will not
+ * be judged on its own from one that is merely waiting.
+ */
+const NODE_PARK_SELECT_SQL = stewardParkSelectSql(
+  "c",
+  "a.id IS NULL AND qe.claim_id IS NULL AND qa.claim_id IS NULL"
+);
 const NODE_KIND_JOIN_SQL = `LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
          LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
          LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true`;
@@ -48,7 +64,7 @@ interface MathRowFields {
   formal?: boolean | null;
 }
 
-interface TreeRootRow extends MathRowFields, KindRowFields {
+interface TreeRootRow extends MathRowFields, KindRowFields, StewardParkRow {
   id: string;
   text: string;
   claim_type: string;
@@ -62,7 +78,7 @@ interface TreeRootRow extends MathRowFields, KindRowFields {
   seed_credence: number | null;
 }
 
-interface TreeEdgeRow extends MathRowFields, KindRowFields {
+interface TreeEdgeRow extends MathRowFields, KindRowFields, StewardParkRow {
   parent_id: string;
   id: string;
   text: string;
@@ -177,7 +193,8 @@ export async function getClaimTree(
             a.claim_credence AS assessment_credence,
             CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
             ${NODE_MATH_SELECT_SQL},
-            ${NODE_KIND_SELECT_SQL}
+            ${NODE_KIND_SELECT_SQL},
+            ${NODE_PARK_SELECT_SQL}
        FROM claims c
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
        ${NODE_MATH_JOIN_SQL}
@@ -214,6 +231,7 @@ export async function getClaimTree(
               CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
               ${NODE_MATH_SELECT_SQL},
               ${NODE_KIND_SELECT_SQL},
+              ${NODE_PARK_SELECT_SQL},
               alc.lean_check_id, alc.lean_check_kind, alc.lean_check_verdict,
               alc.lean_check_at, alc.lean_check_pin_id, alc.lean_check_sha256,
               alc.lean_check_submitted_by
@@ -489,6 +507,7 @@ function assembleTree(
       argument_decisive: edge?.argument_decisive ?? null,
       argument_evaluation: edge?.argument_evaluation ?? null,
       ...kindFields(node, edge),
+      ...stewardParkedField(node),
       ...mathFields(node),
       argument_lean_check: edge ? leanCheckSummaryFromLateral(edge) : null,
       children: first ? edges.map((e) => render(e, e, depth + 1)) : [],

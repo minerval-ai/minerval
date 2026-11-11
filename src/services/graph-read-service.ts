@@ -22,6 +22,7 @@ import { rawQuery } from "../db/client.js";
 import { hybridSearch } from "./search-service.js";
 import { getClaimById } from "./claim-service.js";
 import { getClaimTree, getTransitiveDependents } from "./tree-service.js";
+import { STEWARD_PARKED_DESCRIPTION } from "./steward-park-reason.js";
 import { attachClaimTags, resolveTagBySlug } from "./tag-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
 import { NODE_KINDS } from "../schemas/kinds.js";
@@ -143,8 +144,9 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "(requires, supports, contradicts, and so on) and grouped into a named " +
         "argument where one exists, and each node carries its own assessment " +
         "status, so a disputed subclaim under a well-supported parent marks " +
-        "where the disagreement lives. For what rests ON a claim, use " +
-        "get_dependents." +
+        "where the disagreement lives. " +
+        STEWARD_PARKED_DESCRIPTION +
+        " For what rests ON a claim, use get_dependents." +
         (caller ? FREE : ""),
       input_schema: {
         type: "object",

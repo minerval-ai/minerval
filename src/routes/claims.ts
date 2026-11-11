@@ -1666,6 +1666,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           allocated_owls: result.allocatedOwls,
           unspent_owls: result.unspentOwls,
           covered: result.covered,
+          // A parked claim: the reader is told this buys another attempt (#846).
+          ...(result.note ? { note: result.note } : {}),
         });
       },
     }
