@@ -40,8 +40,9 @@ A run's first step is a prompt step (a run that starts more than one tool
 loop or single call has one for each), and its content carries a `setup`
 object: the commit the code was built from, the hash of the prompt set
 (`promptSet`), the model and its settings, the parts the setup was made of
-(the constitution, the role prompt, each tool) by hash, and the `label` the
-run wrote at.
+(the constitution, the role prompt, each tool) by hash, the `label` the
+run wrote at, and the features that were switched off for it
+(`featuresOff`).
 
 A label says who may read a row (`src/labels.ts`). Every judgment and source
 a run writes is stamped with the run's label (the `sensitivity_label`
@@ -57,6 +58,17 @@ session) was stamped with the label of the run or request that created it,
 and the worker that picks the row up opens the run at that label. So the
 label in a run's setup is the label of whatever asked for the run, through
 however many hand-overs, and never something the agent chose.
+
+`featuresOff` names the features the deployment had switched off when the
+run was set up (docs/architecture.md, "Features"): `["mathematics",
+"prizes"]` where mathematics is off, since prizes go with it. A run with
+any off was told so at the head of its first task message, and the same
+prompt step records that message as it was sent. The prompts and the prompt
+set's hash do not depend on the list, so two runs with the same `promptSet`
+and different `featuresOff` read the same role text and were offered
+different tools. The list is always recorded: `[]` means nothing was off,
+which is every run on the public graph, and a setup with no `featuresOff`
+is from before the field existed and says nothing either way.
 
 ## Checking a log
 

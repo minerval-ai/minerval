@@ -77,4 +77,6 @@ of each skill, so you can check a run's setup (`get_run`) against it.
 `list_features` says which optional parts of the product this deployment
 has on (the browser extension, mathematics, prizes): a feature that is off
 has no tools here, and the agents it concerns are not given its tools,
-though their prompts and skills read the same.
+though their prompts and skills read the same. Where any feature is off,
+every agent run is told which at the head of its task message, and its
+setup records the list (`get_run`, `setup.featuresOff`).

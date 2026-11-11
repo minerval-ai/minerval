@@ -294,7 +294,7 @@ describe("the label in a run's log", () => {
   }
 
   async function promptStep(runId: string) {
-    const [step] = await rawQuery<{ seq: number; kind: string; setup: { label?: string; model?: string } | null }>(
+    const [step] = await rawQuery<{ seq: number; kind: string; setup: { label?: string; model?: string; featuresOff?: string[] } | null }>(
       `SELECT seq, kind, content->'setup' AS setup FROM agent_steps WHERE run_id = $1 ORDER BY seq LIMIT 1`,
       [runId]
     );
@@ -335,7 +335,11 @@ describe("the label in a run's log", () => {
     const runId = await runWithOneCall();
     const run = await sealed(runId);
     expect(run.sensitivity_label).toBe("public");
-    expect(await promptStep(runId)).toMatchObject({ seq: 0, kind: "prompt", setup: { label: "public" } });
+    // The setup also lists the features that were off for the run
+    // (src/features.ts): none here, recorded as an empty list.
+    expect(await promptStep(runId)).toMatchObject({
+      seq: 0, kind: "prompt", setup: { label: "public", featuresOff: [] },
+    });
     expect(await verify(runId)).toMatchObject({ sealed: true, head: run.log_hash, intact: true, problem: null, steps_checked: 2 });
   });
 });

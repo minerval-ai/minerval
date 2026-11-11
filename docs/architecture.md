@@ -2092,10 +2092,40 @@ Nothing else changes. The tables stay. Core routes that carry a field about
 a feature (a claim's formalization record, the prize money in a mandate's
 accounts) keep the field and report what the tables hold, which is nothing
 in a deployment that has never had the feature. The role prompts and skills
-are the same text either way. A formalization the Steward is asked
-for with `mathematics` off ends the way it does with no checker configured:
-the run is told the formal tools are unavailable and why, and logs that it
-could not proceed.
+are the same text either way.
+
+A plan cannot ask for work that only a feature can carry out. The kinds of
+work that belong to a feature are listed beside its tools
+(`ACTION_FEATURES` in `src/llm/tools/feature-tools.ts`): `formalize` and
+`attempt_proof` belong to `mathematics`. With the feature off, a plan item
+of that kind is refused where the agent proposes it (every path that writes
+a plan validates through `validatePlanItems`), with the reason and what to
+do: "formalize is not available in this deployment: mathematics is switched
+off. Leave it out of the plan." The plan tools' schema and descriptions
+still name the kind, as the prompts still describe it. An item a plan
+already held when the feature went off opens no ledger row and reads
+`blocked` with the same reason; it becomes work again if the feature is
+switched back on. A formalize row that was already open then runs once and
+ends the way it does with no checker configured: the run is told the formal
+tools are unavailable and why, and logs that it could not proceed.
+
+Because the prompts do not change, each agent run is told in its brief
+instead. One generated passage heads the first task message of the run
+(`src/llm/features-off-note.ts`), naming the features that are off here in
+words an agent would know them by, and saying that their tools are not
+offered, so what its instructions and skills say about using them does not
+apply in this deployment. What they say about reading a record the feature
+left behind (a formal statement published while mathematics was on) still
+holds: the tables stay, and so does what is in them. The LLM client adds it (`src/llm/client.ts`), so
+every agent is told without its own code knowing of it; a call that is not
+an agent's run is sent as given, and so is every call in a deployment with
+nothing off, where there is no passage at all. The passage is outside the
+role text that the prompt set hashes (`GET /setup/prompt-set`), so the
+prompt set is the same in every deployment and "this run used the published
+prompts" stays a comparison of hashes. The run's log records the passage
+with the message it heads, and its setup lists the features that were off
+for the run (`setup.featuresOff`, an empty list when none was;
+docs/run-log.md).
 
 `GET /setup/features` (`list_features` on MCP) reports each feature with
 whether it is on and what switching it off removes. That is how the web app

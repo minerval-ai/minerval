@@ -17,6 +17,7 @@ import {
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { getPublicMandate } from "../../src/services/mandate-service.js";
 import { collectMandateEvents, pendingMandateEvents } from "../../src/services/mandate-event-service.js";
+import { loadConfig } from "../../src/config.js";
 import { seedClaim, seedUser, seedGrantWithJob, creditOwls, OWL } from "./helpers.js";
 
 async function seedPublishedFormalization(claimId: string): Promise<string> {
@@ -250,6 +251,72 @@ describe("plan-to-ledger materialization (#416)", () => {
       [`formalize:${c}`]
     );
     expect(Number(row!.n)).toBe(0);
+  });
+
+  // A plan written while mathematics was on, in a deployment that has since
+  // switched it off (src/features.ts): its formalize and attempt_proof items
+  // open no rows, and say why. New plans are refused such items where they
+  // are written (validatePlanItems).
+  it("opens no row for an item whose feature is switched off, and says why", async () => {
+    const funder = await seedUser("plan-funder-features");
+    await creditOwls(funder, 1000 * OWL);
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL });
+    const plain = await seedClaim("features: plain pending");
+    const math = await seedClaim("features: mathematics domain");
+    await rawQuery(`UPDATE claims SET domains = ARRAY['mathematics'] WHERE id = $1`, [math]);
+    const published = await seedClaim("features: published statement");
+    await rawQuery(`UPDATE claims SET domains = ARRAY['mathematics'] WHERE id = $1`, [published]);
+    const formalizationId = await seedPublishedFormalization(published);
+    const items = [
+      { action: "assess", claim_id: plain, rationale: "first pass" }, // 0
+      { action: "formalize", claim_id: math, rationale: "math domain" }, // 1
+      { action: "formalize", claim_id: published, rationale: "already published" }, // 2
+      { action: "attempt_proof", claim_id: published, variant: "standard", rationale: "first" }, // 3
+    ];
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({ strategy: "s", items }),
+    ]);
+    const rows = () =>
+      rawQuery<{ kind: string }>(
+        `SELECT kind FROM actions WHERE exclusion_group = $1 OR exclusion_group LIKE $2`,
+        [`formalize:${math}`, `attempt:${formalizationId}:%`]
+      );
+
+    const config = loadConfig() as { featuresOff: string[] };
+    const saved = config.featuresOff;
+    config.featuresOff = ["mathematics"];
+    try {
+      const outcomes = await materializePlanItems(grantId);
+      const ledger = outcomes.map((o) => o.ledger);
+      // Work of the core product is untouched.
+      expect(ledger[0]!.status).toBe("open");
+      // A formalize item opens nothing and carries the reason.
+      expect(ledger[1]!.status).toBe("blocked");
+      expect(ledger[1]!.reason).toBe(
+        "formalize is not available in this deployment: mathematics is switched off, " +
+          "so the item opens no work; it becomes work if that is switched on"
+      );
+      // What the record already holds still reads as it is.
+      expect(ledger[2]!.status).toBe("done");
+      expect(ledger[2]!.reason).toContain("already carries a published");
+      // An attempt opens no group, though the statement is published.
+      expect(ledger[3]!.status).toBe("blocked");
+      expect(ledger[3]!.reason).toContain(
+        "attempt_proof is not available in this deployment: mathematics is switched off"
+      );
+      expect(await rows()).toEqual([]);
+    } finally {
+      config.featuresOff = saved;
+    }
+
+    // Switched back on, the same items become work.
+    const ledger = (await materializePlanItems(grantId)).map((o) => o.ledger);
+    expect(ledger[1]!.status).toBe("open");
+    expect(ledger[1]!.exclusion_group).toBe(`formalize:${math}`);
+    expect(ledger[3]!.status).toBe("open");
+    expect(ledger[3]!.exclusion_group).toBe(`attempt:${formalizationId}:1`);
+    expect((await rows()).map((r) => r.kind).sort()).toEqual(["attempt_proof", "attempt_proof", "formalize"]);
   });
 
   it("reads an assess item on an already-assessed claim as done instead of queueing a pass (#427)", async () => {
