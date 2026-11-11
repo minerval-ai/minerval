@@ -1025,6 +1025,12 @@ const configSchema = z.object({
   // graph. Always the best available model — this is judgment-heavy,
   // user-facing work where a weak model would be a false economy.
   grantmakerModel: modelId(MODELS.frontier),
+  // The Assistant works for one user, who pays for it at metered cost: the
+  // strongest model by default (the one a Steward's strong pass and the
+  // Grantmaker run on), with the tier below as the user's cheaper choice
+  // for a conversation.
+  assistantModel: modelId(MODELS.frontier),
+  assistantStandardModel: modelId(MODELS.strong),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -1374,6 +1380,8 @@ export function loadConfig(): Config {
     arbitrationModel: process.env.ARBITRATION_MODEL,
     extensionModel: process.env.EXTENSION_MODEL,
     grantmakerModel: process.env.GRANTMAKER_MODEL,
+    assistantModel: process.env.ASSISTANT_MODEL,
+    assistantStandardModel: process.env.ASSISTANT_STANDARD_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,

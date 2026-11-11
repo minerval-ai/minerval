@@ -590,5 +590,18 @@
         ]
       }
     ]
+  },
+  {
+    "key": "assistant",
+    "name": "Assistant",
+    "stage": 12,
+    "group": "assistant",
+    "tagline": "Works for one signed-in user, with the tools their account has over MCP and nothing more. Not an administrator: it is given the constitution so that it reads the graph as the graph means to be read, and writes nothing to the graph except through the doors open to any account. Its work is charged to its user's balance as it runs, and calls that spend owls on the graph or publish under the user's name wait for the user.",
+    "invokedWhen": "A signed-in user sends a message on the Ask page.",
+    "model": "Claude Fable 5.2 by default; the user may choose Claude Opus 5.5 for a conversation",
+    "hasConstitution": true,
+    "roleChars": 7564,
+    "fullChars": 100818,
+    "skills": []
   }
 ]

@@ -62,6 +62,8 @@ describe("caller skills", () => {
       "commissioning-research",
       "minerval-constitution",
       "sql",
+      "using-minerval",
+      "writing-from-the-graph",
     ]);
     for (const s of skills) {
       expect(s.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);

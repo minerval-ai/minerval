@@ -317,6 +317,65 @@ whichever entitlement read sees the user first.
 
 Service traffic with no acting user is system work and exempt from pricing.
 
+## The Assistant
+
+The **Assistant** (`/assistant/conversations`, UI at `/ask`; #646, #619,
+#312) is an agent that works for one signed-in user. It is not an
+administrator: it is given the constitution so that it reads the graph as
+the graph means to be read, under a heading that says the document does
+not bind it (`src/llm/prompts/assistant.ts`). Its tools are the account's
+MCP tool list, whole, built in process for the user at the trust of an API
+key (`src/llm/tools/assistant-tools.ts`), plus `load_skill` over the caller
+skills, `note_progress`, and `delegate`, which hands one self-contained
+task to a fresh copy of itself (one level deep, same tools, same bill).
+
+**The bill.** The Assistant has no cap, no reply ceiling and no count of
+messages. Each model turn is charged to the user's balance as it finishes
+(`chargeMetered`, op `assistant`), the conversation keeps what it has cost
+(`spent_micro_usd`), and the running turn reports its cost so far
+(`turn.cost_micro_usd`). A run ends when the balance reaches zero or the
+user stops it (`POST /assistant/conversations/:id/stop`); what had been
+written is kept and marked `stopped`. A message is refused with 402 only
+when the balance is zero. docs/allocation.md, "Agents work to a budget
+they can see", says why this agent alone has no budget and what it is told
+in place of one.
+
+**Held actions.** A tool that spends owls on the graph or publishes under
+the user's name (`HELD_TOOLS`) does not run when the Assistant calls it.
+The call is saved (`assistant_held_actions`) and shown to the user as a
+card; `POST /assistant/conversations/:id/held/:action_id` with
+`decision: "run"` performs the same call as the user, and `"decline"`
+records the refusal. The Assistant is told the outcome in its next reply.
+The user may allow kinds of action (`propose`, `submit`, `assess`, `fund`,
+`cancel`) to run without a card, for one conversation or for the account
+(`PUT /assistant/allowance`); an allowed call runs at once and leaves the
+same row as a receipt. Releasing an action and changing the allowance need
+the signed-in session and are not MCP tools, so nothing the Assistant holds
+can do either. The gate is a hard limit money cannot serve: the Assistant
+reads pages, sources and other people's text while it works, and injected
+text must not be able to move a person's money or name.
+
+**Turns** follow the granting conversation's protocol: a message is saved
+and returns at once with `turn.state: "replying"`, the reply forms in the
+background (`turn.partial`, `turn.note`), and callers read the
+conversation until the turn is idle.
+
+**Privacy.** A conversation is private to its user. Its runs are logged
+like a granting conversation's, with the transcript private to the user
+(`AGENT_INPUTS.assistant`). Deleting a conversation deletes its text, its
+held actions and, unless run logs are kept as a record
+(`RUN_LOG_MODE=record`), the transcripts of its runs. What it cost stays
+in the owl ledger.
+
+**The Grantmaker.** The Assistant may hold a granting conversation for
+its user. What it writes there is stored with `via: "assistant"` and shown
+to the Grantmaker as coming from the funder's assistant, so the Grantmaker
+knows which words are the funder's own. Funding the drafted mandate is the
+user's act.
+
+**Model.** Claude Fable 5.2 by default (`ASSISTANT_MODEL`), with Claude
+Opus 5.5 as the cheaper choice per conversation (`ASSISTANT_STANDARD_MODEL`).
+
 ## The owl ledger
 
 `owl_ledger` is the one spendable balance: every earn and spend is an

@@ -14,9 +14,9 @@
  * Not every MCP client loads skills, so the server serves the same files as
  * resources (`minerval://skills/{name}`, `minerval://constitution`) and puts
  * the shortest form of the principles in its initialize instructions. One
- * source of truth: the files under plugin/skills. The personal assistant
- * (#646) is meant to read these same files, since it is a caller like any
- * other and can do nothing the user's own agent over MCP could not.
+ * source of truth: the files under plugin/skills. The Assistant (#646)
+ * loads these same files, since it is a caller like any other and can do
+ * nothing the user's own agent over MCP could not.
  */
 import { readFileSync, readdirSync, existsSync, statSync } from "fs";
 import { resolve, dirname, join } from "path";
@@ -84,4 +84,4 @@ export const MCP_INSTRUCTIONS = `Minerval is a shared, public map of what is kno
 - Act in good faith. The graph is shared infrastructure that others rely on, and it presumes good faith of everyone who contributes to it or funds work on it. Funding buys attention, never conclusions: the Grantmaker declines mandates that try to steer outcomes, and you should not ask it to. Mandates and contributions are public.
 - Spend is your user's money. Graph reads are free; match_claim, extract_claims and assess_text run models and are charged. Check get_account and confirm amounts before anything that spends or escrows owls.
 
-Read the constitution (resource minerval://constitution) before you contribute or fund anything, and whenever a verdict surprises you. Fuller guidance is in the resources minerval://skills/claim-checking (checking and citing claims), minerval://skills/commissioning-research (funding work, appropriate mandates), minerval://skills/minerval-constitution (a reader's guide to the constitution), minerval://skills/administrator-skills (what each of the graph's own agents works under), and minerval://skills/sql (the views query_sql reads, and queries for common questions).`;
+Read the constitution (resource minerval://constitution) before you contribute or fund anything, and whenever a verdict surprises you. Fuller guidance is in the resources minerval://skills/claim-checking (checking and citing claims), minerval://skills/commissioning-research (funding work, appropriate mandates), minerval://skills/minerval-constitution (a reader's guide to the constitution), minerval://skills/administrator-skills (what each of the graph's own agents works under), minerval://skills/sql (the views query_sql reads, and queries for common questions), minerval://skills/using-minerval (the product and its site page by page, for helping someone find their way around it), and minerval://skills/writing-from-the-graph (facts that bear on making a document from the graph).`;

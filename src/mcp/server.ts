@@ -390,6 +390,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         inputSchema: z.fromJSONSchema(
           def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
         ) as z.ZodObject,
+        annotations: { readOnlyHint: true },
       },
       async (args: Record<string, unknown>) => {
         const result = await runGraphRead(def.name, args);
@@ -412,6 +413,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         inputSchema: z.fromJSONSchema(
           def.input_schema as Parameters<typeof z.fromJSONSchema>[0]
         ) as z.ZodObject,
+        annotations: { readOnlyHint: true },
       },
       async (args: Record<string, unknown>) => {
         const result = await runGraphChanges(args);
@@ -438,6 +440,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .describe("A topic to look for; omit for the most-used tags"),
         limit: z.number().int().min(1).max(200).default(50),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ query, limit }) => {
       if (query?.trim()) {
@@ -485,6 +488,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .default(DEFAULT_DEPENDENTS_PAGE),
         dependents_offset: z.number().int().min(0).default(0),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ claim_id, include, dependents_limit, dependents_offset }) => {
       const view = await getClaimView(claim_id, {
@@ -513,6 +517,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         instances_limit: z.number().int().min(1).max(MAX_INSTANCES_PAGE).default(DEFAULT_INSTANCES_PAGE),
         instances_offset: z.number().int().min(0).default(0),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ argument_id, include, instances_limit, instances_offset }) => {
       const view = await getArgumentView(argument_id, {
@@ -539,6 +544,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "now (the statement's review period must have ended). Offering a " +
         "prize does not change how the claim is assessed. Free.",
       inputSchema: { claim_id: z.guid() },
+      annotations: { readOnlyHint: true },
     },
     async ({ claim_id }) => {
       const claim = await getClaimById(claim_id);
@@ -797,6 +803,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       inputSchema: {
         job_id: z.string().uuid().describe("The job_id the analysis tool returned"),
       },
+      annotations: { readOnlyHint: true },
     },
     async ({ job_id }) => {
       const view = await getTextAnalysis(job_id, {
@@ -1095,6 +1102,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "carries became_claim_id and page_url, the node it became. Lost the " +
         "id? list_contributions with mine: true lists yours. Free.",
       inputSchema: { contribution_id: z.guid() },
+      annotations: { readOnlyHint: true },
     },
     async ({ contribution_id }) => {
       const contribution = await getContributionById(contribution_id);

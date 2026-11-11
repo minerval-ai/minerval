@@ -331,12 +331,27 @@ can be reviewed, not so it can be read. Splitting them means neither has to
 compromise; a trace written to be skimmable makes a worse audit record, and an
 audit record shown to readers makes a worse summary.
 
-Alongside these sit the `status` and `confidence`, a `subclaim_summary`
-snapshot of the children at judgment time, and the `trigger` (and
+Alongside these sit the `status` and `confidence`, and the `trigger` (and
 `trigger_context`) that prompted the assessment. Assessments are append-only
 history: exactly one row per claim is flagged `is_current`, enforced by a
 partial unique index, so the timeline of *why* a claim's status changed is
-fully recoverable. The statuses and how they propagate are described under
+fully recoverable. Reads of the judgment in force go through the view
+`assessments_in_force` (and its siblings for quantities, questions and
+argument evaluations), which defines "in force" once.
+
+What a judgment was made against is recorded with it, in `judgment_inputs`
+(#566): each node under the judged one with the id of that node's own
+judgment in force at the time, and each source attached to it. Reading that
+record against the graph as it stands says what has changed since: a premise
+judged again, a premise or a source added or removed, a correction or a
+retraction on one of its sources. `GET /claims/:claim_id/judgment-inputs`
+(`get_judgment_inputs`) serves it. It reports changes of version, not of
+verdict: a premise judged again to the same status still counts, and whether
+that warrants a reassessment is for the Steward and the Grantmaker. A
+judgment written before the record existed has `inputs_recorded` false and
+is reported as not recorded, never as unchanged. The older
+`subclaim_summary` column was meant as this snapshot, was never filled, and
+is always `{}`. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
 
 ### Node kinds: quantities and questions
@@ -1466,6 +1481,7 @@ Model choice follows the value of the judgment, not a single default:
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5.5 |
 | Claim Steward (standard pass) · Curator · Audit Agent | Claude Opus 5.5 |
 | Claim Steward (strong pass, money triggers) · Dispute Arbitrator · Grantmaker | Claude Fable 5.2 |
+| Assistant | Claude Fable 5.2 (`ASSISTANT_MODEL`); the user may pick Claude Opus 5.5 for a conversation (`ASSISTANT_STANDARD_MODEL`) |
 | Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`), fallbacks off |
 | Researcher (`researcher`) | Chosen per launch by the administrator: Claude Fable 5.2 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
 
@@ -1930,6 +1946,18 @@ route an account can call is also a tool (docs/mcp.md). Clients authenticate wit
 `/mcp` resource, handing sign-in and consent to the web app — which is what
 lets hosted clients such as Claude.ai connect. Every call is attributed to an
 account either way.
+
+### The Assistant
+
+`/ask` is an agent that works for the signed-in user (docs/accounts.md,
+"The Assistant"). It is the graph's first agent that is not an
+administrator: it holds no role under the constitution and writes nothing
+to the graph itself. Its tools are the MCP server's, opened in process for
+its user, so everything it does goes through the same public doors as any
+account's agent: a proposal goes to the Contribution Reviewer, a mandate is
+designed with the Grantmaker. Its work is charged to the user's balance as
+it runs, with no cap, and calls that spend owls on the graph or publish
+under the user's name wait for the user unless they have allowed that kind.
 
 ---
 

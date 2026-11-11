@@ -3297,6 +3297,107 @@ export const grantConversations = pgTable(
 export type GrantConversation = typeof grantConversations.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// assistant_conversations, assistant_held_actions, assistant_allowances
+//
+// The Assistant (#646, #619, #312): an agent that works for one user, with
+// the account's own tools. A conversation is the user's: private, deletable,
+// and the only place its text is kept besides the run log.
+// ---------------------------------------------------------------------------
+export const assistantConversations = pgTable(
+  "assistant_conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // The user's first message, shortened: what the conversation list shows.
+    title: text("title").notNull().default(""),
+    // Where the user is: 'web' today.
+    surface: text("surface").notNull().default("web"),
+    // The node page the conversation was opened from, if any: {node_id}.
+    origin: jsonb("origin"),
+    // The model the user chose for this conversation; null is the default.
+    model: text("model"),
+    // [{role, content, at, citations?, worked?, cost_micro_usd?, run_id?,
+    //   cards?, stopped?}]: the visible transcript. Tool traffic is in the
+    // run log, which is private.
+    messages: jsonb("messages").notNull().default([]),
+    // What the conversation has cost its user so far.
+    spentMicroUsd: bigint("spent_micro_usd", { mode: "number" }).notNull().default(0),
+    // Kinds of held action the user allows without asking, for this
+    // conversation alone (assistant_allowances holds the account's).
+    allowedKinds: jsonb("allowed_kinds").notNull().default([]),
+    // The turn protocol is the granting conversation's: a turn runs in the
+    // background, refreshes a heartbeat, and saves the reply as it forms.
+    turnStartedAt: timestamp("turn_started_at", { withTimezone: true }),
+    turnHeartbeatAt: timestamp("turn_heartbeat_at", { withTimezone: true }),
+    turnError: text("turn_error"),
+    turnPartial: text("turn_partial"),
+    // The running turn's one-line progress note and its cost so far.
+    turnNote: text("turn_note"),
+    turnCostMicroUsd: bigint("turn_cost_micro_usd", { mode: "number" }).notNull().default(0),
+    // Set by the user's stop button; the running turn ends at its next step.
+    stopRequested: boolean("stop_requested").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_assistant_convos_user").on(table.userId, table.updatedAt),
+  ]
+);
+
+export type AssistantConversation = typeof assistantConversations.$inferSelect;
+
+export const assistantHeldActions = pgTable(
+  "assistant_held_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // The account tool the Assistant called, and the kind it belongs to.
+    tool: text("tool").notNull(),
+    kind: text("kind").notNull(),
+    // Exactly what the Assistant passed: what runs if the user presses.
+    input: jsonb("input").notNull(),
+    // held | running | done | declined | failed
+    status: text("status").notNull().default("held"),
+    // True when the user had allowed this kind and it ran without a card.
+    auto: boolean("auto").notNull().default(false),
+    // The tool's answer once it ran: {ok, status, body}.
+    result: jsonb("result"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_assistant_held_convo").on(table.conversationId, table.createdAt),
+  ]
+);
+
+export type AssistantHeldAction = typeof assistantHeldActions.$inferSelect;
+
+export const assistantAllowances = pgTable("assistant_allowances", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => contributors.id, { onDelete: "cascade" }),
+  // Kinds of held action the account allows without asking, in every
+  // conversation.
+  kinds: jsonb("kinds").notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // oauth_clients
 //
 // OAuth 2.1 clients for the remote MCP server (#73 follow-up): hosted MCP
