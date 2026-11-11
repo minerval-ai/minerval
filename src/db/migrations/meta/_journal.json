@@ -785,6 +785,13 @@
       "when": 1794407725774,
       "tag": "0111_run_log_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1794408364728,
+      "tag": "0112_judgments_in_force",
+      "breakpoints": true
     }
   ]
 }
