@@ -413,6 +413,53 @@ describe("held actions", () => {
   });
 });
 
+describe("the Assistant opened from the browser extension", () => {
+  const page = {
+    url: "https://example.com/eggs",
+    title: "Eggs are fine, says study",
+    claims: [
+      {
+        verbatim_text: "eggs do not raise heart risk",
+        verdict: "contradicts",
+        claim_id: null,
+        canonical_form: "Regular egg consumption increases cardiovascular disease risk",
+        status: "inconclusive",
+      },
+    ],
+  };
+
+  it("is told the page and what the extension found", async () => {
+    const u = await user("extension");
+    const started = await startAssistantConversation({
+      app,
+      user: u,
+      message: "Is this article right?",
+      page,
+    });
+    if (!started.ok) throw new Error(started.message);
+    expect(started.conversation.surface).toBe("extension");
+    await settleAssistantTurns();
+    const input = agent.inputs.at(-1) as TurnInput & { sections: string[] };
+    expect(input.context).toContain("Opened from: the browser extension.");
+    expect(input.context).toContain("URL: https://example.com/eggs");
+    expect(input.context).toContain("eggs do not raise heart risk");
+    expect(input.sections.join("")).toContain("In the Minerval browser extension");
+    expect(input.sections.join("")).not.toContain("On minerval.ai");
+  });
+
+  it("refuses a page with more findings than the route takes", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/assistant/conversations",
+      payload: {
+        message: "x",
+        page: { ...page, claims: Array.from({ length: 201 }, () => page.claims[0]) },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe("the Assistant saving a page", () => {
   it("saves through its own tools without asking, and the reply carries the page", async () => {
     const u = await user("pages");

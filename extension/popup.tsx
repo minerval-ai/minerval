@@ -57,6 +57,12 @@ async function getPageState(): Promise<PageState | null> {
   }
 }
 
+/** What a reply cost, from millionths of an owl. */
+function replyCost(microUsd: number): string {
+  const n = Math.max(0, microUsd) / 1_000_000;
+  return n > 0 && n < 0.01 ? "under 0.01 owls" : `${Number(n.toFixed(2))} owls`;
+}
+
 /** Render a reply, linkifying [claim:<uuid>] markers via the citation list. */
 function ReplyText({ text, citations }: { text: string; citations: ChatCitation[] }) {
   const parts = text.split(/(\[claim:[0-9a-f-]{36}\])/gi);
@@ -624,6 +630,19 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
     void clearTabChat(tab.id);
   };
 
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!busy) setStopping(false);
+  }, [busy]);
+  const stop = () => {
+    if (!tab || !busy) return;
+    setStopping(true);
+    void chrome.runtime.sendMessage({ type: "chat-stop", tabId: tab.id, page: tab.page });
+  };
+
+  // The same conversation, in full, in the user's account.
+  const onSite = chat?.conversationId ? `${WEB_BASE}/ask/c/${chat.conversationId}` : null;
+
   return (
     <div className="chat">
       <PageStatus settings={settings} hook={hook} />
@@ -631,9 +650,10 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
       <div className="messages">
         {messages.length === 0 && (
           <div className="hint">
-            Ask about this page — “is the highlighted claim true?”, “what's the
-            strongest counter-argument here?” Answers are grounded in the
-            Minerval claim graph.
+            Ask the Assistant about this page: “is the highlighted claim true?”,
+            “what's the strongest counter-argument here?” It works for your
+            account, reads the Minerval graph, and is charged in owls at what
+            its work costs.
           </div>
         )}
         {messages.map((m, i) => (
@@ -653,6 +673,29 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
                     ))}
                   </ol>
                 )}
+                {(m.pages ?? []).map((id) => (
+                  <div key={id} className="chat-note">
+                    <a href={`${WEB_BASE}/ask/pages/${id}`} target="_blank" rel="noopener noreferrer">
+                      Saved as a page: open it
+                    </a>
+                  </div>
+                ))}
+                {!!m.waiting && onSite && (
+                  <div className="chat-note chat-waiting">
+                    {m.waiting === 1 ? "One action is" : `${m.waiting} actions are`} waiting for
+                    you. Nothing has been spent or published.{" "}
+                    <a href={onSite} target="_blank" rel="noopener noreferrer">
+                      Review on minerval.ai
+                    </a>
+                  </div>
+                )}
+                {(m.stopped || m.cost !== undefined) && (
+                  <div className="chat-foot">
+                    {m.stopped === "user" && "You stopped this reply. "}
+                    {m.stopped === "balance" && "Stopped: your owl balance ran out. "}
+                    {m.cost !== undefined && replyCost(m.cost)}
+                  </div>
+                )}
               </>
             ) : (
               m.content
@@ -667,6 +710,13 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
           ) : (
             <div className="msg assistant muted">Consulting the graph…</div>
           ))}
+        {pending && (
+          <div className="chat-foot">
+            <button type="button" className="linklike" onClick={stop} disabled={stopping}>
+              {stopping ? "stopping…" : "Stop"}
+            </button>
+          </div>
+        )}
         {error && <div className="error">{error}</div>}
         <div ref={bottomRef} />
       </div>
@@ -692,12 +742,19 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
             type="button"
             onClick={clear}
             disabled={busy}
-            title="Start a new conversation about this page"
+            title="Start a new conversation about this page. This one stays in your account."
           >
-            Clear
+            New
           </button>
         )}
       </form>
+      {onSite && (
+        <div className="chat-foot chat-onsite">
+          <a href={onSite} target="_blank" rel="noopener noreferrer">
+            This conversation on minerval.ai
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -845,7 +902,7 @@ function SettingsPane({
           Minerval dashboard
         </a>
         . Analysis and chat are
-        LLM-backed and metered against your account's monthly allowance.
+        LLM-backed and charged to your account in owls.
       </p>
 
       {/* The hosted API is built in; only developers running their own server

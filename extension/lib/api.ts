@@ -133,51 +133,109 @@ export async function getAnalysisStatus(
   return { status: "ready", analysis: data };
 }
 
+/** The most page findings sent with a new conversation (the route's limit). */
+const MAX_PAGE_CLAIMS = 200;
+// The server saves the reply-so-far about once a second.
+const POLL_MS = 1_200;
+
+interface AssistantConversation {
+  id: string;
+  messages: Array<{
+    role: "user" | "assistant";
+    content: string;
+    citations?: Array<{ id: string; text: string; status: string | null; url: string }>;
+    cost_micro_usd?: number;
+    cards?: Array<{ type: string; id: string }>;
+    stopped?: "user" | "balance";
+  }>;
+  held_actions: Array<{ id: string; status: string }>;
+  turn: { state: "replying" | "idle" | "failed"; error: string | null; partial: string | null; note: string | null };
+}
+
 /**
- * Ask the extension agent about the page. The answer streams: `onText`
- * gets the reply as it is written, with the model turn it belongs to (a new
- * turn, after the agent looks something up, starts the text over), and the
- * promise resolves to the finished reply and its citations. An API that
- * answers with plain JSON (no stream) resolves the same way, just at once.
+ * Ask the Assistant, the agent that works for the user's account, from the
+ * page being read. The question opens a conversation (told which page it
+ * came from and what the extension found on it) or continues the tab's one;
+ * the reply is written on the server and read here until it is finished.
+ * `onText` gets the reply so far, each time with a new turn number, since
+ * each reading replaces the last; `onConversation` gets the conversation's
+ * id as soon as it exists, so the reply can be stopped while it runs.
+ *
+ * The work is charged to the user's owl balance as it runs, at what it
+ * costs. Anything the Assistant prepares that would spend owls on the graph
+ * or publish under the user's name waits for them on minerval.ai: the
+ * extension holds only an API key, which cannot release it.
  */
 export async function chat(
   input: Extract<BackgroundRequest, { type: "chat" }>,
-  onText: (delta: string, turn: number) => void = () => {}
+  onText: (delta: string, turn: number) => void = () => {},
+  onConversation: (id: string) => void = () => {}
 ): Promise<ChatResponse> {
-  const res = await send(
-    "/extension/chat",
-    { messages: input.messages, page: input.page },
-    { accept: "text/event-stream" }
-  );
-  if (!(res.headers.get("content-type") ?? "").includes("text/event-stream") || !res.body) {
-    return (await res.json()) as ChatResponse;
-  }
+  const question = input.messages.at(-1)?.content ?? "";
+  const started = input.conversationId
+    ? await request<{ conversation: AssistantConversation }>(
+        `/assistant/conversations/${encodeURIComponent(input.conversationId)}/messages`,
+        { message: question }
+      )
+    : await request<{ conversation: AssistantConversation }>("/assistant/conversations", {
+        message: question,
+        page: { ...input.page, claims: input.page.claims.slice(0, MAX_PAGE_CLAIMS) },
+      });
+  let convo = started.data.conversation;
+  onConversation(convo.id);
 
-  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += value;
-    // Events are separated by a blank line; keep any partial one for later.
-    let end: number;
-    while ((end = buffer.indexOf("\n\n")) !== -1) {
-      const block = buffer.slice(0, end);
-      buffer = buffer.slice(end + 2);
-      let event = "message";
-      let data = "";
-      for (const line of block.split("\n")) {
-        if (line.startsWith("event: ")) event = line.slice(7);
-        else if (line.startsWith("data: ")) data += line.slice(6);
-      }
-      if (!data) continue;
-      const payload = JSON.parse(data);
-      if (event === "text") onText(payload.delta, payload.turn);
-      else if (event === "done") return payload as ChatResponse;
-      else if (event === "error") throw new ApiError(payload.error ?? "The answer failed.", 502);
+  let reads = 0;
+  let shown = "";
+  while (convo.turn.state === "replying") {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    try {
+      convo = (
+        await request<{ conversation: AssistantConversation }>(
+          `/assistant/conversations/${encodeURIComponent(convo.id)}`
+        )
+      ).data.conversation;
+    } catch (err) {
+      // A dropped read is retried; a refusal is not.
+      if (err instanceof ApiError && err.status !== 0 && err.status < 500) throw err;
+      continue;
+    }
+    const partial = convo.turn.partial || convo.turn.note || "";
+    if (convo.turn.state === "replying" && partial && partial !== shown) {
+      shown = partial;
+      onText(partial, reads++);
     }
   }
-  throw new ApiError("The answer stopped before it finished. Please try again.", 502);
+  if (convo.turn.state === "failed") {
+    throw new ApiError(
+      `The Assistant could not reply${convo.turn.error ? ` (${convo.turn.error})` : ""}. Your question is saved; ask again.`,
+      502
+    );
+  }
+  const reply = convo.messages.at(-1);
+  if (!reply || reply.role !== "assistant") {
+    throw new ApiError("The answer stopped before it finished. Please try again.", 502);
+  }
+  const held = new Set(convo.held_actions.filter((h) => h.status === "held").map((h) => h.id));
+  const cards = reply.cards ?? [];
+  return {
+    reply: reply.content,
+    citations: (reply.citations ?? []).map((c) => ({
+      id: c.id,
+      canonical_form: c.text,
+      status: c.status,
+      url: c.url,
+    })),
+    conversation_id: convo.id,
+    ...(typeof reply.cost_micro_usd === "number" ? { cost_micro_usd: reply.cost_micro_usd } : {}),
+    waiting: cards.filter((c) => c.type === "held" && held.has(c.id)).length,
+    pages: cards.filter((c) => c.type === "page").map((c) => c.id),
+    ...(reply.stopped ? { stopped: reply.stopped } : {}),
+  };
+}
+
+/** Ask a conversation's running reply to stop at its next step. */
+export async function stopChat(conversationId: string): Promise<void> {
+  await request(`/assistant/conversations/${encodeURIComponent(conversationId)}/stop`, {});
 }
 
 /** Free (non-agentic) read used by the click-through panel. */
