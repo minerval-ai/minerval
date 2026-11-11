@@ -1,5 +1,5 @@
 import type {
-  AssessmentStatus, ClaimDetail, ClaimType, SearchResultItem, TreeNode,
+  AssessmentStatus, ClaimDetail, ClaimType, QuestionStanding, SearchResultItem, TreeNode,
 } from "./types";
 import { STATUS_ORDER } from "./ontology";
 
@@ -23,11 +23,18 @@ import { STATUS_ORDER } from "./ontology";
 export interface TerritoryConfig {
   key: string;
   name: string;
-  // The kicker above the name: "Investigation" for an anchored cluster, and
-  // "Domain" for a listing-backed one. Defaults to "Investigation".
+  // The kicker above the name: "Investigation" for an anchored cluster,
+  // "Question" for one anchored on a question node, and "Domain" for a
+  // listing-backed one. Defaults by anchorKind, else "Investigation".
   kicker?: string;
+  // "question" when the anchor is a question node (constitution §7a). Stated
+  // here, not only read from the live node, so the card still leads with the
+  // question and its standing badge when live data is unavailable.
+  anchorKind?: "question";
   // The question the investigation is chasing, shown in italics under the name.
-  question: string;
+  // A territory anchored on a question node leaves it out: the node's own
+  // wording is the question, and the card leads with it.
+  question?: string;
   // The claim the card is fronted by and the map opens on. For a listing-backed
   // territory this is the offline fallback; live, the listing's lead claim
   // takes its place.
@@ -43,10 +50,48 @@ export interface TerritoryConfig {
   listing?: { claimType: ClaimType };
 }
 
-// Curated order is the display order. Cardiovascular is deliberately ONE
+// Curated order is the display order. The AI-safety investigations lead, and
+// the first of them is a question node rather than a claim: a question shows
+// what the graph is for (what it turns on, which answers are favored, what
+// would settle it) better than a single verdict does. Cardiovascular is deliberately ONE
 // territory with the LDL/statins subtree folded in: it is honestly one
 // investigation, and splitting it reads as padding at this scale.
 export const TERRITORIES: TerritoryConfig[] = [
+  {
+    key: "scheming",
+    name: "Scheming evaluations",
+    anchorKind: "question",
+    // A question node: its wording is the card's lead, so no italic line.
+    anchorId: "0d9a8b6e-f091-4fe0-b2aa-bc92d1c0f2c4",
+    coreText:
+      "What explains the behavior of language models that evaluations record as scheming and alignment faking?",
+  },
+  {
+    key: "misalignment",
+    name: "Misalignment risk",
+    question: "Could advanced AI competently pursue goals its developers never intended?",
+    // The deepest AI-safety cluster in the graph: the instrumental
+    // power-seeking and alignment-faking subtrees hang beneath it. It is also
+    // the homepage flagship (web/app/page.tsx).
+    anchorId: "5477338c-4f5c-4049-a959-efbf3f23a988",
+    coreText:
+      "Goal misgeneralization is a plausible mechanism for catastrophic risk from powerful AI systems.",
+  },
+  {
+    key: "oversight",
+    name: "Overseeing superintelligence",
+    question: "Can weaker overseers keep control of AI systems far more capable than they are?",
+    anchorId: "dc02e01f-ce69-4dbe-ba36-ed0e2e90d071",
+    coreText: "Scalable oversight can reliably control superintelligent AI systems.",
+  },
+  {
+    key: "takeoff",
+    name: "Intelligence explosion",
+    question: "Once AI can do AI research, does progress run away?",
+    anchorId: "e68a817d-3271-4cb1-88c1-a7d7a2443a83",
+    coreText:
+      "AI automation of AI research could trigger rapid recursive growth in AI capabilities.",
+  },
   {
     key: "covid",
     name: "COVID origin",
@@ -93,6 +138,10 @@ export const TERRITORIES: TerritoryConfig[] = [
 export interface TerritoryStats {
   coreText: string;
   coreStatus: AssessmentStatus | null;
+  // Set when the core node is a question: it carries a standing (how well
+  // answered it is) where a claim carries a status.
+  coreStanding?: QuestionStanding | null;
+  isQuestion?: boolean;
   // The claim the card fronts when it is not the curated anchor: a
   // listing-backed territory leads with its most important claim.
   leadId?: string;
@@ -133,9 +182,14 @@ export function computeTerritoryStats(detail: ClaimDetail): TerritoryStats {
     count: counts.get(s)!,
   }));
 
+  const isQuestion = detail.claim.kind === "question";
   return {
     coreText: detail.claim.text,
     coreStatus: detail.tree?.assessment_status ?? detail.assessment?.status ?? null,
+    ...(isQuestion && {
+      isQuestion,
+      coreStanding: detail.question?.standing ?? detail.tree?.standing ?? null,
+    }),
     assessedCount: [...seen.values()].filter(Boolean).length,
     totalCount: seen.size,
     mix,
