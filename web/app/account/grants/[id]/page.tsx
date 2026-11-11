@@ -10,6 +10,7 @@ import {
 import { approveGrantAction, cancelGrantAction } from "../../actions";
 import { TopUpGrant } from "./TopUpGrant";
 import { OwlMark } from "../../../../components/OwlMark";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Grant · Minerval" };
 export const dynamic = "force-dynamic";
@@ -61,26 +62,29 @@ export default async function GrantPage({
 
   return (
     <div className="col account">
-      <p className="claim-eyebrow">
-        <Link href="/account/grants">← grants</Link>
-      </p>
-      <h1>{grant.name}</h1>
+      <PageHead
+        back={{ href: "/account/grants", label: "grants" }}
+        kicker="Grant"
+        title={grant.name}
+        meta={
+          <>
+            {grant.policy} ·{" "}
+            {grant.scope_claim_id && (
+              <>
+                scope: <Link href={`/claims/${grant.scope_claim_id}`}>this claim</Link>
+                &rsquo;s subtree
+              </>
+            )}
+            {" · funded "}
+            {grant.created_at.slice(0, 10)}
+          </>
+        }
+      />
       <p className="order-line">
         <Link href={`/mandates/${grant.id}`}>
           public mandate page: live dashboard, contributors, and your line to
           the Grantmaker →
         </Link>
-      </p>
-      <p className="account-meta">
-        {grant.policy} ·{" "}
-        {grant.scope_claim_id && (
-          <>
-            scope: <Link href={`/claims/${grant.scope_claim_id}`}>this claim</Link>
-            &rsquo;s subtree
-          </>
-        )}
-        {" · funded "}
-        {grant.created_at.slice(0, 10)}
       </p>
 
       <section>

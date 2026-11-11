@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { getDoc } from "@/lib/content";
 import { Markdown } from "@/components/Markdown";
 import { DocLayout } from "@/components/DocLayout";
 import { extractToc } from "@/lib/toc";
+import { PageBack } from "@/components/PageHead";
 
 // The Terms of Service: the agreement covering the whole product, from the
 // website and API to the extension, the MCP server, owls, paid work, and
@@ -24,9 +24,7 @@ export default function TermsOfServicePage() {
   const toc = extractToc(text, { minDepth: 2, maxDepth: 2 });
   return (
     <div>
-      <p className="sc" style={{ marginBottom: "1rem" }}>
-        <Link href="/docs">← docs</Link>
-      </p>
+      <PageBack href="/docs" label="docs" />
       <DocLayout
         toc={toc}
         aside={

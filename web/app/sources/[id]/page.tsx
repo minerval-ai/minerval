@@ -3,6 +3,7 @@ import Link from "next/link";
 import { loadSourcePage } from "@/lib/data";
 import { SOURCE_FIXTURE_IDS } from "@/lib/fixtures-source";
 import { SourceView } from "@/components/source/SourceView";
+import { PageHead } from "@/components/PageHead";
 
 export async function generateMetadata({
   params,
@@ -27,8 +28,7 @@ export default async function SourcePage({ params }: { params: Promise<{ id: str
     // preview names its sample sources instead.
     return (
       <div className="col">
-        <p className="sc"><Link href="/claims">← claims</Link></p>
-        <h1 className="claim-hero">Source not found.</h1>
+        <PageHead back={{ href: "/claims", label: "claims" }} title="Source not found." />
         {source === "fixture" ? (
           <>
             <p style={{ color: "var(--muted)" }}>

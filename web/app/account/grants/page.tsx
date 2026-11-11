@@ -8,6 +8,7 @@ import {
   type GrantView,
 } from "../../../lib/account-api";
 import { OwlMark } from "../../../components/OwlMark";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Grants · Minerval" };
 export const dynamic = "force-dynamic";
@@ -39,19 +40,21 @@ export default async function GrantsPage() {
 
   return (
     <div className="col account">
-      <p className="claim-eyebrow">
-        <Link href="/account">← account</Link>
-      </p>
-      <h1>Grants</h1>
-      <p>
-        A grant funds sustained attention on the part of the graph you care
-        about, from a handful of claims to a whole literature. You describe
-        the work in conversation with the Grantmaker, it drafts a mandate and
-        quotes the cost in owls, and funding the mandate escrows the budget
-        and starts the work. Money buys scheduling, never conclusions: funded
-        assessments meet the same standards as every other, and whatever a
-        mandate does not spend returns to your balance.
-      </p>
+      <PageHead
+        back={{ href: "/account", label: "account" }}
+        title="Grants"
+        lede={
+          <>
+            A grant funds sustained attention on the part of the graph you care
+            about, from a handful of claims to a whole literature. You describe
+            the work in conversation with the Grantmaker, it drafts a mandate and
+            quotes the cost in owls, and funding the mandate escrows the budget
+            and starts the work. Money buys scheduling, never conclusions: funded
+            assessments meet the same standards as every other, and whatever a
+            mandate does not spend returns to your balance.
+          </>
+        }
+      />
       <p>
         <Link href="/account/grants/new">→ create a grant</Link>
       </p>

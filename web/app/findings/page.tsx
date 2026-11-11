@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { apiConfigured, fetchFindings } from "../../lib/api";
 import { FindingCard } from "../../components/Findings";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = {
   title: "Findings · Minerval",
@@ -39,8 +40,7 @@ export default async function FindingsPage({
   if (!apiConfigured()) {
     return (
       <div className="col">
-        <p className="claim-eyebrow"><span className="sc">findings</span></p>
-        <h1>Findings</h1>
+        <PageHead title="Findings" />
         <p>
           The frontend is not connected to a Minerval API (set{" "}
           <code>MINERVAL_API_URL</code>), so the findings feed is unavailable.
@@ -53,15 +53,18 @@ export default async function FindingsPage({
 
   return (
     <div className="col">
-      <p className="claim-eyebrow"><span className="sc">findings</span></p>
-      <h1>Findings</h1>
-      <p>
-        What the graph&apos;s administrators found in the course of their work that people
-        who hold the question would be better for knowing: what most of them believe is
-        wrong, or missing, or true for reasons the record now supplies. Each note is
-        published as its author wrote it, in the graph&apos;s voice, and rests on records
-        in the graph it cites. Nothing here is a verdict; the verdict is on the claim.
-      </p>
+      <PageHead
+        title="Findings"
+        lede={
+          <>
+            What the graph&apos;s administrators found in the course of their work that people
+            who hold the question would be better for knowing: what most of them believe is
+            wrong, or missing, or true for reasons the record now supplies. Each note is
+            published as its author wrote it, in the graph&apos;s voice, and rests on records
+            in the graph it cites. Nothing here is a verdict; the verdict is on the claim.
+          </>
+        }
+      />
 
       <p className="finding-controls">
         <span className="sc">Order</span>{" "}

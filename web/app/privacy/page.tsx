@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHead } from "@/components/PageHead";
 
 // Privacy policy for the site, API, and browser extension. The Chrome Web
 // Store listing (#135) links here from its privacy-practices disclosure, so
@@ -13,14 +14,17 @@ export const metadata = {
 export default function Privacy() {
   return (
     <div className="doc">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Privacy</p>
-      <h1>Privacy policy</h1>
-      <p className="lede">
-        Minerval collects the minimum it needs to run a metered claim-graph
-        service, and nothing it collects is sold, shared for advertising, or
-        used to track you anywhere else. What it does keep, including a
-        contributor&rsquo;s track record on the graph, is described below.
-      </p>
+      <PageHead
+        title="Privacy policy"
+        lede={
+          <>
+            Minerval collects the minimum it needs to run a metered claim-graph
+            service, and nothing it collects is sold, shared for advertising, or
+            used to track you anywhere else. What it does keep, including a
+            contributor&rsquo;s track record on the graph, is described below.
+          </>
+        }
+      />
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
         Effective October 19, 2026 · applies to minerval.ai, the Minerval API, and
         the Minerval browser extension.

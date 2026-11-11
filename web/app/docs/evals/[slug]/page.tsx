@@ -7,6 +7,7 @@ import { loadEvalsData } from "@/lib/evals";
 import { extractToc } from "@/lib/toc";
 import { GROUPS, TOPICS, topicBySlug } from "../guide";
 import s from "../evals.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // One topic of the evals guide: a title, one line, the tags, and collapsed
 // sections the reader opens. The rubric is the exception: a verbatim document
@@ -62,13 +63,13 @@ export default async function TopicPage({ params }: { params: Promise<{ slug: st
 
   return (
     <div>
-      <p className="sc" style={{ marginBottom: "1rem" }}><Link href="/docs/evals">← evals</Link></p>
-      <div className="claim-eyebrow">
-        <span className="sc">{topic.kind === "eval" ? "Eval" : "Background"}</span>
-        {group && topic.kind === "eval" ? <span className="tag">{group.title}</span> : null}
-      </div>
-      <h1 className="claim-hero" style={{ fontSize: "2.1rem" }}>{topic.title}</h1>
-      <p className={s.summary}>{topic.line}</p>
+      <PageHead
+        back={{ href: "/docs/evals", label: "evals" }}
+        kicker={topic.kind === "eval" ? "Eval" : "Background"}
+        tags={group && topic.kind === "eval" ? <span className="tag">{group.title}</span> : null}
+        title={topic.title}
+        lede={topic.line}
+      />
       {tags.length ? <Tags items={tags} /> : null}
 
       {intro ? (

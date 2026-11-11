@@ -4,6 +4,7 @@ import { getReplays, replayModels } from "@/lib/replay";
 import { modelDisplayName } from "@/lib/model-names";
 import s from "@/app/docs/evals/evals.module.css";
 import r from "./replays.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // The replays index (#334): one card per committed recording. Reads the
 // evals index's `replays` line when the sync wrote one, else the files
@@ -43,11 +44,15 @@ export default function ReplaysIndex() {
   const items = summaries();
   return (
     <div>
-      <p className="sc" style={{ marginBottom: "1rem" }}><Link href="/docs/evals">← evals</Link></p>
-      <h1>Replays</h1>
-      <p className="lede" style={{ fontSize: "1.02rem", marginBottom: "1.2rem" }}>
-        A scorecard says how a graph came out. A replay shows how it was built: the sources landing one by one, the Extractor listing claims, the Matcher searching and deciding, each Steward&rsquo;s tool calls and verdict, the Curator&rsquo;s merges; for a two-arm episode, the same sources building two graphs side by side. Everything in a recording is derived from what the run wrote; nothing is narrated.
-      </p>
+      <PageHead
+        back={{ href: "/docs/evals", label: "evals" }}
+        title="Replays"
+        lede={
+          <>
+            A scorecard says how a graph came out. A replay shows how it was built: the sources landing one by one, the Extractor listing claims, the Matcher searching and deciding, each Steward&rsquo;s tool calls and verdict, the Curator&rsquo;s merges; for a two-arm episode, the same sources building two graphs side by side. Everything in a recording is derived from what the run wrote; nothing is narrated.
+          </>
+        }
+      />
 
       {items.length === 0 ? (
         <p className={s.small} style={{ border: "1px dashed var(--rule)", borderRadius: 4, padding: "0.8rem 1rem", maxWidth: "36rem" }}>

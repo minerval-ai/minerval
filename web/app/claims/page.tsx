@@ -12,6 +12,7 @@ import { PrizeChip } from "@/components/claim/PrizeChip";
 import { MachineChecked } from "@/components/claim/MachineChecked";
 import { describeEstimate } from "@/lib/quantity";
 import type { AssessedFilter, ClaimType, NodeKind, SearchResultItem } from "@/lib/types";
+import { PageHead } from "@/components/PageHead";
 
 // How many newest claims the demoted "recently added" strip shows in the
 // overview. Small on purpose: it is orientation, not the feed.
@@ -104,13 +105,16 @@ export default async function ClaimsIndex({
 
     return (
       <div className="col-wide">
-        <p className="sc" style={{ marginBottom: ".5rem" }}>Browse</p>
-        <h1>Claims</h1>
-        <p className="lede" style={{ fontSize: "1.05rem" }}>
-          Claimspace is every claim the graph holds, each decomposed to its bedrock and weighed
-          against the evidence. Right now it gathers around a few investigations. Search it by
-          meaning, or start from one below.
-        </p>
+        <PageHead
+          title="Claims"
+          lede={
+            <>
+              Claimspace is every claim the graph holds, each decomposed to its bedrock and weighed
+              against the evidence. Right now it gathers around a few investigations. Search it by
+              meaning, or start from one below.
+            </>
+          }
+        />
 
         <p className="sc" style={{ marginTop: "-0.4rem", marginBottom: "1.4rem" }}>
           {territories.length} investigations · growing as claims are ingested
@@ -155,12 +159,15 @@ export default async function ClaimsIndex({
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Browse</p>
-      <h1>Claims</h1>
-      <p className="lede" style={{ fontSize: "1.05rem" }}>
-        Search the graph by meaning. Each result carries its current verdict; open one to
-        see its decomposition, provenance, and the reasoning behind the assessment.
-      </p>
+      <PageHead
+        title="Claims"
+        lede={
+          <>
+            Search the graph by meaning. Each result carries its current verdict; open one to
+            see its decomposition, provenance, and the reasoning behind the assessment.
+          </>
+        }
+      />
 
       <ClaimsControls
         q={q ?? ""}

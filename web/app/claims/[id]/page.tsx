@@ -3,6 +3,7 @@ import Link from "next/link";
 import { loadClaim } from "@/lib/data";
 import { claimPreview, describePreview, truncateText } from "@/lib/preview";
 import { ClaimMargins } from "@/components/claim/ClaimMargins";
+import { PageHead } from "@/components/PageHead";
 
 // What a pasted link to this page unfurls into: the claim as the title, and
 // the graph's judgment of it, whole, as the description (lib/preview.ts). The
@@ -40,8 +41,7 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
     // explanation instead of internal vocabulary (#195).
     return (
       <div className="col">
-        <p className="sc"><Link href="/claims">← claims</Link></p>
-        <h1 className="claim-hero">Claim not found.</h1>
+        <PageHead back={{ href: "/claims", label: "claims" }} title="Claim not found." />
         {source === "fixture" ? (
           <>
             <p style={{ color: "var(--muted)" }}>

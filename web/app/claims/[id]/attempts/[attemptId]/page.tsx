@@ -3,6 +3,7 @@ import Link from "next/link";
 import { loadAttempt, loadClaim } from "@/lib/data";
 import { formatUsd, fmtDate } from "@/lib/format";
 import { ATTEMPT_VARIANT_LABEL, attemptOutcomeLabel } from "@/lib/prizes";
+import { PageHead } from "@/components/PageHead";
 
 // One house attempt (docs/mathematics.md §7.7): the report (the informal
 // argument, the approaches tried, the obstruction, what would help, and the
@@ -38,8 +39,10 @@ export default async function AttemptPage({
   if (!detail || !attempt) {
     return (
       <div className="col">
-        <p className="sc"><Link href={detail ? `/claims/${id}` : "/claims"}>← {detail ? "claim page" : "claims"}</Link></p>
-        <h1 className="claim-hero">Attempt not found.</h1>
+        <PageHead
+          back={detail ? { href: `/claims/${id}`, label: "claim page" } : { href: "/claims", label: "claims" }}
+          title="Attempt not found."
+        />
         <p style={{ color: "var(--muted)" }}>
           There is no attempt at this address under this claim. The link may be mistyped or out of date.
         </p>
@@ -53,26 +56,27 @@ export default async function AttemptPage({
 
   return (
     <div className="col">
-      <p className="sc" style={{ marginBottom: "1.2rem", display: "flex", gap: ".7rem", alignItems: "center" }}>
-        <Link href={`/claims/${detail.claim.id}`}>← claim page</Link>
-        {source === "fixture" && (
-          <span className="tag" title="The API is not connected; showing a design fixture.">
-            fixture data
-          </span>
-        )}
-      </p>
-      <div className="claim-eyebrow">
-        <span className="sc">Attempt</span>
-        <span className="tag kind">{ATTEMPT_VARIANT_LABEL[attempt.variant] ?? attempt.variant}</span>
-        {attempt.is_calibration && (
-          <span className="tag" title="A calibration run: the solver against a theorem with a known proof, so its record on open problems has a baseline.">
-            calibration
-          </span>
-        )}
-      </div>
-      <h1 className="claim-hero" style={{ fontSize: "1.5rem" }}>
-        <Link href={`/claims/${detail.claim.id}`} className="plain">{detail.claim.text}</Link>
-      </h1>
+      <PageHead
+        back={{ href: `/claims/${detail.claim.id}`, label: "claim page" }}
+        kicker="Attempt"
+        tags={
+          <>
+            <span className="tag kind">{ATTEMPT_VARIANT_LABEL[attempt.variant] ?? attempt.variant}</span>
+            {attempt.is_calibration && (
+              <span className="tag" title="A calibration run: the solver against a theorem with a known proof, so its record on open problems has a baseline.">
+                calibration
+              </span>
+            )}
+            {source === "fixture" && (
+              <span className="tag" title="The API is not connected; showing a design fixture.">
+                fixture data
+              </span>
+            )}
+          </>
+        }
+        variant="statement"
+        title={<Link href={`/claims/${detail.claim.id}`}>{detail.claim.text}</Link>}
+      />
 
       <div className="claim-assess" style={{ gap: "1rem" }}>
         <span className="summary-chip">

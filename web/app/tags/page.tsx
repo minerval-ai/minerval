@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { loadTags } from "@/lib/data";
 import { topicHref } from "@/components/Topics";
+import { PageHead } from "@/components/PageHead";
 
 // The topic vocabulary (#272): every tag claims carry, most-used first, each
 // opening the claim list filtered to it. A tag names what claims are ABOUT
@@ -19,14 +20,17 @@ export default async function TagsPage() {
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Browse</p>
-      <h1>Topics</h1>
-      <p className="lede" style={{ fontSize: "1.05rem" }}>
-        What the graph&rsquo;s claims are about. Each topic is a tag a small labelling agent
-        attaches as claims land, reusing the vocabulary before adding to it; a topic says
-        nothing about whether the claims under it hold. Open one to see its claims, each with
-        its current verdict.
-      </p>
+      <PageHead
+        title="Topics"
+        lede={
+          <>
+            What the graph&rsquo;s claims are about. Each topic is a tag a small labelling agent
+            attaches as claims land, reusing the vocabulary before adding to it; a topic says
+            nothing about whether the claims under it hold. Open one to see its claims, each with
+            its current verdict.
+          </>
+        }
+      />
 
       {tags.length === 0 ? (
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)" }}>

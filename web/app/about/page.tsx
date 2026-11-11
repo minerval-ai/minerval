@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ContactForm } from "@/components/ContactForm";
+import { PageHead } from "@/components/PageHead";
 
 // The about page: what Minerval is (#112), where it's going, who
 // builds it, and how to reach the project (#81). The explainer content lives
@@ -34,9 +35,7 @@ function Annot({ n, text, children }: { n: number; text: ReactNode; children: Re
 export default function About() {
   return (
     <div className="doc">
-      <h1 className="sc" style={{ fontSize: ".66rem", letterSpacing: ".09em", margin: "0 0 .9rem" }}>
-        About
-      </h1>
+      <PageHead title="About" />
       <p className="dropcap">
         Minerval is an open source project to build a database of{" "}
         <Annot n={1} text="claims about the world">

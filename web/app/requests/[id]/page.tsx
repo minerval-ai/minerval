@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { loadRequest } from "@/lib/data";
 import { RequestView } from "@/components/request/Requests";
+import { PageHead } from "@/components/PageHead";
 
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -8,8 +8,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   if (!request) {
     return (
       <div className="col">
-        <p className="sc"><Link href="/requests">← requests</Link></p>
-        <h1 className="claim-hero">Request not found.</h1>
+        <PageHead back={{ href: "/requests", label: "requests" }} title="Request not found." />
         <p style={{ color: "var(--muted)" }}>There is no request at this address.</p>
       </div>
     );

@@ -13,7 +13,5 @@
 
 /* the replay page runs wide: two graphs side by side need the frame, not the measure */
 .wide { max-width: var(--frame); }
-.about { font-size: 1.02rem; line-height: 1.5; color: var(--ink-soft); max-width: 40rem; margin: 0.4rem 0 0.8rem; }
-.meta { font-family: var(--sans); font-size: 0.78rem; color: var(--muted); margin: 0 0 1rem; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-variant-numeric: tabular-nums; }
 .fps { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0 1rem; max-width: 46rem; }
 .fps > div > p { margin: 0 0 0.2rem; }

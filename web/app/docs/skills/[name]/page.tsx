@@ -11,6 +11,7 @@ import {
 import { Markdown } from "@/components/Markdown";
 import { DocLayout } from "@/components/DocLayout";
 import { extractToc } from "@/lib/toc";
+import { PageBack, PageHead } from "@/components/PageHead";
 
 export function generateStaticParams() {
   return getSkills().map((s) => ({ name: s.name }));
@@ -49,9 +50,7 @@ export default async function SkillPage({ params }: { params: Promise<{ name: st
 
   return (
     <div>
-      <p className="sc" style={{ marginBottom: "1rem" }}>
-        <Link href="/docs/skills">← skills</Link>
-      </p>
+      <PageBack href="/docs/skills" label="skills" />
       <DocLayout
         toc={toc}
         aside={
@@ -65,11 +64,12 @@ export default async function SkillPage({ params }: { params: Promise<{ name: st
         }
       >
         <div className="doc">
-          <p className="sc" style={{ marginBottom: ".5rem" }}>
-            {skill.kind === "method" ? "Method skill" : "Domain skill"} · version {skill.version} · since epoch {skill.sinceEpoch}
-          </p>
-          <h1>{skill.displayName}</h1>
-          <p className="lede">{skill.description}</p>
+          <PageHead
+            kicker={skill.kind === "method" ? "Method skill" : "Domain skill"}
+            title={skill.displayName}
+            meta={<>version {skill.version} · since epoch {skill.sinceEpoch}</>}
+            lede={skill.description}
+          />
           <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)" }}>
             <strong style={{ color: "var(--ink-soft)" }}>Loaded:</strong>{" "}
             {skill.kind === "method" ? (

@@ -9,6 +9,7 @@ import { DEFINED_IN, premiseSummary } from "@/lib/ontology";
 import type { Stance } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import styles from "./argument.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // How a passage stands toward the argument (§4, §7). A mention is
 // provenance and counts in neither camp.
@@ -52,21 +53,22 @@ export function ArgumentView({ page, source }: { page: ArgumentPage; source: Dat
 
   return (
     <div className="col">
-      <p className="sc" style={{ marginBottom: "1.2rem", display: "flex", gap: ".7rem", alignItems: "center" }}>
-        <Link href={`/claims/${conclusion.id}`}>← the claim it bears on</Link>
-        {source === "fixture" && (
-          <span className="tag" title="The API is not connected; showing a design fixture.">
-            fixture data
-          </span>
-        )}
-      </p>
-
-      <p className="sc">
-        <Term gloss="A line of reasoning from premises to a conclusion. Like a claim, it belongs to no one who makes it." href={DEFINED_IN.argument}>
-          argument
-        </Term>
-      </p>
-      <h1 className="claim-hero">{a.name ?? "Unnamed argument"}</h1>
+      <PageHead
+        back={{ href: `/claims/${conclusion.id}`, label: "the claim it bears on" }}
+        kicker={
+          <Term gloss="A line of reasoning from premises to a conclusion. Like a claim, it belongs to no one who makes it." href={DEFINED_IN.argument}>
+            argument
+          </Term>
+        }
+        tags={
+          source === "fixture" && (
+            <span className="tag" title="The API is not connected; showing a design fixture.">
+              fixture data
+            </span>
+          )
+        }
+        title={a.name ?? "Unnamed argument"}
+      />
 
       <div className={styles.head}>
         {isStance(a.stance) && a.stance !== "neutral" && <StanceTag stance={a.stance} />}

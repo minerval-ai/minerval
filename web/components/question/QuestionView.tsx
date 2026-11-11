@@ -11,6 +11,7 @@ import { Contribute } from "@/components/claim/Contribute";
 import { CiteClaim } from "@/components/claim/CiteClaim";
 import { EmbedClaim } from "@/components/claim/EmbedClaim";
 import styles from "./question.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // A question's page (constitution §7a): first-class, like a claim's. It
 // leads with how well the question is answered and the Steward's best
@@ -94,7 +95,7 @@ function Answers({ q }: { q: QuestionDetail }) {
   );
 }
 
-export function QuestionView({ detail }: { detail: ClaimDetail }) {
+export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail; fixture?: boolean }) {
   const { claim } = detail;
   const q = detail.question!;
   const a = q.assessment?.summary ? { ...q.assessment, summary: q.assessment.summary } : null;
@@ -106,17 +107,27 @@ export function QuestionView({ detail }: { detail: ClaimDetail }) {
 
   return (
     <article className="col">
-      <div className="claim-eyebrow">
-        <span className="sc">Question</span>
-        {claim.state !== "active" && <span className="tag">{claim.state.replace(/_/g, " ")}</span>}
-        {typeof claim.importance === "number" && (
-          <span style={{ marginLeft: "auto" }}>
-            <Importance value={claim.importance} />
-          </span>
-        )}
-      </div>
-
-      <h1 className="claim-hero">{claim.text}</h1>
+      <PageHead
+        back={{ href: "/claims", label: "claims" }}
+        kicker="Question"
+        tags={
+          <>
+            {claim.state !== "active" && <span className="tag">{claim.state.replace(/_/g, " ")}</span>}
+            {fixture && (
+              <span className="tag" title="The API is not connected; showing a design fixture.">
+                fixture data
+              </span>
+            )}
+            {typeof claim.importance === "number" && (
+              <span style={{ marginLeft: "auto" }}>
+                <Importance value={claim.importance} />
+              </span>
+            )}
+          </>
+        }
+        variant="statement"
+        title={claim.text}
+      />
 
       <div className="claim-assess">
         <span className="verdict-pair">

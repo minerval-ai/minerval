@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchSetupPart } from "@/lib/api";
 import { lineDiff } from "@/lib/line-diff";
+import { PageHead } from "@/components/PageHead";
 
 // One version of a setup part: its text when public, its source on GitHub at
 // the commit it first ran under, and what changed from the version before.
@@ -34,31 +35,32 @@ export default async function SetupPartPage({ params }: { params: Promise<Params
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: "1rem" }}>
-        <Link href="/docs/setup">← setup versions</Link>
-      </p>
-      <h1>
-        <code>{name}</code> v{part.version}
-      </h1>
-      <p style={{ fontFamily: "var(--sans)", fontSize: ".85rem", color: "var(--muted)" }}>
-        {kind} · first ran {new Date(part.first_seen_at).toISOString().slice(0, 10)}
-        {part.first_seen_commit ? (
+      <PageHead
+        back={{ href: "/docs/setup", label: "setup versions" }}
+        kicker={kind}
+        title={<><code>{name}</code> v{part.version}</>}
+        meta={
           <>
-            {" "}under commit <code>{part.first_seen_commit.slice(0, 7)}</code>
+              first ran {new Date(part.first_seen_at).toISOString().slice(0, 10)}
+              {part.first_seen_commit ? (
+                <>
+                  {" "}under commit <code>{part.first_seen_commit.slice(0, 7)}</code>
+                </>
+              ) : null}
+              {part.source_url ? (
+                <>
+                  {" "}· <a href={part.source_url}>source on GitHub</a>
+                </>
+              ) : null}
+              {" "}· sha256 <code title={part.hash}>{part.hash.slice(0, 12)}</code>
+              {part.previous_version ? (
+                <>
+                  {" "}· <Link href={href(part.previous_version)}>v{part.previous_version}</Link>
+                </>
+              ) : null}
           </>
-        ) : null}
-        {part.source_url ? (
-          <>
-            {" "}· <a href={part.source_url}>source on GitHub</a>
-          </>
-        ) : null}
-        {" "}· sha256 <code title={part.hash}>{part.hash.slice(0, 12)}</code>
-        {part.previous_version ? (
-          <>
-            {" "}· <Link href={href(part.previous_version)}>v{part.previous_version}</Link>
-          </>
-        ) : null}
-      </p>
+        }
+      />
 
       {part.content === null ? (
         <p style={{ fontFamily: "var(--sans)", color: "var(--muted)" }}>
