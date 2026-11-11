@@ -2676,7 +2676,8 @@ export const lookoutEvents = pgTable(
 // mandate_events — a mandate's inbox: what its work produced since its
 // Grantmaker last looked (an assessment on a node it funded, with the
 // children that pass surfaced; a decision on a contribution it submitted;
-// a source it ingested; a lookout's flag). Pending events wake a review
+// a source in its pipeline whose extraction finished; a lookout's flag).
+// Pending events wake a review
 // pass; the pass reads them and marks them consumed
 // (mandate-event-service.ts).
 // ---------------------------------------------------------------------------
