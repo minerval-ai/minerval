@@ -365,6 +365,8 @@ export interface SourceFactsView {
     archived_url: string | null;
     retrieved_at: string;
     facts_checked_at: string | null;
+    /** SHA-256 of the stored text (services/source-content.ts); null when no text is stored. */
+    content_hash: string | null;
   };
   /** Other versions of the same work; `later` says which way the relation runs. */
   versions: Array<{ id: string; title: string; url: string | null; later: boolean }>;
@@ -396,9 +398,10 @@ export async function getSourceFacts(sourceId: string): Promise<SourceFactsView 
     archived_url: string | null;
     retrieved_at: Date;
     facts_checked_at: Date | null;
+    content_hash: string | null;
   }>(
     `SELECT id, url, title, source_type, authors, publisher, published_date, doi, archived_url,
-            retrieved_at, facts_checked_at
+            retrieved_at, facts_checked_at, content_hash
        FROM sources WHERE id = $1`,
     [sourceId]
   );
@@ -448,6 +451,7 @@ export async function getSourceFacts(sourceId: string): Promise<SourceFactsView 
       archived_url: row.archived_url,
       retrieved_at: new Date(row.retrieved_at).toISOString(),
       facts_checked_at: row.facts_checked_at ? new Date(row.facts_checked_at).toISOString() : null,
+      content_hash: row.content_hash,
     },
     // version_of records the LATER document as the parent.
     versions: relations

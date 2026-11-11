@@ -768,7 +768,10 @@ export const sources = pgTable("sources", {
   id: uuid("id").primaryKey().defaultRandom(),
   url: text("url").unique(),
   title: text("title").notNull(),
-  contentHash: text("content_hash").unique(),
+  // SHA-256 of raw_content, written when the text is first stored
+  // (services/source-content.ts). Not unique: one document can be held at
+  // two addresses.
+  contentHash: text("content_hash"),
   rawContent: text("raw_content"),
   sourceType: text("source_type").notNull().default("unknown"),
   retrievedAt: timestamp("retrieved_at", { withTimezone: true })
@@ -801,6 +804,7 @@ export const sources = pgTable("sources", {
   pageUrlHash: text("page_url_hash"),
 }, (table) => [
   index("idx_sources_doi").on(table.doi),
+  index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
 ]);
 

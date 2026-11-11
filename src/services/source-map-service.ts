@@ -36,6 +36,7 @@ import {
   SOURCE_RELATION_TYPES,
   SYMMETRIC_SOURCE_RELATIONS,
 } from "../schemas/common.js";
+import { sourceContentHash } from "./source-content.js";
 
 export class SourceMapError extends Error {
   constructor(message: string) {
@@ -333,9 +334,9 @@ export async function fetchAndStoreSource(
 ): Promise<string> {
   const raw = sanitizeStoredText(await fetch(source.url));
   await rawQuery(
-    `UPDATE sources SET raw_content = $2, retrieved_at = now()
+    `UPDATE sources SET raw_content = $2, content_hash = $3, retrieved_at = now()
       WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
-    [source.id, raw]
+    [source.id, raw, sourceContentHash(raw)]
   );
   await refreshSourceFactsOnce(source.id, { newText: true });
   await segmentSourceOnce(source.id);
