@@ -6,7 +6,7 @@
  * feature on, which is how the public deployment runs, so is every call.
  * The prompt step's setup records the list either way.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 
 type MessageParam = Anthropic.MessageParam;
@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   completeStructured: vi.fn(),
   recordAgentStep: vi.fn(),
-  featuresOff: [] as string[],
 }));
 
 vi.mock("../../../src/llm/providers/index.js", () => ({
@@ -41,15 +40,6 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
   checkBudget: vi.fn(),
 }));
 
-// The deployment's FEATURES_OFF, as config loading parsed it.
-vi.mock("../../../src/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/config.js")>();
-  return {
-    ...actual,
-    loadConfig: () => ({ ...actual.loadConfig(), featuresOff: mocks.featuresOff }),
-  };
-});
-
 import {
   complete,
   completeStructured,
@@ -60,10 +50,20 @@ import {
 } from "../../../src/llm/client.js";
 import { runWithUsageContext, untraced, withAgent } from "../../../src/llm/usage-context.js";
 import { runDateLine } from "../../../src/llm/run-date.js";
+import { loadConfig } from "../../../src/config.js";
 import {
   FEATURES_OFF_NOTE_SEPARATOR,
   featuresOffNote,
 } from "../../../src/llm/features-off-note.js";
+
+// The deployment's FEATURES_OFF as config loading parsed it: the loaded
+// config is one object per process, so setting the list on it is what the
+// client and the note read.
+const deployment = loadConfig() as { featuresOff: string[] };
+const loaded = deployment.featuresOff;
+afterAll(() => {
+  deployment.featuresOff = loaded;
+});
 
 const NOTE = featuresOffNote({ featuresOff: ["mathematics"] });
 const BRIEFED = `${NOTE}${FEATURES_OFF_NOTE_SEPARATOR}go`;
@@ -126,7 +126,7 @@ beforeEach(() => {
   mocks.complete.mockReset();
   mocks.completeStructured.mockReset();
   mocks.recordAgentStep.mockReset();
-  mocks.featuresOff = [];
+  deployment.featuresOff = [];
 });
 
 describe("with every feature on", () => {
@@ -205,7 +205,7 @@ describe("with every feature on", () => {
 
 describe("with mathematics off", () => {
   beforeEach(() => {
-    mocks.featuresOff = ["mathematics"];
+    deployment.featuresOff = ["mathematics"];
   });
 
   it("heads the first message of an agent run's tool loop with the note, once", async () => {
@@ -397,7 +397,7 @@ describe("with mathematics off", () => {
 
 describe("with the extension off", () => {
   it("records the one feature, and tells the run of it alone", async () => {
-    mocks.featuresOff = ["extension"];
+    deployment.featuresOff = ["extension"];
     const sent = capture(mocks.completeWithTools, finalTurn);
     await runWithUsageContext({ agent: "curator", trace: newTrace() }, () =>
       toolUseLoop({

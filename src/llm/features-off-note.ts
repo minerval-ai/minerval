@@ -41,8 +41,8 @@ export function featuresOffNote(config?: FeaturesConfig): string {
   const phrases = FEATURES.filter((f) => off.has(f.name)).map((f) => f.agentPhrase);
   return (
     `Some parts of Minerval are switched off in this deployment: ${phrases.join("; ")}. ` +
-    `Their tools are not offered to you, and what your instructions and skills ` +
-    `say about them does not apply here. The rest of your instructions hold as written.`
+    `Their tools are not offered to you, so what your instructions and skills ` +
+    `say about using them does not apply here. The rest of your instructions hold as written.`
   );
 }
 

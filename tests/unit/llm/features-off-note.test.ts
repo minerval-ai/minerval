@@ -21,8 +21,8 @@ const MATHEMATICS_OFF =
   "Some parts of Minerval are switched off in this deployment: formal " +
   "statements in Lean, the Lean checker and the solver's proof attempts; " +
   "prizes and bounties for machine-checked proofs. Their tools are not " +
-  "offered to you, and what your instructions and skills say about them " +
-  "does not apply here. The rest of your instructions hold as written.";
+  "offered to you, so what your instructions and skills say about using " +
+  "them does not apply here. The rest of your instructions hold as written.";
 
 describe("the features that are off", () => {
   it("is empty with everything on, and with a config that carries no list", () => {
@@ -78,8 +78,8 @@ describe("featuresOffNote", () => {
     expect(featuresOffNote({ featuresOff: ["extension"] })).toBe(
       "Some parts of Minerval are switched off in this deployment: the " +
         "browser extension and its page analysis. Their tools are not " +
-        "offered to you, and what your instructions and skills say about them " +
-        "does not apply here. The rest of your instructions hold as written."
+        "offered to you, so what your instructions and skills say about using " +
+        "them does not apply here. The rest of your instructions hold as written."
     );
   });
 
