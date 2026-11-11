@@ -35,7 +35,7 @@ import pg from "pg";
 import { loadConfig } from "../config.js";
 import { databaseSsl, rawQuery } from "../db/client.js";
 
-/** The views callers and agents may read (migration 0091). */
+/** The views callers and agents may read (migration 0093). */
 export const SQL_VIEWS = [
   "nodes",
   "assessments",
