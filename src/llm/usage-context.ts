@@ -29,6 +29,7 @@ import {
 } from "../services/trace-service.js";
 import { setStatementObserver } from "../db/statement-observer.js";
 import { writesGraph } from "../db/graph-writes.js";
+import { PUBLIC_LABEL } from "../labels.js";
 
 export interface UsageContext {
   userId?: string | null;
@@ -89,6 +90,13 @@ export interface UsageContext {
    * cover (runBudget, budgetRefusal below).
    */
   passBudget?: PassBudget;
+  /**
+   * The label the enclosing work writes at (src/labels.ts): stamped onto the
+   * run row, its prompt step's setup, and every judgment and source it
+   * writes (currentLabel below), never chosen by the agent. Absent means
+   * public, which is all the public graph has; nothing sets another yet.
+   */
+  label?: string;
 }
 
 export interface PassBudget {
@@ -126,6 +134,15 @@ const storage = new AsyncLocalStorage<UsageContext>();
 
 export function getUsageContext(): UsageContext {
   return storage.getStore() ?? {};
+}
+
+/**
+ * The label a write made now carries: the enclosing run's or request's, and
+ * public outside any. The write seams of the labelled tables call this the
+ * way they read the funder and the run id from the context.
+ */
+export function currentLabel(): string {
+  return getUsageContext().label ?? PUBLIC_LABEL;
 }
 
 export function runWithUsageContext<T>(

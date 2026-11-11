@@ -84,9 +84,10 @@ describe("getOrCreateSource", () => {
 
   it("creates the row when none exists", async () => {
     const row = await getOrCreateSource({ url: "u", title: "T", content: "c" });
-    // "u" is no web page, so its page hash is the empty marker.
+    // "u" is no web page, so its page hash is the empty marker. Written
+    // outside any run, the row is public (src/labels.ts).
     expect(state.inserts).toEqual([
-      { url: "u", title: "T", rawContent: "c", contentHash: sourceContentHash("c"), pageUrlHash: "" },
+      { url: "u", title: "T", rawContent: "c", contentHash: sourceContentHash("c"), pageUrlHash: "", label: "public" },
     ]);
     expect(row.id).toBe("new");
   });

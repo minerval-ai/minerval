@@ -60,6 +60,7 @@ import { agentPrivateReason } from "../llm/run-visibility.js";
 import { agentRuns, agentSteps } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { genesisHash, stepHash } from "./run-log.js";
+import { PUBLIC_LABEL } from "../labels.js";
 
 /** Mutable trace handle carried on the usage context for the run's duration. */
 export interface AgentTrace {
@@ -110,6 +111,8 @@ export interface RunAttribution {
   jobId?: string | null;
   claimId?: string | null;
   requestId?: string | null;
+  /** The label the run writes at (src/labels.ts); absent means public. */
+  label?: string;
 }
 
 /**
@@ -193,6 +196,9 @@ export function startAgentRun(
         claimId: attribution.claimId ?? null,
         requestId: attribution.requestId ?? null,
         commitSha: loadConfig().gitSha ?? null,
+        // The label the run writes at, from the context that opened it, so
+        // the run row and the rows the run writes carry the same one.
+        label: attribution.label ?? PUBLIC_LABEL,
         // A run starts private when its agent's inputs are not public by
         // construction (llm/run-visibility.ts); tools can add reasons later.
         privateReasons: initialReasons,

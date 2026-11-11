@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations, argumentEvaluationsInForce } from "../db/schema.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /**
  * Inline claim reference inside an argument's written form:
@@ -197,6 +198,8 @@ export async function setArgumentEvaluation(input: {
       estimateId: input.estimateId ?? null,
       isCurrent: true,
       createdBy: input.createdBy ?? "claim_steward",
+      // The label of the run that wrote it (src/labels.ts).
+      label: currentLabel(),
     })
     .returning();
   return evaluation!;

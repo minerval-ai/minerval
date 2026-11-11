@@ -31,7 +31,7 @@ import {
   modelRefusalFallbackForm,
   modelSupportsLongRun,
 } from "./models.js";
-import { getUsageContext, runBudget } from "./usage-context.js";
+import { currentLabel, getUsageContext, runBudget } from "./usage-context.js";
 import { spendLine } from "./budget-line.js";
 import { markRunPrivate, recordAgentStep, type AgentTrace } from "../services/trace-service.js";
 import { toolPrivateReason } from "./run-visibility.js";
@@ -141,8 +141,9 @@ function recordPromptStep(step: {
       : t
   );
   // The setup as versioned parts (services/setup-service.ts): each part is
-  // stored once, and the step records which ones it ran under. Never fails
-  // the run: a setup that cannot be split or stored is left out.
+  // stored once, and the step records which ones it ran under, with the
+  // label the run writes at (src/labels.ts). Never fails the run: a setup
+  // that cannot be split or stored is left out.
   // The registry that names role parts imports every role's prompt module,
   // so storage loads lazily, off the step's path.
   let setup: SetupRecord | null = null;
@@ -151,7 +152,7 @@ function recordPromptStep(step: {
       system: step.system ?? null,
       tools: tools as Array<{ name: string } & Record<string, unknown>>,
     });
-    setup = setupRecord(parts, step, loadConfig().gitSha ?? null);
+    setup = setupRecord(parts, step, loadConfig().gitSha ?? null, currentLabel());
     const agent = context.agent ?? "unknown";
     void import("../services/setup-service.js")
       .then((s) => s.storeSetupParts(s.classifyParts(parts, agent)))

@@ -16,11 +16,13 @@ vi.mock("../../../src/services/trace-service.js", () => ({
 }));
 
 import {
+  currentLabel,
   getUsageContext,
   runWithUsageContext,
   untraced,
   withAgent,
 } from "../../../src/llm/usage-context.js";
+import { PUBLIC_LABEL } from "../../../src/labels.js";
 
 const fakeTrace = () => ({ runId: "run-1", seq: { n: 0 }, ready: Promise.resolve() });
 
@@ -92,6 +94,43 @@ describe("withAgent with tracing", () => {
     mocks.start.mockReturnValue(trace);
     expect(withAgent("steward", () => "done")).toBe("done");
     expect(mocks.finish).toHaveBeenCalledWith(trace, "ok");
+  });
+});
+
+// The label a write carries comes from the context, never from the agent
+// (src/labels.ts). The public graph sets none, so everything is public.
+describe("currentLabel", () => {
+  it("is public outside any run", () => {
+    expect(PUBLIC_LABEL).toBe("public");
+    expect(currentLabel()).toBe(PUBLIC_LABEL);
+  });
+
+  it("is public inside a run whose context sets no label", async () => {
+    await runWithUsageContext({ jobId: "job-9" }, () =>
+      withAgent("steward", async () => {
+        expect(currentLabel()).toBe(PUBLIC_LABEL);
+      })
+    );
+  });
+
+  it("is the context's label, through nested agents and untraced work", async () => {
+    await runWithUsageContext({ label: "internal" }, () =>
+      withAgent("steward", async () => {
+        expect(currentLabel()).toBe("internal");
+        await withAgent("matcher", async () => {
+          expect(currentLabel()).toBe("internal");
+        });
+        await untraced(async () => {
+          expect(currentLabel()).toBe("internal");
+        });
+      })
+    );
+    expect(currentLabel()).toBe(PUBLIC_LABEL);
+  });
+
+  it("is handed to the run when it opens, so the run row carries it", async () => {
+    await runWithUsageContext({ label: "internal" }, () => withAgent("steward", async () => undefined));
+    expect(mocks.start).toHaveBeenCalledWith("steward", expect.objectContaining({ label: "internal" }));
   });
 });
 

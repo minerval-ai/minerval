@@ -34,6 +34,23 @@ still chain from it, so the gap shows instead of being closed over. So:
 The code is in `src/services/run-log.ts` (the arithmetic, no database) and
 `src/services/trace-service.ts` (the writer).
 
+## What the first step says about the run
+
+A run's first step is a prompt step (a run that starts more than one tool
+loop or single call has one for each), and its content carries a `setup`
+object: the commit the code was built from, the hash of the prompt set
+(`promptSet`), the model and its settings, the parts the setup was made of
+(the constitution, the role prompt, each tool) by hash, and the `label` the
+run wrote at.
+
+A label says who may read a row (`src/labels.ts`). Every judgment and source
+a run writes is stamped with the run's label, and so is its `agent_runs`
+row. Recording the label in the setup puts it under the chain: the label a
+sealed run worked at cannot be changed afterwards without the log no longer
+reaching its seal. The public graph has one label, `public`, so every run
+there records `"label": "public"`; a run logged before labels existed has
+no `label` in its setup and was public.
+
 ## Checking a log
 
 `GET /runs/:run_id/verify` (`verify_run_log` on MCP) recomputes the chain
