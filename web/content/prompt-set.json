@@ -1,11 +1,18 @@
 {
   "format": 1,
-  "hash": "7e4e2f1fd23430ba3251c6ae519635d26fdd2492ba44d134bfdd7d431399c5d3",
+  "hash": "23957f1d49cbc5174d8ec2fe15446fb9f0f96e58f615c418860e6f3a277d7ff3",
   "constitution": {
     "hash": "a0f849d02707f59443470b598ea64ca3607596a0cb9731230cec8506254649bc",
     "source_path": "admin_constitution.md"
   },
   "roles": [
+    {
+      "name": "assistant",
+      "source_path": "src/llm/prompts/assistant.ts",
+      "blocks": [
+        "70e40089fec1af567c591ca43fd87d6e9fb166c4667570c1c1fe672078306de7"
+      ]
+    },
     {
       "name": "audit-agent",
       "source_path": "src/llm/prompts/audit-agent.ts",

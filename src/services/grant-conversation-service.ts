@@ -37,6 +37,7 @@ import { owlsToMicroUsd } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import { PLATFORM_EXTERNAL_ID } from "./platform-account.js";
 import { loadConfig } from "../config.js";
+import { actingAsAssistant } from "../llm/assistant-acting.js";
 
 /** Hard ceilings on turns per conversation — a runaway/abuse backstop.
  * Funded conversations get more room: they manage a live mandate and stay
@@ -48,7 +49,16 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
   at: string;
+  /**
+   * Set on a funder's message their Assistant wrote for them (#646): shown
+   * to the funder and told to the Grantmaker, which takes who is funding
+   * and what stake they have only as the funder's own words.
+   */
+  via?: "assistant";
 }
+
+/** How a message the funder's Assistant wrote is introduced to the Grantmaker. */
+export const VIA_ASSISTANT_NOTE = "[via the funder's assistant]";
 
 export type ConverseResult =
   | { ok: true; conversation: GrantConversation }
@@ -128,7 +138,10 @@ const rateLimited = (): ConverseResult => ({
 
 function transcriptOf(convo: GrantConversation): TranscriptMessage[] {
   const messages = (convo.messages ?? []) as ConversationMessage[];
-  return messages.map((m) => ({ role: m.role, content: m.content }));
+  return messages.map((m) => ({
+    role: m.role,
+    content: m.via === "assistant" ? `${VIA_ASSISTANT_NOTE}\n${m.content}` : m.content,
+  }));
 }
 
 /** True while a turn holds the conversation and its process is alive. */
@@ -168,6 +181,7 @@ async function claimTurn(
     role: "user",
     content: userMessage,
     at: startedAt.toISOString(),
+    ...(actingAsAssistant() ? { via: "assistant" as const } : {}),
   };
   const [claimed] = await getDb()
     .update(grantConversations)

@@ -96,3 +96,7 @@ The platform's own prover, an instrument rather than an administrator: it receiv
 ### Researcher (`roles/researcher.md`)
 
 An instrument for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. An administrator launches it with a brief, or it takes up a funded request on its own account. It carries the constitution unless told otherwise, writes nothing to the graph but provenance rows and the instances it finds on its node (and, on a funded request, may file a request of its own), and returns a report: to its launcher, who weighs it, or on the request it answers.
+
+### Assistant (`roles/assistant.md`)
+
+Works for one signed-in user, with the tools their account has over MCP and nothing more. Not an administrator: it is given the constitution so that it reads the graph as the graph means to be read, and writes nothing to the graph except through the doors open to any account. Its work is charged to its user's balance as it runs, and calls that spend owls on the graph or publish under the user's name wait for the user.

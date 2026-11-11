@@ -4,6 +4,8 @@ Jackson often takes a few days to get to a PR review, so after opening a PR a ch
 
 MCP keeps parity with the REST API: every route an account can call is also an MCP tool unless there is a written reason it shouldn't be. When you add or rename a route, decide its MCP side in `src/mcp/route-tools.ts` (usually one line in `ROUTE_TOOLS`; an exclusion needs its reason). `tests/unit/mcp/parity.test.ts` fails until you do. See docs/mcp.md, "Parity with the REST API".
 
+The Assistant (`/ask`, docs/accounts.md) uses the MCP tool list as its own. A new tool that is not a read must be classified in `src/llm/tools/assistant-tools.ts` as held for the user or as running without asking, with its reason; `tests/unit/llm/assistant-tools.test.ts` fails until it is. When you add, move or remove a page under `web/app`, update the table in `plugin/skills/using-minerval/SKILL.md` (`tests/unit/plugin/using-minerval.test.ts`).
+
 The caller skills in `plugin/skills/` carry the graph's principles to outside agents and are served over MCP (#620). When you change the constitution, a skill in `skills/`, a role prompt, a tool's name, or how a tool or agent behaves, update them in the same change: run `npx tsx scripts/sync-frontend-content.ts` and read the skills that mention what you changed. See docs/mcp.md, "Keeping them current".
 
 ## Constraints on agents

@@ -184,6 +184,40 @@ export async function chargeOwls(input: {
 }
 
 /**
+ * Debit metered cost as it is incurred, for work that has no cap (the
+ * Assistant, which is bounded by its user's balance alone). The debit is
+ * what the balance holds, at most `microUsd`: a run's last model call can
+ * finish past a balance that reached zero while it ran, and the platform
+ * absorbs that fraction, as it absorbs cost past a cap. Returns what was
+ * debited and the balance left, both read under the user's balance lock.
+ */
+export async function chargeMetered(input: {
+  userId: string;
+  microUsd: number;
+  /** What the money paid for, shown in the owl history. */
+  op: string;
+}): Promise<{ chargedMicroUsd: number; balanceMicroUsd: number }> {
+  const want = Math.max(0, Math.round(input.microUsd));
+  return withOwlBalanceLock(input.userId, async (tx) => {
+    const [row] = await tx.query<{ balance: string }>(
+      `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS balance
+         FROM owl_ledger WHERE user_id = $1`,
+      [input.userId]
+    );
+    const balance = Math.max(0, Number(row?.balance ?? 0));
+    const charged = Math.min(want, balance);
+    if (charged > 0) {
+      await tx.query(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, op)
+         VALUES ($1, $2, 'charge', $3)`,
+        [input.userId, -charged, input.op]
+      );
+    }
+    return { chargedMicroUsd: charged, balanceMicroUsd: balance - charged };
+  });
+}
+
+/**
  * Attach a contribution to an already-written charge row. Used by proposal
  * flows where the charge is taken first (charge-at-start) and the
  * contribution row is minted right after — the link is what lets a later
