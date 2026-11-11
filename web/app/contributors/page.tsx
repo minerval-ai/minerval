@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { apiConfigured, fetchLeaderboard } from "../../lib/api";
 import { OwlMark } from "../../components/OwlMark";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = {
   title: "Contributors · Minerval",
@@ -15,7 +16,7 @@ export default async function ContributorsPage() {
   if (!apiConfigured()) {
     return (
       <div className="col">
-        <h1>Contributors</h1>
+        <PageHead title="Contributors" />
         <p>
           The frontend is not connected to a Minerval API (set{" "}
           <code>MINERVAL_API_URL</code>), so contributor data is unavailable.
@@ -28,18 +29,21 @@ export default async function ContributorsPage() {
 
   return (
     <div className="col">
-      <p className="claim-eyebrow">contributors</p>
-      <h1>Leaderboard</h1>
-      <p>
-        Accepted challenges, evidence, and proposals earn{" "}
-        <strong>owls</strong> (the same spendable unit that buys
-        assessments) in proportion to how load-bearing the affected claim
-        is, with a bonus for contributions that survive appeal scrutiny.
-        The leaderboard ranks lifetime owls <em>earned</em>: buying owls
-        never moves it, and spending them never lowers it. It is distinct
-        from <strong>reputation</strong>, which tracks standing; good-faith
-        contribution is always free, whether or not it is accepted.
-      </p>
+      <PageHead
+        title="Leaderboard"
+        lede={
+          <>
+            Accepted challenges, evidence, and proposals earn{" "}
+            <strong>owls</strong> (the same spendable unit that buys
+            assessments) in proportion to how load-bearing the affected claim
+            is, with a bonus for contributions that survive appeal scrutiny.
+            The leaderboard ranks lifetime owls <em>earned</em>: buying owls
+            never moves it, and spending them never lowers it. It is distinct
+            from <strong>reputation</strong>, which tracks standing; good-faith
+            contribution is always free, whether or not it is accepted.
+          </>
+        }
+      />
 
       {contributors.length === 0 ? (
         <p className="account-empty">

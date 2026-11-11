@@ -78,10 +78,6 @@
 
 /* ----- head ----- */
 .head { max-width: none; }
-.hero {
-  font-size: 1.85rem; line-height: 1.22; letter-spacing: -0.011em;
-  font-weight: 600; margin: 0 0 0.7rem; max-width: 36rem;
-}
 .ident {
   font-family: var(--sans); font-size: 0.76rem; color: var(--ink-soft);
   display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; align-items: baseline; margin: 0;

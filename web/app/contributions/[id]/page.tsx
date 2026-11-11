@@ -7,6 +7,7 @@ import {
   fetchContributorProfile,
 } from "../../../lib/api";
 import { loadClaim } from "../../../lib/data";
+import { PageHead } from "@/components/PageHead";
 
 // The public record of a single contribution (#174): the submission, and once
 // review lands, the decision with its reasoning. This is where "the reasons
@@ -71,7 +72,7 @@ export default async function ContributionPage({
   if (!apiConfigured()) {
     return (
       <div className="col">
-        <h1>Contribution</h1>
+        <PageHead title="Contribution" />
         <p>
           The frontend is not connected to a Minerval API (set{" "}
           <code>MINERVAL_API_URL</code>), so contribution records are
@@ -110,31 +111,33 @@ export default async function ContributionPage({
 
   return (
     <div className="col">
-      <div className="claim-eyebrow">
-        <span className="sc">Contribution</span>
-        <span className="tag kind">{typeLabel}</span>
-        <span className="tag">{statusLabel}</span>
-      </div>
-
-      {/* what the contribution is about: the claim, quoted, or the proposal */}
-      {(isIntake || becameId) && c.proposed_canonical_form ? (
-        <h1 className="claim-hero">{c.proposed_canonical_form}</h1>
-      ) : claim ? (
-        <h1 className="claim-hero" style={{ fontSize: "1.6rem" }}>
-          On the claim:{" "}
-          <Link href={`/claims/${c.claim_id}`}>{claim.claim.text}</Link>
-        </h1>
-      ) : (
-        <h1 className="claim-hero" style={{ fontSize: "1.6rem" }}>
-          {c.claim_id ? (
+      <PageHead
+        kicker="Contribution"
+        tags={
+          <>
+            <span className="tag kind">{typeLabel}</span>
+            <span className="tag">{statusLabel}</span>
+          </>
+        }
+        variant="statement"
+        // what the contribution is about: the claim, quoted, or the proposal
+        title={
+          (isIntake || becameId) && c.proposed_canonical_form ? (
+            c.proposed_canonical_form
+          ) : claim ? (
+            <>
+              On the claim:{" "}
+              <Link href={`/claims/${c.claim_id}`}>{claim.claim.text}</Link>
+            </>
+          ) : c.claim_id ? (
             <>
               On <Link href={`/claims/${c.claim_id}`}>this claim</Link>
             </>
           ) : (
             "A proposed addition to the graph"
-          )}
-        </h1>
-      )}
+          )
+        }
+      />
 
       {becameId && (
         <div className="contribute-box" style={{ marginTop: "1rem" }}>

@@ -3,6 +3,7 @@ import { MapDiagram } from "@/components/evals/Diagrams";
 import { fmtDate, loadEvalsData } from "@/lib/evals";
 import { GROUPS, TOPICS, indexRow } from "./guide";
 import s from "./evals.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // The evals index (#368): a table. One row per eval: the property it checks,
 // its standing, when it last ran, what it found, what it costs. Everything
@@ -20,13 +21,15 @@ export default function EvalsIndex() {
 
   return (
     <div className={s.wide}>
-      <p className="sc" style={{ marginBottom: "1rem" }}>
-        <Link href="/docs">← docs</Link>
-      </p>
-      <h1>Evals</h1>
-      <p className="lede" style={{ fontSize: "1.02rem", marginBottom: "1.2rem" }}>
-        The properties of the claim graph we can measure, and the test for each. Click a row.
-      </p>
+      <PageHead
+        back={{ href: "/docs", label: "docs" }}
+        title="Evals"
+        lede={
+          <>
+            The properties of the claim graph we can measure, and the test for each. Click a row.
+          </>
+        }
+      />
       <p className={s.small} style={{ margin: "-0.6rem 0 1.2rem" }}>
         <Link href="/docs/evals/replays">Watch a run</Link>: the agents building a graph, played back event by event
         {d.index.replays?.length ? ` · ${d.index.replays.length} recording${d.index.replays.length === 1 ? "" : "s"}` : " · no recordings committed yet"}.

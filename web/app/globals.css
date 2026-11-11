@@ -140,6 +140,34 @@ h2 { font-size: 1.5rem;  letter-spacing: -0.008em;
 h3 { font-size: 1.18rem; }
 h4 { font-size: 1rem; text-transform: none; }
 
+/* ----- the page head (components/PageHead.tsx) -----
+   Every page's back link, kicker, title, meta line and lede come from here,
+   so no page sets its own heading size or styles the line above it. */
+.page-back { margin: 0 0 1rem; }
+.page-kicker {
+  display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
+  margin: 0 0 0.6rem;
+}
+.page-title { margin: 0 0 0.7rem; }
+/* a title that is a sentence (a claim, an ask, a document's title) runs
+   longer than a name, so it is set a step smaller on a narrower measure */
+.page-title.statement {
+  font-size: 1.85rem; line-height: 1.24; letter-spacing: -0.011em;
+  max-width: 30rem; margin-bottom: 1.1rem;
+}
+.page-title a, .page-title a:visited { color: inherit; }
+.page-title a:hover { color: var(--link); text-decoration: none; }
+.page-title-row { display: flex; align-items: baseline; gap: 1rem; }
+.page-title-row .page-actions { margin-left: auto; }
+.page-meta {
+  font-family: var(--sans); font-size: 0.82rem; color: var(--muted);
+  margin: 0 0 1.05rem;
+}
+.page-lede {
+  font-size: 1.05rem; line-height: 1.5; color: var(--ink-soft);
+  max-width: var(--measure); margin: 0.4rem 0 2rem;
+}
+
 p { margin: 0 0 1.05rem; }
 strong { font-weight: 650; }
 small { font-size: 0.82rem; color: var(--muted); }
@@ -558,14 +586,6 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
    Claim view
    ========================================================================== */
 
-.claim-eyebrow {
-  display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
-  margin-bottom: 0.8rem;
-}
-.claim-hero {
-  font-size: 1.85rem; line-height: 1.24; letter-spacing: -0.011em;
-  font-weight: 600; margin: 0 0 1.1rem; max-width: 30rem;
-}
 .claim-assess {
   display: flex; gap: 1.4rem; align-items: center; flex-wrap: wrap;
   padding: 0.9rem 0; border-top: 1px solid var(--rule);
@@ -857,10 +877,6 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
    Landing / explainer prose
    ========================================================================== */
 
-.lede {
-  font-size: 1.22rem; line-height: 1.5; color: var(--ink-soft);
-  max-width: 34rem; margin: 0.4rem 0 2rem;
-}
 .dropcap::first-letter {
   initial-letter: 3 3; -webkit-initial-letter: 3 3;
   font-weight: 600; margin-right: 0.6rem; color: var(--ink);
@@ -981,7 +997,6 @@ hr.thin { border: none; border-top: 1px solid var(--rule); margin: 2.4rem 0; }
 }
 
 /* markdown elements rendered inside .doc (constitution / policies / prompts) */
-.doc h1 { font-size: 1.9rem; letter-spacing: -0.01em; }
 .doc > p:first-of-type { }
 .doc ul, .doc ol { padding-left: 1.3rem; margin: 0 0 1.05rem; }
 .doc li { margin-bottom: 0.35rem; }
@@ -1104,10 +1119,6 @@ html { scroll-behavior: smooth; }
 .signin-note { font-family: var(--sans); font-size: 0.78rem; color: var(--faint); margin: 0.5rem 0 0; }
 
 .account section { margin-top: 2.4rem; border-top: 1px solid var(--rule-soft); padding-top: 1.4rem; }
-.account-head { display: flex; align-items: baseline; gap: 1rem; }
-.account-head h1 { margin-bottom: 0.2rem; }
-.account-head form { margin-left: auto; }
-.account-meta { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); margin-top: 0; }
 .account-window { font-family: var(--sans); font-size: 0.78rem; font-weight: 400; color: var(--faint); letter-spacing: 0; text-transform: none; }
 .account-empty { font-family: var(--sans); font-size: 0.82rem; color: var(--faint); }
 

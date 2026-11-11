@@ -26,6 +26,7 @@ import { PrizeAward } from "../../components/account/PrizeAward";
 import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
 import type { ContributorProfile, OpenPrizeClaim } from "../../lib/types";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
@@ -103,7 +104,7 @@ export default async function AccountPage({
   if (!accountApiConfigured()) {
     return (
       <div className="col">
-        <h1>Account</h1>
+        <PageHead title="Account" />
         <p>
           The frontend is not connected to a Minerval API (set{" "}
           <code>MINERVAL_API_URL</code>), so account data is unavailable.
@@ -135,7 +136,7 @@ export default async function AccountPage({
       err instanceof AccountApiError ? err.message : "Unexpected error.";
     return (
       <div className="col">
-        <h1>Account</h1>
+        <PageHead title="Account" />
         <p>
           Could not load your account from the API: <em>{detail}</em>
         </p>
@@ -171,19 +172,23 @@ export default async function AccountPage({
 
   return (
     <div className="col-wide account">
-      <p className="claim-eyebrow">account</p>
-      <div className="account-head">
-        <h1>{user.display_name}</h1>
-        <form action={signOutAction}>
-          <button className="linklike" type="submit">
-            sign out
-          </button>
-        </form>
-      </div>
-      <p className="account-meta">
-        {user.email ?? "no email"} · {user.external_id} · member since{" "}
-        {dateish(user.created_at)}
-      </p>
+      <PageHead
+        kicker="Account"
+        title={user.display_name}
+        actions={
+          <form action={signOutAction}>
+            <button className="linklike" type="submit">
+              sign out
+            </button>
+          </form>
+        }
+        meta={
+          <>
+            {user.email ?? "no email"} · {user.external_id} · member since{" "}
+            {dateish(user.created_at)}
+          </>
+        }
+      />
 
       {/* ------------------------------------------------ owls */}
       <section>

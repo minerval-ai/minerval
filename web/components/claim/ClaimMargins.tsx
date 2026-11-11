@@ -37,15 +37,11 @@ export function ClaimMargins({ detail, source }: { detail: ClaimDetail; source: 
 
         {/* CENTRE — the reading column */}
         <div className={styles.center}>
-          <p className="sc" style={{ marginBottom: "1.2rem", display: "flex", gap: ".7rem", alignItems: "center" }}>
-            <Link href="/claims">← claims</Link>
-            {source === "fixture" && (
-              <span className="tag" title="The API is not connected; showing a design fixture.">
-                fixture data
-              </span>
-            )}
-          </p>
-          {isQuestion ? <QuestionView detail={detail} /> : <ClaimView detail={detail} />}
+          {isQuestion ? (
+            <QuestionView detail={detail} fixture={source === "fixture"} />
+          ) : (
+            <ClaimView detail={detail} fixture={source === "fixture"} />
+          )}
         </div>
 
         {/* RIGHT — what depends on this claim */}

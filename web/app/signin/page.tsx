@@ -8,6 +8,7 @@ import {
   devLoginEnabled,
 } from "../../auth";
 import { isSafeRelativePath } from "../../lib/safe-redirect";
+import { PageHead } from "../../components/PageHead";
 
 export const metadata: Metadata = { title: "Sign in · Minerval" };
 
@@ -30,13 +31,16 @@ export default async function SignInPage({
 
   return (
     <div className="col">
-      <p className="claim-eyebrow">account</p>
-      <h1>Sign in</h1>
-      <p>
-        One account serves both roles: <em>consumer</em> (API keys, usage,
-        the coming browser extension) and <em>contributor</em> (challenges,
-        evidence, reputation). Reading the graph never requires an account.
-      </p>
+      <PageHead
+        title="Sign in"
+        lede={
+          <>
+            One account serves both roles: <em>consumer</em> (API keys, usage,
+            the coming browser extension) and <em>contributor</em> (challenges,
+            evidence, reputation). Reading the graph never requires an account.
+          </>
+        }
+      />
 
       <div className="signin-options">
         {githubEnabled() && (

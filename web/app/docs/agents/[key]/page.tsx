@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAgent, getAgentIndex, getAgentPrompt } from "@/lib/content";
 import { Markdown } from "@/components/Markdown";
+import { PageHead } from "@/components/PageHead";
 
 export function generateStaticParams() {
   return getAgentIndex().map((a) => ({ key: a.key }));
@@ -23,17 +24,18 @@ export default async function AgentPage({ params }: { params: Promise<{ key: str
 
   return (
     <div>
-      <p className="sc" style={{ marginBottom: "1rem" }}>
-        <Link href="/docs/agents">← agents</Link>
-      </p>
-
-      <div className="claim-eyebrow">
-        <span className="sc">Agent {String(agent.stage).padStart(2, "0")}</span>
-        <span className="tag">{agent.group}</span>
-        <span className="tag">{agent.model}</span>
-      </div>
-      <h1 className="claim-hero" style={{ fontSize: "2.1rem" }}>{agent.name}</h1>
-      <p className="lede" style={{ fontSize: "1.05rem", maxWidth: "32rem" }}>{agent.tagline}</p>
+      <PageHead
+        back={{ href: "/docs/agents", label: "agents" }}
+        kicker={`Agent ${String(agent.stage).padStart(2, "0")}`}
+        tags={
+          <>
+            <span className="tag">{agent.group}</span>
+            <span className="tag">{agent.model}</span>
+          </>
+        }
+        title={agent.name}
+        lede={agent.tagline}
+      />
 
       <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)", maxWidth: "34rem" }}>
         <strong style={{ color: "var(--ink-soft)" }}>Invoked when:</strong> {agent.invokedWhen}

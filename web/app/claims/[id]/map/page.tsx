@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { loadClaim } from "@/lib/data";
 import { GraphView } from "@/components/graph/GraphView";
+import { PageHead } from "@/components/PageHead";
 
 // The claim map (issue #79): /claims/:id/map is a sibling VIEW of /claims/:id,
 // not a separate feature — the same address seen as structure instead of prose.
@@ -33,8 +34,7 @@ export default async function ClaimMapPage({
     // Same plain-language treatment as the claim page's not-found state (#195).
     return (
       <div className="col">
-        <p className="sc"><Link href="/claims">← claims</Link></p>
-        <h1 className="claim-hero">Claim not found.</h1>
+        <PageHead back={{ href: "/claims", label: "claims" }} title="Claim not found." />
         {source === "fixture" ? (
           <>
             <p style={{ color: "var(--muted)" }}>

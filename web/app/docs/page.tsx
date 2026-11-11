@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { DocLayout } from "@/components/DocLayout";
+import { PageHead } from "@/components/PageHead";
 
 // The documentation hub (issue #112): a short overview of the structure and
 // the pipeline, then links to the long verbatim documents (constitution,
@@ -22,11 +23,15 @@ export default function DocsPage() {
   return (
     <DocLayout toc={toc}>
       <div className="doc">
-        <h1>Documentation</h1>
-        <p className="lede">
-          Minerval is an open repository of the world&rsquo;s claims, quantities, and
-          questions, maintained by LLM administrators bound by a public constitution.
-        </p>
+        <PageHead
+          title="Documentation"
+          lede={
+            <>
+              Minerval is an open repository of the world&rsquo;s claims, quantities, and
+              questions, maintained by LLM administrators bound by a public constitution.
+            </>
+          }
+        />
 
         <h2 id="structure">Structure</h2>
         <ul>

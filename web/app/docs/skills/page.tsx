@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getAgentIndex, getSkills } from "@/lib/content";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata = { title: "The skills · Minerval" };
 
@@ -14,17 +15,21 @@ export default function SkillsIndex() {
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Skills</p>
-      <h1>How the constitution applies in a domain</h1>
-      <p className="lede" style={{ fontSize: "1.08rem" }}>
-        A skill is the third layer of an administrator&rsquo;s prompt, between its role and
-        its task: how the <Link href="/docs/constitution">Constitution</Link>&rsquo;s standards
-        apply in one domain, what the domain&rsquo;s characteristic objects are, what counts
-        as evidence of which grade there, and what tools the domain brings. One document
-        serves every role; each agent receives only its sections. A skill may sharpen a
-        role&rsquo;s obligations and never loosen them, and where it appears to diverge from
-        the constitution, the constitution wins.
-      </p>
+      <PageHead
+        back={{ href: "/docs", label: "docs" }}
+        title="How the constitution applies in a domain"
+        lede={
+          <>
+            A skill is the third layer of an administrator&rsquo;s prompt, between its role and
+            its task: how the <Link href="/docs/constitution">Constitution</Link>&rsquo;s standards
+            apply in one domain, what the domain&rsquo;s characteristic objects are, what counts
+            as evidence of which grade there, and what tools the domain brings. One document
+            serves every role; each agent receives only its sections. A skill may sharpen a
+            role&rsquo;s obligations and never loosen them, and where it appears to diverge from
+            the constitution, the constitution wins.
+          </>
+        }
+      />
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".82rem" }}>
         Skills load on demand. Each agent&rsquo;s prompt lists the skills it can load, and
         the agent reads one with the load_skill tool when its work calls for it; every load

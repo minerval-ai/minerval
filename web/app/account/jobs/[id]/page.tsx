@@ -10,6 +10,7 @@ import {
 import { cancelJobAction } from "../../actions";
 import { TopUpJob } from "./TopUpJob";
 import { OwlMark } from "../../../../components/OwlMark";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Funded job · Minerval" };
 export const dynamic = "force-dynamic";
@@ -58,16 +59,19 @@ export default async function JobPage({
 
   return (
     <div className="col account">
-      <p className="claim-eyebrow">
-        <Link href="/account">← account</Link>
-      </p>
-      <h1>{KIND_LABELS[job.kind] ?? job.kind}</h1>
-      {job.claim_id && (
-        <p className="account-meta">
-          on <Link href={`/claims/${job.claim_id}`}>this claim</Link> and its
-          subtree · funded {job.created_at.slice(0, 10)}
-        </p>
-      )}
+      <PageHead
+        back={{ href: "/account", label: "account" }}
+        kicker="Job"
+        title={KIND_LABELS[job.kind] ?? job.kind}
+        meta={
+          job.claim_id && (
+            <>
+              on <Link href={`/claims/${job.claim_id}`}>this claim</Link> and its
+              subtree · funded {job.created_at.slice(0, 10)}
+            </>
+          )
+        }
+      />
 
       <section>
         <h2>Status</h2>

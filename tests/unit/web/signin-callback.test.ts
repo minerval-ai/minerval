@@ -32,6 +32,9 @@ const h = vi.hoisted(() => {
 
 vi.mock("next/navigation", () => ({ redirect: h.redirect }));
 vi.mock("../../../web/node_modules/next/navigation.js", () => ({ redirect: h.redirect }));
+// The page head (web/components/PageHead.tsx) imports next/link for its back link.
+vi.mock("next/link", () => ({ default: "a" }));
+vi.mock("../../../web/node_modules/next/link.js", () => ({ default: "a" }));
 vi.mock("react/jsx-runtime", () => h.jsxRuntime);
 vi.mock("../../../web/node_modules/react/jsx-runtime.js", () => h.jsxRuntime);
 vi.mock("react/jsx-dev-runtime", () => h.jsxDevRuntime);

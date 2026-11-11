@@ -4,6 +4,7 @@ import { loadClaim } from "@/lib/data";
 import { formatOwls, fmtDateLong } from "@/lib/format";
 import { resolutionPhrase } from "@/lib/prizes";
 import { PrizeClaimForm } from "@/components/claim/PrizeClaimForm";
+import { PageHead } from "@/components/PageHead";
 
 // The claim-prize flow (docs/mathematics.md §8.4): the form for one claim's
 // open prize, opened on the current published statement. The page refuses
@@ -35,8 +36,7 @@ export default async function PrizeClaimPage({
   if (!detail) {
     return (
       <div className="col">
-        <p className="sc"><Link href="/prizes">← prizes</Link></p>
-        <h1 className="claim-hero">Claim not found.</h1>
+        <PageHead back={{ href: "/prizes", label: "prizes" }} title="Claim not found." />
         <p style={{ color: "var(--muted)" }}>
           There is no claim at this address. The link may be mistyped or out of date.
         </p>
@@ -51,21 +51,22 @@ export default async function PrizeClaimPage({
 
   return (
     <div className="col">
-      <p className="sc" style={{ marginBottom: "1.2rem", display: "flex", gap: ".7rem", alignItems: "center" }}>
-        <Link href={`/claims/${detail.claim.id}#prize`}>← claim page</Link>
-        {source === "fixture" && (
-          <span className="tag" title="The API is not connected; showing a design fixture.">
-            fixture data
-          </span>
-        )}
-      </p>
-      <div className="claim-eyebrow">
-        <span className="sc">Prize claim</span>
-        {bounty && <span className="tag prize">{formatOwls(bounty.amount_micro_usd)}</span>}
-      </div>
-      <h1 className="claim-hero" style={{ fontSize: "1.5rem" }}>
-        <Link href={`/claims/${detail.claim.id}`} className="plain">{detail.claim.text}</Link>
-      </h1>
+      <PageHead
+        back={{ href: `/claims/${detail.claim.id}#prize`, label: "claim page" }}
+        kicker="Prize claim"
+        tags={
+          <>
+            {bounty && <span className="tag prize">{formatOwls(bounty.amount_micro_usd)}</span>}
+            {source === "fixture" && (
+              <span className="tag" title="The API is not connected; showing a design fixture.">
+                fixture data
+              </span>
+            )}
+          </>
+        }
+        variant="statement"
+        title={<Link href={`/claims/${detail.claim.id}`}>{detail.claim.text}</Link>}
+      />
 
       {!open ? (
         <>

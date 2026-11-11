@@ -4,6 +4,7 @@ import { loadClaim, loadClaimEvents } from "@/lib/data";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { ClaimTimeline, summarizeEvents } from "@/components/claim/ClaimTimeline";
 import styles from "@/components/claim/timeline.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // The claim history (issue #175): /claims/:id/history is a sibling VIEW of
 // /claims/:id, like /map — the same address seen as a record of how the
@@ -40,8 +41,7 @@ export default async function ClaimHistoryPage({
   if (!detail) {
     return (
       <div className="col">
-        <p className="sc"><Link href="/claims">← claims</Link></p>
-        <h1 className="claim-hero">Claim not in the local fixture set.</h1>
+        <PageHead back={{ href: "/claims", label: "claims" }} title="Claim not in the local fixture set." />
         <p style={{ color: "var(--muted)" }}>
           The history opens on any claim once the API is connected.
         </p>
@@ -52,22 +52,20 @@ export default async function ClaimHistoryPage({
 
   return (
     <div className="col">
-      <header className={styles.head}>
-        <p className="sc" style={{ display: "flex", gap: ".7rem", alignItems: "center" }}>
-          <Link href={`/claims/${detail.claim.id}`}>← claim page</Link>
-          {source === "fixture" && (
+      <PageHead
+        back={{ href: `/claims/${detail.claim.id}`, label: "claim page" }}
+        kicker="History"
+        tags={
+          source === "fixture" && (
             <span className="tag" title="The API is not connected; showing a design fixture.">
               fixture data
             </span>
-          )}
-        </p>
-        <h1 className={styles.title}>
-          <Link href={`/claims/${detail.claim.id}`}>{detail.claim.text}</Link>
-        </h1>
-        {events && events.events.length > 0 && (
-          <p className={styles.headMeta}>{summarizeEvents(events)}</p>
-        )}
-      </header>
+          )
+        }
+        variant="statement"
+        title={<Link href={`/claims/${detail.claim.id}`}>{detail.claim.text}</Link>}
+        meta={events && events.events.length > 0 && summarizeEvents(events)}
+      />
 
       {events === null ? (
         <p style={{ color: "var(--muted)" }}>

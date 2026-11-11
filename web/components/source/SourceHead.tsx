@@ -3,6 +3,7 @@ import type { SourcePage } from "@/lib/types";
 import { EVENT_WORD, kindLabel, partialDate, when, type ExamView, type Group } from "./model";
 import { Prominence } from "./Prominence";
 import s from "./source.module.css";
+import { PageHead } from "@/components/PageHead";
 
 // Identity, then what has happened to the document since: facts that need no
 // judgment, first on the page (#507).
@@ -21,18 +22,23 @@ export function SourceHead({
   const lastEvent = [...events].sort((a, b) => (b.occurred_at ?? b.detected_at).localeCompare(a.occurred_at ?? a.detected_at))[0];
 
   return (
-    <header className={s.head}>
-      <div className="claim-eyebrow">
-        <span className="sc">Source</span>
-        <span className="tag kind">{kindLabel(source.source_type)}</span>
-        <span className="tag">{stored ? "text stored" : "no stored text"}</span>
-        {sample && (
-          <span className="tag" title="This preview is not connected to the live graph; this is an invented example.">
-            sample
-          </span>
-        )}
-      </div>
-      <h1 className={s.hero}>{source.title}</h1>
+    <div className={s.head}>
+      <PageHead
+        kicker="Source"
+        tags={
+          <>
+            <span className="tag kind">{kindLabel(source.source_type)}</span>
+            <span className="tag">{stored ? "text stored" : "no stored text"}</span>
+            {sample && (
+              <span className="tag" title="This preview is not connected to the live graph; this is an invented example.">
+                sample
+              </span>
+            )}
+          </>
+        }
+        variant="statement"
+        title={source.title}
+      />
       <p className={s.ident}>
         {source.authors.length > 0 ? <b>{source.authors.join(", ")}</b> : <span className={s.none}>Author not recorded</span>}
         {source.publisher && <span>{source.publisher}</span>}
@@ -94,7 +100,7 @@ export function SourceHead({
         </span>
       </div>
       <Prominence context={page.context} />
-    </header>
+    </div>
   );
 }
 

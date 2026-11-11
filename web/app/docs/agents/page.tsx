@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getAgentIndex } from "@/lib/content";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata = { title: "The agents · Minerval" };
 
@@ -10,15 +11,19 @@ export default function AgentsIndex() {
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>The administrators</p>
-      <h1>Who maintains the graph</h1>
-      <p className="lede" style={{ fontSize: "1.08rem" }}>
-        Minerval is run by ten LLM administrators, each with a narrow role and a
-        published system prompt. Every one of them is given the full{" "}
-        <Link href="/docs/constitution">Constitution</Link> as the first layer of its
-        prompt; below, you can read each agent&rsquo;s role-specific instructions and the
-        complete assembled prompt, exactly as the system uses them.
-      </p>
+      <PageHead
+        back={{ href: "/docs", label: "docs" }}
+        title="Who maintains the graph"
+        lede={
+          <>
+            Minerval is run by ten LLM administrators, each with a narrow role and a
+            published system prompt. Every one of them is given the full{" "}
+            <Link href="/docs/constitution">Constitution</Link> as the first layer of its
+            prompt; below, you can read each agent&rsquo;s role-specific instructions and the
+            complete assembled prompt, exactly as the system uses them.
+          </>
+        }
+      />
 
       <h2>Processing · building the graph</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".82rem", marginTop: "-.3rem" }}>

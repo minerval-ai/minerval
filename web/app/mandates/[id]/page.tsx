@@ -22,6 +22,7 @@ import { MandateRecord } from "../../../components/MandateRecord";
 import { AllocationSection } from "./AllocationView";
 import { ContributeBox } from "./ContributeBox";
 import { MandateChat } from "./MandateChat";
+import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Mandate · Minerval" };
 export const dynamic = "force-dynamic";
@@ -428,7 +429,7 @@ export default async function MandatePage({
   if (!accountApiConfigured()) {
     return (
       <div className="col">
-        <h1>Mandate</h1>
+        <PageHead title="Mandate" />
         <p>The frontend is not connected to a Minerval API.</p>
       </div>
     );
@@ -455,25 +456,28 @@ export default async function MandatePage({
 
   return (
     <div className="col-wide account">
-      <p className="claim-eyebrow">
-        <Link href="/mandates">← mandates</Link>
-      </p>
-      <p className="sc mandate-tile-manager">
-        {mandate.is_platform
-          ? "run by Minerval"
-          : `managed by ${mandate.manager}`}
-        {mandate.status !== "active" && ` · ${mandate.status}`}
-        {mandate.platform_approval && (
+      <PageHead
+        back={{ href: "/mandates", label: "mandates" }}
+        kicker="Mandate"
+        tags={mandate.status !== "active" && <span className="tag">{mandate.status}</span>}
+        title={mandate.title}
+        meta={
           <>
-            {" · funded under a "}
-            <a href={mandate.platform_approval.approval_url}>
-              public approval
-            </a>
-            {` merged by ${mandate.platform_approval.approved_by}`}
+            {mandate.is_platform
+              ? "run by Minerval"
+              : `managed by ${mandate.manager}`}
+            {mandate.platform_approval && (
+              <>
+                {" · funded under a "}
+                <a href={mandate.platform_approval.approval_url}>
+                  public approval
+                </a>
+                {` merged by ${mandate.platform_approval.approved_by}`}
+              </>
+            )}
           </>
-        )}
-      </p>
-      <h1>{mandate.title}</h1>
+        }
+      />
       {mandate.objective && <Paragraphs text={mandate.objective} />}
       {mandate.funder && !mandate.is_platform && (
         <p className="meter-caption">

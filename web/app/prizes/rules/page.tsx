@@ -5,6 +5,7 @@ import {
   PRIZE_RULES, PRIZE_RULES_EFFECTIVE, PRIZE_RULES_VERSION, prizeRulesText,
 } from "@/lib/prize-rules";
 import { fmtDateLong } from "@/lib/format";
+import { PageHead } from "@/components/PageHead";
 
 // The official prize rules (docs/mathematics.md §8.10): one versioned page,
 // plain text, with an effective date and a content hash computed over the
@@ -21,14 +22,17 @@ const CONTENT_HASH = createHash("sha256").update(prizeRulesText(), "utf8").diges
 export default function PrizeRulesPage() {
   return (
     <div className="doc">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Official rules</p>
-      <h1>Prize rules</h1>
-      <p className="lede">
-        The terms under which Minerval offers a prize for a machine-checked
-        proof or disproof of a claim&rsquo;s formal statement. Each prize names
-        the version in force when it was posted, and each submission records
-        the version it was made under.
-      </p>
+      <PageHead
+        title="Prize rules"
+        lede={
+          <>
+            The terms under which Minerval offers a prize for a machine-checked
+            proof or disproof of a claim&rsquo;s formal statement. Each prize names
+            the version in force when it was posted, and each submission records
+            the version it was made under.
+          </>
+        }
+      />
       <p className="rules-meta">
         Version {PRIZE_RULES_VERSION} · effective {fmtDateLong(PRIZE_RULES_EFFECTIVE)} ·{" "}
         <span className="mono" title="sha256 over the canonical text of these rules">

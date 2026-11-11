@@ -3,6 +3,7 @@ import Link from "next/link";
 import { loadArgument } from "@/lib/data";
 import { ARGUMENT_FIXTURE_IDS } from "@/lib/fixtures-argument";
 import { ArgumentView } from "@/components/argument/ArgumentView";
+import { PageHead } from "@/components/PageHead";
 
 export async function generateMetadata({
   params,
@@ -27,8 +28,7 @@ export default async function ArgumentPage({ params }: { params: Promise<{ id: s
   if (!page) {
     return (
       <div className="col">
-        <p className="sc"><Link href="/claims">← claims</Link></p>
-        <h1 className="claim-hero">Argument not found.</h1>
+        <PageHead back={{ href: "/claims", label: "claims" }} title="Argument not found." />
         {source === "fixture" ? (
           <>
             <p style={{ color: "var(--muted)" }}>
