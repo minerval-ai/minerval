@@ -6,6 +6,8 @@ MCP keeps parity with the REST API: every route an account can call is also an M
 
 The caller skills in `plugin/skills/` carry the graph's principles to outside agents and are served over MCP (#620). When you change the constitution, a skill in `skills/`, a role prompt, a tool's name, or how a tool or agent behaves, update them in the same change: run `npx tsx scripts/sync-frontend-content.ts` and read the skills that mention what you changed. See docs/mcp.md, "Keeping them current".
 
+Two open PRs that each add a migration take the same number, so the second to merge always conflicts in `src/db/migrations`. Do not resolve that by hand: merge `origin/main`, leave the conflicts in the migrations folder as they are, and run `npm run db:renumber`. It renumbers this branch's migrations after main's and rebuilds the journal and snapshots. The journal's timestamps matter more than they look: production skips, without an error, a migration whose `when` is earlier than one it has already run (`scripts/migrations-lib.ts`). `tests/unit/scripts/migrations.test.ts` fails on a folder that is out of order.
+
 ## Constraints on agents
 
 Agents, like anyone, need to know their affordances and the constraints they work under.
