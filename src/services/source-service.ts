@@ -6,6 +6,7 @@ import { sources } from "../db/schema.js";
 import { createJob, type JobAttribution } from "./job-service.js";
 import { sourceContentHash } from "./source-content.js";
 import { enqueueUrlExtraction } from "./queue-service.js";
+import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 
 /**
  * Find or create the source row for a URL, without enqueueing extraction.
@@ -57,6 +58,52 @@ export async function getOrCreateSource(input: {
     })
     .returning();
   return source!;
+}
+
+export interface SourceKindOutcome {
+  /** The source's kind after the call. */
+  source_kind: string;
+  /** Present when the kind stated was not taken, saying why and what to do. */
+  source_kind_note?: string;
+}
+
+/**
+ * Record what kind of document a source is, as an agent says it
+ * (SOURCE_KIND_DESCRIPTIONS). A citing agent fills the kind only where none
+ * more specific is recorded: "unknown", or "webpage" giving way to a
+ * specific kind. An agent that read the document (`read`) corrects it,
+ * since it has seen what the first to cite it may only have assumed. The
+ * outcome says what the source's kind now is, so an agent whose kind was not
+ * taken is told so rather than left to think it was.
+ */
+export async function recordSourceKind(
+  sourceId: string,
+  kind: SourceKind,
+  opts: { read?: boolean } = {}
+): Promise<SourceKindOutcome> {
+  const [row] = await rawQuery<{ before: string; after: string }>(
+    `WITH prior AS (SELECT source_type FROM sources WHERE id = $1 FOR UPDATE),
+          changed AS (
+            UPDATE sources s SET source_type = $2
+              FROM prior
+             WHERE s.id = $1 AND prior.source_type <> $2
+               AND ($3::boolean OR prior.source_type = 'unknown'
+                    OR (prior.source_type = 'webpage' AND NOT $2 = ANY($4::text[])))
+            RETURNING s.source_type)
+     SELECT prior.source_type AS before,
+            COALESCE((SELECT source_type FROM changed), prior.source_type) AS after
+       FROM prior`,
+    [sourceId, kind, opts.read === true, [...GENERIC_SOURCE_KINDS]]
+  );
+  if (!row) return { source_kind: kind };
+  if (row.after === kind) return { source_kind: kind };
+  return {
+    source_kind: row.after,
+    source_kind_note:
+      `This source is already recorded as "${row.after}", so "${kind}" was not taken. ` +
+      `If "${row.after}" is wrong, open the document (provenance_read_source) and state its kind ` +
+      `on a reading of it (provenance_record_reading with source_read true), which corrects it.`,
+  };
 }
 
 /** A source URL's page hash (sources.page_url_hash); '' when it is not a web page. */

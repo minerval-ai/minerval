@@ -225,10 +225,15 @@ describe("provenance_read_source", () => {
 
 describe("the write tools", () => {
   it("record_reading stamps the claim, the model, and the writer, and explains the quote check", async () => {
-    mocks.recordInstanceReading.mockResolvedValue({ id: "r1", quote_check: "not_found", replaced: false });
+    mocks.recordInstanceReading.mockResolvedValue({
+      id: "r1", quote_check: "not_found", replaced: false, source_kind: "journal_article",
+    });
     const out = JSON.parse(
       await executeRecordReading(
-        { instance_id: "i1", support: "overstates", note: "n", worth_reading: true, worth_reading_reason: "why", source_read: true },
+        {
+          instance_id: "i1", support: "overstates", note: "n", worth_reading: true, worth_reading_reason: "why",
+          source_read: true, source_kind: "journal_article",
+        },
         steward
       )
     );
@@ -241,10 +246,13 @@ describe("the write tools", () => {
       worthReading: true,
       worthReadingReason: "why",
       sourceRead: true,
+      sourceKind: "journal_article",
       model: "model-x",
       createdBy: "claim_steward",
     });
     expect(out.success).toBe(true);
+    // The source's kind after the call is reported back to the agent.
+    expect(out.source_kind).toBe("journal_article");
     expect(out.quote_check_note).toMatch(/NOT found/);
   });
 
@@ -256,6 +264,7 @@ describe("the write tools", () => {
           from_instance_id: "i1",
           to_source_url: "https://x.example/study",
           to_source_title: "Study",
+          to_source_kind: "official_statistics",
           relation_type: "derives_from",
           fidelity: "strengthened",
           evidence: "p",
@@ -272,6 +281,7 @@ describe("the write tools", () => {
       toSourceId: null,
       toSourceUrl: "https://x.example/study",
       toSourceTitle: "Study",
+      toSourceKind: "official_statistics",
       relationType: "derives_from",
       fidelity: "strengthened",
       evidence: "p",

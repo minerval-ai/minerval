@@ -806,6 +806,13 @@ export const sources = pgTable("sources", {
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
+  // The one list of source kinds: SOURCE_KIND_DESCRIPTIONS in
+  // src/schemas/common.ts (tests/unit/schemas/source-kinds.test.ts holds the
+  // two together).
+  check(
+    "ck_sources_source_type",
+    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')`
+  ),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1412,7 +1419,7 @@ export const claimSourceMaps = pgTable(
 //
 // Most of the distinction is derived, not stored: a source the claim's edges
 // lead upward from is not a top node at all, and a top node whose kind is a
-// primary one (PRIMARY_SOURCE_TYPES) reads as an origin on that basis. This
+// primary one (PRIMARY_SOURCE_KINDS) reads as an origin on that basis. This
 // table holds only the Steward's judgment where it overrides or confirms the
 // derivation: an origin the kind does not reveal, or a mislabelled
 // "transcript" demoted to untraced. Claim-scoped, because the same document

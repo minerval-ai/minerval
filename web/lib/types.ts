@@ -35,10 +35,13 @@ export type RelationType =
 // their own assessments.
 export type ArgumentVerdict = "certain" | "likely" | "slight" | "none";
 
-// Mirrors the backend sourceTypeEnum (src/schemas/common.ts).
-export type SourceType =
-  | "primary_data" | "peer_reviewed" | "government" | "news_original"
-  | "news_secondary" | "opinion" | "social_media" | "unknown";
+// What kind of document a source is. Mirrors the backend's one list,
+// SOURCE_KIND_DESCRIPTIONS (src/schemas/common.ts).
+export type SourceKind =
+  | "dataset" | "official_statistics" | "transcript" | "treaty" | "court_record" | "legislation"
+  | "journal_article" | "preprint" | "conference_paper" | "book" | "book_chapter" | "thesis"
+  | "report" | "standard" | "news_article" | "opinion" | "press_release" | "blog_post"
+  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "unknown";
 
 export interface TreeNode {
   id: string;
@@ -308,7 +311,7 @@ export interface Instance {
   confidence: number;
   source_title: string;
   source_url: string | null;
-  source_type?: SourceType;
+  source_type?: SourceKind;
   // Which side the source takes on the canonical claim; absent when the API
   // predates the field.
   stance?: InstanceStance;

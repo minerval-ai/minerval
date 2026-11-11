@@ -270,16 +270,75 @@ export const arbitrationOutcomeEnum = z.enum([
 
 export const informationDepthEnum = z.enum(["cursory", "standard", "deep"]);
 
-export const sourceTypeEnum = z.enum([
-  "primary_data",
-  "peer_reviewed",
-  "government",
-  "news_original",
-  "news_secondary",
-  "opinion",
-  "social_media",
-  "unknown",
-]);
+/**
+ * What kind of document a source is: the one list `sources.source_type`
+ * holds (a CHECK constraint keeps it so, migration 0119), the registry
+ * lookup maps onto, the agents choose from, and the page shows. Each kind
+ * with what counts as one, in the words an agent choosing reads.
+ *
+ * The kind says what a document is, never how far to trust it: a journal
+ * article can be wrong and a blog post right. The one thing derived from it
+ * is where a claim's provenance story may begin (PRIMARY_SOURCE_KINDS).
+ *
+ * Adding a kind: add it here, to the CHECK in src/db/schema.ts with a
+ * migration, and to SourceKind in web/lib/types.ts.
+ */
+export const SOURCE_KIND_DESCRIPTIONS = {
+  dataset: "data published as data: a data file, a database, a registry record",
+  official_statistics: "a statistical release from the body that compiles the figures",
+  transcript:
+    "the verbatim record of what was said: a hearing, a speech, an interview or debate in full, or the recording itself",
+  treaty: "the text of a treaty or international agreement",
+  court_record: "a judgment, order, or filing in a case",
+  legislation: "a statute, regulation or bill, in its own text",
+  journal_article: "an article in a scholarly journal",
+  preprint: "a scholarly paper posted before or without journal publication",
+  conference_paper: "a paper in a conference's proceedings",
+  book: "a book",
+  book_chapter: "a chapter of a book",
+  thesis: "a dissertation or thesis",
+  report:
+    "a report, working paper or white paper issued by an organization: an agency, a company, a think tank, a working group",
+  standard: "a published technical standard or specification",
+  news_article: "a news outlet's report of events",
+  opinion: "an editorial, column, essay or commentary that argues a position",
+  press_release: "an organization's own announcement or statement",
+  blog_post: "a post on a personal or organizational blog, forum or newsletter",
+  social_media_post: "a post or thread on a social platform",
+  reference_work: "an encyclopedia entry, textbook, handbook or fact sheet",
+  broadcast: "a podcast, programme or video that is not a verbatim record of one remark or event",
+  webpage: "a web page of none of the kinds above: an organization's page, documentation, a product page",
+  unknown: "not yet identified",
+} as const;
+
+export type SourceKind = keyof typeof SOURCE_KIND_DESCRIPTIONS;
+
+export const SOURCE_KINDS = Object.keys(SOURCE_KIND_DESCRIPTIONS) as [SourceKind, ...SourceKind[]];
+
+export const sourceKindEnum = z.enum(SOURCE_KINDS);
+
+/**
+ * Kinds that say nothing specific about the document. A more specific kind
+ * may replace one of these from any supplier; a specific kind, once
+ * recorded, is replaced only by a Steward's correction.
+ */
+export const GENERIC_SOURCE_KINDS: ReadonlySet<string> = new Set<SourceKind>(["unknown", "webpage"]);
+
+/** The kinds an agent may state for a source it read: every kind but "unknown", which is the absence of one. */
+export const STATABLE_SOURCE_KINDS = SOURCE_KINDS.filter((k) => k !== "unknown");
+
+/** `value` as a kind an agent may state, or null when it is not one. */
+export function statedSourceKind(value: unknown): SourceKind | null {
+  const v = typeof value === "string" ? value.trim() : "";
+  return (STATABLE_SOURCE_KINDS as string[]).includes(v) ? (v as SourceKind) : null;
+}
+
+/** The list as a tool description gives it: each kind with what counts as one. */
+export const SOURCE_KIND_GUIDANCE =
+  "What kind of document the source is, when you have seen enough of it to say. " +
+  STATABLE_SOURCE_KINDS.map((k) => `'${k}': ${SOURCE_KIND_DESCRIPTIONS[k]}`).join("; ") +
+  ". Say what the document itself is, not what it reports on: a news report of a court ruling is a " +
+  "news_article, and the ruling is the court_record. Omit it rather than guess.";
 
 // Agent reports (#366): the agents' own channel for system failures, tool
 // gaps, and improvement ideas. Keep in sync with the agent_reports column
@@ -494,7 +553,7 @@ export const PROVENANCE_ROOT_GUIDANCE =
  * as untraced. A derivation, never a verdict: the Steward's root row
  * overrides it either way.
  */
-export const PRIMARY_SOURCE_TYPES: ReadonlySet<string> = new Set([
+export const PRIMARY_SOURCE_KINDS: ReadonlySet<string> = new Set<SourceKind>([
   "dataset",
   "official_statistics",
   "transcript",

@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const h = vi.hoisted(() => ({
   extracted: [] as Array<Record<string, unknown>>,
   problem: null as null | { kind: string; note: string },
+  kind: null as null | string,
   decisions: [] as Array<Record<string, unknown>>,
   inserts: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
   rawCalls: [] as Array<{ sql: string; params: unknown[] }>,
@@ -46,8 +47,12 @@ vi.mock("../../../src/llm/agents/extractor.js", () => ({
   extractClaims: vi.fn(async (input: Record<string, unknown>) => {
     h.extractInput = input;
     if (h.problem) (input.onDocumentProblem as (p: unknown) => void)(h.problem);
+    if (h.kind) (input.onDocumentKind as (k: unknown) => void)(h.kind);
     return h.extracted;
   }),
+}));
+vi.mock("../../../src/services/source-service.js", () => ({
+  recordSourceKind: vi.fn(async (_id: string, kind: string) => ({ source_kind: kind })),
 }));
 vi.mock("../../../src/llm/agents/matcher.js", () => ({
   matchClaim: vi.fn(async () => h.decisions.shift()),
@@ -84,6 +89,7 @@ import { requestCuration } from "../../../src/services/curation-service.js";
 import { requestAudit } from "../../../src/services/queue-service.js";
 import { updateJob } from "../../../src/services/job-service.js";
 import { matchClaim } from "../../../src/llm/agents/matcher.js";
+import { recordSourceKind } from "../../../src/services/source-service.js";
 
 const proposal = (text: string, extra: Record<string, unknown> = {}) => ({
   verbatim_text: text,
@@ -123,6 +129,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.extracted = [];
   h.problem = null;
+  h.kind = null;
   h.decisions = [];
   h.inserts = [];
   h.rawCalls = [];
@@ -169,6 +176,18 @@ describe("ingestion", () => {
     expect(calls[0]).toMatchObject({ otherClaimId: "alt-3", source: "matcher" });
     expect(calls[0]!.concern).toMatch(/narrower grain[\s\S]*alt-3 is a specification/);
     expect(lastJobResult()).toMatchObject({ curation_requests: 1 });
+  });
+
+  it("keeps the kind of document the Extractor read, as a correction, and never for a problem document", async () => {
+    h.kind = "journal_article";
+    await handleUrlExtraction(MESSAGE);
+    // The Extractor read it whole, so its kind replaces one a citing agent recorded.
+    expect(vi.mocked(recordSourceKind)).toHaveBeenCalledWith("src-1", "journal_article", { read: true });
+
+    vi.mocked(recordSourceKind).mockClear();
+    h.problem = { kind: "not_the_document", note: "A login page." };
+    await handleUrlExtraction(MESSAGE);
+    expect(vi.mocked(recordSourceKind)).not.toHaveBeenCalled();
   });
 
   it("records a document problem, and refers injected instructions to Audit (#740)", async () => {

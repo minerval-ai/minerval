@@ -34,6 +34,7 @@ import {
   updateArgumentInstance,
 } from "../../services/argument-instance-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
+import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { rawQuery } from "../../db/client.js";
 import { notYourNode } from "./steward-ownership.js";
 
@@ -79,6 +80,7 @@ const PROPERTIES = {
     description: "URL of the source you read; sources are found or created by URL.",
   },
   title: { type: "string", description: "Title of the source." },
+  source_kind: SOURCE_KIND_PROPERTY,
   verbatim_text: {
     type: "string",
     description:
@@ -297,12 +299,16 @@ export async function executeArgumentInstanceTool(
 
   // Found or created by URL without enqueueing extraction: recording a
   // sighting stays a cheap side effect of the run.
+  const kindRefusal = sourceKindRefusal(input.source_kind);
+  if (kindRefusal) return refuse(kindRefusal);
   const source = await getOrCreateSource({ url, title: optText(input.title) });
+  const sourceKind = await applyStatedSourceKind(source.id, input.source_kind);
   const speaker = optText(input.speaker) ?? null;
   const existing = await findArgumentInstance({ argumentId, sourceId: source.id, speaker });
   if (existing) {
     const differs = existing.stance !== rawStance || (rawReading !== undefined && existing.reading !== rawReading);
     return JSON.stringify({
+    ...sourceKind,
       success: true,
       deduplicated: true,
       instance_id: existing.id,
@@ -336,6 +342,7 @@ export async function executeArgumentInstanceTool(
     createdBy: recordedBy,
   });
   return JSON.stringify({
+    ...sourceKind,
     success: true,
     instance_id: id,
     source_id: source.id,

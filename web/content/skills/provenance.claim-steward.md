@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 7)
+# Method skill: Provenance (version 8)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -79,10 +79,13 @@ the graph does not yet hold. As you read each source against the claim,
 record a reading with `provenance_record_reading`: whether its own evidence
 bears its assertion, what it deploys the claim for, a note in the graph's
 voice where one would help a reader, and whether a later Steward should open
-it and why. Where the source draws on another document for the assertion,
+it and why. Say what kind of document it is in `source_kind`; having read
+it, your kind replaces whatever an agent that only cited it recorded. Where
+the source draws on another document for the assertion,
 record the edge with `provenance_record_edge`, naming the passage where it
 does so, the kind of dependency, and how the claim fared in the crossing;
-say whether you opened the target. Where two documents are one voice, the
+say whether you opened the target, and what kind of document it is in
+`to_source_kind`. Where two documents are one voice, the
 same authors or the same text under two mastheads, record the relation with
 `provenance_record_source_relationship`. Finish with `provenance_write_map`:
 the account of what the support rests on, and whether it is material.
@@ -122,7 +125,11 @@ at the top as one of two things. It is an origin when its kind is a
 primary one, a dataset, official statistics, a transcript, a treaty, a
 court record, legislation; otherwise it is untraced, shown apart, so that
 a source nobody has followed upstream does not pass for one with nothing
-upstream to find. Where that derivation is wrong, record your judgment
+upstream to find. The kind is the one recorded on the source, and a source
+nobody has named a kind for is "unknown" and so untraced: state the kind on
+the reading or the edge when you record it, and most origins need nothing
+more. `provenance_get_map` shows each source's recorded kind. Where the
+derivation is still wrong, record your judgment
 with `provenance_record_root`: confirm as an origin the press release that
 first published the figure or the video of the remark, or mark as untraced
 a "transcript" that is a summary of an unseen original. The basis you give

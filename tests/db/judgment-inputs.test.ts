@@ -16,7 +16,7 @@ import { seedClaim } from "./helpers.js";
 
 async function seedSource(): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'DB-test source', 'paper') RETURNING id`,
+    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'DB-test source', 'journal_article') RETURNING id`,
     [`https://example.org/judgment-inputs/${randomUUID()}`]
   );
   return row!.id;

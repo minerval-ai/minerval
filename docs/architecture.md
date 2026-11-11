@@ -510,6 +510,36 @@ voices that take a position. The Matcher assigns `affirms`, `denies` or
 `poses` at ingestion; a mention is the Steward's reading of a source, recorded
 with `record_claim_instance`.
 
+A source's **kind** (`sources.source_type`) says what sort of document it is:
+a journal article, a news article, a court record, official statistics. There
+is one list, `SOURCE_KIND_DESCRIPTIONS` in `src/schemas/common.ts`, with what
+counts as each; a CHECK constraint holds the column to it, and
+`tests/unit/schemas/source-kinds.test.ts` holds the constraint, the web's
+type and the tool schemas to the list. A kind says what a document is, never
+how far to trust it. One thing is derived from it: a source of a primary
+kind (`PRIMARY_SOURCE_KINDS`: dataset, official statistics, transcript,
+treaty, court record, legislation) with nothing recorded upstream of it reads
+as where a claim's provenance story begins, and any other reads as untraced.
+A source starts as `unknown`, and three suppliers name it:
+
+- **The registry.** Crossref's work type, for a document with a DOI
+  (`source-facts-service.ts`).
+- **The Extractor**, on a document that comes in through ingestion: it has
+  read the whole text, and says the kind as `document_kind` when it finishes.
+- **The agent that records the source**: `source_kind` on
+  `record_claim_instance`, `record_question_instance`, `record_estimate`,
+  `record_quantity_reading` and `record_argument_instance`, and on the
+  provenance tools, `source_kind` on a reading and `to_source_kind` on an
+  upstream edge.
+
+`recordSourceKind` (`source-service.ts`) is the one writer the agents share,
+and its rule is who has seen the document. An agent that only cites a source
+fills the kind where none more specific is recorded (`unknown`, or `webpage`
+giving way to a specific kind). An agent that read it, the Extractor, or a
+reading with `source_read` or an edge with `target_read`, corrects it. Every
+call's result says what the source's kind now is, and says so when the kind
+stated was not taken.
+
 A source also carries **facts** that need no judgment (authors, publisher,
 publication date at the precision stated, DOI, an archived copy, and the
 dated `source_events` a watcher recorded against it: corrections,
