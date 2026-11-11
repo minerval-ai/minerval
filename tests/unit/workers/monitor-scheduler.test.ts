@@ -8,6 +8,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requestAudit: vi.fn(async (_input: unknown): Promise<string | null> => "run-1"),
+  /** The claim whose label each audit was asked for at, in order (src/labels.ts). */
+  atClaimLabel: [] as string[],
+  /** The claim whose label is in the air while requestAudit runs. */
+  open: null as string | null,
+  asked: [] as Array<{ dedupeKey: unknown; atLabelOf: string | null }>,
   performedSettling: vi.fn(async (): Promise<unknown> => ({ candidates: [] })),
   emptyChairs: vi.fn(async (): Promise<unknown> => ({ candidates: [] })),
   config: {
@@ -18,6 +23,17 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/services/queue-service.js", () => ({ requestAudit: mocks.requestAudit }));
+vi.mock("../../../src/services/label-service.js", () => ({
+  runAtClaimLabel: async (claimId: string, fn: () => Promise<unknown>) => {
+    mocks.atClaimLabel.push(claimId);
+    mocks.open = claimId;
+    try {
+      return await fn();
+    } finally {
+      mocks.open = null;
+    }
+  },
+}));
 vi.mock("../../../src/services/monitor-service.js", () => ({
   defaultThresholds: (o: Record<string, unknown>) => ({ limit: 25, ...o }),
   performedSettling: mocks.performedSettling,
@@ -106,6 +122,27 @@ describe("flagMonitorCandidates", () => {
     expect(first.dedupeKey).toBe(`monitor:performed_settling:s1:${reflagBucket(NOW, 14)}`);
     expect(String(first.context)).toContain("candidate, not a verdict");
     expect(String(first.context)).toContain("s1");
+  });
+
+  it("asks for each audit at the label of the claim it is about", async () => {
+    // The sweep is a timer, outside any run. Each audit is about one claim,
+    // so the request is made inside that claim's label (src/labels.ts).
+    mocks.performedSettling.mockResolvedValue({ candidates: [settling("s1", 0.9)] });
+    mocks.emptyChairs.mockResolvedValue({ candidates: [chair("e1", 0.6)] });
+    mocks.atClaimLabel.length = 0;
+    mocks.asked.length = 0;
+    mocks.requestAudit.mockImplementation(async (input: unknown) => {
+      mocks.asked.push({ dedupeKey: (input as { dedupeKey: unknown }).dedupeKey, atLabelOf: mocks.open });
+      return "run-1";
+    });
+    try {
+      await flagMonitorCandidates({ now: NOW });
+    } finally {
+      mocks.requestAudit.mockImplementation(async () => "run-1");
+    }
+    expect(mocks.atClaimLabel).toEqual(["s1", "e1"]);
+    expect(mocks.asked.map((a) => a.atLabelOf)).toEqual(["s1", "e1"]);
+    expect(String(mocks.asked[0]!.dedupeKey)).toContain(":s1:");
   });
 
   it("caps flags per sweep and passes the cap as the detectors' limit", async () => {

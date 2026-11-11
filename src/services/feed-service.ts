@@ -35,6 +35,7 @@ import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.
 import { segmentText } from "./source-segment-service.js";
 import { flagIngest, queueLookoutEvent } from "./lookout-service.js";
 import { normalizeFocus } from "./ingest-focus-service.js";
+import { runAtLookoutLabelOutsideAnyRun } from "./label-service.js";
 
 const USER_AGENT = "Minerval/1.0 (lookout feeds; mailto:hello@minerval.ai)";
 
@@ -771,8 +772,8 @@ export async function addFeed(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookout_feeds
        (lookout_id, url, site_url, title, wake, batch_size, max_wait_hours,
-        min_wake_hours, poll_hours, retain_days, created_by, ingest_focus)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        min_wake_hours, poll_hours, retain_days, created_by, ingest_focus, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (lookout_id, url) DO UPDATE
        SET status = 'active', site_url = EXCLUDED.site_url,
            title = COALESCE(EXCLUDED.title, lookout_feeds.title),
@@ -797,6 +798,7 @@ export async function addFeed(input: {
       rule.retain_days,
       input.createdBy,
       normalizeFocus(input.ingestFocus),
+      currentLabel(),
     ]
   );
   // A lookout that follows feeds wakes on them; keep its trigger list honest.
@@ -947,6 +949,18 @@ export async function pollFeed(
   feed: FeedRow,
   opts: { now?: Date; parsed?: ParsedFeed } = {}
 ): Promise<FeedPollResult> {
+  // The poller is a timer, outside any run, and the poll is the lookout's
+  // work: the items it records, the wake it queues and the ingests an
+  // auto_ingest feed raises are written at the lookout's label
+  // (label-service.ts). A poll made from inside a run (a Grantmaker adding
+  // the feed) is that run's.
+  return runAtLookoutLabelOutsideAnyRun(feed.lookout_id, () => pollFeedAtLabel(feed, opts));
+}
+
+async function pollFeedAtLabel(
+  feed: FeedRow,
+  opts: { now?: Date; parsed?: ParsedFeed }
+): Promise<FeedPollResult> {
   const now = opts.now ?? new Date();
   const result: FeedPollResult = {
     feedId: feed.id, ok: false, seeded: false, newItems: 0, autoIngested: 0, woke: false,
@@ -993,10 +1007,8 @@ export async function pollFeed(
       [
         feed.id, feed.lookout_id, it.key, it.url, it.title, it.author, it.published,
         it.summary, it.content, seeding ? "seen" : "new", now, feed.retain_days,
-        // The poll's label (src/labels.ts). The poll is keyed on a lookout,
-        // and a lookout carries no label yet, so outside any run this is
-        // public. Once lookouts carry one, the poll opens at it and this
-        // line needs no change.
+        // The poll's label (src/labels.ts): the lookout's when the poller
+        // runs it, the run's when a run does (pollFeed above).
         currentLabel(),
       ]
     );

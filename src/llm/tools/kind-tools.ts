@@ -1110,12 +1110,13 @@ async function executeKindToolImpl(
       if (deleted.length === 0) return refuse("That node is not in the question's answer set.");
       const edge = deleted[0]!;
       await rawQuery(
-        `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'remove_answer', $2, $3)`,
+        `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, 'remove_answer', $2, $3, $4)`,
         [
           questionId,
           `Removed ${answerId} from the answer set (basis ${edge.answer_basis ?? "none"}; edge reasoning: ` +
             `"${edge.reasoning}"): ${reasoning}`,
           createdBy,
+          currentLabel(),
         ]
       );
       return ok(`Removed ${answerId} from the answer set.`);

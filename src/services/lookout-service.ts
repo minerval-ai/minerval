@@ -94,11 +94,20 @@ export interface LookoutRow {
   updated_at: Date;
 }
 
+/**
+ * The columns a lookout is read with, named, so that a column the table
+ * gains (its label, src/labels.ts) does not ride along into a run's brief
+ * or a route's reply. Every read of a whole lookout uses these.
+ */
+export const LOOKOUT_COLUMNS = [
+  "id", "grant_id", "title", "brief", "status", "heartbeat_hours", "triggers", "model",
+  "commission_limit_micro_usd", "territory_claim_ids", "territory_tag_ids",
+  "changes_cursor", "workspace", "last_note", "last_run_at",
+  "next_due_at", "runs", "flags", "created_by", "created_at", "updated_at",
+] as const;
+
 const LOOKOUT_SELECT = `
-  SELECT id, grant_id, title, brief, status, heartbeat_hours, triggers, model,
-         commission_limit_micro_usd, territory_claim_ids, territory_tag_ids,
-         changes_cursor, workspace, last_note, last_run_at,
-         next_due_at, runs, flags, created_by, created_at, updated_at
+  SELECT ${LOOKOUT_COLUMNS.join(", ")}
     FROM lookouts`;
 
 export type LookoutWriteResult =
@@ -218,8 +227,8 @@ export async function createLookout(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookouts
        (grant_id, title, brief, heartbeat_hours, triggers, model, created_by,
-        commission_limit_micro_usd, territory_claim_ids, territory_tag_ids)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[])
+        commission_limit_micro_usd, territory_claim_ids, territory_tag_ids, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[], $11)
      RETURNING id`,
     [
       input.grantId,
@@ -232,6 +241,7 @@ export async function createLookout(input: {
       Math.round(Math.max(0, Number(input.commissionLimitOwls ?? 0) || 0) * 1_000_000),
       territory.claimIds,
       territory.tagIds,
+      currentLabel(),
     ]
   );
   return { ok: true, lookoutId: row!.id };
@@ -360,11 +370,11 @@ export async function queueLookoutEvent(input: {
   payload?: Record<string, unknown>;
 }): Promise<{ queued: boolean }> {
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO lookout_events (lookout_id, kind, payload)
-     SELECT $1, $2, $3::jsonb
+    `INSERT INTO lookout_events (lookout_id, kind, payload, sensitivity_label)
+     SELECT $1, $2, $3::jsonb, $4::text
        FROM lookouts WHERE id = $1 AND status = 'active'
      RETURNING id`,
-    [input.lookoutId, input.kind, JSON.stringify(input.payload ?? {})]
+    [input.lookoutId, input.kind, JSON.stringify(input.payload ?? {}), currentLabel()]
   );
   return { queued: rows.length > 0 };
 }
@@ -383,8 +393,11 @@ export async function queueLookoutEventsByTrigger(input: {
 }): Promise<{ queued: number }> {
   const cap = input.maxPendingPerLookout ?? 50;
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO lookout_events (lookout_id, kind, payload)
-     SELECT l.id, $1, $2::jsonb
+    // The fan-out is a timer's (the retraction poll), not a run's, and each
+    // event is for one lookout: it carries that lookout's label, read here
+    // with the row (src/labels.ts).
+    `INSERT INTO lookout_events (lookout_id, kind, payload, sensitivity_label)
+     SELECT l.id, $1, $2::jsonb, l.sensitivity_label
        FROM lookouts l
        JOIN grants g ON g.id = l.grant_id
       WHERE l.status = 'active' AND g.status = 'active'
@@ -521,10 +534,10 @@ async function actOnFind(input: {
     });
     if (res.ok) {
       await rawQuery(
-        `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id)
-         VALUES ($1, 'lookout', 'commission', $2, $3, $4, $5, $6)`,
+        `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id, sensitivity_label)
+         VALUES ($1, 'lookout', 'commission', $2, $3, $4, $5, $6, $7)`,
         [input.grantId, res.status === "commissioned" ? "commissioned" : "joined a paid pass", input.claimId ?? input.url,
-         res.status === "commissioned" ? input.budgetMicroUsd : null, input.rationale, input.actionId]
+         res.status === "commissioned" ? input.budgetMicroUsd : null, input.rationale, input.actionId, currentLabel()]
       );
       return {
         commissioned: res.status === "commissioned",
@@ -647,8 +660,8 @@ export async function flagReassessment(input: {
   const [flag] = await rawQuery<{ id: string }>(
     `INSERT INTO lookout_flags
        (lookout_id, kind, claim_id, action_id, rationale, urgency, value_written,
-        status_at_flag, credence_at_flag, assessment_id_at_flag)
-     VALUES ($1, 'reassess', $2, $3, $4, $5, $6, $7, $8, $9)
+        status_at_flag, credence_at_flag, assessment_id_at_flag, sensitivity_label)
+     VALUES ($1, 'reassess', $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id`,
     [
       input.lookoutId,
@@ -660,6 +673,7 @@ export async function flagReassessment(input: {
       current?.status ?? null,
       current?.claim_credence ?? null,
       current?.id ?? null,
+      currentLabel(),
     ]
   );
   return {
@@ -797,9 +811,9 @@ export async function flagIngest(input: {
     commissionLimitMicroUsd: Math.max(0, Number(input.commissionLimitMicroUsd) || 0),
   });
   const [flag] = await rawQuery<{ id: string }>(
-    `INSERT INTO lookout_flags (lookout_id, kind, url, action_id, rationale, urgency, value_written)
-     VALUES ($1, 'ingest', $2, $3, $4, $5, $6) RETURNING id`,
-    [input.lookoutId, url, row.id, rationale, null, null]
+    `INSERT INTO lookout_flags (lookout_id, kind, url, action_id, rationale, urgency, value_written, sensitivity_label)
+     VALUES ($1, 'ingest', $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [input.lookoutId, url, row.id, rationale, null, null, currentLabel()]
   );
   return {
     ok: true,
@@ -823,12 +837,12 @@ export async function flagNote(input: {
   // An anchor that is not a real claim id is dropped, not an error.
   const claimId = isUuid(input.claimId) ? input.claimId : null;
   const [flag] = await rawQuery<{ id: string }>(
-    `INSERT INTO lookout_flags (lookout_id, kind, claim_id, url, rationale)
-     SELECT $1, 'note', c.id, $3, $4
+    `INSERT INTO lookout_flags (lookout_id, kind, claim_id, url, rationale, sensitivity_label)
+     SELECT $1, 'note', c.id, $3, $4, $5::text
        FROM (SELECT $2::uuid AS id) want
        LEFT JOIN claims c ON c.id = want.id
      RETURNING id`,
-    [input.lookoutId, claimId, input.url ?? null, text]
+    [input.lookoutId, claimId, input.url ?? null, text, currentLabel()]
   );
   return {
     ok: true,

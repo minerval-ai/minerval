@@ -559,6 +559,8 @@ export async function createGrant(input: {
     .insert(grants)
     .values({
       funderUserId: input.funderUserId,
+      // The label of the request that creates the mandate (src/labels.ts).
+      sensitivityLabel: currentLabel(),
       budgetJobId: job!.id,
       name: input.name,
       scopeClaimId: input.scopeClaimId ?? null,

@@ -163,28 +163,38 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Five groups: the judgments, sources and runs (this file); the rows
+    // Six groups: the judgments, sources and runs (this file); the rows
     // that stand for work waiting to be done, which hand their label to the
     // run that takes it up (label-carried.test.ts); the graph's own
     // content, from nodes and edges to formal statements
     // (label-graph.test.ts); what is read from a source or written about
     // one, from instances and segments to examinations
-    // (label-sources.test.ts); and what a run writes about itself, from the
-    // steps of its transcript to the reports it files (label-runs.test.ts).
+    // (label-sources.test.ts); what a run writes about itself, from the
+    // steps of its transcript to the reports it files (label-runs.test.ts);
+    // and the rows of work and governance, from requests and messages to
+    // mandates, their lookouts and the audit trail
+    // (label-governance.test.ts). The tables that carry no label are listed
+    // there too, each with its reason.
     expect(rows).toEqual(
       [
         "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
-        "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals", "argument_evaluations",
-        "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments", "assessment_orders",
-        "assessments", "assistant_held_actions", "audit_notes", "audit_runs", "budget_jobs", "claim_formalizations",
-        "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
-        "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claims",
-        "contributions", "examination_coverage", "examination_findings", "examinations", "grant_sources", "jobs",
-        "judgment_inputs", "lean_checks", "llm_usage", "lookout_feed_items", "proof_attempts", "quantity_cuts",
+        "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals", "arbitration_results",
+        "argument_evaluations", "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments",
+        "assessment_orders", "assessments", "assistant_conversations", "assistant_held_actions", "assistant_pages",
+        "attachments", "audit_findings", "audit_log", "audit_notes", "audit_runs", "bounties", "budget_jobs",
+        "claim_formalizations", "claim_instance_reading_log", "claim_instance_readings", "claim_instances",
+        "claim_links", "claim_predictions", "claim_provenance_edges", "claim_provenance_roots",
+        "claim_relationships", "claim_source_maps", "claims", "consistency_flags", "consistency_sweeps",
+        "contribution_reviews", "contributions", "correspondent_events", "correspondent_plan_items",
+        "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
+        "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants", "ingest_focuses",
+        "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events", "lookout_feed_items",
+        "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events", "mandate_inbox",
+        "mandate_policy_versions", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
-        "reading_citations", "reconciliation_events", "research_runs", "setup_parts", "shared_page_analyses",
-        "source_events", "source_extractions", "source_interests", "source_relationships", "source_segments",
-        "sources", "taggings", "tags",
+        "reading_citations", "reconciliation_events", "reputation_events", "request_targets", "request_work",
+        "requests", "research_runs", "setup_parts", "shared_page_analyses", "source_events", "source_extractions",
+        "source_interests", "source_relationships", "source_segments", "sources", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });

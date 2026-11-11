@@ -218,7 +218,7 @@ async function restoreKindRefs(loserId: string, survivorId: string, m: Partial<K
     await rawQuery(`UPDATE request_targets SET claim_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.request_target_ids]);
   }
   for (const t of m.dropped_request_targets ?? []) {
-    await rawQuery(`INSERT INTO request_targets (request_id, claim_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [t.request_id, loserId]);
+    await rawQuery(`INSERT INTO request_targets (request_id, claim_id, sensitivity_label) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [t.request_id, loserId, currentLabel()]);
   }
   if (m.keeper_request_ids?.length) {
     await rawQuery(`UPDATE requests SET keeper_claim_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.keeper_request_ids]);

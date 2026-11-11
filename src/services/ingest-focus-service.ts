@@ -46,10 +46,10 @@ export function ingestGroup(url: string, focus?: string | null): string {
 /** Record the focus behind a scoped ingest group, for the executor to read. */
 export async function recordIngestFocus(group: string, url: string, focus: string): Promise<void> {
   await rawQuery(
-    `INSERT INTO ingest_focuses (exclusion_group, url, focus)
-     VALUES ($1, $2, $3)
+    `INSERT INTO ingest_focuses (exclusion_group, url, focus, sensitivity_label)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (exclusion_group) DO NOTHING`,
-    [group, url, focus]
+    [group, url, focus, currentLabel()]
   );
 }
 

@@ -50,7 +50,10 @@ about a source (an instance, a reading, a provenance edge, an examination's
 findings), is stamped with the run's label (the
 `sensitivity_label` column), and so is its `agent_runs` row. So is what the
 run writes about itself: the usage row of each model call, an investigation
-it launches, a report or a finding it files, an audit it asks for.
+it launches, a report or a finding it files, an audit it asks for. And so
+is what it writes to ask for work or to govern it: a request, a message to
+another node's Steward, a petition, a decision, a review, an entry in a
+claim's audit trail.
 
 Each step carries the label too, in the same column of `agent_steps`. It is
 the label the run was opened at, not the label in the air when the step is
@@ -78,7 +81,12 @@ and the worker that picks the row up opens the run at that label. So the
 label in a run's setup is the label of whatever asked for the run, through
 however many hand-overs, and never something the agent chose. A run that
 starts from a claim itself, with no such row (the Tagger's, or a pass the
-scheduler's sweep opens for a pending claim), works at the claim's label.
+scheduler's sweep opens for a pending claim), works at the claim's label,
+or, for a pending claim whose unread messages all carry one label, at that
+label. A run that is some row's own work is opened at that row's label,
+whichever sweep starts it: a mandate's review, planning and plan rows and
+its officers' sittings at the mandate's label, a lookout's and a
+correspondent's runs at theirs, the work on a request at the request's.
 Work that starts from a source the same way (the source backfill) is done
 at the source's label; it opens no run. Two kinds of row are not the run's
 at all: a document's segments and the notices against it are derived from

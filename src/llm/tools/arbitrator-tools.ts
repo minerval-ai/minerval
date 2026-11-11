@@ -32,6 +32,7 @@ import {
   applyAcceptanceEffects,
 } from "../../services/contribution-acceptance.js";
 import { getContributionById } from "../../services/contribution-service.js";
+import { currentLabel } from "../usage-context.js";
 
 export function getArbitratorToolDefinitions(): Tool[] {
   return [
@@ -282,6 +283,7 @@ export async function executeArbitratorTool(
 
         await db.insert(arbitrationResults).values({
           contributionId,
+          sensitivityLabel: currentLabel(),
           appealId: appealId ?? null,
           outcome,
           decision,

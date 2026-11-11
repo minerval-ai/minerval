@@ -28,6 +28,7 @@ import { getGeneralMandate } from "./allocation-policy-service.js";
 import { commissionNodePass, placeCommission } from "./commission-service.js";
 import { microUsdToOwls } from "./owl.js";
 import type { RunFunding } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 
 export type PetitionKind = "more_budget" | "follow_up";
 export type PetitionStatus = "pending" | "escalated" | "granted" | "refused" | "follow_up";
@@ -62,6 +63,14 @@ export interface PetitionRow {
   /** The session the decision returns into, when the petitioner waits in one. */
   reply_to_session?: string | null;
 }
+
+/**
+ * The columns a petition is read with, named: a column the table gains (its
+ * label, src/labels.ts) does not ride along into a brief or a reply.
+ */
+export const PETITION_COLUMNS = `id, grant_id, kind, asked_micro_usd, plan, why, if_refused, requester_agent,
+  requester_action_id, requester_node_id, chain, waiting, status, granted_micro_usd, decided_by, reason,
+  follow_up_commissioned_at, created_at, decided_at, reply_to_session`;
 
 /** The chain of runs that led to `actionId`, root first. */
 export async function runChain(actionId: string): Promise<ChainLink[]> {
@@ -142,8 +151,8 @@ export async function filePetition(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO petitions
        (grant_id, kind, asked_micro_usd, plan, why, if_refused, requester_agent,
-        requester_action_id, requester_node_id, chain, waiting, reply_to_session)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+        requester_action_id, requester_node_id, chain, waiting, reply_to_session, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
      RETURNING id`,
     [
       input.grantId,
@@ -158,13 +167,14 @@ export async function filePetition(input: {
       JSON.stringify(chain),
       input.waiting,
       input.replyToSession ?? null,
+      currentLabel(),
     ]
   );
   return row!.id;
 }
 
 export async function getPetition(id: string): Promise<PetitionRow | null> {
-  const [row] = await rawQuery<PetitionRow>(`SELECT * FROM petitions WHERE id = $1`, [id]);
+  const [row] = await rawQuery<PetitionRow>(`SELECT ${PETITION_COLUMNS} FROM petitions WHERE id = $1`, [id]);
   return row ?? null;
 }
 
@@ -246,9 +256,9 @@ export async function decidePetition(input: {
   );
   await rawQuery(
     `INSERT INTO mandate_decisions
-       (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, petition_id, action_id)
-     VALUES ($1, $2, 'petition', $3, $4, $5, $6, $7, $8)`,
-    [p.grant_id, input.decidedBy, status, p.requester_node_id, granted || null, reason, p.id, p.requester_action_id]
+       (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, petition_id, action_id, sensitivity_label)
+     VALUES ($1, $2, 'petition', $3, $4, $5, $6, $7, $8, $9)`,
+    [p.grant_id, input.decidedBy, status, p.requester_node_id, granted || null, reason, p.id, p.requester_action_id, currentLabel()]
   );
   // The decision returns into the session that asked: shown to its run if it
   // is still working (a grant raising its ceiling then), or resuming it if
@@ -299,16 +309,28 @@ export async function decidePetition(input: {
 
 async function commissionFollowUp(p: PetitionRow): Promise<boolean> {
   if (!p.requester_node_id || !p.granted_micro_usd) return false;
-  const res = await commissionNodePass({
-    payer: { kind: "grant", grantId: p.grant_id },
-    claimId: p.requester_node_id,
-    budgetMicroUsd: Number(p.granted_micro_usd),
-    brief:
-      `A follow-up pass, funded because the last pass asked for more than it had: ${p.plan}`,
-    reason: p.reason ?? undefined,
-    commissionedBy: p.decided_by ?? "officer",
-    message: { trigger: "mandate_plan", sender: { kind: "mandate" } },
-  });
+  const nodeId = p.requester_node_id;
+  // A follow-up continues the pass that asked, so it is commissioned at the
+  // petition's label, which is the label that pass ran at (src/labels.ts).
+  // It is reached from the sitting that decides the petition, from the
+  // settle hook of the run that asked, and from the scheduler's sweep, and
+  // none of those is the work the follow-up belongs to.
+  const [own] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM petitions WHERE id = $1`,
+    [p.id]
+  );
+  const res = await runAtLabel(own?.sensitivity_label, `petition ${p.id}`, () =>
+    commissionNodePass({
+      payer: { kind: "grant", grantId: p.grant_id },
+      claimId: nodeId,
+      budgetMicroUsd: Number(p.granted_micro_usd),
+      brief:
+        `A follow-up pass, funded because the last pass asked for more than it had: ${p.plan}`,
+      reason: p.reason ?? undefined,
+      commissionedBy: p.decided_by ?? "officer",
+      message: { trigger: "mandate_plan", sender: { kind: "mandate" } },
+    })
+  );
   if (res.ok && res.status === "commissioned") {
     await rawQuery(`UPDATE petitions SET follow_up_commissioned_at = now() WHERE id = $1`, [p.id]);
     return true;
@@ -324,7 +346,7 @@ export async function commissionFollowUps(actionId: string): Promise<number> {
   const [running] = await rawQuery<{ status: string }>(`SELECT status FROM actions WHERE id = $1`, [actionId]);
   if (running?.status === "running") return 0;
   const rows = await rawQuery<PetitionRow>(
-    `SELECT * FROM petitions
+    `SELECT ${PETITION_COLUMNS} FROM petitions
       WHERE requester_action_id = $1 AND status = 'follow_up' AND follow_up_commissioned_at IS NULL`,
     [actionId]
   );

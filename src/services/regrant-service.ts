@@ -366,10 +366,10 @@ export async function spawnFundedMandate(input: {
   };
   const [grant] = await rawQuery<{ id: string }>(
     `INSERT INTO grants
-       (funder_user_id, budget_job_id, name, policy, status, mandate)
-     VALUES ($1, $2, $3, 'agent', 'planning', $4::jsonb)
+       (funder_user_id, budget_job_id, name, policy, status, mandate, sensitivity_label)
+     VALUES ($1, $2, $3, 'agent', 'planning', $4::jsonb, $5)
      RETURNING id`,
-    [source.funder_user_id, job!.id, input.title, JSON.stringify(mandate)]
+    [source.funder_user_id, job!.id, input.title, JSON.stringify(mandate), currentLabel()]
   );
   const regranted = await createRegrant({
     fromGrantId: source.id,

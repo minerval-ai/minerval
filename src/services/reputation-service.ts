@@ -28,6 +28,7 @@ import {
   SURVIVED_APPEAL_BONUS_POINTS,
 } from "./contribution-award-service.js";
 import { refundChargeForContribution } from "./owl-ledger-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 // ---------------------------------------------------------------------------
 // Rules (pure, exported for tests and prompts)
@@ -248,8 +249,8 @@ export async function applyReviewOutcome(
     running = clampScore(running + event.delta);
     await rawQuery(
       `INSERT INTO reputation_events
-         (contributor_id, contribution_id, review_id, delta, score_after, reason)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+         (contributor_id, contribution_id, review_id, delta, score_after, reason, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         contribution.contributor_id,
         input.contributionId,
@@ -257,6 +258,7 @@ export async function applyReviewOutcome(
         event.delta,
         running,
         event.reason,
+        currentLabel(),
       ]
     );
   }
@@ -433,14 +435,15 @@ export async function applyArbitrationOutcome(input: {
     running = clampScore(running + event.delta);
     await rawQuery(
       `INSERT INTO reputation_events
-         (contributor_id, contribution_id, review_id, delta, score_after, reason)
-       VALUES ($1, $2, NULL, $3, $4, $5)`,
+         (contributor_id, contribution_id, review_id, delta, score_after, reason, sensitivity_label)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6)`,
       [
         contribution.contributor_id,
         input.contributionId,
         event.delta,
         running,
         event.reason,
+        currentLabel(),
       ]
     );
   }
@@ -588,14 +591,15 @@ export async function reverseReviewOutcome(input: {
 
   await rawQuery(
     `INSERT INTO reputation_events
-       (contributor_id, contribution_id, review_id, delta, score_after, reason)
-     VALUES ($1, $2, NULL, $3, $4, $5)`,
+       (contributor_id, contribution_id, review_id, delta, score_after, reason, sensitivity_label)
+     VALUES ($1, $2, NULL, $3, $4, $5, $6)`,
     [
       contribution.contributor_id,
       input.contributionId,
       reversalDelta,
       newScore,
       REPUTATION_REASONS.overturned,
+      currentLabel(),
     ]
   );
 
@@ -761,8 +765,8 @@ export async function neutralizeReviewOutcome(input: {
   if (netDelta !== 0) {
     await rawQuery(
       `INSERT INTO reputation_events
-         (contributor_id, contribution_id, review_id, delta, score_after, reason)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+         (contributor_id, contribution_id, review_id, delta, score_after, reason, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         contribution.contributor_id,
         input.contributionId,
@@ -770,6 +774,7 @@ export async function neutralizeReviewOutcome(input: {
         -netDelta,
         newScore,
         REPUTATION_REASONS.superseded,
+        currentLabel(),
       ]
     );
   }
@@ -848,13 +853,14 @@ export async function adjustReputation(input: {
 
   await rawQuery(
     `INSERT INTO reputation_events
-       (contributor_id, contribution_id, review_id, delta, score_after, reason)
-     VALUES ($1, NULL, NULL, $2, $3, $4)`,
+       (contributor_id, contribution_id, review_id, delta, score_after, reason, sensitivity_label)
+     VALUES ($1, NULL, NULL, $2, $3, $4, $5)`,
     [
       input.contributorId,
       input.delta,
       newScore,
       REPUTATION_REASONS.auditAdjustment,
+      currentLabel(),
     ]
   );
 

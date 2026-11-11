@@ -716,6 +716,8 @@ export async function startAssistantConversation(input: {
     .insert(assistantConversations)
     .values({
       userId: input.user.id,
+      // The label of the request that opens the conversation (src/labels.ts).
+      sensitivityLabel: currentLabel(),
       title: titleOf(message),
       origin: input.page
         ? { page: input.page }

@@ -862,10 +862,12 @@ describe("ledger derivability (property, #180)", () => {
         }
         if (sql.includes("INSERT INTO reputation_events")) {
           // The three insert shapes inline NULLs differently, so the delta
-          // and reason sit at arity-dependent positions: 6 params (apply,
-          // neutralize), 5 (reverse: review_id literal NULL), 4 (adjust:
-          // contribution_id and review_id literal NULL).
-          const arity = params!.length;
+          // and reason sit at arity-dependent positions: 6 params before the
+          // label (apply, neutralize), 5 (reverse: review_id literal NULL),
+          // 4 (adjust: contribution_id and review_id literal NULL). The
+          // event's label is the last parameter of each (src/labels.ts).
+          expect(params!.at(-1)).toBe("public");
+          const arity = params!.length - 1;
           const deltaIndex = arity === 6 ? 3 : arity === 5 ? 2 : 1;
           ledger.push({
             delta: params![deltaIndex] as number,

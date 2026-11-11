@@ -76,14 +76,21 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // sources and what is read from them: instances, readings, provenance,
 // examinations; the run itself and what it writes about itself: its
 // steps, its usage rows, the parts of its setup, the investigations,
-// reports, findings and audits it opens), and work waiting to be done or resumed (a
-// job, a ledger action, an order, a paused session), which hands its label
-// to the run that later takes it up (runAtLabel). A claim and a source are
-// both: work that starts from the claim or the source itself, with no row
-// of its own to wait in, runs at that row's label. One kind of row takes
+// reports, findings and audits it opens; and the rows work is asked for
+// and governed with: requests, messages, petitions, mandates and their
+// decisions, lookouts, correspondents, reviews, rulings, the audit trail),
+// and work waiting to be done or resumed (a job, a ledger action, an
+// order, a paused session), which hands its label to the run that later
+// takes it up (runAtLabel). A claim and a source are both: work that
+// starts from the claim or the source itself, with no row of its own to
+// wait in, runs at that row's label. So are a mandate, a lookout, a
+// correspondent and a request: the work that is theirs is opened at their
+// label, whichever sweep starts it. The tables with no label are the
+// accounts and keys, the owl ledger and payouts, the platform's own
+// switches and counters, and the two tables here. One kind of row takes
 // its label from neither a run nor a request: what is derived mechanically
 // from a document (its segments, the notices against it) carries the
-// document's label. No reader is held to a label yet.
+// document's label. No reader is held to a clearance yet.
 // ---------------------------------------------------------------------------
 export const labels = pgTable("labels", {
   name: text("name").primaryKey(),
@@ -2077,6 +2084,8 @@ export const enqueueEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that enqueued (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_enqueue_events_queue_time").on(table.queue, table.createdAt),
@@ -2189,6 +2198,8 @@ export const claimPredictions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of whatever seeded the prediction (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_claim_predictions_fixture").on(table.fixtureId),
@@ -2672,6 +2683,10 @@ export const grants = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request or run that created the mandate
+    // (src/labels.ts). A mandate decides for its work: its plan, its review
+    // and planning rows, its sittings and its events are opened at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_grants_funder").on(table.funderUserId, table.createdAt),
@@ -2827,6 +2842,8 @@ export const ingestFocuses = pgTable("ingest_focuses", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // The label of the work that first opened the scoped ingest (src/labels.ts).
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -2904,6 +2921,10 @@ export const lookouts = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that set the lookout up (src/labels.ts). A
+    // lookout decides for its work: its runs, its feed polls and the events
+    // a timer queues for it are at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_lookouts_grant").on(table.grantId, table.createdAt),
@@ -2941,6 +2962,9 @@ export const lookoutEvents = pgTable(
       .notNull()
       .defaultNow(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The label of whoever queued it; for an event a timer queues (a
+    // retraction, a feed wake), the lookout's (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_lookout_events_pending")
@@ -2976,6 +3000,9 @@ export const mandateEvents = pgTable(
       .notNull()
       .defaultNow(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The mandate's label (src/labels.ts): events are collected for a
+    // mandate, by a timer that works at the mandate's label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_mandate_events_pending")
@@ -3035,6 +3062,8 @@ export const lookoutFlags = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the lookout's run that raised it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_lookout_flags_lookout").on(table.lookoutId, table.createdAt),
@@ -3106,6 +3135,8 @@ export const lookoutFeeds = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that added the feed (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_lookout_feeds_url").on(table.lookoutId, table.url),
@@ -3260,6 +3291,9 @@ export const correspondents = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that set the correspondent up (src/labels.ts). Its
+    // runs and the wakes a timer queues for it are at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondents_grant").on(table.grantId, table.createdAt),
@@ -3294,6 +3328,9 @@ export const correspondentEvents = pgTable(
       .notNull()
       .defaultNow(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The label of whoever queued it; for a wake the change scan queues, the
+    // correspondent's (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondent_events_pending")
@@ -3323,6 +3360,8 @@ export const correspondentPlanItems = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the correspondent's run that added it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondent_plan_items").on(table.correspondentId, table.status, table.createdAt),
@@ -3364,6 +3403,8 @@ export const correspondentUpdates = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the correspondent's run that published it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondent_updates_feed").on(table.correspondentId, table.createdAt),
@@ -3410,6 +3451,8 @@ export const consistencySweeps = pgTable(
       .notNull()
       .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // The label of the run that swept (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_consistency_sweeps_tag").on(table.tagId, table.startedAt),
@@ -3474,6 +3517,8 @@ export const consistencyFlags = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the sweep that raised it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_consistency_flags_primary").on(table.primaryClaimId, table.createdAt),
@@ -3533,6 +3578,9 @@ export const grantConversations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request that opened the conversation (src/labels.ts).
+    // Its turns are in `messages`, on this row.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_grant_convos_user").on(table.userId, table.createdAt),
@@ -3589,6 +3637,9 @@ export const assistantConversations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request that opened the conversation (src/labels.ts).
+    // Its turns are in `messages`, on this row.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_assistant_convos_user").on(table.userId, table.updatedAt),
@@ -3665,6 +3716,8 @@ export const assistantPages = pgTable(
     versions: jsonb("versions").notNull().default([]),
     savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run or request that made the page (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_assistant_pages_user").on(table.userId, table.savedAt)]
 );
@@ -3908,6 +3961,8 @@ export const contributionReviews = pgTable("contribution_reviews", {
   // as history, but exactly one non-superseded review is live per contribution
   // and get_recent_decisions shows only live ones.
   superseded: boolean("superseded").notNull().default(false),
+  // The label of the run that reviewed (src/labels.ts).
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -3973,6 +4028,8 @@ export const arbitrationResults = pgTable("arbitration_results", {
     .notNull()
     .defaultNow(),
   arbitratedBy: text("arbitrated_by").notNull().default("dispute_arbitrator"),
+  // The label of the run that ruled (src/labels.ts).
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -4006,6 +4063,8 @@ export const reputationEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request behind the change (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_reputation_events_contributor_time").on(
@@ -4060,6 +4119,8 @@ export const curationRequests = pgTable(
       { onDelete: "set null" }
     ),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The label of the run or request that asked (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_curation_requests_live")
@@ -4138,6 +4199,8 @@ export const auditLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that made the entry (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_audit_log_claim_time").on(table.claimId, table.createdAt)]
 );
@@ -4252,6 +4315,8 @@ export const auditFindings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the audit run that recorded it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_audit_findings_status").on(table.status, table.createdAt),
@@ -4661,6 +4726,8 @@ export const bounties = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that posted it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_bounties_claim").on(table.claimId),
@@ -4751,6 +4818,8 @@ export const prizeClaims = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request that submitted it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_prize_claims_bounty_status").on(table.bountyId, table.status),
@@ -4861,6 +4930,9 @@ export const attachments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request or run that stored it (src/labels.ts). Who
+    // may fetch the bytes is `visibility`, which this does not replace.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_attachments_contribution").on(table.contributionId),
@@ -5534,6 +5606,9 @@ export const requests = pgTable(
         || setweight(to_tsvector('english', ${requests.satisfiedBy}), 'C')
         || setweight(to_tsvector('english', coalesce(${requests.bearsOnText}, '')), 'C')`
     ),
+    // The label of the run or request that filed it (src/labels.ts). The
+    // ledger rows for its work are opened at it.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_requests_state").on(table.state, table.createdAt),
@@ -5564,6 +5639,8 @@ export const requestTargets = pgTable(
       .references(() => requests.id, { onDelete: "cascade" }),
     claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
     sourceId: uuid("source_id").references(() => sources.id, { onDelete: "cascade" }),
+    // The label of the run or request that named the target (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_request_targets_request").on(table.requestId),
@@ -5607,6 +5684,8 @@ export const requestWork = pgTable(
     budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" }),
     quoteMicroUsd: bigint("quote_micro_usd", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run that recorded the work (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_request_work_request").on(table.requestId),
@@ -5661,6 +5740,9 @@ export const nodeMessages = pgTable(
     // answer: the answer returns into that session instead of the sender
     // node's inbox.
     replyToSession: uuid("reply_to_session"),
+    // The label of whoever sent it (src/labels.ts). A claim left pending by
+    // unread messages of one label is taken up at that label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_node_messages_unread")
@@ -5709,6 +5791,9 @@ export const petitions = pgTable(
     replyToSession: uuid("reply_to_session"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    // The label of the run that asked (src/labels.ts). A sitting works the
+    // petitions of its mandate's label, and a follow-up runs at this one.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_petitions_open").on(table.grantId, table.createdAt).where(sql`status IN ('pending', 'escalated')`),
@@ -5745,6 +5830,9 @@ export const mandateInbox = pgTable(
     handledBy: text("handled_by"),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),
     escalationNote: text("escalation_note"),
+    // The label of the run that raised it (src/labels.ts). A sitting works
+    // the items of its mandate's label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_mandate_inbox_open").on(table.grantId, table.createdAt).where(sql`handled_at IS NULL`),
@@ -5772,6 +5860,8 @@ export const mandateDecisions = pgTable(
     petitionId: uuid("petition_id").references(() => petitions.id, { onDelete: "set null" }),
     actionId: uuid("action_id").references(() => actions.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run or request that decided (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_mandate_decisions_grant").on(table.grantId, table.createdAt)]
 );
@@ -5796,6 +5886,8 @@ export const mandatePolicyVersions = pgTable(
     // applied | awaiting_approval (a platform mandate's amended terms)
     status: text("status").notNull().default("applied"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run or request that wrote the version (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_mandate_policy_versions_grant").on(table.grantId, table.createdAt)]
 );
