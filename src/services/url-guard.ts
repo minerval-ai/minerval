@@ -135,15 +135,27 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
   return url;
 }
 
+/** A fetched body as it arrived: its bytes, what the server called it, and where it came from. */
+export interface PublicBody {
+  bytes: Buffer;
+  /** The Content-Type header, or null when none was sent. The server's claim, not a fact about the bytes. */
+  contentType: string | null;
+  /** The URL the body came from, after redirects. */
+  url: string;
+}
+
 /**
- * Fetch a public URL's body as text: every hop validated, redirects
+ * Fetch a public URL's body as bytes: every hop validated, redirects
  * bounded, response time- and size-capped. The one sanctioned way for
- * ingestion to touch the network.
+ * ingestion and the agents' reading tools to touch the network. `maxBytes`
+ * replaces the page-sized cap for a caller that knows it is fetching
+ * something larger (a paper's source archive).
  */
-export async function fetchPublicUrl(
+export async function fetchPublicBytes(
   rawUrl: string,
-  init: { userAgent?: string } = {}
-): Promise<string> {
+  init: { userAgent?: string; maxBytes?: number } = {}
+): Promise<PublicBody> {
+  const maxBytes = init.maxBytes ?? MAX_RESPONSE_BYTES;
   let current = rawUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const url = await assertPublicHttpUrl(current);
@@ -167,25 +179,35 @@ export async function fetchPublicUrl(
     if (!response.ok) {
       throw new Error(`Failed to fetch ${current}: ${response.status}`);
     }
+    const contentType = response.headers.get("content-type");
     const reader = response.body?.getReader();
-    if (!reader) return "";
+    if (!reader) return { bytes: Buffer.alloc(0), contentType, url: current };
     const chunks: Uint8Array[] = [];
     let received = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (received > MAX_RESPONSE_BYTES) {
+      if (received > maxBytes) {
         await reader.cancel().catch(() => undefined);
         throw new Error(
-          `Response from ${current} exceeds ${MAX_RESPONSE_BYTES} bytes`
+          `Response from ${current} exceeds ${maxBytes} bytes`
         );
       }
       chunks.push(value);
     }
-    // A PDF body is extracted to text; every body is scrubbed of the NUL
-    // and control characters a text column refuses (#430).
-    return bodyToText(Buffer.concat(chunks), response.headers.get("content-type"), current);
+    return { bytes: Buffer.concat(chunks), contentType, url: current };
   }
   throw new UnsafeUrlError(`Too many redirects fetching ${rawUrl}`);
+}
+
+/** Fetch a public URL's body as text, under the same guard. */
+export async function fetchPublicUrl(
+  rawUrl: string,
+  init: { userAgent?: string } = {}
+): Promise<string> {
+  const body = await fetchPublicBytes(rawUrl, init);
+  // A PDF body is extracted to text; every body is scrubbed of the NUL
+  // and control characters a text column refuses (#430).
+  return bodyToText(body.bytes, body.contentType, body.url);
 }

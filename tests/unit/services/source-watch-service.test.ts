@@ -10,7 +10,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { state } = vi.hoisted(() => ({
   state: {
-    responses: new Map<string, string>(),
+    responses: new Map<string, string | Buffer>(),
+    /** What the server calls a body, by the same prefix; HTML when unset. */
+    contentTypes: new Map<string, string | null>(),
     fetched: [] as string[],
   },
 }));
@@ -21,6 +23,20 @@ vi.mock("../../../src/services/url-guard.js", () => ({
     state.fetched.push(url);
     for (const [prefix, body] of state.responses) {
       if (url.startsWith(prefix)) return body;
+    }
+    throw new Error(`no response for ${url}`);
+  }),
+  // readPage reads bytes and what the server called them (#912).
+  fetchPublicBytes: vi.fn(async (url: string) => {
+    state.fetched.push(url);
+    for (const [prefix, body] of state.responses) {
+      if (url.startsWith(prefix)) {
+        return {
+          bytes: typeof body === "string" ? Buffer.from(body, "utf8") : body,
+          contentType: state.contentTypes.get(prefix) ?? "text/html; charset=utf-8",
+          url,
+        };
+      }
     }
     throw new Error(`no response for ${url}`);
   }),
@@ -38,6 +54,7 @@ import {
 
 beforeEach(() => {
   state.responses = new Map();
+  state.contentTypes = new Map();
   state.fetched = [];
 });
 
@@ -271,6 +288,43 @@ describe("htmlToText / readPage", () => {
     expect(await readPage("https://plain.example/a", { offset: 60_000 })).toMatchObject({
       chars: 0, truncated: false, next_offset: null,
     });
+  });
+
+  it("reads a data or TeX file as written, not as markup to strip (#912)", async () => {
+    // htmlToText drops what lies between a `<` and a later `>` and folds tabs and blank lines.
+    const tex = "\\begin{tabular}{ll}\nmass\t$m < 3$\\\\\n\nwidth\t$w > 2$\\\\\n\\end{tabular}\n";
+    state.responses.set("https://raw.githubusercontent.com/a/b/main/table.tex", tex);
+    state.contentTypes.set("https://raw.githubusercontent.com/a/b/main/table.tex", "text/plain; charset=utf-8");
+    const res = await readPage("https://raw.githubusercontent.com/a/b/main/table.tex");
+    expect(res).toMatchObject({ ok: true, text: tex });
+
+    // A server that says only "octet-stream" is believed about nothing; the extension decides.
+    const csv = "x,y\n1,<2\n3,>4\n";
+    state.responses.set("https://zenodo.example/files/fig2.csv", csv);
+    state.contentTypes.set("https://zenodo.example/files/fig2.csv", "application/octet-stream");
+    expect(await readPage("https://zenodo.example/files/fig2.csv")).toMatchObject({ ok: true, text: csv });
+
+    // HTML served as text/plain is still a page.
+    state.responses.set("https://odd.example/", "<!doctype html><html><body><p>Hello</p></body></html>");
+    state.contentTypes.set("https://odd.example/", "text/plain");
+    expect(await readPage("https://odd.example/x")).toMatchObject({ ok: true, text: "Hello" });
+  });
+
+  it("names an image or an archive for what it is, with the tool that reads it (#912)", async () => {
+    const png = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]).copy(png);
+    png.write("IHDR", 12, "latin1");
+    png.writeUInt32BE(640, 16);
+    png.writeUInt32BE(480, 20);
+    state.responses.set("https://arxiv.org/html/2401.00001/x1.png", png);
+    // Whatever the server calls it.
+    state.contentTypes.set("https://arxiv.org/html/2401.00001/x1.png", "text/html");
+    const image = await readPage("https://arxiv.org/html/2401.00001/x1.png");
+    expect(image).toMatchObject({ ok: false, problem: expect.stringMatching(/is an image \(image\/png, 640 by 480 px\).*view_image/) });
+
+    state.responses.set("https://arxiv.org/e-print/2401.00001", Buffer.from([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0]));
+    const archive = await readPage("https://arxiv.org/e-print/2401.00001");
+    expect(archive).toMatchObject({ ok: false, problem: expect.stringMatching(/gzip archive.*read_arxiv_source/) });
   });
 
   it("returns a problem rather than throwing on an unfetchable page", async () => {
