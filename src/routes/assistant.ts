@@ -40,6 +40,7 @@ import {
   setAssistantModel,
   startAssistantConversation,
   stopAssistantTurn,
+  type AssistantPageOrigin,
   type AssistantResult,
   type AssistantUser,
 } from "../services/assistant-service.js";
@@ -101,7 +102,9 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
       ? await insufficientOwlsBody(request.auth!.userId!, result.message)
       : { error: result.message, code: result.code };
 
-  app.post<{ Body: { message: string; node_id?: string; model?: string } }>("/conversations", {
+  app.post<{
+    Body: { message: string; node_id?: string; model?: string; page?: AssistantPageOrigin };
+  }>("/conversations", {
     schema: {
       tags: ["assistant"],
       summary: "Start a conversation with the Assistant, the agent that works for your account",
@@ -117,6 +120,32 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
             description: "The node whose page the conversation was opened from, if any.",
           },
           model: { type: "string", description: "One of the models a conversation lists; omitted, the default." },
+          page: {
+            type: "object",
+            description:
+              "Set by the browser extension: the web page the user is reading, and what the " +
+              "extension found on it. The Assistant is told this came from the page.",
+            required: ["url", "title", "claims"],
+            properties: {
+              url: { type: ["string", "null"], maxLength: 4000 },
+              title: { type: ["string", "null"], maxLength: 500 },
+              claims: {
+                type: "array",
+                maxItems: 200,
+                items: {
+                  type: "object",
+                  required: ["verbatim_text", "verdict"],
+                  properties: {
+                    verbatim_text: { type: "string", maxLength: 2000 },
+                    verdict: { type: "string", maxLength: 40 },
+                    claim_id: { type: ["string", "null"], maxLength: 40 },
+                    canonical_form: { type: ["string", "null"], maxLength: 2000 },
+                    status: { type: ["string", "null"], maxLength: 40 },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -127,6 +156,7 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
         user: userOf(request),
         message: request.body.message,
         nodeId: request.body.node_id ?? null,
+        page: request.body.page ?? null,
         model: request.body.model ?? null,
       });
       if (!result.ok) return reply.code(statusOf(result.code)).send(await refuse(request, result));

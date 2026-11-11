@@ -1062,9 +1062,9 @@ contribution, and a Lookout's is a flag for a Steward to judge.
 
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
-live web page against graph state (verdicts range from "egregious" to "fine")
-and powers the extension's chat, grounded in the same graph tools. It never
-writes to the graph.
+live web page against graph state (verdicts range from "egregious" to "fine").
+It never writes to the graph. The extension's chat is no longer this agent's:
+it is the Assistant, opened from the page (docs/accounts.md).
 
 ### The Lean checker
 
@@ -1915,16 +1915,19 @@ A claim's page offers the three snippets under "Embed this claim", beside
 
 The extension analyzes the page you are reading: captured text flows through
 the Extractor and Matcher, then the Extension Agent judges each on-page claim
-against graph state and the verdicts are anchored as a non-destructive overlay,
-with a chat popup grounded in the same graph. Analysis answers immediately when
+against graph state and the verdicts are anchored as a non-destructive overlay.
+The chat popup is the Assistant, told which page it was opened from. Analysis answers immediately when
 the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
-Nothing the extension sends is persisted (#356). The page is whatever the
-reader has open, so the whole pipeline runs untraced (no `agent_runs` or
-`agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or instances,
-and keeps its result only in an in-memory cache; chat is the same. The MCP's
+Page text the extension sends is not persisted (#356). The page is whatever
+the reader has open, so the analysis pipeline runs untraced (no `agent_runs`
+or `agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or
+instances, and keeps its result only in an in-memory cache. Chat is the
+exception since it became the Assistant: a conversation is kept in the
+user's account, with the page's address, title and marked passages (never
+its text), and its runs are logged privately like any Assistant run. The MCP's
 on-demand analysis tools follow the same rule. Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)

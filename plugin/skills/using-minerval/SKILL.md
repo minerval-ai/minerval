@@ -24,9 +24,12 @@ description: >-
   through the API it can do here. Suits work the site does not render
   or run: code, the user's own files, long agentic jobs, rich outputs.
 - **Browser extension** (Chrome Web Store, "Minerval"): marks claims on
-  the page being read by what the graph holds. Analysing a page needs an
-  API key pasted into its settings; passages the graph already recorded
-  from a page show without one.
+  the page being read by what the graph holds, and its Chat tab is the
+  Assistant, told which page it was opened from. Analysing a page and
+  chat need an API key pasted into its settings; passages the graph
+  already recorded from a page show without one. A held action cannot
+  be run from the extension: it links to the conversation on
+  minerval.ai.
 - **Claude Code / Cowork plugin**: the MCP connection plus
   `/minerval:check`, `/minerval:claim`, `/minerval:factcheck-diff`,
   `/minerval:contribute`, `/minerval:report`, and a fact-checker
