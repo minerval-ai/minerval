@@ -142,6 +142,23 @@ export function getFundRequestToolDefinition(): Tool {
  * configured model is Anthropic-served (agents/researcher.ts); the launcher
  * is told which, since a replication on a tier without it cannot run code.
  */
+/**
+ * What a Researcher run can use, for whoever writes its brief (#847): a
+ * brief that names a tool the Researcher lacks sends the run looking for
+ * it. Shared by delegate_research and commission (kind research).
+ */
+export function researcherToolsSentence(graphWrites = true): string {
+  return (
+    "The researcher's tools are web search, read_page, the graph's read tools, query_sql " +
+    "(read-only SQL over the graph's public views), scholarly search where configured, " +
+    (graphWrites
+      ? "a notebook, and the provenance tools on a claim-scoped task. "
+      : "and a notebook. ") +
+    "It has no others: no Lean checker, no model or other API to call, no GPU, and it cannot " +
+    "commission or delegate work of its own, so a brief should not ask for a tool outside this list. "
+  );
+}
+
 export function sandboxTiersSentence(): string {
   const withSandbox = RESEARCH_MODEL_TIERS.filter((t) => {
     const model = modelForTier(t);
@@ -212,10 +229,8 @@ export function getResearchToolDefinitions(
         "plan). Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
-        "Every tier has web search, read_page, the graph's read tools, scholarly search " +
-        (graphWrites
-          ? "where configured, a notebook, and the provenance tools on a claim-scoped task. "
-          : "where configured, and a notebook. ") +
+        "On every tier: " +
+        researcherToolsSentence(graphWrites) +
         "Tiers: 'strong' runs the best model class, for a replication or an analysis " +
         "where the best model pays; 'standard' for most delegated reading and checking; " +
         "'cheap' for reading and mapping a large literature economically. " +

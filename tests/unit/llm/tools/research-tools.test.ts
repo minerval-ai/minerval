@@ -145,6 +145,28 @@ describe("definitions", () => {
     expect(mandate.description).toContain("writes nothing to the graph directly (research a mandate launches");
     expect(mandate.description).not.toContain("provenance tools on a claim-scoped task");
   });
+
+  it("tells whoever writes the brief what the Researcher can use, query_sql included (#847)", async () => {
+    for (const d of [
+      getResearchToolDefinitions({ claimScoped: true })[0]!,
+      getResearchToolDefinitions({ claimScoped: false, graphWrites: false })[0]!,
+    ]) {
+      expect(d.description).toContain("query_sql (read-only SQL over the graph's public views)");
+      expect(d.description).toContain("a brief should not ask for a tool outside this list");
+    }
+    const { getSpendToolDefinitions } = await import("../../../../src/llm/tools/spend-tools.js");
+    const commission = getSpendToolDefinitions().find((t) => t.name === "commission")!;
+    expect(commission.description).toContain("The researcher's tools are web search, read_page, the graph's read tools, query_sql");
+    expect(commission.description).toMatch(/code-execution sandbox/);
+  });
+
+  it("says in fund_request that the run works to the budget given, not to the quote (#885)", async () => {
+    const { getFundRequestToolDefinition } = await import("../../../../src/llm/tools/research-tools.js");
+    const d = getFundRequestToolDefinition().description!;
+    expect(d).toContain("The run works to the budget you give here, not to the quote");
+    expect(d).toContain("A budget below the quote is accepted, and the result says so plainly");
+    expect(d).toContain("funded at $X of a $Y quote");
+  });
 });
 
 describe("delegate_research", () => {
