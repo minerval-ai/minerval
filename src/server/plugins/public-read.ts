@@ -160,7 +160,9 @@ async function cachePolicyOnSend(
 
   const body = typeof payload === "string" || Buffer.isBuffer(payload) ? payload : null;
   if (
-    request.method !== "GET" ||
+    // HEAD is answered by the GET handler and carries the same headers; the
+    // body is dropped after this hook, so the validator is still the GET's.
+    (request.method !== "GET" && request.method !== "HEAD") ||
     reply.statusCode !== 200 ||
     body === null ||
     !CACHEABLE_TYPE.test(String(reply.getHeader("content-type") ?? ""))
@@ -206,7 +208,19 @@ export async function registerPublicRead(app: FastifyInstance): Promise<void> {
       readClasses.set(routeKey(String(method), route.url), readClass);
     }
     route.config = { ...route.config, readClass };
-    route.onSend = [...onSend, cachePolicyOnSend] as RouteOptions["onSend"];
+    // Last, so it sees the bytes actually sent. On the HEAD twin Fastify
+    // generates for a GET, "last" has one exception: Fastify's own hook that
+    // drops the body, which has to stay after this one or there would be no
+    // bytes left to take the validator from.
+    const dropsHeadBody = onSend.findIndex(
+      (hook) => typeof hook === "function" && hook.name === "headRouteOnSendHandler"
+    );
+    const at = dropsHeadBody === -1 ? onSend.length : dropsHeadBody;
+    route.onSend = [
+      ...onSend.slice(0, at),
+      cachePolicyOnSend,
+      ...onSend.slice(at),
+    ] as RouteOptions["onSend"];
   });
 }
 

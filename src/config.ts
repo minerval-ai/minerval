@@ -97,10 +97,10 @@ const configSchema = z.object({
   publicReadMaxAgeSeconds: z.coerce.number().int().min(0).default(60),
   publicReadStaleWhileRevalidateSeconds: z.coerce.number().int().min(0).default(300),
 
-  // The per-IP limit on requests without credentials. Cloudflare enforces it
-  // (docs/infrastructure.md, "Caching and the anonymous rate limit"); this
-  // value is what the API tells callers the limit is, in the OpenAPI
-  // description. Change the Cloudflare rule and this together.
+  // The per-IP limit on requests with no recognised credential, per minute,
+  // enforced by each API instance (src/server/plugins/anonymous-rate-limit.ts)
+  // and stated to callers in the OpenAPI description and the
+  // RateLimit-Policy header.
   anonymousRateLimitPerMinute: z.coerce
     .number()
     .int()
