@@ -12,13 +12,29 @@ vi.hoisted(() => {
   process.env.TRACE_LEVEL = "full";
 });
 
+// No model is called: the provider answers from here. Everything after it is
+// the real path, from the client's prompt step to the rows in Postgres.
+vi.mock("../../src/llm/providers/index.js", async (orig) => ({
+  ...(await orig<typeof import("../../src/llm/providers/index.js")>()),
+  getAdapter: () => ({
+    complete: async (options: { model: string }) => ({
+      content: "Done.",
+      model: options.model,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      stopReason: "end_turn",
+    }),
+  }),
+}));
+
 import { rawQuery } from "../../src/db/client.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
+import { complete } from "../../src/llm/client.js";
 import { currentLabel, getUsageContext, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { addArgument, setArgumentEvaluation } from "../../src/services/argument-service.js";
 import { defineQuantity, recordEstimate } from "../../src/services/quantity-service.js";
 import { markQuestion, recordQuestionAssessment } from "../../src/services/question-service.js";
+import { verifyRunLog, type RunLogCheck } from "../../src/services/run-view-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
 import { seedClaim } from "./helpers.js";
 
@@ -241,6 +257,81 @@ describe("a write inside a run", () => {
     const again = await runWithUsageContext({ label: INTERNAL }, () => getOrCreateSource({ url, content: "The text." }));
     expect(again.id).toBe(first.id);
     expect(await labelOf("sources", first.id)).toBe("public");
+  });
+});
+
+// The label a run worked at is in its log, on the prompt step's setup, where
+// the hash chain covers it (docs/run-log.md).
+describe("the label in a run's log", () => {
+  /** A run that makes one model call, so the client records its prompt step; returns the run's id. */
+  async function runWithOneCall(): Promise<string> {
+    return withAgent("matcher", async () => {
+      await complete({
+        model: "claude-sonnet-5-5",
+        system: "You are a test.",
+        messages: [{ role: "user", content: "Say done." }],
+      });
+      return getUsageContext().trace!.runId;
+    });
+  }
+
+  /** Wait for the run to close with its seal, which in the default mode comes after it returns. */
+  async function sealed(runId: string) {
+    for (let i = 0; i < 250; i++) {
+      const [row] = await rawQuery<{ sensitivity_label: string; log_hash: string | null; sealed_at: Date | null; steps: number }>(
+        `SELECT sensitivity_label, log_hash, sealed_at, steps FROM agent_runs WHERE id = $1 AND finished_at IS NOT NULL`,
+        [runId]
+      );
+      if (row) return row;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error("the run did not close");
+  }
+
+  async function promptStep(runId: string) {
+    const [step] = await rawQuery<{ seq: number; kind: string; setup: { label?: string; model?: string } | null }>(
+      `SELECT seq, kind, content->'setup' AS setup FROM agent_steps WHERE run_id = $1 ORDER BY seq LIMIT 1`,
+      [runId]
+    );
+    return step!;
+  }
+
+  async function verify(runId: string): Promise<RunLogCheck> {
+    const check = await verifyRunLog(runId);
+    if (!check || "withheld" in check) throw new Error("expected a check");
+    return check;
+  }
+
+  it("is on the prompt step's setup and under the run's seal", async () => {
+    const runId = await runWithUsageContext({ label: INTERNAL }, runWithOneCall);
+    const run = await sealed(runId);
+    expect(run.sensitivity_label).toBe(INTERNAL);
+    expect(run.sealed_at).not.toBeNull();
+
+    // The first step is the prompt step the client recorded, and its setup names the label.
+    const step = await promptStep(runId);
+    expect(step).toMatchObject({ seq: 0, kind: "prompt", setup: { label: INTERNAL, model: "claude-sonnet-5-5" } });
+
+    // The chain, prompt step included, reaches the seal.
+    expect(await verify(runId)).toMatchObject({
+      sealed: true, log_hash: run.log_hash, head: run.log_hash, intact: true, problem: null,
+      steps_counted: 2, steps_recorded: 2, steps_checked: 2,
+    });
+
+    // So the label cannot be changed afterwards without the log showing it.
+    await rawQuery(
+      `UPDATE agent_steps SET content = jsonb_set(content, '{setup,label}', '"public"') WHERE run_id = $1 AND seq = 0`,
+      [runId]
+    );
+    expect(await verify(runId)).toMatchObject({ intact: false, problem: { seq: 0, reason: "hash_mismatch" } });
+  });
+
+  it("says public for a run whose context sets no label", async () => {
+    const runId = await runWithOneCall();
+    const run = await sealed(runId);
+    expect(run.sensitivity_label).toBe("public");
+    expect(await promptStep(runId)).toMatchObject({ seq: 0, kind: "prompt", setup: { label: "public" } });
+    expect(await verify(runId)).toMatchObject({ sealed: true, head: run.log_hash, intact: true, problem: null, steps_checked: 2 });
   });
 });
 
