@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { DocLayout } from "@/components/DocLayout";
 import { PageHead } from "@/components/PageHead";
+import { loadFeatures } from "@/lib/data";
+import { featureOn } from "@/lib/features";
 
 // The documentation hub (issue #112): a short overview of the structure and
 // the pipeline, then links to the long verbatim documents (constitution,
@@ -19,7 +21,8 @@ const toc = [
   { depth: 2, text: "Built on the graph", slug: "built-on-the-graph" },
 ];
 
-export default function DocsPage() {
+export default async function DocsPage() {
+  const extensionOn = featureOn(await loadFeatures(), "extension");
   return (
     <DocLayout toc={toc}>
       <div className="doc">
@@ -147,12 +150,15 @@ export default function DocsPage() {
             <Link href="/claims">The website</Link>: browse any claim, its decomposition,
             its provenance, and its full assessment history.
           </li>
-          <li>
-            <a href="https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci">
-              The browser extension
-            </a>
-            : claims on any webpage, colour-coded by verdict as you read.
-          </li>
+          {/* listed only where this deployment has the extension */}
+          {extensionOn && (
+            <li>
+              <a href="https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci">
+                The browser extension
+              </a>
+              : claims on any webpage, colour-coded by verdict as you read.
+            </li>
+          )}
           <li>
             <a href="https://api.claimgraph.io/docs">The API &amp; MCP server</a>: the
             same graph as a REST API and a remote MCP endpoint. Keys are minted at{" "}

@@ -70,13 +70,16 @@ function Segmented<T extends string>({
 }
 
 export function ClaimsControls({
-  q, assessed, imp, prizes = false, type, tag, kind, resultCount,
+  q, assessed, imp, prizes = false, prizeFilter = true, type, tag, kind, resultCount,
 }: {
   q: string;
   assessed: AssessedFilter;
   imp: ImportanceFloor;
   // Only claims with a live prize (docs/mathematics.md §8.3; API with_prizes).
   prizes?: boolean;
+  // Whether the prize filter is offered at all: false in a deployment with
+  // prizes switched off, where no claim can carry one.
+  prizeFilter?: boolean;
   // A claim-type restriction, set by a territory's front door rather than a
   // control of its own; shown as a removable lever while active.
   type?: ClaimType;
@@ -168,15 +171,17 @@ export function ClaimsControls({
           />
         </span>
 
-        <span className="filter-group">
-          <span className="sc">Prizes</span>
-          <Segmented
-            ariaLabel="Filter by prize"
-            value={prizes ? "with" : "any"}
-            segments={PRIZE_SEGMENTS}
-            onPick={(v) => go({ prizes: v === "with" })}
-          />
-        </span>
+        {prizeFilter && (
+          <span className="filter-group">
+            <span className="sc">Prizes</span>
+            <Segmented
+              ariaLabel="Filter by prize"
+              value={prizes ? "with" : "any"}
+              segments={PRIZE_SEGMENTS}
+              onPick={(v) => go({ prizes: v === "with" })}
+            />
+          </span>
+        )}
 
         {type && (
           <span className="filter-group">

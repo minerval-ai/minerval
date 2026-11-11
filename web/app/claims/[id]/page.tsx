@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { loadClaim, loadMergedFrom } from "@/lib/data";
+import { loadClaim, loadFeatures, loadMergedFrom } from "@/lib/data";
 import { mergedFromParam, mergedRedirectPath } from "@/lib/merged";
 import { claimPreview, describePreview, truncateText } from "@/lib/preview";
 import { ClaimMargins } from "@/components/claim/ClaimMargins";
@@ -81,7 +81,7 @@ export default async function ClaimPage({
   return (
     <>
       {mergedFrom && <MergedFromNote from={mergedFrom} />}
-      <ClaimMargins detail={detail} source={source} />
+      <ClaimMargins detail={detail} source={source} features={await loadFeatures()} />
     </>
   );
 }

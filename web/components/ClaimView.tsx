@@ -6,6 +6,7 @@ import {
   DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
+import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
@@ -78,13 +79,20 @@ function fmtDate(iso: string) {
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fixture?: boolean }) {
+export function ClaimView({
+  detail, fixture = false, features = ALL_FEATURES_ON,
+}: {
+  detail: ClaimDetail;
+  fixture?: boolean;
+  features?: Features;
+}) {
   const { claim, tree, instances, trajectory, record } = detail;
   const { voices, mentions } = splitInstances(instances ?? []);
   // Mathematics (docs/mathematics.md §8.3): the formal statement, the derived
   // machine-checked badge, the bounty, the attempts, and the prize claims.
   // Each is null or empty until the API serves it, and each section renders
-  // nothing then.
+  // nothing then. A deployment with mathematics or prizes switched off gets
+  // the same: loadClaim empties what belongs to a feature that is off.
   const formalization = detail.formalization ?? null;
   const verification = detail.verification ?? null;
   const bounty = detail.bounty ?? null;
@@ -241,7 +249,9 @@ export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fi
               rather than in place of it: the checker confirms the proof;
               the verdict is still the steward's judgment of the claim as
               worded. */}
-          {verification && <MachineChecked kind={verification.kind} size="lg" />}
+          {verification && (
+            <MachineChecked kind={verification.kind} size="lg" rules={featureOn(features, "prizes")} />
+          )}
           {/* Credence (P(claim true)) gets the meter, when the Steward stated
               one; verdict confidence is meta and stays a quiet labelled figure
               so the two are never mistaken for each other (#160). */}
