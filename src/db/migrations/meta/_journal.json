@@ -869,6 +869,13 @@
       "when": 1794436592886,
       "tag": "0123_assistant_turn_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1794438567284,
+      "tag": "0124_refetch_arxiv_facts",
+      "breakpoints": true
     }
   ]
 }

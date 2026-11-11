@@ -8,7 +8,9 @@
  *  - Crossref, for a document with a DOI: the registry the publisher itself
  *    deposits to, which also carries the update notices.
  *  - The page's own metadata: the `citation_*` tags scholarly publishers
- *    emit for indexers, then Dublin Core and Open Graph.
+ *    emit for indexers, then Dublin Core and Open Graph. Where the URL is a
+ *    rendering that carries none (an arXiv PDF or full-text HTML page), the
+ *    page of the same work that does (factsPageUrl).
  *  - The Internet Archive's availability API, for an archived copy.
  *
  * Every fact is filled once and never overwritten: a column already set
@@ -156,6 +158,24 @@ export function parsePageFacts(content: string | null | undefined): PageFacts {
   };
 }
 
+/**
+ * Where a document's facts are stated, when the URL cited is a rendering
+ * that does not state them. arXiv serves one paper at three addresses: the
+ * abstract page (/abs/) carries the `citation_*` tags, and the full-text
+ * HTML (/html/) and the PDF (/pdf/) carry none, so a paper cited by either
+ * of those had no author, date or publisher. Null for a URL whose own page
+ * is the place to look.
+ */
+export function factsPageUrl(url: string | null | undefined): string | null {
+  const m = (url ?? "").match(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:html|pdf)\/([^?#]+?)(?:\.pdf)?\/?(?:[?#].*)?$/i);
+  return m ? `https://arxiv.org/abs/${m[1]}` : null;
+}
+
+/** A source kind the address alone settles: a paper on arXiv, at any of its addresses, is a preprint. */
+export function kindFromUrl(url: string | null | undefined): SourceKind | null {
+  return /^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|html|pdf)\//i.test(url ?? "") ? "preprint" : null;
+}
+
 /** The Internet Archive's closest snapshot of a URL, or null. */
 export async function findArchivedCopy(
   url: string,
@@ -251,7 +271,25 @@ export async function refreshSourceFacts(
   );
   if (!row) return { source_id: sourceId, filled: [], events_recorded: 0, doi: null };
 
-  const page = parsePageFacts(row.raw_content);
+  let page = parsePageFacts(row.raw_content);
+  // A rendering that states no facts of its own (an arXiv PDF or HTML page):
+  // read them from the page that does. The source's own page still wins
+  // wherever it says something. A failed fetch leaves the facts as they are.
+  const elsewhere = factsPageUrl(row.url);
+  if (elsewhere && (page.authors.length === 0 || !page.published_date || !page.publisher)) {
+    const other = await (deps.fetch ?? ((u: string) => fetchPublicUrl(u)))(elsewhere)
+      .then(parsePageFacts)
+      .catch(() => null);
+    if (other) {
+      page = {
+        title: page.title ?? other.title,
+        authors: page.authors.length ? page.authors : other.authors,
+        publisher: page.publisher ?? other.publisher,
+        published_date: page.published_date ?? other.published_date,
+        doi: page.doi ?? other.doi,
+      };
+    }
+  }
   const doi = row.doi ?? page.doi ?? extractDois(row.url ?? "")[0] ?? null;
 
   let work: DoiCheck | null = null;
@@ -271,7 +309,7 @@ export async function refreshSourceFacts(
     published_date: isoDatePrefix(work?.published) ?? page.published_date,
     doi,
     archived_url: archived,
-    source_type: work?.type ? CROSSREF_KINDS[work.type] ?? null : null,
+    source_type: (work?.type ? CROSSREF_KINDS[work.type] : null) ?? kindFromUrl(row.url),
     title: work?.title ?? page.title,
   };
 

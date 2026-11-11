@@ -37,7 +37,7 @@ const ROW_NOT_SHOWN = { examined: true, on: ["evidence_not_shown"] };
 
 async function seedSource(): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'DB-test source', 'paper') RETURNING id`,
+    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'DB-test source', 'journal_article') RETURNING id`,
     [`https://example.org/coverage/${randomUUID()}`]
   );
   return row!.id;
