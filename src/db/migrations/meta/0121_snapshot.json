@@ -1,5 +1,5 @@
 {
-  "id": "03a4524c-cb0f-4ae2-a619-d7bdf40e364f",
+  "id": "86d8bef2-d807-4ab3-9144-29614bbd3076",
   "prevId": "8535b779-2fe7-4e4e-a9a0-dd1375517db5",
   "version": "7",
   "dialect": "postgresql",
@@ -1324,6 +1324,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1395,7 +1402,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "agent_runs_sensitivity_label_labels_name_fk": {
+          "name": "agent_runs_sensitivity_label_labels_name_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -2281,6 +2302,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2354,6 +2382,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "argument_evaluations_sensitivity_label_labels_name_fk": {
+          "name": "argument_evaluations_sensitivity_label_labels_name_fk",
+          "tableFrom": "argument_evaluations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -3241,6 +3282,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -3294,6 +3342,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assessments_sensitivity_label_labels_name_fk": {
+          "name": "assessments_sensitivity_label_labels_name_fk",
+          "tableFrom": "assessments",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9914,6 +9975,98 @@
       },
       "isRLSEnabled": false
     },
+    "public.label_reads": {
+      "name": "label_reads",
+      "schema": "",
+      "columns": {
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reads": {
+          "name": "reads",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "label_reads_label_labels_name_fk": {
+          "name": "label_reads_label_labels_name_fk",
+          "tableFrom": "label_reads",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "label_reads_reads_labels_name_fk": {
+          "name": "label_reads_reads_labels_name_fk",
+          "tableFrom": "label_reads",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "reads"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "label_reads_label_reads_pk": {
+          "name": "label_reads_label_reads_pk",
+          "columns": [
+            "label",
+            "reads"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.labels": {
+      "name": "labels",
+      "schema": "",
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.lean_checks": {
       "name": "lean_checks",
       "schema": "",
@@ -13964,6 +14117,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14011,6 +14171,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "quantity_estimates_sensitivity_label_labels_name_fk": {
+          "name": "quantity_estimates_sensitivity_label_labels_name_fk",
+          "tableFrom": "quantity_estimates",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -14255,6 +14428,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14302,6 +14482,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "question_assessments_sensitivity_label_labels_name_fk": {
+          "name": "question_assessments_sensitivity_label_labels_name_fk",
+          "tableFrom": "question_assessments",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -16115,6 +16308,140 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.source_interests": {
+      "name": "source_interests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "party": {
+          "name": "party",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stake": {
+          "name": "stake",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_source_interests_source": {
+          "name": "idx_source_interests_source",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_source_interests_claim": {
+          "name": "idx_source_interests_claim",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "claim_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "source_interests_source_id_sources_id_fk": {
+          "name": "source_interests_source_id_sources_id_fk",
+          "tableFrom": "source_interests",
+          "tableTo": "sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "source_interests_claim_id_claims_id_fk": {
+          "name": "source_interests_claim_id_claims_id_fk",
+          "tableFrom": "source_interests",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.source_relationships": {
       "name": "source_relationships",
       "schema": "",
@@ -16508,6 +16835,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16557,7 +16891,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "sources_sensitivity_label_labels_name_fk": {
+          "name": "sources_sensitivity_label_labels_name_fk",
+          "tableFrom": "sources",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "sources_url_unique": {
@@ -16569,12 +16917,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "ck_sources_source_type": {
-          "name": "ck_sources_source_type",
-          "value": "\"sources\".\"source_type\" IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.taggings": {
@@ -16863,140 +17206,6 @@
         }
       },
       "isRLSEnabled": false
-    },
-    "public.source_interests": {
-      "name": "source_interests",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "party": {
-          "name": "party",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stake": {
-          "name": "stake",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recorded_by": {
-          "name": "recorded_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_source_interests_source": {
-          "name": "idx_source_interests_source",
-          "columns": [
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_source_interests_claim": {
-          "name": "idx_source_interests_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "claim_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "source_interests_source_id_sources_id_fk": {
-          "name": "source_interests_source_id_sources_id_fk",
-          "tableFrom": "source_interests",
-          "tableTo": "sources",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "source_interests_claim_id_claims_id_fk": {
-          "name": "source_interests_claim_id_claims_id_fk",
-          "tableFrom": "source_interests",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
     }
   },
   "enums": {},
@@ -17071,9 +17280,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
-      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\" from \"argument_evaluations\" where \"argument_evaluations\".\"is_current\" = true",
+      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\", \"sensitivity_label\" from \"argument_evaluations\" where \"argument_evaluations\".\"is_current\" = true",
       "name": "argument_evaluations_in_force",
       "schema": "public",
       "isExisting": false,
@@ -17199,9 +17415,16 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\" from \"assessments\" where \"assessments\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\", \"sensitivity_label\" from \"assessments\" where \"assessments\".\"is_current\" = true",
       "name": "assessments_in_force",
       "schema": "public",
       "isExisting": false,
@@ -17290,9 +17513,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\" from \"quantity_estimates\" where \"quantity_estimates\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\" from \"quantity_estimates\" where \"quantity_estimates\".\"is_current\" = true",
       "name": "quantity_estimates_in_force",
       "schema": "public",
       "isExisting": false,
@@ -17406,9 +17636,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\" from \"question_assessments\" where \"question_assessments\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\" from \"question_assessments\" where \"question_assessments\".\"is_current\" = true",
       "name": "question_assessments_in_force",
       "schema": "public",
       "isExisting": false,

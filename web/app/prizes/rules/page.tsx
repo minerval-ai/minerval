@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { createHash } from "node:crypto";
+import { loadFeatures } from "@/lib/data";
+import { featureOn } from "@/lib/features";
 import {
   PRIZE_RULES, PRIZE_RULES_EFFECTIVE, PRIZE_RULES_VERSION, prizeRulesText,
 } from "@/lib/prize-rules";
@@ -17,9 +20,18 @@ export const metadata: Metadata = {
   description: "The official rules for prizes offered on Minerval, versioned, with an effective date and a content hash.",
 };
 
+// Rendered on request, like the prize listing. Built ahead of time, the page
+// would be a stored copy made with whatever the build could see, and a copy
+// made where the API could not be asked would stay up in a deployment that
+// has prizes off.
+export const dynamic = "force-dynamic";
+
 const CONTENT_HASH = createHash("sha256").update(prizeRulesText(), "utf8").digest("hex");
 
-export default function PrizeRulesPage() {
+export default async function PrizeRulesPage() {
+  // The rules of a prize nobody can be offered here would read as an offer,
+  // so the page is not found where prizes are off.
+  if (!featureOn(await loadFeatures(), "prizes")) notFound();
   return (
     <div className="doc">
       <PageHead

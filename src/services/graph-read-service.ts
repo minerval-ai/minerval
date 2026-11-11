@@ -26,6 +26,12 @@ import { STEWARD_PARKED_DESCRIPTION } from "./steward-park-reason.js";
 import { attachClaimTags, resolveTagBySlug } from "./tag-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
 import { NODE_KINDS } from "../schemas/kinds.js";
+import {
+  SINCE_ASSESSED_ROW_DESCRIPTION,
+  sinceAssessedRow,
+  summarizeJudgmentChanges,
+  type JudgmentChangeSummary,
+} from "./judgment-inputs-service.js";
 
 /** Who is reading: an outside caller over MCP, or one of the graph's agents. */
 export type GraphReadAudience = "caller" | "agent";
@@ -92,7 +98,11 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "actively it is disputed, 0..1, kept apart from the status; null until " +
         "judged), its current judgment (`assessment_status` and " +
         "`assessment_confidence` on a claim, `standing` on a question, " +
-        "`estimate` and `unit` on a quantity), `days_since_assessed`, the " +
+        "`estimate` and `unit` on a quantity), `days_since_assessed`, " +
+        "`since_assessed` (" +
+        SINCE_ASSESSED_ROW_DESCRIPTION +
+        "; get_claim has every count, and with include " +
+        "`judgment_inputs` says which nodes and sources), the " +
         "amount of any live prize for a machine-checked proof or disproof of " +
         "its formal statement (`prize_micro_usd`) and whether such a check " +
         "exists (`checked`), its topic tags and its page_url." +
@@ -246,6 +256,12 @@ async function searchSignals(ids: string[]): Promise<Map<string, SearchSignals>>
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/** `since_assessed` for one row in its short form, or no key at all for a node with no judgment. */
+function sinceAssessedKey(summary: JudgmentChangeSummary | undefined) {
+  const since = sinceAssessedRow(summary);
+  return since ? { since_assessed: since } : {};
+}
+
 async function searchClaims(input: Record<string, unknown>): Promise<GraphReadResult> {
   const query = String(input.query ?? "");
   const tag = typeof input.tag === "string" ? input.tag.trim() : "";
@@ -264,12 +280,18 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
     tagId,
     kind: oneOf(input.kind, NODE_KINDS),
   });
-  const [signals, tagged] = await Promise.all([
+  const [signals, changes, tagged] = await Promise.all([
     // The signals decorate the hits, as tags do: their failure costs the
     // signals, never the search.
     searchSignals(results.map((r) => r.id)).catch((err) => {
       console.error(`[graph-read] search signals failed: ${err instanceof Error ? err.message : err}`);
       return new Map<string, SearchSignals>();
+    }),
+    // What has changed under each hit's judgment (#566), for all of them in
+    // one query. Its failure costs the field, never the search.
+    summarizeJudgmentChanges(results.map((r) => r.id)).catch((err) => {
+      console.error(`[graph-read] search changes-since failed: ${err instanceof Error ? err.message : err}`);
+      return null as Map<string, JudgmentChangeSummary> | null;
     }),
     attachClaimTags(results),
   ]);
@@ -291,6 +313,7 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
           assessment_status: r.assessment_status,
           assessment_confidence: r.assessment_confidence,
           days_since_assessed: s?.days_since_assessed ?? null,
+          ...sinceAssessedKey(changes?.get(r.id)),
           steward_state: s?.steward_state ?? null,
           prize_micro_usd: r.prize_micro_usd ?? null,
           checked: r.checked ?? null,

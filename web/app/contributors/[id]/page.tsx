@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchContributorProfile } from "../../../lib/api";
+import { loadFeatures } from "../../../lib/data";
+import { featureOn } from "../../../lib/features";
 import { OwlMark } from "../../../components/OwlMark";
 import { PageHead } from "@/components/PageHead";
 
@@ -55,6 +57,8 @@ export default async function ContributorPage({
   if (!profile) notFound();
 
   const c = profile.contributor;
+  // The prize owls figure is shown only where this deployment has prizes.
+  const prizesOn = featureOn(await loadFeatures(), "prizes");
 
   return (
     <div className="col">
@@ -77,7 +81,7 @@ export default async function ContributorPage({
             <OwlMark size={14} className="owl-mark" />
             {c.owls_earned} owls earned
           </span>
-          {typeof c.owls_prized === "number" && c.owls_prized > 0 && (
+          {prizesOn && typeof c.owls_prized === "number" && c.owls_prized > 0 && (
             <span className="summary-chip">
               {c.owls_prized} owls in prizes
             </span>

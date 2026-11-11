@@ -32,6 +32,7 @@ import type {
   RunStepSummary,
   RunStep,
 } from "./types";
+import { ALL_FEATURES_ON, featuresFromResponse, type Features } from "./features";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
 // environment and attached here, on the server — it is never shipped to the
@@ -76,6 +77,29 @@ async function apiGet<T>(path: string): Promise<T> {
     throw new ApiError(`Minerval API ${res.status} ${res.statusText} for ${path}`, res.status);
   }
   return (await res.json()) as T;
+}
+
+// --- features ----------------------------------------------------------------
+
+// Which optional parts of the product this deployment has on (GET
+// /setup/features; lib/features.ts). The answer changes only when the API is
+// redeployed, and it rides the same short cache as every other read, so a
+// deployment that switches a feature off shows it here within half a minute.
+//
+// A failed read answers "every feature is on" instead of throwing. That is
+// how the site behaved before features could be switched off, so a passing
+// error costs at worst a link that leads nowhere for half a minute. Failing
+// the other way would make part of the site vanish from a deployment that
+// has it. The offline design preview, with no API to ask, shows everything
+// for the same reason.
+export async function fetchFeatures(): Promise<Features> {
+  if (!BASE) return ALL_FEATURES_ON;
+  try {
+    return featuresFromResponse(await apiGet<unknown>("/setup/features"));
+  } catch (err) {
+    console.error("[minerval] features read failed, treating every feature as on:", err);
+    return ALL_FEATURES_ON;
+  }
 }
 
 // --- mathematics: field defaults ---------------------------------------------

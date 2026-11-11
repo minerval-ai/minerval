@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ClaimDetail } from "@/lib/types";
 import type { DataSource } from "@/lib/data";
+import { ALL_FEATURES_ON, type Features } from "@/lib/features";
 import { ClaimView } from "@/components/ClaimView";
 import { DecompositionCompass } from "./DecompositionCompass";
 import { MapCard } from "./MapCard";
@@ -16,7 +17,17 @@ import styles from "./margins.module.css";
 // reading column in the centre. On narrow screens the rails fold inline above
 // and below the reading column. Assessment history lives at the bottom of the
 // reading column (#196), not in a rail.
-export function ClaimMargins({ detail, source }: { detail: ClaimDetail; source: DataSource }) {
+//
+// `features` says which optional parts this deployment has on. The claim's
+// own data already arrives without what is off (lib/data.ts, loadClaim); the
+// reading column takes the list for the links that lead to a feature's pages.
+export function ClaimMargins({
+  detail, source, features = ALL_FEATURES_ON,
+}: {
+  detail: ClaimDetail;
+  source: DataSource;
+  features?: Features;
+}) {
   // A question is a node of its own kind (constitution §7a), with a page of
   // its own shape in the same frame.
   const isQuestion = detail.claim.kind === "question" && !!detail.question;
@@ -40,7 +51,7 @@ export function ClaimMargins({ detail, source }: { detail: ClaimDetail; source: 
           {isQuestion ? (
             <QuestionView detail={detail} fixture={source === "fixture"} />
           ) : (
-            <ClaimView detail={detail} fixture={source === "fixture"} />
+            <ClaimView detail={detail} fixture={source === "fixture"} features={features} />
           )}
         </div>
 

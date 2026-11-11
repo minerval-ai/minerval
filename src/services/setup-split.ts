@@ -34,6 +34,12 @@ export interface SetupRecord {
    * be built.
    */
   promptSet?: string | null;
+  /**
+   * The label the run wrote at (src/labels.ts), so it is part of what the
+   * log's chain covers. Absent on runs recorded before labels existed, all
+   * of which were public.
+   */
+  label?: string;
   model: string;
   effort: string | null;
   maxTokens: number | null;
@@ -92,10 +98,12 @@ export function splitSetup(input: {
 export function setupRecord(
   parts: readonly SplitPart[],
   settings: { model: string; effort?: string | null; maxTokens?: number | null; temperature?: number | null },
-  commit: string | null
+  commit: string | null,
+  label: string
 ): SetupRecord {
   return {
     commit,
+    label,
     model: settings.model,
     effort: settings.effort ?? null,
     maxTokens: settings.maxTokens ?? null,

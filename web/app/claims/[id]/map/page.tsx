@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { loadClaim } from "@/lib/data";
+import { loadClaim, loadFeatures } from "@/lib/data";
 import { mergedRedirectPath } from "@/lib/merged";
 import { GraphView } from "@/components/graph/GraphView";
 import { PageHead } from "@/components/PageHead";
@@ -59,5 +59,5 @@ export default async function ClaimMapPage({
       </div>
     );
   }
-  return <GraphView initialDetail={detail} source={source} />;
+  return <GraphView initialDetail={detail} source={source} features={await loadFeatures()} />;
 }

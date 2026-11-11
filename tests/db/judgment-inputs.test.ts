@@ -7,12 +7,22 @@ import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { rawQuery } from "../../src/db/client.js";
-import { getJudgmentInputs, recordJudgmentInputs } from "../../src/services/judgment-inputs-service.js";
+import {
+  countJudgmentChanges,
+  getJudgmentInputs,
+  recordJudgmentInputs,
+  sinceAssessed,
+  sinceAssessedRow,
+  summarizeJudgmentChanges,
+} from "../../src/services/judgment-inputs-service.js";
 import { defineQuantity, recordEstimate } from "../../src/services/quantity-service.js";
 import { markQuestion, recordQuestionAssessment } from "../../src/services/question-service.js";
 import { claimRoutes } from "../../src/routes/claims.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
-import { seedClaim } from "./helpers.js";
+import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
+import { executeManagementTool } from "../../src/llm/agents/grantmaker.js";
+import { loadChangesSinceJudgedNote } from "../../src/llm/agents/steward-changes-note.js";
+import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 async function seedSource(): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
@@ -244,3 +254,327 @@ describe("what a judgment was made against", () => {
     expect((await app.inject({ url: `/claims/${randomUUID()}/judgment-inputs` })).statusCode).toBe(404);
   });
 });
+
+/**
+ * The summary of many nodes is the same fact as the detailed read of each
+ * (#566): every case the detailed read distinguishes, read both ways.
+ */
+describe("the summary of what changed, for many nodes at once", () => {
+  /** What the summary must say for a node, worked out from its detailed read. */
+  async function expected(id: string) {
+    const v = await getJudgmentInputs(id);
+    if (!v || !v.judgment) {
+      return {
+        judged: false, recorded: false, changed: null,
+        premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+        sources_added: 0, sources_removed: 0, source_events: 0,
+      };
+    }
+    return { judged: true, recorded: v.recorded, changed: v.changed, ...countJudgmentChanges(v) };
+  }
+
+  it("agrees with the detailed read on every kind of change, and on none", async () => {
+    // Nothing changed.
+    const fresh = await seedCase();
+
+    // Premises judged again: one that had a judgment, one judged for the first time.
+    const rejudged = await seedCase();
+    await assess(rejudged.a);
+    await assess(rejudged.unjudged);
+
+    // A premise added and a premise removed.
+    const edges = await seedCase();
+    await seedEdge(edges.parent, await seedClaim("summary premise added"), "contradicts");
+    await rawQuery(`DELETE FROM claim_relationships WHERE parent_claim_id = $1 AND child_claim_id = $2`, [
+      edges.parent,
+      edges.b,
+    ]);
+
+    // A source attached, the recorded one detached, and two events on it:
+    // one before the judgment, which does not count, and one after.
+    const sources = await seedCase();
+    await seedInstance(sources.parent, await seedSource());
+    await rawQuery(`UPDATE claim_instances SET detached_at = now() WHERE id = $1`, [sources.instance]);
+    await rawQuery(
+      `INSERT INTO source_events (source_id, kind, detected_at, detected_by, notice_url)
+       VALUES ($1, 'correction', now() - interval '1 day', 'dbtest', 'before'),
+              ($1, 'retraction', now() + interval '1 second', 'dbtest', 'after')`,
+      [sources.source]
+    );
+
+    // Everything at once, on a node that shares a premise with another case:
+    // a change under one parent must not leak into another's counts.
+    const all = await seedCase();
+    await seedEdge(all.parent, rejudged.a);
+    await assess(all.b);
+    await rawQuery(`DELETE FROM claim_relationships WHERE parent_claim_id = $1 AND child_claim_id = $2`, [
+      all.parent,
+      all.a,
+    ]);
+    const second = await seedSource();
+    await seedInstance(all.parent, second);
+    await seedInstance(all.parent, second);
+    await rawQuery(
+      `INSERT INTO source_events (source_id, kind, detected_at, detected_by)
+       VALUES ($1, 'expression_of_concern', now() + interval '1 second', 'dbtest')`,
+      [all.source]
+    );
+
+    // A judgment that settles earlier changes, a judgment with no record, a
+    // node never judged, and an id no node has.
+    const settled = await seedCase();
+    await assess(settled.a);
+    await assess(settled.parent);
+    const unrecorded = await seedClaim("summary unrecorded");
+    await seedEdge(unrecorded, await seedClaim("summary unrecorded child"));
+    await assess(unrecorded, { record: false });
+    const never = await seedClaim("summary never judged");
+    const nowhere = randomUUID();
+
+    // A quantity and a question, whose judgments live in their own tables.
+    const quantity = await seedClaim("summary quantity");
+    await defineQuantity({
+      claimId: quantity,
+      definition: { measures: "Tests run", population: "This suite", unit: { kind: "count", noun: "tests", min: 0 } },
+      createdBy: "dbtest",
+    });
+    const part = await seedClaim("summary quantity premise");
+    await seedEdge(quantity, part);
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 1, high: 5 }, work: "counted" });
+    const question = await seedClaim("summary question");
+    await markQuestion(question);
+    await seedEdge(question, quantity, "part_of");
+    await recordQuestionAssessment({ claimId: question, standing: "open", reasoningTrace: "t" });
+    // The question's premise is estimated again; then the estimate's own premise is judged again.
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 2, high: 4 }, work: "recounted" });
+    await assess(part);
+
+    const ids = [
+      fresh.parent, rejudged.parent, edges.parent, sources.parent, all.parent, settled.parent,
+      unrecorded, never, nowhere, quantity, question,
+      // Leaves, each with a judgment and nothing under it.
+      fresh.a, rejudged.a,
+    ];
+    const summary = await summarizeJudgmentChanges([...ids, fresh.parent]);
+    expect([...summary.keys()].sort()).toEqual([...ids].sort());
+    for (const id of ids) expect(summary.get(id), id).toEqual(await expected(id));
+
+    // The cases are the ones intended, so the agreement above is not vacuous.
+    const counts = (id: string) => {
+      const { judged: _j, recorded: _r, changed: _c, ...rest } = summary.get(id)!;
+      return rest;
+    };
+    const none = {
+      premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+      sources_added: 0, sources_removed: 0, source_events: 0,
+    };
+    expect(summary.get(fresh.parent)).toEqual({ judged: true, recorded: true, changed: false, ...none });
+    expect(counts(rejudged.parent)).toEqual({ ...none, premises_rejudged: 2 });
+    expect(counts(edges.parent)).toEqual({ ...none, premises_added: 1, premises_removed: 1 });
+    expect(counts(sources.parent)).toEqual({ ...none, sources_added: 1, sources_removed: 1, source_events: 1 });
+    expect(counts(all.parent)).toEqual({
+      premises_rejudged: 1, premises_added: 1, premises_removed: 1,
+      sources_added: 1, sources_removed: 0, source_events: 1,
+    });
+    expect(summary.get(all.parent)!.changed).toBe(true);
+    expect(summary.get(settled.parent)).toEqual({ judged: true, recorded: true, changed: false, ...none });
+    expect(summary.get(unrecorded)).toEqual({ judged: true, recorded: false, changed: null, ...none });
+    expect(summary.get(never)).toEqual({ judged: false, recorded: false, changed: null, ...none });
+    expect(summary.get(nowhere)).toEqual({ judged: false, recorded: false, changed: null, ...none });
+    expect(counts(quantity)).toEqual({ ...none, premises_rejudged: 1 });
+    expect(counts(question)).toEqual({ ...none, premises_rejudged: 1 });
+
+    expect(await summarizeJudgmentChanges([])).toEqual(new Map());
+  });
+
+  it("is served as since_assessed: counts when recorded, a plain statement when not, nothing when never judged", async () => {
+    const c = await seedCase();
+    await assess(c.a);
+    const unrecorded = await seedClaim("since unrecorded");
+    await assess(unrecorded, { record: false });
+    const never = await seedClaim("since never judged");
+    const summary = await summarizeJudgmentChanges([c.parent, unrecorded, never]);
+
+    expect(sinceAssessed(summary.get(c.parent))).toEqual({
+      recorded: true, changed: true,
+      premises_rejudged: 1, premises_added: 0, premises_removed: 0,
+      sources_added: 0, sources_removed: 0, source_events: 0,
+    });
+    // No counts beside "not recorded": zeros there would read as "nothing changed".
+    const said = sinceAssessed(summary.get(unrecorded))!;
+    expect(said).toEqual({ recorded: false, changed: null, note: expect.stringContaining("unknown, not unchanged") });
+    expect(sinceAssessed(summary.get(never))).toBeNull();
+    expect(sinceAssessed(undefined)).toBeNull();
+  });
+
+  it("is served on a list row in as few keys as the fact takes", async () => {
+    const c = await seedCase();
+    await assess(c.a);
+    await seedInstance(c.parent, await seedSource());
+    const fresh = await seedCase();
+    const unrecorded = await seedClaim("row unrecorded");
+    await assess(unrecorded, { record: false });
+    const never = await seedClaim("row never judged");
+    const summary = await summarizeJudgmentChanges([c.parent, fresh.parent, unrecorded, never]);
+
+    // Changed: only the counts above zero.
+    expect(sinceAssessedRow(summary.get(c.parent))).toEqual({ changed: true, premises_rejudged: 1, sources_added: 1 });
+    expect(sinceAssessedRow(summary.get(fresh.parent))).toEqual({ changed: false });
+    // Unknown is said as unknown, never as `changed: false`.
+    expect(sinceAssessedRow(summary.get(unrecorded))).toEqual({ recorded: false });
+    // No judgment: nothing, so the row carries no key.
+    expect(sinceAssessedRow(summary.get(never))).toBeUndefined();
+    expect(sinceAssessedRow(undefined)).toBeUndefined();
+  });
+});
+
+/** The claim routes on a bare app: these reads need none of the auth plugin's checks. */
+async function claimsApp() {
+  const app = Fastify();
+  const decorate = app.decorate.bind(app) as (name: string, value: unknown) => void;
+  app.decorateRequest("auth", null);
+  decorate("authenticate", async () => {});
+  decorate("requireAgenticQuota", () => async () => {});
+  decorate("requireUser", async () => {});
+  await app.register(claimRoutes, { prefix: "/claims" });
+  await app.ready();
+  return app;
+}
+
+/**
+ * The same fact where each reader already looks (#566): the claim read, the
+ * Grantmaker's list of candidates, and the Steward's task.
+ */
+describe("what changed since the judgment, where readers already look", () => {
+  const none = {
+    premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+    sources_added: 0, sources_removed: 0, source_events: 0,
+  };
+
+  it("is on GET /claims/:claim_id and get_claim beside the judgment, for each kind", async () => {
+    const c = await seedCase();
+    await assess(c.a);
+    const later = await seedSource();
+    await seedInstance(c.parent, later);
+    const app = await claimsApp();
+    const expected = { recorded: true, changed: true, ...none, premises_rejudged: 1, sources_added: 1 };
+
+    const rest = (await app.inject({ url: `/claims/${c.parent}?information_depth=cursory` })).json();
+    expect(rest.since_assessed).toEqual(expected);
+    // An id in another letter case reads the same node and the same summary.
+    const upper = (await app.inject({ url: `/claims/${c.parent.toUpperCase()}?information_depth=cursory` })).json();
+    expect(upper.since_assessed).toEqual(expected);
+
+    const view = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: c.parent }))!);
+    expect(view.since_assessed).toEqual(expected);
+    expect(view.judgment_inputs).toBeUndefined();
+    const full = JSON.parse(
+      (await executeGraphReadTool("get_claim", { claim_id: c.parent, include: ["judgment_inputs"] }))!
+    );
+    expect(full.judgment_inputs).toEqual(JSON.parse(JSON.stringify(await getJudgmentInputs(c.parent))));
+
+    // Nothing changed: said as such, with every count at zero.
+    const fresh = await seedCase();
+    expect((await app.inject({ url: `/claims/${fresh.parent}?information_depth=cursory` })).json().since_assessed).toEqual({
+      recorded: true, changed: false, ...none,
+    });
+
+    // A judgment that predates the record: said in words, never as unchanged.
+    const old = await seedClaim("read unrecorded");
+    await assess(old, { record: false });
+    const oldRest = (await app.inject({ url: `/claims/${old}?information_depth=cursory` })).json();
+    expect(oldRest.since_assessed).toEqual({
+      recorded: false, changed: null, note: expect.stringContaining("unknown, not unchanged"),
+    });
+    expect(JSON.parse((await executeGraphReadTool("get_claim", { claim_id: old }))!).since_assessed).toEqual(
+      oldRest.since_assessed
+    );
+
+    // A node never judged has no such field.
+    const never = await seedClaim("read never judged");
+    expect("since_assessed" in (await app.inject({ url: `/claims/${never}?information_depth=cursory` })).json()).toBe(false);
+    expect("since_assessed" in JSON.parse((await executeGraphReadTool("get_claim", { claim_id: never }))!)).toBe(false);
+
+    // A quantity's estimate and a question's assessment are judgments too.
+    const quantity = await seedClaim("read quantity");
+    await defineQuantity({
+      claimId: quantity,
+      definition: { measures: "Tests run", population: "This suite", unit: { kind: "count", noun: "tests", min: 0 } },
+      createdBy: "dbtest",
+    });
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 1, high: 5 }, work: "counted" });
+    await seedEdge(quantity, await seedClaim("read quantity premise added"));
+    const question = await seedClaim("read question");
+    await markQuestion(question);
+    await seedEdge(question, quantity, "part_of");
+    await recordQuestionAssessment({ claimId: question, standing: "open", reasoningTrace: "t" });
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 2, high: 4 }, work: "recounted" });
+    await seedEdge(quantity, await seedClaim("read quantity premise added later"));
+    for (const [id, counts] of [
+      [quantity, { premises_added: 1 }],
+      [question, { premises_rejudged: 1 }],
+    ] as const) {
+      const want = { recorded: true, changed: true, ...none, ...counts };
+      expect((await app.inject({ url: `/claims/${id}?information_depth=cursory` })).json().since_assessed).toEqual(want);
+      expect(JSON.parse((await executeGraphReadTool("get_claim", { claim_id: id }))!).since_assessed).toEqual(want);
+    }
+  });
+
+  it("is on each row of the Grantmaker's list of a source's nodes", async () => {
+    const c = await seedCase();
+    await assess(c.b);
+    const unjudged = await seedClaim("list never judged");
+    await seedInstance(unjudged, c.source);
+    const steady = await seedClaim("list judged, nothing moved");
+    await seedInstance(steady, c.source);
+    await assess(steady);
+    const old = await seedClaim("list judged before the record");
+    await seedInstance(old, c.source);
+    await assess(old, { record: false });
+    const { grantId } = await seedGrantWithJob({ funderId: await seedUser("changes-funder"), budgetMicroUsd: 10 * OWL });
+    const [job] = await rawQuery<{ id: string }>(
+      `INSERT INTO jobs (type, status, input, completed_at) VALUES ('url_extraction', 'completed', '{}', now()) RETURNING id`
+    );
+    await rawQuery(
+      `INSERT INTO grant_sources (grant_id, source_id, url, job_id) VALUES ($1, $2, 'https://example.org/changes', $3)`,
+      [grantId, c.source, job!.id]
+    );
+
+    const out = JSON.parse((await executeManagementTool(grantId, "claims_from_source", { source_id: c.source }))!);
+    const byId = new Map<string, { since_assessed?: unknown }>(
+      out.claims.map((r: { claim_id: string; since_assessed?: unknown }) => [r.claim_id, r])
+    );
+    // The short form of a list row: only what is not the default.
+    expect(byId.get(c.parent)!.since_assessed).toEqual({ changed: true, premises_rejudged: 1 });
+    expect(byId.get(steady)!.since_assessed).toEqual({ changed: false });
+    expect(byId.get(old)!.since_assessed).toEqual({ recorded: false });
+    expect("since_assessed" in byId.get(unjudged)!).toBe(false);
+  });
+
+  it("opens the Steward's pass, by claim id and text", async () => {
+    const c = await seedCase();
+    await assess(c.a);
+    await rawQuery(
+      `INSERT INTO source_events (source_id, kind, detected_at, detected_by)
+       VALUES ($1, 'retraction', now() + interval '1 second', 'dbtest')`,
+      [c.source]
+    );
+    const note = await loadChangesSinceJudgedNote(c.parent, "claim");
+    expect(note).toContain("What has changed in the graph under the current assessment since it was recorded on ");
+    expect(note).toContain("Subclaims judged again (1):");
+    expect(note).toMatch(new RegExp(`- ${c.a} "[^"]*inputs premise a[^"]*" \\(requires\\)`));
+    expect(note).toContain("Notices recorded on its sources (1):");
+    expect(note).toMatch(new RegExp(`- retraction, \\d{4}-\\d{2}-\\d{2}: ${c.source} "DB-test source"`));
+    expect(note).not.toContain(c.b);
+
+    const fresh = await seedCase();
+    expect(await loadChangesSinceJudgedNote(fresh.parent, "claim")).toMatch(
+      /^Since the current assessment was recorded on \d{4}-\d{2}-\d{2}, nothing it was made against in the graph has changed/
+    );
+    const old = await seedClaim("note unrecorded");
+    await assess(old, { record: false });
+    expect(await loadChangesSinceJudgedNote(old, "claim")).toContain("there is no record of what has changed under it since");
+    expect(await loadChangesSinceJudgedNote(await seedClaim("note never judged"), "claim")).toBe("");
+  });
+});
+

@@ -53,7 +53,7 @@ import {
   enqueueSteward,
   enqueueClaimPipeline,
 } from "../../services/queue-service.js";
-import { getUsageContext } from "../usage-context.js";
+import { currentLabel, getUsageContext } from "../usage-context.js";
 import {
   executeNotifySteward,
   getNotifyStewardToolDefinition,
@@ -1496,6 +1496,9 @@ export async function executeStewardTool(
           // The run that wrote this verdict, so its transcript is one join
           // away; stamped from the usage context, never by the agent.
           runId: getUsageContext().runId ?? null,
+          // Who may read the verdict (src/labels.ts): the label the run
+          // writes at, stamped the same way.
+          sensitivityLabel: currentLabel(),
         }).returning({ id: assessments.id });
 
         // What the verdict was made against: the nodes under the claim with

@@ -19,6 +19,8 @@ import { formatOwls } from "../../../lib/format";
 import { ATTEMPT_VARIANT_LABEL, BOUNTY_STATUS_LABEL, attemptOutcomeLabel } from "../../../lib/prizes";
 import { OwlMark } from "../../../components/OwlMark";
 import { MandateRecord } from "../../../components/MandateRecord";
+import { loadFeatures } from "../../../lib/data";
+import { featureOn, type Features } from "../../../lib/features";
 import { AllocationSection } from "./AllocationView";
 import { ContributeBox } from "./ContributeBox";
 import { MandateChat } from "./MandateChat";
@@ -101,11 +103,14 @@ function Paragraphs({ text, muted = false }: { text: string; muted?: boolean }) 
 // is a public document that must stand alone for a reader who has read
 // nothing else on the site, a funder deciding whether to back it included,
 // so every section it carries is rendered here in full.
-function MandateTextSection({ text }: { text: MandateTextView }) {
+//
+// The prize and attempt policies are the exception: each is shown only where
+// this deployment has the feature it is a policy for.
+function MandateTextSection({ text, features }: { text: MandateTextView; features: Features }) {
   const policies: Array<[string, string | null]> = [
     ["Scope", text.scope],
-    ["Prizes", text.prize_policy],
-    ["Attempts", text.attempt_policy],
+    ["Prizes", featureOn(features, "prizes") ? text.prize_policy : null],
+    ["Attempts", featureOn(features, "mathematics") ? text.attempt_policy : null],
     ["What this mandate declines", text.refusals],
     ["What every funded claim says", text.disclosure],
   ];
@@ -278,6 +283,58 @@ function PipelineSection({ pipeline }: { pipeline: MandatePipelineRow[] }) {
   );
 }
 
+// The house solver's attempts under a mandate, newest first, each with its
+// cost and its report once published. Its own component because attempts
+// belong to mathematics and the section around them to prizes: a deployment
+// with prizes off and mathematics on still lists them, under their own
+// heading.
+function AttemptsTable({ attempts }: { attempts: AttemptSummary[] }) {
+  const sorted = [...attempts].sort((a, b) =>
+    (b.finished_at ?? b.started_at).localeCompare(a.finished_at ?? a.started_at),
+  );
+  return (
+    <>
+      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem", maxWidth: "44rem" }}>
+        The house solver&rsquo;s runs against published statements, each
+        public with its cost and its report.
+      </p>
+      <table className="account-table">
+        <thead>
+          <tr>
+            <th>claim</th>
+            <th>finished</th>
+            <th>variant</th>
+            <th>cost</th>
+            <th>outcome</th>
+            <th aria-label="report" />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((a) => (
+            <tr key={a.id}>
+              <td>
+                <Link href={`/claims/${a.claim_id}`}>view claim</Link>
+                {a.is_calibration && <> <span className="tag">calibration</span></>}
+              </td>
+              <td>{dateish(a.finished_at ?? a.started_at)}</td>
+              <td>{ATTEMPT_VARIANT_LABEL[a.variant] ?? a.variant}</td>
+              <td>{formatOwls(a.spent_micro_usd)}</td>
+              <td>{attemptOutcomeLabel(a)}</td>
+              <td>
+                {a.published_at ? (
+                  <Link href={`/claims/${a.claim_id}/attempts/${a.id}`}>report</Link>
+                ) : (
+                  <span style={{ color: "var(--faint)" }}>not yet published</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 // The prizes section (docs/mathematics.md §8.1, §8.3): the mandate's prize
 // numbers (a bounty is owls held against this mandate's own escrow from the
 // day it opens until it resolves, and the payout consumes the hold), the
@@ -289,9 +346,6 @@ function PrizesSection({
   prizes: MandatePrizesView;
   attempts: AttemptSummary[];
 }) {
-  const sorted = [...attempts].sort((a, b) =>
-    (b.finished_at ?? b.started_at).localeCompare(a.finished_at ?? a.started_at),
-  );
   return (
     <section>
       <h2>Prizes</h2>
@@ -343,46 +397,10 @@ function PrizesSection({
         </div>
       </div>
 
-      {sorted.length > 0 && (
+      {attempts.length > 0 && (
         <>
           <h3>Attempts</h3>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem", maxWidth: "44rem" }}>
-            The house solver&rsquo;s runs against published statements, each
-            public with its cost and its report.
-          </p>
-          <table className="account-table">
-            <thead>
-              <tr>
-                <th>claim</th>
-                <th>finished</th>
-                <th>variant</th>
-                <th>cost</th>
-                <th>outcome</th>
-                <th aria-label="report" />
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((a) => (
-                <tr key={a.id}>
-                  <td>
-                    <Link href={`/claims/${a.claim_id}`}>view claim</Link>
-                    {a.is_calibration && <> <span className="tag">calibration</span></>}
-                  </td>
-                  <td>{dateish(a.finished_at ?? a.started_at)}</td>
-                  <td>{ATTEMPT_VARIANT_LABEL[a.variant] ?? a.variant}</td>
-                  <td>{formatOwls(a.spent_micro_usd)}</td>
-                  <td>{attemptOutcomeLabel(a)}</td>
-                  <td>
-                    {a.published_at ? (
-                      <Link href={`/claims/${a.claim_id}/attempts/${a.id}`}>report</Link>
-                    ) : (
-                      <span style={{ color: "var(--faint)" }}>not yet published</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <AttemptsTable attempts={attempts} />
         </>
       )}
 
@@ -454,6 +472,12 @@ export default async function MandatePage({
   const hasPipeline = mandate.pipeline.length > 0;
   const open = mandate.status === "active";
   const prizes = mandate.prizes ?? null;
+  // The mandate's own routes keep their prize and attempt fields whatever is
+  // switched on; the sections that show them go with their features.
+  const features = await loadFeatures();
+  const prizesOn = featureOn(features, "prizes");
+  const mathematicsOn = featureOn(features, "mathematics");
+  const attempts = mathematicsOn ? (mandate.attempts ?? []) : [];
 
   return (
     <div className="col-wide account">
@@ -521,7 +545,7 @@ export default async function MandatePage({
             {mandate.pipeline.length === 1 ? "" : "s"} ingested
           </span>
         )}
-        {prizes && prizes.bounties_posted > 0 && (
+        {prizesOn && prizes && prizes.bounties_posted > 0 && (
           <span className="summary-chip">
             {prizes.bounties_posted} prize{prizes.bounties_posted === 1 ? "" : "s"} posted
           </span>
@@ -667,9 +691,18 @@ export default async function MandatePage({
         </section>
       )}
 
-      {prizes && <PrizesSection prizes={prizes} attempts={mandate.attempts ?? []} />}
-      {mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
-      {mandate.text && <MandateTextSection text={mandate.text} />}
+      {/* The prizes section carries the attempts. Where prizes are off and
+          mathematics is on, the attempts stand in a section of their own. */}
+      {prizesOn
+        ? prizes && <PrizesSection prizes={prizes} attempts={attempts} />
+        : attempts.length > 0 && (
+          <section>
+            <h2>Attempts</h2>
+            <AttemptsTable attempts={attempts} />
+          </section>
+        )}
+      {mathematicsOn && mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
+      {mandate.text && <MandateTextSection text={mandate.text} features={features} />}
 
       {mandate.is_manager && mandate.conversation_id && (
         <section>

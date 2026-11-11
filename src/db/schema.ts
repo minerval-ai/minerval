@@ -20,6 +20,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { eq, sql, type SQL } from "drizzle-orm";
+import { PUBLIC_LABEL } from "../labels.js";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -55,6 +56,52 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
     return "bytea";
   },
 });
+
+// ---------------------------------------------------------------------------
+// labels: who may read a row (src/labels.ts)
+//
+// A label is a row here, never a value in an enum or a CHECK, because each
+// deployment defines its own and may define several restricted ones that are
+// unrelated to each other. Labels are not ranked. Which labels a holder of
+// one may also read is the pairs in label_reads: whoever is cleared for
+// `label` may also read rows labelled `reads`. A label always reads itself,
+// which needs no pair.
+//
+// The public graph has one label, 'public' (seeded by the migration that
+// created the table), and no pairs. The rows that carry a label hold it in
+// sensitivity_label, stamped from the run or request that writes them
+// (currentLabel in llm/usage-context.ts); nothing reads the column yet.
+// ---------------------------------------------------------------------------
+export const labels = pgTable("labels", {
+  name: text("name").primaryKey(),
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const labelReads = pgTable(
+  "label_reads",
+  {
+    label: text("label")
+      .notNull()
+      .references(() => labels.name),
+    reads: text("reads")
+      .notNull()
+      .references(() => labels.name),
+  },
+  (table) => [primaryKey({ columns: [table.label, table.reads] })]
+);
+
+// The label column of a row that carries one. It is sensitivity_label, not
+// label, because some tables that will need one already have a `label` that
+// is a display name (actions, source_segments). The default is what a row
+// written before labels existed is, and what a write outside any run gets.
+const sensitivityLabelColumn = () =>
+  text("sensitivity_label")
+    .notNull()
+    .default(PUBLIC_LABEL)
+    .references(() => labels.name);
 
 // ---------------------------------------------------------------------------
 // claims
@@ -506,8 +553,16 @@ export const assessments = pgTable(
     // is re-judged; set on a current row, it means the status is provisional,
     // not a finding. NULL on every other row.
     relabeledFrom: text("relabeled_from"),
+    // Who may read this verdict (src/labels.ts), stamped from the usage
+    // context by update_claim_assessment, never by the agent.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
+    // One current verdict per claim, whatever its label. It becomes one per
+    // claim and label only when the reads can choose a judgment by the
+    // reader's clearance: until then two current rows for one claim is a
+    // state no read can handle. The same holds for the current-row indexes
+    // on argument_evaluations, quantity_estimates and question_assessments.
     uniqueIndex("idx_assessments_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -752,6 +807,9 @@ export const argumentEvaluations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this evaluation (src/labels.ts), stamped from the usage
+    // context when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_argument_evaluations_argument").on(table.argumentId),
@@ -802,6 +860,9 @@ export const sources = pgTable("sources", {
   // row is created and filled for older rows at startup; '' marks a URL that
   // is not a web page, null one not yet looked at.
   pageUrlHash: text("page_url_hash"),
+  // Who may read this document (src/labels.ts): the label of the run or
+  // request that first recorded it.
+  sensitivityLabel: sensitivityLabelColumn(),
 }, (table) => [
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
@@ -1790,6 +1851,9 @@ export const agentRuns = pgTable(
     // steps were chained. A sealed run's log can be checked against log_hash.
     logHash: text("log_hash"),
     sealedAt: timestamp("sealed_at", { withTimezone: true }),
+    // The label the run wrote at (src/labels.ts): every labelled row it
+    // wrote carries the same one, and so does its prompt step's setup.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -5079,6 +5143,8 @@ export const quantityEstimates = pgTable(
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this estimate (src/labels.ts), as on assessments.sensitivity_label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_quantity_estimates_current")
@@ -5183,6 +5249,8 @@ export const questionAssessments = pgTable(
     trigger: text("trigger"),
     triggerContext: text("trigger_context"),
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this assessment (src/labels.ts), as on assessments.sensitivity_label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_question_assessments_current")
@@ -5692,7 +5760,8 @@ export const judgmentInputs = pgTable(
 //
 // Read the view to learn what a node's judgment is. Read the table for
 // history (every row, current or not) and for the write seam that supersedes
-// a current row; nothing writes through a view.
+// a current row; nothing writes through a view. A file that mentions
+// is_current has to say why (tests/unit/db/judgment-in-force.test.ts).
 //
 // drizzle-kit writes the views into migrations with their columns spelled
 // out, so adding a column to one of the tables regenerates its view: run

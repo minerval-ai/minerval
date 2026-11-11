@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FLAGSHIP_ID } from "@/lib/fixtures";
 import { apiConfigured } from "@/lib/api";
-import { loadClaim } from "@/lib/data";
+import { loadClaim, loadFeatures } from "@/lib/data";
 import { TERRITORIES, territoryHref } from "@/lib/territories";
 import { SearchInput } from "@/components/home/SearchInput";
 import { Surfaces } from "@/components/home/Surfaces";
@@ -31,7 +31,7 @@ const FLAGSHIP =
   process.env.FLAGSHIP_CLAIM_ID ?? (apiConfigured() ? LIVE_FLAGSHIP_ID : FLAGSHIP_ID);
 
 export default async function Home() {
-  const { detail, source } = await loadClaim(FLAGSHIP);
+  const [{ detail, source }, features] = await Promise.all([loadClaim(FLAGSHIP), loadFeatures()]);
 
   return (
     <div>
@@ -72,8 +72,9 @@ export default async function Home() {
         </p>
       </div>
 
-      {/* what's built on the graph: 01 map · 02 extension · 03 MCP & API */}
-      <Surfaces detail={detail} source={source} />
+      {/* what's built on the graph: 01 map · 02 extension · 03 MCP & API
+          (the extension's tab only where this deployment has the extension) */}
+      <Surfaces detail={detail} source={source} features={features} />
 
       {/* how it works: the docs triptych closes the page */}
       <section className={styles.section}>

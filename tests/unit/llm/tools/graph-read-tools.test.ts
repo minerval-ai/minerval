@@ -215,6 +215,61 @@ describe("graph-read-tools", () => {
       });
     });
 
+    // #566: what has changed under each hit's judgment travels with the hit,
+    // read for all of them in one query, never one read per hit, and in the
+    // short form: a search is run constantly, and most hits have nothing to say.
+    it("says for each hit what has changed since it was judged, in one query and as few keys as it takes", async () => {
+      mockHybrid.mockResolvedValue({
+        results: [
+          { id: "c1", text: "Moved under", importance: 0.8 },
+          { id: "c2", text: "Judged before the record", importance: 0.7 },
+          { id: "c3", text: "Never judged", importance: 0.6 },
+          { id: "c4", text: "Judged, nothing moved", importance: 0.5 },
+        ],
+        total: 4,
+      } as never);
+      const zero = {
+        premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+        sources_added: 0, sources_removed: 0, source_events: 0,
+      };
+      mockRawQuery.mockImplementation((async (sql: string) =>
+        sql.includes("judged AS")
+          ? [
+              { node_id: "c1", recorded: true, ...zero, premises_rejudged: 2, sources_added: 1 },
+              { node_id: "c2", recorded: false, ...zero },
+              { node_id: "c4", recorded: true, ...zero },
+            ]
+          : []) as never);
+
+      const out = JSON.parse((await executeGraphReadTool("search_claims", { query: "x" }))!);
+
+      // Changed: only the counts above zero.
+      expect(out.results[0].since_assessed).toEqual({ changed: true, premises_rejudged: 2, sources_added: 1 });
+      // Not recorded is said as such, and never as unchanged.
+      expect(out.results[1].since_assessed).toEqual({ recorded: false });
+      // Never judged: no key at all, like other absent facts.
+      expect("since_assessed" in out.results[2]).toBe(false);
+      expect(out.results[3].since_assessed).toEqual({ changed: false });
+      const summaryCalls = mockRawQuery.mock.calls.filter(([sql]) => String(sql).includes("judged AS"));
+      expect(summaryCalls).toHaveLength(1);
+      expect(summaryCalls[0]![1]).toEqual([["c1", "c2", "c3", "c4"]]);
+      mockRawQuery.mockResolvedValue([] as never);
+    });
+
+    it("still answers the search, without the field, when that read fails", async () => {
+      mockHybrid.mockResolvedValue({ results: [{ id: "c1", text: "A claim", importance: 0.8 }], total: 1 } as never);
+      mockRawQuery.mockImplementation((async (sql: string) => {
+        if (sql.includes("judged AS")) throw new Error("connection reset");
+        return [];
+      }) as never);
+
+      const out = JSON.parse((await executeGraphReadTool("search_claims", { query: "x" }))!);
+
+      expect(out.results[0].id).toBe("c1");
+      expect("since_assessed" in out.results[0]).toBe(false);
+      mockRawQuery.mockResolvedValue([] as never);
+    });
+
     it("skips the signals query when nothing matched", async () => {
       mockHybrid.mockResolvedValue({ results: [], total: 0 } as never);
 
@@ -474,9 +529,44 @@ describe("graph-read-tools", () => {
         expect(out.source_map).toEqual({ summary: "Rests on one survey" });
         expect(out.requests[0].kept_by_this_node).toBe(true);
         // Sections that grow with the graph come only when asked for.
-        for (const key of ["arguments", "subclaims", "instances", "dependents", "related", "findings", "proofs"]) {
+        for (const key of ["arguments", "subclaims", "instances", "dependents", "related", "findings", "proofs", "judgment_inputs"]) {
           expect(out[key]).toBeUndefined();
         }
+      });
+
+      // #566: the read says what has changed under the judgment in force,
+      // and the whole record comes as a section.
+      it("says what has changed since the node was judged, and names the inputs on request", async () => {
+        const zero = {
+          premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+          sources_added: 0, sources_removed: 0, source_events: 0,
+        };
+        let summary: Record<string, unknown>[] = [{ node_id: "c1", recorded: true, ...zero, premises_removed: 1 }];
+        mockRawQuery.mockImplementation((async (sql: string) =>
+          sql.includes("LEFT JOIN (SELECT parent_id") ? summary : []) as never);
+
+        let out = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "c1" }))!);
+        expect(out.since_assessed).toEqual({ recorded: true, changed: true, ...zero, premises_removed: 1 });
+        expect(out.judgment_inputs).toBeUndefined();
+
+        // A judgment that predates the record says so in words, with no counts.
+        summary = [{ node_id: "c1", recorded: false, ...zero }];
+        out = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "c1" }))!);
+        expect(out.since_assessed).toEqual({
+          recorded: false,
+          changed: null,
+          note: expect.stringContaining("unknown, not unchanged"),
+        });
+
+        // A node never judged has nothing to be out of date: the field is absent.
+        summary = [];
+        out = JSON.parse(
+          (await executeGraphReadTool("get_claim", { claim_id: "c1", include: ["judgment_inputs"] }))!
+        );
+        expect("since_assessed" in out).toBe(false);
+        // The section is the detailed read; with no rows mocked, no node has the id.
+        expect(out.judgment_inputs).toBeNull();
+        mockRawQuery.mockResolvedValue([] as never);
       });
 
       it("drops the seed once the node has its own assessment", async () => {

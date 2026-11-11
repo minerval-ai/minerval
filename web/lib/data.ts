@@ -1,9 +1,10 @@
 import { cache } from "react";
 import {
   apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimCard, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
-  fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
+  fetchFeatures, fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
   fetchTag, fetchTags,
 } from "./api";
+import { claimWithoutOffFeatures, listWithoutOffFeatures } from "./features";
 import { getSourcePageFixture } from "./fixtures-source";
 import { getArgumentPageFixture } from "./fixtures-argument";
 import { REQUESTS, getRequest } from "./fixtures-kinds";
@@ -49,17 +50,28 @@ function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): Search
 
 export type DataSource = "live" | "fixture";
 
+// Which features this deployment has on (lib/features.ts). Every page that
+// shows something belonging to a feature asks here first. Memoized for the
+// length of one render, so a page, its metadata and its sections ask once
+// between them. A failed read means every feature is on (see fetchFeatures).
+export const loadFeatures = cache(fetchFeatures);
+
 // Memoized for the length of one render, so a page and its generateMetadata
-// read the claim once between them.
+// read the claim once between them. What the claim carries about a feature
+// that is off is emptied here, including on the fixture fallback, so no
+// surface that reads a claim shows a formal statement or a prize the
+// deployment does not have.
 export const loadClaim = cache(async (
   id: string,
 ): Promise<{ detail: ClaimDetail | null; source: DataSource }> => {
   if (!apiConfigured()) return { detail: getClaim(id), source: "fixture" };
+  const features = await loadFeatures();
   try {
-    return { detail: await fetchClaimDetail(id), source: "live" };
+    return { detail: claimWithoutOffFeatures(await fetchClaimDetail(id), features), source: "live" };
   } catch (err) {
     console.error("[minerval] live claim fetch failed, using fixture:", err);
-    return { detail: getClaim(id), source: "fixture" };
+    const fixture = getClaim(id);
+    return { detail: fixture && claimWithoutOffFeatures(fixture, features), source: "fixture" };
   }
 });
 
@@ -158,15 +170,21 @@ export async function loadClaims(
   if (!apiConfigured()) {
     return { results: applyFilters(listClaims(), filters), source: "fixture" };
   }
+  // The cards' prize chip and machine-checked badge go with their features,
+  // as the claim page's sections do (loadClaim).
+  const features = await loadFeatures();
   try {
     // With a query, search by meaning; without one, browse the most recent.
     const results = query
       ? await fetchSearch(query, filters)
       : await fetchList(40, filters);
-    return { results, source: "live" };
+    return { results: listWithoutOffFeatures(results, features), source: "live" };
   } catch (err) {
     console.error("[minerval] live claim list failed, using fixture:", err);
-    return { results: applyFilters(listClaims(), filters), source: "fixture" };
+    return {
+      results: listWithoutOffFeatures(applyFilters(listClaims(), filters), features),
+      source: "fixture",
+    };
   }
 }
 

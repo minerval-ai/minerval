@@ -272,7 +272,7 @@ export const informationDepthEnum = z.enum(["cursory", "standard", "deep"]);
 
 /**
  * What kind of document a source is: the one list `sources.source_type`
- * holds (a CHECK constraint keeps it so, migration 0121), the registry
+ * holds (a CHECK constraint keeps it so, the source_kinds migration), the registry
  * lookup maps onto, the agents choose from, and the page shows. Each kind
  * with what counts as one, in the words an agent choosing reads.
  *

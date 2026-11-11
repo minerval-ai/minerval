@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { loadClaim } from "@/lib/data";
+import { notFound } from "next/navigation";
+import { loadClaim, loadFeatures } from "@/lib/data";
+import { featureOn } from "@/lib/features";
 import { formatOwls, fmtDateLong } from "@/lib/format";
 import { resolutionPhrase } from "@/lib/prizes";
 import { PrizeClaimForm } from "@/components/claim/PrizeClaimForm";
@@ -17,6 +19,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
+  if (!featureOn(await loadFeatures(), "prizes")) notFound();
   const { detail } = await loadClaim(id);
   if (!detail) return { title: "Claim a prize · Minerval" };
   const text = detail.claim.text;
@@ -31,6 +34,9 @@ export default async function PrizeClaimPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // The form files against the prize routes, which do not exist where
+  // prizes are off; the page is not found there, before the claim is read.
+  if (!featureOn(await loadFeatures(), "prizes")) notFound();
   const { detail, source } = await loadClaim(id);
 
   if (!detail) {

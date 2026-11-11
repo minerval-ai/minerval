@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { loadAttempt, loadClaim } from "@/lib/data";
+import { notFound } from "next/navigation";
+import { loadAttempt, loadClaim, loadFeatures } from "@/lib/data";
+import { featureOn } from "@/lib/features";
 import { formatUsd, fmtDate } from "@/lib/format";
 import { ATTEMPT_VARIANT_LABEL, attemptOutcomeLabel } from "@/lib/prizes";
 import { PageHead } from "@/components/PageHead";
@@ -17,6 +19,7 @@ export async function generateMetadata({
   params: Promise<{ id: string; attemptId: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
+  if (!featureOn(await loadFeatures(), "mathematics")) notFound();
   const { detail } = await loadClaim(id);
   if (!detail) return { title: "Attempt · Minerval" };
   const text = detail.claim.text;
@@ -31,6 +34,9 @@ export default async function AttemptPage({
   params: Promise<{ id: string; attemptId: string }>;
 }) {
   const { id, attemptId } = await params;
+  // A proof attempt belongs to mathematics. Where that is off the attempt
+  // routes do not exist, so the page is not found before anything is read.
+  if (!featureOn(await loadFeatures(), "mathematics")) notFound();
   const [{ detail, source }, { attempt }] = await Promise.all([
     loadClaim(id),
     loadAttempt(id, attemptId),

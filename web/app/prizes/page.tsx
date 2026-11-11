@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { loadOpenPrizes } from "@/lib/data";
+import { notFound } from "next/navigation";
+import { loadFeatures, loadOpenPrizes } from "@/lib/data";
+import { featureOn } from "@/lib/features";
 import { formatOwls, fmtDate } from "@/lib/format";
 import {
   BOUNTY_STATUS_LABEL, PRIZE_PAYMENT_SENTENCE, houseAttemptSentence, resolutionPhrase,
@@ -26,6 +28,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function PrizesPage() {
+  // This page exists only for prizes. Where they are off it is not found,
+  // decided before the listing is read, so it can never show an empty or
+  // sample listing for a feature the deployment does not have.
+  if (!featureOn(await loadFeatures(), "prizes")) notFound();
   const { prizes, mandates, source } = await loadOpenPrizes(100);
 
   return (

@@ -167,7 +167,13 @@ read is free, an agent which signals allocation turns on.
   search over canonical claims, quantities and questions (all three live in
   `claims`). Each result carries its `kind`, importance, `contestation`,
   current assessment status/confidence (a question's `standing`, a
-  quantity's `estimate` and `unit`), `days_since_assessed`, its topic
+  quantity's `estimate` and `unit`), `days_since_assessed`, `since_assessed`
+  (what has changed under its judgment since it was written, read for every
+  hit in one query and served in a short form, since most hits have nothing
+  to say: `{changed: false}`, or `{changed: true}` with only the counts
+  above zero, or `{recorded: false}` for a judgment that predates the
+  record, which is unknown, not unchanged; a node with no judgment has no
+  such key; `get_claim` has every count), its topic
   `tags`, and a `minerval.ai` page link. It also carries `prize_micro_usd`
   (the live bounty on the claim, or null) and `checked` (`proof`,
   `disproof`, or null: whether a machine-checked argument stands on the
@@ -190,14 +196,19 @@ read is free, an agent which signals allocation turns on.
 - **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
   claims carry, with how many claims carry each; with `query`, ranked by
   meaning. A tag says what a claim is about, never whether it holds.
-- **`get_claim`** `{claim_id, include?: ["arguments"|"subclaims"|"provenance"|"dependents"|"related"|"findings"|"proofs"], dependents_limit?, dependents_offset?}`
+- **`get_claim`** `{claim_id, include?: ["arguments"|"subclaims"|"provenance"|"dependents"|"related"|"findings"|"proofs"|"judgment_inputs"], dependents_limit?, dependents_offset?}`
   — one node as the graph records it. This is the same tool, with the same
   description and payload, that the graph's own agents call
   (`src/services/claim-view-service.ts`, #774), so a skill that names
   `get_claim` means one thing to every reader. Every read returns `claim`
   (`kind`, canonical form, type, state, importance, contestation, tags,
   page link, `steward_state` and `stewarded_at`), `assessment` (its `id`,
-  status, confidence, credence, reasoning, `run_id`), the kind's record, `preliminary_seed`
+  status, confidence, credence, reasoning, `run_id`), the kind's record,
+  `since_assessed` on a node with a judgment in force (what has changed
+  under that judgment since it was written, as counts: premises judged
+  again, added or removed, sources added or removed, notices on its
+  sources; `recorded: false` means the judgment predates the record, which
+  is unknown, not unchanged), `preliminary_seed`
   while the node is unassessed, the formalization record, `requests`,
   `subclaim_count`, `instance_count` and `source_map` (the Steward's account
   of what the support rests on, with `material` saying whether the claim page
@@ -222,6 +233,9 @@ read is free, an agent which signals allocation turns on.
     dependencies.
   - `"findings"`: findings already noted on the node.
   - `"proofs"`: every Lean check record on any version of the statement.
+  - `"judgment_inputs"`: the record behind `since_assessed`, input by input:
+    the same view `get_judgment_inputs` serves. The graph's own agents have
+    no `get_judgment_inputs`, so this section is how they read it.
 
   A merged id resolves to its survivor (#884). A merge leaves the absorbed
   node as an alias "so that existing references still resolve" (constitution
@@ -419,7 +433,9 @@ read of a claim, use a card.
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
   `get_judgment_inputs` (what a node's judgment in force was made against,
   and what has changed since: premises judged again, added or removed,
-  sources attached or detached, corrections and retractions on its sources),
+  sources attached or detached, corrections and retractions on its sources;
+  `get_claim` and `search_claims` carry its counts as `since_assessed`, so
+  this is the read for which premises and which sources),
   `get_claim_events`, `propose_claim` (a claim, a question or a quantity by
   its optional `kind`, reviewed by the Contribution Reviewer before anything
   enters the graph).

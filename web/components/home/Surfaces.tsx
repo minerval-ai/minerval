@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ClaimDetail } from "@/lib/types";
 import type { DataSource } from "@/lib/data";
+import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { GraphView } from "@/components/graph/GraphView";
 import { Swatch } from "@/components/Assessment";
 import { AnnotatedDemo } from "./AnnotatedDemo";
@@ -95,19 +96,24 @@ const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
 const VERDICTS = ["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"];
 
 export function Surfaces({
-  detail, source,
+  detail, source, features = ALL_FEATURES_ON,
 }: {
   detail: ClaimDetail | null;
   source: DataSource;
+  features?: Features;
 }) {
   const [tab, setTab] = useState<TabId>("graph");
   const [setup, setSetup] = useState<SetupId>("cc");
 
+  // A deployment with the extension switched off has no extension tab: the
+  // tab's demo and its install link would promise an API that is not there.
+  // The tabs are numbered as shown, so the row never skips a number.
+  const extensionOn = featureOn(features, "extension");
   const tabs: { id: TabId; n: string; label: string }[] = [
-    { id: "graph", n: "01", label: "The graph" },
-    { id: "ext", n: "02", label: "Browser extension" },
-    { id: "mcp", n: "03", label: "MCP & API" },
-  ];
+    { id: "graph" as const, label: "The graph" },
+    ...(extensionOn ? [{ id: "ext" as const, label: "Browser extension" }] : []),
+    { id: "mcp" as const, label: "MCP & API" },
+  ].map((t, i) => ({ ...t, n: String(i + 1).padStart(2, "0") }));
 
   return (
     <section className={styles.section}>
@@ -145,7 +151,7 @@ export function Surfaces({
             )}
           </div>
           {detail ? (
-            <GraphView initialDetail={detail} source={source} embed />
+            <GraphView initialDetail={detail} source={source} embed features={features} />
           ) : (
             <p style={{ padding: "2rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".85rem" }}>
               The map opens once a claim is available. <Link href="/claims">Browse the claims →</Link>
@@ -165,6 +171,7 @@ export function Surfaces({
       </div>
 
       {/* ---- 02 · the browser extension: the web, annotated ---- */}
+      {extensionOn && (
       <div id="panel-ext" role="tabpanel" aria-labelledby="tab-ext" hidden={tab !== "ext"}>
         <h3 className={styles.panelTitle}>The web, annotated.</h3>
         <div className={styles.panelCopy}>
@@ -186,6 +193,7 @@ export function Surfaces({
           <span className={styles.legendCap}>six verdicts, one non-verdict</span>
         </div>
       </div>
+      )}
 
       {/* ---- 03 · MCP & API ---- */}
       <div id="panel-mcp" role="tabpanel" aria-labelledby="tab-mcp" hidden={tab !== "mcp"}>

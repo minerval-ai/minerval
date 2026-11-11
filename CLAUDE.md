@@ -10,6 +10,8 @@ The caller skills in `plugin/skills/` carry the graph's principles to outside ag
 
 Two open PRs that each add a migration take the same number, so the second to merge always conflicts in `src/db/migrations`. Do not resolve that by hand: merge `origin/main`, leave the conflicts in the migrations folder as they are, and run `npm run db:renumber`. It renumbers this branch's migrations after main's and rebuilds the journal and snapshots. The journal's timestamps matter more than they look: production skips, without an error, a migration whose `when` is earlier than one it has already run (`scripts/migrations-lib.ts`). `tests/unit/scripts/migrations.test.ts` fails on a folder that is out of order.
 
+Read a node's current judgment through the four `*_in_force` views (`src/db/schema.ts`), not by filtering on `is_current` by hand: a file under `src` that mentions `is_current` must be listed with its reason in `tests/unit/db/judgment-in-force.test.ts`, which fails until it is.
+
 ## Constraints on agents
 
 Agents, like anyone, need to know their affordances and the constraints they work under.
