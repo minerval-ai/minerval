@@ -83,6 +83,7 @@ import {
   getRequestToolDefinitions,
 } from "../tools/kind-tools.js";
 import type { NodeKind } from "../../schemas/kinds.js";
+import { loadChangesSinceJudgedNote } from "./steward-changes-note.js";
 
 /**
  * The Steward's tools that belong to propositions and quantities, withheld
@@ -758,6 +759,15 @@ a cent.`
     moneyTask(input.trigger) ??
     defaultTask(passNote, kind, !judged);
 
+  // What has changed under the node's judgment since it was written (#566):
+  // which premises were judged again, added or removed, which sources came
+  // or went, and notices on them. Stated as fact after the task, for any
+  // pass on a node that has a judgment; what it means for the assessment is
+  // the Steward's to decide. The two formalization passes are not about the
+  // assessment and are told not to revisit it, so they go without.
+  const changesNote =
+    judged && !formalTask ? await loadChangesSinceJudgedNote(input.claimId, kind) : "";
+
   // Every unread message on the node, whole (inbox-service.ts). The lane's
   // own context, when it has one, still comes first.
   const inbox = await openInbox(input.claimId);
@@ -769,7 +779,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
+${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
