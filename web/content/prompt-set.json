@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "c9cf3e3f61dd76979f7c9715a5ac84143e6c44f414eee0b84eaf2855cfeb775d",
+  "hash": "f48c2ef54df47dfc447948004d31b6e008220f6d5006fbaa9427c68533424186",
   "constitution": {
     "hash": "b24cc4c0387ac1856f463bc9f3c0ee627c2ff34f74d41e6e878996f33721c95f",
     "source_path": "admin_constitution.md"
@@ -73,7 +73,7 @@
       "name": "grantmaker",
       "source_path": "src/llm/prompts/grantmaker.ts",
       "blocks": [
-        "72b171f58b143c5020673e19420f38ae016377119c5ef6e338ad96eeff1d7960"
+        "938c4d62baf45c51fcea4ae56890afffed534f75a37e20c1c33bf1872d81923c"
       ]
     },
     {

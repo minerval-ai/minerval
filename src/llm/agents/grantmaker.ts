@@ -53,6 +53,11 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { createMandateTools } from "../tools/mandate-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import {
+  SINCE_ASSESSED_DESCRIPTION,
+  sinceAssessed,
+  summarizeJudgmentChanges,
+} from "../../services/judgment-inputs-service.js";
+import {
   PLAN_ITEM_SCHEMA,
   PLAN_KIND_RULES,
   normalizePlanItems,
@@ -844,7 +849,10 @@ export function getManagementReadToolDefinitions(): Tool[] {
       description:
         "The nodes linked to one ingested source (by the source_id the " +
         "ingestion report gives), with kind, importance, contestation, stance, " +
-        "and when each was last assessed. Pages through every node the " +
+        "when each was last assessed, and `since_assessed` (" +
+        SINCE_ASSESSED_DESCRIPTION +
+        "; null on a node with no assessment; get_claim with include " +
+        "`judgment_inputs` says which nodes and sources). Pages through every node the " +
         "source carries: the result gives the total and the next offset.",
       input_schema: {
         type: "object" as const,
@@ -1187,12 +1195,21 @@ export async function executeManagementTool(
     // An offset past the end returns no rows to carry the window count.
     const total = rows[0]?.total ?? (offset > 0 ? ((await page(1, 0))[0]?.total ?? 0) : 0);
     const next = offset + rows.length < total ? offset + rows.length : null;
+    // What has changed under each node's assessment (#566), for the page in
+    // one query. A failed read leaves the field off rather than null, which
+    // would say the node has no assessment.
+    const changes = await summarizeJudgmentChanges(rows.map((r) => String(r.claim_id))).catch(() => null);
     return JSON.stringify({
       total,
       offset,
       returned: rows.length,
       next_offset: next,
-      claims: rows.map(({ total: _t, ...r }) => r),
+      claims: rows.map(({ total: _t, ...r }) => ({
+        ...r,
+        ...(changes
+          ? { since_assessed: sinceAssessed(changes.get(String(r.claim_id)), { note: false }) }
+          : {}),
+      })),
     });
   }
   if (name === "importance_distribution") {

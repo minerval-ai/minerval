@@ -155,7 +155,11 @@ three: a claim (a proposition, assessed with a verdict), a quantity (a
 value the discourse estimates, assessed with an estimate), and a question
 (assessed with its standing: the best answer, and how well answered it
 is). search_claims and get_claim report each node's kind; a plan item's
-claim_id is the id of any of them.
+claim_id is the id of any of them. For a node that has been judged they
+also report `since_assessed`: what has changed under that judgment since
+it was written (premises judged again, added or removed, sources added or
+removed, corrections or retractions on its sources), or that the judgment
+predates the record of such changes.
 
 - assess: one Steward pass on an unassessed node. On a claim it reaches a
   verdict; on a quantity it completes the definition and sets an estimate

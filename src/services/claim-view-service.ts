@@ -8,8 +8,9 @@
  * `include` sections, and a caller asks for the sections its work needs.
  *
  * The base view is everything cheap enough to read on every call: the node
- * row, its current assessment, the kind's record, the formalization record,
- * the requests bearing on it, and counts. Sections that grow with the graph
+ * row, its current assessment and what has changed under it since, the
+ * kind's record, the formalization record, the requests bearing on it, and
+ * counts. Sections that grow with the graph
  * (arguments, subclaims, instances, dependents, related links, findings,
  * check records) come only when asked for.
  */
@@ -40,6 +41,12 @@ import { listUnplacedPassages } from "./argument-instance-service.js";
 import { getClaimSourceMap, getSourceMapSummary } from "./source-map-service.js";
 import { listRelatedClaims } from "./claim-link-service.js";
 import { listFindings } from "./finding-service.js";
+import {
+  SINCE_ASSESSED_DESCRIPTION,
+  getJudgmentInputs,
+  sinceAssessed,
+  summarizeJudgmentChanges,
+} from "./judgment-inputs-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
 import {
   STEWARD_PARKED_DESCRIPTION,
@@ -57,6 +64,7 @@ export const CLAIM_VIEW_INCLUDES = [
   "related",
   "findings",
   "proofs",
+  "judgment_inputs",
 ] as const;
 export type ClaimViewInclude = (typeof CLAIM_VIEW_INCLUDES)[number];
 
@@ -92,7 +100,10 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`question`: standing with its confidence and marginal_yield " +
   "(`assessment.id` is what a finding cites), answers, presuppositions, " +
   "subquestions; " +
-  "`threshold_of` on a claim that cuts a quantity); `preliminary_seed`, the " +
+  "`threshold_of` on a claim that cuts a quantity); `since_assessed` (once " +
+  "the node has been judged), " +
+  SINCE_ASSESSED_DESCRIPTION +
+  " (include `judgment_inputs` to see which nodes and sources); `preliminary_seed`, the " +
   "parent Steward's prior, only while the node is unassessed; the " +
   "formalization record (`formalization`, `formalization_pending`, " +
   "`formalization_history`, `verification`, `lean_checks`), null or empty " +
@@ -117,7 +128,11 @@ export const CLAIM_VIEW_DESCRIPTION =
   "dependencies, with their standing and credence), `findings` (the " +
   "newest findings already noted on the node, with `findings_note` when " +
   "there are more), " +
-  "`proofs` (every Lean check record). " +
+  "`proofs` (every Lean check record), `judgment_inputs` (what the " +
+  "judgment in force was made against, input by input: each node under it " +
+  "with the id of the judgment it had then and has now, nodes added under " +
+  "it since, sources attached or detached since, and notices on its " +
+  "sources since). " +
   RESOLVED_FROM_DESCRIPTION +
   " Free.";
 
@@ -233,6 +248,7 @@ export async function getClaimView(
     sourceMap,
     kindJudgment,
     waiting,
+    changes,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -260,7 +276,12 @@ export async function getClaimView(
     // readers and funders can see what the assessment has not yet weighed;
     // a read failure loses the list, never the read.
     waitingMessages(claimId).catch(() => []),
+    // What has changed under the judgment in force (#566), whichever kind
+    // keeps it. A read failure loses the field, never the read: absent is
+    // "not said", which a reader cannot mistake for "unchanged".
+    summarizeJudgmentChanges([claimId]).catch(() => null),
   ]);
+  const since = sinceAssessed(changes?.get(claimId));
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left
   // when it minted this node. Served only while the node has no current
@@ -313,6 +334,9 @@ export async function getClaimView(
       claim.text,
       tags.map((t) => t.name)
     ),
+    // Beside the verdict it qualifies; for a quantity or a question, whose
+    // judgment sits in the kind's record below, it describes that one.
+    ...(since ? { since_assessed: since } : {}),
     ...(preliminarySeed ? { preliminary_seed: preliminarySeed } : {}),
     quantity: quantity ? { ...quantity, ...kindJudgment } : quantity,
     threshold_of: thresholdOf,
@@ -510,6 +534,16 @@ export async function getClaimView(
         // Every check the platform ran on any version of the statement:
         // verdict, mode, kind, gate, pin and hash, never the source.
         payload.proofs = await listLeanChecksForClaim(claimId);
+      })()
+    );
+  }
+
+  if (include.has("judgment_inputs")) {
+    sections.push(
+      (async () => {
+        // The whole record behind since_assessed (#566): which premises and
+        // sources, by id. The same view GET /claims/:id/judgment-inputs serves.
+        payload.judgment_inputs = await getJudgmentInputs(claimId);
       })()
     );
   }

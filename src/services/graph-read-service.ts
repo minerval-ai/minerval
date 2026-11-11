@@ -26,6 +26,12 @@ import { STEWARD_PARKED_DESCRIPTION } from "./steward-park-reason.js";
 import { attachClaimTags, resolveTagBySlug } from "./tag-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
 import { NODE_KINDS } from "../schemas/kinds.js";
+import {
+  SINCE_ASSESSED_DESCRIPTION,
+  sinceAssessed,
+  summarizeJudgmentChanges,
+  type JudgmentChangeSummary,
+} from "./judgment-inputs-service.js";
 
 /** Who is reading: an outside caller over MCP, or one of the graph's agents. */
 export type GraphReadAudience = "caller" | "agent";
@@ -92,7 +98,11 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "actively it is disputed, 0..1, kept apart from the status; null until " +
         "judged), its current judgment (`assessment_status` and " +
         "`assessment_confidence` on a claim, `standing` on a question, " +
-        "`estimate` and `unit` on a quantity), `days_since_assessed`, the " +
+        "`estimate` and `unit` on a quantity), `days_since_assessed`, " +
+        "`since_assessed` (" +
+        SINCE_ASSESSED_DESCRIPTION +
+        "; null on a node with no judgment; get_claim with include " +
+        "`judgment_inputs` says which nodes and sources), the " +
         "amount of any live prize for a machine-checked proof or disproof of " +
         "its formal statement (`prize_micro_usd`) and whether such a check " +
         "exists (`checked`), its topic tags and its page_url." +
@@ -264,12 +274,19 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
     tagId,
     kind: oneOf(input.kind, NODE_KINDS),
   });
-  const [signals, tagged] = await Promise.all([
+  const [signals, changes, tagged] = await Promise.all([
     // The signals decorate the hits, as tags do: their failure costs the
     // signals, never the search.
     searchSignals(results.map((r) => r.id)).catch((err) => {
       console.error(`[graph-read] search signals failed: ${err instanceof Error ? err.message : err}`);
       return new Map<string, SearchSignals>();
+    }),
+    // What has changed under each hit's judgment (#566), for all of them in
+    // one query. On a failure the field is left off every hit rather than
+    // set to null, which would say the node has no judgment.
+    summarizeJudgmentChanges(results.map((r) => r.id)).catch((err) => {
+      console.error(`[graph-read] search changes-since failed: ${err instanceof Error ? err.message : err}`);
+      return null as Map<string, JudgmentChangeSummary> | null;
     }),
     attachClaimTags(results),
   ]);
@@ -291,6 +308,7 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
           assessment_status: r.assessment_status,
           assessment_confidence: r.assessment_confidence,
           days_since_assessed: s?.days_since_assessed ?? null,
+          ...(changes ? { since_assessed: sinceAssessed(changes.get(r.id), { note: false }) } : {}),
           steward_state: s?.steward_state ?? null,
           prize_micro_usd: r.prize_micro_usd ?? null,
           checked: r.checked ?? null,
