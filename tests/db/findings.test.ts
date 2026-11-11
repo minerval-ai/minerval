@@ -54,6 +54,26 @@ async function seedAssessment(claimId: string, isCurrent = true): Promise<string
   return id;
 }
 
+async function seedQuestionAssessment(claimId: string): Promise<string> {
+  const id = randomUUID();
+  await rawQuery(
+    `INSERT INTO question_assessments (id, claim_id, standing, reasoning_trace)
+     VALUES ($1, $2, 'open', 'trace')`,
+    [id, claimId]
+  );
+  return id;
+}
+
+async function seedQuantityEstimate(claimId: string): Promise<string> {
+  const id = randomUUID();
+  await rawQuery(
+    `INSERT INTO quantity_estimates (id, claim_id, estimate, work)
+     VALUES ($1, $2, '{"form":"point","central":1}', 'work')`,
+    [id, claimId]
+  );
+  return id;
+}
+
 function base(claimId: string, assessmentId: string) {
   return {
     headline: "Moderate drinking does not lower cardiovascular risk once abstainer bias is corrected for.",
@@ -187,6 +207,55 @@ describe("noteFinding on a real database", () => {
     expect(withdrawn!.withdrawn_note).toBe("cited a retired statement");
     expect((await listFindings({ claimId })).length).toBe(0);
     expect((await listFindings({ claimId, status: "withdrawn" })).length).toBe(1);
+  });
+
+  it("cites a question's standing and a quantity's estimate, drops ones that do not exist, and flags each stale once superseded", async () => {
+    const question = await seedClaim("finding question");
+    const quantity = await seedClaim("finding quantity");
+    const standingId = await seedQuestionAssessment(question);
+    const estimateId = await seedQuantityEstimate(quantity);
+    embedMock.next.push(axis(30));
+    const noted = await noteFinding({
+      ...base(question, standingId),
+      refs: [
+        { kind: "question_assessment", id: standingId },
+        { kind: "quantity_estimate", id: estimateId },
+        // Ids from the wrong table do not resolve under these kinds.
+        { kind: "question_assessment", id: estimateId },
+        { kind: "quantity_estimate", id: randomUUID() },
+      ],
+    });
+    expect(noted.outcome).toBe("recorded");
+    if (noted.outcome !== "recorded") return;
+    expect(noted.droppedRefs.map((r) => r.kind).sort()).toEqual([
+      "quantity_estimate",
+      "question_assessment",
+    ]);
+    let row = await getFindingById(noted.findingId);
+    expect(row!.refs).toEqual([
+      { kind: "question_assessment", id: standingId },
+      { kind: "quantity_estimate", id: estimateId },
+    ]);
+    expect(row!.stale).toBe(false);
+
+    // The question's standing is superseded: stale.
+    await rawQuery(`UPDATE question_assessments SET is_current = false WHERE id = $1`, [standingId]);
+    await seedQuestionAssessment(question);
+    row = await getFindingById(noted.findingId);
+    expect(row!.stale).toBe(true);
+
+    // Only the quantity's estimate cited, and then superseded: stale too.
+    embedMock.next.push(axis(31));
+    const onEstimate = await noteFinding({
+      ...base(quantity, estimateId),
+      refs: [{ kind: "quantity_estimate", id: estimateId }],
+    });
+    expect(onEstimate.outcome).toBe("recorded");
+    const estimateFinding = onEstimate.outcome === "recorded" ? onEstimate.findingId : "";
+    expect((await getFindingById(estimateFinding))!.stale).toBe(false);
+    await rawQuery(`UPDATE quantity_estimates SET is_current = false WHERE id = $1`, [estimateId]);
+    await seedQuantityEstimate(quantity);
+    expect((await getFindingById(estimateFinding))!.stale).toBe(true);
   });
 
   it("refuses the importance range and the status vocabulary at the constraint", async () => {

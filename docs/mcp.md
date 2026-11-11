@@ -234,7 +234,9 @@ read is free, an agent which signals allocation turns on.
   figures not yet recorded, readings, cut claims) and no assessment, a
   question a `question` record (standing, answers, presuppositions,
   subquestions), a cut claim `threshold_of`, and every node its `requests`,
-  as `GET /claims/:id` serves them.
+  as `GET /claims/:id` serves them. The estimate's record (`quantity.assessed`)
+  and the standing's (`question.assessment`) carry their own `id`, as a
+  claim's `assessment` does.
 - **`get_argument`** `{argument_id, include?, instances_limit?, instances_offset?}`
   — one argument (#541): its conclusion, stance or what it shows about a
   quantity, written form, and retirement if retired. `include` adds

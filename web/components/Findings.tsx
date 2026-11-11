@@ -8,8 +8,8 @@ import { AssessmentText } from "./AssessmentText";
  * footing beneath (the claim it is about, the records it cites, who noted it
  * and when, how many later runs met the same finding). No editorializing
  * layer sits between the record and the reader; the page's only additions
- * are mechanical: the stale marker when a cited assessment has been
- * superseded, and the withdrawal note when an operator has taken it down.
+ * are mechanical: the stale marker when a cited assessment, question
+ * standing or quantity estimate has been superseded, and the withdrawal note when an operator has taken it down.
  */
 
 const AGENT_LABELS: Record<string, string> = {
@@ -109,7 +109,7 @@ export function FindingCard({
       {finding.stale && (
         <p className="finding-notice">
           <span className="sc">The graph has moved</span> · this note cites an assessment that
-          is no longer the claim&apos;s current one; read the claim for the present verdict.
+          is no longer the node&apos;s current one; read the node for the present verdict.
         </p>
       )}
       <div className="finding-account">

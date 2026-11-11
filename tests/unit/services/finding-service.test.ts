@@ -184,6 +184,41 @@ describe("noteFinding", () => {
     expect(JSON.parse(params![3] as string)).toEqual([{ kind: "claim", id: CLAIM_ID }]);
   });
 
+  it("resolves a question's standing and a quantity's estimate in their own tables", async () => {
+    const refs = [
+      { kind: "question_assessment", id: ASSESSMENT_ID },
+      { kind: "quantity_estimate", id: CHECK_ID },
+    ];
+    const result = await noteFinding({ ...GOOD, refs });
+    expect(result).toEqual({ outcome: "recorded", findingId: FINDING_ID, droppedRefs: [] });
+    expect(callsMatching("FROM question_assessments WHERE id = ANY")).toEqual([[[ASSESSMENT_ID]]]);
+    expect(callsMatching("FROM quantity_estimates WHERE id = ANY")).toEqual([[[CHECK_ID]]]);
+    const [params] = callsMatching("INSERT INTO agent_findings");
+    expect(JSON.parse(params![3] as string)).toEqual(refs);
+  });
+
+  it("drops a question's standing or a quantity's estimate that does not resolve", async () => {
+    routeQueries({ existing: { question_assessments: [], quantity_estimates: [] } });
+    const result = await noteFinding({
+      ...GOOD,
+      refs: [
+        { kind: "claim", id: CLAIM_ID },
+        { kind: "question_assessment", id: ASSESSMENT_ID },
+        { kind: "quantity_estimate", id: CHECK_ID },
+      ],
+    });
+    expect(result).toEqual({
+      outcome: "recorded",
+      findingId: FINDING_ID,
+      droppedRefs: [
+        { kind: "question_assessment", id: ASSESSMENT_ID },
+        { kind: "quantity_estimate", id: CHECK_ID },
+      ],
+    });
+    const [params] = callsMatching("INSERT INTO agent_findings");
+    expect(JSON.parse(params![3] as string)).toEqual([{ kind: "claim", id: CLAIM_ID }]);
+  });
+
   it("does not record a finding none of whose refs resolve", async () => {
     routeQueries({ existing: { assessments: [], claims: [] } });
     const result = await noteFinding(GOOD);

@@ -204,6 +204,8 @@ export interface QuantityDefinitionView {
 }
 
 export interface QuantityAssessedView {
+  /** The estimate row's own id: what a finding cites as a quantity_estimate ref. */
+  id: string;
   summary: string | null;
   work: string;
   model: string | null;
@@ -267,7 +269,7 @@ export async function getCurrentEstimate(
   claimId: string
 ): Promise<{ estimate: QuantityEstimate; assessed: QuantityAssessedView } | null> {
   const [row] = await rawQuery<{ estimate: QuantityEstimate } & QuantityAssessedView>(
-    `SELECT estimate, summary, work, model, assessed_at
+    `SELECT id, estimate, summary, work, model, assessed_at
        FROM quantity_estimates WHERE claim_id = $1 AND is_current = true`,
     [claimId]
   );

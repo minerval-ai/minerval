@@ -99,7 +99,9 @@ skill bundles it in full, and the section numbers below point into it.
   given only where one number is an honest summary.
 - An assessment's `id` names the verdict itself; cite it, not only the
   claim, when you point at what the graph concluded, so the citation still
-  means that verdict after a reassessment. Its `run_id` names the run that
+  means that verdict after a reassessment. A quantity's estimate
+  (`quantity.assessed.id`) and a question's standing
+  (`question.assessment.id`) carry ids the same way. An assessment's `run_id` names the run that
   wrote it. `get_run` and
   `list_run_steps` show what that run was given and did, step by step,
   when the run is public; a run that read private data is withheld, with

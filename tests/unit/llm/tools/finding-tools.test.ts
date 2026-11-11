@@ -17,6 +17,8 @@ vi.mock("../../../../src/services/finding-service.js", () => ({
   FINDING_REF_KINDS: [
     "claim",
     "assessment",
+    "question_assessment",
+    "quantity_estimate",
     "argument",
     "contribution",
     "lean_check",
@@ -61,6 +63,13 @@ describe("note_finding tool", () => {
     expect(tool!.name).toBe(NOTE_FINDING_TOOL_NAME);
     const props = tool!.input_schema.properties as Record<string, any>;
     expect(props.refs.items.properties.kind.enum).toContain("lean_check");
+    // A question's standing and a quantity's estimate are cited as a
+    // claim's assessment is, by the id get_claim serves (#890).
+    expect(props.refs.items.properties.kind.enum).toEqual(
+      expect.arrayContaining(["assessment", "question_assessment", "quantity_estimate"])
+    );
+    expect(props.refs.description).toContain("`question.assessment.id`");
+    expect(props.refs.description).toContain("`quantity.assessed.id`");
     expect(props.importance.minimum).toBe(1);
     expect(props.importance.maximum).toBe(10);
     expect(props.joins).toBeDefined();

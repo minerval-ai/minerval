@@ -1012,8 +1012,9 @@ sibling channel for the other thing an agent notices in the course of its
 work: something people who hold a question would be better for knowing,
 because what most of them believe is wrong, or missing, or true for reasons
 the record now supplies. A finding is written in the graph's voice, rests on
-typed refs into the graph (claim, assessment, argument, contribution, check,
-attempt, formalization) that are checked to exist on write, carries an
+typed refs into the graph (claim, assessment, a question's standing, a
+quantity's estimate, argument, contribution, check, attempt, formalization)
+that are checked to exist on write, carries an
 importance of its own from 1 to 10, and is published as written on the
 public findings page (`/findings`), where the platform's later writing draws
 from it. The Grantmaker, a mandate's agent, makes no assessment, argument,
@@ -1026,7 +1027,8 @@ passes `joins` to `note_finding` and its account is added as a sighting,
 counted and kept in its own words, rather than a new finding. Findings live in
 `agent_findings` with the same no-FK attribution snapshot as reports, so a
 note outlives the trace it came from; the read side computes a `stale`
-flag when a cited assessment is no longer the claim's current one. The
+flag when a cited assessment, standing or estimate is no longer the node's
+current one. The
 extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
 and the solver do not carry the tool: an outside agent's discovery is a
 contribution, and a Lookout's is a flag for a Steward to judge.

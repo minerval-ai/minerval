@@ -78,9 +78,11 @@ export const CLAIM_VIEW_DESCRIPTION =
   "is honest, else null, and `marginal_yield`, how much another pass " +
   "would add); the kind's record, since a quantity or a " +
   "question has no `assessment` (`quantity`: definition, the graph's " +
-  "estimate with its work and marginal_yield, the figures sources state, " +
-  "readings and cuts; `question`: standing with its confidence and " +
-  "marginal_yield, answers, presuppositions, subquestions; " +
+  "estimate with its work and marginal_yield (`assessed.id` is what a " +
+  "finding cites), the figures sources state, readings and cuts; " +
+  "`question`: standing with its confidence and marginal_yield " +
+  "(`assessment.id` is what a finding cites), answers, presuppositions, " +
+  "subquestions; " +
   "`threshold_of` on a claim that cuts a quantity); `preliminary_seed`, the " +
   "parent Steward's prior, only while the node is unassessed; the " +
   "formalization record (`formalization`, `formalization_pending`, " +

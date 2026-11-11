@@ -260,6 +260,8 @@ export interface QuestionAnswerView {
 }
 
 export interface QuestionAssessmentView {
+  /** The row's own id: what a finding cites as a question_assessment ref. */
+  id: string;
   standing: QuestionStanding;
   summary: string | null;
   reasoning_trace: string;
@@ -307,7 +309,7 @@ export async function getCurrentStanding(claimId: string): Promise<QuestionStand
 export async function getQuestionDetail(claimId: string): Promise<QuestionDetailView> {
   const [current, children, relations, dependedOnBy, instances] = await Promise.all([
     rawQuery<QuestionAssessmentView & { incomplete: string | null }>(
-      `SELECT standing, summary, reasoning_trace, model, assessed_at,
+      `SELECT id, standing, summary, reasoning_trace, model, assessed_at,
               favored_claim_ids::text[] AS favored_ids, incomplete
          FROM question_assessments WHERE claim_id = $1 AND is_current = true`,
       [claimId]
@@ -372,6 +374,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
     standing: cur?.standing ?? null,
     assessment: cur
       ? {
+          id: cur.id,
           standing: cur.standing,
           summary: cur.summary,
           reasoning_trace: cur.reasoning_trace,
