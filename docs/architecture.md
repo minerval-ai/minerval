@@ -681,7 +681,7 @@ the disagreement rather than the evidence and let a verdict be avoided;
 evidence would exist if the claim were true, `unknown` where it would not be
 expected). Migration 0066 relabeled existing rows provisionally
 (`contested` to `inconclusive`, `unsupported` to `unknown`) and queued the
-affected claims for a fresh Steward pass. Migration 0111 (#848) records the
+affected claims for a fresh Steward pass. Migration 0112 (#848) records the
 retired label in `assessments.relabeled_from`; the claim view, the API and
 `public_read.assessments` carry it, and the claim page says the status was
 carried over and not yet re-judged. A Steward never writes it, so a re-judged

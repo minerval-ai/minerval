@@ -21,7 +21,7 @@ import { loadConfig } from "../config.js";
 export interface TraceRetentionResult {
   /** Runs deleted this tick (steps cascade and are not counted). */
   deleted: number;
-  /** False when retention is disabled (TRACE_RETENTION_DAYS=0). */
+  /** False when retention is disabled (TRACE_RETENTION_DAYS=0, or RUN_LOG_MODE=record). */
   swept: boolean;
 }
 
@@ -31,7 +31,10 @@ const MAX_BATCHES_PER_TICK = 20;
 export async function traceRetentionTick(
   now: Date = new Date()
 ): Promise<TraceRetentionResult> {
-  const days = loadConfig().traceRetentionDays;
+  const config = loadConfig();
+  // In record mode a run's log is a record, not a window: nothing expires.
+  if (config.runLogMode === "record") return { deleted: 0, swept: false };
+  const days = config.traceRetentionDays;
   if (!(days > 0)) return { deleted: 0, swept: false };
   const cutoff = new Date(now.getTime() - days * 86_400_000);
 

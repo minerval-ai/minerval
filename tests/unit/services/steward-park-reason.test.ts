@@ -68,10 +68,10 @@ describe("classifying a Steward failure", () => {
   });
 });
 
-describe("the backfill in migration 0112", () => {
+describe("the backfill in migration 0113", () => {
   it("is the classifier's own SQL, verbatim", () => {
     const dir = resolve(__dirname, "../../../src/db/migrations");
-    const file = readFileSync(resolve(dir, "0112_steward_error_reason.sql"), "utf8");
+    const file = readFileSync(resolve(dir, "0113_steward_error_reason.sql"), "utf8");
     expect(file).toContain(`SET steward_error_reason = ${stewardErrorReasonSql("steward_error")}`);
   });
 });

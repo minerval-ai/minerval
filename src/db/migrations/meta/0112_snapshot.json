@@ -1,6 +1,6 @@
 {
-  "id": "a6eed3f3-da0a-41be-9a9f-f886d321949d",
-  "prevId": "e813d8d5-cdfa-4a5b-b5b8-9aee1b10907a",
+  "id": "e813d8d5-cdfa-4a5b-b5b8-9aee1b10907a",
+  "prevId": "5ffc0651-9e20-4d5d-bef7-e8616ff20de3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1312,6 +1312,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::text[]"
+        },
+        "log_hash": {
+          "name": "log_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sealed_at": {
+          "name": "sealed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1595,6 +1607,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "prev_hash": {
+          "name": "prev_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1621,6 +1645,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_agent_steps_chained": {
+          "name": "uq_agent_steps_chained",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "hash IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6225,12 +6271,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "steward_error_reason": {
-          "name": "steward_error_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

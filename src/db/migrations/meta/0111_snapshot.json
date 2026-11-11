@@ -1,5 +1,5 @@
 {
-  "id": "e813d8d5-cdfa-4a5b-b5b8-9aee1b10907a",
+  "id": "5ffc0651-9e20-4d5d-bef7-e8616ff20de3",
   "prevId": "c3d60824-2c32-45e6-aae8-92857a7d2924",
   "version": "7",
   "dialect": "postgresql",
@@ -1312,6 +1312,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::text[]"
+        },
+        "log_hash": {
+          "name": "log_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sealed_at": {
+          "name": "sealed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1595,6 +1607,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "prev_hash": {
+          "name": "prev_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1621,6 +1645,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_agent_steps_chained": {
+          "name": "uq_agent_steps_chained",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "hash IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3175,12 +3221,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "relabeled_from": {
-          "name": "relabeled_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

@@ -1,8 +1,8 @@
 /**
- * Migration 0111 (#848): statuses migration 0066 relabeled (#524) and no
+ * Migration 0112 (#848): statuses migration 0066 relabeled (#524) and no
  * Steward has re-judged carry the retired label in assessments.relabeled_from.
  * The global setup applied the whole chain to an empty database, so this file
- * seeds rows in the retired vocabulary, runs 0066 and then 0111's backfill
+ * seeds rows in the retired vocabulary, runs 0066 and then 0112's backfill
  * again, and checks: both relabels are backfilled, current and historical
  * rows alike; a row whose trace only quotes the note is not; the claim view
  * and public_read carry the field; and a Steward's re-judgment writes a
@@ -28,8 +28,8 @@ function statements(file: string): string[] {
 async function runMigrations(): Promise<void> {
   for (const sql of statements("0066_evidential_status_ladder.sql")) await rawQuery(sql);
   // The column already exists (the chain ran in global setup); the rest of
-  // 0111 is the backfill and the view, both safe to run again.
-  for (const sql of statements("0111_assessment_relabeled_from.sql")) {
+  // 0112 is the backfill and the view, both safe to run again.
+  for (const sql of statements("0112_assessment_relabeled_from.sql")) {
     await rawQuery(sql.replace('ADD COLUMN "relabeled_from"', 'ADD COLUMN IF NOT EXISTS "relabeled_from"'));
   }
 }
@@ -65,7 +65,7 @@ async function relabeledFrom(id: string): Promise<string | null> {
   return row!.relabeled_from;
 }
 
-describe("migration 0111: relabeled_from (#848)", () => {
+describe("migration 0112: relabeled_from (#848)", () => {
   const ids: Record<string, string> = {};
 
   beforeAll(async () => {

@@ -51,7 +51,7 @@ export function stewardErrorReasonOf(v: unknown): StewardErrorReason {
  * The text patterns behind each class, in the order they are tried. One list
  * serves both classifiers: the TypeScript one below (which also reads the
  * error's class and status) and the SQL one that backfilled the rows parked
- * before the column existed (migration 0112), so the two cannot drift.
+ * before the column existed (migration 0113), so the two cannot drift.
  * Lower-case substrings, matched against the lower-cased error text; none
  * contains a quote, a percent sign or an underscore-sensitive wildcard that
  * SQL LIKE would read differently (underscores are escaped in the SQL).
@@ -139,7 +139,7 @@ function sqlLikePattern(p: string): string {
 
 /**
  * The same text classification as a SQL CASE over `column` (a text
- * expression). Migration 0112's backfill is this expression over
+ * expression). Migration 0113's backfill is this expression over
  * `steward_error`, verbatim; tests/unit/services/steward-park-reason.test.ts
  * holds the two together.
  */

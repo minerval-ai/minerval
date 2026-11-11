@@ -496,7 +496,7 @@ export const assessments = pgTable(
       .defaultNow(),
     // The retired status this row carried before migration 0066 relabeled
     // it (#524, #848): 'contested' (now inconclusive) or 'unsupported' (now
-    // unknown). Backfilled by migration 0111 from the note 0066 appended to
+    // unknown). Backfilled by migration 0112 from the note 0066 appended to
     // reasoning_trace. A Steward never writes it, so a node clears it when it
     // is re-judged; set on a current row, it means the status is provisional,
     // not a finding. NULL on every other row.
@@ -1670,10 +1670,13 @@ export const llmUsage = pgTable(
 // Deliberately span-shaped (run → ordered steps with timestamps) so an
 // OTel/Langfuse exporter stays an adapter, never a migration (#334 §4).
 //
-// Writes are fire-and-forget from the hot path (like llm_usage): tracing must
-// never fail or slow an agent run, so there are no FKs to domain tables and
-// consumers must tolerate a run row without steps or an unfinished run
-// (finished_at NULL after a crash). Retention is the operator's policy knob:
+// Writes are fire-and-forget from the hot path by default (like llm_usage):
+// tracing does not fail or slow an agent run, so there are no FKs to domain
+// tables and consumers must tolerate a run row without steps or an
+// unfinished run (finished_at NULL after a crash). A run whose every step
+// was written is sealed (log_hash, sealed_at), which is how a reader tells
+// a whole log from a partial one; RUN_LOG_MODE=record makes the run wait on
+// that seal (#552). Retention is the operator's policy knob:
 // traces are large, TRACE_LEVEL=off disables writes entirely (the production
 // default until a retention job exists), and rows are safe to prune by
 // started_at — nothing joins to them by FK except agent_steps, which cascades.
@@ -1718,6 +1721,12 @@ export const agentRuns = pgTable(
     // A reason is only ever added while the run is live; nothing removes one
     // except a release that names it (a grant conversation that has closed).
     privateReasons: text("private_reasons").array().notNull().default(sql`'{}'::text[]`),
+    // The seal (#552; services/run-log.ts): the hash the run's chain of
+    // steps reached, and when the run closed with every step written. NULL
+    // on a run still open, on one that lost a step, and on runs from before
+    // steps were chained. A sealed run's log can be checked against log_hash.
+    logHash: text("log_hash"),
+    sealedAt: timestamp("sealed_at", { withTimezone: true }),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -1737,19 +1746,30 @@ export const agentSteps = pgTable(
     runId: uuid("run_id")
       .notNull()
       .references(() => agentRuns.id, { onDelete: "cascade" }),
-    // Client-side sequence within the run (0-based). Not unique-indexed:
-    // inserts are fire-and-forget and a duplicate seq from a lost race is a
-    // tolerable trace defect, not worth failing writes over.
+    // Client-side sequence within the run (0-based). Unique within a run
+    // for chained steps (the partial index below); steps recorded before
+    // the chain were not held to that.
     seq: integer("seq").notNull(),
     // 'assistant' (one model turn: stop reason + full content blocks) or
     // 'tool_results' (the executed tools of that turn: name, input, output).
     kind: text("kind").notNull(),
     content: jsonb("content").notNull(),
+    // The hash chain (#552; services/run-log.ts): the hash of the step
+    // before this one (the run's genesis hash for step 0), and this step's
+    // own, taken over prev_hash, seq, kind and the content as stored. NULL
+    // on steps recorded before the chain.
+    prevHash: text("prev_hash"),
+    hash: text("hash"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("idx_agent_steps_run").on(table.runId, table.seq)]
+  (table) => [
+    index("idx_agent_steps_run").on(table.runId, table.seq),
+    uniqueIndex("uq_agent_steps_chained")
+      .on(table.runId, table.seq)
+      .where(sql`hash IS NOT NULL`),
+  ]
 );
 
 // ---------------------------------------------------------------------------
