@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "7e4e2f1fd23430ba3251c6ae519635d26fdd2492ba44d134bfdd7d431399c5d3",
+  "hash": "0b9e767bcffb844adb43b58415abfc1ea58b7bc6754b4f8e0d33fa90f8c7557b",
   "constitution": {
     "hash": "a0f849d02707f59443470b598ea64ca3607596a0cb9731230cec8506254649bc",
     "source_path": "admin_constitution.md"
@@ -17,7 +17,7 @@
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "a4f7d5044cdda30f672f95352b6e4f4ef00555e88d199b5cf40391b7d706ef5b"
+        "73e7e65279ef10be7958772be2947ed42a5f73727d17d3fb6fef2177f5a5cf06"
       ]
     },
     {
@@ -101,14 +101,14 @@
       "name": "researcher",
       "source_path": "src/llm/prompts/researcher.ts",
       "blocks": [
-        "da9b13ce1fc9ce41d5e4944e7f32435776f17dea95b60f77410ec04b26b64c2a"
+        "30af1e958e63e3221333d62971f18da64ba866ed5144c6ab93976230ae20f163"
       ]
     },
     {
       "name": "researcher",
       "source_path": "src/llm/prompts/researcher.ts",
       "blocks": [
-        "f161a497df8490d05093de845ba607d1d207d2ccd4882d48d4d88b63872f3169"
+        "4b5dec1e97bf350a983f55a9914cf3587c07674a9f87ed84d4971abc069f12df"
       ]
     },
     {
