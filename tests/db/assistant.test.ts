@@ -131,6 +131,10 @@ describe("assistant conversations", () => {
     const gate = new Promise<void>((r) => (release = r));
     script(async (input) => {
       input.onNote?.("Reading the decomposition");
+      (input as unknown as { onTool?: (tool: string, args: Record<string, unknown>) => void }).onTool?.(
+        "search_claims",
+        { query: "eggs and heart disease" }
+      );
       await input.charge(250_000);
       await gate;
       await input.charge(400_000);
@@ -141,7 +145,13 @@ describe("assistant conversations", () => {
 
     await new Promise((r) => setTimeout(r, 1_300));
     const mid = await read(convo.id, u.id);
-    expect(mid.turn).toMatchObject({ state: "replying", note: "Reading the decomposition", cost_micro_usd: 250_000 });
+    expect(mid.turn).toMatchObject({
+      state: "replying",
+      note: "Reading the decomposition",
+      // What the turn is doing, so a long reply is not a still page.
+      activity: [{ tool: "search_claims", about: "eggs and heart disease" }],
+      cost_micro_usd: 250_000,
+    });
 
     release();
     await settleAssistantTurns();
