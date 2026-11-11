@@ -23,7 +23,10 @@ import styles from "@/components/home/home.module.css";
 // FLAGSHIP_CLAIM_ID repoints it without a code change (if the claim's state
 // degrades, or a better flagship emerges); loadClaim still degrades to the
 // fixture if the live fetch fails.
-const LIVE_FLAGSHIP_ID = "585e0bd0-5830-4104-851e-7d4130a1be05"; // egg consumption → CVD risk
+// It was the eggs/cardiovascular claim (585e0bd0-…); it is now the deepest
+// AI-safety cluster the graph holds, with the instrumental power-seeking and
+// alignment-faking subtrees beneath it.
+const LIVE_FLAGSHIP_ID = "5477338c-4f5c-4049-a959-efbf3f23a988"; // goal misgeneralization → catastrophic risk
 const FLAGSHIP =
   process.env.FLAGSHIP_CLAIM_ID ?? (apiConfigured() ? LIVE_FLAGSHIP_ID : FLAGSHIP_ID);
 
