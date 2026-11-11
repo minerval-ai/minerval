@@ -59,7 +59,7 @@ export const claimProposeBody = z.object({
   // contribution reviewed on its merits (an `argument` sent by an older
   // client is dropped here, never stored).
   claim: z.string().min(1).max(2000),
-  kind: z.enum(["claim", "question"]).default("claim"),
+  kind: z.enum(["claim", "question", "quantity"]).default("claim"),
 });
 
 export const claimPatchBody = z.object({

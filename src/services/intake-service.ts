@@ -20,7 +20,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { claims, contributions } from "../db/schema.js";
-import { intakeContributionTypeEnum, type MatchedInstanceStance } from "../schemas/common.js";
+import {
+  intakeContributionTypeEnum,
+  PROPOSAL_TYPE_FOR_KIND,
+  proposedNodeKind,
+  type MatchedInstanceStance,
+} from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { inferDomainPrior } from "../llm/agents/domain-prior.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -69,7 +74,12 @@ async function createProposalFundedOrder(
   }
 }
 
-export type IntakeContributionType = "propose_claim" | "propose_question" | "propose_source";
+export type IntakeContributionType =
+  | "propose_claim"
+  | "propose_question"
+  | "propose_quantity"
+  | "propose_source";
+
 
 export function isIntakeContributionType(
   type: string
@@ -86,8 +96,8 @@ export function isIntakeContributionType(
 export async function createClaimProposal(input: {
   claimText: string;
   contributorId: string;
-  /** A question proposed directly is a propose_question (§7a). */
-  kind?: "claim" | "question";
+  /** A question or a quantity proposed directly is a propose_question or a propose_quantity (§7a). */
+  kind?: NodeKind;
 }) {
   const db = getDb();
   const [contribution] = await db
@@ -95,7 +105,7 @@ export async function createClaimProposal(input: {
     .values({
       claimId: null,
       contributorId: input.contributorId,
-      contributionType: input.kind === "question" ? "propose_question" : "propose_claim",
+      contributionType: PROPOSAL_TYPE_FOR_KIND[input.kind ?? "claim"],
       // A proposal is its wording alone, which rides in
       // proposed_canonical_form as a propose_edit's does; it carries no
       // argument (the case for a node is a contribution on it once it exists).
@@ -180,7 +190,7 @@ export async function materializeAcceptedIntake(
     );
   }
 
-  if (contribution.contributionType === "propose_claim" || contribution.contributionType === "propose_question") {
+  if (proposedNodeKind(contribution.contributionType)) {
     return materializeProposedClaim(contribution);
   }
 
@@ -206,7 +216,8 @@ async function materializeProposedClaim(contribution: {
   proposedCanonicalForm: string | null;
 }): Promise<IntakeMaterializationResult> {
   // A question proposed directly enters as a question unless the Matcher
-  // finds it asks whether something is so, or for a value (§7a).
+  // finds it asks whether something is so, or for a value (§7a); a quantity
+  // proposed directly enters as a quantity unless the Matcher finds otherwise.
   //
   // Only the wording enters the graph. A mandate's proposal carries a
   // content (why the mandate wants the node); that is the mandate's public
@@ -214,7 +225,7 @@ async function materializeProposedClaim(contribution: {
   // to the Steward: proposing a node and arguing about it are separate acts,
   // and the case for or against a node comes through reviewed contributions
   // on it.
-  const proposedKind: NodeKind = contribution.contributionType === "propose_question" ? "question" : "claim";
+  const proposedKind: NodeKind = proposedNodeKind(contribution.contributionType) ?? "claim";
   if (contribution.claimId) {
     return { action: "already_materialized", claimId: contribution.claimId };
   }

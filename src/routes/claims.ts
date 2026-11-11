@@ -1436,7 +1436,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["claims"],
       summary:
-        "Propose a new claim or question, judged on its wording alone (user proposals enter the review queue). Arguments and evidence go on the node once it exists, as contributions reviewed on their merits.",
+        "Propose a new claim, question or quantity, judged on its wording alone (user proposals enter the review queue). Arguments and evidence go on the node once it exists, as contributions reviewed on their merits.",
       body: {
         type: "object",
         required: ["claim"],
@@ -1449,10 +1449,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           // review never rejects a proposal for arriving as the wrong one.
           kind: {
             type: "string",
-            enum: ["claim", "question"],
+            enum: ["claim", "question", "quantity"],
             default: "claim",
             description:
-              "Optional guess at the kind. The Matcher decides whether the node enters as a claim, a question or a quantity.",
+              "Optional guess at the kind. The Matcher decides whether the node enters as a claim, a question or a quantity. " +
+              "A quantity's wording says what is measured, in which population and under which conditions, and in what unit.",
           },
         },
       },

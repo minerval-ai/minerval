@@ -169,6 +169,37 @@ describe("createClaimProposal — a question", () => {
   });
 });
 
+describe("a quantity proposed directly (#816)", () => {
+  it("files a propose_quantity with its wording alone", async () => {
+    await createClaimProposal({
+      claimText: "Share of US adults who smoke daily, in percent",
+      contributorId: "user-1",
+      kind: "quantity",
+    });
+    expect(state.inserts[0]!.values).toMatchObject({
+      contributionType: "propose_quantity",
+      content: "",
+      proposedCanonicalForm: "Share of US adults who smoke daily, in percent",
+    });
+  });
+
+  it("enters as a quantity through the Matcher, which is told the kind proposed", async () => {
+    state.selectResults.push([pendingContribution({ contributionType: "propose_quantity" })]);
+    mocks.matchClaim.mockResolvedValue({
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: null,
+      instance_stance: "affirms",
+    });
+
+    const result = await materializeAcceptedIntake("contrib-1");
+
+    expect(result.action).toBe("created_claim");
+    expect(mocks.matchClaim).toHaveBeenCalledWith(expect.objectContaining({ kind: "quantity" }));
+    expect(state.inserts.find((i) => i.table === claims)!.values).toMatchObject({ kind: "quantity" });
+  });
+});
+
 describe("createSourceProposal", () => {
   it("stores the source verbatim but enqueues only review, not extraction", async () => {
     const { contribution, sourceId } = await createSourceProposal({

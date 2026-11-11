@@ -221,9 +221,9 @@ support matters:
 - When the graph is silent on a claim that matters, or wrong about one,
   the better move is to improve it rather than fill in quietly from
   memory. With your user's agreement:
-  - **Missing claim or question**: `propose_claim` (the Matcher decides
-    whether it enters as a claim, a question or a quantity, so `kind` is
-    only a guess; it takes the wording alone and is reviewed on it before
+  - **Missing claim, question or quantity**: `propose_claim` (the Matcher
+    decides whether it enters as a claim, a question or a quantity, so
+    `kind`, which takes any of the three, is only a guess; it takes the wording alone and is reviewed on it before
     anything enters the graph; spends owls; a rejected good-faith proposal
     refunds). The case for or against it, once it is a node, is a
     `submit_contribution` of its own.

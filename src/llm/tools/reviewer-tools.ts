@@ -47,7 +47,7 @@ export function getReviewerToolDefinitions(): Tool[] {
         "status. Escalating also places the case in the Dispute " +
         "Arbitrator's queue, with escalation_reason on the contribution. " +
         "Accepting an intake contribution (propose_claim, " +
-        "propose_question, propose_source) also materializes it here: the Matcher decides " +
+        "propose_question, propose_quantity, propose_source) also materializes it here: the Matcher decides " +
         "identity, then the claim is created or the source queued for " +
         "extraction, and the outcome is reported in the tool result.",
       input_schema: {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { NodeKind } from "./kinds.js";
 
 export const uuidSchema = z.guid();
 
@@ -218,8 +219,25 @@ export const intakeContributionTypeEnum = z.enum([
   // claim, through the Matcher, as a question node or as the claim or
   // quantity it turns out to ask about.
   "propose_question",
+  // A quantity proposed directly (#816): its wording says what is measured,
+  // in what population and unit, as an extracted quantity's does; the
+  // Steward records the structured definition on its first pass.
+  "propose_quantity",
   "propose_source",
 ]);
+
+/** The intake type that proposes a node of each kind (§2, §7a). */
+export const PROPOSAL_TYPE_FOR_KIND = {
+  claim: "propose_claim",
+  question: "propose_question",
+  quantity: "propose_quantity",
+} as const satisfies Record<NodeKind, string>;
+
+/** The kind a node proposal proposes; null for any other contribution type. */
+export function proposedNodeKind(type: string): NodeKind | null {
+  const hit = (Object.entries(PROPOSAL_TYPE_FOR_KIND) as Array<[NodeKind, string]>).find(([, t]) => t === type);
+  return hit ? hit[0] : null;
+}
 
 // The prize claim (docs/mathematics.md §8.4): an ordinary contribution so it
 // inherits the identity gate, the review pipeline, appeals, arbitration, and

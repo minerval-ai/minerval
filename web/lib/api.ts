@@ -448,7 +448,8 @@ export async function fetchContributionStatus(id: string): Promise<{
       c.became_claim_id ??
       (c.claim_id &&
       (c.contribution_type === "propose_claim" ||
-        c.contribution_type === "propose_question")
+        c.contribution_type === "propose_question" ||
+        c.contribution_type === "propose_quantity")
         ? c.claim_id
         : null);
     return { review_status: c.review_status, became_claim_id: became };

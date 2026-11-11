@@ -24,7 +24,7 @@ import type { NodeKind } from "../schemas/kinds.js";
  */
 export async function proposeClaim(input: {
   claim: string;
-  kind?: "claim" | "question";
+  kind?: NodeKind;
   createdBy?: string;
   /** Metering attribution (#70): the requesting account/key. */
   attribution?: { userId?: string | null; apiKeyId?: string | null };

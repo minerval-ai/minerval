@@ -385,8 +385,9 @@ read of a claim, use a card.
   take a `get_claim` each), `cite_claim`, `get_claim_provenance`,
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
-  `get_claim_events`, `propose_claim` (reviewed by the Contribution Reviewer
-  before anything enters the graph).
+  `get_claim_events`, `propose_claim` (a claim, a question or a quantity by
+  its optional `kind`, reviewed by the Contribution Reviewer before anything
+  enters the graph).
 - **Funding:** `order_assessment`, `fund_claim_assessment` (commission a
   claim's next assessment whole, at a budget you choose; what it does not
   spend comes back),
