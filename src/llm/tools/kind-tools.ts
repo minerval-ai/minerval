@@ -860,8 +860,9 @@ async function insertInstance(input: {
 }): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO claim_instances
-       (claim_id, source_id, verbatim_text, stance, speaker, publication, source_date, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+       (claim_id, source_id, verbatim_text, stance, speaker, publication, source_date, created_by,
+        sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       input.claimId,
       input.sourceId,
@@ -871,6 +872,7 @@ async function insertInstance(input: {
       optStr(input.fields.publication) ?? null,
       optStr(input.fields.source_date) ?? null,
       input.createdBy,
+      currentLabel(),
     ]
   );
   return row!.id;

@@ -1369,8 +1369,9 @@ export async function reassignInstance(input: {
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO claim_instances
            (claim_id, source_id, verbatim_text, context, summary_context, stance, stated_estimate,
-            answer_claim_id, speaker, publication, source_date, link, segment_id, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, 'curator')
+            answer_claim_id, speaker, publication, source_date, link, segment_id, created_by,
+            sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, 'curator', $14)
          RETURNING id`,
         [
           input.toClaimId,
@@ -1386,6 +1387,9 @@ export async function reassignInstance(input: {
           before.source_date,
           before.link,
           before.segment_id,
+          // The copy is a new row and is this run's, like every row a run
+          // writes. It does not take the label of the instance it copies.
+          currentLabel(),
         ]
       );
       instanceId = row!.id;

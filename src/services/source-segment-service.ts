@@ -18,9 +18,11 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
+import { runAtSourceLabelOutsideAnyRun } from "./label-service.js";
 
 /** Segments beyond this are not recorded; a book is segmented up to here. */
 export const MAX_SEGMENTS = 5000;
@@ -173,8 +175,18 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
  * Segment a stored source, replacing any earlier segmentation, then anchor
  * its instances. Returns how many segments were written; zero when the
  * source has no stored text.
+ *
+ * Segmenting is work on the source itself. Started by a worker or a script,
+ * outside any run, it runs at the source's label, so a restricted document's
+ * structure is not written as public (runAtSourceLabelOutsideAnyRun). Started
+ * by a run that is reading the document, it is that run's work and the
+ * segments carry the run's label.
  */
 export async function segmentSource(sourceId: string): Promise<{ segments: number; anchored: number }> {
+  return runAtSourceLabelOutsideAnyRun(sourceId, () => cutSegments(sourceId));
+}
+
+async function cutSegments(sourceId: string): Promise<{ segments: number; anchored: number }> {
   const [row] = await rawQuery<{ raw_content: string | null }>(
     `SELECT raw_content FROM sources WHERE id = $1`,
     [sourceId]
@@ -185,6 +197,11 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
 
   await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1`, [sourceId]);
   await rawQuery(`DELETE FROM source_segments WHERE source_id = $1`, [sourceId]);
+  // The segments are new rows, so they carry the label of whatever is
+  // segmenting: the reading run's, or the source's own when a worker
+  // segments it outside any run (runAtSourceLabel in label-service.ts).
+  // The column is not `label`, which is a segment's heading.
+  const sensitivityLabel = currentLabel();
   // Ids are made here so a child can name its parent in the same batch;
   // parents precede children in document order, so each batch's foreign
   // keys point at rows already inserted or inserted in the same statement.
@@ -193,7 +210,7 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
   for (let i = 0; i < drafts.length; i += BATCH) {
     const values: unknown[] = [];
     const rows = drafts.slice(i, i + BATCH).map((d, j) => {
-      const base = j * 9;
+      const base = j * 10;
       values.push(
         ids[i + j],
         sourceId,
@@ -203,12 +220,14 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
         d.kind,
         d.start,
         d.end,
-        sha256(text.slice(d.start, d.end))
+        sha256(text.slice(d.start, d.end)),
+        sensitivityLabel
       );
-      return `($${base + 1}::uuid, $${base + 2}::uuid, $${base + 3}::uuid, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9})`;
+      return `($${base + 1}::uuid, $${base + 2}::uuid, $${base + 3}::uuid, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
     });
     await rawQuery(
-      `INSERT INTO source_segments (id, source_id, parent_id, ordinal, label, kind, char_start, char_end, text_hash)
+      `INSERT INTO source_segments
+         (id, source_id, parent_id, ordinal, label, kind, char_start, char_end, text_hash, sensitivity_label)
        VALUES ${rows.join(", ")}`,
       values
     );

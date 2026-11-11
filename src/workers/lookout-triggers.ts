@@ -55,7 +55,7 @@ import {
 } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
 import { enqueueSteward } from "../services/queue-service.js";
-import { runAtClaimLabel } from "../services/label-service.js";
+import { runAtClaimLabel, runAtSourceLabel } from "../services/label-service.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
 
@@ -177,8 +177,10 @@ async function tellStewards(
     try {
       // The poll runs outside any run and writes to one node at a time, so
       // the pass each letter asks for is opened at that node's label
-      // (runAtClaimLabel). The letter names the source, which carries a
-      // label of its own; holding the two together is the source-side work.
+      // (runAtClaimLabel). The letter names the source, whose event was
+      // recorded at the source's own label above; a node and a source it
+      // rests on may carry different labels, and holding a letter to what
+      // its node may read of the source is the enforcement work's.
       await runAtClaimLabel(claimId, () => enqueueSteward({ claimId, trigger: "source_event", context }));
       told++;
     } catch (err) {
@@ -235,14 +237,20 @@ export async function retractionPollTick(
   for (const m of matches) {
     const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
     if (!notice) continue;
-    const { recorded } = await recordSourceEvent({
-      sourceId: m.source_id,
-      kind: eventKindForCrossref(notice.type),
-      occurredAt: notice.updated,
-      noticeUrl: notice.notice_doi ? `https://doi.org/${notice.notice_doi}` : null,
-      note: notice.title,
-      detectedBy: "crossref_poll",
-    });
+    // The poll runs outside any run and records against one source at a
+    // time, so each event is written at that source's label
+    // (runAtSourceLabel): a notice against a restricted document says the
+    // graph holds it, and is not written as public.
+    const { recorded } = await runAtSourceLabel(m.source_id, () =>
+      recordSourceEvent({
+        sourceId: m.source_id,
+        kind: eventKindForCrossref(notice.type),
+        occurredAt: notice.updated,
+        noticeUrl: notice.notice_doi ? `https://doi.org/${notice.notice_doi}` : null,
+        note: notice.title,
+        detectedBy: "crossref_poll",
+      })
+    );
     if (recorded) {
       result.sourceEvents++;
       fresh.push({ match: m, notice });

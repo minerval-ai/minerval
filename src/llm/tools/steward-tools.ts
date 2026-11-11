@@ -1758,6 +1758,9 @@ export async function executeStewardTool(
             link: optText(input.link),
             statedProbability,
             createdBy: recordedBy,
+            // The instance is the recording run's, whatever the source's
+            // label or the claim's (src/labels.ts).
+            sensitivityLabel: currentLabel(),
           })
           .returning();
 

@@ -22,7 +22,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
-import { runAtClaimLabelOutsideAnyRun } from "./label-service.js";
+import { runAtClaimLabelOutsideAnyRun, runAtSourceLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
@@ -2609,12 +2609,12 @@ export async function recordGrantSource(
   jobId: string | null
 ): Promise<void> {
   await rawQuery(
-    `INSERT INTO grant_sources (grant_id, source_id, url, job_id)
-     SELECT $1, $2, $3, $4
+    `INSERT INTO grant_sources (grant_id, source_id, url, job_id, sensitivity_label)
+     SELECT $1, $2, $3, $4, $5
       WHERE NOT EXISTS (SELECT 1 FROM grant_sources
                          WHERE grant_id = $1 AND source_id = $2
                            AND job_id IS NOT DISTINCT FROM $4::uuid)`,
-    [grantId, sourceId, url, jobId]
+    [grantId, sourceId, url, jobId, currentLabel()]
   );
 }
 
@@ -2643,7 +2643,12 @@ async function attributeIngestedSource(grantId: string, url: string, focus: stri
       ORDER BY created_at DESC LIMIT 1`,
     [source.id, focus]
   );
-  await recordGrantSource(grantId, source.id, url, job?.id ?? null);
+  // The scheduler materializes a plan outside any run, and this row is about
+  // a source someone else ingested, so it is written at that source's label
+  // (runAtSourceLabelOutsideAnyRun in label-service.ts): a mandate's
+  // pipeline does not name a restricted document in a public row. The
+  // source is found by its URL whatever its label, as it always was.
+  await runAtSourceLabelOutsideAnyRun(source.id, () => recordGrantSource(grantId, source.id, url, job?.id ?? null));
 }
 
 export async function largestActionFunder(

@@ -148,7 +148,7 @@ describe("the labels table", () => {
 
   it("gives every labelled table a sensitivity_label that defaults to public and points here", async () => {
     // The column has its own name because `label` is already a display name
-    // on tables that will need one (actions, source_segments).
+    // on two tables that carry one (actions, source_segments).
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -163,19 +163,26 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Three groups: the judgments, sources and runs (this file); the rows
+    // Four groups: the judgments, sources and runs (this file); the rows
     // that stand for work waiting to be done, which hand their label to the
-    // run that takes it up (label-carried.test.ts); and the graph's own
+    // run that takes it up (label-carried.test.ts); the graph's own
     // content, from nodes and edges to formal statements
-    // (label-graph.test.ts).
+    // (label-graph.test.ts); and what is read from a source or written
+    // about one, from instances and segments to examinations
+    // (label-sources.test.ts).
     expect(rows).toEqual(
       [
         "actions", "agent_runs", "agent_sessions", "answer_relations", "appeals", "argument_evaluations",
         "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments", "assessment_orders",
-        "assessments", "assistant_held_actions", "budget_jobs", "claim_formalizations", "claim_links",
-        "claim_relationships", "claims", "contributions", "jobs", "judgment_inputs", "lean_checks",
-        "proof_attempts", "quantity_cuts", "quantity_definitions", "quantity_estimates", "quantity_readings",
-        "question_assessments", "reconciliation_events", "sources", "taggings", "tags",
+        "assessments", "assistant_held_actions", "audit_notes", "budget_jobs", "claim_formalizations",
+        "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
+        "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claims",
+        "contributions", "examination_coverage", "examination_findings", "examinations", "grant_sources", "jobs",
+        "judgment_inputs", "lean_checks", "lookout_feed_items", "proof_attempts", "quantity_cuts",
+        "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
+        "reading_citations", "reconciliation_events", "shared_page_analyses", "source_events",
+        "source_extractions", "source_interests", "source_relationships", "source_segments", "sources",
+        "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });

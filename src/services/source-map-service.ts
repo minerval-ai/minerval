@@ -22,6 +22,7 @@
  * structured refusal (§20).
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
 import { getOrCreateSource } from "./source-service.js";
@@ -516,11 +517,14 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
     );
   }
   const check = quoteCheck(instance.verbatim_text, instance.raw_content);
+  // A first reading takes this run's label, whatever the source's or the
+  // claim's: a reading is the reader's. A re-read replaces the reading in
+  // place and leaves the label it has (src/labels.ts).
   const rows = await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_instance_readings
        (instance_id, support, deployment, note, quote_check, worth_reading,
-        worth_reading_reason, source_read, model, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        worth_reading_reason, source_read, model, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (instance_id) DO UPDATE SET
        support = EXCLUDED.support,
        deployment = EXCLUDED.deployment,
@@ -544,15 +548,18 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
       input.sourceRead === true,
       input.model ?? null,
       input.createdBy,
+      currentLabel(),
     ]
   );
   // The current reading is replaced in place; the log keeps every one, so a
-  // source's history shows a reading that changed (#507).
+  // source's history shows a reading that changed (#507). Each log row is
+  // new, so each carries the label of the run that made that reading, which
+  // may not be the label the current reading keeps.
   await rawQuery(
     `INSERT INTO claim_instance_reading_log
-       (instance_id, support, note, source_read, worth_reading, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [instanceId, support, note, input.sourceRead === true, worthReading, input.createdBy]
+       (instance_id, support, note, source_read, worth_reading, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [instanceId, support, note, input.sourceRead === true, worthReading, input.createdBy, currentLabel()]
   );
   const row = rows[0]!;
   return { id: row.id, quote_check: check, replaced: !row.inserted };
@@ -635,8 +642,8 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
   const rows = await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_provenance_edges
        (from_instance_id, to_source_id, to_instance_id, relation_type, fidelity,
-        evidence, reasoning, confidence, target_read, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        evidence, reasoning, confidence, target_read, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (from_instance_id, to_source_id, relation_type) DO UPDATE SET
        to_instance_id = EXCLUDED.to_instance_id,
        fidelity = EXCLUDED.fidelity,
@@ -658,6 +665,9 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
       confidence,
       input.targetRead === true,
       input.createdBy,
+      // The edge is the writing run's, whatever labels the two documents it
+      // joins carry (src/labels.ts). An edge already there keeps its label.
+      currentLabel(),
     ]
   );
   const row = rows[0]!;
@@ -709,15 +719,15 @@ export async function recordSourceRelationship(input: RecordSourceRelationshipIn
   }
   const rows = await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO source_relationships
-       (parent_source_id, child_source_id, relation_type, reasoning, confidence, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (parent_source_id, child_source_id, relation_type, reasoning, confidence, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (parent_source_id, child_source_id, relation_type) DO UPDATE SET
        reasoning = EXCLUDED.reasoning,
        confidence = EXCLUDED.confidence,
        created_by = EXCLUDED.created_by,
        created_at = now()
      RETURNING id, (xmax = 0) AS inserted`,
-    [parent, child, relationType, reasoning, confidence, input.createdBy]
+    [parent, child, relationType, reasoning, confidence, input.createdBy, currentLabel()]
   );
   const row = rows[0]!;
   return { id: row.id, parent_source_id: parent, child_source_id: child, replaced: !row.inserted };
@@ -769,15 +779,15 @@ export async function recordProvenanceRoot(input: RecordProvenanceRootInput): Pr
     );
   }
   const rows = await rawQuery<{ id: string; inserted: boolean }>(
-    `INSERT INTO claim_provenance_roots (claim_id, source_id, status, basis, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO claim_provenance_roots (claim_id, source_id, status, basis, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (claim_id, source_id) DO UPDATE SET
        status = EXCLUDED.status,
        basis = EXCLUDED.basis,
        created_by = EXCLUDED.created_by,
        updated_at = now()
      RETURNING id, (xmax = 0) AS inserted`,
-    [claimId, sourceId, status, basis, input.createdBy]
+    [claimId, sourceId, status, basis, input.createdBy, currentLabel()]
   );
   const row = rows[0]!;
   return { id: row.id, source_id: sourceId, status, has_upstream: place.has_upstream, replaced: !row.inserted };
@@ -834,10 +844,13 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
   const sourcesConsidered = Number(counts?.sources_considered ?? 0);
   const sourcesRead = Number(counts?.sources_read ?? 0);
   const edgesRecorded = Number(counts?.edges_recorded ?? 0);
+  // A claim has one map, refreshed in place: the first run to write it sets
+  // its label and a later rewrite leaves that as it was (src/labels.ts).
   const rows = await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_source_maps
-       (claim_id, summary, material, sources_considered, sources_read, edges_recorded, model, mapped_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (claim_id, summary, material, sources_considered, sources_read, edges_recorded, model, mapped_by,
+        sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (claim_id) DO UPDATE SET
        summary = EXCLUDED.summary,
        material = EXCLUDED.material,
@@ -848,7 +861,17 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
        mapped_by = EXCLUDED.mapped_by,
        mapped_at = now()
      RETURNING id, (xmax = 0) AS inserted`,
-    [claimId, summary, input.material === true, sourcesConsidered, sourcesRead, edgesRecorded, input.model ?? null, input.mappedBy]
+    [
+      claimId,
+      summary,
+      input.material === true,
+      sourcesConsidered,
+      sourcesRead,
+      edgesRecorded,
+      input.model ?? null,
+      input.mappedBy,
+      currentLabel(),
+    ]
   );
   const row = rows[0]!;
   return {

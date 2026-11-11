@@ -73,11 +73,13 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // (currentLabel in llm/usage-context.ts). Two kinds of row carry one:
 // what a run writes (the graph's content: nodes, edges, arguments, tags,
 // definitions and formal statements; judgments and what each rested on;
-// sources; the run itself), and work waiting to be done or resumed (a job,
-// a ledger action, an order, a paused session), which hands its label to
-// the run that later takes it up (runAtLabel). A claim is both: work that
-// starts from the claim itself, with no row of its own to wait in, runs at
-// the claim's label. No reader is held to a label yet.
+// sources and what is read from them: instances, readings, segments,
+// events, provenance, examinations; the run itself), and work waiting to be
+// done or resumed (a job, a ledger action, an order, a paused session),
+// which hands its label to the run that later takes it up (runAtLabel). A
+// claim and a source are both: work that starts from the claim or the
+// source itself, with no row of its own to wait in, runs at that row's
+// label. No reader is held to a label yet.
 // ---------------------------------------------------------------------------
 export const labels = pgTable("labels", {
   name: text("name").primaryKey(),
@@ -934,6 +936,9 @@ export const sourceEvents = pgTable(
     note: text("note"),
     // Which watcher recorded it ("crossref_poll", "facts_fetch").
     detectedBy: text("detected_by").notNull(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_source_events_unique").on(table.sourceId, table.kind, table.noticeUrl),
@@ -982,6 +987,9 @@ export const sourceSegments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written. Not `label` above, which is the heading a reader sees.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal),
@@ -1040,6 +1048,9 @@ export const examinations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_examinations_source").on(table.sourceId),
@@ -1065,6 +1076,9 @@ export const examinationCoverage = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_examination_coverage_unique").on(table.examinationId, table.segmentId, table.facet),
@@ -1090,6 +1104,9 @@ export const examinationFindings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_examination_findings_examination").on(table.examinationId)]
 );
@@ -1109,6 +1126,9 @@ export const readingCitations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId),
@@ -1129,6 +1149,9 @@ export const auditNotes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_audit_notes_finding").on(table.findingId)]
 );
@@ -1232,6 +1255,9 @@ export const claimInstances = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     check(
@@ -1317,6 +1343,9 @@ export const claimProvenanceEdges = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_cpe_unique").on(
@@ -1357,6 +1386,9 @@ export const sourceRelationships = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_sr_unique").on(
@@ -1424,6 +1456,10 @@ export const claimInstanceReadings = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this reading (src/labels.ts): the label of the run that
+    // first recorded it. A re-read replaces the reading in place and leaves
+    // this as it was; the log row each re-read appends carries its own.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     // One current reading per instance; a re-map overwrites in place. The
@@ -1455,6 +1491,9 @@ export const claimInstanceReadingLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_cirl_instance").on(table.instanceId)]
 );
@@ -1493,6 +1532,9 @@ export const claimSourceMaps = pgTable(
     mappedAt: timestamp("mapped_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [uniqueIndex("idx_csm_claim").on(table.claimId)]
 );
@@ -1541,6 +1583,9 @@ export const claimProvenanceRoots = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId),
@@ -1586,6 +1631,9 @@ export const sourceInterests = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_source_interests_source").on(table.sourceId, table.claimId, table.createdAt),
@@ -2683,6 +2731,9 @@ export const grantSources = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_grant_sources_grant").on(table.grantId, table.createdAt),
@@ -2733,6 +2784,9 @@ export const sourceExtractions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_source_extractions_source").on(table.sourceId, table.createdAt)]
 );
@@ -3096,6 +3150,10 @@ export const lookoutFeedItems = pgTable(
       .notNull()
       .defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when the poll records the item. The page a lookout later fetches into
+    // `body` lands on the row and leaves this as it was.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey),
@@ -5069,6 +5127,10 @@ export const sharedPageAnalyses = pgTable(
     verifiedAt: timestamp("verified_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this entry (src/labels.ts): the label of the request whose
+    // analysis first entered the page. A later analysis replaces the entry
+    // in place and leaves this as it was.
+    sensitivityLabel: sensitivityLabelColumn(),
   }
   // Lookups ask for every hash sharing a short prefix: a range scan on the
   // primary key (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.

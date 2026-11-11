@@ -427,6 +427,9 @@ async function processUrlExtraction(
         // #744): a figure on an instance of a quantity, a probability on an
         // instance of a claim.
         ...statedFigures(claim, nodeKind, stance),
+        // The extraction runs at its job's label, so the instance carries
+        // the label the document was submitted at.
+        sensitivityLabel: currentLabel(),
       });
       await placeArgumentPassages(claim, claimId, nodeKind, stance);
     };
