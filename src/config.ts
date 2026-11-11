@@ -247,6 +247,22 @@ const configSchema = z.object({
   // The most a program officer commits in one decision unless the mandate's
   // operating policy says otherwise (its delegation section).
   defaultOfficerLimitOwls: z.coerce.number().positive().default(5),
+  // The budget a mandate's review pass works to when its operating policy
+  // names none (review_pass_owls, operating-policy-service.ts), and the
+  // budget of a planning pass, which runs before there is a policy. The
+  // same figure a Curator run, an Audit run and a paid assessment work to:
+  // a pass opens by reading its whole briefing and tool list, then has a
+  // survey and its decisions to pay for (#820 saw 1 owl leave nothing after
+  // the opening turn). A ceiling: the pass returns what it does not spend.
+  defaultReviewPassBudgetOwls: z.coerce.number().positive().default(5),
+  // The least a review or planning pass is started with when today's rate
+  // or the escrow cannot fund its budget in full
+  // (allocation-service.ts, fundGrantSelfActions). Money alone cannot
+  // serve here: a pass started with less than its opening turn costs
+  // spends it reading the briefing, decides nothing, and is opened again,
+  // so the mandate would pay for nothing repeatedly. Below this the pass
+  // waits for room. Stated to the Grantmaker in its briefing.
+  reviewPassFloorOwls: z.coerce.number().positive().default(1),
   // Whether the scheduler holds program officer sittings for inboxes no run
   // is waiting on. A deployment off-switch, like the lookout and review ones.
   officerSittingsEnabled: z
@@ -570,8 +586,9 @@ const configSchema = z.object({
     .transform((s) => s === "true")
     .prefault("false"),
   // Mandate review passes (kind 'mandate_review'): a mandate's Grantmaker
-  // can chain passes within a day (continue_review) when the mission needs
-  // the bandwidth — enumerating a big source backlog, a territory survey.
+  // can add to a running pass's budget (add_to_pass_budget) or start a
+  // fresh one (continue_review) when the mission needs the bandwidth —
+  // enumerating a big source backlog, a territory survey.
   // There is no count of passes: each is funded out of the mandate's day
   // like the rest of its work, and the briefing shows the Grantmaker what
   // the day has left, so chaining is a choice it makes against its own
@@ -1359,6 +1376,8 @@ export function loadConfig(): Config {
     sessionWaitForAnswersSeconds: process.env.SESSION_WAIT_FOR_ANSWERS_SECONDS,
     officerBatchMs: process.env.OFFICER_BATCH_MS,
     defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
+    defaultReviewPassBudgetOwls: process.env.DEFAULT_REVIEW_PASS_BUDGET_OWLS,
+    reviewPassFloorOwls: process.env.REVIEW_PASS_FLOOR_OWLS,
     officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
     sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
     sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,

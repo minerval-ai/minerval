@@ -507,6 +507,8 @@ export interface MandateAllocationView {
   operating_policy: string;
   /** The most an officer may commit in one decision, and why. */
   officer_limit: { owls: number; reason: string };
+  /** The budget each of the mandate's review passes works to, and why (#820). */
+  review_pass: { owls: number; reason: string };
   budget: {
     escrow_owls: number;
     spent_owls: number;
@@ -559,12 +561,13 @@ export async function getMandateAllocationView(
   );
   if (!grant) return null;
 
-  const { getOperatingPolicy, renderOperatingPolicy, officerLimit } = await import(
+  const { getOperatingPolicy, renderOperatingPolicy, officerLimit, reviewPassBudget } = await import(
     "./operating-policy-service.js"
   );
   const { grantDayUseMicroUsd } = await import("./commission-service.js");
   const policy = await getOperatingPolicy(grantId);
   const limit = officerLimit(policy);
+  const reviewPass = reviewPassBudget(policy);
 
   const [money, usedToday] = await Promise.all([
     grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id }),
@@ -649,6 +652,7 @@ export async function getMandateAllocationView(
     title: grant.title ?? grant.name,
     operating_policy: renderOperatingPolicy(policy),
     officer_limit: { owls: microUsdToOwls(limit.microUsd), reason: limit.reason },
+    review_pass: { owls: microUsdToOwls(reviewPass.microUsd), reason: reviewPass.reason },
     budget: {
       escrow_owls: microUsdToOwls(escrow),
       spent_owls: microUsdToOwls(Math.min(money.spent, escrow)),

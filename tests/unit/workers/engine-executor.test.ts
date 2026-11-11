@@ -69,6 +69,8 @@ vi.mock("../../../src/services/action-service.js", () => ({
   nextRunnableAction: vi.fn(async () => state.action),
   // No mandate here has a Grantmaker share (a decomposition's tenth).
   grantmakerShareLeftMicroUsd: vi.fn(async () => null),
+  // The mandate's own figure for a review pass (#820).
+  reviewPassBudgetMicroUsd: vi.fn(async () => 7_000_000),
   claimAction: vi.fn(async () => true),
   releaseAction: vi.fn(async (id: string) => {
     state.released.push(id);
@@ -229,6 +231,8 @@ describe("processNextEngineAction", () => {
     expect(state.reviewRuns).toBe(1);
     expect(state.completed).toHaveLength(1);
     expect(state.reopened).toHaveLength(1); // another pass runs next drain
+    // Reopened at the mandate's pass budget, not at whatever the row held.
+    expect(state.reopened[0]).toEqual(["act-1", 7_000_000]);
   });
 
   it("enqueues an ingest and leaves the action running for the meter", async () => {

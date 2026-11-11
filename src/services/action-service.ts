@@ -29,6 +29,7 @@ import {
   type ConsistencyNodeCost,
 } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
+import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
 import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import {
@@ -502,8 +503,7 @@ export async function reconcileActions(): Promise<{
           PLANNING_GROUP(g.id),
           g.id,
           `Planning run for the mandate "${g.name}"`,
-          // The opening plan takes half the share; the reviews the rest.
-          share ? Math.max(1, Math.round(share.totalMicroUsd / 2)) : capMicroUsd("assessment"),
+          await reviewPassBudgetMicroUsd(g, "planning", share),
         ]
       );
     }
@@ -536,7 +536,7 @@ export async function reconcileActions(): Promise<{
           REVIEW_GROUP(g.id),
           g.id,
           `Mandate review for "${g.name}"`,
-          share ? Math.max(1, Math.round(share.leftMicroUsd)) : capMicroUsd("assessment"),
+          await reviewPassBudgetMicroUsd(g, "review", share),
         ]
       );
     }
@@ -1069,7 +1069,11 @@ export interface PlanGrantRow {
   plan: { strategy?: string; items?: MaterializablePlanItem[] } | null;
   plan_cursor: number;
   scope_claim_id?: string | null;
-  mandate?: { grantmaker_share_owls?: number | null; scope_ref?: string | null } | null;
+  mandate?: {
+    grantmaker_share_owls?: number | null;
+    scope_ref?: string | null;
+    operating_policy?: OperatingPolicy | null;
+  } | null;
 }
 
 /**
@@ -1094,6 +1098,41 @@ export async function grantmakerShareLeftMicroUsd(g: {
     [g.id]
   );
   return { totalMicroUsd, leftMicroUsd: totalMicroUsd - Number(row?.spent ?? 0) };
+}
+
+/**
+ * The budget a mandate's review or planning pass is opened at: the one
+ * figure every site that opens or reopens that row writes as its estimate
+ * (the reconcile sweep, the wake on new events, continue_review), so the
+ * row never carries a stale or unrelated one (#820: it carried the public
+ * assessment price cap, a deployment constant that knows nothing about the
+ * mandate).
+ *
+ *  - a review pass: the figure the mandate's operating policy names
+ *    (review_pass_owls), or the platform's default while it names none;
+ *  - a planning pass: the platform's default, since it runs before there
+ *    is a policy;
+ *  - a mandate whose Grantmaker passes have a share of their own (a
+ *    decomposition): half the share for the opening plan, and what the
+ *    share has left for each review.
+ *
+ * A ceiling: it is held against the mandate's day and escrow while the pass
+ * runs and settles to what the pass metered. When the day or the escrow
+ * cannot fund it whole, the pass is started with what there is and told so
+ * (allocation-service.ts, fundGrantSelfActions).
+ */
+export async function reviewPassBudgetMicroUsd(
+  g: {
+    id: string;
+    mandate?: { grantmaker_share_owls?: number | null; operating_policy?: OperatingPolicy | null } | null;
+  },
+  pass: "review" | "planning" = "review",
+  /** The share, when the caller has already read it; undefined reads it. */
+  share?: { totalMicroUsd: number; leftMicroUsd: number } | null
+): Promise<number> {
+  const own = share === undefined ? await grantmakerShareLeftMicroUsd(g) : share;
+  if (own) return Math.max(1, Math.round(pass === "planning" ? own.totalMicroUsd / 2 : own.leftMicroUsd));
+  return reviewPassBudget(pass === "review" ? g.mandate?.operating_policy : null).microUsd;
 }
 
 export interface PlanItemOutcome {

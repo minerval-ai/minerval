@@ -346,6 +346,28 @@ const SWEEP_RULE_VARIANT_SQL = `(
                WHERE std.exclusion_group = a.exclusion_group AND std.variant = 'standard')`;
 
 /**
+ * What to place on a Grantmaker's own pass (review or planning) that the
+ * mandate's day or escrow cannot fund in full: the room there is, when the
+ * pass would then start with at least the floor (REVIEW_PASS_FLOOR_OWLS;
+ * config.ts gives the reason a floor is needed at all), else null and the
+ * pass waits for room. The pass is told its budget is short, with figures
+ * (llm/prompts/pass-budget.ts).
+ */
+export function shortPassFunding(input: {
+  costEstMicroUsd: number;
+  /** The estimate less what already backs the row. */
+  neededMicroUsd: number;
+  /** What the day's rate and the escrow both still allow. */
+  roomMicroUsd: number;
+  floorMicroUsd: number;
+}): number | null {
+  const amount = Math.floor(Math.min(input.neededMicroUsd, input.roomMicroUsd));
+  if (!(amount > 0)) return null;
+  const backed = input.costEstMicroUsd - input.neededMicroUsd + amount;
+  return backed >= input.floorMicroUsd ? amount : null;
+}
+
+/**
  * Grants fund their OWN work through the same ledger as everything else:
  * a planning grant covers its grant_planning action, an active mandate
  * covers its review passes and the runs of the lookouts and correspondents
@@ -358,7 +380,9 @@ const SWEEP_RULE_VARIANT_SQL = `(
  * Deliberation pays its own way: these allocations come out of the same
  * daily rate as everything else the mandate commissions, so thinking about
  * the work competes with the work. Bounded by escrow headroom too
- * (committed money includes these allocations and any regrants out).
+ * (committed money includes these allocations and any regrants out). A
+ * row the day or the escrow cannot cover waits, except the Grantmaker's
+ * own passes, which start short and are told (shortPassFunding).
  */
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
@@ -367,12 +391,14 @@ export async function fundGrantSelfActions(): Promise<number> {
     claim_id: string | null;
     grant_id: string;
     kind: string;
+    cost_est: number;
     needed: number;
     headroom: number;
     /** Null when the mandate has no daily rate: unpaced, escrow-bounded only. */
     day_room: number | null;
   }>(
     `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
+            a.cost_est_micro_usd::bigint AS cost_est,
             -- What this row still needs: its cost less what already backs
             -- it (an allocation placed on its group as a whole, or on this
             -- row). A sibling variant's allocation is not this row's (#756).
@@ -524,23 +550,50 @@ export async function fundGrantSelfActions(): Promise<number> {
     if (needed <= 0) continue;
     if (coveredThisPass.has(row.exclusion_group)) continue;
     const drawn = spentThisPass.get(row.grant_id) ?? 0;
-    if (needed > Number(row.headroom) - drawn) continue;
     const dayRoom =
       row.day_room === null
         ? Number.POSITIVE_INFINITY
         : Number(row.day_room) - drawn;
-    if (needed > dayRoom) continue;
+    const room = Math.min(Number(row.headroom) - drawn, dayRoom);
+    // Work is funded whole or not at all, except the Grantmaker's own
+    // passes: a review or planning pass the day or the escrow cannot fund
+    // in full is started with what there is (shortPassFunding), because a
+    // pass that never runs is the one thing that cannot fix the rate or
+    // the figure that keeps it from running (#820).
+    const amount =
+      needed <= room
+        ? needed
+        : row.kind === "mandate_review" || row.kind === "grant_planning"
+          ? shortPassFunding({
+              costEstMicroUsd: Number(row.cost_est),
+              neededMicroUsd: needed,
+              roomMicroUsd: room,
+              floorMicroUsd: owlsToMicroUsd(loadConfig().reviewPassFloorOwls ?? 1),
+            })
+          : null;
+    if (amount === null) continue;
     const inserted = await rawQuery<{ id: string }>(
       `INSERT INTO action_allocations
          (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, needed]
+      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount]
     );
     if (inserted.length === 0) continue;
+    if (amount < needed) {
+      // The row's estimate becomes what backs it, so the executor runs it
+      // (a row runs once covered) at that budget and the pass's briefing
+      // states the shortfall against the mandate's figure. Every site
+      // that reopens the row writes the full figure back
+      // (reviewPassBudgetMicroUsd).
+      await rawQuery(
+        `UPDATE actions SET cost_est_micro_usd = $2 WHERE id = $1 AND status = 'open'`,
+        [row.action_id, Number(row.cost_est) - (needed - amount)]
+      );
+    }
     placed++;
-    spentThisPass.set(row.grant_id, drawn + needed);
+    spentThisPass.set(row.grant_id, drawn + amount);
     coveredThisPass.add(row.exclusion_group);
   }
   return placed;

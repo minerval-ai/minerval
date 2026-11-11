@@ -20,7 +20,8 @@
  *    ones it was shown consumed.
  */
 import { rawQuery } from "../db/client.js";
-import { REVIEW_GROUP, grantmakerShareLeftMicroUsd } from "./action-service.js";
+import type { OperatingPolicy } from "./operating-policy-service.js";
+import { REVIEW_GROUP, grantmakerShareLeftMicroUsd, reviewPassBudgetMicroUsd } from "./action-service.js";
 
 /**
  * How long after a review pass ends before events can wake the next one. A
@@ -179,7 +180,10 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
  * share). Returns the number of reviews reopened.
  */
 export async function wakeDueMandateReviews(): Promise<number> {
-  const due = await rawQuery<{ id: string; mandate: { grantmaker_share_owls?: number | null } | null }>(
+  const due = await rawQuery<{
+    id: string;
+    mandate: { grantmaker_share_owls?: number | null; operating_policy?: OperatingPolicy | null } | null;
+  }>(
     `SELECT g.id, g.mandate FROM grants g
        JOIN actions a ON a.exclusion_group = 'review:' || g.id::text AND a.kind = 'mandate_review'
       WHERE g.status = 'active'
@@ -191,12 +195,14 @@ export async function wakeDueMandateReviews(): Promise<number> {
   for (const g of due) {
     const share = await grantmakerShareLeftMicroUsd(g).catch(() => null);
     if (share && share.leftMicroUsd <= 0) continue;
+    // Reopened at the pass budget as it stands now (the policy may have
+    // changed it, and a pass started short lowered the row's estimate).
     const rows = await rawQuery(
-      `UPDATE actions SET status = 'open', updated_at = now()
+      `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
         WHERE exclusion_group = $1 AND kind = 'mandate_review'
           AND status IN ('done', 'superseded', 'cancelled')
         RETURNING id`,
-      [REVIEW_GROUP(g.id)]
+      [REVIEW_GROUP(g.id), await reviewPassBudgetMicroUsd(g, "review", share)]
     );
     woken += rows.length;
   }

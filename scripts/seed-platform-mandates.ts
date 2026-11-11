@@ -81,6 +81,8 @@ interface PlatformMandate {
     delegation?: string;
     officer_limit_owls?: number;
     officer_limit_reason?: string;
+    review_pass_owls?: number;
+    review_pass_reason?: string;
   };
   /** Lookouts it stands up at creation (lookout-service.ts, createLookout). */
   lookouts?: Array<{

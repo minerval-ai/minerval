@@ -198,10 +198,25 @@ export const WRITE_OPERATING_POLICY: Tool = {
         enum: ["mission", "priorities", "budgets", "petitions", "delegation"],
         description: "mission (how you read the mandate's words), priorities, budgets, petitions, or delegation. Leave it out to replace the whole operating policy.",
       },
-      content: { type: "string", description: "The section's new text, or the whole operating policy." },
+      content: {
+        type: "string",
+        description:
+          "The section's new text, or the whole operating policy. An empty string with officer_limit_owls or " +
+          "review_pass_owls changes that figure alone.",
+      },
       officer_limit_owls: {
         type: "number",
         description: "Delegation only: the most a program officer may commit in one decision without you. It is stated to the officers, with your note as its reason.",
+      },
+      review_pass_owls: {
+        type: "number",
+        description:
+          "The budget each of your own review passes works to, in owls, from the next pass opened. It is yours to set " +
+          "because your mandate pays for it: the whole figure is held against the day's rate while a pass runs, and " +
+          "what the pass does not spend is freed when it ends. Each pass first pays for its opening turn (your " +
+          "instructions, tool list and briefing), so set it to what a pass of yours actually needs on top of that. " +
+          "Your note is recorded as its reason and stated in each pass's briefing. To set it and leave the text as " +
+          "it is, send content as an empty string.",
       },
       note: { type: "string", description: "What you learned that justifies the change, for the public record." },
     },
@@ -720,13 +735,52 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
       note: String(input.note ?? ""),
       author: "grantmaker",
       officerLimitOwls: input.officer_limit_owls != null ? Number(input.officer_limit_owls) : null,
+      reviewPassOwls: input.review_pass_owls != null ? Number(input.review_pass_owls) : null,
     });
     if (!res.ok) return JSON.stringify({ success: false, message: res.message });
-    await logDecision(ctx, { itemKind: "policy", decision: input.section ? `rewrote ${String(input.section)}` : "rewrote the policy", reason: String(input.note ?? "") });
-    return JSON.stringify({ success: true, message: "The operating policy is updated; the officers read it from their next sitting." });
+    const figuresOnly = !String(input.content ?? "").trim();
+    await logDecision(ctx, {
+      itemKind: "policy",
+      decision: figuresOnly ? "set the policy's figures" : input.section ? `rewrote ${String(input.section)}` : "rewrote the policy",
+      reason: String(input.note ?? ""),
+    });
+    return JSON.stringify({
+      success: true,
+      message:
+        "The operating policy is updated; the officers read it from their next sitting." +
+        (input.review_pass_owls != null ? await reviewPassSetNote(ctx.grant.id, Number(input.review_pass_owls)) : ""),
+    });
   }
 
   return JSON.stringify({ success: false, message: `Unknown tool: ${name}` });
+}
+
+/**
+ * What the Grantmaker is told on setting its review-pass budget: when it
+ * applies, and, with figures, when the day's rate or the escrow cannot fund
+ * a pass that size, so the shortfall is known when the figure is chosen.
+ */
+async function reviewPassSetNote(grantId: string, owls: number): Promise<string> {
+  const [g] = await rawQuery<{ daily: string; escrow: string; budget_job_id: string }>(
+    `SELECT g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow, g.budget_job_id
+       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
+    [grantId]
+  ).catch(() => []);
+  let note = ` Review passes opened from now on work to ${owls} owls; a pass already running keeps the budget it has.`;
+  if (!g) return note;
+  const micro = owlsToMicroUsd(owls);
+  const floor = loadConfig().reviewPassFloorOwls ?? 1;
+  const daily = Number(g.daily);
+  const short = (bound: string) =>
+    ` That is more than ${bound}, so a pass will start with what can be found, when that is at least ${floor} owls, ` +
+    `and its briefing will say so.`;
+  if (daily > 0 && micro > daily) note += short(`your daily rate (${microUsdToOwls(daily)} owls)`);
+  else {
+    const committed = await grantCommittedMicroUsd({ id: grantId, budgetJobId: g.budget_job_id }).catch(() => null);
+    const free = committed == null ? null : Math.max(0, Number(g.escrow) - committed);
+    if (free != null && micro > free) note += short(`the escrow holds uncommitted (${microUsdToOwls(free)} owls)`);
+  }
+  return note;
 }
 
 /**

@@ -6,10 +6,13 @@
  * `grants.mandate.operating_policy`. Every version is kept in
  * mandate_policy_versions with the note that justified it.
  *
- * The Grantmaker writes it in prose. The one number in it is the officers'
- * delegation limit: the most an officer commits in one decision without the
- * Grantmaker, which is the Grantmaker's own choice, stated to the officers
- * with the Grantmaker's reason.
+ * The Grantmaker writes it in prose. It carries two numbers, each the
+ * Grantmaker's own choice with its reason beside it: the officers'
+ * delegation limit, the most an officer commits in one decision without the
+ * Grantmaker, stated to the officers; and the review-pass budget, what each
+ * of the Grantmaker's own review passes works to (#820), stated in that
+ * pass's briefing. The payer sets what its deliberation is worth; a
+ * deployment constant knows nothing about the mandate.
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -27,6 +30,10 @@ export interface OperatingPolicy {
   officer_limit_owls?: number;
   /** The reason the Grantmaker gave for the limit, stated to the officers. */
   officer_limit_reason?: string;
+  /** The budget each review pass of this mandate works to, in owls. */
+  review_pass_owls?: number;
+  /** The reason the Grantmaker gave for it, stated in each pass's briefing. */
+  review_pass_reason?: string;
 }
 
 const HEADINGS: Record<PolicySection, string> = {
@@ -69,9 +76,33 @@ export function officerLimit(policy: OperatingPolicy): { microUsd: number; reaso
 }
 
 /**
+ * The budget a review pass of this mandate works to: the policy's own
+ * figure, or the platform's default while the Grantmaker has set none
+ * (DEFAULT_REVIEW_PASS_BUDGET_OWLS). A ceiling paid from the mandate's
+ * escrow within its day's rate; the pass returns what it does not spend.
+ */
+export function reviewPassBudget(policy: OperatingPolicy | null | undefined): {
+  microUsd: number;
+  /** True when the Grantmaker set it; false for the platform's default. */
+  fromPolicy: boolean;
+  reason: string;
+} {
+  const own = Number(policy?.review_pass_owls);
+  const fromPolicy = Number.isFinite(own) && own > 0;
+  return {
+    microUsd: owlsToMicroUsd(fromPolicy ? own : loadConfig().defaultReviewPassBudgetOwls ?? 5),
+    fromPolicy,
+    reason: fromPolicy
+      ? policy?.review_pass_reason?.trim() || "set by the Grantmaker"
+      : "the platform's default until the Grantmaker sets one",
+  };
+}
+
+/**
  * Write the policy, or one section of it, and keep the version. The
  * delegation limit, when given, is stated to the officers with the note as
- * its reason.
+ * its reason; the review-pass budget, when given, is stated to each review
+ * pass with the note as its reason, and applies from the next pass opened.
  */
 export async function writeOperatingPolicy(input: {
   grantId: string;
@@ -80,13 +111,18 @@ export async function writeOperatingPolicy(input: {
   note: string;
   author: string;
   officerLimitOwls?: number | null;
+  reviewPassOwls?: number | null;
 }): Promise<{ ok: true; policy: OperatingPolicy } | { ok: false; message: string }> {
   const content = input.content.trim();
   const note = input.note.trim();
   if (!note) return { ok: false, message: "note is required: it is the public record of why." };
   const current = await getOperatingPolicy(input.grantId);
   const next: OperatingPolicy = { ...current };
-  if (input.section) {
+  // The two figures alone, with no text: the prose stays as it is.
+  const figuresOnly = !content && (input.officerLimitOwls != null || input.reviewPassOwls != null);
+  if (figuresOnly) {
+    // nothing to rewrite
+  } else if (input.section) {
     if (!POLICY_SECTIONS.includes(input.section)) {
       return { ok: false, message: `section must be one of ${POLICY_SECTIONS.join(", ")}.` };
     }
@@ -103,6 +139,12 @@ export async function writeOperatingPolicy(input: {
     if (!(owls >= 0)) return { ok: false, message: "officer_limit_owls must be zero or more." };
     next.officer_limit_owls = owls;
     next.officer_limit_reason = note;
+  }
+  if (input.reviewPassOwls != null) {
+    const owls = Number(input.reviewPassOwls);
+    if (!(owls > 0)) return { ok: false, message: "review_pass_owls must be above zero." };
+    next.review_pass_owls = owls;
+    next.review_pass_reason = note;
   }
   await rawQuery(
     `UPDATE grants
