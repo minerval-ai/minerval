@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "hash": "30ab55d598400f819920bb14f17aff9b334e6dad3f57bfb1129696cf8dacbcdd",
+  "hash": "c9cf3e3f61dd76979f7c9715a5ac84143e6c44f414eee0b84eaf2855cfeb775d",
   "constitution": {
-    "hash": "1d24d4767f0348611889a6529488420357e3e247707e9a081098c6c3589f943c",
+    "hash": "b24cc4c0387ac1856f463bc9f3c0ee627c2ff34f74d41e6e878996f33721c95f",
     "source_path": "admin_constitution.md"
   },
   "roles": [
@@ -10,7 +10,7 @@
       "name": "assistant",
       "source_path": "src/llm/prompts/assistant.ts",
       "blocks": [
-        "70e40089fec1af567c591ca43fd87d6e9fb166c4667570c1c1fe672078306de7"
+        "c303c39375c37ccc915fa9b6d1ce04de1d5092ee1507957398bb2d5388189ddb"
       ]
     },
     {
@@ -139,8 +139,8 @@
     },
     {
       "name": "provenance",
-      "version": 6,
-      "hash": "50566f8ad97d03d7fe7264df4a2052cc4362a28d6a293710e68f52264d9873c1"
+      "version": 7,
+      "hash": "e64d07e458e81e6e9fe3c891a2fdb07045c7bd6daf79d87c5c6748cd2c772a84"
     },
     {
       "name": "search",

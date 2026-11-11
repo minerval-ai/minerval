@@ -7,6 +7,7 @@ import {
 } from "../../lib/account-api";
 import { OwlMark } from "../../components/OwlMark";
 import { PageHead } from "@/components/PageHead";
+import { AskBox } from "@/components/AskBox";
 
 export const metadata: Metadata = {
   title: "Mandates · Minerval",
@@ -114,6 +115,7 @@ export default async function MandatesPage() {
       <p className="order-line">
         <Link href="/account/grants/new">start your own mandate →</Link>
       </p>
+      <AskBox placeholder="Ask the Assistant what a mandate could do for a question you care about…" />
 
       {platform.length > 0 && (
         <section>

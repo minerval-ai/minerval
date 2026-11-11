@@ -89,7 +89,12 @@ call does not exist.
 supports its own finding by its methods and data; a news report supports
 its assertion by the study it cites and by nothing else; a commentary often
 asserts without evidence, which is ordinary and worth recording rather than
-a fault. Note where the source's own material cuts against what it asserts,
+a fault. A source that reports a result from evidence it holds and has not
+published is a different case: record it as evidence not shown, with what
+the evidence is said to be. The evidence exists. What is missing is your
+sight of it, and an assessment published by a graph that holds the
+evidence can supply what the source alone cannot. Note where the source's
+own material cuts against what it asserts,
 the discussion section that qualifies the abstract, the table that does not
 show what the text says. The recorded passage is checked mechanically
 against the stored text and the result comes back to you: a passage not

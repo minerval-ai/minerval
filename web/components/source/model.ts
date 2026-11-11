@@ -161,6 +161,7 @@ export const SUPPORT_WORD: Record<InstanceSupport, string> = {
   overstates: "Overstates",
   understates: "Understates",
   asserts_without_evidence: "Without evidence",
+  evidence_not_shown: "Evidence not shown",
   contradicts_own_evidence: "Against its own evidence",
   unclear: "Unclear",
 };
@@ -170,6 +171,7 @@ export const SUPPORT_CLS: Record<InstanceSupport, string> = {
   overstates: "st-inconclusive",
   understates: "st-unknown",
   asserts_without_evidence: "st-contradicted",
+  evidence_not_shown: "st-unknown",
   contradicts_own_evidence: "st-contradicted",
   unclear: "st-unknown",
 };

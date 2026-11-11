@@ -3401,6 +3401,32 @@ export const assistantAllowances = pgTable("assistant_allowances", {
     .defaultNow(),
 });
 
+// A page: something made for a user to keep (a brief, a ranked list, a
+// table), by their Assistant or their own agent. Markdown, with embeds that
+// show nodes of the graph as they stand when the page is read. Private to
+// its user.
+export const assistantPages = pgTable(
+  "assistant_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    // What the graph held for each embedded node when the page was saved:
+    // {id: {status, standing, estimate}}. The page marks what has moved.
+    snapshot: jsonb("snapshot").notNull().default({}),
+    // Earlier saves, newest last: [{title, body, saved_at}].
+    versions: jsonb("versions").notNull().default([]),
+    savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_assistant_pages_user").on(table.userId, table.savedAt)]
+);
+
+export type AssistantPage = typeof assistantPages.$inferSelect;
+
 // ---------------------------------------------------------------------------
 // oauth_clients
 //

@@ -74,6 +74,8 @@ export interface AssistantToolUse {
   ok: boolean;
   /** A granting conversation the call opened or wrote to, when it did. */
   grantConversationId?: string;
+  /** A page the call saved, when it did. */
+  pageId?: string;
 }
 
 export interface AssistantTurnResult {
@@ -95,6 +97,17 @@ function grantConversationIn(tool: string, text: string): string | undefined {
   if (!GRANT_TOOLS.has(tool)) return undefined;
   try {
     const id = (JSON.parse(text) as { conversation?: { id?: unknown } }).conversation?.id;
+    return typeof id === "string" ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The id of the page a save_page result names. */
+function pageIn(tool: string, text: string): string | undefined {
+  if (tool !== "save_page") return undefined;
+  try {
+    const id = (JSON.parse(text) as { page?: { id?: unknown } }).page?.id;
     return typeof id === "string" ? id : undefined;
   } catch {
     return undefined;
@@ -139,7 +152,12 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
       toolUses.push({
         tool,
         ok: !result.isError,
-        ...(result.isError ? {} : { grantConversationId: grantConversationIn(tool, result.text) }),
+        ...(result.isError
+          ? {}
+          : {
+              grantConversationId: grantConversationIn(tool, result.text),
+              pageId: pageIn(tool, result.text),
+            }),
       });
     };
 

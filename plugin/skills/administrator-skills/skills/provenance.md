@@ -7,7 +7,7 @@ description: >-
   where it matters.
 metadata:
   minerval:
-    version: 6
+    version: 7
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
@@ -16,6 +16,7 @@ metadata:
       4: The Contribution Reviewer and the Dispute Arbitrator may open a cited source with provenance_read_source, so a quote, a figure or a counter-source is checked against the text, not taken on faith.
       5: The researcher's section carries the mapping procedure it follows, so the researcher no longer reads the Steward's section.
       6: A retraction or correction notice is sent to the Steward of every claim that asserts the document or rests on it through recorded provenance (trigger source_event), not only to lookouts.
+      7: "a source that reports a result from evidence it holds and has not published is read as evidence not shown (support evidence_not_shown), apart from one that asserts without evidence"
 ---
 
 ## For every administrator
@@ -109,7 +110,12 @@ call does not exist.
 supports its own finding by its methods and data; a news report supports
 its assertion by the study it cites and by nothing else; a commentary often
 asserts without evidence, which is ordinary and worth recording rather than
-a fault. Note where the source's own material cuts against what it asserts,
+a fault. A source that reports a result from evidence it holds and has not
+published is a different case: record it as evidence not shown, with what
+the evidence is said to be. The evidence exists. What is missing is your
+sight of it, and an assessment published by a graph that holds the
+evidence can supply what the source alone cannot. Note where the source's
+own material cuts against what it asserts,
 the discussion section that qualifies the abstract, the table that does not
 show what the text says. The recorded passage is checked mechanically
 against the stored text and the result comes back to you: a passage not

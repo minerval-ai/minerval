@@ -221,6 +221,7 @@ export type InstanceSupport =
   | "overstates"
   | "understates"
   | "asserts_without_evidence"
+  | "evidence_not_shown"
   | "contradicts_own_evidence"
   | "unclear";
 export type QuoteCheck = "verbatim" | "normalized_match" | "not_found" | "no_stored_content";

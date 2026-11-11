@@ -13,6 +13,12 @@
  * in none of them (or a table names a route that no longer exists), so a new
  * route cannot reach REST alone by accident: adding one means choosing.
  *
+ * The tables decide every route the product has. A deployment that switches
+ * a feature off (src/features.ts) does not mount that feature's routes, so
+ * their generated tools are absent there: registerRouteTools walks the
+ * catalog of mounted routes. The hand-written tools of a feature are gated
+ * in server.ts.
+ *
  * A generated tool takes its input schema (the route's params, querystring,
  * and body, merged) and its description (the route's summary) from the
  * route, and runs by dispatching into the route in-process (dispatch.ts), so
@@ -129,6 +135,9 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /assistant/conversations": { name: "list_assistant_conversations" },
   "GET /assistant/conversations/:id": { name: "get_assistant_conversation" },
   "GET /assistant/allowance": { name: "get_assistant_allowance" },
+  "POST /pages": { name: "save_page" },
+  "GET /pages": { name: "list_pages" },
+  "GET /pages/:id": { name: "get_page" },
 
   // ---- correspondents (#563) ----
   "GET /correspondents": { name: "list_correspondents" },
@@ -178,6 +187,9 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /setup/parts": { name: "list_setup_parts" },
   "GET /setup/parts/:kind/:name/:version": { name: "get_setup_part" },
   "GET /setup/prompt-set": { name: "get_prompt_set" },
+  // What this deployment has switched on (src/features.ts): a route behind
+  // a feature that is off is not mounted, so it is not a tool here either.
+  "GET /setup/features": { name: "list_features" },
   "GET /runs/:run_id": {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",
@@ -325,6 +337,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /assistant/conversations/:id": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/held/:action_id": ASSISTANT_GATE,
   "PUT /assistant/allowance": ASSISTANT_GATE,
+  "DELETE /pages/:id":
+    "A page is its user's to throw away: deleting takes the signed-in dashboard session, so " +
+    "nothing an agent reads can have it delete what the user keeps.",
   "POST /extension/chat":
     "The extension's chat over the page open in the browser; an MCP client " +
     "is itself the conversation, with the graph tools in hand.",

@@ -43,6 +43,7 @@ import {
   getActiveSkillToolDefinitions,
   isSkillTool,
 } from "../tools/skill-tools.js";
+import { withoutOffFeatureTools } from "../tools/feature-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import {
   executeGraphReadTool,
@@ -454,8 +455,9 @@ async function runMandateReviewImpl(input: {
     },
  
     // The bounty tools (docs/mathematics.md §8.1): the same implementation
-    // as the management chat, two-pass by construction.
-    ...getBountyToolDefinitions(),
+    // as the management chat, two-pass by construction. Not offered while
+    // the prizes feature is off (src/features.ts).
+    ...withoutOffFeatureTools(getBountyToolDefinitions()),
     // The lookout tools (docs/allocation.md, "Lookouts"): the standing
     // watches this mandate funds. Same implementation as the management
     // chat, through executeManagementTool below.

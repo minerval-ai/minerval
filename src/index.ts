@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { buildApp } from "./server/app.js";
 import { loadConfig } from "./config.js";
+import { featureOn } from "./features.js";
 import { assertSkillToolsRegistered } from "./llm/tools/skill-tools.js";
 import { getDb, closeDb } from "./db/client.js";
 import { startPoller } from "./workers/poller.js";
@@ -151,9 +152,13 @@ async function main() {
   // Sources from before sources.page_url_hash existed get their hash, so the
   // browser extension can find the pages the graph already read. Detached:
   // nothing waits on it, and a failure only leaves those pages unfound.
-  void fillSourcePageHashes()
-    .then((n) => n > 0 && app.log.info(`Filled page hashes for ${n} sources`))
-    .catch((err) => app.log.error({ err }, "filling source page hashes failed"));
+  // Only the extension's lookups read the hash, so the fill does not run
+  // while the extension feature is off (src/features.ts).
+  if (featureOn("extension", config)) {
+    void fillSourcePageHashes()
+      .then((n) => n > 0 && app.log.info(`Filled page hashes for ${n} sources`))
+      .catch((err) => app.log.error({ err }, "filling source page hashes failed"));
+  }
 
   // The source backfill (#507) fills the facts and segments of sources
   // that lack them, fetching the page of a source an agent cited without

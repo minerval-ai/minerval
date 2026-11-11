@@ -2,6 +2,7 @@ import crypto from "crypto";
 import Fastify from "fastify";
 import formbody from "@fastify/formbody";
 import { loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 import { registerSwagger } from "./plugins/swagger.js";
 import { registerCors } from "./plugins/cors.js";
 import { registerAuth } from "./plugins/auth.js";
@@ -43,6 +44,7 @@ import { consistencyRoutes } from "../routes/consistency.js";
 import { grantRoutes } from "../routes/grants.js";
 import { grantConversationRoutes } from "../routes/grant-conversations.js";
 import { assistantRoutes } from "../routes/assistant.js";
+import { pageRoutes } from "../routes/pages.js";
 import { mandateRoutes } from "../routes/mandates.js";
 import { platformMandateRoutes } from "../routes/platform-mandates.js";
 import { reportRoutes } from "../routes/reports.js";
@@ -120,6 +122,8 @@ export async function buildApp() {
   });
   // The Assistant (#646): a user's conversations with their own agent.
   await app.register(assistantRoutes, { prefix: "/assistant" });
+  // Pages (#646): what an agent saves for a user to keep.
+  await app.register(pageRoutes, { prefix: "/pages" });
   await app.register(mandateRoutes, { prefix: "/mandates" });
   // Operator-key routes for platform mandates (#529): fund a pinned draft,
   // and mint the key that holds the platform's granting conversations.
@@ -133,15 +137,25 @@ export async function buildApp() {
   await app.register(runRoutes, { prefix: "/runs" });
   await app.register(requestRoutes, { prefix: "/requests" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
+  // The route groups of a feature are mounted only while it is on
+  // (src/features.ts). A route that is not mounted is not an MCP tool
+  // either: the tools are built from the catalog of mounted routes.
+  //
   // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,
   // /prize-claims, /bounties, /lean-checks, and /attachments,
   // so they register without a prefix (docs/mathematics.md §11.1).
-  await app.register(formalizationsRoutes);
-  await app.register(attemptsRoutes);
-  await app.register(prizesRoutes);
+  if (featureOn("mathematics", config)) {
+    await app.register(formalizationsRoutes);
+    await app.register(attemptsRoutes);
+  }
+  if (featureOn("prizes", config)) {
+    await app.register(prizesRoutes);
+  }
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);
-  await app.register(extensionRoutes, { prefix: "/extension" });
+  if (featureOn("extension", config)) {
+    await app.register(extensionRoutes, { prefix: "/extension" });
+  }
 
   return app;
 }
