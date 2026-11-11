@@ -1329,6 +1329,13 @@ export async function materializeGrantPlan(
       console.error(`[reconcile] plan item ${i} (${item.action}) of mandate ${g.id} failed: ${msg}`);
       ledger = blocked(`the materializer failed on this item: ${msg}`);
     }
+    if (active && item.action === "ingest" && item.url && (ledger.status === "running" || ledger.status === "done")) {
+      await attributeIngestedSource(g.id, item.url, normalizeFocus(item.focus)).catch((err: unknown) =>
+        console.error(
+          `[reconcile] attributing ${item.url} to mandate ${g.id} failed: ${err instanceof Error ? err.message : String(err)}`
+        )
+      );
+    }
     outcomes.push({
       index: i,
       action: item.action,
@@ -2034,6 +2041,70 @@ export async function completeAction(
  * A mandate yields its budget-job id (which also stamps the funding
  * disclosure); a person yields their user id.
  */
+/** Every mandate with money on this action's run (largestActionFunder's rows). */
+export async function actionFunderGrants(actionId: string): Promise<string[]> {
+  const rows = await rawQuery<{ grant_id: string }>(
+    `SELECT DISTINCT al.grant_id
+       FROM action_allocations al
+       JOIN actions a ON a.id = $1
+      WHERE al.exclusion_group = a.exclusion_group
+        AND al.released_at IS NULL
+        AND al.grant_id IS NOT NULL
+        AND (al.action_id IS NULL OR al.action_id = a.id)`,
+    [actionId]
+  );
+  return rows.map((r) => r.grant_id);
+}
+
+/**
+ * Put a source in a mandate's pipeline (grant_sources), once per
+ * extraction job: what pipeline_report lists and the mandate's
+ * source_ingested event is recorded from.
+ */
+export async function recordGrantSource(
+  grantId: string,
+  sourceId: string,
+  url: string,
+  jobId: string | null
+): Promise<void> {
+  await rawQuery(
+    `INSERT INTO grant_sources (grant_id, source_id, url, job_id)
+     SELECT $1, $2, $3, $4
+      WHERE NOT EXISTS (SELECT 1 FROM grant_sources
+                         WHERE grant_id = $1 AND source_id = $2
+                           AND job_id IS NOT DISTINCT FROM $4::uuid)`,
+    [grantId, sourceId, url, jobId]
+  );
+}
+
+/**
+ * A mandate's ingest item whose per-URL row is running or done without it
+ * (someone else ingested the URL, or is ingesting it) still names a source
+ * the mandate asked for: attribute it, with the extraction that read it for
+ * this focus, so pipeline_report lists it with its real status instead of
+ * the item reading done over an empty pipeline (#657). Once per URL.
+ */
+async function attributeIngestedSource(grantId: string, url: string, focus: string | null): Promise<void> {
+  // A run this mandate put money on is attributed by the executor, to every
+  // funder, when it submits (engine-executor.ts runIngestAction).
+  const [have] = await rawQuery(
+    `SELECT 1 WHERE EXISTS (SELECT 1 FROM grant_sources WHERE grant_id = $1 AND url = $2)
+                 OR EXISTS (SELECT 1 FROM action_allocations WHERE grant_id = $1 AND exclusion_group = $3)`,
+    [grantId, url, INGEST_GROUP(url, focus)]
+  );
+  if (have) return;
+  const [source] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE url = $1 LIMIT 1`, [url]);
+  if (!source) return;
+  const [job] = await rawQuery<{ id: string }>(
+    `SELECT id FROM jobs
+      WHERE type = 'url_extraction' AND input->>'sourceId' = $1
+        AND input->>'focus' IS NOT DISTINCT FROM $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [source.id, focus]
+  );
+  await recordGrantSource(grantId, source.id, url, job?.id ?? null);
+}
+
 export async function largestActionFunder(
   actionId: string
 ): Promise<{ jobId?: string; userId?: string; grantId?: string }> {

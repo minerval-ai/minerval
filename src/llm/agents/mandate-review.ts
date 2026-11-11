@@ -310,7 +310,9 @@ async function runMandateReviewImpl(input: {
       name: "pipeline_report",
       description:
         "What your mandate's ingestion has actually produced: each source " +
-        "brought in, extraction status, claims linked or minted, " +
+        "brought in (a plan item whose URL someone else had already " +
+        "ingested is listed too, with that extraction's status), extraction " +
+        "status, claims linked or minted, " +
         "importance and contestation statistics. Read this before " +
         "deciding what to ingest next.",
       input_schema: { type: "object" as const, properties: {}, required: [] },

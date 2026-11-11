@@ -16,6 +16,7 @@ import {
 } from "../../src/services/action-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { getPublicMandate } from "../../src/services/mandate-service.js";
+import { collectMandateEvents, pendingMandateEvents } from "../../src/services/mandate-event-service.js";
 import { seedClaim, seedUser, seedGrantWithJob, creditOwls, OWL } from "./helpers.js";
 
 async function seedPublishedFormalization(claimId: string): Promise<string> {
@@ -390,5 +391,43 @@ describe("plan-to-ledger materialization (#416)", () => {
       [`ingest:${url}`, grantId]
     );
     expect(Number(alloc!.n)).toBe(1);
+  });
+
+  it("attributes a URL someone else already ingested to the mandate whose item reads done (#657)", async () => {
+    const funder = await seedUser("plan-funder-657");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
+    const url = `https://example.org/${randomUUID()}`;
+    // Another reader's ingest of the URL ran and finished.
+    const [src] = await rawQuery<{ id: string }>(`INSERT INTO sources (title, url) VALUES ('Earlier', $1) RETURNING id`, [url]);
+    const [job] = await rawQuery<{ id: string }>(
+      `INSERT INTO jobs (type, status, input, completed_at)
+       VALUES ('url_extraction', 'completed', jsonb_build_object('sourceId', $1::text, 'url', $2::text), now()) RETURNING id`,
+      [src!.id, url]
+    );
+    await rawQuery(
+      `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, status)
+       VALUES ('ingest', $1, 'standard', $2, 'Ingest', 1000000, 'done')`,
+      [`ingest:${url}`, url]
+    );
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({ strategy: "s", items: [{ action: "ingest", url, rationale: "a source" }] }),
+    ]);
+
+    await rawQuery(`UPDATE grants SET events_scanned_at = now() - interval '1 minute' WHERE id = $1`, [grantId]);
+    const [item] = await materializePlanItems(grantId);
+    expect(item!.ledger.status).toBe("done");
+    // Its review is told the source was already in the graph, once (#898).
+    expect(await collectMandateEvents(grantId)).toBe(1);
+    const { events } = await pendingMandateEvents(grantId);
+    expect(events[0]!.payload).toMatchObject({ outcome: "completed", already_extracted: true });
+    const detail = await getPublicMandate(grantId);
+    expect(detail!.pipeline).toHaveLength(1);
+    expect(detail!.pipeline[0]).toMatchObject({ source_id: src!.id, extraction_status: "completed" });
+
+    // Every later sweep leaves it at one row.
+    await materializePlanItems(grantId);
+    const rows = await rawQuery(`SELECT job_id FROM grant_sources WHERE grant_id = $1`, [grantId]);
+    expect(rows).toEqual([{ job_id: job!.id }]);
   });
 });

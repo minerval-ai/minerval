@@ -119,6 +119,8 @@ import {
   grantmakerShareLeftMicroUsd,
   ensureRequestActions,
   largestActionFunder,
+  actionFunderGrants,
+  recordGrantSource,
   nextRunnableAction,
   releaseAction,
   actionBudgetMicroUsd,
@@ -1575,8 +1577,8 @@ async function runGrantAgentAction(
 }
 
 /**
- * ingest: enqueue the source for extraction, attributed to the largest
- * funder (whose mandate also records the source in its pipeline). The
+ * ingest: enqueue the source for extraction, metered to the largest
+ * funder; every funding mandate records the source in its pipeline. The
  * action stays 'running'; the extraction worker completes it with the
  * metered cost (url-extraction.ts), which is when the funders' pro-rata
  * shares are consumed.
@@ -1617,12 +1619,11 @@ async function runIngestAction(
         ...(owner ? { grantId: owner.id } : {}),
       }
     );
-    if (owner) {
-      await rawQuery(
-        `INSERT INTO grant_sources (grant_id, source_id, url, job_id)
-         VALUES ($1, $2, $3, $4)`,
-        [owner.id, sourceId, url, jobId]
-      );
+    // Every mandate paying for the run has the source in its pipeline, not
+    // only the largest funder (#657).
+    const funders = await actionFunderGrants(action.id).catch(() => [] as string[]);
+    for (const fundingGrantId of new Set([...(owner ? [owner.id] : []), ...funders])) {
+      await recordGrantSource(fundingGrantId, sourceId, url, jobId);
     }
     return {
       status: "processed",
