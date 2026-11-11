@@ -135,6 +135,9 @@ skill bundles it in full, and the section numbers below point into it.
   that the source is wrong.
 - A source read as "evidence not shown" is not a source without evidence:
   it reports a result from evidence it holds and has not published (§9).
+  When a verdict was made with such a source among its inputs, `get_claim`
+  lists `evidence_not_shown` in `coverage.on`. Pass that on with the
+  verdict: it rests in part on evidence a reader cannot inspect.
 - A verdict is about the claim as its words read today, not about any
   source that states it (§3, §4). Check that the claim's words say what the
   text you are checking says before you apply the verdict to the text.
@@ -187,11 +190,22 @@ splits the two sides (§1, §6). Name that crux for your user. "This turns
 on whether X, which the evidence does not yet settle" is more useful than
 "it's disputed".
 
-A subclaim with no status is usually just waiting its turn. One marked
-`steward_parked` is not: the graph tried to assess it and the passes
-failed (`reason` gives the class of failure, `since` the date), and it
-will stay unjudged until someone commissions a pass on it. Say so when a
-verdict rests on such a premise: the parent was judged without it.
+Every node of the tree carries `coverage`, and so does `get_claim`:
+`examined` says whether the graph has a judgment of the node in force, and
+`on` what that judgment was made on. On a node of the tree `on` lists only
+what goes beyond public evidence, and is left out when nothing does;
+`get_claim` lists everything. `examined: false` means the graph has
+not looked at that part, which is silence and not a finding either way
+(see "Silence and gaps" below). An assessed `unknown` is examined: the
+evidence was looked at and found insufficient. A quantity or a question
+carries no status even when it has been judged, so `coverage`, not the
+status, tells which parts of a case were examined.
+
+A subclaim that has not been examined is usually just waiting its turn.
+One marked `steward_parked` is not: the graph tried to assess it and the
+passes failed (`reason` gives the class of failure, `since` the date), and
+it will stay unjudged until someone commissions a pass on it. Say so when
+a verdict rests on such a premise: the parent was judged without it.
 
 `get_claim` with `include: ["arguments"]` shows the named arguments and
 the Steward's `evaluation` of each (§7). Its `verdict` rates the
@@ -259,8 +273,9 @@ support matters:
 ## Silence and gaps are contributions
 
 - `not_in_graph` (from `assess_text`; `matched: false` from
-  `match_claim`: no such claim) and `unassessed` (no assessment yet) mean
-  the graph is silent. That is not evidence for or
+  `match_claim`: no such claim) and `unassessed` (no assessment yet;
+  `coverage.examined: false` on `get_claim` and on each node of
+  `get_decomposition`) mean the graph is silent. That is not evidence for or
   against, and not a license to answer from recollection. Say the graph
   has no assessment; if you then give your own view, label it as yours.
 - `matched: null` / `undecided` means the Matcher ran out of budget

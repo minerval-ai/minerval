@@ -4,6 +4,7 @@ import { DEFINED_IN, QUESTION_STANDING, isStanding, statusMeta, isStatus } from 
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { modelDisplayName } from "@/lib/model-names";
 import { describeEstimate } from "@/lib/quantity";
+import { isExamined, notExaminedLine } from "@/lib/coverage";
 import { StatusBadge, StandingBadge, Dispute, Importance, Swatch, Unassessed } from "@/components/Assessment";
 import { AssessmentText } from "@/components/AssessmentText";
 import { Term } from "@/components/Term";
@@ -185,7 +186,10 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
         </section>
       ) : (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
-          Not yet assessed.
+          {/* No assessment in force: say what that does and does not mean
+              (#543). An assessment recorded without a summary is examined,
+              and keeps the bare line. */}
+          {isExamined(detail.coverage, !!standing) ? "Not yet assessed." : notExaminedLine("question")}
         </p>
       )}
 

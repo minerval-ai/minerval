@@ -5,6 +5,14 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(),
 }));
 
+// What examination each node has had (#543) is read in a query of its own,
+// through its own service. Mocked here so that the counts below stay counts
+// of the walk's queries; tests/db/coverage.test.ts reads the real thing.
+vi.mock("../../../src/services/coverage-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/coverage-service.js")>()),
+  summarizeCoverage: vi.fn(),
+}));
+
 import {
   getTransitiveDependents,
   getClaimTree,
@@ -12,8 +20,10 @@ import {
   listClaimDependents,
 } from "../../../src/services/tree-service.js";
 import { rawQuery } from "../../../src/db/client.js";
+import { summarizeCoverage } from "../../../src/services/coverage-service.js";
 
 const mockRawQuery = vi.mocked(rawQuery);
+const mockCoverage = vi.mocked(summarizeCoverage);
 
 // Row builders matching the two query shapes getClaimTree issues: one root
 // lookup, then one edge query per level (each edge row carries its child's
@@ -52,6 +62,7 @@ const edgeRow = (
 describe("tree-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCoverage.mockResolvedValue(new Map());
   });
 
   describe("getClaimTree", () => {
@@ -223,6 +234,44 @@ describe("tree-service", () => {
       const d3 = tree!.children[0]!.children[0]!.children[0]!;
       expect(d3.id).toBe("d3");
       expect(d3.children).toHaveLength(0);
+    });
+
+    it("puts each node's coverage on it in the short form, read once for the whole tree (#543)", async () => {
+      mockRawQuery.mockResolvedValueOnce([rootRow("root", { assessment_status: "supported" })]);
+      mockRawQuery.mockResolvedValueOnce([edgeRow("root", "judged"), edgeRow("root", "never")]);
+      mockRawQuery.mockResolvedValueOnce([]);
+      mockCoverage.mockResolvedValueOnce(
+        new Map([
+          ["root", { examined: true, on: ["public_evidence"] }],
+          ["judged", { examined: true, on: ["public_evidence", "evidence_not_shown"] }],
+          ["never", { examined: false, on: [] }],
+        ])
+      );
+
+      const tree = await getClaimTree("root");
+
+      expect(mockCoverage).toHaveBeenCalledTimes(1);
+      expect([...mockCoverage.mock.calls[0]![0]].sort()).toEqual(["judged", "never", "root"]);
+      // A row names what the judgment was made on only beyond public evidence.
+      expect(tree!.coverage).toEqual({ examined: true });
+      expect(tree!.children[0]!.coverage).toEqual({ examined: true, on: ["evidence_not_shown"] });
+      expect(tree!.children[1]!.coverage).toEqual({ examined: false });
+    });
+
+    it("serves the tree without coverage when that read fails, never a guess", async () => {
+      mockRawQuery.mockResolvedValueOnce([rootRow("root")]);
+      mockRawQuery.mockResolvedValueOnce([edgeRow("root", "child")]);
+      mockRawQuery.mockResolvedValueOnce([]);
+      mockCoverage.mockRejectedValueOnce(new Error("statement timeout"));
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const tree = await getClaimTree("root");
+      expect(logged).toHaveBeenCalledTimes(1);
+      logged.mockRestore();
+
+      expect(tree!.children).toHaveLength(1);
+      expect("coverage" in tree!).toBe(false);
+      expect("coverage" in tree!.children[0]!).toBe(false);
     });
   });
 
