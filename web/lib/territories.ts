@@ -70,9 +70,8 @@ export const TERRITORIES: TerritoryConfig[] = [
     key: "misalignment",
     name: "Misalignment risk",
     question: "Could advanced AI competently pursue goals its developers never intended?",
-    // The deepest AI-safety cluster in the graph: the instrumental
-    // power-seeking and alignment-faking subtrees hang beneath it. It is also
-    // the homepage flagship (web/app/page.tsx).
+    // A deep AI-safety cluster: the instrumental
+    // power-seeking and alignment-faking subtrees hang beneath it.
     anchorId: "5477338c-4f5c-4049-a959-efbf3f23a988",
     coreText:
       "Goal misgeneralization is a plausible mechanism for catastrophic risk from powerful AI systems.",
@@ -81,6 +80,7 @@ export const TERRITORIES: TerritoryConfig[] = [
     key: "oversight",
     name: "Overseeing superintelligence",
     question: "Can weaker overseers keep control of AI systems far more capable than they are?",
+    // The homepage flagship (web/app/page.tsx).
     anchorId: "dc02e01f-ce69-4dbe-ba36-ed0e2e90d071",
     coreText: "Scalable oversight can reliably control superintelligent AI systems.",
   },

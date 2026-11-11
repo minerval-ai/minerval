@@ -7,6 +7,7 @@ import {
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { sinceAssessedLine } from "@/lib/since-assessed";
+import { evidenceNotShownLine, isExamined, notExaminedLine } from "@/lib/coverage";
 import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
@@ -144,6 +145,11 @@ export function ClaimView({
   const changedSince = anyAssessment
     ? sinceAssessedLine(detail.since_assessed, isQuantity ? "estimate" : "assessment")
     : null;
+  // What the judgment was made on (#543): one line when it rests in part on
+  // a source that reports a result from data it has not published.
+  const notShown = anyAssessment
+    ? evidenceNotShownLine(detail.coverage, isQuantity ? "estimate" : "assessment")
+    : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
@@ -198,14 +204,25 @@ export function ClaimView({
           a claim's status would (§3, §10). */}
       {isQuantity && <QuantityHead detail={detail} aside={<Dispute value={claim.contestation} />} />}
 
+      {/* A quantity nobody has estimated: the head above says "Not yet
+          estimated"; this says what that does and does not mean (#543). */}
+      {isQuantity && !isExamined(detail.coverage, !!detail.quantity?.estimate) && (
+        <p className="not-examined" style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
+          {notExaminedLine("quantity", { afterLead: true })}
+        </p>
+      )}
+
       {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" />}
 
       {!isQuantity && !assessment && (
         <>
-          <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-            Not yet assessed. Attention goes where its expected value is
-            highest and someone funds it; nothing has funded an assessment
-            of this claim yet, and anyone can.
+          {/* The place a verdict would stand. An empty place is easy to
+              read as nothing being wrong, so it says in words that there is
+              no verdict and that this is not a finding (#543). */}
+          <p className="not-examined" style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
+            {isExamined(detail.coverage, false) ? "Not yet assessed." : notExaminedLine("claim")} Attention goes where its expected
+            value is highest and someone funds it; nothing has funded an
+            assessment of this claim yet, and anyone can.
           </p>
           {/* The demand side: a purchase fully funds the action, and a
               fully funded action runs now. */}
@@ -326,6 +343,12 @@ export function ClaimView({
       {changedSince && (
         <p className="assess-changed-since" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
           {changedSince}
+        </p>
+      )}
+      {/* Quiet as well: what the judgment was made on, beside what it says. */}
+      {notShown && (
+        <p className="assess-not-shown" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
+          {notShown}
         </p>
       )}
 

@@ -90,9 +90,11 @@ export async function recordJudgmentInputs(
 /**
  * `judged`: the judgment in force of each node in $1, whichever kind it is.
  * A node keeps one kind of judgment; if one ever holds two (a node converted
- * to another kind), the newest is the one read.
+ * to another kind), the newest is the one read. Exported so that the other
+ * read of a judgment in force for many nodes at once (coverage-service.ts)
+ * means the same judgment by it.
  */
-const JUDGED_CTE = `judged AS (
+export const JUDGED_CTE = `judged AS (
     SELECT DISTINCT ON (node_id) node_id, kind, id, assessed_at, inputs_recorded
       FROM (
         SELECT claim_id AS node_id, 'assessment'::text AS kind, id, assessed_at, inputs_recorded

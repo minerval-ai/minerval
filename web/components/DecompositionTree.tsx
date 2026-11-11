@@ -14,6 +14,7 @@ import { buildClaimTextMap, hasClaimLinks } from "@/lib/claim-links";
 import { ArgumentText } from "./ArgumentText";
 import { Swatch, StandingBadge } from "./Assessment";
 import { describeEstimate } from "@/lib/quantity";
+import { isExamined } from "@/lib/coverage";
 import { Term } from "./Term";
 import { fmtDate } from "@/lib/format";
 
@@ -84,15 +85,36 @@ export function StanceTag({ stance }: { stance: Stance }) {
   );
 }
 
+// A subclaim with no judgment of its own (#543). It used to render no mark
+// at all, and a row with nothing beside it, among rows with solid swatches,
+// is easy to read as a row with nothing wrong. So it carries the hollow
+// dashed swatch every other surface uses for unassessed, and says in its
+// title that this is not a finding.
+function UnexaminedSwatch({ kind }: { kind: "claim" | "quantity" }) {
+  const what = kind === "quantity" ? "Not yet estimated" : "Unassessed";
+  return (
+    <span
+      className="swatch st-unassessed"
+      title={`${what}: no judgment of this ${kind} is in force, which is not a finding either way.`}
+      aria-label={what.toLowerCase()}
+    />
+  );
+}
+
 // An unassessed subclaim carrying a confident steward-seeded prior (#285)
 // renders a hatched, dashed swatch tinted by where the seed credence points —
 // preliminary-styled so it never reads as the solid swatch of a real verdict.
-// Mid-range seeds (an honest "don't know yet") render nothing, like any
-// unassessed node.
+// Mid-range seeds (an honest "don't know yet") render the plain unassessed
+// swatch, like any unassessed node.
 function SeedSwatch({ node }: { node: TreeNode }) {
   if (node.assessment_status) return null;
   const verity = seedVerity(node.seed_credence);
-  if (verity === 0) return null;
+  if (verity === 0) {
+    // A node that has a judgment this row has no mark for (a quantity whose
+    // estimate cannot be drawn as a chip) keeps the bare row it had.
+    if (isExamined(node.coverage, node.estimate != null)) return null;
+    return <UnexaminedSwatch kind={node.node_kind === "quantity" ? "quantity" : "claim"} />;
+  }
   const cls = verity > 0 ? "st-supported" : "st-contradicted";
   return (
     <span
