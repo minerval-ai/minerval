@@ -96,14 +96,21 @@ vi.mock("../../src/services/source-facts-service.js", async (orig) => ({
 }));
 
 import { rawQuery } from "../../src/db/client.js";
-import { MissingLabelError, PUBLIC_LABEL } from "../../src/labels.js";
+import { MissingLabelError, PUBLIC_LABEL, UndefinedLabelError } from "../../src/labels.js";
 import { currentLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
 import { claimAction } from "../../src/services/action-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 import { createDeepDecompositionJob } from "../../src/services/budget-job-service.js";
 import { createAppeal, createContribution } from "../../src/services/contribution-service.js";
 import { createOrder } from "../../src/services/order-service.js";
-import { enqueueClaimPipeline, enqueueSteward, getLocalQueue, type ClaimPipelineMessage } from "../../src/services/queue-service.js";
+import { publicIsTheOnlyLabel } from "../../src/services/label-service.js";
+import {
+  enqueueClaimPipeline,
+  enqueueSteward,
+  getLocalQueue,
+  type ClaimPipelineMessage,
+  type PreLabelClaimPipelineMessage,
+} from "../../src/services/queue-service.js";
 import { commissionResearch } from "../../src/services/research-commission-service.js";
 import { suspendSession, takeReadySession } from "../../src/services/session-service.js";
 import { submitSource } from "../../src/services/source-service.js";
@@ -345,16 +352,139 @@ describe("a ledger action", () => {
 });
 
 describe("the claim pipeline's message", () => {
-  it("is refused when it carries no label, and the claim is not onboarded as public", async () => {
-    const claim = await seedClaim("carried unlabeled message");
-    const unlabeled = { claimId: claim, jobId: "steward" } as ClaimPipelineMessage;
-    await expect(handleClaimPipeline(unlabeled)).rejects.toBeInstanceOf(MissingLabelError);
-    expect(await assessLabels(claim)).toEqual([]);
+  /** A message as the code before the label field wrote it: no `label` key at all. */
+  const preLabel = (claimId: string): PreLabelClaimPipelineMessage => ({ claimId, jobId: "steward" });
+  /** A message whose label is there but is not one: what JSON can carry in the field. */
+  const withLabel = (claimId: string, label: unknown) =>
+    ({ claimId, jobId: "steward", label }) as ClaimPipelineMessage;
+
+  async function onboarding(claimId: string) {
     const [row] = await rawQuery<{ decomposition_status: string }>(
       `SELECT decomposition_status FROM claims WHERE id = $1`,
-      [claim]
+      [claimId]
     );
-    expect(row!.decomposition_status).toBe("pending");
+    return { status: row!.decomposition_status, labels: await assessLabels(claimId) };
+  }
+  const NOT_ONBOARDED = { status: "pending", labels: [] };
+
+  /**
+   * Run `fn` in a deployment whose only label is `public`, as the public
+   * graph is.
+   *
+   * The scratch database is shared by every file in the suite, and by the
+   * time this one runs it holds rows at `internal` (this file's and other
+   * files'), so that label's row cannot be deleted to get there. Instead the
+   * real table is set aside under another name and a stand-in with the one
+   * row takes its place while `fn` runs. Foreign keys follow the real table
+   * itself, not its name, so every write is still checked against the real
+   * labels; only a read of `labels` by name sees the stand-in, and that
+   * read is what is under test.
+   *
+   * `fn` is handed a way to define another label in the stand-in. Whatever
+   * it defines goes when the stand-in is dropped, so no test's second label
+   * reaches another test or another file.
+   */
+  async function whereOnlyPublicIsDefined<T>(
+    fn: (defineLabel: (name: string) => Promise<void>) => Promise<T>
+  ): Promise<T> {
+    await rawQuery(`ALTER TABLE labels RENAME TO labels_set_aside`);
+    try {
+      await rawQuery(`CREATE TABLE labels (LIKE labels_set_aside INCLUDING DEFAULTS)`);
+      await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'Readable by anyone.')`, [PUBLIC_LABEL]);
+      return await fn(async (name) => {
+        await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'Defined for one test.')`, [name]);
+      });
+    } finally {
+      await rawQuery(`DROP TABLE IF EXISTS labels`);
+      await rawQuery(`ALTER TABLE labels_set_aside RENAME TO labels`);
+    }
+  }
+
+  it("says whether public is the only label by reading the labels table", async () => {
+    // This file's own second label is in the shared table.
+    expect(await publicIsTheOnlyLabel()).toBe(false);
+    await whereOnlyPublicIsDefined(async (defineLabel) => {
+      expect(await publicIsTheOnlyLabel()).toBe(true);
+      await defineLabel("restricted");
+      expect(await publicIsTheOnlyLabel()).toBe(false);
+    });
+    // The stand-in is gone with the label defined in it, and the real table
+    // is back under its name with the foreign keys still on it.
+    const names = (await rawQuery<{ name: string }>(`SELECT name FROM labels`)).map((r) => r.name);
+    expect(names).toContain(INTERNAL);
+    expect(names).not.toContain("restricted");
+    const [keys] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM pg_constraint WHERE contype = 'f' AND confrelid = 'public.labels'::regclass`
+    );
+    expect(keys!.n).toBeGreaterThan(0);
+  });
+
+  it("written before the label field is run at public where public is the only label", async () => {
+    const claim = await seedClaim("carried pre-label message");
+    await whereOnlyPublicIsDefined(async () => {
+      // What the poller hands over: the stored body, parsed.
+      const message = JSON.parse(JSON.stringify(preLabel(claim))) as PreLabelClaimPipelineMessage;
+      expect("label" in message).toBe(false);
+      await handleClaimPipeline(message);
+    });
+    const after = await onboarding(claim);
+    expect(after.status).toBe("complete");
+    expect(after.labels.length).toBeGreaterThan(0);
+    expect(new Set(after.labels)).toEqual(new Set([PUBLIC_LABEL]));
+  });
+
+  it("written before the label field is refused once the deployment defines a second label", async () => {
+    const first = await seedClaim("carried pre-label, then a second label");
+    const second = await seedClaim("carried pre-label, after a second label");
+    await whereOnlyPublicIsDefined(async (defineLabel) => {
+      // The same message is public work up to the moment another label
+      // exists, and from then on it could be anything.
+      await handleClaimPipeline(preLabel(first));
+      await defineLabel("restricted");
+      await expect(handleClaimPipeline(preLabel(second))).rejects.toBeInstanceOf(MissingLabelError);
+    });
+    expect((await onboarding(first)).status).toBe("complete");
+    expect(await onboarding(second)).toEqual(NOT_ONBOARDED);
+
+    // The shared table, where this file defined `internal`: refused as well,
+    // and the claim is not onboarded as public.
+    const third = await seedClaim("carried pre-label message, two labels");
+    await expect(handleClaimPipeline(preLabel(third))).rejects.toBeInstanceOf(MissingLabelError);
+    expect(await onboarding(third)).toEqual(NOT_ONBOARDED);
+  });
+
+  it("whose label is there but empty or null is refused, whatever labels the deployment has", async () => {
+    // A key with nothing in it is not a message from before the field: the
+    // code that wrote it knew about labels and lost this one.
+    const refuseAll = async () => {
+      for (const label of ["", null, undefined, 0, false]) {
+        const claim = await seedClaim("carried empty label");
+        await expect(handleClaimPipeline(withLabel(claim, label))).rejects.toBeInstanceOf(MissingLabelError);
+        expect(await onboarding(claim)).toEqual(NOT_ONBOARDED);
+      }
+    };
+    await whereOnlyPublicIsDefined(refuseAll);
+    await refuseAll();
+  });
+
+  it("whose label names no row is refused, whatever labels the deployment has", async () => {
+    // A row cannot carry such a label (its foreign key), so the message is
+    // the one place it can arrive. Left to run, the claim would be marked
+    // onboarded with no pass on the ledger, and the scheduler's sweep would
+    // open that pass at public.
+    const refuse = async () => {
+      const claim = await seedClaim("carried unknown label");
+      await expect(handleClaimPipeline(withLabel(claim, "undefined-label"))).rejects.toBeInstanceOf(UndefinedLabelError);
+      expect(await onboarding(claim)).toEqual(NOT_ONBOARDED);
+      const [row] = await rawQuery<{ steward_state: string }>(`SELECT steward_state FROM claims WHERE id = $1`, [claim]);
+      return row!.steward_state;
+    };
+    const untouched = await rawQuery<{ steward_state: string }>(
+      `SELECT steward_state FROM claims WHERE id = $1`,
+      [await seedClaim("carried never queued")]
+    );
+    expect(await whereOnlyPublicIsDefined(refuse)).toBe(untouched[0]!.steward_state);
+    expect(await refuse()).toBe(untouched[0]!.steward_state);
   });
 });
 

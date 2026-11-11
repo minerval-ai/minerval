@@ -30,6 +30,19 @@ export interface ClaimPipelineMessage {
   label: string;
 }
 
+/**
+ * A claim pipeline message written before the label field existed: the same
+ * message with no `label` key. Nothing enqueues one now (enqueueClaimPipeline
+ * always stamps the label), but the queue outlives a deploy, so the worker
+ * can still be handed one that the earlier code wrote. Only the worker's
+ * side of the queue uses this type, and it says there what it does with
+ * such a message and when the type can go (workers/claim-pipeline.ts).
+ */
+export type PreLabelClaimPipelineMessage = Omit<ClaimPipelineMessage, "label">;
+
+/** What the claim pipeline's worker may find in the queue. */
+export type QueuedClaimPipelineMessage = ClaimPipelineMessage | PreLabelClaimPipelineMessage;
+
 export interface UrlExtractionMessage {
   sourceId: string;
   jobId: string;

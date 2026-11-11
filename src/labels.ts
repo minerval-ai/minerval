@@ -40,6 +40,16 @@
  * the mistake the labels exist to prevent, and a refusal is seen where a
  * wrong label is not.
  *
+ * One carrier could not be given its label by a migration: a claim pipeline
+ * message already waiting in the queue when the label field was introduced.
+ * A message with no label field is run as public only where `public` is the
+ * only label the deployment has (publicIsTheOnlyLabel in
+ * services/label-service.ts), and refused everywhere else. The reasons, and
+ * when that path can be deleted, are in workers/claim-pipeline.ts. The
+ * message is also the one carrier with no foreign key to hold its label to
+ * the table, so the worker checks that the label it carries is defined and
+ * refuses the message if it is not (UndefinedLabelError).
+ *
  * The public graph has one label, the one named here, and no pairs. Nothing
  * reads a label yet: the rows carry them and the writes stamp them, and
  * holding a reader or a run to its clearance is later work.
@@ -59,5 +69,21 @@ export class MissingLabelError extends Error {
         `and a missing label is never read as public (src/labels.ts)`
     );
     this.name = "MissingLabelError";
+  }
+}
+
+/**
+ * Work was picked up from a queue message whose label names no row in
+ * `labels`. Thrown instead of running the work. A row cannot be in this
+ * state, because its foreign key holds it to the table; a message has no
+ * such key, so the worker that reads it asks (workers/claim-pipeline.ts).
+ */
+export class UndefinedLabelError extends Error {
+  constructor(work: string, label: string) {
+    super(
+      `${work} carries the label "${label}", which this deployment does not define, so it was not run: ` +
+        `work runs only at a label that is a row in labels (src/labels.ts)`
+    );
+    this.name = "UndefinedLabelError";
   }
 }
