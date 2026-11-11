@@ -34,6 +34,7 @@ import {
   type TranscriptMessage,
 } from "../llm/agents/grantmaker.js";
 import { owlsToMicroUsd } from "./owl.js";
+import { mandateDraftHash } from "./mandate-draft-hash.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import { PLATFORM_EXTERNAL_ID } from "./platform-account.js";
 import { loadConfig } from "../config.js";
@@ -650,29 +651,134 @@ export function serializeTurn(convo: TurnFields, now = Date.now()) {
     : { state: "idle" as const, started_at: null, error: null, partial: null };
 }
 
-export function serializeConversation(convo: GrantConversation) {
+/**
+ * What a caller already holds, so a read can leave it out (#905). `after` is
+ * how many messages the caller has (the `message_count` of its last read):
+ * messages are append-only, so the count is a cursor. `mandateSha256` is the
+ * draft hash from its last read: while the draft still hashes the same, the
+ * read says `mandate_unchanged` instead of sending the plan again.
+ */
+export interface ConversationReadOptions {
+  after?: number;
+  mandateSha256?: string;
+}
+
+/** The hash of the stored draft, as the platform route pins it (#529). */
+function draftHash(convo: Pick<GrantConversation, "mandate">): string | null {
+  return convo.mandate ? mandateDraftHash(convo.mandate) : null;
+}
+
+function serializeMandate(mandate: GrantMandate) {
+  return {
+    title: mandate.title,
+    objective: mandate.objective,
+    scope_claim_id: mandate.scope_claim_id ?? null,
+    scope_query: mandate.scope_query ?? null,
+    plan: mandate.plan,
+    expected_cost_owls: mandate.expected_cost_owls,
+    expected_cost_usd:
+      Math.round(owlsToMicroUsd(mandate.expected_cost_owls) / 10_000) / 100,
+    notes: mandate.notes ?? null,
+  };
+}
+
+/**
+ * One conversation for a reader. With no options, the whole of it; with
+ * `after` and `mandateSha256`, only what the caller does not hold yet.
+ * `message_count` and `mandate_sha256` are always present, so a caller can
+ * pass them back on its next read.
+ */
+export function serializeConversation(
+  convo: GrantConversation,
+  opts: ConversationReadOptions = {}
+) {
+  const all = (convo.messages ?? []) as ConversationMessage[];
+  const after = Math.min(Math.max(0, Math.floor(opts.after ?? 0)), all.length);
   const mandate = convo.mandate as GrantMandate | null;
+  const hash = draftHash(convo);
+  const unchanged =
+    !!opts.mandateSha256 && hash !== null && opts.mandateSha256 === hash;
   return {
     id: convo.id,
     status: convo.status,
-    messages: (convo.messages ?? []) as ConversationMessage[],
-    mandate: mandate
-      ? {
-          title: mandate.title,
-          objective: mandate.objective,
-          scope_claim_id: mandate.scope_claim_id ?? null,
-          scope_query: mandate.scope_query ?? null,
-          plan: mandate.plan,
-          expected_cost_owls: mandate.expected_cost_owls,
-          expected_cost_usd:
-            Math.round(owlsToMicroUsd(mandate.expected_cost_owls) / 10_000) /
-            100,
-          notes: mandate.notes ?? null,
-        }
-      : null,
+    message_count: all.length,
+    ...(after > 0 ? { messages_after: after } : {}),
+    messages: after > 0 ? all.slice(after) : all,
+    ...(unchanged
+      ? { mandate_unchanged: true as const }
+      : { mandate: mandate ? serializeMandate(mandate) : null }),
+    mandate_sha256: hash,
     turn: serializeTurn(convo),
     grant_id: convo.grantId,
     created_at: convo.createdAt?.toISOString(),
     updated_at: convo.updatedAt?.toISOString(),
   };
+}
+
+/**
+ * What sending a message returns (#905): the message's place in the
+ * conversation and the turn it started, not the transcript. The caller wrote
+ * the message and already holds everything before it; the reply is not in
+ * yet. It reads the reply with GET /grant-conversations/:id, passing
+ * `after` = message_count and `mandate_sha256`.
+ */
+export function serializeSentMessage(convo: GrantConversation) {
+  const all = (convo.messages ?? []) as ConversationMessage[];
+  const last = all[all.length - 1];
+  return {
+    id: convo.id,
+    status: convo.status,
+    message: last ? { index: all.length - 1, role: last.role, at: last.at } : null,
+    message_count: all.length,
+    mandate_sha256: draftHash(convo),
+    turn: serializeTurn(convo),
+    grant_id: convo.grantId,
+  };
+}
+
+/** One row of the conversation list: enough to choose one, no transcript. */
+export function serializeConversationSummary(convo: GrantConversation) {
+  const mandate = convo.mandate as GrantMandate | null;
+  return {
+    id: convo.id,
+    status: convo.status,
+    title: mandate?.title ?? null,
+    message_count: ((convo.messages ?? []) as unknown[]).length,
+    mandate_sha256: draftHash(convo),
+    turn: serializeTurn(convo),
+    grant_id: convo.grantId,
+    created_at: convo.createdAt?.toISOString(),
+    updated_at: convo.updatedAt?.toISOString(),
+  };
+}
+
+/** The longest a read may wait for a turn to end, in seconds. */
+export const MAX_TURN_WAIT_SECONDS = 25;
+/** How often a waiting read checks the turn. */
+const TURN_WAIT_POLL_MS = 1_000;
+
+/**
+ * Read a conversation, first waiting up to `waitSeconds` for a running turn
+ * to end (#905). A caller that would otherwise poll every few seconds makes
+ * one call that returns as soon as the reply lands. The wait is capped well
+ * under the load balancer's idle timeout and ends early when `isAborted`
+ * says the caller has gone. Returns null when the conversation is not the
+ * user's.
+ */
+export async function getConversationAfterTurn(
+  conversationId: string,
+  userId: string,
+  waitSeconds: number,
+  isAborted: () => boolean = () => false
+): Promise<GrantConversation | null> {
+  const deadline =
+    Date.now() + Math.min(Math.max(0, waitSeconds), MAX_TURN_WAIT_SECONDS) * 1000;
+  let convo = await getConversation(conversationId, userId);
+  while (convo && turnRunning(convo) && Date.now() < deadline && !isAborted()) {
+    await new Promise((r) =>
+      setTimeout(r, Math.min(TURN_WAIT_POLL_MS, Math.max(0, deadline - Date.now())))
+    );
+    convo = await getConversation(conversationId, userId);
+  }
+  return convo;
 }

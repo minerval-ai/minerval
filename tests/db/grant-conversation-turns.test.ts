@@ -34,7 +34,10 @@ vi.mock("../../src/llm/agents/grantmaker.js", () => ({
   }),
 }));
 
+import Fastify from "fastify";
 import { rawQuery } from "../../src/db/client.js";
+import { grantConversationRoutes } from "../../src/routes/grant-conversations.js";
+import { mandateDraftHash } from "../../src/services/mandate-draft-hash.js";
 import {
   addMessage,
   fundConversationMandate,
@@ -208,5 +211,107 @@ describe("granting-conversation turns", () => {
     await settleGrantConversationTurns();
     const funded = await fundConversationMandate({ conversationId: id, userId, budgetOwls: 10 });
     expect(funded.ok).toBe(true);
+  });
+
+  it("reads only what the caller lacks, and waits for the turn to end (#905)", async () => {
+    const userId = await seedUser("turn-delta");
+    const app = Fastify();
+    app.decorate("authenticate", async (request: { auth?: unknown }) => {
+      request.auth = { userId };
+    });
+    app.decorate("requireUser", async () => {});
+    await app.register(grantConversationRoutes, { prefix: "/grant-conversations" });
+    await app.ready();
+    try {
+      // A send answers with the message's place and the turn, no transcript.
+      agent.mandate = draft;
+      const release = hold();
+      const startRes = await app.inject({
+        method: "POST",
+        url: "/grant-conversations",
+        payload: { message: "Fund education research." },
+      });
+      expect(startRes.statusCode).toBe(201);
+      const sent = startRes.json().conversation;
+      expect(sent).toMatchObject({
+        message: { index: 0, role: "user" },
+        message_count: 1,
+        mandate_sha256: null,
+        turn: { state: "replying" },
+      });
+      expect(sent).not.toHaveProperty("messages");
+      expect(sent).not.toHaveProperty("mandate");
+      const id = sent.id as string;
+
+      // A read that waits returns once the turn ends, with the reply alone.
+      const reading = app.inject({
+        method: "GET",
+        url: `/grant-conversations/${id}?after=1&wait=10`,
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      const read = (await reading).json().conversation;
+      expect(read.turn.state).toBe("idle");
+      expect(read.message_count).toBe(2);
+      expect(read.messages_after).toBe(1);
+      expect(read.messages.map((m: { role: string }) => m.role)).toEqual(["assistant"]);
+      expect(read.mandate.title).toBe(draft.title);
+      const stored = (await getConversation(id, userId))!;
+      expect(read.mandate_sha256).toBe(mandateDraftHash(stored.mandate));
+
+      // With the hash it holds, the caller is not sent the draft again.
+      const again = (
+        await app.inject({
+          method: "GET",
+          url: `/grant-conversations/${id}?after=2&mandate_sha256=${read.mandate_sha256}`,
+        })
+      ).json().conversation;
+      expect(again.messages).toEqual([]);
+      expect(again.mandate_unchanged).toBe(true);
+      expect(again).not.toHaveProperty("mandate");
+
+      // With no parameters, the whole conversation, as before.
+      const whole = (await app.inject({ method: "GET", url: `/grant-conversations/${id}` })).json()
+        .conversation;
+      expect(whole.messages).toHaveLength(2);
+      expect(whole.mandate.title).toBe(draft.title);
+
+      // A wait with no turn running answers at once.
+      const t0 = Date.now();
+      await app.inject({ method: "GET", url: `/grant-conversations/${id}?wait=25` });
+      expect(Date.now() - t0).toBeLessThan(2_000);
+
+      // A wait is capped.
+      const tooLong = await app.inject({ method: "GET", url: `/grant-conversations/${id}?wait=60` });
+      expect(tooLong.statusCode).toBe(400);
+
+      // The list carries summaries, not transcripts.
+      const list = (await app.inject({ method: "GET", url: "/grant-conversations" })).json();
+      expect(list.conversations[0]).toMatchObject({ id, title: draft.title, message_count: 2 });
+      expect(list.conversations[0]).not.toHaveProperty("messages");
+
+      // A follow-up send, then funding, answer without the conversation.
+      await creditOwls(userId, 100 * OWL);
+      const follow = await app.inject({
+        method: "POST",
+        url: `/grant-conversations/${id}/messages`,
+        payload: { message: "Looks good." },
+      });
+      expect(follow.statusCode).toBe(202);
+      expect(follow.json().conversation).toMatchObject({ message: { index: 2 }, message_count: 3 });
+      await settleGrantConversationTurns();
+      const fund = await app.inject({
+        method: "POST",
+        url: `/grant-conversations/${id}/fund`,
+        payload: { budget_owls: 10 },
+      });
+      expect(fund.statusCode).toBe(200);
+      expect(fund.json()).toEqual({
+        grant_id: expect.any(String),
+        conversation: { id, status: "funded" },
+      });
+    } finally {
+      await app.close();
+    }
   });
 });

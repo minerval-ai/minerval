@@ -257,11 +257,21 @@ the budget and starts the grant with the mandate as its plan; nothing runs
 or is charged before that.
 
 The Grantmaker replies in the background. Sending a message saves it and
-returns the conversation at once with `turn.state: "replying"`; the reply
-lands in the transcript when the turn finishes (a drafting turn can take
-minutes, streamed so it has the model's full output for the plan). Callers
-read `GET /grant-conversations/:id` until the turn is `idle`, or `failed`
-with `turn.error` (the message stays saved; a short follow-up asks again).
+returns at once with the message's place (`message.index`,
+`message_count`), the draft's hash (`mandate_sha256`) and
+`turn.state: "replying"`, not the transcript (#905); the reply lands in the
+conversation when the turn finishes (a drafting turn can take minutes,
+streamed so it has the model's full output for the plan). Callers read
+`GET /grant-conversations/:id?after=<message_count>&mandate_sha256=<hash>&wait=25`
+until the turn is `idle`, or `failed` with `turn.error` (the message stays
+saved; a short follow-up asks again). `after` returns only the messages
+after those the caller holds; `mandate_sha256` leaves the draft out
+(`mandate_unchanged: true`) while it still hashes the same; `wait` holds
+the read up to 25 seconds for the turn to end, well under the load
+balancer's idle timeout. With no parameters the read is the whole
+conversation. Funding returns the new `grant_id`, and the conversation list
+returns one summary per conversation (title, status, message count, turn),
+not transcripts.
 One turn runs at a time: a message sent meanwhile is refused with
 `TURN_IN_PROGRESS` and not saved, and the draft can't be funded until the
 turn ends, since it may still revise it. A running turn refreshes a
