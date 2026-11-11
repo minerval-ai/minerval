@@ -10,10 +10,11 @@
  * out of date from then on (judgment-inputs-service.ts, `source_events`).
  *
  * This module is what makes the same fact a reason to look: the first time
- * a notice is recorded, by either watcher, the Steward of every active node
- * that has the source attached, or rests on it through recorded provenance
- * (a copy or version of the work, or a source drawing on it), gets one
- * `source_event` message naming the notice and the path.
+ * a retraction, correction or expression of concern is recorded, by either
+ * watcher, the Steward of every active node that has the source attached,
+ * or rests on it through recorded provenance (a copy or version of the
+ * work, or a source drawing on it), gets one `source_event` message naming
+ * the notice and the path.
  *
  * A message spends nothing (enqueueSteward): the node becomes a candidate
  * with the message in its inbox, and whether its pass runs is for whoever
@@ -21,8 +22,36 @@
  * notice means for its node; a correction may change nothing.
  */
 import { rawQuery } from "../db/client.js";
+import { getUsageContext } from "../llm/usage-context.js";
 import { enqueueSteward } from "./queue-service.js";
 import { claimsRestingOnSources, type RestingClaim } from "./source-watch-service.js";
+
+/**
+ * The notices a Steward is told of, as Crossref types them (its
+ * `update-type`). The one list both watchers read: the Crossref poll asks
+ * for exactly these (workers/lookout-triggers.ts), and the facts fetch,
+ * whose DOI check returns every notice against a work, tells of these and
+ * no others (isToldNoticeType).
+ *
+ * Why not every notice a watcher records: a prompt leaves each node resting
+ * on the source pending, with open rows nobody has paid for, and the other
+ * kinds are common and seldom bear on a verdict. A new version of a
+ * preprint is the usual case, and would do that to every node citing it
+ * each time one is first seen. Those notices are still recorded on the
+ * source, shown on its page and in the document's first window, and counted
+ * by `since_assessed`: that is the record, and this is the prompt. Crossref
+ * also files some corrections and retractions under other types (erratum,
+ * corrigendum, withdrawal). They are recorded as corrections and
+ * retractions, and neither watcher tells of them: the poll does not ask
+ * for them.
+ */
+export const TOLD_NOTICE_TYPES = ["retraction", "correction", "expression_of_concern"] as const;
+
+/** Whether a notice of this Crossref type is one a Steward is told of. */
+export function isToldNoticeType(type: string | null | undefined): boolean {
+  const t = (type ?? "").toLowerCase().replace(/-/g, "_");
+  return (TOLD_NOTICE_TYPES as readonly string[]).includes(t);
+}
 
 /** A source a notice was recorded against, with the active nodes that have it attached. */
 export interface NoticedSource {
@@ -34,7 +63,7 @@ export interface NoticedSource {
 
 /** The notice as Crossref gives it. */
 export interface SourceNotice {
-  /** Crossref's update type: retraction, correction, expression_of_concern, new_version, ... */
+  /** Crossref's update type; one of TOLD_NOTICE_TYPES for a notice that is told. */
   type: string | null;
   title: string | null;
   updated: string | null;
@@ -87,7 +116,7 @@ export async function tellStewardsOfSourceEvents(
 
   let told = 0;
   for (const { claimId, notice, paths } of letters.values()) {
-    const kind = (notice.type ?? "retraction").replace(/_/g, " ");
+    const kind = (notice.type ?? "retraction").toLowerCase().replace(/[_-]/g, " ");
     const article = /^[aeiou]/i.test(kind) ? "an" : "a";
     const when = notice.updated ? ` dated ${notice.updated.slice(0, 10)}` : "";
     const where = notice.notice_doi ? ` The notice: https://doi.org/${notice.notice_doi}.` : "";
@@ -115,15 +144,37 @@ export async function tellStewardsOfSourceEvents(
 }
 
 /**
- * The same, for notices freshly recorded against one source: the nodes are
- * looked up here. The join is the Crossref poll's (source-watch-service
- * sourcesForDois): active nodes with a live instance on the source, then
- * the nodes resting on it through recorded provenance.
+ * The node whose Steward is running now, if this is called from inside a
+ * Steward's own run (the run sets the agent and its node on the usage
+ * context, llm/agents/claim-steward.ts). Null anywhere else, including a
+ * researcher the Steward launched: its reads are not the Steward's.
+ */
+function nodeOfRunningSteward(): string | null {
+  const ctx = getUsageContext();
+  return ctx.agent === "steward" && ctx.claimId ? ctx.claimId : null;
+}
+
+/**
+ * The same, for notices the facts fetch freshly recorded against one
+ * source: the nodes are looked up here. The join is the Crossref poll's
+ * (source-watch-service sourcesForDois): active nodes with a live instance
+ * on the source, then the nodes resting on it through recorded provenance.
+ * Notices of a type outside TOLD_NOTICE_TYPES are left out.
+ *
+ * One node is skipped: the node whose Steward is reading the document right
+ * now. The facts fetch runs inside a Steward's run only when its own
+ * provenance_read_source fetches the document for the first time, and the
+ * result of that read lists the source's events (provenance-tools.ts,
+ * executeReadSource: the facts come with the first window and with any read
+ * that fetched). So the notice is in what it just read, before it writes
+ * its judgment, and a message would only leave the node pending again for a
+ * pass with nothing new to weigh. Every other node is told as usual.
  */
 export async function tellStewardsOfNoticesOn(
   sourceId: string,
-  notices: SourceNotice[]
+  recorded: SourceNotice[]
 ): Promise<number> {
+  const notices = recorded.filter((n) => isToldNoticeType(n.type));
   if (notices.length === 0) return 0;
   const [source] = await rawQuery<NoticedSource>(
     `SELECT s.id AS source_id, s.url, s.title,
@@ -136,7 +187,9 @@ export async function tellStewardsOfNoticesOn(
     [sourceId]
   );
   if (!source) return 0;
-  const resting = await claimsRestingOnSources([sourceId]);
+  const reading = nodeOfRunningSteward();
+  source.claim_ids = source.claim_ids.filter((id) => id !== reading);
+  const resting = (await claimsRestingOnSources([sourceId])).filter((r) => r.claim_id !== reading);
   if (source.claim_ids.length === 0 && resting.length === 0) return 0;
   return tellStewardsOfSourceEvents(
     notices.map((notice) => ({ source, notice })),

@@ -325,15 +325,16 @@ export async function refreshSourceFacts(
       fresh.push({ type: u.type, title: null, updated: u.updated, notice_doi: u.doi || null });
     }
   }
-  // A notice recorded here for the first time is told to the Stewards of
-  // the nodes resting on the source, as one the Crossref poll finds is
-  // (source-notice-service.ts). The poll reads only notices added since its
-  // last run, and a notice recorded here is never fresh to it, so without
-  // this a source cited by URL and judged against before its facts were
-  // looked up would show the notice in `since_assessed` and tell nobody. A
-  // source no node rests on yet (a document being ingested) tells nobody. A
-  // message spends nothing; a failure to send loses the message, never the
-  // facts.
+  // A retraction, correction or expression of concern recorded here for the
+  // first time is told to the Stewards of the nodes resting on the source,
+  // as one the Crossref poll finds is (source-notice-service.ts, which keeps
+  // the list of kinds and leaves the others out). The poll reads only
+  // notices added since its last run, and a notice recorded here is never
+  // fresh to it, so without this a source cited by URL and judged against
+  // before its facts were looked up would show the notice in
+  // `since_assessed` and tell nobody. A source no node rests on yet (a
+  // document being ingested) tells nobody. A message spends nothing; a
+  // failure to send loses the message, never the facts.
   if (fresh.length > 0) {
     await tellStewardsOfNoticesOn(sourceId, fresh).catch((err) => {
       console.error(

@@ -9,14 +9,24 @@
  * other message, so the pass runs when someone commissions it. A source no
  * node rests on has its event recorded and tells nobody.
  *
- * Only Crossref is replaced: the poll's window of notices, and the facts
- * fetch's DOI check.
+ * Both watchers tell of the same three kinds (retraction, correction,
+ * expression of concern); the facts fetch records the others and tells of
+ * none of them. And the node whose Steward is reading the document when the
+ * facts fetch runs is not sent the message: the read's result lists the
+ * notice.
+ *
+ * Only the network is replaced: Crossref (the poll's window of notices, the
+ * DOI check) and the fetch of a page.
  */
 import { describe, it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
 const { crossref } = vi.hoisted(() => ({
-  crossref: { notices: [] as Array<Record<string, unknown>> },
+  crossref: {
+    notices: [] as Array<Record<string, unknown>>,
+    /** The DOI check's answer, for the reads that reach Crossref through the module itself. */
+    updates: [] as Array<Record<string, unknown>>,
+  },
 }));
 
 vi.mock("../../src/services/source-watch-service.js", async (importOriginal) => {
@@ -24,14 +34,30 @@ vi.mock("../../src/services/source-watch-service.js", async (importOriginal) => 
   return {
     ...actual,
     retractionNoticesSince: vi.fn(async () => ({ notices: crossref.notices, complete: true, readThrough: null })),
+    checkDoi: vi.fn(async (doi: string) => ({
+      doi, found: true, title: "Registered title", type: "journal-article", published: "2021-06",
+      cited_by: 3, authors: ["Jane Smith"], publisher: "Registry Press", container: null,
+      updates: crossref.updates, updates_to: [],
+    })),
+  };
+});
+vi.mock("../../src/services/url-guard.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/services/url-guard.js")>();
+  return {
+    ...actual,
+    fetchPublicUrl: vi.fn(async () => "<html><body><p>The text of a paper, long enough to read in windows.</p></body></html>"),
   };
 });
 
 import { rawQuery } from "../../src/db/client.js";
 import { retractionPollTick } from "../../src/workers/lookout-triggers.js";
 import { refreshSourceFacts } from "../../src/services/source-facts-service.js";
+import { fetchAndStoreSource } from "../../src/services/source-map-service.js";
 import { getJudgmentInputs, recordJudgmentInputs } from "../../src/services/judgment-inputs-service.js";
 import { openInbox } from "../../src/services/inbox-service.js";
+import { runWithUsageContext } from "../../src/llm/usage-context.js";
+import { executeReadSource } from "../../src/llm/tools/provenance-tools.js";
+import { TOLD_NOTICE_TYPES, isToldNoticeType } from "../../src/services/source-notice-service.js";
 import type { DoiCheck } from "../../src/services/source-watch-service.js";
 import { seedClaim } from "./helpers.js";
 
@@ -187,15 +213,15 @@ describe("a notice the Crossref poll finds", () => {
   });
 });
 
-describe("a notice the facts fetch finds", () => {
-  function work(doi: string, updates: DoiCheck["updates"]): DoiCheck {
-    return {
-      doi, found: true, title: "Registered title", type: "journal-article", published: "2021-06",
-      cited_by: 3, authors: ["Jane Smith"], publisher: "Registry Press", container: null,
-      updates, updates_to: [],
-    };
-  }
+function work(doi: string, updates: DoiCheck["updates"]): DoiCheck {
+  return {
+    doi, found: true, title: "Registered title", type: "journal-article", published: "2021-06",
+    cited_by: 3, authors: ["Jane Smith"], publisher: "Registry Press", container: null,
+    updates, updates_to: [],
+  };
+}
 
+describe("a notice the facts fetch finds", () => {
   it("tells the Stewards of the nodes resting on the source, the first time the notice is recorded", async () => {
     // A source cited by URL and judged against before its facts were looked up.
     const doi = newDoi();
@@ -252,28 +278,51 @@ describe("a notice the facts fetch finds", () => {
     expect(await messages(viaNews)).toHaveLength(1);
   });
 
-  it("tells of every kind of notice it records, in Crossref's own word for it", async () => {
-    // The poll asks Crossref for retractions, corrections and expressions of
-    // concern; the DOI check returns every notice against the work, and each
-    // is recorded (an erratum as a correction, a new version as an update)
-    // and counted by since_assessed, so each is told.
-    const paper = await seedSource("Paper with two notices", newDoi());
-    const claim = await seedJudgedClaim("cites the paper with two notices", [paper.id]);
+  it("tells of the kinds the poll tells of and no others, though every notice is recorded and counted", async () => {
+    expect([...TOLD_NOTICE_TYPES]).toEqual(["retraction", "correction", "expression_of_concern"]);
+    expect(isToldNoticeType("Expression-of-Concern")).toBe(true);
+    expect(["erratum", "corrigendum", "withdrawal", "new_version", "removal", "addendum", null].some(isToldNoticeType)).toBe(false);
+
+    const paper = await seedSource("Paper with four notices", newDoi());
+    const claim = await seedJudgedClaim("cites the paper with four notices", [paper.id]);
+    const concernDoi = newDoi();
     const result = await refreshSourceFacts(paper.id, {
       checkDoi: async (d) =>
         work(d, [
-          { doi: newDoi(), type: "erratum", label: "Erratum", updated: "2026-07-01T00:00:00Z", source: "publisher" },
           { doi: newDoi(), type: "new_version", label: "New version", updated: null, source: "publisher" },
+          { doi: newDoi(), type: "erratum", label: "Erratum", updated: "2026-07-01T00:00:00Z", source: "publisher" },
+          { doi: newDoi(), type: "removal", label: "Removal", updated: null, source: "publisher" },
+          { doi: concernDoi, type: "expression-of-concern", label: "Expression of concern", updated: "2026-07-02T00:00:00Z", source: "publisher" },
         ]),
       archive: false,
     });
-    expect(result.events_recorded).toBe(2);
-    expect((await eventsOn(paper.id)).map((e) => e.kind).sort()).toEqual(["correction", "update"]);
-    expect((await getJudgmentInputs(claim))!.sources.events_since).toHaveLength(2);
+    // The record: all four, each under its kind, and all four counted against the judgment.
+    expect(result.events_recorded).toBe(4);
+    expect((await eventsOn(paper.id)).map((e) => e.kind).sort()).toEqual(
+      ["correction", "expression_of_concern", "removal", "update"]
+    );
+    expect((await getJudgmentInputs(claim))!.sources.events_since).toHaveLength(4);
+    // The prompt: the expression of concern alone.
     const bodies = (await messages(claim)).map((m) => m.body);
-    expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toContain("Crossref records an erratum notice dated 2026-07-01 against a document this node rests on.");
-    expect(bodies[1]).toContain("Crossref records a new version notice against a document this node rests on.");
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toContain(
+      "Crossref records an expression of concern notice dated 2026-07-02 against a document this node rests on."
+    );
+    expect(bodies[0]).toContain(`The notice: https://doi.org/${concernDoi}.`);
+  });
+
+  it("leaves a node at rest when the only notices are of kinds nobody is told of", async () => {
+    const paper = await seedSource("Preprint with a new version", newDoi());
+    const claim = await seedJudgedClaim("cites the preprint", [paper.id]);
+    const result = await refreshSourceFacts(paper.id, {
+      checkDoi: async (d) =>
+        work(d, [{ doi: newDoi(), type: "new_version", label: "New version", updated: null, source: "publisher" }]),
+      archive: false,
+    });
+    expect(result.events_recorded).toBe(1);
+    expect(await messages(claim)).toEqual([]);
+    expect(await stewardState(claim)).toEqual({ steward_state: "done", steward_trigger: null });
+    expect((await ledger(claim)).rows).toEqual([]);
   });
 
   it("tells nobody when no node rests on the source", async () => {
@@ -285,5 +334,70 @@ describe("a notice the facts fetch finds", () => {
     });
     expect(result.events_recorded).toBe(1);
     expect(await mentions(paper.url)).toBe(0);
+  });
+});
+
+describe("a notice found while a Steward is reading the document", () => {
+  /** A source cited by URL, its page never fetched, attached to two judged nodes; one is mid-pass. */
+  async function seedOpened() {
+    const noticeDoi = newDoi();
+    const paper = await seedSource("Cited by URL, opened later", newDoi());
+    const reader = await seedJudgedClaim("its Steward is reading the document", [paper.id]);
+    const other = await seedJudgedClaim("another node citing the document", [paper.id]);
+    await rawQuery(`UPDATE claims SET steward_state = 'running', stewarded_at = now() WHERE id = $1`, [reader]);
+    crossref.updates = [
+      { doi: noticeDoi, type: "retraction", label: "Retraction", updated: "2026-09-03T00:00:00Z", source: "publisher" },
+    ];
+    return { noticeDoi, paper, reader, other };
+  }
+
+  const requeued = async (claimId: string) =>
+    (await rawQuery<{ steward_state: string; steward_requeued: boolean }>(
+      `SELECT steward_state, steward_requeued FROM claims WHERE id = $1`,
+      [claimId]
+    ))[0]!;
+
+  it("shows the reading Steward the notice in the read, sends its node no message, and tells the other nodes", async () => {
+    const c = await seedOpened();
+    // The Steward's own read, as its run makes it: the first fetch of the
+    // document, asking for a later window, which is the one read that would
+    // not otherwise carry the document's facts.
+    const out = JSON.parse(
+      await runWithUsageContext({ claimId: c.reader, agent: "steward" }, () =>
+        executeReadSource({ source_id: c.paper.id, offset: 4 }, { role: "claim-steward", claimId: c.reader })
+      )
+    );
+    expect(out).toMatchObject({ success: true, origin: "fetched", offset: 4 });
+    expect(out.facts.events).toEqual([
+      expect.objectContaining({ kind: "retraction", notice_url: `https://doi.org/${c.noticeDoi}` }),
+    ]);
+    expect(await eventsOn(c.paper.id)).toHaveLength(1);
+
+    // Its own node: no message, and not queued for another pass on this account.
+    expect(await messages(c.reader)).toEqual([]);
+    expect(await requeued(c.reader)).toEqual({ steward_state: "running", steward_requeued: false });
+    // The other node resting on the source is told as usual.
+    const told = await messages(c.other);
+    expect(told.map((m) => m.trigger)).toEqual(["source_event"]);
+    expect(told[0]!.body).toContain("Crossref records a retraction notice dated 2026-09-03");
+    expect(await stewardState(c.other)).toEqual({ steward_state: "pending", steward_trigger: "source_event" });
+  });
+
+  it("tells the node when the reader is a researcher working for it, since its Steward was not shown the read", async () => {
+    const c = await seedOpened();
+    await runWithUsageContext({ claimId: c.reader, agent: "researcher" }, () =>
+      executeReadSource({ source_id: c.paper.id }, { role: "researcher", claimId: c.reader })
+    );
+    expect((await messages(c.reader)).map((m) => m.trigger)).toEqual(["source_event"]);
+    // Mid-pass, a message queues the node for its next pass instead of interrupting this one.
+    expect(await requeued(c.reader)).toEqual({ steward_state: "running", steward_requeued: true });
+    expect(await messages(c.other)).toHaveLength(1);
+  });
+
+  it("tells every node when the fetch is nobody's read (the source backfill)", async () => {
+    const c = await seedOpened();
+    await fetchAndStoreSource({ id: c.paper.id, url: c.paper.url });
+    expect(await messages(c.reader)).toHaveLength(1);
+    expect(await messages(c.other)).toHaveLength(1);
   });
 });

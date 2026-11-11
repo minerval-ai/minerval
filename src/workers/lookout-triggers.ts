@@ -56,7 +56,11 @@ import {
 } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
-import { tellStewardsOfSourceEvents, type FreshSourceEvent } from "../services/source-notice-service.js";
+import {
+  TOLD_NOTICE_TYPES,
+  tellStewardsOfSourceEvents,
+  type FreshSourceEvent,
+} from "../services/source-notice-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
 
 const FLAG_KEY = "lookout_retraction_poll";
@@ -140,7 +144,8 @@ export async function retractionPollTick(
   const from = new Date(since.getTime() - 86_400_000);
   const window = await retractionNoticesSince({
     since: from,
-    types: ["retraction", "correction", "expression_of_concern"],
+    // The notices Stewards are told of: the list the facts fetch tells by too.
+    types: [...TOLD_NOTICE_TYPES],
     maxPages: MAX_PAGES_PER_POLL,
   });
   const notices = window.notices;
