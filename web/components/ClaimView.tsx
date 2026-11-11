@@ -6,6 +6,7 @@ import {
   DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
+import { sinceAssessedLine } from "@/lib/since-assessed";
 import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
@@ -118,6 +119,12 @@ export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fi
     !assessment && detail.seed && (detail.seed.credence != null || detail.seed.note)
       ? detail.seed
       : null;
+  // What has changed under the judgment since it was written (#566): one
+  // line, only when something did. Null when nothing changed and when the
+  // judgment predates the record, where nothing is known either way.
+  const changedSince = anyAssessment
+    ? sinceAssessedLine(detail.since_assessed, isQuantity ? "estimate" : "assessment")
+    : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
@@ -291,6 +298,13 @@ export function ClaimView({ detail, fixture = false }: { detail: ClaimDetail; fi
       {assessment?.relabeled_from && (
         <p className="assess-relabeled" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
           Status carried over from the retired label &lsquo;{assessment.relabeled_from}&rsquo;; not yet re-judged.
+        </p>
+      )}
+      {/* Quiet, like the note above: a fact about the judgment's footing,
+          not a verdict on whether it still holds. */}
+      {changedSince && (
+        <p className="assess-changed-since" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
+          {changedSince}
         </p>
       )}
 
