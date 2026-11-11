@@ -29,6 +29,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { PRIMARY_SOURCE_TYPES } from "../schemas/common.js";
+import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
 
 export type StoryStanding = "origin" | "untraced" | "derived";
 
@@ -45,6 +46,12 @@ export interface StorySource {
   source_type: string;
   /** Partial ISO-8601, as the facts fetcher recorded it (#507 phase 3). */
   published_date?: string | null;
+  /**
+   * The stake recorded for this source on this claim (§9): the claim's own
+   * record where there is one, else the source-wide one, else null. A fact
+   * about the source; it changes nothing about the story's structure.
+   */
+  interest?: SourceInterestView | null;
 }
 
 export interface StoryEdgeInput {
@@ -301,7 +308,7 @@ export async function getProvenanceStory(claimId: string): Promise<ProvenanceSto
   if (ids.length === 0) {
     return buildProvenanceStory(claimId, { sources: [], instances: [], edges: [], republishes: [], roots: [] });
   }
-  const [sources, republishes] = await Promise.all([
+  const [sources, republishes, interests] = await Promise.all([
     rawQuery<StorySource>(
       `SELECT id, title, url, source_type, published_date FROM sources WHERE id = ANY($1::uuid[])`,
       [ids]
@@ -311,9 +318,10 @@ export async function getProvenanceStory(claimId: string): Promise<ProvenanceSto
         WHERE relation_type = 'republishes' AND parent_source_id = ANY($1::uuid[])`,
       [ids]
     ),
+    interestsForClaim(claimId, ids),
   ]);
   return buildProvenanceStory(claimId, {
-    sources,
+    sources: sources.map((s) => ({ ...s, interest: interests.get(s.id) ?? null })),
     instances,
     edges,
     republishes,

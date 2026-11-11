@@ -150,7 +150,7 @@ describe("the Provenance skill", () => {
     ]);
   });
 
-  it("declares its tools: five for the researcher too, the two reads also for Audit, origins and the map for the Steward alone, and the examination tools by role", () => {
+  it("declares its tools: six for the researcher too, the two reads also for Audit, origins and the map for the Steward alone, and the examination tools by role", () => {
     expect(p.tools.map((t) => t.name)).toEqual([
       "provenance_get_map",
       "provenance_read_source",
@@ -164,6 +164,7 @@ describe("the Provenance skill", () => {
       "examination_record_finding",
       "provenance_cite_findings",
       "examination_note_finding",
+      "record_source_interest",
     ]);
     expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
     // Reading a source is also how the Reviewer and the Arbitrator check
@@ -182,11 +183,14 @@ describe("the Provenance skill", () => {
     for (const t of p.tools.slice(7, 10)) expect(t.roles).toEqual(["researcher"]);
     expect(p.tools[10]!.roles).toEqual(["claim-steward"]);
     expect(p.tools[11]!.roles).toEqual(["audit-agent"]);
+    // A source's interest (§9) is recorded by whoever reads the source for
+    // the claim: the Steward, and the researcher mapping on its behalf.
+    expect(p.tools[12]!.roles).toEqual(["claim-steward", "researcher"]);
   });
 
   it("is headed as a method skill with its own sentence of standing", () => {
     const view = getSkillView(p, "claim-steward");
-    expect(view.startsWith("# Method skill: Provenance (version 7)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 8)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
     expect(view).not.toContain("## Failure modes");
   });
 });

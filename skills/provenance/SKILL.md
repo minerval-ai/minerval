@@ -7,7 +7,7 @@ description: >-
   where it matters.
 metadata:
   minerval:
-    version: 7
+    version: 8
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
@@ -17,6 +17,7 @@ metadata:
       5: The researcher's section carries the mapping procedure it follows, so the researcher no longer reads the Steward's section.
       6: A retraction or correction notice is sent to the Steward of every claim that asserts the document or rests on it through recorded provenance (trigger source_event), not only to lookouts.
       7: "a source that reports a result from evidence it holds and has not published is read as evidence not shown (support evidence_not_shown), apart from one that asserts without evidence"
+      8: "a source's interest, a stake its author or publisher has in what it says, is recorded with record_source_interest as a fact about the source, and is shown on each instance's source in provenance_get_map"
 ---
 
 ## For every administrator
@@ -121,6 +122,20 @@ show what the text says. The recorded passage is checked mechanically
 against the stored text and the result comes back to you: a passage not
 found is a reason to read before relying on the quotation, and a misquoted
 instance is something your reasoning should say.
+
+**A source's interest.** `provenance_get_map` shows, on each instance's
+source, any interest recorded for it: who has a stake in what the source
+says, and what the stake is. The record is a fact about the source and not
+a reading of it. It does not say the source is wrong, and it moves no
+status. How the stake bears on the claim is your judgment, made as §9
+describes and stated in your reasoning. Where you find a stake the record
+lacks, add it with `record_source_interest`: name the party, say in a
+sentence or two what it stands to gain or lose, and choose the scope. Scope
+it to the claim when the stake is in how this claim comes out. Scope it to
+the source when it holds for whatever the source says about the party's own
+affairs, as with a lab's own system card. A later record for the same
+source and scope replaces the earlier one for readers, and the earlier one
+is kept.
 
 **Following an edge.** The commonest failure at a crossing is strengthening:
 a hedged finding stated as fact, a subgroup result stated for everyone, a
@@ -256,7 +271,10 @@ rewriting. A split leaves each claim's readings and edges with the
 instances that went to it, and the map with the original. Relations between
 two documents are claim-independent and survive every merge and split.
 Origins the loser's Steward recorded stay with the loser; the survivor's
-Steward records its own when it refreshes the map.
+Steward records its own when it refreshes the map. An interest recorded for
+a source as a whole follows the source onto every claim. One recorded for
+the loser alone stays with the loser, and the survivor's Steward records it
+again if it holds for the survivor.
 
 ## For the Extractor
 
@@ -290,6 +308,9 @@ stated as fact, a subgroup result stated for everyone, a correlation stated
 as a cause), and catching it is the main reason the map exists; say with
 `target_read` whether you opened the target. Where two documents are one
 voice, record the relation with `provenance_record_source_relationship`.
+Where a source you read has a stake in the claim that the map does not
+show, record it with `record_source_interest`, as a fact about the source;
+what it means for the claim is the Steward's to weigh.
 When the first window of a source lists a retraction or correction, say so
 in its reading. Record as you go rather than at the end. Every reading and edge hangs on an
 instance, so where you find a source that asserts, denies or poses the

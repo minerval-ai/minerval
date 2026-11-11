@@ -611,6 +611,26 @@ beside each instance, and the edges behind a disclosure, in words), on
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
 `get_claim_instances`.
 
+A source may also carry a recorded **interest** (§9): a stake its author or
+publisher has in what it says, as with a lab's own system card or a
+company's account of its own product. An agent that notices one records it
+with `record_source_interest` (the Steward, and the researcher wherever it
+has the provenance tools that write): the party, the stake in a sentence or
+two, and a scope, either the source as a whole or one claim. The row goes
+to `source_interests`, which is append-only: a new record for the same
+source and scope supersedes the older one for readers, and the older rows
+are kept (`src/services/source-interest-service.ts`). The record is a fact
+about the source. It moves no status and discounts nothing: what the source
+says is evidence, and the Steward weighs it knowing the stake. It is served
+with the source's facts (`GET /sources/:id` and `get_source`, as
+`interests`, current records only), and on each instance's source wherever
+a claim's instances or provenance are read (`source_interest` on the
+instances of `GET /claims/:id`, `get_claim` and `get_claim_instances`;
+`source.interest` in `provenance_get_map` and `GET /claims/:id/provenance`).
+There a claim's own record is preferred to the source-wide one. The source
+page shows it as a notice, and the claim page marks the instance. There is
+no REST route that writes one.
+
 A claim is a canonical proposition with no home source, so `get_claim`
 returns the canonical record and an `instance_count`, and the instances only
 when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`

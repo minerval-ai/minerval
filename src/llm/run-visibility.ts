@@ -223,6 +223,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   record_quantity_reading: { reads: "public", why: "confirms the run's own write to public graph records" },
   record_question_instance: { reads: "public", why: "confirms the run's own write to public graph records" },
   record_review_decision: { reads: "public", why: "confirms the run's own decision, with public reputation figures" },
+  record_source_interest: { reads: "public", why: "confirms the run's own write to public provenance records" },
   regrant: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   remove_answer: { reads: "public", why: "confirms the run's own write to public graph records" },
   remove_relationship_edge: { reads: "public", why: "confirms the run's own write to public graph records" },

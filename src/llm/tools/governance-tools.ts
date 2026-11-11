@@ -45,7 +45,10 @@ export function getGovernanceToolDefinitions(): Tool[] {
         "source that asserts, denies, poses or mentions the proposition " +
         "(each with its stance; a mention takes no side), with the " +
         "passage, its attribution (speaker, publication, date, link), any " +
-        "reading recorded from opening the source, what it was recorded as " +
+        "reading recorded from opening the source, any interest recorded " +
+        "for the source on this claim (source_interest: a stake its author " +
+        "or publisher has, a fact about the source and not a finding " +
+        "against it), what it was recorded as " +
         "drawing on, and where the source sits in the claim's provenance " +
         "story. These are the instances recorded so far, not a sample of the " +
         "discourse, and not necessarily the right set; the claim's Steward " +
