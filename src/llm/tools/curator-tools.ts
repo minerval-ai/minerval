@@ -30,6 +30,7 @@ import {
   unlinkClaims,
 } from "../../services/reconciliation-service.js";
 import { isClaimLinkKind } from "../../services/claim-link-service.js";
+import { UnknownRelationError } from "../../services/relationship-service.js";
 import { enqueueSteward } from "../../services/queue-service.js";
 import {
   executeNotifySteward,
@@ -599,12 +600,22 @@ export async function executeCuratorTool(
       }
 
       case "add_relationship_edge": {
-        const { added, eventId } = await addRelationshipEdge({
-          parentId: String(input.parent_id),
-          childId: String(input.child_id),
-          relationType: String(input.relation),
-          reasoning: String(input.reasoning ?? ""),
-        });
+        let result: Awaited<ReturnType<typeof addRelationshipEdge>>;
+        try {
+          result = await addRelationshipEdge({
+            parentId: String(input.parent_id),
+            childId: String(input.child_id),
+            relationType: String(input.relation ?? ""),
+            reasoning: String(input.reasoning ?? ""),
+          });
+        } catch (err) {
+          // The service checks the relation for every caller (#658).
+          if (err instanceof UnknownRelationError) {
+            return JSON.stringify({ success: false, message: err.message });
+          }
+          throw err;
+        }
+        const { added, eventId } = result;
         return JSON.stringify({
           success: true,
           added,
