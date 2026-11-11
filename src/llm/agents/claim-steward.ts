@@ -53,6 +53,7 @@ import { resolveProvider } from "../providers/routing.js";
 import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-harness.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
+import { createFigureTools } from "../tools/figure-tools.js";
 import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
@@ -580,6 +581,7 @@ async function runClaimStewardImpl(input: {
   // server runs it on an Anthropic model; elsewhere the loop executes it
   // (tools/web-search-tool.ts).
   const webSearch = createWebSearch(model);
+  const figureTools = createFigureTools({ model });
 
   // The graph search the Curator also gets (#69). get_claim reads the claim,
   // its subclaims and their credences, and get_claim_dependents what rests on
@@ -654,6 +656,10 @@ async function runClaimStewardImpl(input: {
     // A search hit is a snippet; the page is where an abstract, a results
     // table, or a retraction notice actually is (#333).
     getReadPageToolDefinition(),
+    // A value that sits only in a plot, or in the TeX and data files behind
+    // a paper (#912): view_image where this pass's model takes images, and
+    // read_arxiv_source on every model.
+    ...figureTools.definitions,
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
     ...getSpendToolDefinitions(),
@@ -811,6 +817,8 @@ ${task.text}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
         `${task.concluding}. Whatever is not recorded when the run ends is lost.`,
     },
     executeTool: async (name, toolInput) => {
+      const figure = await figureTools.execute(name, toolInput);
+      if (figure !== null) return figure;
       const output = await dispatch(name, toolInput);
       if (succeeded(output)) done.add(name);
       return output;

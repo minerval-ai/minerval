@@ -21,8 +21,9 @@
  * notebook: the provenance and examination tools are withheld from it
  * whatever it was given (research-run-service.ts says why).
  *
- * The toolset follows the model. Every tier has web_search and read_page
- * (tools/web-search-tool.ts serves the search on any provider). A
+ * The toolset follows the model. Every tier has web_search, read_page and
+ * read_arxiv_source, and a model that takes images has view_image (#912;
+ * tools/web-search-tool.ts serves the search on any provider). A
  * strong-tier model runs the long-run loop with the code-execution sandbox;
  * a standard Claude model runs the ordinary loop with the same sandbox; the
  * cheap tier runs the ordinary loop without it, since the sandbox is an
@@ -68,6 +69,8 @@ import {
 import { isLeanTool } from "../tools/lean-tools.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { executeReadPage, getReadPageToolDefinition, READ_PAGE_TOOL_NAME } from "../tools/read-page-tool.js";
+import { createFigureTools } from "../tools/figure-tools.js";
+import type { ToolExecution } from "../tool-output.js";
 import {
   elicitConfigured,
   executeElicitTool,
@@ -587,6 +590,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   };
 
   const webSearch = createWebSearch(model);
+  const figureTools = createFigureTools({ model });
   const tools: ToolUnion[] = [
     ...graphReadTools,
     ...readTools.definitions,
@@ -595,6 +599,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // petition of its own: what its work shows is needed, its report says.
     getSqlToolDefinition(),
     getReadPageToolDefinition(),
+    // What read_page cannot give: a figure looked at, and the source arXiv
+    // holds for a paper (#912). Which of them this model can use, the bundle
+    // decides (tools/figure-tools.ts).
+    ...figureTools.definitions,
     ...elicitTools,
     ...pangramTools.definitions,
     ...skillLoader.definitions,
@@ -703,7 +711,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     return JSON.stringify({ success: true, section, sections: Object.keys(notebook) });
   };
 
-  const executeTool = async (name: string, toolInput: Record<string, unknown>): Promise<string> => {
+  const executeTool = async (name: string, toolInput: Record<string, unknown>): Promise<ToolExecution> => {
     // The ordinary loop has no beforeTurn hook, so the ceiling and the pause
     // flag are enforced here too: past either, every call is refused with
     // the instruction to report. The long-run loop stops before the turn.
@@ -726,6 +734,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     }
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
     if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
+    const figure = await figureTools.execute(name, toolInput);
+    if (figure !== null) return figure;
     if (name === FILE_REQUEST_TOOL.name) {
       return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
     }

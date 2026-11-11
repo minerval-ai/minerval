@@ -1222,7 +1222,14 @@ model is Anthropic-served; by default that is strong and standard, and the
 `delegate_research` description names the tiers that have it in the
 deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
-OpenRouter search elsewhere) and `read_page`, the graph's read tools
+OpenRouter search elsewhere), `read_page`, and `read_arxiv_source`, which
+lists and reads the files arXiv holds for a paper (TeX, tables, data files,
+figure files), unpacked in memory under a size cap. A tier whose model takes
+images also has `view_image`, which fetches a figure by its URL and shows it
+to the model; the image costs input tokens against the run's budget, and no
+count limits them. A PDF is shown as a document on Claude models only, and
+EPS figures cannot be shown at all. The Claim Steward has the same two
+tools. Every tier also has the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`,
 `get_argument`, `get_source`, `get_source_examinations`, `get_source_context`, and on a request or scoping run
 `get_request` and `list_requests`, without who funded the work), the issue

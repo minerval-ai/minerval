@@ -37,6 +37,7 @@ import {
 } from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
 import { resolveProvider } from "../providers/routing.js";
+import { modelSeesImages } from "../models.js";
 import { LlmBudgetExceededError } from "../errors.js";
 import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withPassBudget } from "../usage-context.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
@@ -149,13 +150,43 @@ export function getFundRequestToolDefinition(): Tool {
  */
 export function researcherToolsSentence(graphWrites = true): string {
   return (
-    "The researcher's tools are web search, read_page, the graph's read tools, query_sql " +
+    "The researcher's tools are web search, read_page, read_arxiv_source (the TeX, tables and data " +
+    "files of an arXiv paper's source), the graph's read tools, query_sql " +
     "(read-only SQL over the graph's public views), scholarly search where configured, " +
     (graphWrites
       ? "a notebook, and the provenance tools on a claim-scoped task. "
       : "and a notebook. ") +
     "It has no others: no Lean checker, no model or other API to call, no GPU, and it cannot " +
     "commission or delegate work of its own, so a brief should not ask for a tool outside this list. "
+  );
+}
+
+/**
+ * Which tiers can look at an image (#912). view_image is offered only to a
+ * model that takes images (models.ts, modelSeesImages), so a brief that
+ * turns on reading values off a plot has to go to a tier that has it.
+ */
+export function figureTiersSentence(): string {
+  const caveat =
+    "a value read off a plot is an estimate, and a figure that exists only as EPS or SVG cannot be shown. ";
+  const seeing = RESEARCH_MODEL_TIERS.filter((t) => {
+    const model = modelForTier(t);
+    return !!model && modelSeesImages(model);
+  });
+  const list = (tiers: readonly string[]) => tiers.map((t) => `'${t}'`).join(" and ");
+  if (seeing.length === RESEARCH_MODEL_TIERS.length) {
+    return `Every tier can look at a figure by its image URL (view_image); ${caveat}`;
+  }
+  if (seeing.length === 0) {
+    return (
+      "No tier can look at images here, so a value that exists only as a plotted point is beyond the " +
+      "researcher; the numbers in a paper's TeX and data files are not. "
+    );
+  }
+  const blind = RESEARCH_MODEL_TIERS.filter((t) => !seeing.includes(t));
+  return (
+    `${list(seeing)} can look at a figure by its image URL (view_image); ${list(blind)} cannot, and ` +
+    `${blind.length === 1 ? "reads" : "read"} only text and source files. Where it can, ${caveat}`
   );
 }
 
@@ -235,6 +266,7 @@ export function getResearchToolDefinitions(
         "where the best model pays; 'standard' for most delegated reading and checking; " +
         "'cheap' for reading and mapping a large literature economically. " +
         sandboxTiersSentence() +
+        figureTiersSentence() +
         "Budget is in USD of metered work. " +
         funding +
         "Each result says what is left after the run. " +

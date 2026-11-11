@@ -711,6 +711,10 @@ same holds for a question or a claim yours depends on.
 Where the verdict rests on what a source says in its methods, data or
 appendices, read it whole rather than trusting a snippet or the opening of a
 page: provenance_read_source reads any source in full, a window at a time.
+Where it rests on a number that is not in the text, read_arxiv_source reads
+the TeX, tables and data files arXiv holds for a paper, and view_image, when
+it is in your toolset, shows you a figure. A value read off a plot is an
+estimate: weigh and record it as one, with the precision its axes allow.
 
 Your toolset may also include Elicit scholarly search (elicit_search_papers
 over the academic literature, elicit_search_trials over ClinicalTrials.gov)
