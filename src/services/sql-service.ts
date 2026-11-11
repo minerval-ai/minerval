@@ -363,7 +363,8 @@ export async function runReadOnlyQuery(
   } catch (err) {
     if (err instanceof SqlRefusal) throw err;
     const code = (err as { code?: string }).code;
-    if (code === "57014") {
+    // "Query read timeout" is pg's own client-side timer, the backstop behind statement_timeout.
+    if (code === "57014" || (err instanceof Error && err.message === "Query read timeout")) {
       throw new SqlRefusal("TIMED_OUT", `The query ran past ${timeoutMs / 1000} seconds and was stopped. Narrow it as for a query that is too expensive.`);
     }
     if (isSystemFault(err)) throw unavailable(opts.audience, err);
