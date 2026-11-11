@@ -1297,7 +1297,10 @@ export function getStewardToolDefinitions(): Tool[] {
         "not yours; raise it and let the Curator adjudicate. The concern goes on the " +
         "ledger as a curation request: curation is funded work, so it runs when a " +
         "mandate judges it worth buying, and one run reads every concern waiting on " +
-        "the claim. Name the other claim when you know it.",
+        "the claim. Name the other claim when you know it. An argument " +
+        "recorded on the wrong side of your claim is not one of these: its stance " +
+        "is yours to correct with revise_argument, and the Curator, which never " +
+        "flips an argument's stance itself, would send it back to you.",
       input_schema: {
         type: "object" as const,
         properties: {

@@ -836,7 +836,15 @@ These act through tools over the life of a claim and the graph:
   mandate) commission the row, and one run reads every concern waiting on
   the anchor. Every structural
   operation lands in an append-only reconciliation log with enough payload to
-  reverse it, and the Curator never overrides a Steward's verdict. It also
+  reverse it, and the Curator never overrides a Steward's verdict. In a
+  split, `reassign_instance` is the one operation that puts a passage on the
+  node it is about, whatever the node's kind: it moves the instance or, for
+  a passage that states several nodes' content, copies it (same source and
+  passage, no readings carried over), with what the passage says about that
+  node (`stance_relation` for a claim, `stated` for a quantity,
+  `answer_claim_id` for a question). An argument recorded on the wrong side
+  is not the Curator's to flip: it asks the node's Steward, who has
+  `revise_argument`. It also
   corrects a node created as the wrong kind (`change_node_kind`, reversible),
   merges a claim that only states a value into its quantity, and keeps the
   requests that bear on several nodes or on none.

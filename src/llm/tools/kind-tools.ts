@@ -92,7 +92,7 @@ export interface KindToolContext {
 // Schemas the tools share
 // ---------------------------------------------------------------------------
 
-const ESTIMATE_SCHEMA = {
+export const ESTIMATE_SCHEMA = {
   type: "object",
   description:
     "A value at the precision the evidence supports (§10). form is one of: distribution " +
