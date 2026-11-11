@@ -271,7 +271,7 @@ export async function getJobSpentMicroUsd(jobId: string): Promise<number> {
 /**
  * This job's metered cost today (UTC), in micro-USD — the shared
  * daily-rate accounting every paced mandate uses (grants.
- * daily_budget_micro_usd), Minerval's General assessment mandate included.
+ * daily_budget_micro_usd), Minerval's General mandate included.
  */
 export async function jobSpentTodayMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(

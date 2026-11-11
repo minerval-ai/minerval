@@ -2,7 +2,7 @@
  * Allocation policy — the rules of the platform's own spending, owned by
  * an agent, not by code.
  *
- * Minerval's background lane is itself a mandate ("General assessment",
+ * Minerval's background lane is itself a mandate ("General maintenance",
  * platform-run, policy 'general'): its escrow is however many dollars the
  * platform allocates to expanding and maintaining the graph, its daily
  * spend rate paces the lane, and — the point of this module — its
@@ -188,7 +188,7 @@ export function resetAllocationPolicyCache(): void {
 }
 
 /**
- * The platform's General assessment mandate, if seeded (dev and tests run
+ * The platform's General mandate, if seeded (dev and tests run
  * without one and fall back to config alone). Cached for a minute — policy
  * changes land on the next drain pass, not the same tick.
  */

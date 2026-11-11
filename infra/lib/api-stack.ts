@@ -265,10 +265,16 @@ export class ApiStack extends cdk.Stack {
         // against each other and raises flags the owning Steward decides.
         // A sweep is an exclusive set (#756): the standard variant on the
         // cheap tier, the strong one on the standard tier, each pinned to
-        // its config default. Sweeps stay off until
-        // CONSISTENCY_SWEEPS_ENABLED is "true".
+        // its config default.
         CONSISTENCY_MODEL: "openai/gpt-6-luna",
         CONSISTENCY_STRONG_MODEL: "claude-sonnet-5-5",
+        // Sweeps on: they are the General mandate's own upkeep, funded from
+        // its escrow and day room like a review pass (docs/allocation.md,
+        // "Consistency sweeps"). Off, the Consistency Checker never runs
+        // whatever the mandate's policy says, which is how the first live
+        // epoch spent nothing on coherence. How many run is its money, with
+        // the re-sweep interval holding a partition to one a day.
+        CONSISTENCY_SWEEPS_ENABLED: "true",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses
