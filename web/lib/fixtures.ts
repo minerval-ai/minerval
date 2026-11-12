@@ -269,7 +269,7 @@ const FLAGSHIP: ClaimDetail = {
       confidence: 0.99,
       source_title: "Consumer Price Index — December 2022 (BLS)",
       source_url: "https://www.bls.gov/news.release/archives/cpi_01122023.htm",
-      source_type: "primary_data",
+      source_type: "dataset",
     },
     {
       id: "inst-2",
@@ -279,7 +279,7 @@ const FLAGSHIP: ClaimDetail = {
       confidence: 0.82,
       source_title: "A year of soaring prices, in charts",
       source_url: "https://example.com/2022-inflation-charts",
-      source_type: "news_secondary",
+      source_type: "news_article",
       // The Steward's reading (#286): the analysis reports the official
       // figure and adds no measurement of its own.
       reading: {

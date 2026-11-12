@@ -145,6 +145,7 @@ import {
   splitArgument,
 } from "../../src/services/reconciliation-service.js";
 import { attachEdgeToArgument, insertRelationshipEdge } from "../../src/services/relationship-service.js";
+import { tellStewardsOfSourceEvents } from "../../src/services/source-notice-service.js";
 import { getOrCreateSource, submitSource } from "../../src/services/source-service.js";
 import { placeStandingOrder } from "../../src/services/standing-order-service.js";
 import { setSubjectTags } from "../../src/services/tag-service.js";
@@ -179,10 +180,11 @@ function inRunAt<T>(label: string, fn: () => Promise<T>): Promise<T> {
 /** The labels on the rows of `table` that match, without repeats. */
 async function labelsWhere(table: string, where: string, params: unknown[]): Promise<string[]> {
   const rows = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where} ORDER BY 1`,
+    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where}`,
     params
   );
-  return rows.map((r) => r.sensitivity_label);
+  // Sorted here: the database orders text by its locale, which differs between machines.
+  return rows.map((r) => r.sensitivity_label).sort();
 }
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 
@@ -785,6 +787,50 @@ describe("work that starts from a claim", () => {
     const sent = await sendArgumentEvidenceBacklog({ argumentId: argument.id });
     expect(sent).toEqual([{ claimId: claim, argumentId: argument.id, urls: [url] }]);
     expect(await assessLabels(claim)).toEqual([INTERNAL]);
+  });
+
+  it("is asked of the Steward at the claim's label when a notice is found against a source it rests on, whoever found it", async () => {
+    const restricted = await settledClaim("graph notice restricted");
+    const open = await settledClaim("graph notice public");
+    await setLabel(restricted, INTERNAL);
+    const letters = (doi: string) =>
+      tellStewardsOfSourceEvents(
+        [
+          {
+            source: { source_id: randomUUID(), url: `https://doi.org/${doi}`, title: "A paper", claim_ids: [restricted, open] },
+            notice: { type: "retraction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
+          },
+        ],
+        []
+      );
+    // The Crossref poll finds the notice outside any run.
+    expect(currentLabel()).toBe(PUBLIC_LABEL);
+    expect(await letters(`10.5555/${randomUUID()}`)).toBe(2);
+    expect(await assessLabels(restricted)).toEqual([INTERNAL]);
+    expect(await assessLabels(open)).toEqual([PUBLIC_LABEL]);
+
+    // A run's first fetch of the document finds it: each letter is still at
+    // its node's label and not at the label of the run that fetched.
+    const restrictedAgain = await settledClaim("graph notice restricted, found in a run");
+    const openAgain = await settledClaim("graph notice public, found in a run");
+    await setLabel(restrictedAgain, INTERNAL);
+    for (const finder of [INTERNAL, PUBLIC_LABEL]) {
+      const doi = `10.5555/${randomUUID()}`;
+      const told = await inRunAt(finder, () =>
+        tellStewardsOfSourceEvents(
+          [
+            {
+              source: { source_id: randomUUID(), url: `https://doi.org/${doi}`, title: "A paper", claim_ids: [restrictedAgain, openAgain] },
+              notice: { type: "correction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
+            },
+          ],
+          []
+        )
+      );
+      expect(told).toBe(2);
+      expect(await assessLabels(restrictedAgain)).toEqual([INTERNAL]);
+      expect(await assessLabels(openAgain)).toEqual([PUBLIC_LABEL]);
+    }
   });
 
   it("takes the claim's label over the one in the air, except through the seam meant for code a run also reaches", async () => {

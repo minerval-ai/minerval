@@ -53,7 +53,7 @@ description: >-
 | Route | What is there |
 | --- | --- |
 | `/` | Search, the live claim map, and how Minerval works |
-| `/ask`, `/ask/c/:id` | The Assistant: a new conversation, past ones and saved pages, and one conversation with its held actions, bill, model choice and stop button |
+| `/ask`, `/ask/c/:id` | The Assistant, laid out as a chat: a sidebar of the user's conversations, saved pages and mandates; the conversation with the composer, model choice, bill and stop button at the bottom; and a panel on the right that shows a cited node when its citation is pointed at, or a saved page opened from the conversation |
 | `/ask/pages/:id` | A page saved for the user with `save_page`: markdown with embedded nodes shown as the graph holds them now and marked where they have moved since. Edit, export as markdown, delete. Private to the user |
 | `/claims` | Search and browse nodes, with filters for kind, assessment, importance, prizes, type and topic |
 | `/claims/:id` | A node: status or estimate or standing, the assessment and its reasoning, findings, decomposition, provenance, citation, contributions, and the funding disclosure. Order an assessment, deepen the subtree, or contribute from here |

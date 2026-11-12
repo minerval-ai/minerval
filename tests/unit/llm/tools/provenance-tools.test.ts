@@ -234,6 +234,21 @@ describe("provenance_read_source", () => {
     expect(facts.getSourceFacts).not.toHaveBeenCalled();
   });
 
+  it("adds them to the read that fetched the document, whatever window it asked for", async () => {
+    // The fetch is when the facts are looked up, and a notice recorded then
+    // is not sent to the reading Steward's own node: it has to be here.
+    mocks.readSourceContent.mockResolvedValue({
+      source: { id: "s1" }, origin: "fetched", total_chars: 100, offset: 50, content: "x", truncated: true,
+    });
+    facts.getSourceFacts.mockResolvedValue({
+      source: { authors: [], publisher: null, published_date: null, doi: "10.1/x", archived_url: null },
+      events: [{ kind: "retraction", occurred_at: null, notice_url: "https://doi.org/10.1/n", note: null, detected_at: "x", detected_by: "facts_fetch" }],
+      versions: [], copies: [], copy_of: [], interests: [],
+    });
+    const out = JSON.parse(await executeReadSource({ source_id: "s1", offset: 50 }, steward));
+    expect(out.facts.events).toEqual([{ kind: "retraction", occurred_at: null, notice_url: "https://doi.org/10.1/n", note: null }]);
+  });
+
   it("turns a service refusal into a structured result rather than throwing", async () => {
     mocks.readSourceContent.mockRejectedValue(new SourceMapError("No source s9 exists."));
     const out = JSON.parse(await executeReadSource({ source_id: "s9" }, steward));
@@ -243,10 +258,15 @@ describe("provenance_read_source", () => {
 
 describe("the write tools", () => {
   it("record_reading stamps the claim, the model, and the writer, and explains the quote check", async () => {
-    mocks.recordInstanceReading.mockResolvedValue({ id: "r1", quote_check: "not_found", replaced: false });
+    mocks.recordInstanceReading.mockResolvedValue({
+      id: "r1", quote_check: "not_found", replaced: false, source_kind: "journal_article",
+    });
     const out = JSON.parse(
       await executeRecordReading(
-        { instance_id: "i1", support: "overstates", note: "n", worth_reading: true, worth_reading_reason: "why", source_read: true },
+        {
+          instance_id: "i1", support: "overstates", note: "n", worth_reading: true, worth_reading_reason: "why",
+          source_read: true, source_kind: "journal_article",
+        },
         steward
       )
     );
@@ -259,10 +279,13 @@ describe("the write tools", () => {
       worthReading: true,
       worthReadingReason: "why",
       sourceRead: true,
+      sourceKind: "journal_article",
       model: "model-x",
       createdBy: "claim_steward",
     });
     expect(out.success).toBe(true);
+    // The source's kind after the call is reported back to the agent.
+    expect(out.source_kind).toBe("journal_article");
     expect(out.quote_check_note).toMatch(/NOT found/);
   });
 
@@ -274,6 +297,7 @@ describe("the write tools", () => {
           from_instance_id: "i1",
           to_source_url: "https://x.example/study",
           to_source_title: "Study",
+          to_source_kind: "official_statistics",
           relation_type: "derives_from",
           fidelity: "strengthened",
           evidence: "p",
@@ -290,6 +314,7 @@ describe("the write tools", () => {
       toSourceId: null,
       toSourceUrl: "https://x.example/study",
       toSourceTitle: "Study",
+      toSourceKind: "official_statistics",
       relationType: "derives_from",
       fidelity: "strengthened",
       evidence: "p",

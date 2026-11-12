@@ -186,10 +186,11 @@ function inRunAt<T>(label: string, fn: () => Promise<T>): Promise<T> {
 /** The labels on the rows of `table` that match, without repeats. */
 async function labelsWhere(table: string, where: string, params: unknown[]): Promise<string[]> {
   const rows = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where} ORDER BY 1`,
+    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where}`,
     params
   );
-  return rows.map((r) => r.sensitivity_label);
+  // Sorted here: the database orders text by its locale, which differs between machines.
+  return rows.map((r) => r.sensitivity_label).sort();
 }
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 const labelsOn = (table: string, sourceId: string) => labelsWhere(table, "source_id = $1", [sourceId]);
@@ -642,10 +643,12 @@ describe("a row read from a source or written about one", () => {
     // The poller runs outside any run. A lookout carries no label yet, so what it records is public.
     stage.pages.set(`${site}/feed`, rss(site, ["a", "b"]));
     expect(await pollFeed((await getFeed(feed.feed_id))!)).toMatchObject({ ok: true, newItems: 1 });
-    const items = await rawQuery<{ id: string; url: string; sensitivity_label: string }>(
-      `SELECT id, url, sensitivity_label FROM lookout_feed_items WHERE lookout_id = $1 ORDER BY url`,
-      [lookoutId]
-    );
+    const items = (
+      await rawQuery<{ id: string; url: string; sensitivity_label: string }>(
+        `SELECT id, url, sensitivity_label FROM lookout_feed_items WHERE lookout_id = $1`,
+        [lookoutId]
+      )
+    ).sort((a, b) => (a.url < b.url ? -1 : 1));
     expect(items.map((i) => [i.url, i.sensitivity_label])).toEqual([
       [`${site}/p/a`, INTERNAL],
       [`${site}/p/b`, PUBLIC_LABEL],
@@ -730,10 +733,12 @@ describe("what is derived mechanically from a document", () => {
           .toEqual({ recorded: true });
       });
       expect(await labelsOn("source_segments", source.id)).toEqual([sourceLabel]);
-      const events = await rawQuery<{ kind: string; sensitivity_label: string }>(
-        `SELECT kind, sensitivity_label FROM source_events WHERE source_id = $1 ORDER BY kind`,
-        [source.id]
-      );
+      const events = (
+        await rawQuery<{ kind: string; sensitivity_label: string }>(
+          `SELECT kind, sensitivity_label FROM source_events WHERE source_id = $1`,
+          [source.id]
+        )
+      ).sort((a, b) => (a.kind < b.kind ? -1 : 1));
       expect(events).toEqual([
         { kind: "correction", sensitivity_label: sourceLabel },
         { kind: "retraction", sensitivity_label: sourceLabel },

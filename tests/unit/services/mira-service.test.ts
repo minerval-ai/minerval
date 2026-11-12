@@ -103,7 +103,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
         quote: 'They said it was "transitory".',
         context: "From the opening paragraph.",
         stance: "denies",
-        source: { id: SRC_ID, title: "A skeptical column", url: "https://example.com/column", source_type: "news" },
+        source: { id: SRC_ID, title: "A skeptical column", url: "https://example.com/column", source_type: "news_article" },
       },
       {
         id: "eeeeeeee-2222-3333-4444-555555555555",
@@ -312,14 +312,14 @@ describe("buildMiraDocument: a question", () => {
       relations: [{ a: ANS2_ID, b: ANS_ID, relation: "compatible" }],
       depended_on_by: [],
       instances: [
-        { id: "eeeeeeee-3333-3333-4444-555555555555", role: "answers", verbatim_text: "Supply shocks did it.", source_title: "A paper", source_url: null, source_type: "paper", answer_id: ANS_ID },
-        { id: "eeeeeeee-4444-3333-4444-555555555555", role: "asks", verbatim_text: "What drove it?", source_title: "A paper", source_url: null, source_type: "paper", answer_id: null },
+        { id: "eeeeeeee-3333-3333-4444-555555555555", role: "answers", verbatim_text: "Supply shocks did it.", source_title: "A paper", source_url: null, source_type: "journal_article", answer_id: ANS_ID },
+        { id: "eeeeeeee-4444-3333-4444-555555555555", role: "asks", verbatim_text: "What drove it?", source_title: "A paper", source_url: null, source_type: "journal_article", answer_id: null },
       ],
     };
   }
 
   function questionInput(): MiraInput {
-    const source = { id: SRC_ID, title: "A paper", url: null, source_type: "paper" };
+    const source = { id: SRC_ID, title: "A paper", url: null, source_type: "journal_article" };
     return input({
       record: record({
         claim: { ...record().claim, id: Q_ID, kind: "question", text: "What drove 2022 inflation?" },

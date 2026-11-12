@@ -3,13 +3,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Cited, Owls, Prose } from "./prose";
+import { ClaimPreview, Cited, Owls, Prose } from "./prose";
+import { PageView } from "./pages/[id]/PageView";
 import {
   MandateProposal,
   type MandateView,
 } from "../../components/account/MandateProposal";
 import type {
+  AssistantCitationView,
   AssistantConversationView,
+  PageView as PageData,
   AssistantHeldActionView,
   AssistantMessageView,
   AssistantModelView,
@@ -250,8 +253,8 @@ function GrantThread({ id }: { id: string }) {
   );
 }
 
-/** A page the Assistant saved, as a link to it. A deleted page shows nothing. */
-function PageCard({ id }: { id: string }) {
+/** A page the Assistant saved: opens beside the chat. A deleted page shows nothing. */
+function PageCard({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
   const [title, setTitle] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   useEffect(() => {
@@ -269,12 +272,51 @@ function PageCard({ id }: { id: string }) {
   }, [id]);
   if (missing) return null;
   return (
-    <aside className="ask-card">
+    <aside className="ask-card ask-card-page">
       <p className="sc">Saved as a page</p>
       <p className="ask-card-title">
-        <Link href={`/ask/pages/${id}`}>{title ?? "Open the page"}</Link>
+        <Link
+          href={`/ask/pages/${id}`}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+            if (!window.matchMedia("(min-width: 1100px)").matches) return;
+            e.preventDefault();
+            onOpen(id);
+          }}
+        >
+          {title ?? "Open the page"}
+        </Link>
       </p>
     </aside>
+  );
+}
+
+/** A saved page, read beside the chat. */
+function PagePanel({ id }: { id: string }) {
+  const [page, setPage] = useState<PageData | null>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setPage(null);
+    setMissing(false);
+    fetch(`/api/assistant/pages/${id}`, { cache: "no-store" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) return setMissing(true);
+        setPage(((await res.json()) as { page: PageData }).page);
+      })
+      .catch(() => !cancelled && setMissing(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+  if (missing) return <p className="order-line">This page is no longer there.</p>;
+  if (!page) return <p className="convo-thinking">loading the page…</p>;
+  return (
+    <>
+      <h2 className="ask-panel-title">{page.title}</h2>
+      <PageView page={page} embedded />
+    </>
   );
 }
 
@@ -288,9 +330,15 @@ function ReplyFoot({ message }: { message: AssistantMessageView }) {
     );
   }
   if (message.worked && message.worked.length > 0) {
+    const steps = message.worked.reduce((n, w) => n + w.count, 0);
     parts.push(
-      <span key="worked">
-        {message.worked.map((w) => (w.count > 1 ? `${w.tool} ×${w.count}` : w.tool)).join(", ")}
+      <span
+        key="worked"
+        title={message.worked
+          .map((w) => (w.count > 1 ? `${w.tool} ×${w.count}` : w.tool))
+          .join(", ")}
+      >
+        {steps} {steps === 1 ? "step" : "steps"}
       </span>
     );
   }
@@ -305,6 +353,13 @@ function ReplyFoot({ message }: { message: AssistantMessageView }) {
   return <p className="ask-foot">{parts}</p>;
 }
 
+/** A tool's name as a phrase: "search_claims" reads "search claims". */
+function toolPhrase(tool: string): string {
+  return tool.replace(/_/g, " ");
+}
+
+type Panel = { type: "claim"; citation: AssistantCitationView } | { type: "page"; id: string } | null;
+
 export function AssistantConversation({
   initial,
   models,
@@ -313,6 +368,7 @@ export function AssistantConversation({
   kindLabels,
   nodeId,
   question,
+  children,
 }: {
   initial: Convo | null;
   models: AssistantModelView[];
@@ -323,6 +379,8 @@ export function AssistantConversation({
   nodeId?: string;
   /** A question written on another page's ask box, not yet sent. */
   question?: string;
+  /** What an empty conversation shows above the composer. */
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const [convo, setConvo] = useState<Convo | null>(initial);
@@ -333,14 +391,20 @@ export function AssistantConversation({
   const [always, setAlways] = useState(initial?.allowed_kinds.always ?? allowedAlways);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  // The side panel: what is kept open there, and what a hovered citation
+  // shows over it for as long as the pointer stays.
+  const [pinned, setPinned] = useState<Panel>(null);
+  const [preview, setPreview] = useState<AssistantCitationView | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const atBottom = useRef(true);
 
   const replying = convo?.turn.state === "replying";
   const balance = convo?.balance_micro_usd ?? balanceMicroUsd;
   const heldById = new Map((convo?.held_actions ?? []).map((h) => [h.id, h]));
+  const cite = { onPreview: setPreview, onPick: (c: AssistantCitationView) => setPinned({ type: "claim", citation: c }) };
 
-  // Read the conversation while its turn runs: the reply as it forms, the
-  // progress line, and the cost so far.
+  // Read the conversation while its turn runs: what it is doing, the reply
+  // as it forms, and the bill.
   const id = convo?.id;
   useEffect(() => {
     if (!id || !replying) return;
@@ -350,7 +414,11 @@ export function AssistantConversation({
         const res = await fetch(`/api/assistant/conversations/${id}`, { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const data = (await res.json()) as { conversation?: Convo };
-        if (data.conversation && !cancelled) setConvo(data.conversation);
+        if (data.conversation && !cancelled) {
+          setConvo(data.conversation);
+          // The sidebar's list shows the conversation's title and state.
+          if (data.conversation.turn.state !== "replying") router.refresh();
+        }
       } catch {
         // a dropped read; the next tick tries again
       }
@@ -359,17 +427,21 @@ export function AssistantConversation({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [id, replying]);
+  }, [id, replying, router]);
 
+  // Follow the reply down the page unless the reader has scrolled up.
+  const activityCount = convo?.turn.activity?.length ?? 0;
   useEffect(() => {
-    if (replying) endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [convo?.messages.length, convo?.turn.partial, replying]);
+    const el = scrollRef.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [convo?.messages.length, convo?.turn.partial, activityCount, replying]);
 
   const send = async () => {
     const message = draft.trim();
     if (!message || sending || replying) return;
     setSending(true);
     setError(null);
+    atBottom.current = true;
     try {
       const res = convo
         ? await fetch(`/api/assistant/conversations/${convo.id}/messages`, {
@@ -388,6 +460,7 @@ export function AssistantConversation({
       } else if (!convo) {
         // The conversation has an address of its own from its first message.
         router.push(`/ask/c/${data.conversation.id}`);
+        router.refresh();
         return;
       } else {
         setDraft("");
@@ -448,178 +521,223 @@ export function AssistantConversation({
     if (!convo) return;
     if (!window.confirm("Delete this conversation? What it cost stays in your owl history.")) return;
     const res = await fetch(`/api/assistant/conversations/${convo.id}`, { method: "DELETE" });
-    if (res.ok) router.push("/ask");
-    else setError("The conversation was not deleted.");
+    if (res.ok) {
+      router.push("/ask");
+      router.refresh();
+    } else setError("The conversation was not deleted.");
   };
 
   const labels = convo?.allowed_kinds.labels ?? kindLabels;
   const inConversation = convo?.allowed_kinds.conversation ?? [];
-  const allowedNames = [...new Set([...always, ...inConversation])].map(
-    (k) => (labels[k] ?? k).toLowerCase()
-  );
-  const modelName = (convo?.models ?? models).find((m) => m.id === model)?.name ?? model;
+  const allowedCount = new Set([...always, ...inConversation]).size;
+  const offered = convo?.models ?? models;
+  const shown: Panel = preview ? { type: "claim", citation: preview } : pinned;
+  const activity = convo?.turn.activity ?? [];
 
   return (
-    <div className="ask">
-      {convo && (
-        <div className="ask-transcript" role="log">
-          {convo.messages.map((m, i) =>
-            m.role === "user" ? (
-              <div key={`${m.at}-${i}`} className="convo-msg convo-user">
-                <span className="sc convo-who">you</span>
-                <div className="convo-body">{m.content}</div>
-              </div>
-            ) : (
-              <div key={`${m.at}-${i}`} className="convo-msg convo-agent">
-                <span className="sc convo-who">assistant</span>
-                {m.content ? (
-                  <Prose content={m.content} citations={m.citations} />
-                ) : (
-                  <div className="convo-body convo-thinking">(no text)</div>
-                )}
-                <Cited citations={m.citations ?? []} />
-                {(m.cards ?? []).map((card) =>
-                  card.type === "held" ? (
-                    heldById.has(card.id) && (
-                      <HeldCard
-                        key={card.id}
-                        conversationId={convo.id}
-                        action={heldById.get(card.id)!}
-                        onChange={setConvo}
-                      />
-                    )
-                  ) : card.type === "page" ? (
-                    <PageCard key={card.id} id={card.id} />
-                  ) : (
-                    <GrantThread key={card.id} id={card.id} />
-                  )
-                )}
-                <ReplyFoot message={m} />
-              </div>
-            )
-          )}
-          {replying && (
-            <div className="convo-msg convo-agent">
-              <span className="sc convo-who">assistant</span>
-              {convo.turn.partial ? (
-                <Prose content={convo.turn.partial} />
+    <div className={`ask-chat${pinned?.type === "page" ? " ask-chat-wide-panel" : ""}`}>
+      <div className="ask-col">
+        {convo && (
+          <div className="ask-bar">
+            <span className="ask-bar-title" title={convo.title}>
+              {convo.title}
+            </span>
+            <button className="linklike danger" onClick={() => void remove()} disabled={replying}>
+              Delete
+            </button>
+          </div>
+        )}
+
+        <div
+          className="ask-scroll"
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          }}
+        >
+          <div className="ask-transcript" role="log">
+            {!convo && children}
+            {convo?.messages.map((m, i) =>
+              m.role === "user" ? (
+                <div key={`${m.at}-${i}`} className="ask-msg ask-msg-user">
+                  <div className="ask-bubble">{m.content}</div>
+                </div>
               ) : (
-                <div className="convo-body convo-thinking">{convo.turn.note || "working…"}</div>
-              )}
-              <p className="ask-foot ask-running">
-                {convo.turn.partial && convo.turn.note && <span>{convo.turn.note}</span>}
-                <span>
-                  <Owls microUsd={convo.turn.cost_micro_usd} /> owls so far
-                </span>
-                <button className="linklike" onClick={() => void stop()} disabled={convo.turn.stopping}>
-                  {convo.turn.stopping ? "stopping…" : "Stop"}
-                </button>
+                <div key={`${m.at}-${i}`} className="ask-msg ask-msg-assistant">
+                  {m.content ? (
+                    <Prose content={m.content} citations={m.citations} cite={cite} />
+                  ) : (
+                    <div className="convo-body convo-thinking">(no text)</div>
+                  )}
+                  {/* without a side panel, the cited nodes are listed */}
+                  <div className="ask-cited-narrow">
+                    <Cited citations={m.citations ?? []} />
+                  </div>
+                  {(m.cards ?? []).map((card) =>
+                    card.type === "held" ? (
+                      heldById.has(card.id) && (
+                        <HeldCard
+                          key={card.id}
+                          conversationId={convo.id}
+                          action={heldById.get(card.id)!}
+                          onChange={setConvo}
+                        />
+                      )
+                    ) : card.type === "page" ? (
+                      <PageCard
+                        key={card.id}
+                        id={card.id}
+                        onOpen={(pageId) => setPinned({ type: "page", id: pageId })}
+                      />
+                    ) : (
+                      <GrantThread key={card.id} id={card.id} />
+                    )
+                  )}
+                  <ReplyFoot message={m} />
+                </div>
+              )
+            )}
+            {replying && convo && (
+              <div className="ask-msg ask-msg-assistant" aria-live="polite">
+                {/* what it is doing: its own line, then its latest steps */}
+                <ul className="ask-activity">
+                  {convo.turn.note && <li className="ask-activity-note">{convo.turn.note}</li>}
+                  {activity.slice(-4).map((a, i) => (
+                    <li key={`${activity.length}-${i}`}>
+                      {toolPhrase(a.tool)}
+                      {a.about && <span> {a.about}</span>}
+                    </li>
+                  ))}
+                  {!convo.turn.note && activity.length === 0 && !convo.turn.partial && (
+                    <li className="ask-activity-note">Starting…</li>
+                  )}
+                </ul>
+                {convo.turn.partial && <Prose content={convo.turn.partial} />}
+              </div>
+            )}
+            {convo?.turn.state === "failed" && (
+              <p className="form-error">
+                The Assistant could not reply{convo.turn.error ? ` (${convo.turn.error})` : ""}.
+                Your message is saved; send a short follow-up to ask again.
               </p>
+            )}
+          </div>
+        </div>
+
+        <div className="ask-dock">
+          {balance <= 0 ? (
+            <p className="ask-notice">
+              Your balance is 0 owls. The Assistant&rsquo;s work is charged in owls at what it
+              costs, so it needs some to reply. Searching and reading the graph stay free.{" "}
+              <Link href="/account#buy-owls">Buy owls</Link>
+            </p>
+          ) : (
+            <div className="ask-composer">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                rows={2}
+                placeholder={convo ? "Reply…" : "What do you want to know or do?"}
+                aria-label="Your message"
+                autoFocus
+              />
+              <div className="ask-composer-row">
+                {offered.length > 1 ? (
+                  <select
+                    className="ask-model"
+                    value={model}
+                    onChange={(e) => void chooseModel(e.target.value)}
+                    disabled={replying}
+                    aria-label="Model"
+                  >
+                    {offered.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="ask-model">{offered[0]?.name ?? model}</span>
+                )}
+                {replying ? (
+                  <button
+                    className="order-button"
+                    onClick={() => void stop()}
+                    disabled={convo?.turn.stopping}
+                  >
+                    {convo?.turn.stopping ? "Stopping…" : "Stop"}
+                  </button>
+                ) : (
+                  <button
+                    className="order-button"
+                    onClick={() => void send()}
+                    disabled={sending || !draft.trim()}
+                  >
+                    {sending ? "Sending…" : "Send"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
-          {convo.turn.state === "failed" && (
-            <p className="form-error">
-              The Assistant could not reply{convo.turn.error ? ` (${convo.turn.error})` : ""}. Your
-              message is saved; send a short follow-up to ask again.
-            </p>
-          )}
-          <div ref={endRef} />
+          {error && <p className="form-error">{error}</p>}
+          <div className="ask-bill">
+            <span>
+              {convo ? (
+                <>
+                  <Owls microUsd={convo.spent_micro_usd} /> owls so far ·{" "}
+                </>
+              ) : (
+                <>Charged at what the work costs, as it runs · </>
+              )}
+              balance <Owls microUsd={balance} />
+            </span>
+            <details className="ask-allowed">
+              <summary>
+                {allowedCount === 0
+                  ? "Asks before spending or publishing"
+                  : `Runs ${allowedCount} kind${allowedCount === 1 ? "" : "s"} of action without asking`}
+              </summary>
+              <div className="ask-allowed-pop">
+                <p className="order-caption">
+                  When the Assistant wants to spend owls on the graph or publish under your name,
+                  it prepares the action and waits for you to run it. You can let kinds of action
+                  run without asking, in every conversation; each still leaves a receipt.
+                </p>
+                {Object.entries(labels).map(([kind, label]) => (
+                  <label key={kind} className="ask-allow-kind">
+                    <input
+                      type="checkbox"
+                      checked={always.includes(kind)}
+                      onChange={(e) => void toggleAlways(kind, e.target.checked)}
+                    />{" "}
+                    {label}
+                    {!always.includes(kind) && inConversation.includes(kind) && (
+                      <span className="order-caption"> allowed in this conversation</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </details>
+          </div>
         </div>
-      )}
-
-      {balance <= 0 ? (
-        <p className="ask-notice">
-          Your balance is 0 owls. The Assistant&rsquo;s work is charged in owls at what it
-          costs, so it needs some to reply. Searching and reading the graph stay free.{" "}
-          <Link href="/account#buy-owls">Buy owls</Link>
-        </p>
-      ) : (
-        <div className="grant-convo-input">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            rows={3}
-            placeholder={convo ? "Reply to the Assistant…" : "What do you want to know or do?"}
-            disabled={sending || replying}
-            aria-label="Your message"
-            autoFocus={!!question}
-          />
-          <button
-            className="order-button"
-            onClick={() => void send()}
-            disabled={sending || replying || !draft.trim()}
-          >
-            {sending ? "sending…" : replying ? "working…" : "Send"}
-          </button>
-        </div>
-      )}
-      {error && <p className="form-error">{error}</p>}
-
-      <div className="ask-bill">
-        <span>
-          {convo ? (
-            <>
-              This conversation has cost <Owls microUsd={convo.spent_micro_usd} /> owls.{" "}
-            </>
-          ) : (
-            <>Charged at what the work costs, as it runs. </>
-          )}
-          Balance <Owls microUsd={balance} /> owls.
-        </span>
-        <label>
-          Model{" "}
-          {(convo?.models ?? models).length > 1 ? (
-            <select value={model} onChange={(e) => void chooseModel(e.target.value)} disabled={replying}>
-              {(convo?.models ?? models).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            modelName
-          )}
-        </label>
       </div>
 
-      <details className="ask-allowed">
-        <summary>
-          Runs without asking: {allowedNames.length > 0 ? allowedNames.join("; ") : "nothing"}
-        </summary>
-        <p className="order-caption">
-          When the Assistant wants to spend owls on the graph or publish under your name, it
-          prepares the action and waits for you to run it. You can let kinds of action run
-          without asking, in every conversation; each still leaves a receipt.
-        </p>
-        {Object.entries(labels).map(([kind, label]) => (
-          <label key={kind} className="ask-allow-kind">
-            <input
-              type="checkbox"
-              checked={always.includes(kind)}
-              onChange={(e) => void toggleAlways(kind, e.target.checked)}
-            />{" "}
-            {label}
-            {!always.includes(kind) && inConversation.includes(kind) && (
-              <span className="order-caption"> allowed in this conversation</span>
-            )}
-          </label>
-        ))}
-      </details>
-
-      {convo && (
-        <p className="ask-manage">
-          <Link href="/ask">New conversation</Link>
-          <button className="linklike danger" onClick={() => void remove()} disabled={replying}>
-            Delete this conversation
+      <aside className="ask-panel" aria-label="Details">
+        {shown?.type === "claim" && <ClaimPreview citation={shown.citation} />}
+        {shown?.type === "page" && <PagePanel id={shown.id} />}
+        {pinned && !preview && (
+          <button className="linklike ask-panel-close" onClick={() => setPinned(null)}>
+            Close
           </button>
-        </p>
-      )}
+        )}
+      </aside>
     </div>
   );
 }

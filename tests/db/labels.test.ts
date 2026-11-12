@@ -163,26 +163,40 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Four groups: the judgments, sources and runs (this file); the rows
-    // that stand for work waiting to be done, which hand their label to the
-    // run that takes it up (label-carried.test.ts); the graph's own
-    // content, from nodes and edges to formal statements
-    // (label-graph.test.ts); and what is read from a source or written
-    // about one, from instances and segments to examinations
-    // (label-sources.test.ts).
+    // Fifty-one of these are stamped by the code that writes them: the
+    // judgments, sources and runs (this file); the rows that stand for
+    // work waiting to be done, which hand their label to the run that
+    // takes it up (label-carried.test.ts); the graph's own content, from
+    // nodes and edges to formal statements (label-graph.test.ts); and what
+    // is read from a source or written about one, from instances and
+    // segments to examinations (label-sources.test.ts). The other
+    // forty-four, what a run writes about itself and the rows work is
+    // asked for and governed with, got the column in the label_columns
+    // migration and hold its default until the code that stamps them lands
+    // (label-columns.test.ts, which also lists the tables that carry no
+    // label, each with its reason).
     expect(rows).toEqual(
       [
-        "actions", "agent_runs", "agent_sessions", "answer_relations", "appeals", "argument_evaluations",
-        "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments", "assessment_orders",
-        "assessments", "assistant_held_actions", "audit_notes", "budget_jobs", "claim_formalizations",
+        "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
+        "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals",
+        "arbitration_results", "argument_evaluations", "argument_evidence_backlog", "argument_instances",
+        "argument_subclaims", "arguments", "assessment_orders", "assessments", "assistant_conversations",
+        "assistant_held_actions", "assistant_pages", "attachments", "audit_findings", "audit_log",
+        "audit_notes", "audit_runs", "bounties", "budget_jobs", "claim_formalizations",
         "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
-        "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claims",
-        "contributions", "examination_coverage", "examination_findings", "examinations", "grant_sources", "jobs",
-        "judgment_inputs", "lean_checks", "lookout_feed_items", "proof_attempts", "quantity_cuts",
-        "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
-        "reading_citations", "reconciliation_events", "shared_page_analyses", "source_events",
-        "source_extractions", "source_interests", "source_relationships", "source_segments", "sources",
-        "taggings", "tags",
+        "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships",
+        "claim_source_maps", "claims", "consistency_flags", "consistency_sweeps", "contribution_reviews",
+        "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
+        "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
+        "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants",
+        "ingest_focuses", "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events",
+        "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
+        "mandate_events", "mandate_inbox", "mandate_policy_versions", "node_messages", "petitions",
+        "prize_claims", "proof_attempts", "quantity_cuts", "quantity_definitions", "quantity_estimates",
+        "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events",
+        "reputation_events", "request_targets", "request_work", "requests", "research_runs",
+        "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
+        "source_relationships", "source_segments", "sources", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });
@@ -306,7 +320,7 @@ describe("the label in a run's log", () => {
   }
 
   async function promptStep(runId: string) {
-    const [step] = await rawQuery<{ seq: number; kind: string; setup: { label?: string; model?: string } | null }>(
+    const [step] = await rawQuery<{ seq: number; kind: string; setup: { label?: string; model?: string; featuresOff?: string[] } | null }>(
       `SELECT seq, kind, content->'setup' AS setup FROM agent_steps WHERE run_id = $1 ORDER BY seq LIMIT 1`,
       [runId]
     );
@@ -347,7 +361,11 @@ describe("the label in a run's log", () => {
     const runId = await runWithOneCall();
     const run = await sealed(runId);
     expect(run.sensitivity_label).toBe("public");
-    expect(await promptStep(runId)).toMatchObject({ seq: 0, kind: "prompt", setup: { label: "public" } });
+    // The setup also lists the features that were off for the run
+    // (src/features.ts): none here, recorded as an empty list.
+    expect(await promptStep(runId)).toMatchObject({
+      seq: 0, kind: "prompt", setup: { label: "public", featuresOff: [] },
+    });
     expect(await verify(runId)).toMatchObject({ sealed: true, head: run.log_hash, intact: true, problem: null, steps_checked: 2 });
   });
 });

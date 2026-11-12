@@ -73,14 +73,18 @@
  * Some work has no row of its own to wait in. A sweep finds a claim that is
  * pending, stale or untagged and starts work on it there and then: the
  * scheduler's reconcile sweep and its staleness check, the Steward's
- * fallback lane, the Tagger, the retraction poll, the reconcile-candidate
- * scan, and a mandate's plan when the scheduler materializes it. That work
- * runs at the claim's label (runAtClaimLabel in services/label-service.ts),
- * so work on a restricted claim is never written as public. It is a floor,
- * not the whole rule: a pass asked for at a restricted label on a public
- * claim is not told apart from a public one by the claim's pending slot,
- * and those paths take it up as public. Closing that takes one judgment per
- * label, which is later work.
+ * fallback lane, the Tagger, the reconcile-candidate scan, and a mandate's
+ * plan when the scheduler materializes it. That work runs at the claim's
+ * label (runAtClaimLabel in services/label-service.ts), so work on a
+ * restricted claim is never written as public. So does the letter that
+ * tells a node's Steward of a notice against a source the node rests on
+ * (services/source-notice-service.ts), whether the retraction poll found
+ * the notice or a run's fetch of the document did: the letter is the same
+ * whoever found it and is sent once, so it goes at the node's label and
+ * not the finder's. All of this is a floor, not the whole rule: a pass
+ * asked for at a restricted label on a public claim is not told apart from
+ * a public one by the claim's pending slot, and those paths take it up as
+ * public. Closing that takes one judgment per label, which is later work.
  *
  * A source is the same kind of carrier. The source backfill finds a
  * document with no facts, no text or no segments and fills them in, and

@@ -40,6 +40,14 @@ export interface SetupRecord {
    * of which were public.
    */
   label?: string;
+  /**
+   * The features that were switched off for the run (src/features.ts), by
+   * name: empty when everything was on. A run with any off was told so in
+   * its first task message (llm/features-off-note.ts), which the same step
+   * records. Absent on runs recorded before this was stamped, which says
+   * nothing either way about them.
+   */
+  featuresOff?: string[];
   model: string;
   effort: string | null;
   maxTokens: number | null;
@@ -99,11 +107,13 @@ export function setupRecord(
   parts: readonly SplitPart[],
   settings: { model: string; effort?: string | null; maxTokens?: number | null; temperature?: number | null },
   commit: string | null,
-  label: string
+  label: string,
+  featuresOff: readonly string[]
 ): SetupRecord {
   return {
     commit,
     label,
+    featuresOff: [...featuresOff],
     model: settings.model,
     effort: settings.effort ?? null,
     maxTokens: settings.maxTokens ?? null,

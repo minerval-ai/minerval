@@ -44,6 +44,7 @@ import {
 import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { actionUnavailable } from "../llm/tools/feature-tools.js";
 export { allocationDayUseSql } from "./day-use.js";
 
 export type ActionKind =
@@ -1398,7 +1399,9 @@ export async function materializeGrantPlan(
     attemptItems.set(it.claim_id, list);
   }
   const attemptResults = new Map<string, EnsureAttemptResult>();
-  if (active && attemptItems.size > 0) {
+  // No attempt group opens while the solver's feature is off; the items say
+  // why (materializePlanItem).
+  if (active && attemptItems.size > 0 && !actionUnavailable("attempt_proof")) {
     const policy = await getMandateAllocationPolicy(g.id);
     const owl = loadConfig().owlCostMicroUsd;
     const costs = {
@@ -1769,6 +1772,17 @@ async function materializePlanItem(
     return withChildren(own, pending ? [own.reason, pending].filter(Boolean).join(" Also: ") : own.reason);
   }
 
+  // A kind whose feature this deployment has switched off opens no work
+  // (llm/tools/feature-tools.ts). New plans are refused such an item where
+  // they are written (validatePlanItems); this is for one a plan already
+  // held when the feature went off. Without it a formalize item would reopen
+  // its row every FORMALIZE_RETRY_HOURS for a pass that can only log that it
+  // could not proceed. Work the item finished before then still reads done.
+  const unavailable = actionUnavailable(kind);
+  const switchedOff = unavailable
+    ? blocked(`${unavailable}, so the item opens no work; it becomes work if that is switched on`)
+    : null;
+
   if (kind === "formalize") {
     if (claim.published) {
       const row = await groupLedger({ group: FORMALIZE_GROUP(claim.id) });
@@ -1777,6 +1791,7 @@ async function materializePlanItem(
         ? fromRow({ ...row, status: "done" }, reason)
         : { status: "done", reason, checked_at: nowIso() };
     }
+    if (switchedOff) return switchedOff;
     if (!o.active) return o.notActive;
     const gap = await formalizeToolGap(claim.id);
     if (gap) return blocked(gap);
@@ -1805,6 +1820,7 @@ async function materializePlanItem(
   }
 
   if (kind === "attempt_proof") {
+    if (switchedOff) return item.ledger?.status === "done" ? item.ledger : switchedOff;
     if (!o.active) return o.notActive;
     const res = o.attemptResult;
     if (!res || !res.formalizationId) {

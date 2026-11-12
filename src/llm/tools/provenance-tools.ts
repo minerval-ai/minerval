@@ -58,6 +58,7 @@ import {
   INSTANCE_SUPPORT_GUIDANCE,
   PROVENANCE_FIDELITY_GUIDANCE,
   PROVENANCE_ROOT_GUIDANCE,
+  SOURCE_KIND_GUIDANCE,
   SOURCE_RELATION_GUIDANCE,
 } from "../../schemas/common.js";
 
@@ -210,7 +211,14 @@ export const executeReadSource: SkillToolExecutor = async (input) =>
     });
     // On the first window, what is known about the document without
     // judgment (#507): who, where, when, and any correction or retraction.
-    const facts = result.offset === 0 ? await getSourceFacts(result.source.id).catch(() => null) : null;
+    // Also on the read that fetched the document, whatever window it asked
+    // for: that fetch is when the facts are looked up, and a notice it
+    // records is not sent to the reading Steward's own node on the strength
+    // of being shown here (source-notice-service.ts).
+    const facts =
+      result.offset === 0 || result.origin === "fetched"
+        ? await getSourceFacts(result.source.id).catch(() => null)
+        : null;
     return JSON.stringify({
       success: true,
       ...result,
@@ -250,6 +258,7 @@ export const executeRecordReading: SkillToolExecutor = async (input, ctx) =>
       worthReading: input.worth_reading === true,
       worthReadingReason: str(input.worth_reading_reason) || null,
       sourceRead: input.source_read === true,
+      sourceKind: str(input.source_kind) || null,
       model: ctx.run?.model ?? null,
       createdBy: writerFor(ctx),
     });
@@ -276,6 +285,7 @@ export const executeRecordEdge: SkillToolExecutor = async (input, ctx) =>
       toSourceId: str(input.to_source_id) || null,
       toSourceUrl: str(input.to_source_url) || null,
       toSourceTitle: str(input.to_source_title) || null,
+      toSourceKind: str(input.to_source_kind) || null,
       relationType: str(input.relation_type),
       fidelity: str(input.fidelity) || null,
       evidence: str(input.evidence),
@@ -468,6 +478,7 @@ export const PROVENANCE_GUIDANCE = {
   support: INSTANCE_SUPPORT_GUIDANCE,
   sourceRelation: SOURCE_RELATION_GUIDANCE,
   root: PROVENANCE_ROOT_GUIDANCE,
+  sourceKind: SOURCE_KIND_GUIDANCE,
 };
 
 export function registerProvenanceTools(

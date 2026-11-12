@@ -1,4 +1,4 @@
-# Method skill: Provenance (version 8)
+# Method skill: Provenance (version 9)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 

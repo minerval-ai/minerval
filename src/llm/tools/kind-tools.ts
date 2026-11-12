@@ -28,7 +28,8 @@ import { rawQuery, withTransaction } from "../../db/client.js";
 import { claims } from "../../db/schema.js";
 import { loadConfig } from "../../config.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
-import { getOrCreateSource } from "../../services/source-service.js";
+import { getOrCreateSource, type SourceKindOutcome } from "../../services/source-service.js";
+import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { insertRelationshipEdge } from "../../services/relationship-service.js";
 import { enqueueClaimPipeline, enqueueSteward } from "../../services/queue-service.js";
 import { getEvaluationStateForClaim, parseClaimLinks } from "../../services/argument-service.js";
@@ -191,6 +192,7 @@ export const DEFINITION_PROPERTIES = {
 const SOURCE_PROPERTIES = {
   url: { type: "string", description: "URL of the source you read; sources are found or created by URL." },
   title: { type: "string", description: "Title of the source." },
+  source_kind: SOURCE_KIND_PROPERTY,
   speaker: { type: "string", description: "Who stated it, where identifiable." },
   publication: { type: "string" },
   source_date: { type: "string", description: "ISO-8601 to the precision known; omit rather than guess." },
@@ -843,11 +845,16 @@ async function existingOrNew(
   return { id, created: true };
 }
 
-async function sourceFor(input: Record<string, unknown>): Promise<{ id: string } | { error: string }> {
+async function sourceFor(
+  input: Record<string, unknown>
+): Promise<{ id: string; kind: SourceKindOutcome | Record<string, never> } | { error: string }> {
   const url = str(input.url);
   if (!/^https?:\/\//i.test(url)) return { error: "url must be the http(s) URL of the source you read." };
+  const kindRefusal = sourceKindRefusal(input.source_kind);
+  if (kindRefusal) return { error: kindRefusal };
   const source = await getOrCreateSource({ url, title: optStr(input.title) });
-  return { id: source.id };
+  // What kind of document it is, where the agent said; the result reports it back.
+  return { id: source.id, kind: await applyStatedSourceKind(source.id, input.source_kind) };
 }
 
 async function insertInstance(input: {
@@ -962,9 +969,11 @@ async function executeKindToolImpl(
       }
       const argumentId = optStr(input.argument_id) ?? null;
       let instanceId = optStr(input.instance_id);
+      let sourceKind: SourceKindOutcome | Record<string, never> = {};
       if (!instanceId) {
         const source = await sourceFor(input);
         if ("error" in source) return refuse(source.error);
+        sourceKind = source.kind;
         const verbatim = str(input.verbatim_text);
         if (verbatim.length > 2000) return refuse("verbatim_text must stay under 2000 characters: the passage, not the document.");
         instanceId = await insertInstance({
@@ -977,7 +986,7 @@ async function executeKindToolImpl(
         });
       }
       await setStatedEstimate({ instanceId, stated: input.stated as never, argumentId });
-      return ok(`Recorded the figure as an instance of quantity ${quantityId}.`, { instance_id: instanceId });
+      return ok(`Recorded the figure as an instance of quantity ${quantityId}.`, { instance_id: instanceId, ...sourceKind });
     }
 
     case "update_quantity_estimate": {
@@ -1025,7 +1034,7 @@ async function executeKindToolImpl(
         bearingClaimId: optStr(input.bearing_claim_id) ?? null,
         createdBy,
       });
-      return ok("Reading recorded in the quantity's provenance.", { reading_id: id });
+      return ok("Reading recorded in the quantity's provenance.", { reading_id: id, ...source.kind });
     }
 
     case "set_argument_shows": {
@@ -1194,9 +1203,11 @@ async function executeKindToolImpl(
           );
         }
       }
+      let sourceKind: SourceKindOutcome | Record<string, never> = {};
       if (!instanceId) {
         const source = await sourceFor(input);
         if ("error" in source) return refuse(source.error);
+        sourceKind = source.kind;
         const verbatim = str(input.verbatim_text);
         if (verbatim.length > 2000) return refuse("verbatim_text must stay under 2000 characters: the passage, not the document.");
         instanceId = await insertInstance({
@@ -1211,6 +1222,7 @@ async function executeKindToolImpl(
       await setQuestionInstance({ instanceId, role, answerClaimId: answerId });
       return ok(`Recorded the source as one that ${role === "asks" ? "asks" : "answers"} the question.`, {
         instance_id: instanceId,
+        ...sourceKind,
       });
     }
 

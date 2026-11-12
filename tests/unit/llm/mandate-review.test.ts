@@ -89,7 +89,7 @@ vi.mock("../../../src/services/mandate-reflection-service.js", () => ({
 }));
 vi.mock("../../../src/services/allocation-policy-service.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../src/services/allocation-policy-service.js")>()),
-  getMandateAllocationPolicy: async () => ({ maintenance_share: 0.1 }),
+  getMandateAllocationPolicy: async () => ({}),
 }));
 vi.mock("../../../src/services/action-service.js", () => ({
   materializePlanItems: async () => [],

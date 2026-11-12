@@ -25,7 +25,7 @@ import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
-import { getOrCreateSource } from "./source-service.js";
+import { getOrCreateSource, recordSourceKind } from "./source-service.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
 import {
@@ -36,6 +36,9 @@ import {
   QUOTE_CHECK_RESULTS,
   SOURCE_RELATION_TYPES,
   SYMMETRIC_SOURCE_RELATIONS,
+  STATABLE_SOURCE_KINDS,
+  statedSourceKind,
+  type SourceKind,
 } from "../schemas/common.js";
 import { sourceContentHash } from "./source-content.js";
 import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
@@ -412,6 +415,16 @@ function oneOf<T extends readonly string[]>(
   return v as T[number];
 }
 
+/** A stated source kind, or null when none was given; an unknown one is refused with the list. */
+function sourceKindOrThrow(value: unknown, field: string): SourceKind | null {
+  if (value === undefined || value === null || value === "") return null;
+  const kind = statedSourceKind(value);
+  if (!kind) {
+    throw new SourceMapError(`${field} must be one of ${STATABLE_SOURCE_KINDS.join(", ")} (got "${String(value)}").`);
+  }
+  return kind;
+}
+
 function requiredText(value: unknown, field: string, max = 4000): string {
   const v = typeof value === "string" ? value.trim() : "";
   if (!v) throw new SourceMapError(`${field} is required.`);
@@ -489,6 +502,8 @@ export interface RecordInstanceReadingInput {
   worthReading?: boolean;
   worthReadingReason?: string | null;
   sourceRead?: boolean;
+  /** What kind of document the source is; corrects the recorded kind when the source was read. */
+  sourceKind?: string | null;
   model?: string | null;
   createdBy: string;
 }
@@ -503,6 +518,8 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
   id: string;
   quote_check: QuoteCheckResult;
   replaced: boolean;
+  source_kind?: string;
+  source_kind_note?: string;
 }> {
   const instanceId = uuid(input.instanceId, "instance_id");
   const instance = await instanceOfClaim(instanceId, input.claimId);
@@ -510,6 +527,7 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
   const deployment = optionalText(input.deployment, "deployment", 2000);
   const note = optionalText(input.note, "note", 4000);
   const worthReading = input.worthReading === true;
+  const sourceKind = sourceKindOrThrow(input.sourceKind, "source_kind");
   const worthReadingReason = optionalText(input.worthReadingReason, "worth_reading_reason", 2000);
   if (worthReading && !worthReadingReason) {
     throw new SourceMapError(
@@ -562,7 +580,10 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
     [instanceId, support, note, input.sourceRead === true, worthReading, input.createdBy, currentLabel()]
   );
   const row = rows[0]!;
-  return { id: row.id, quote_check: check, replaced: !row.inserted };
+  const kind = sourceKind
+    ? await recordSourceKind(instance.source_id, sourceKind, { read: input.sourceRead === true })
+    : {};
+  return { id: row.id, quote_check: check, replaced: !row.inserted, ...kind };
 }
 
 export interface RecordProvenanceEdgeInput {
@@ -572,6 +593,8 @@ export interface RecordProvenanceEdgeInput {
   toSourceId?: string | null;
   toSourceUrl?: string | null;
   toSourceTitle?: string | null;
+  /** What kind of document the upstream one is; corrects the recorded kind when it was opened. */
+  toSourceKind?: string | null;
   relationType: string;
   fidelity?: string | null;
   evidence: string;
@@ -591,7 +614,10 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
   to_source_id: string;
   to_instance_id: string | null;
   replaced: boolean;
+  to_source_kind?: string;
+  to_source_kind_note?: string;
 }> {
+  const toSourceKind = sourceKindOrThrow(input.toSourceKind, "to_source_kind");
   const fromInstanceId = uuid(input.fromInstanceId, "from_instance_id");
   const from = await instanceOfClaim(fromInstanceId, input.claimId);
   const relationType = oneOf(input.relationType, CLAIM_PROVENANCE_RELATION_TYPES, "relation_type");
@@ -671,11 +697,16 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
     ]
   );
   const row = rows[0]!;
+  const kind = toSourceKind
+    ? await recordSourceKind(toSourceId, toSourceKind, { read: input.targetRead === true })
+    : null;
   return {
     id: row.id,
     to_source_id: toSourceId,
     to_instance_id: toInstance?.id ?? null,
     replaced: !row.inserted,
+    ...(kind ? { to_source_kind: kind.source_kind } : {}),
+    ...(kind?.source_kind_note ? { to_source_kind_note: kind.source_kind_note } : {}),
   };
 }
 

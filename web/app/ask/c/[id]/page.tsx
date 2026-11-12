@@ -7,10 +7,11 @@ import {
   AccountApiError,
   type AssistantConversationView,
 } from "../../../../lib/account-api";
-import { PageHead } from "@/components/PageHead";
 import { AssistantConversation } from "../../AssistantConversation";
 
-export const metadata: Metadata = { title: "Ask · Minerval" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: "Ask · Minerval" };
+}
 export const dynamic = "force-dynamic";
 
 // One conversation with the Assistant. Private to its user: anyone else
@@ -34,15 +35,13 @@ export default async function AskConversationPage({
   }
 
   return (
-    <div className="col account">
-      <PageHead back={{ href: "/ask", label: "ask" }} title={convo.title} />
-      <AssistantConversation
-        initial={convo}
-        models={convo.models}
-        balanceMicroUsd={convo.balance_micro_usd}
-        allowedAlways={convo.allowed_kinds.always}
-        kindLabels={convo.allowed_kinds.labels}
-      />
-    </div>
+    <AssistantConversation
+      key={convo.id}
+      initial={convo}
+      models={convo.models}
+      balanceMicroUsd={convo.balance_micro_usd}
+      allowedAlways={convo.allowed_kinds.always}
+      kindLabels={convo.allowed_kinds.labels}
+    />
   );
 }

@@ -309,7 +309,7 @@ describe("record_claim_instance deduplicates per (claim, source, speaker) (#481)
 
   beforeAll(async () => {
     claim = await seedClaim("two voices in one paper");
-    paperUrl = (await source("A jointly signed paper", "paper")).url;
+    paperUrl = (await source("A jointly signed paper", "journal_article")).url;
   });
 
   it("holds two speakers' assertions from one source, and dedups each speaker", async () => {
@@ -337,7 +337,7 @@ describe("record_claim_instance deduplicates per (claim, source, speaker) (#481)
 
   it("an unattributed instance blocks a named voice until it is attributed", async () => {
     const other = await seedClaim("unattributed first");
-    const url = (await source("Another paper", "paper")).url;
+    const url = (await source("Another paper", "journal_article")).url;
     const first = await steward("record_claim_instance", {
       claim_id: other,
       url,
@@ -360,8 +360,8 @@ describe("record_claim_instance deduplicates per (claim, source, speaker) (#481)
 describe("a mention: a source that refers to the claim without taking a side", () => {
   it("is recorded by the Steward, served with its stance, and counted apart from both camps", async () => {
     const claim = await seedClaim("a claim much cited in the debate");
-    const study = await source("The study", "paper");
-    const explainer = await source("An explainer on the debate", "news");
+    const study = await source("The study", "journal_article");
+    const explainer = await source("An explainer on the debate", "news_article");
     await instance(claim, study.id, "2020", "affirms");
 
     const out = await steward("record_claim_instance", {

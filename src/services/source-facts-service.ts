@@ -8,7 +8,9 @@
  *  - Crossref, for a document with a DOI: the registry the publisher itself
  *    deposits to, which also carries the update notices.
  *  - The page's own metadata: the `citation_*` tags scholarly publishers
- *    emit for indexers, then Dublin Core and Open Graph.
+ *    emit for indexers, then Dublin Core and Open Graph. Where the URL is a
+ *    rendering that carries none (an arXiv PDF or full-text HTML page), the
+ *    page of the same work that does (factsPageUrl).
  *  - The Internet Archive's availability API, for an archived copy.
  *
  * Every fact is filled once and never overwritten: a column already set
@@ -22,8 +24,14 @@ import { PUBLIC_LABEL } from "../labels.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
-import { SOURCE_EVENT_KINDS, type SourceEventKind } from "../schemas/common.js";
+import {
+  GENERIC_SOURCE_KINDS,
+  SOURCE_EVENT_KINDS,
+  type SourceEventKind,
+  type SourceKind,
+} from "../schemas/common.js";
 import { listCurrentSourceInterests, type SourceInterestView } from "./source-interest-service.js";
+import { tellStewardsOfNoticesOn, type SourceNotice } from "./source-notice-service.js";
 
 export interface PageFacts {
   title: string | null;
@@ -33,14 +41,11 @@ export interface PageFacts {
   doi: string | null;
 }
 
-/** Kinds no more specific than "we fetched it": a fact may replace these. */
-const GENERIC_KINDS = new Set(["unknown", "webpage"]);
-
 /**
  * Crossref work types onto the graph's source kinds. Only the types whose
  * kind a reader would want named; anything else leaves the kind alone.
  */
-const CROSSREF_KINDS: Record<string, string> = {
+const CROSSREF_KINDS: Record<string, SourceKind> = {
   "journal-article": "journal_article",
   "posted-content": "preprint",
   "proceedings-article": "conference_paper",
@@ -154,6 +159,24 @@ export function parsePageFacts(content: string | null | undefined): PageFacts {
   };
 }
 
+/**
+ * Where a document's facts are stated, when the URL cited is a rendering
+ * that does not state them. arXiv serves one paper at three addresses: the
+ * abstract page (/abs/) carries the `citation_*` tags, and the full-text
+ * HTML (/html/) and the PDF (/pdf/) carry none, so a paper cited by either
+ * of those had no author, date or publisher. Null for a URL whose own page
+ * is the place to look.
+ */
+export function factsPageUrl(url: string | null | undefined): string | null {
+  const m = (url ?? "").match(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:html|pdf)\/([^?#]+?)(?:\.pdf)?\/?(?:[?#].*)?$/i);
+  return m ? `https://arxiv.org/abs/${m[1]}` : null;
+}
+
+/** A source kind the address alone settles: a paper on arXiv, at any of its addresses, is a preprint. */
+export function kindFromUrl(url: string | null | undefined): SourceKind | null {
+  return /^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|html|pdf)\//i.test(url ?? "") ? "preprint" : null;
+}
+
 /** The Internet Archive's closest snapshot of a URL, or null. */
 export async function findArchivedCopy(
   url: string,
@@ -264,7 +287,25 @@ export async function refreshSourceFacts(
   );
   if (!row) return { source_id: sourceId, filled: [], events_recorded: 0, doi: null };
 
-  const page = parsePageFacts(row.raw_content);
+  let page = parsePageFacts(row.raw_content);
+  // A rendering that states no facts of its own (an arXiv PDF or HTML page):
+  // read them from the page that does. The source's own page still wins
+  // wherever it says something. A failed fetch leaves the facts as they are.
+  const elsewhere = factsPageUrl(row.url);
+  if (elsewhere && (page.authors.length === 0 || !page.published_date || !page.publisher)) {
+    const other = await (deps.fetch ?? ((u: string) => fetchPublicUrl(u)))(elsewhere)
+      .then(parsePageFacts)
+      .catch(() => null);
+    if (other) {
+      page = {
+        title: page.title ?? other.title,
+        authors: page.authors.length ? page.authors : other.authors,
+        publisher: page.publisher ?? other.publisher,
+        published_date: page.published_date ?? other.published_date,
+        doi: page.doi ?? other.doi,
+      };
+    }
+  }
   const doi = row.doi ?? page.doi ?? extractDois(row.url ?? "")[0] ?? null;
 
   let work: DoiCheck | null = null;
@@ -284,7 +325,7 @@ export async function refreshSourceFacts(
     published_date: isoDatePrefix(work?.published) ?? page.published_date,
     doi,
     archived_url: archived,
-    source_type: work?.type ? CROSSREF_KINDS[work.type] ?? null : null,
+    source_type: (work?.type ? CROSSREF_KINDS[work.type] : null) ?? kindFromUrl(row.url),
     title: work?.title ?? page.title,
   };
 
@@ -294,7 +335,7 @@ export async function refreshSourceFacts(
   if (!row.published_date && next.published_date) filled.push("published_date");
   if (!row.doi && next.doi) filled.push("doi");
   if (!row.archived_url && next.archived_url) filled.push("archived_url");
-  if (GENERIC_KINDS.has(row.source_type) && next.source_type) filled.push("source_type");
+  if (GENERIC_SOURCE_KINDS.has(row.source_type) && next.source_type) filled.push("source_type");
   // A title is replaced only where none was ever given: the row's title is
   // its URL, the placeholder getOrCreateSource writes.
   const placeholderTitle = !row.title || row.title === row.url;
@@ -325,6 +366,7 @@ export async function refreshSourceFacts(
   );
 
   let eventsRecorded = 0;
+  const fresh: SourceNotice[] = [];
   for (const u of work?.updates ?? []) {
     const { recorded } = await recordSourceEvent({
       sourceId,
@@ -334,7 +376,27 @@ export async function refreshSourceFacts(
       note: u.label,
       detectedBy: "facts_fetch",
     }).catch(() => ({ recorded: false }));
-    if (recorded) eventsRecorded++;
+    if (recorded) {
+      eventsRecorded++;
+      fresh.push({ type: u.type, title: null, updated: u.updated, notice_doi: u.doi || null });
+    }
+  }
+  // A retraction, correction or expression of concern recorded here for the
+  // first time is told to the Stewards of the nodes resting on the source,
+  // as one the Crossref poll finds is (source-notice-service.ts, which keeps
+  // the list of kinds and leaves the others out). The poll reads only
+  // notices added since its last run, and a notice recorded here is never
+  // fresh to it, so without this a source cited by URL and judged against
+  // before its facts were looked up would show the notice in
+  // `since_assessed` and tell nobody. A source no node rests on yet (a
+  // document being ingested) tells nobody. A message spends nothing; a
+  // failure to send loses the message, never the facts.
+  if (fresh.length > 0) {
+    await tellStewardsOfNoticesOn(sourceId, fresh).catch((err) => {
+      console.error(
+        `[source-facts] could not tell Stewards of notices on ${sourceId}: ${err instanceof Error ? err.message : err}`
+      );
+    });
   }
 
   return { source_id: sourceId, filled, events_recorded: eventsRecorded, doi };

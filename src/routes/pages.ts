@@ -38,7 +38,7 @@ const SAVE_DESCRIPTION =
   "- `[claim:<uuid>]` inline: a numbered citation with the node's current status.\n" +
   "- `{{node <uuid>}}` on a line of its own: the node as a card.\n" +
   "- `{{nodes <uuid> <uuid> ...}}` on a line of its own: a table of those nodes that the reader " +
-  "can sort by status, confidence or contestation.\n" +
+  "can sort by judgment or confidence.\n" +
   "- `{{decomposition <uuid>}}` on a line of its own: the node with the parts it rests on.\n\n" +
   `Limits, each because a page is read in one request: a body of ${PAGE_MAX_BODY_CHARS} ` +
   `characters, ${PAGE_MAX_NODES} distinct embedded nodes, ${PAGE_MAX_DECOMPOSITIONS} ` +
@@ -71,7 +71,8 @@ export async function pageRoutes(app: FastifyInstance) {
             type: "string",
             minLength: 1,
             maxLength: PAGE_MAX_TITLE_CHARS,
-            description: "Your user's title for it.",
+            description:
+              "Your user's title for it. It is shown above the body, so the body should not open by repeating it.",
           },
           body: {
             type: "string",

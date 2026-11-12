@@ -319,6 +319,7 @@ describe("GET /billing/ledger", () => {
         claimId: null,
         contributionId: "contrib-1",
         jobId: null,
+        settlesEntryId: null,
         createdAt: new Date("2026-08-01T00:00:00Z"),
       },
     ]);
@@ -334,9 +335,18 @@ describe("GET /billing/ledger", () => {
         claim_id: null,
         contribution_id: "contrib-1",
         job_id: null,
+        settles_entry_id: null,
         created_at: "2026-08-01T00:00:00.000Z",
       },
     ]);
-    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1");
+    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 50);
+  });
+
+  it("returns as many entries as asked for, and refuses more than 500", async () => {
+    const app = await buildApp();
+    await app.inject({ method: "GET", url: "/billing/ledger?limit=200" });
+    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 200);
+    const tooMany = await app.inject({ method: "GET", url: "/billing/ledger?limit=501" });
+    expect(tooMany.statusCode).toBe(400);
   });
 });

@@ -12,6 +12,8 @@ import {
   findArchivedCopy,
   isoDatePrefix,
   parsePageFacts,
+  factsPageUrl,
+  kindFromUrl,
 } from "../../../src/services/source-facts-service.js";
 
 describe("parsePageFacts", () => {
@@ -54,6 +56,29 @@ describe("parsePageFacts", () => {
     const empty = { title: null, authors: [], publisher: null, published_date: null, doi: null };
     expect(parsePageFacts("Just some text about 10.1234/x")).toEqual(empty);
     expect(parsePageFacts(null)).toEqual(empty);
+  });
+});
+
+describe("factsPageUrl and kindFromUrl", () => {
+  it("points an arXiv PDF or HTML rendering at the paper's abstract page, keeping the version", () => {
+    expect(factsPageUrl("https://arxiv.org/pdf/2503.08679")).toBe("https://arxiv.org/abs/2503.08679");
+    expect(factsPageUrl("https://arxiv.org/pdf/2503.08679v2.pdf")).toBe("https://arxiv.org/abs/2503.08679v2");
+    expect(factsPageUrl("https://arxiv.org/html/2509.15541v1")).toBe("https://arxiv.org/abs/2509.15541v1");
+    expect(factsPageUrl("http://www.arxiv.org/html/2509.15541v1/#S3")).toBe("https://arxiv.org/abs/2509.15541v1");
+    expect(factsPageUrl("https://arxiv.org/pdf/hep-th/9901001?download=1")).toBe("https://arxiv.org/abs/hep-th/9901001");
+  });
+
+  it("leaves alone a URL whose own page is the place to look", () => {
+    expect(factsPageUrl("https://arxiv.org/abs/2503.08679")).toBeNull();
+    expect(factsPageUrl("https://example.org/pdf/2503.08679")).toBeNull();
+    expect(factsPageUrl("https://notarxiv.org/pdf/2503.08679")).toBeNull();
+    expect(factsPageUrl(null)).toBeNull();
+  });
+
+  it("knows a paper on arXiv is a preprint at any of its addresses, and says nothing of other hosts", () => {
+    for (const path of ["abs", "html", "pdf"]) expect(kindFromUrl(`https://arxiv.org/${path}/2503.08679`)).toBe("preprint");
+    expect(kindFromUrl("https://arxiv.org/list/cs.AI/recent")).toBeNull();
+    expect(kindFromUrl("https://example.org/abs/1")).toBeNull();
   });
 });
 

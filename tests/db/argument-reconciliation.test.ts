@@ -36,7 +36,7 @@ async function group(argumentId: string, relationshipId: string) {
 
 async function instance(argumentId: string): Promise<string> {
   const [src] = await rawQuery<{ id: string }>(
-    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'S', 'paper') RETURNING id`,
+    `INSERT INTO sources (url, title, source_type) VALUES ($1, 'S', 'journal_article') RETURNING id`,
     [`https://dbtest.example/${randomUUID()}`]
   );
   return insertArgumentInstance({
