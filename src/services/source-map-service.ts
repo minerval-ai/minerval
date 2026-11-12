@@ -25,8 +25,7 @@ import { rawQuery } from "../db/client.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
 import { getOrCreateSource, recordSourceKind } from "./source-service.js";
-import { noKeptReading, sourceAddressProblem } from "./reading-address.js";
-import { isReadingAddress } from "../connections.js";
+import { noKeptSource, sourceAddressProblem } from "./reading-address.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
 import {
@@ -369,9 +368,9 @@ export async function readSourceContent(input: {
     // A reading address no source holds is not a document to be created
     // and fetched: a reading exists only as it was kept
     // (services/reading-address.ts).
-    if (isReadingAddress(input.url)) {
-      throw new SourceMapError(noKeptReading(input.url));
-    }
+    // The same holds for an analysis or a file kept from a file set.
+    const notKept = noKeptSource(input.url);
+    if (notKept) throw new SourceMapError(notKept);
     const created = await getOrCreateSource({ url: input.url });
     source = {
       id: created.id,

@@ -1,0 +1,4 @@
+# The build context is sandbox/ itself. Only the service, its launcher and
+# the pinned library list go into the image.
+README.md
+__pycache__

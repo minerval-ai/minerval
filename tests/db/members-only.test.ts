@@ -452,6 +452,15 @@ describe("what a permission guards", () => {
       "PATCH /connections/:connection_id": ["administer"],
       "POST /connections/:connection_id/look": ["administer"],
       "PUT /connections/:connection_id/tools": ["administer"],
+      // Sets of files for the agents to read (tests/db/file-sets.test.ts).
+      "GET /file-sets": ["direct"],
+      "GET /file-sets/:file_set_id": ["direct"],
+      "GET /file-sets/:file_set_id/files": ["direct"],
+      "GET /file-sets/:file_set_id/commands": ["direct"],
+      "POST /file-sets": ["direct"],
+      "PUT /file-sets/:file_set_id/files/*": ["direct"],
+      "POST /file-sets/:file_set_id/close": ["direct"],
+      "PATCH /file-sets/:file_set_id": ["direct"],
     });
   });
 

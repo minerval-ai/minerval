@@ -55,6 +55,14 @@ export const BOOKKEEPING_TABLES: ReadonlySet<string> = new Set([
   "connections",
   "connection_tools",
   "connection_calls",
+  // A deployment's file sets and the record of commands run against them
+  // (src/file-sets.ts): what people added and a run's own telemetry. A run
+  // that only explored marks nothing; one that keeps an analysis or a file
+  // writes `sources`, which is graph state.
+  "file_sets",
+  "file_set_files",
+  "file_set_keeps",
+  "sandbox_calls",
 ]);
 
 const SCHEMA_TABLES: ReadonlySet<string> = new Set(

@@ -75,7 +75,7 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "direct the graph",
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
-      "Correspondent for an update, and add sources.",
+      "Correspondent for an update, and add sources, sets of files among them.",
     never: "Edit an assessment or a run's log.",
   },
   release: {

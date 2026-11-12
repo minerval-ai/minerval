@@ -165,14 +165,17 @@ describe("the labels table", () => {
     );
     // Six are what a run writes (the judgments, sources, the run itself).
     // connections and connection_calls carry the label of an organization's
-    // system and of what was read through it (src/connections.ts). The rest
+    // system and of what was read through it (src/connections.ts), and
+    // file_sets and sandbox_calls that of a set of files and of a command
+    // run against one (src/file-sets.ts). The rest
     // stand for work waiting to be done, and hand their label to the run
     // that takes it up (label-carried.test.ts).
     expect(rows).toEqual(
       [
         "actions", "agent_runs", "agent_sessions", "appeals", "argument_evaluations", "assessment_orders",
         "assessments", "assistant_held_actions", "budget_jobs", "connection_calls", "connections",
-        "contributions", "jobs", "quantity_estimates", "question_assessments", "sources",
+        "contributions", "file_sets", "jobs", "quantity_estimates", "question_assessments", "sandbox_calls",
+        "sources",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });

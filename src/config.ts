@@ -742,6 +742,33 @@ const configSchema = z.object({
   // 1500 words is $0.75 at the default rate.
   pangramMaxWords: z.coerce.number().int().min(50).default(1500),
 
+  // --- File sets and the sandbox (docs/file-sets.md) ---
+  // A members-only deployment takes in sets of files and lets its agents
+  // explore them by running commands in a sandbox the deployment runs.
+  // Where uploaded sets are kept: a directory this process can write. The
+  // sandbox mounts the same directory read-only. Empty = no upload: a set
+  // can then only be a registered directory.
+  fileSetStoreDir: z.string().default(""),
+  // The root a directory must be under to be registered as a set, for data
+  // too large to upload. Read where it lies; the sandbox mounts the same
+  // root read-only. Empty = no directory can be registered.
+  fileSetDirectoryRoot: z.string().default(""),
+  // The most bytes one uploaded set may hold. Upload is for sets of modest
+  // size, since every byte passes through this process; larger data is
+  // registered where it lies.
+  fileSetUploadMaxBytes: z.coerce.number().int().min(1).default(10 * 1024 * 1024 * 1024),
+  // The sandbox service's private base URL and bearer token (sandbox/ in
+  // this repository). Empty URL = no sandbox: no run is offered a command,
+  // and a run that has file sets is told why.
+  sandboxUrl: z.string().default(""),
+  sandboxToken: z.string().default(""),
+  // What an hour of a command's time in the sandbox is charged to the run
+  // that ran it, into llm_usage like any spend, so the run's budget bounds
+  // it. The default is the rate the model provider's code sandbox is
+  // charged at here ($0.05 a container-hour, llm/instrument-harness.ts);
+  // set it from what the machine costs, or to 0 to charge nothing.
+  sandboxHourCostMicroUsd: z.coerce.number().min(0).default(50_000),
+
   // --- Mathematics: the Lean checker (docs/mathematics.md §5) ---
   // The lean-checker service's private base URL and bearer token. Empty
   // URL = no checker: the Lean tools are absent from every toolset, no
@@ -1350,6 +1377,12 @@ export function loadConfig(): Config {
     pangramAiUsdPerWord: process.env.PANGRAM_AI_USD_PER_WORD,
     pangramPlagiarismUsdPerWord: process.env.PANGRAM_PLAGIARISM_USD_PER_WORD,
     pangramMaxWords: process.env.PANGRAM_MAX_WORDS,
+    fileSetStoreDir: process.env.FILE_SET_STORE_DIR,
+    fileSetDirectoryRoot: process.env.FILE_SET_DIRECTORY_ROOT,
+    fileSetUploadMaxBytes: process.env.FILE_SET_UPLOAD_MAX_BYTES || undefined,
+    sandboxUrl: process.env.SANDBOX_URL,
+    sandboxToken: process.env.SANDBOX_TOKEN,
+    sandboxHourCostMicroUsd: process.env.SANDBOX_HOUR_COST_MICRO_USD || undefined,
     leanCheckerUrl: process.env.LEAN_CHECKER_URL,
     leanCheckerToken: process.env.LEAN_CHECKER_TOKEN,
     leanCpuHourCostMicroUsd: process.env.LEAN_CPU_HOUR_COST_MICRO_USD,

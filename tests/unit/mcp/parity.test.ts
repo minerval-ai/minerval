@@ -52,7 +52,7 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|connections)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|connections|file-sets)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
 const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(key.slice(key.indexOf(" ") + 1));
 const openRouteTools = () =>
   Object.entries(ROUTE_TOOLS)

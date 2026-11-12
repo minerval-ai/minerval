@@ -30,6 +30,7 @@ import {
   executeMatcherTool,
 } from "../tools/matcher-tools.js";
 import { createConnectionTools } from "../tools/connection-tools.js";
+import { createFileSetTools, withRunScratch } from "../tools/file-set-tools.js";
 import {
   getElicitToolDefinitions,
   executeElicitTool,
@@ -578,7 +579,10 @@ export function runClaimSteward(
   input: Parameters<typeof runClaimStewardImpl>[0]
 ): ReturnType<typeof runClaimStewardImpl> {
   return runWithUsageContext({ claimId: input.claimId }, () =>
-    withAgent("steward", () => runClaimStewardImpl(input))
+    // The run's scratch directory in the sandbox goes when the run ends
+    // (tools/file-set-tools.ts); a run that never runs a command asks the
+    // sandbox nothing.
+    withAgent("steward", () => withRunScratch(() => runClaimStewardImpl(input)))
   );
 }
 
@@ -626,6 +630,10 @@ async function runClaimStewardImpl(input: {
   // a run whose label reads them (tools/connection-tools.ts). None on the
   // public graph, where this reads nothing and adds nothing.
   const connectionTools = await createConnectionTools({ config });
+  // The sets of files this deployment holds for a run whose label reads
+  // them, and the sandbox they are explored in (tools/file-set-tools.ts).
+  // None on the public graph, where this reads nothing and adds nothing.
+  const fileSetTools = await createFileSetTools({ config });
 
   // Skills load on demand (load_skill): the prompt carries the catalog,
   // and the claim's recorded domains point the task at the domain skills
@@ -693,6 +701,7 @@ async function runClaimStewardImpl(input: {
     ...elicitTools,
     ...pangramTools.definitions,
     ...connectionTools.definitions,
+    ...fileSetTools.definitions,
     ...skillLoader.definitions,
     ...skillTools,
     ...researchTools.definitions,
@@ -785,7 +794,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${skillsNote}`;
+${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
@@ -812,7 +821,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     ? await resumeMessages(resumed.session, resumed.replies, {
         // The connections are said again on resume: which of them the run
         // has, and which of their tools, may have changed while it was paused.
-        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief, connectionTools.note].filter(Boolean).join("\n\n"),
+        // So are the file sets, and that the scratch directory starts empty.
+        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief, connectionTools.note, fileSetTools.note].filter(Boolean).join("\n\n"),
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
     : [{ role: "user" as const, content: userMessage }];
@@ -906,6 +916,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (pangram !== null) return pangram;
     const connection = await connectionTools.execute(name, toolInput);
     if (connection !== null) return connection;
+    const fileSet = await fileSetTools.execute(name, toolInput);
+    if (fileSet !== null) return fileSet;
     if (name === "match_claim") {
       // The Matcher receives the domains its caller knows.
       return executeMatcherTool(name, toolInput, { domains: claimDomains });
