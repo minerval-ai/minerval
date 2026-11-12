@@ -34,9 +34,9 @@
  *     opened.
  *  4. A node arrived that a node of this deployment's own may already
  *     state. The Curator is asked, at that node's label, whether they are
- *     one: if so, its ordinary merge folds the deployment's node into the
- *     public one, and what was recorded on it moves there and keeps its
- *     label.
+ *     one (curation-service.ts, scanArrivedPublicNodes): if so, its
+ *     ordinary merge folds the deployment's node into the public one, and
+ *     what was recorded on it moves there and keeps its label.
  *
  * It sees every label to find what is affected, and puts each recipient's
  * piece together at the recipient's label, from rows read there
@@ -45,7 +45,6 @@
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { runAtLabel } from "../llm/usage-context.js";
-import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
 import type { ApplyResult } from "./mirror-apply-service.js";
 import { openReassessmentsForVersionsMadeBesideEarlier } from "./version-upkeep.js";
 
@@ -286,74 +285,6 @@ async function tellOfWithdrawal(withdrawnId: string): Promise<number> {
 }
 
 /**
- * A node of this deployment's own that a node which just arrived may
- * state: the Curator is asked, at the deployment's node's label. A scan and
- * not a judgment, like the reconcile-candidate scan (curation-service.ts),
- * whose similarity floor it takes. Each of the deployment's nodes is paired
- * with the nearest of the arrivals, once: a pair with an edge, a link or a
- * request of any age between them is not raised again. Raising costs no
- * model call, and a Curator's run happens only if someone funds it, so the
- * number raised is not capped: money bounds what follows.
- */
-async function raiseConvergenceCandidates(arrived: readonly string[]): Promise<number> {
-  if (arrived.length === 0) return 0;
-  const policy = await getEffectiveAllocationPolicy();
-  const pairs = await withSystemClearance(REASON, () =>
-    rawQuery<{ anchor: string; label: string; other: string; similarity: number }>(
-      `SELECT p.id AS anchor, p.sensitivity_label AS label, n.id AS other, n.similarity
-         FROM claims p
-         CROSS JOIN LATERAL (
-           SELECT m.id, (1 - (m.embedding <=> p.embedding))::real AS similarity
-             FROM claims m
-            WHERE m.id = ANY($1::uuid[]) AND m.origin = 'mirror' AND m.state = 'active' AND m.embedding IS NOT NULL
-            ORDER BY m.embedding <=> p.embedding
-            LIMIT 1
-         ) n
-        WHERE p.origin = 'local' AND p.state = 'active' AND p.embedding IS NOT NULL
-          AND n.similarity >= $2
-          AND NOT EXISTS (SELECT 1 FROM claim_relationships r
-                           WHERE (r.parent_claim_id = p.id AND r.child_claim_id = n.id)
-                              OR (r.parent_claim_id = n.id AND r.child_claim_id = p.id))
-          AND NOT EXISTS (SELECT 1 FROM claim_links l
-                           WHERE l.claim_a_id = LEAST(p.id, n.id) AND l.claim_b_id = GREATEST(p.id, n.id))
-          AND NOT EXISTS (SELECT 1 FROM curation_requests q
-                           WHERE (q.anchor_claim_id = p.id AND q.other_claim_id = n.id)
-                              OR (q.anchor_claim_id = n.id AND q.other_claim_id = p.id))
-        ORDER BY n.similarity DESC`,
-      [[...arrived], policy.reconcile_candidate_min_similarity]
-    )
-  );
-  const { requestCuration } = await import("./curation-service.js");
-  let raised = 0;
-  for (const p of pairs) {
-    const r = await runAtLabel(p.label, `claim ${p.anchor}`, () =>
-      requestCuration({
-        anchorClaimId: p.anchor,
-        otherClaimId: p.other,
-        source: "reconcile_candidate",
-        signal: Number(p.similarity),
-        concern: convergenceConcern(p.other, Number(p.similarity)),
-      })
-    );
-    if (r.ok && !r.repeat) raised++;
-  }
-  return raised;
-}
-
-/** What the Curator is asked about a node of this deployment's own and a public node that just arrived. */
-export function convergenceConcern(publicNodeId: string, similarity: number): string {
-  return (
-    `The public graph now holds a node unusually like this one (embedding similarity ` +
-    `${similarity.toFixed(3)}): ${publicNodeId}, which arrived with the mirror. They may be one claim, ` +
-    `counterparts, or simply neighbours; decide which, and do nothing if they are distinct. If they are ` +
-    `one, this node is the one to fold in: merge_claims with the public node as the survivor moves what ` +
-    `is recorded on this node (its sources, arguments and edges) onto the public node, each row at the ` +
-    `label it has, and its judgment is then made again there at that label. The public node cannot be ` +
-    `the one merged away, or be reworded here: it is the public graph's.`
-  );
-}
-
-/**
  * Do what follows the batches just applied. Each step is taken for the
  * nodes the batches name and no others, and a step that fails is logged and
  * leaves the rest to run: the scheduler's own sweep finds a version made
@@ -392,7 +323,8 @@ export async function afterMirrorApplied(applied: readonly ApplyResult[]): Promi
     });
   }
   await attempt("asking the Curator about nodes that arrived", async () => {
-    result.convergence = await raiseConvergenceCandidates(union((a) => a.nodes.arrived));
+    const { scanArrivedPublicNodes } = await import("./curation-service.js");
+    result.convergence = await scanArrivedPublicNodes(union((a) => a.nodes.arrived));
   });
   return result;
 }

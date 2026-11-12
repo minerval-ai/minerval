@@ -96,10 +96,16 @@ interface TableEntry {
   /**
    * What the applier does to a mirrored row the public graph has withdrawn
    * while rows of this deployment's own still point to it, as an SQL
-   * assignment. Without one the row is deleted and those rows follow their
-   * foreign keys. Claims have one: a claim is the hub local work hangs off
-   * (edges, instances, judgments), and 'deprecated' is the state that
-   * already means "gone, but still referenced".
+   * assignment that marks it as gone (empty where the table has no such
+   * mark). Without one the row is deleted and those rows follow their
+   * foreign keys. The tables that have one are those a deployment's own
+   * work hangs off: a claim (edges, instances, judgments at any label; the
+   * state 'deprecated' already means "gone, but still referenced"), an
+   * argument (a label's evaluation of it, the passages recorded as making
+   * it), an instance (a label's reading of it) and a source (a label's
+   * instances from it). So a batch deletes nothing a deployment recorded
+   * on them. A row is also kept while a kept row points to it: a withdrawn
+   * argument that is kept keeps its claim.
    */
   keepWhenReferenced?: string;
   /**
@@ -165,6 +171,8 @@ const ENTRIES: readonly TableEntry[] = [
   { table: answerRelations, removeBeforeWrite: true },
   {
     table: sources,
+    // A document has no state to mark: it is kept as it was last sent.
+    keepWhenReferenced: "",
     leftOut: {
       party_id: {
         kind: "withheld",
@@ -176,6 +184,7 @@ const ENTRIES: readonly TableEntry[] = [
   { table: sourceSegments, removeBeforeWrite: true },
   {
     table: arguments_,
+    keepWhenReferenced: `retired_at = COALESCE(retired_at, now()), retired_reason = COALESCE(retired_reason, 'Withdrawn by the public graph.')`,
     leftOut: {
       lean_check_id: {
         kind: "withheld",
@@ -185,7 +194,10 @@ const ENTRIES: readonly TableEntry[] = [
     },
   },
   { table: argumentSubclaims, removeBeforeWrite: true },
-  { table: claimInstances },
+  {
+    table: claimInstances,
+    keepWhenReferenced: `detached_at = COALESCE(detached_at, now()), detached_reason = COALESCE(detached_reason, 'Withdrawn by the public graph.')`,
+  },
   { table: argumentInstances },
   { table: quantityReadings },
   {

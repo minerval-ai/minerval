@@ -121,6 +121,8 @@ const id = {
   edgeLater: randomUUID(),
   argument: randomUUID(),
   argumentLater: randomUUID(),
+  argumentWithdrawn: randomUUID(),
+  paperWithdrawn: randomUUID(),
   paper: randomUUID(),
   paperLater: randomUUID(),
   paperPublicLater: randomUUID(),
@@ -178,6 +180,8 @@ async function seedPublicGraph(): Promise<void> {
     created_by: "claim_steward",
   });
   await ins(pub, "argument_subclaims", { argument_id: id.argument, relationship_id: id.edgeChild });
+  await ins(pub, "arguments", { id: id.argumentWithdrawn, claim_id: id.withdrawn, name: "An argument that goes with its node", stance: "for", content: "It goes with its node.", created_by: "claim_steward" });
+  await ins(pub, "sources", { id: id.paperWithdrawn, url: `https://journal.example/${tag}/soon-gone`, title: "A paper the public graph will drop" });
   const verdict = (key: keyof typeof id, claimId: string, status: string, words: string) =>
     ins(pub, "assessments", { id: id[key], claim_id: claimId, status, confidence: 0.6, summary: words, reasoning_trace: `${words} The reasoning.` });
   await verdict("verdict1", id.parent, "inconclusive", "The first public reading.");
@@ -287,16 +291,33 @@ const inbox = (node: string) =>
     )
   );
 
+/**
+ * Leave this database holding no mirror at all: every mirrored row and the
+ * applier's bookkeeping go, as the applier itself would remove them.
+ */
+async function forgetTheMirror(): Promise<void> {
+  await system(async () => {
+    const { withTransaction } = await import("../../src/db/client.js");
+    const { replicatedTables } = await import("../../src/services/mirror-manifest.js");
+    await withTransaction(async (tx) => {
+      await tx.query(`SELECT set_config('minerval.mirror_applier', 'on', true)`);
+      for (const table of [...replicatedTables()].reverse()) {
+        await tx.query(`DELETE FROM "${table.name}" WHERE origin = 'mirror'`);
+      }
+      await tx.query(`TRUNCATE mirror_applied_batches, mirror_snapshot_rows, mirror_refusals, mirror_node_changes`);
+    });
+  });
+}
+
 beforeAll(async () => {
   setNoContextSessionForTests(null);
-  pubPool = new pg.Pool({ connectionString: mirrorDatabaseUrl("a"), max: 4 });
+  // A publisher of this file's own (tests/db/urls.ts), and a mirror that
+  // has followed nothing: whatever another file's feed left here is cleared,
+  // as this file's is at the end.
+  pubPool = new pg.Pool({ connectionString: mirrorDatabaseUrl("c"), max: 4 });
   pub = poolDb(pubPool);
-  // A feed of this file's own, whatever ran before it: the publisher starts
-  // a new one, and the mirror forgets the one it followed, so that its
-  // first batch here is a snapshot.
-  await pub.query(`TRUNCATE mirror_feed_batches, mirror_feed_rows`);
+  await forgetTheMirror();
   await system(async () => {
-    await rawQuery(`TRUNCATE mirror_applied_batches, mirror_snapshot_rows, mirror_refusals`);
     await rawQuery(
       `INSERT INTO labels (name, description) VALUES ($1, 'One partner.'), ($2, 'Another partner.'), ($3, 'Reads the first.')
        ON CONFLICT (name) DO NOTHING`,
@@ -320,12 +341,15 @@ afterAll(async () => {
     await rawQuery(`DELETE FROM assessment_orders WHERE claim_id = ANY($1::uuid[])`, [nodes]);
     await rawQuery(`DELETE FROM actions WHERE claim_id = ANY($1::uuid[])`, [nodes]);
     await rawQuery(`DELETE FROM audit_log WHERE sensitivity_label = ANY($1::text[])`, [[A, B, C]]);
-    for (const table of ["judgment_inputs", "argument_evaluations", "assessments", "quantity_estimates", "node_messages", "steward_slots", "claim_instances", "argument_subclaims", "claim_links", "claim_relationships", "arguments", "requests", "enqueue_events"]) {
+    for (const table of ["judgment_inputs", "argument_evaluations", "assessments", "quantity_estimates", "node_messages", "steward_slots", "argument_instances", "claim_instances", "argument_subclaims", "claim_links", "claim_relationships", "arguments", "request_targets", "requests", "enqueue_events"]) {
       await rawQuery(`DELETE FROM ${table} WHERE sensitivity_label = ANY($1::text[])`, [[A, B, C]]).catch(() => undefined);
     }
     await rawQuery(`DELETE FROM claims WHERE id = ANY($1::uuid[])`, [made.claims]);
     await rawQuery(`DELETE FROM sources WHERE id = ANY($1::uuid[]) OR (origin = 'local' AND sensitivity_label = ANY($2::text[]))`, [made.sources, [A, B, C]]);
     await rawQuery(`DELETE FROM contributors WHERE id = ANY($1::uuid[])`, [made.users]);
+  }).catch((err: unknown) => console.warn("[private-on-mirror] cleanup:", err instanceof Error ? err.message : err));
+  await forgetTheMirror().catch((err: unknown) => console.warn("[private-on-mirror] cleanup:", err instanceof Error ? err.message : err));
+  await system(async () => {
     await rawQuery(`DELETE FROM label_reads WHERE label = ANY($1::text[])`, [[A, B, C]]);
     await rawQuery(`DELETE FROM labels WHERE name = ANY($1::text[])`, [[A, B, C]]);
   }).catch((err: unknown) => console.warn("[private-on-mirror] cleanup:", err instanceof Error ? err.message : err));
@@ -426,13 +450,13 @@ describe("a version at a on a mirrored claim", () => {
     const before = await mirroredRows();
     const refused = await runAt(PUBLIC_LABEL, () => assess(id.parent, "verified", "A local public reading."));
     expect(refused.success).toBe(false);
-    expect(refused.message).toBe(await runAt(PUBLIC_LABEL, async () => publicJudgmentMessage("An assessment")));
+    expect(refused.message).toBe(await runAt(PUBLIC_LABEL, async () => publicJudgmentMessage("An assessment of it")));
     expect(refused.message).toContain("is the public graph's own, which arrives with the mirror");
     const evaluated = await runAt(PUBLIC_LABEL, () =>
       tool("evaluate_argument", { argument_id: id.argument, verdict: "certain", evaluation: `A local public evaluation: it rests on [[claim:${id.child}]].` })
     );
     expect(evaluated.success).toBe(false);
-    expect(evaluated.message).toContain("An evaluation of this argument of it at `public` is the public graph's own");
+    expect(evaluated.message).toContain("An evaluation of this argument at `public` is the public graph's own");
     const estimated = await runAt(PUBLIC_LABEL, () =>
       executeKindTool(
         "update_quantity_estimate",
@@ -694,6 +718,15 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       expectWritten("escalate_to_curator", await tool("escalate_to_curator", { claim_id: id.parent, concern: "Two of our nodes under it look like one." }));
       expectWritten("record_argument_instance", await tool("record_argument_instance", { argument_id: id.argument, url: `https://intranet.example/${tag}/field-notes`, verbatim_text: "Our cores show the soil still accumulating.", stance: "advances", reading: "full" }));
       expectWritten("notify_steward", await tool("notify_steward", { claim_id: id.other, target_ids: [id.parent], message: "Our upland cores bear on this." }));
+      // A mirrored node it thinks is wrong is a request, which stays at the run's label.
+      const filed = JSON.parse(
+        (await executeKindTool(
+          "file_request",
+          { ask: "Reword the node: it says per hectare and means per hectare of soil surface.", why: "The public wording is ambiguous.", satisfied_by: "A reworded node on the public graph.", claim_ids: [id.parent] },
+          { role: "claim_steward", claimId: id.parent }
+        ))!
+      ) as ToolAnswer;
+      expectWritten("file_request", filed);
       expectWritten("update_claim_assessment", await assess(id.parent, "supported", "With a's cores, against the second public reading."));
       expectWritten("evaluate_argument", await tool("evaluate_argument", { argument_id: id.argument, verdict: "likely", evaluation: `With a's cores [[claim:${id.child}]] holds, and the rest follows.` }));
     });
@@ -725,6 +758,9 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       expect(labels, table).toEqual([{ l: A }]);
     }
     expect(await mirroredRows()).toEqual(before);
+    expect(
+      await system(() => rawQuery<{ l: string }>(`SELECT DISTINCT r.sensitivity_label AS l FROM requests r JOIN request_targets t ON t.request_id = r.id WHERE t.claim_id = $1`, [id.parent]))
+    ).toEqual([{ l: A }]);
     expect(outcome).toEqual({
       update_canonical_form: "refused",
       set_claim_importance: "refused",
@@ -746,6 +782,7 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       escalate_to_curator: "at the run's label",
       record_argument_instance: "at the run's label",
       notify_steward: "at the run's label",
+      file_request: "at the run's label",
       update_claim_assessment: "at the run's label",
       evaluate_argument: "at the run's label",
       "update_claim_instance (its own)": "at the run's label",
@@ -891,8 +928,28 @@ describe("a merge and a withdrawal upstream, under private versions", () => {
   });
 
   it("keeps a withdrawn node with what a recorded on it, shows it as withdrawn, and tells the Steward of a's node that rests on it", async () => {
+    // a also evaluated the public graph's argument on that node, and read the public graph's source for it.
+    const [mineOnTheirs] = await system(() =>
+      rawQuery<{ evaluation: string; instance: string }>(
+        `WITH e AS (INSERT INTO argument_evaluations (argument_id, verdict, content, sensitivity_label)
+                    VALUES ($1, 'slight', 'a''s evaluation of the public argument.', $3) RETURNING id),
+              i AS (INSERT INTO claim_instances (claim_id, source_id, verbatim_text, stance, sensitivity_label)
+                    VALUES ($4, $2, 'a''s reading of the public paper.', 'affirms', $3) RETURNING id)
+         SELECT e.id AS evaluation, i.id AS instance FROM e, i`,
+        [id.argumentWithdrawn, id.paperWithdrawn, A, restingOnWithdrawn]
+      )
+    );
     await pub.query(`DELETE FROM claims WHERE id = $1`, [id.withdrawn]);
+    await pub.query(`DELETE FROM sources WHERE id = $1`, [id.paperWithdrawn]);
     const { applied, upkeep } = await publishAndApply();
+    // The argument and the source went upstream, and are kept here with what a recorded on them.
+    expect(applied.at(-1)!.notes.kept_rows!.map((k) => [k.table, k.count]).sort()).toEqual([["arguments", 1], ["sources", 1]]);
+    expect(
+      await system(() => rawQuery<{ retired: boolean; reason: string }>(`SELECT retired_at IS NOT NULL AS retired, retired_reason AS reason FROM arguments WHERE id = $1`, [id.argumentWithdrawn]))
+    ).toEqual([{ retired: true, reason: "Withdrawn by the public graph." }]);
+    expect(await system(() => rawQuery(`SELECT 1 FROM argument_evaluations WHERE id = $1`, [mineOnTheirs!.evaluation]))).toHaveLength(1);
+    expect(await system(() => rawQuery(`SELECT 1 FROM claim_instances WHERE id = $1`, [mineOnTheirs!.instance]))).toHaveLength(1);
+    expect(await system(() => rawQuery(`SELECT 1 FROM sources WHERE id = $1 AND origin = 'mirror'`, [id.paperWithdrawn]))).toHaveLength(1);
     expect(applied.at(-1)!.nodes.withdrawn).toEqual([id.withdrawn]);
     expect(applied.at(-1)!.notes.kept_claims!.count).toBe(1);
     const [row] = await system(() => rawQuery<{ state: string; origin: string }>(`SELECT state, origin FROM claims WHERE id = $1`, [id.withdrawn]));
@@ -1016,7 +1073,7 @@ describe("what a run is told", () => {
     expect(labelNote(A, [A, PUBLIC_LABEL], { writesJudgments: true, mirror: null })).toBe(plain);
     // A deployment that mirrors and has one label has no label note: the passage stands alone.
     expect(mirrorNote({ publicGraphAsOf: asOf }, { writesJudgments: true })).toContain(
-      "The assessment of a mirrored node is the public graph's own and arrives with the mirror: no run here records one"
+      "No pass on a mirrored node at `public` is opened, paid for or run in this deployment: its assessment there is the public graph's own"
     );
   });
 });

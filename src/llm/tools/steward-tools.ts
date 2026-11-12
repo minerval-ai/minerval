@@ -1486,7 +1486,7 @@ export async function executeStewardTool(
         // public graph's, and nothing here records one in its place
         // (mirrored-node-service.ts).
         if (await publicGraphJudges(claimId)) {
-          return JSON.stringify({ success: false, message: publicJudgmentMessage("An assessment") });
+          return JSON.stringify({ success: false, message: publicJudgmentMessage("An assessment of it") });
         }
         const noMaterial = await versionWithoutMaterial(claimId);
         if (noMaterial) {

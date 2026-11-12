@@ -2410,6 +2410,12 @@ at that label under it, or a node under it with a version at that label);
 otherwise the tool refuses, says what would satisfy it, and the version that
 label reads stands for its readers. A node's own label needs none.
 
+On a deployment that mirrors the public graph, the `public` version of a
+mirrored node is the mirrored row. Nothing local records one or opens work
+at `public` on a mirrored node, and a version at another label is recorded
+beside it and kept current as batches of the mirror are applied
+([mirror.md](mirror.md), "Beside a deployment's own rows").
+
 Which versions are in force depends on who reads, and the rule is written
 once, in the database (`minerval_version_standing`): among the current
 versions a connection's clearance reads, a version is in force unless
@@ -2506,8 +2512,11 @@ node's Steward, a mandate) names a row only where the recipient's label
 reads that row: it puts each recipient's piece together inside
 `runAtLabel` at the recipient's label, from rows read there.
 `tests/unit/db/system-clearance.test.ts` lists every caller with its reason
-and with what it writes. Nothing at a label other than `public` is sent to
-the issue tracker, which is outside the deployment.
+and with what it writes. The mirror's applier is among them: it writes the
+public graph's rows, as `public`, and what follows a batch for a label's own
+work is opened at that label ([mirror.md](mirror.md)). Nothing at a label
+other than `public` is sent to the issue tracker, which is outside the
+deployment.
 
 **Money.** `action_allocations` and `regrants` carry a label for the text on
 them (a commission's brief and reason, a regrant's note), and their money
@@ -2603,7 +2612,10 @@ where reads are held.
   other keys the collision guard covers. Judgments and the work on a node
   are no longer among them: each label keeps its own version, ledger row,
   slot and order. A write that lands on such a row at a label the writer
-  reads is refused too, and says so.
+  reads is refused too, and says so. A mirrored row is the exception in the
+  other direction: where a table has a key besides its id, the key is
+  unique within each graph, so a row of the deployment's own and the public
+  graph's row for the same thing both stand ([mirror.md](mirror.md)).
 - The money views show every label's amounts, ledger keys, ids and who
   commissioned, without the text, and let any cleared connection change the
   money columns of any label's row, which is what settlement does. A ledger

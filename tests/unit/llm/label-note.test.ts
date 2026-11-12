@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import { FEATURES_OFF_NOTE_SEPARATOR, featuresOffNote, withFeaturesOffNote } from "../../../src/llm/features-off-note.js";
-import { labelNote, withLabelNote } from "../../../src/llm/label-note.js";
+import { LABEL_NOTE_HEADING, MIRROR_NOTE_HEADING, labelNote, mirrorNote, withLabelNote } from "../../../src/llm/label-note.js";
 
 type MessageParam = Anthropic.MessageParam;
 
@@ -185,5 +185,106 @@ describe("withLabelNote", () => {
   it("finds no user message to head and changes nothing", () => {
     const messages: MessageParam[] = [{ role: "assistant", content: "hello" }];
     expect(withLabelNote(messages, note)).toBe(messages);
+  });
+});
+
+describe("on a deployment that mirrors the public graph", () => {
+  const mirror = { publicGraphAsOf: "2026-11-12T17:08:45.113Z" };
+
+  it("says nothing of the mirror where none is held, word for word", () => {
+    for (const writesJudgments of [true, false]) {
+      const plain = labelNote("internal", ["internal", "public"], { writesJudgments });
+      expect(labelNote("internal", ["internal", "public"], { writesJudgments, mirror: null })).toBe(plain);
+      expect(plain).not.toMatch(/mirror/i);
+    }
+  });
+
+  it("tells a Steward at a private label what is mirrored and as of when, why it is not changed, whose the public version is, and where a request goes", () => {
+    const note = labelNote("internal", ["internal", "public"], { writesJudgments: true, mirror });
+    const plain = labelNote("internal", ["internal", "public"], { writesJudgments: true });
+    const added = [
+      " Part of what is labeled `public` is the public graph itself, read through a mirror: a copy of its nodes, with their arguments, sources and assessments, that follows it. It shows the public graph as of 2026-11-12 17:08 UTC, when the newest batch applied here was cut, not as of now. A node's full read says under `mirrored` that it is one of these.",
+      " A mirrored row is not changed by any run in this deployment, at any label: the next batch from the public graph would overwrite the change, and until then readers would take it for the public graph's own. A tool that would change one refuses and says so.",
+      " On a mirrored node the version at `public` is the public graph's own assessment, which arrives with the mirror, and the Steward at that label is the public graph's: no run in this deployment records a version there.",
+      " A request about a mirrored node stays in this deployment like any other. Raising it on the public graph would show what this deployment is working on, so that is for the people who direct the deployment to decide, and no tool of yours sends anything there.",
+    ];
+    // Each is a sentence or two inside a passage that was already there, and
+    // taking them out gives back the note as it was: nothing else moved.
+    let without = note;
+    for (const sentence of added) {
+      expect(note.split(sentence).length - 1, sentence).toBe(1);
+      without = without.replace(sentence, "");
+    }
+    expect(without).toBe(plain);
+  });
+
+  it("tells a run that records no judgments the same, in the passage it already has", () => {
+    const note = labelNote("internal", ["internal", "public"], { mirror });
+    expect(note).toContain("It shows the public graph as of 2026-11-12 17:08 UTC");
+    expect(note).toContain("A mirrored row is not changed by any run in this deployment, at any label");
+    expect(note).toContain(
+      "On a mirrored node the version at `public` is the public graph's own assessment. No pass on a mirrored node " +
+        "at `public` is opened, paid for or run in this deployment: its assessment there is the public graph's own, " +
+        "and a second one made here would be this deployment's, shown to readers as the public graph's. A fresh " +
+        "public assessment is funded on the public graph. If you judge that the public graph has a mirrored node " +
+        "wrong, in its wording, its structure or its assessment, that is a request (file_request, where your role " +
+        "has it; otherwise say so in what you report). A request about a mirrored node stays in this deployment " +
+        "like any other."
+    );
+    expect(note).not.toContain("## A judgment at each label");
+  });
+
+  it("tells a Steward at public that no pass on a mirrored node is opened here", () => {
+    const note = labelNote("public", ["public"], { writesJudgments: true, mirror });
+    expect(note).toContain(
+      "On a mirrored node the version at `public` is the public graph's own assessment, which arrives with the " +
+        "mirror, and no run in this deployment records one. No pass on a mirrored node at `public` is opened, paid " +
+        "for or run in this deployment: its assessment there is the public graph's own, and a second one made here " +
+        "would be this deployment's, shown to readers as the public graph's. A fresh public assessment is funded on " +
+        "the public graph. If you judge that the public graph has a mirrored node wrong, that is a request " +
+        "(file_request)."
+    );
+  });
+
+  it("gives a deployment with one label the passage on its own, since it has no label note", () => {
+    expect(mirrorNote(mirror, { writesJudgments: true })).toBe(
+      "## The public graph, mirrored\n\n" +
+        "Part of this graph is the public graph itself, read through a mirror: a copy of its nodes, with their " +
+        "arguments, sources and assessments, that follows it. It shows the public graph as of 2026-11-12 17:08 UTC, " +
+        "when the newest batch applied here was cut, not as of now. A node's full read says under `mirrored` that " +
+        "it is one of these.\n\n" +
+        "A mirrored row is not changed by any run in this deployment, at any label: the next batch from the public " +
+        "graph would overwrite the change, and until then readers would take it for the public graph's own. A tool " +
+        "that would change one refuses and says so. What this run adds to a mirrored node (an argument, a subclaim, " +
+        "a source) is a row of this deployment's own, beside what is there. No pass on a mirrored node at `public` " +
+        "is opened, paid for or run in this deployment: its assessment there is the public graph's own, and a " +
+        "second one made here would be this deployment's, shown to readers as the public graph's. A fresh public " +
+        "assessment is funded on the public graph. No run here records an assessment of a mirrored node " +
+        "either.\n\n" +
+        "If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its " +
+        "assessment, that is a request (file_request, where your role has it; otherwise say so in what you report). " +
+        "A request about a mirrored node stays in this deployment like any other. Raising it on the public graph " +
+        "would show what this deployment is working on, so that is for the people who direct the deployment to " +
+        "decide, and no tool of yours sends anything there."
+    );
+    expect(mirrorNote(mirror)).not.toContain("No run here records an assessment");
+  });
+
+  it("is said once: a note that states a newer time is not added to a first message that already carries one", () => {
+    const first = labelNote("internal", ["internal", "public"], { mirror });
+    const later = labelNote("internal", ["internal", "public"], { mirror: { publicGraphAsOf: "2026-11-12T18:30:00.000Z" } });
+    expect(later).not.toBe(first);
+    const briefed = withLabelNote([{ role: "user", content: "go" }], first, LABEL_NOTE_HEADING);
+    expect(withLabelNote(briefed, later, LABEL_NOTE_HEADING)).toBe(briefed);
+    const alone = withLabelNote([{ role: "user", content: [{ type: "text", text: "go" }] }], mirrorNote(mirror), MIRROR_NOTE_HEADING);
+    expect(withLabelNote(alone, mirrorNote({ publicGraphAsOf: "2026-11-12T18:30:00.000Z" }), MIRROR_NOTE_HEADING)).toBe(alone);
+  });
+
+  it("is plain prose in the house style", () => {
+    for (const note of [labelNote("internal", ["internal", "public"], { writesJudgments: true, mirror }), mirrorNote(mirror, { writesJudgments: true })]) {
+      // No em-dashes, and American spelling for what an agent reads.
+      expect(note).not.toMatch(/[\u2014\u2013]/);
+      expect(note).not.toMatch(/labelled/);
+    }
   });
 });

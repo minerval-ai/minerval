@@ -76,6 +76,12 @@ const MIRROR_REQUEST =
   `graph would show what this deployment is working on, so that is for the people who direct the ` +
   `deployment to decide, and no tool of yours sends anything there.`;
 
+/** That work on a mirrored node at the node's own label is not done here, and why. */
+const MIRROR_NO_PUBLIC_PASS =
+  `No pass on a mirrored node at ${tick(PUBLIC_LABEL)} is opened, paid for or run in this deployment: its ` +
+  `assessment there is the public graph's own, and a second one made here would be this deployment's, shown ` +
+  `to readers as the public graph's. A fresh public assessment is funded on the public graph.`;
+
 /** The start of the note, by which a first message that already carries one is known. */
 export const LABEL_NOTE_HEADING = "## This run's label\n\n";
 export const MIRROR_NOTE_HEADING = "## The public graph, mirrored\n\n";
@@ -92,11 +98,8 @@ export function mirrorNote(mirror: MirrorBrief, opts: { writesJudgments?: boolea
     `${asOf(mirror)}, when the newest batch applied here was cut, not as of now. A node's full read says ` +
     `under \`mirrored\` that it is one of these.\n\n` +
     `${MIRROR_NOT_CHANGED} What this run adds to a mirrored node (an argument, a subclaim, a source) is a ` +
-    `row of this deployment's own, beside what is there.` +
-    (opts.writesJudgments
-      ? ` The assessment of a mirrored node is the public graph's own and arrives with the mirror: no run ` +
-        `here records one, and no pass on a mirrored node is opened here.`
-      : "") +
+    `row of this deployment's own, beside what is there. ${MIRROR_NO_PUBLIC_PASS}` +
+    (opts.writesJudgments ? ` No run here records an assessment of a mirrored node either.` : "") +
     `\n\n` +
     `If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its ` +
     `assessment, that is a request (file_request, where your role has it; otherwise say so in what you ` +
@@ -163,6 +166,7 @@ function versionsForAReader(mirror: MirrorBrief | null = null): string {
     `not read each other each have one.` +
     (mirror
       ? ` On a mirrored node the version at ${tick(PUBLIC_LABEL)} is the public graph's own assessment. ` +
+        `${MIRROR_NO_PUBLIC_PASS} ` +
         `If you judge that the public graph has a mirrored node wrong, in its wording, its structure or ` +
         `its assessment, that is a request (file_request, where your role has it; otherwise say so in ` +
         `what you report). ${MIRROR_REQUEST}`
@@ -195,10 +199,9 @@ function versionsForAWriter(label: string, others: readonly string[], mirror: Mi
       (mirror && label === PUBLIC_LABEL
         ? `\n\n` +
           `On a mirrored node the version at ${own} is the public graph's own assessment, which arrives ` +
-          `with the mirror. No run in this deployment records one, and no pass on a mirrored node at ` +
-          `${own} is opened here: a second assessment at ${own} would be this deployment's, shown to ` +
-          `readers as the public graph's. If you judge that the public graph has a mirrored node wrong, ` +
-          `that is a request (file_request). ${MIRROR_REQUEST}`
+          `with the mirror, and no run in this deployment records one. ${MIRROR_NO_PUBLIC_PASS} If you ` +
+          `judge that the public graph has a mirrored node wrong, that is a request (file_request). ` +
+          `${MIRROR_REQUEST}`
         : "")
     );
   }

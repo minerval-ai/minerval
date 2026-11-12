@@ -295,12 +295,12 @@ export function mirroredRefusalForPerson(err: unknown): string | null {
 /**
  * What an agent is told when it would record a judgment of a mirrored node
  * at the node's own label. `what` is the judgment, capitalized ("An
- * assessment").
+ * assessment of it").
  */
 export function publicJudgmentMessage(what: string): string {
   const label = currentLabel();
   return (
-    `Not recorded. This node belongs to the public graph and is read here through the mirror. ${what} of it ` +
+    `Not recorded. This node belongs to the public graph and is read here through the mirror. ${what} ` +
     `at \`${label}\` is the public graph's own, which arrives with the mirror, and nothing in this ` +
     `deployment records one in its place: it would be shown to readers as the public graph's judgment ` +
     `without being it. If the public graph's judgment is wrong on evidence the public graph could see, ` +

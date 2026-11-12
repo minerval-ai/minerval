@@ -159,8 +159,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "After a batch of the mirror, finding what of this deployment's own rests on the nodes the batch touched means reading every label; each Steward's piece is then written at its own label, from rows read there.",
       "Nothing while it sees every label: it reads which nodes have the withdrawn node under them by an edge of this deployment's own, and that edge's label. Each message is then written inside runAtLabel at that label, from rows read there.",
     ],
+  ],
+  "src/services/curation-service.ts": [
     [
-      "After a batch of the mirror, finding what of this deployment's own rests on the nodes the batch touched means reading every label; each Steward's piece is then written at its own label, from rows read there.",
+      "Pairing each of this deployment's own nodes with a public node that has just arrived means reading nodes at every label; each request is then raised at the deployment's node's label.",
       "Nothing while it sees every label: it pairs each of the deployment's own nodes with the nearest node that arrived, by their vectors. The request to the Curator is then raised inside runAtLabel at the deployment's node's label, through requestCuration, and names the public node's id and a similarity, in fixed words.",
     ],
   ],

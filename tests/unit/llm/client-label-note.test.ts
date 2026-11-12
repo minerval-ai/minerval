@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   known: null as boolean | null,
   /** What the database client answers: the labels read, or null where nothing is held. */
   reads: vi.fn(),
+  /** When the mirror stood, at each asking; empty where no mirror is held. */
+  mirrorAsOf: [] as string[],
+  mirrorAsked: 0,
 }));
 
 vi.mock("../../../src/llm/providers/index.js", () => ({
@@ -55,6 +58,16 @@ vi.mock("../../../src/db/client.js", () => ({
   currentReadClearance: mocks.reads,
 }));
 
+// Whether this deployment keeps a mirror, and the time it stands at
+// (services/mirrored-node-service.ts). None, unless a test says so.
+vi.mock("../../../src/services/mirrored-node-service.js", () => ({
+  holdsMirror: () => mocks.mirrorAsOf.length > 0,
+  publicGraphAsOf: async () => {
+    mocks.mirrorAsked++;
+    return mocks.mirrorAsOf[Math.min(mocks.mirrorAsked - 1, mocks.mirrorAsOf.length - 1)] ?? null;
+  },
+}));
+
 vi.mock("../../../src/db/clearance.js", async (original) => ({
   ...(await original<typeof import("../../../src/db/clearance.js")>()),
   enforcementLastKnown: () => mocks.known,
@@ -63,7 +76,7 @@ vi.mock("../../../src/db/clearance.js", async (original) => ({
 import { complete, toolUseLoop } from "../../../src/llm/client.js";
 import { runAtLabel, runWithUsageContext, withAgent } from "../../../src/llm/usage-context.js";
 import { FEATURES_OFF_NOTE_SEPARATOR } from "../../../src/llm/features-off-note.js";
-import { labelNote } from "../../../src/llm/label-note.js";
+import { labelNote, mirrorNote } from "../../../src/llm/label-note.js";
 
 const usage = { inputTokens: 1, outputTokens: 1 };
 const finalTurn = { content: "done", model: "m", usage, stopReason: "end_turn", toolUses: [], rawContent: [{ type: "text", text: "done" }] };
@@ -93,6 +106,8 @@ beforeEach(() => {
   mocks.recordAgentStep.mockReset();
   mocks.reads.mockReset();
   mocks.known = null;
+  mocks.mirrorAsOf = [];
+  mocks.mirrorAsked = 0;
 });
 
 describe("where public is the only label", () => {
@@ -175,5 +190,60 @@ describe("where a second label exists", () => {
       withAgent("matcher", () => complete({ messages: [{ role: "user", content: "go" }], model: "m" }))
     ).rejects.toThrow("the database is away");
     expect(mocks.complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("on a deployment that mirrors the public graph", () => {
+  it("asks nothing about a mirror where none is held", async () => {
+    mocks.known = false;
+    const sent = capture(mocks.complete, { content: "hello", model: "m", usage, stopReason: "end_turn" });
+    await withAgent("steward", () => complete({ messages: [{ role: "user", content: "go" }], model: "m" }));
+    expect(sent).toEqual([[{ role: "user", content: "go" }]]);
+    expect(mocks.mirrorAsked).toBe(0);
+  });
+
+  it("tells a run what is mirrored inside its label note, once, as things stood when it started", async () => {
+    mocks.known = true;
+    mocks.reads.mockResolvedValue(["internal", "public"]);
+    // A batch is applied between the first turn and the second.
+    mocks.mirrorAsOf = ["2026-11-12T17:08:45.113Z", "2026-11-12T18:30:00.000Z"];
+    const note = labelNote("internal", ["internal", "public"], {
+      writesJudgments: true,
+      mirror: { publicGraphAsOf: "2026-11-12T17:08:45.113Z" },
+    });
+    expect(note).toContain("It shows the public graph as of 2026-11-12 17:08 UTC");
+    const sent = capture(mocks.completeWithTools, toolTurn, finalTurn);
+    await runAtLabel("internal", "a test", () =>
+      withAgent("steward", () =>
+        toolUseLoop({
+          initialMessages: [{ role: "user", content: "go" }],
+          tools,
+          system: "the constitution",
+          executeTool: async () => "search-output",
+        })
+      )
+    );
+    const briefed = `${note}${FEATURES_OFF_NOTE_SEPARATOR}go`;
+    expect(sent[0]).toEqual([{ role: "user", content: briefed }]);
+    expect(sent[1]![0]).toEqual({ role: "user", content: briefed });
+    expect(JSON.stringify(sent[1]).split("read through a mirror").length - 1).toBe(1);
+  });
+
+  it("gives a deployment whose only label is public the passage on its own", async () => {
+    mocks.known = false;
+    mocks.mirrorAsOf = ["2026-11-12T17:08:45.113Z"];
+    const sent = capture(mocks.complete, { content: "hello", model: "m", usage, stopReason: "end_turn" });
+    await withAgent("matcher", () => complete({ messages: [{ role: "user", content: "go" }], model: "m" }));
+    expect(sent[0]![0]!.content).toBe(
+      `${mirrorNote({ publicGraphAsOf: "2026-11-12T17:08:45.113Z" })}${FEATURES_OFF_NOTE_SEPARATOR}go`
+    );
+  });
+
+  it("says nothing of a mirror that has applied no batch yet", async () => {
+    mocks.known = false;
+    mocks.mirrorAsOf = [""];
+    const sent = capture(mocks.complete, { content: "hello", model: "m", usage, stopReason: "end_turn" });
+    await withAgent("matcher", () => complete({ messages: [{ role: "user", content: "go" }], model: "m" }));
+    expect(sent).toEqual([[{ role: "user", content: "go" }]]);
   });
 });

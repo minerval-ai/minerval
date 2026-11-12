@@ -229,6 +229,15 @@
  * a run lands at the run's label. Each label keeping its own copy of a
  * source, its own edges and its own tags is later work.
  *
+ * A deployment may also hold the public graph's own rows, through a mirror
+ * (docs/mirror.md). They are `public`, and they are the public graph's:
+ * no run changes one, and the judgment of a mirrored node at `public` is
+ * the mirrored row, so a run at `public` records none of its own there and
+ * a run at another label records its version beside it
+ * (services/mirrored-node-service.ts). A mirrored row and a row of the
+ * deployment's own never collide: where a table has a key besides its id,
+ * the key is unique within each graph (db/schema.ts, the origin column).
+ *
  * One thing is held to a run's label already: where its text may be sent.
  * A model provider or an outside service receives text only from runs at
  * the labels it is cleared for (src/provider-labels.ts), and one that

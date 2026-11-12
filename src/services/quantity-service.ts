@@ -80,7 +80,7 @@ export async function recordEstimate(input: {
   // on material at this label or is not stored (judgment-version-service.ts).
   // A mirrored quantity's estimate at its own label is the public graph's
   // (mirrored-node-service.ts).
-  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An estimate"));
+  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An estimate of it"));
   const noMaterial = await versionWithoutMaterial(input.claimId);
   if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An estimate"));
   return withTransaction(async (tx) => {

@@ -233,7 +233,7 @@ export async function recordQuestionAssessment(input: {
   // on material at this label or is not stored (judgment-version-service.ts).
   // A mirrored question's assessment at its own label is the public graph's
   // (mirrored-node-service.ts).
-  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An assessment"));
+  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An assessment of it"));
   const noMaterial = await versionWithoutMaterial(input.claimId);
   if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An assessment"));
   return withTransaction(async (tx) => {

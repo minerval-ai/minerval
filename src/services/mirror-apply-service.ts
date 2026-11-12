@@ -55,12 +55,13 @@
  * judgment moved, for the upkeep that follows (services/mirror-upkeep.ts).
  *
  * What the public graph withdraws (a deletion, a retraction, a row absent
- * from a snapshot) is removed here too, with one exception stated in the
- * manifest: a mirrored claim that this deployment's own rows still point to
- * is kept, as deprecated, so that local edges, instances and judgments are
- * not swept away with it. Other mirrored rows are deleted and local rows
- * that pointed to them follow their foreign keys, as they would on the
- * public graph; what went that way is written in the batch's notes. A merge
+ * from a snapshot) is removed here too, with the exceptions the manifest
+ * states (keepWhenReferenced): a mirrored claim, argument, instance or
+ * source that this deployment's own rows still point to is kept, marked as
+ * gone where the table has a mark, so that what the deployment recorded on
+ * it is not swept away with it. Other mirrored rows are deleted and the
+ * local link rows that pointed to them (a grouping of an edge) follow their
+ * foreign keys; what was kept and what went is in the batch's notes. A merge
  * needs no handling: the absorbed claim arrives with its state and
  * merged_into, references to it still resolve, and local rows that hang off
  * it are left as they are and listed in the notes. Nothing of the
@@ -130,6 +131,12 @@ export interface ApplyNotes {
   merged_with_local_rows?: { count: number; claims: Array<{ claim_id: string; merged_into: string; local_rows: LocalRows[] }> };
   /** Mirrored claims the public graph withdrew, kept as deprecated because local rows point to them. */
   kept_claims?: { count: number; claims: Array<{ claim_id: string; reason: WithdrawalReason; local_rows: LocalRows[] }> };
+  /**
+   * Other mirrored rows the public graph withdrew and this deployment kept,
+   * marked as gone where the table has a mark, because local rows point to
+   * them: arguments, instances and sources.
+   */
+  kept_rows?: Array<{ table: string; reason: WithdrawalReason; count: number; keys: string[] }>;
   /** Local rows that pointed to a mirrored row this batch removed, and so were deleted or unlinked with it. */
   local_rows_followed?: Array<{ table: string; reason: WithdrawalReason; local_rows: LocalRows[] }>;
   /**
@@ -274,6 +281,34 @@ async function localReferences(
   return found;
 }
 
+/**
+ * Which of `keys` in `table` a mirrored row still points to, from a table
+ * whose withdrawn rows are kept when this deployment's own point to them.
+ * The public graph removes what hangs off a row with the row, in the same
+ * cut and before it here, so a mirrored row that still points to one being
+ * removed is one that was kept.
+ */
+async function heldByKeptRows(
+  tx: MirrorQuery,
+  fks: readonly ForeignKey[],
+  table: ReplicatedTable,
+  keys: readonly string[]
+): Promise<Set<string>> {
+  const held = new Set<string>();
+  if (table.key.length !== 1 || keys.length === 0) return held;
+  for (const fk of fks) {
+    if (fk.to_table !== table.name || !fk.has_origin || fk.from_table === table.name) continue;
+    if (replicatedTable(fk.from_table)?.keepWhenReferenced === undefined) continue;
+    const rows = await tx.query<{ key: string }>(
+      `SELECT DISTINCT r.${q(fk.from_column)}::text AS key FROM ${fk.from_table} r
+        WHERE r.${q(fk.from_column)} = ANY($1::uuid[]) AND r.origin = 'mirror'`,
+      [keys]
+    );
+    for (const r of rows) held.add(r.key);
+  }
+  return held;
+}
+
 function sumLocalRows(lists: Iterable<LocalRows[]>): LocalRows[] {
   const total = new Map<string, LocalRows>();
   for (const list of lists) {
@@ -387,29 +422,68 @@ async function fksOf(w: Working): Promise<ForeignKey[]> {
 async function removeRows(w: Working, table: ReplicatedTable, keys: readonly string[], reason: WithdrawalReason): Promise<void> {
   if (keys.length === 0) return;
   const counts = countsFor(w, table.name);
-  const refs = await localReferences(w.tx, await fksOf(w), table, keys);
+  const fks = await fksOf(w);
+  const refs = await localReferences(w.tx, fks, table, keys);
+  // A row a kept row points to is kept with it: deleting it would take the
+  // kept row, and what this deployment recorded on that, by the foreign key.
+  const held = table.keepWhenReferenced === undefined ? new Set<string>() : await heldByKeptRows(w.tx, fks, table, keys);
+  const isKept = (k: string) => refs.has(k) || held.has(k);
   let toDelete = [...keys];
-  if (table.keepWhenReferenced && refs.size > 0) {
-    const kept = keys.filter((k) => refs.has(k));
-    toDelete = keys.filter((k) => !refs.has(k));
-    await w.tx.query(
-      `UPDATE ${q(table.name)} x SET ${table.keepWhenReferenced}${table.touchOnWrite ? `, ${q(table.touchOnWrite)} = now()` : ""}
-        WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'mirror'`,
-      [kept]
+  if (table.keepWhenReferenced !== undefined && keys.some(isKept)) {
+    const kept = keys.filter(isKept);
+    toDelete = keys.filter((k) => !isKept(k));
+    // A row kept at an earlier batch is met again by every later snapshot,
+    // which does not hold it either. What is recorded and told below is for
+    // the rows this batch is the first to keep.
+    const firstKept = new Set(
+      table.name === "claims" || table.name === "arguments"
+        ? (
+            await w.tx.query<{ id: string }>(
+              `SELECT id::text FROM ${q(table.name)} x WHERE x.id = ANY($1::uuid[])
+                  AND ${table.name === "claims" ? "x.state <> 'deprecated'" : "x.retired_at IS NULL"}`,
+              [kept]
+            )
+          ).map((r) => r.id)
+        : kept
     );
-    counts.kept += kept.length;
-    changedFor(w, table.name).kept.push(...kept);
-    if (table.name === "claims") {
-      for (const key of kept) w.withdrawn.add(key);
-      await recordNodeChanges(
-        w,
-        kept.map((claim_id) => ({ claim_id, change: "withdrawn" as const, detail: { how: reason } }))
+    const marks = [table.keepWhenReferenced, table.touchOnWrite ? `${q(table.touchOnWrite)} = now()` : ""].filter((m) => m !== "");
+    if (marks.length > 0) {
+      await w.tx.query(
+        `UPDATE ${q(table.name)} x SET ${marks.join(", ")} WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'mirror'`,
+        [kept]
       );
     }
-    const note = (w.notes.kept_claims ??= { count: 0, claims: [] });
-    note.count += kept.length;
-    for (const key of kept) {
-      if (note.claims.length < NOTE_LIMIT) note.claims.push({ claim_id: key, reason, local_rows: refs.get(key)! });
+    counts.kept += kept.length;
+    changedFor(w, table.name).kept.push(...kept);
+    if (table.name !== "claims") {
+      (w.notes.kept_rows ??= []).push({ table: table.name, reason, count: kept.length, keys: kept.slice(0, NOTE_LIMIT) });
+    }
+    if (table.name === "arguments") {
+      const of = await w.tx.query<{ id: string; claim_id: string; name: string }>(
+        `SELECT id::text, claim_id::text, name FROM arguments WHERE id = ANY($1::uuid[])`,
+        [kept]
+      );
+      await recordNodeChanges(
+        w,
+        of
+          .filter((a) => firstKept.has(a.id))
+          .map((a) => ({ claim_id: a.claim_id, change: "argument_removed" as const, detail: { argument_id: a.id, name: a.name } }))
+      );
+    }
+    if (table.name === "claims") {
+      const fresh = kept.filter((key) => firstKept.has(key));
+      for (const key of fresh) w.withdrawn.add(key);
+      await recordNodeChanges(
+        w,
+        fresh.map((claim_id) => ({ claim_id, change: "withdrawn" as const, detail: { how: reason } }))
+      );
+    }
+    if (table.name === "claims") {
+      const note = (w.notes.kept_claims ??= { count: 0, claims: [] });
+      note.count += kept.length;
+      for (const key of kept) {
+        if (note.claims.length < NOTE_LIMIT) note.claims.push({ claim_id: key, reason, local_rows: refs.get(key) ?? [] });
+      }
     }
   } else if (refs.size > 0) {
     (w.notes.local_rows_followed ??= []).push({ table: table.name, reason, local_rows: sumLocalRows(refs.values()) });
