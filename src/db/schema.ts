@@ -20,7 +20,6 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { eq, sql, type SQL } from "drizzle-orm";
-import { PUBLIC_LABEL } from "../labels.js";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -98,13 +97,24 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // holds its default, 'public', on every row, and the comment on each says
 // what label the row will carry.
 // ---------------------------------------------------------------------------
-export const labels = pgTable("labels", {
-  name: text("name").primaryKey(),
-  description: text("description").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const labels = pgTable(
+  "labels",
+  {
+    name: text("name").primaryKey(),
+    description: text("description").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // A label's name is written into a connection's settings (the clearance
+    // a connection reads with, where the database holds reads to one), so
+    // the table holds it to a plain word: lower-case letters, digits,
+    // hyphens and underscores, starting with a letter. Nothing in a name
+    // can end the setting it is written in.
+    check("labels_name_plain", sql`${table.name} ~ '^[a-z][a-z0-9_-]{0,62}$'`),
+  ]
+);
 
 export const labelReads = pgTable(
   "label_reads",
@@ -121,12 +131,22 @@ export const labelReads = pgTable(
 
 // The label column of a row that carries one. It is sensitivity_label, not
 // label, because some tables that will need one already have a `label` that
-// is a display name (actions, source_segments). The default is what a row
-// written before labels existed is, and what a write outside any run gets.
+// is a display name (actions, source_segments).
+//
+// The default is for an insert that does not say its label, and it is the
+// label of the connection the insert arrives on (minerval_default_label(),
+// defined in the migration that set it: the connection's minerval.label
+// setting). A connection opened for a run at a label will carry that
+// label, so a write that forgot its stamp inside the run lands where the
+// stamp would have put it. Where the connection carries no label, which
+// is every connection today, the default is 'public' while 'public' is the
+// one label the deployment has: every write on the public graph, as
+// before. Where a second label exists and nothing says which one the row
+// is for, the insert is refused: a row is never public by omission.
 const sensitivityLabelColumn = () =>
   text("sensitivity_label")
     .notNull()
-    .default(PUBLIC_LABEL)
+    .default(sql`minerval_default_label()`)
     .references(() => labels.name);
 
 // ---------------------------------------------------------------------------

@@ -146,7 +146,7 @@ describe("the labels table", () => {
     expect(pairs!.n).toBe("0");
   });
 
-  it("gives every labelled table a sensitivity_label that defaults to public and points here", async () => {
+  it("gives every labelled table a sensitivity_label that defaults to the connection's label and points here", async () => {
     // The column has its own name because `label` is already a display name
     // on two tables that carry one (actions, source_segments).
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
@@ -192,7 +192,7 @@ describe("the labels table", () => {
         "reputation_events", "request_targets", "request_work", "requests", "research_runs",
         "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
         "source_relationships", "source_segments", "sources", "taggings", "tags",
-      ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 

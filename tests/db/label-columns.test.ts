@@ -94,7 +94,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-five tables, public by default, each with a key to labels", async () => {
+  it("is on ninety-five tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -104,7 +104,7 @@ describe("the label column, in the catalog", () => {
     );
     expect(columns).toHaveLength(95);
     for (const column of columns) {
-      expect(column, column.table_name).toMatchObject({ column_default: "'public'::text", is_nullable: "NO", data_type: "text" });
+      expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
     // One key each, and on no table that lacks the column.
     expect((await keys()).map((k) => k.table_name)).toEqual(columns.map((c) => c.table_name));
