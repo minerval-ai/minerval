@@ -488,10 +488,14 @@ without the ruleset.
 
 **Migration renumbering.** Two open PRs that each add a migration take the
 same number, so whichever merges second conflicts in `src/db/migrations`
-(CLAUDE.md). `.github/workflows/renumber-migrations.yml` runs on every push
-to `main`. For each open PR from this repository whose conflicts with main
-are all inside the migrations folder, it merges main, runs
-`npm run db:renumber`, and pushes the merge to the PR's branch. CI then
+(CLAUDE.md). Two that change the same prompt, skill or document conflict in
+`web/content` as well, which `scripts/sync-frontend-content.ts` generates.
+`.github/workflows/renumber-migrations.yml` runs on every push to `main`.
+For each open PR from this repository whose conflicts with main are all
+inside those two folders, it merges main, takes main's side of the
+generated files and regenerates them from the merged source, runs
+`npm run db:renumber` if the migrations conflicted, and pushes the merge to
+the PR's branch. CI then
 runs on the result as it would on any push. A PR that also conflicts
 elsewhere is left alone and named in the run's summary; so is one where
 `db:renumber` cannot reconcile the schema, such as when main changed a
@@ -506,15 +510,17 @@ repository only, with **Contents: read and write** and nothing else (listing
 PRs uses the built-in token). Without the secret every run fails and says
 why.
 
-Renumbering runs each branch's own code (its `renumber-migrations.ts`, and
-its `schema.ts` through drizzle-kit), and an admin's token can push to
+Both fixes run each branch's own code (its `renumber-migrations.ts`, its
+`schema.ts` through drizzle-kit, and its content sync), and an admin's token can push to
 `main` past the ruleset, so the two never share a runner. The `prepare` job
 merges and renumbers holding no secret, and hands each merge to the `push`
 job as a git bundle. `push` runs no branch code. It pushes a merge only if
 it is a merge of main into the branch's current tip, the PR's only
-conflicts with main are in the migrations folder, it differs from git's own
-merge only inside that folder, and every `.sql` file there is one main or
-the branch already has. Anything else is refused and named in the run's
+conflicts with main are in those two folders, it differs from git's own
+merge only inside them, and every `.sql` file in the migrations folder is
+one main or the branch already has. The regenerated `web/content` is the
+site's copy of text, not code anything runs, and CI's drift test checks it
+as it would on any push. Anything else is refused and named in the run's
 summary.
 
 **The weekly maintenance pass** takes what the workflow leaves: major
