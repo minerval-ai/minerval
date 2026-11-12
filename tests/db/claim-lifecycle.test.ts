@@ -6,7 +6,7 @@
  * reason and the successors; nothing is delivered to a retired node's inbox,
  * and what is addressed to one with a live successor goes there; the inbox
  * clean-up script closes what sat on retired nodes before; and migration
- * 0133's backfill gives each live merge its record.
+ * 0134's backfill gives each live merge its record.
  *
  * The scratch DB is shared across files, so every assertion is about the
  * rows seeded here.
@@ -172,7 +172,7 @@ describe("the Curator's surgery on record", () => {
     expect(changes[1]!.reason).toBe("dbtest: they differ");
   });
 
-  it("is backfilled for live merges by migration 0133, and only for those", async () => {
+  it("is backfilled for live merges by migration 0134, and only for those", async () => {
     const survivor = await seedClaim("backfill survivor");
     const loser = await seedClaim("backfill loser");
     const unmerged = await seedClaim("reversed loser");
@@ -187,7 +187,7 @@ describe("the Curator's surgery on record", () => {
       ]
     );
     const statements = readFileSync(
-      fileURLToPath(new URL("../../src/db/migrations/0133_claim_state_changes.sql", import.meta.url)),
+      fileURLToPath(new URL("../../src/db/migrations/0134_claim_state_changes.sql", import.meta.url)),
       "utf8"
     ).split("--> statement-breakpoint");
     const backfill = statements.find((s) => s.includes('INSERT INTO "claim_state_changes"'))!;
