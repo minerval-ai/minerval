@@ -2260,9 +2260,18 @@ that forgets to filter is filtered all the same and a wrong stamp is
 refused. Code that writes a row belonging to another label (a document's
 segments, at the document's) runs that write at that label. A row's label
 does not change on such a connection: an update that would change it is
-refused. The one exception is the ledger's own rule, which the database
-checks: a finished ledger row that is opened again takes the label of the
-work that reopens it.
+refused. The one exception is the ledger's own rule, and the database lets
+through exactly it: a ledger row that was finished (done, superseded or
+cancelled) and is opened by the same statement takes the label of the
+connection that reopens it, and only where that label reads the row's old
+one. So a row moves only to where fewer people read it, never down to
+`public` and never sideways, and the statement that reopens it replaces its
+display text and its target, so nothing written at the old label is carried
+under the new one. An upsert that carries its writer's words (a reasoning, a
+note, a summary) applies only to a row at the writer's own label; where the
+row is there at another label the writer is told that nothing was written
+(`sameLabelOnly` in `src/db/clearance.ts`,
+`tests/unit/db/upsert-labels.test.ts`).
 
 **A request's label.** A person's request has a clearance and, until it is
 given one, no label to write at. Each request that writes is given one
@@ -2295,14 +2304,20 @@ refused. The role's password is derived from the owner's credentials unless
 verifier, never as text, and only when a login with it does not already
 work.
 
-**The tables that say what a clearance is.** `labels`, `label_reads`,
-`permission_grants` and `account_groups` can be read on a connection held to
-a clearance and written only on the owner's, so a connection that reads
-`public` alone cannot widen what anyone reads. `public` reads no other label
-by a constraint on `label_reads`. The administrators' log
+**The tables that say what a clearance is, and who a request is.** `labels`,
+`label_reads`, `permission_grants` and `account_groups` say what an account
+reads. `api_keys`, `oauth_tokens`, `oauth_clients` and
+`oauth_authorization_requests` say which account a request is: a key or a
+token is as good as the account it names. All eight can be read on a
+connection held to a clearance and written only on the owner's, so a
+connection that reads `public` alone can neither widen what anyone reads nor
+make itself a key to an account that reads more. On `contributors`, the
+column that says which sign-in an account belongs to (`external_id`) cannot
+be changed on such a connection; the rest of the row can. `public` reads no
+other label by a constraint on `label_reads`. The administrators' log
 (`administrative_events`) can be added to and not changed. Labels are
-defined, and grants made, through the API, which checks the administrator
-and then writes as the owner.
+defined, grants made and keys minted through the API, which checks who is
+asking and then writes as the owner.
 
 **System work.** Migrations, the workers that find work at any label before
 running each piece at its own, retention and the step below must see every
@@ -2323,7 +2338,15 @@ is read whole all the same, through `minerval_whole.allocation_money` and
 `minerval_whole.regrant_money`, which leave the text out (`src/db/money.ts`).
 A run's cost is split across everyone who paid for it and a mandate's room
 is its budget less everything it has placed; either sum taken over one
-label's rows would spend the same money twice.
+label's rows would spend the same money twice. The views are not read-only:
+settling money changes rows at every label, so a cleared connection may
+update through them exactly the columns settlement writes (an allocation's
+amount, what of it is spent and when it was released; a regrant's amount and
+what came back) and may delete a regrant that is returned in full. It may
+change no other column through them, add no row, and delete no allocation.
+A listing or a feed of commissions is read from the table, under the
+policies: the change feed shows a commission to the readers of the label it
+was placed at.
 
 **Caches.** A cache in a process's memory that holds something read from a
 labelled table has its reader in its key (`readerKey` in
@@ -2388,7 +2411,18 @@ where reads are held.
   [accounts.md](accounts.md), "Opening raw sources"). A passage an agent
   quoted from a source is shown to everyone who reads at the label.
 - A run may change or delete a row at any label it reads. An internal run
-  that rewords a public node has written into a public row.
+  that rewords a public node has written into a public row. Upserts that
+  carry text are held to the writer's own label, as above; a plain update
+  of a row's text is not.
+- A request is given a label only by the rule of a route that writes
+  (`src/server/request-labels.ts`). A read has none, and neither has a
+  route the table says adds no labelled row, and a labelled row such a
+  request did add would be stamped `public`. The case that exists is the
+  usage row of an embedding call made for a search, which holds counts and
+  no text. `tests/db/request-labels.test.ts` drives every writing route
+  against a private row and counts every labelled table at every label
+  before and after. The routes the operator key guards act for no person,
+  and read and write `public` alone.
 - A table holds one row for each identity whatever the labels. An insert
   that collides with a row the writer cannot read is refused and says so,
   which tells the writer the row exists. A node holds one judgment in force,
@@ -2397,8 +2431,12 @@ where reads are held.
   for a public claim, public work on that claim is refused until the row is
   the public's again, so private work can hold up public work on a claim
   and show that it exists. Each label keeping its own is later work.
-- The money views show every label's amounts, ledger keys and ids, without
-  the text. A ledger key can hold an address (`ingest:<url>`).
+- The money views show every label's amounts, ledger keys, ids and who
+  commissioned, without the text, and let any cleared connection change the
+  money columns of any label's row, which is what settlement does. A ledger
+  key can hold an address (`ingest:<url>`). Work at one label can therefore
+  mark another label's money spent or released; it cannot rewrite its text
+  or its key, or delete it.
 - Read-only SQL refuses a query whose estimate passes the limit, and that
   estimate counts rows at every label: the refusal is one bit about them.
   Counts of waiting work (`queue_depth_snapshots`) are over every label too.

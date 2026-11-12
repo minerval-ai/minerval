@@ -14,7 +14,8 @@ import { ALLOCATION_MONEY, REGRANT_MONEY } from "../../../src/db/money.js";
  * mandate's room looks larger than it is, a run's cost is split across
  * fewer payers than covered it. So money is read and settled through the
  * whole views, and the tables are named only to add a row, which is held to
- * its writer's label, or to read the text.
+ * its writer's label, to read the text, or to show a reader what was placed
+ * (a listing or a feed, which is for the readers of each row's label).
  *
  * Every statement under src/ that names one of the two tables is listed
  * here with what it is there for. A failure means one was added or moved:
@@ -28,6 +29,9 @@ const ON_THE_TABLE: Record<string, string[]> = {
     "INTO action_allocations: a mandate's commission, added at the label of the work that placed it.",
     "INTO action_allocations: a person's commission, added at the label of the request that placed it.",
     "INTO action_allocations: a run's commission from its own budget, added at the run's label.",
+  ],
+  "src/services/graph-change-service.ts": [
+    "FROM action_allocations: the change feed's commission events, shown to the readers of the label each was placed at.",
   ],
   "src/services/mandate-service.ts": [
     "FROM action_allocations: a mandate's commissions as a reader is shown them, each with its reason. A listing with text, so it shows the rows the reader's clearance reads.",

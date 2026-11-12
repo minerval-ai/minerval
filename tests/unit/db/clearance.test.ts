@@ -83,6 +83,29 @@ describe("knowing that enforcement is off", () => {
     expect(enforcementKnownOff()).toBe(false);
   });
 
+  // A review found the belief was timed from when the answer arrived. A
+  // check in flight while enforcement was turned on could then come back
+  // "off" and keep the process on the owner's pool for a whole interval
+  // after the switch, past the wait that armEnforcement makes.
+  it("is as old as the question, not as the answer's arrival", async () => {
+    vi.useFakeTimers();
+    resetClearanceState();
+    const slow = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      return [{ on: false }];
+    }) as never;
+    const asked = enforcementOn(slow);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(await asked).toBe(false);
+    // Three seconds of the interval are already gone.
+    expect(enforcementKnownOff()).toBe(true);
+    await vi.advanceTimersByTimeAsync(ENFORCEMENT_OFF_RECHECK_MS - 3_000 - 1);
+    expect(enforcementKnownOff()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    // Ten seconds after the question was sent, whenever its answer came.
+    expect(enforcementKnownOff()).toBe(false);
+  });
+
   it("is never known where enforcement is on", async () => {
     resetClearanceState();
     expect(await enforcementOn(answering(true))).toBe(true);

@@ -188,20 +188,41 @@ export const COVERAGE_SQL = `
                AND al.released_at IS NULL
                AND (al.action_id IS NULL OR al.action_id = a.id)), 0)`;
 
+/** The statuses of a ledger row whose work is over. A row in one of these is reopened by its group's next piece of work. */
+export const FINISHED_STATUSES_SQL = `('done', 'superseded', 'cancelled')`;
+
 /**
- * What an upsert that can reopen a finished row does with the row's label
- * (SQL fragment for its SET list; src/labels.ts). Every producer below
- * stamps a new row with the label of the work that opens it (currentLabel),
- * and the executors run a row at its label. But a group's row is reused for
- * the group's next piece of work, so the label has to follow the work: a
- * row that is open or running keeps the label of the work already waiting
- * on it, and a finished row opened again takes the label of the work that
- * reopens it. Without this a claim first assessed at one label would have
- * every later pass run at that label, whatever asked for it.
+ * What an upsert that can reopen a finished row does with the row's label,
+ * its display text and its target (SQL fragment for its SET list;
+ * src/labels.ts). Every producer below stamps a new row with the label of
+ * the work that opens it (currentLabel), and the executors run a row at its
+ * label. But a group's row is reused for the group's next piece of work, so
+ * the label has to follow the work: a row that is open or running keeps the
+ * label of the work already waiting on it, and a finished row opened again
+ * takes the label of the work that reopens it. Without this a claim first
+ * assessed at one label would have every later pass run at that label,
+ * whatever asked for it.
+ *
+ * The display text and the target go with the label, in the same statement:
+ * a reopened row is the new work's row, and nothing the old label's work
+ * wrote in it is carried under the new label. A row that keeps its label
+ * keeps its text too, so work that joins an open row at another label
+ * writes none of its own words into it.
+ *
+ * The database holds a cleared connection to this (the label_fixed_guard
+ * trigger): it lets a row's label change only where the row was finished,
+ * the statement opens it, the new label is the connection's own, and the
+ * new label reads the old one. So every upsert that uses this fragment also
+ * sets status to open for a finished row. A reopening by work whose label
+ * does not read the row's (a request, at `public`, on a row finished at a
+ * private label) is refused there.
  */
 export const LABEL_ON_REOPEN_SQL = `sensitivity_label = CASE
-             WHEN actions.status IN ('open', 'running') THEN actions.sensitivity_label
-             ELSE EXCLUDED.sensitivity_label END`;
+             WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.sensitivity_label
+             ELSE actions.sensitivity_label END,
+           label = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.label ELSE actions.label END,
+           target_ref = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.target_ref
+                             ELSE actions.target_ref END`;
 
 // ---------------------------------------------------------------------------
 // Producers: keep the ledger's open rows in sync with the graph's state.
@@ -404,7 +425,6 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
      VALUES ('request', $1, $2, $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-           label = EXCLUDED.label,
            ${LABEL_ON_REOPEN_SQL},
            status = CASE WHEN actions.status = 'running'
                          THEN actions.status ELSE 'open' END,
@@ -577,7 +597,7 @@ export async function reconcileActions(): Promise<{
        VALUES ('lookout_run', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
       // A lookout decides for its work: its run is opened at its label.
@@ -611,7 +631,7 @@ export async function reconcileActions(): Promise<{
        VALUES ('correspondent_run', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
       // And so does a correspondent: its run is opened at its label.
@@ -722,7 +742,7 @@ async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promi
        VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          -- A grant still in 'planning' with a closed planning action
          -- wants a fresh run (a failed write, a pushed-back plan).
@@ -758,7 +778,7 @@ async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promi
        VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')
            AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
@@ -944,7 +964,7 @@ export async function ensureFormalizeAction(
                          WHERE f.claim_id = c.id AND f.status = 'published')
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-           sensitivity_label = EXCLUDED.sensitivity_label,
+           ${LABEL_ON_REOPEN_SQL},
            status = 'open', updated_at = now()
        WHERE actions.status IN ('done', 'cancelled', 'superseded')
          AND actions.updated_at < now() - make_interval(hours => ${FORMALIZE_RETRY_HOURS})`,

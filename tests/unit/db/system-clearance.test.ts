@@ -76,6 +76,18 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing. The facts go to the startup check and name tables and roles, not rows.",
     ],
   ],
+  "src/services/api-key-service.ts": [
+    [
+      "An API key says who a request is, so keys are written on the owner's connection. The caller has checked whose key it is.",
+      "A key for the account the caller was checked to be, its revocation, and the time it was last used. Nothing read from another row.",
+    ],
+  ],
+  "src/services/oauth-service.ts": [
+    [
+      "OAuth clients, authorizations and tokens say who a request is, so they are written on the owner's connection. The flow has verified the client, the code or the token.",
+      "A client's registration, a pending authorization, and tokens for the account that approved it. Nothing read from a labelled table.",
+    ],
+  ],
   "src/services/label-admin-service.ts": [
     [
       "A label and what it reads are the wall itself, so they are written on the owner's connection. The caller has checked that the actor may administer.",

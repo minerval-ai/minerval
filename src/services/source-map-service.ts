@@ -21,6 +21,7 @@
  * message written for the agent; the tool executors turn that into a
  * structured refusal (§20).
  */
+import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
@@ -538,7 +539,8 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
   // A first reading takes this run's label, whatever the source's or the
   // claim's: a reading is the reader's. A re-read replaces the reading in
   // place and leaves the label it has (src/labels.ts).
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_instance_readings
        (instance_id, support, deployment, note, quote_check, worth_reading,
         worth_reading_reason, source_read, model, created_by, sensitivity_label)
@@ -554,6 +556,7 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
        model = EXCLUDED.model,
        created_by = EXCLUDED.created_by,
        updated_at = now()
+     ${sameLabelOnly("claim_instance_readings")}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       instanceId,
@@ -568,6 +571,8 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
       input.createdBy,
       currentLabel(),
     ]
+  ),
+    "a reading of this passage"
   );
   // The current reading is replaced in place; the log keeps every one, so a
   // source's history shows a reading that changed (#507). Each log row is
@@ -665,7 +670,8 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
     [input.claimId, toSourceId]
   );
 
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_provenance_edges
        (from_instance_id, to_source_id, to_instance_id, relation_type, fidelity,
         evidence, reasoning, confidence, target_read, created_by, sensitivity_label)
@@ -679,6 +685,7 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
        target_read = EXCLUDED.target_read,
        created_by = EXCLUDED.created_by,
        created_at = now()
+     ${sameLabelOnly("claim_provenance_edges")}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       fromInstanceId,
@@ -695,6 +702,8 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
       // joins carry (src/labels.ts). An edge already there keeps its label.
       currentLabel(),
     ]
+  ),
+    "this provenance edge"
   );
   const row = rows[0]!;
   const kind = toSourceKind
@@ -748,7 +757,8 @@ export async function recordSourceRelationship(input: RecordSourceRelationshipIn
   if (found.length !== 2) {
     throw new SourceMapError("Both sources must already exist in the graph; take their ids from provenance_get_map.");
   }
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO source_relationships
        (parent_source_id, child_source_id, relation_type, reasoning, confidence, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -757,8 +767,11 @@ export async function recordSourceRelationship(input: RecordSourceRelationshipIn
        confidence = EXCLUDED.confidence,
        created_by = EXCLUDED.created_by,
        created_at = now()
+     ${sameLabelOnly("source_relationships")}
      RETURNING id, (xmax = 0) AS inserted`,
     [parent, child, relationType, reasoning, confidence, input.createdBy, currentLabel()]
+  ),
+    "this relationship between the two sources"
   );
   const row = rows[0]!;
   return { id: row.id, parent_source_id: parent, child_source_id: child, replaced: !row.inserted };
@@ -809,7 +822,8 @@ export async function recordProvenanceRoot(input: RecordProvenanceRootInput): Pr
         "Record the edge that reaches it first (provenance_record_edge), then mark it."
     );
   }
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_provenance_roots (claim_id, source_id, status, basis, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (claim_id, source_id) DO UPDATE SET
@@ -817,8 +831,11 @@ export async function recordProvenanceRoot(input: RecordProvenanceRootInput): Pr
        basis = EXCLUDED.basis,
        created_by = EXCLUDED.created_by,
        updated_at = now()
+     ${sameLabelOnly("claim_provenance_roots")}
      RETURNING id, (xmax = 0) AS inserted`,
     [claimId, sourceId, status, basis, input.createdBy, currentLabel()]
+  ),
+    "this node's record of where the source stands"
   );
   const row = rows[0]!;
   return { id: row.id, source_id: sourceId, status, has_upstream: place.has_upstream, replaced: !row.inserted };
@@ -877,7 +894,8 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
   const edgesRecorded = Number(counts?.edges_recorded ?? 0);
   // A claim has one map, refreshed in place: the first run to write it sets
   // its label and a later rewrite leaves that as it was (src/labels.ts).
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_source_maps
        (claim_id, summary, material, sources_considered, sources_read, edges_recorded, model, mapped_by,
         sensitivity_label)
@@ -891,6 +909,7 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
        model = EXCLUDED.model,
        mapped_by = EXCLUDED.mapped_by,
        mapped_at = now()
+     ${sameLabelOnly("claim_source_maps")}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       claimId,
@@ -903,6 +922,8 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
       input.mappedBy,
       currentLabel(),
     ]
+  ),
+    "this node's source map"
   );
   const row = rows[0]!;
   return {

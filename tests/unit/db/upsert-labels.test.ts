@@ -1,0 +1,124 @@
+import { readFileSync, readdirSync } from "fs";
+import { dirname, join, relative, resolve } from "path";
+import { fileURLToPath } from "url";
+import { describe, expect, it } from "vitest";
+
+/**
+ * An upsert onto a labelled table does not write one label's words into
+ * another label's row (sameLabelOnly in src/db/clearance.ts).
+ *
+ * A table holds one row for each identity whatever the labels, so an upsert
+ * by work at one label can land on a row another label wrote. Where the
+ * writer reads that row the label policy allows the update, and what the
+ * update carries is then read by the row's own readers: a private run's
+ * reasoning in a public edge. A review found a private run's words reaching
+ * the public issue tracker this way.
+ *
+ * So every upsert onto a labelled table is here. One that carries text from
+ * its writer applies only where the row is at the writer's own label, and
+ * tells the writer when it is not. Each of the others is listed with what
+ * it writes and why that is no one's words. A failure means an upsert was
+ * added or changed: if its DO UPDATE sets anything the run wrote in words,
+ * give it sameLabelOnly and writtenAtOwnLabel.
+ */
+const OTHERWISE: Record<string, string> = {
+  "src/services/action-service.ts actions":
+    "The ledger's rows. A row that is open keeps its label and its text; a finished one that is reopened takes the reopener's label, text and target together (LABEL_ON_REOPEN_SQL), which the database checks.",
+  "src/llm/agents/program-officer.ts actions": "A sitting's ledger row, by the same rule (LABEL_ON_REOPEN_SQL).",
+  "src/services/prize-claim-service.ts actions": "A prize review's ledger row: the update sets a time and nothing else.",
+  "src/services/commission-service.ts action_allocations": "Money added to a placement already there: an amount.",
+  "src/services/report-service.ts agent_reports":
+    "A repeat of a report. Each column that holds the reporter's words is set only where the row is at the reporter's own label; otherwise the row gets the count and the time.",
+  "src/services/attempt-service.ts lean_checks":
+    "The checker's verdict on one submission, keyed by the submission's hash and the checker's version: the same output whoever asks.",
+  "src/services/formalization-service.ts lean_checks": "The checker's verdict on one submission, as above.",
+  "src/services/quantity-service.ts quantity_cuts": "A direction and a number.",
+  "src/services/feed-service.ts lookout_feeds":
+    "A feed's settings and the title the feed itself gives, on the lookout's own row for that address.",
+  "src/services/session-service.ts agent_sessions": "What a paused session is waiting for, added by that session's own run to its own row.",
+};
+
+const HELD = "sameLabelOnly";
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const rel = (path: string) => relative(repo, path).split("\\").join("/");
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === "node_modules" || entry.name === "migrations" ? [] : sourceFiles(path);
+    return entry.name.endsWith(".ts") ? [path] : [];
+  });
+}
+
+/** The labelled tables, by their names in SQL and by the names of their schema objects. */
+function labelledTables(): { sql: Set<string>; objects: Set<string> } {
+  const schema = readFileSync(join(repo, "src/db/schema.ts"), "utf-8");
+  const starts = [...schema.matchAll(/export const (\w+) = pgTable\(\s*"(\w+)"/g)];
+  const sql = new Set<string>();
+  const objects = new Set<string>();
+  starts.forEach((m, i) => {
+    const body = schema.slice(m.index!, i + 1 < starts.length ? starts[i + 1]!.index! : schema.length);
+    if (!body.includes("sensitivityLabelColumn()")) return;
+    objects.add(m[1]!);
+    sql.add(m[2]!);
+  });
+  return { sql, objects };
+}
+
+/** Each upsert in a file onto a labelled table: the table, and whether its update is held to the writer's label. */
+export function upserts(text: string, tables: { sql: Set<string>; objects: Set<string> }): Array<{ table: string; held: boolean }> {
+  const found: Array<{ table: string; held: boolean }> = [];
+  for (const m of text.matchAll(/INSERT INTO\s+"?(\w+)"?[^`]*?ON CONFLICT[^`]*?DO UPDATE\s+SET([^`]*)`/g)) {
+    if (tables.sql.has(m[1]!)) found.push({ table: m[1]!, held: m[2]!.includes(`\${${HELD}("${m[1]}")}`) });
+  }
+  for (const m of text.matchAll(/\.onConflictDoUpdate\(/g)) {
+    const inserted = [...text.slice(Math.max(0, m.index! - 900), m.index!).matchAll(/\.insert\((\w+)\)/g)].pop()?.[1];
+    if (!inserted || !tables.objects.has(inserted)) continue;
+    const call = text.slice(m.index!, m.index! + 900);
+    found.push({ table: inserted, held: /setWhere:[^\n]*sensitivityLabel\} = excluded\.sensitivity_label/.test(call) });
+  }
+  return found;
+}
+
+describe("an upsert onto a labelled table", () => {
+  const tables = labelledTables();
+
+  it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
+    expect(tables.sql.size).toBe(98);
+    const unheld = new Set<string>();
+    let held = 0;
+    for (const path of sourceFiles(join(repo, "src"))) {
+      for (const upsert of upserts(readFileSync(path, "utf-8"), tables)) {
+        if (upsert.held) held++;
+        else unheld.add(`${rel(path)} ${upsert.table}`);
+      }
+    }
+    expect([...unheld].sort()).toEqual(Object.keys(OTHERWISE).sort());
+    // The quantity's definition (three writers), the three question edges,
+    // the five rows of a node's source map, and a page's shared analysis.
+    expect(held).toBe(12);
+  });
+
+  it("never takes a ledger row's label from the incoming row except through the one fragment that takes its text too", () => {
+    for (const path of sourceFiles(join(repo, "src"))) {
+      const text = readFileSync(path, "utf-8");
+      expect(text.includes("sensitivity_label = EXCLUDED.sensitivity_label,"), rel(path)).toBe(false);
+    }
+    const fragment = /export const LABEL_ON_REOPEN_SQL = `([^`]*)`/.exec(
+      readFileSync(join(repo, "src/services/action-service.ts"), "utf-8")
+    )![1]!;
+    for (const column of ["sensitivity_label", "label", "target_ref"]) {
+      expect(fragment, column).toMatch(new RegExp(`\\b${column} = CASE\\s+WHEN actions\\.status IN \\$\\{FINISHED_STATUSES_SQL\\} THEN EXCLUDED\\.${column}`));
+    }
+  });
+
+  it("tells an upsert that is held from one that is not", () => {
+    const some = { sql: new Set(["tags"]), objects: new Set(["tags"]) };
+    const sqlOf = (tail: string) => "`INSERT INTO tags (a) VALUES ($1) ON CONFLICT (a) DO UPDATE SET b = EXCLUDED.b " + tail + "`";
+    expect(upserts(sqlOf(""), some)).toEqual([{ table: "tags", held: false }]);
+    expect(upserts(sqlOf('${sameLabelOnly("tags")} RETURNING id'), some)).toEqual([{ table: "tags", held: true }]);
+    expect(upserts("`INSERT INTO tags (a) VALUES ($1) ON CONFLICT DO NOTHING`", some)).toEqual([]);
+    expect(upserts("`INSERT INTO other (a) VALUES ($1) ON CONFLICT (a) DO UPDATE SET b = 1`", some)).toEqual([]);
+  });
+});

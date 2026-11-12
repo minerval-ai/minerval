@@ -9,6 +9,7 @@
  * the prior structure without erasing history). `reverseReconciliation`
  * undoes a logged event.
  */
+import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -585,12 +586,15 @@ export async function changeNodeKind(input: {
   if (definition) {
     // A definition written for the first time takes this run's label; one
     // that is revised keeps the label it has (src/labels.ts).
-    await rawQuery(
+    writtenAtOwnLabel(
+      await rawQuery(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, 'curator', $6)
        ON CONFLICT (claim_id) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
-             conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
+             conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
+       ${sameLabelOnly("quantity_definitions")}
+       RETURNING 1 AS written`,
       [
         claimId,
         definition.measures,
@@ -599,6 +603,8 @@ export async function changeNodeKind(input: {
         JSON.stringify(definition.unit),
         currentLabel(),
       ]
+    ),
+      "this quantity's definition"
     );
   }
   await rawQuery(`UPDATE claims SET kind = $2, updated_at = now() WHERE id = $1`, [claimId, to]);
@@ -704,12 +710,15 @@ export async function setQuantityDefinition(input: {
     `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions WHERE claim_id = $1`,
     [input.claimId]
   );
-  await rawQuery(
+  writtenAtOwnLabel(
+      await rawQuery(
     `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, 'curator', $6)
      ON CONFLICT (claim_id) DO UPDATE
        SET measures = EXCLUDED.measures, population = EXCLUDED.population,
-           conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
+           conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
+       ${sameLabelOnly("quantity_definitions")}
+       RETURNING 1 AS written`,
     [
       input.claimId,
       definition.measures,
@@ -718,7 +727,9 @@ export async function setQuantityDefinition(input: {
       JSON.stringify(definition.unit),
       currentLabel(),
     ]
-  );
+  ),
+      "this quantity's definition"
+    );
   const eventId = await logEvent("set_definition", input.reasoning, {
     claim_id: input.claimId,
     prior_definition: prior ?? null,

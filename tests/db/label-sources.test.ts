@@ -574,17 +574,29 @@ describe("a row read from a source or written about one", () => {
     };
     expect(await read()).toEqual(Object.fromEntries(kept.map((t) => [t, [PUBLIC_LABEL]])));
 
-    // The same writes again, from a run at another label: each lands on the row already there.
+    // The same writes again, from a run at another label.
     const [covered] = await rawQuery<{ segment_id: string }>(
       `SELECT segment_id FROM examination_coverage WHERE examination_id = $1 LIMIT 1`,
       [ids.examination]
     );
     const [event] = await rawQuery<{ notice_url: string }>(`SELECT notice_url FROM source_events WHERE source_id = $1`, [ids.source]);
     const [upstream] = await rawQuery<{ url: string }>(`SELECT url FROM sources WHERE id = $1`, [ids.upstream]);
+    // Five of them carry the run's own words (a note, a reasoning, a basis,
+    // a summary). A run at another label does not write those into a row
+    // the first label's readers read (db/clearance.ts, sameLabelOnly): it
+    // is refused, and told why.
+    const refused = async (write: () => Promise<unknown>) => {
+      const err = await write().then(
+        () => null,
+        (e: unknown) => e
+      );
+      expect(err).toBeInstanceOf(ClearanceError);
+      expect((err as Error).message).toMatch(/already exists at another label than this work's/);
+    };
     await inRunAt(INTERNAL, async () => {
-      expect(ok(await executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward)).replaced).toBe(true);
-      const edge = ok(
-        await executeRecordEdge(
+      await refused(() => executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward));
+      await refused(() =>
+        executeRecordEdge(
           {
             from_instance_id: ids.instance, to_source_url: upstream!.url, relation_type: "derives_from",
             evidence: "As the registry reports.", reasoning: "Read again.",
@@ -592,17 +604,15 @@ describe("a row read from a source or written about one", () => {
           steward
         )
       );
-      expect(edge).toMatchObject({ replaced: true, to_source_id: ids.upstream });
-      expect(
-        ok(
-          await executeRecordSourceRelationship(
-            { parent_source_id: ids.source, child_source_id: ids.upstream, relation_type: "version_of", reasoning: "Read again." },
-            steward
-          )
-        ).replaced
-      ).toBe(true);
-      expect(ok(await executeRecordRoot({ source_id: ids.upstream, status: "untraced", basis: "Read again." }, steward)).replaced).toBe(true);
-      expect(ok(await executeWriteMap({ summary: "Read again, and it still rests on one release.", material: false }, steward)).replaced).toBe(true);
+      await refused(() =>
+        executeRecordSourceRelationship(
+          { parent_source_id: ids.source, child_source_id: ids.upstream, relation_type: "version_of", reasoning: "Read again." },
+          steward
+        )
+      );
+      await refused(() => executeRecordRoot({ source_id: ids.upstream, status: "untraced", basis: "Read again." }, steward));
+      await refused(() => executeWriteMap({ summary: "Read again, and it still rests on one release.", material: false }, steward));
+      // The rest carry no words of the run's, and land on the row already there.
       expect(await recordSourceEvent({ sourceId: ids.source, kind: "correction", noticeUrl: event!.notice_url, detectedBy: "crossref_poll" }))
         .toEqual({ recorded: false });
       expect(ok(await executeRecordCoverage({ segment_ids: [covered!.segment_id], facet: "data" }, researcher)).recorded).toBe(0);
@@ -611,28 +621,35 @@ describe("a row read from a source or written about one", () => {
       // The feed is polled again and holds what it held.
       stage.pages.set(`${ids.lookout.site}/feed`, rss(ids.lookout.site, ["a", "b"]));
       expect(await pollFeed((await getFeed(ids.feedId))!)).toMatchObject({ ok: true, newItems: 0 });
+      // A page's shared entry is the first label's; a later analysis at another label leaves it as it is.
       expect(await shareIfPublic(ids.analyzed, analysis("a later reading"), { fetchText: async () => ANALYZED_PAGE }))
         .toMatchObject({ shared: true });
     });
     expect(await read()).toEqual(Object.fromEntries(kept.map((t) => [t, [PUBLIC_LABEL]])));
-    // The rows were written: the reading and the shared entry say what the second run said.
-    const [reading] = await rawQuery<{ support: string }>(`SELECT support FROM claim_instance_readings WHERE instance_id = $1`, [ids.instance]);
-    expect(reading!.support).toBe("overstates");
+    // Nothing the second run said is in a row the first label's readers read.
+    const [reading] = await rawQuery<{ support: string; note: string | null }>(
+      `SELECT support, note FROM claim_instance_readings WHERE instance_id = $1`,
+      [ids.instance]
+    );
+    expect(reading!.support).toBe("supports");
+    expect(reading!.note ?? "").not.toContain("Read again.");
     const [shared] = await rawQuery<{ annotations: Array<{ why: string }> }>(
       `SELECT annotations FROM shared_page_analyses WHERE url_hash = $1`,
       [ids.urlHash]
     );
-    expect(shared!.annotations[0]!.why).toBe("a later reading");
+    expect(shared!.annotations[0]!.why).not.toBe("a later reading");
     expect((await rawQuery(`SELECT 1 FROM grant_sources WHERE grant_id = $1`, [ids.grantId])).length).toBe(1);
 
-    // The log is not an upsert: each reading is a row of its own, at its own run's label.
+    // A run at the rows' own label revises them as before.
+    expect(ok(await executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward)).replaced).toBe(true);
+    expect(ok(await executeWriteMap({ summary: "Read again, and it still rests on one release.", material: false }, steward)).replaced).toBe(true);
     const log = await rawQuery<{ support: string; sensitivity_label: string }>(
       `SELECT support, sensitivity_label FROM claim_instance_reading_log WHERE instance_id = $1 ORDER BY created_at`,
       [ids.instance]
     );
     expect(log).toEqual([
       { support: "supports", sensitivity_label: PUBLIC_LABEL },
-      { support: "overstates", sensitivity_label: INTERNAL },
+      { support: "overstates", sensitivity_label: PUBLIC_LABEL },
     ]);
   });
 

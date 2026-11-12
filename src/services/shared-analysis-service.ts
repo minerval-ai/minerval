@@ -161,6 +161,12 @@ export function shareIfPublic(
           analyzedAt: row.analyzedAt,
           verifiedAt: row.verifiedAt,
         },
+        // Only an entry at this request's own label is replaced. An
+        // analysis names the nodes its reader could read, so one made for a
+        // reader of another label must not take the place of the entry
+        // that label's readers are served (db/clearance.ts, sameLabelOnly).
+        // The page keeps the entry it has.
+        setWhere: sql`${sharedPageAnalyses.sensitivityLabel} = excluded.sensitivity_label`,
       });
     return { shared: true, urlHash };
   })()
