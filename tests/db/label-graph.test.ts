@@ -494,7 +494,7 @@ describe("the columns", () => {
       [CONTENT_TABLES]
     );
     expect(rows).toEqual(
-      CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 

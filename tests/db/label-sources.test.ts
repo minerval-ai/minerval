@@ -454,7 +454,7 @@ describe("the columns", () => {
       [SOURCE_TABLES]
     );
     expect(rows).toEqual(
-      SOURCE_TABLES.map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      SOURCE_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 
