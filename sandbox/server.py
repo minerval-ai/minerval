@@ -75,6 +75,9 @@ RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 HOME_DIR = ".home"
 TMP_DIR = ".tmp"
 WRITTEN_LISTED_MAX = 200
+# The API sends a command and the text files given with it, which it holds
+# to far less than this.
+MAX_REQUEST_BYTES = 16 * 1024 * 1024
 
 
 def env_int(name, default, minimum=1):
@@ -673,6 +676,11 @@ def make_handler(sandbox):
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            if status >= 400:
+                # A refusal may come before the request's body was read, so
+                # the connection is not used again.
+                self.send_header("Connection", "close")
+                self.close_connection = True
             self.end_headers()
             self.wfile.write(data)
 
@@ -685,6 +693,8 @@ def make_handler(sandbox):
 
         def _body(self):
             length = int(self.headers.get("Content-Length", "0") or "0")
+            if length > MAX_REQUEST_BYTES:
+                raise Refused(413, "too_large", "The request is larger than the sandbox takes.")
             raw = self.rfile.read(length) if length else b"{}"
             body = json.loads(raw.decode("utf-8") or "{}")
             if not isinstance(body, dict):

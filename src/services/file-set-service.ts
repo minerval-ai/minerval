@@ -614,6 +614,12 @@ export async function closeFileSet(
     if (walking.has(id)) {
       return refuse("STILL_HASHING", "This directory is still being walked and hashed. The set closes by itself when that is done.");
     }
+    // Said before the walk starts, so that whoever reads the set next sees
+    // it being hashed and not the failure it is recovering from.
+    await rawQuery(
+      `UPDATE file_sets SET state = 'hashing', problem = NULL, updated_at = now() WHERE id = $1 AND state <> 'closed'`,
+      [id]
+    );
     return { ok: true, restart: true };
   }
   const closed = await withTransaction(async (tx) => {

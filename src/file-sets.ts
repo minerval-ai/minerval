@@ -94,7 +94,6 @@ export function filePathProblem(path: string): string | null {
   if (path.startsWith("/") || path.includes("\\")) {
     return "A file's path is relative to the set, with / between its parts.";
   }
-  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(path)) return "A file's path has no control characters.";
   for (const part of path.split("/")) {
     if (part === "" || part === "." || part === "..") {

@@ -314,8 +314,8 @@ export function fileSetsNote(
     const libraries = Object.keys(health.libraries).map((name) => LIBRARY_NAMES[name] ?? name);
     paragraphs.push(
       `${RUN_COMMAND_TOOL_NAME} runs a shell command in the sandbox, in a scratch directory that is this ` +
-        `run's alone, with the sets mounted read-only at the paths above. The file sets are only there: no ` +
-        `other tool you have can read them. The sandbox has Python ${health.python}` +
+        `run's alone, with the sets mounted read-only at the paths above. The sets are mounted only there, ` +
+        `and in no other sandbox this run may have. The sandbox has Python ${health.python}` +
         (libraries.length > 0 ? ` with ${libraries.join(", ")}` : "") +
         `, and bash with the usual shell tools` +
         (health.tools.length > 0 ? `, among them ${health.tools.join(", ")}` : "") +

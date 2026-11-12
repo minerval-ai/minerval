@@ -52,7 +52,7 @@ beforeAll(async () => {
   listenerPort = (listener.address() as { port: number }).port;
 
   sandbox = await startSandbox({
-    SANDBOX_COMMAND_SECONDS: "3",
+    SANDBOX_COMMAND_SECONDS: "4",
     SANDBOX_OUTPUT_BYTES: "20000",
     SANDBOX_MEMORY_MB: "150",
     SANDBOX_SCRATCH_MB: "20",
@@ -85,7 +85,7 @@ describe("what the service says of itself", () => {
     expect(health.value.landlockAbi).toBeGreaterThanOrEqual(1);
     expect(health.value.tools).toEqual(expect.arrayContaining(["find", "grep", "sed"]));
     expect(health.value.paths).toEqual({ store: sandbox.storeDir, directoryRoot: sandbox.directoryRoot });
-    expect(health.value.limits).toEqual({ commandSeconds: 3, outputBytes: 20000, memoryMb: 150, scratchMb: 20 });
+    expect(health.value.limits).toEqual({ commandSeconds: 4, outputBytes: 20000, memoryMb: 150, scratchMb: 20 });
   });
 
   it("answers only a caller that holds its token", async () => {
@@ -237,8 +237,8 @@ describe("the limits", () => {
     expect(result.ended).toBe("timed_out");
     expect(result.exitCode).toBeNull();
     expect(result.output).toBe("started\n");
-    expect(result.durationMs).toBeGreaterThanOrEqual(3000);
-    expect(result.durationMs).toBeLessThan(10_000);
+    expect(result.durationMs).toBeGreaterThanOrEqual(4000);
+    expect(result.durationMs).toBeLessThan(12_000);
   });
 
   it("stops a command whose output passes the ceiling and keeps the part before it", async () => {

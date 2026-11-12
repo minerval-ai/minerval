@@ -229,8 +229,8 @@ task message, for example:
 >
 > run_command runs a shell command in the sandbox, in a scratch directory
 > that is this run's alone, with the sets mounted read-only at the paths
-> above. The file sets are only there: no other tool you have can read
-> them. The sandbox has Python 3.13.1 with numpy, pandas, scipy,
+> above. The sets are mounted only there, and in no other sandbox this run
+> may have. The sandbox has Python 3.13.1 with numpy, pandas, scipy,
 > statsmodels, scikit-learn, matplotlib, pyarrow, polars, duckdb, openpyxl,
 > lxml, beautifulsoup4, PyYAML, and bash with the usual shell tools, among
 > them find, grep, rg, sed, awk, jq, sqlite3, git, diff, file, tree, tar,
