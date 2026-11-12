@@ -828,7 +828,7 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
 
 // ---- what the destination side reads -------------------------------------------------
 
-export type NodeState = "not_yet_assessed" | "released_unaltered" | "released_in_part" | "held";
+export type NodeState = "not_yet_assessed" | "released_whole" | "released_in_part" | "held";
 
 const STAGE_WORDS: Record<PageStage, string> = {
   to_redact: "waiting for its redaction, which runs when it is paid for",
@@ -863,7 +863,7 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
   const held = parts.filter((p) => p.released_at === null);
   const directHold = pageHeldByDirect(acts);
   const waitingOn = page.needs.filter((party) => standingOf(acts, null, party) !== "released").map((party) => names.get(party) ?? "a party");
-  const state: NodeState = !page.shown_at ? "held" : held.length === 0 ? "released_unaltered" : "released_in_part";
+  const state: NodeState = !page.shown_at ? "held" : held.length === 0 ? "released_whole" : "released_in_part";
   return {
     page_id: page.id,
     version_of: page.judged_at.toISOString(),
@@ -877,9 +877,14 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
               : STAGE_WORDS[page.stage],
           held_for: age(page.opened_at),
         }
-      : { shown_at: page.shown_at!.toISOString(), source_id: page.source_id }),
+      : {
+          shown_at: page.shown_at!.toISOString(),
+          source_id: page.source_id,
+          // Beside the state, always: a page released whole can still have passages removed inside its parts.
+          removals_under_the_policy: (JSON.parse(page.header!) as { removals?: Record<string, number> }).removals ?? {},
+        }),
     ...(state === "released_in_part" ? { parts_held: held.length, of_parts: parts.length, held_kinds: heldByKind(held) } : {}),
-    ...(state === "released_unaltered" ? { of_parts: parts.length } : {}),
+    ...(state === "released_whole" ? { of_parts: parts.length } : {}),
     redaction_round: page.round,
     fingerprint: page.root,
     audit: page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,

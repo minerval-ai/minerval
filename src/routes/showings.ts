@@ -149,7 +149,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
       tags: ["showings"],
       summary: "One showing as the readers it is shown to see it: each node's state, every version made while it stood, and every act on it",
       description:
-        "Each node under the showing is in one of four states: not_yet_assessed, released_unaltered, " +
+        "Each node under the showing is in one of four states: not_yet_assessed, released_whole, " +
         "released_in_part (with how many parts are held and of which kinds), or held (with why, in fixed words, and " +
         "for how long). No state carries any of the page's text. Each act names who did it and the permissions they " +
         "held, so you can see when a person who directed the work also released it.",

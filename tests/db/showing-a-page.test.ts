@@ -596,13 +596,14 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(await system(() => rawQuery(`SELECT 1 FROM claim_instances WHERE source_id = $1`, [arrived!.source_id]))).toEqual([]);
     expect(await system(() => rawQuery(`SELECT 1 FROM node_messages WHERE node_id = $1`, [id.root]))).toEqual([]);
 
-    // The person releases the parts the rule left, and the page is released unaltered by its gate.
+    // The person releases the parts the rule left, and the page is released whole by its gate.
     await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 2 }, { page_id: id.rootPage!, part: 3 }], decision: "release" });
     const whole = (await atA(() => shownPage(id.rootPage!)))!;
-    expect(whole.state).toBe("released_unaltered");
+    expect(whole.state).toBe("released_whole");
+    expect(whole.removals_under_the_policy).toEqual({ "commercial figures": 2 });
     expect(JSON.stringify(whole)).not.toContain(SECRET);
     const record = (await atA(() => shownShowing(id.standing!)))!;
-    expect((record.nodes as any[])[0].state).toBe("released_unaltered");
+    expect((record.nodes as any[])[0].state).toBe("released_whole");
   });
 
   it("a page that cannot be shown under the policy is held, in fixed words, and its reason stays at the page's label", async () => {
@@ -637,7 +638,7 @@ describe("a standing showing of a node with what sits under it", () => {
     // Nothing more is released from a showing that has ended. What was shown stays shown.
     const late = await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 1 }], decision: "release" });
     expect(late.refused[0]!.why).toBe("This page's showing has ended, so nothing more is released from it. What was shown stays shown.");
-    expect((await atA(() => shownPage(id.rootPage!)))!.state).toBe("released_unaltered");
+    expect((await atA(() => shownPage(id.rootPage!)))!.state).toBe("released_whole");
   });
 });
 
@@ -694,7 +695,7 @@ describe("a page shown outside the deployment", () => {
       await decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
     }
     const page = (await atB(() => shownPage(pageId)))!;
-    expect(page.state).toBe("released_unaltered");
+    expect(page.state).toBe("released_whole");
     expect(page.verification!.ok).toBe(true);
     // Nothing has left the deployment and nothing arrived anywhere inside it: carrying it out is not built here.
     expect(page.source_id).toBeNull();

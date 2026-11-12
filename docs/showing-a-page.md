@@ -278,7 +278,7 @@ For every node under a showing, one of four states, and no private content
 in any of them:
 
 - **not yet assessed**;
-- **released unaltered**: every part released (removals under the policy
+- **released whole**: every part released (removals under the policy
   are counted beside it);
 - **released in part**: how many parts of how many are held, and of which
   kinds;

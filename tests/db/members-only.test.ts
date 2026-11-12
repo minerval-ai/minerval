@@ -773,7 +773,7 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(decided.json()).toMatchObject({ decided: 5, refused: [], shown: [pageId] });
 
       const shown = (await as(reader, { url: `/showings/${showingId}/pages/${pageId}` })).json();
-      expect(shown.state).toBe("released_unaltered");
+      expect(shown.state).toBe("released_whole");
       expect(shown.verification).toEqual({ ok: true, problems: [], checked: 5, held: 0 });
       expect(shown.parts[0]).toMatchObject({ kind: "wording" });
       expect(shown.parts[3].text).toBe("The log also gives [redacted: security detail].");
