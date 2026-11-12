@@ -64,6 +64,7 @@ import {
   stopAssistantTurn,
 } from "../../src/services/assistant-service.js";
 import { chargeMetered } from "../../src/services/owl-ledger-service.js";
+import { assistantStreamIsLive, subscribeAssistantStream } from "../../src/services/assistant-stream.js";
 import { getEntitlement } from "../../src/services/billing-service.js";
 import {
   resetGrantConversationRateLimiter,
@@ -292,6 +293,55 @@ describe("assistant conversations", () => {
     expect(await deleteAssistantConversation(convo.id, other.id)).toBe(false);
     expect(await deleteAssistantConversation(convo.id, u.id)).toBe(true);
     expect(await getAssistantConversation(convo.id, u.id)).toBeNull();
+  });
+});
+
+describe("a running turn's event stream", () => {
+  it("publishes text, steps and notes as they happen, then that the turn is done and saved", async () => {
+    const u = await user("stream");
+    const events: Array<Record<string, unknown>> = [];
+    let unsubscribe = () => {};
+    let liveDuringTurn = false;
+    let savedWhenDone: number | null = null;
+    script(async (input) => {
+      const convoId = (
+        await rawQuery<{ id: string }>(
+          `SELECT id FROM assistant_conversations WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [u.id]
+        )
+      )[0]!.id;
+      liveDuringTurn = assistantStreamIsLive(convoId);
+      unsubscribe = subscribeAssistantStream(convoId, (event) => {
+        events.push(event);
+        if (event.type === "done") {
+          void getAssistantConversation(convoId, u.id).then((c) => {
+            savedWhenDone = ((c?.messages ?? []) as unknown[]).length;
+          });
+        }
+      });
+      const hooks = input as unknown as { onTool?: (t: string, a: Record<string, unknown>) => void };
+      hooks.onTool?.("search_claims", { query: "eggs" });
+      input.onNote?.("Reading");
+      input.onText?.("It is ", 0);
+      input.onText?.("inconclusive.", 0);
+      return { reply: "It is inconclusive.", stopped: null, toolUses: [], runId: null };
+    });
+    const convo = await start(u);
+    await settleAssistantTurns();
+    await new Promise((r) => setTimeout(r, 100));
+    unsubscribe();
+
+    expect(liveDuringTurn).toBe(true);
+    expect(assistantStreamIsLive(convo.id)).toBe(false);
+    expect(events).toEqual([
+      { type: "activity", tool: "search_claims", about: "eggs" },
+      { type: "note", note: "Reading" },
+      { type: "text", turn: 0, delta: "It is " },
+      { type: "text", turn: 0, delta: "inconclusive." },
+      { type: "done" },
+    ]);
+    // "done" is said only once the reply is in the conversation.
+    expect(savedWhenDone).toBe(2);
   });
 });
 

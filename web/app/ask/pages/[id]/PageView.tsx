@@ -264,10 +264,13 @@ function exportMarkdown(page: Page): string {
 export function PageView({
   page,
   embedded = false,
+  mode = "owner",
 }: {
   page: Page;
   /** Shown in the chat's side panel: read and export here, edit on its own page. */
   embedded?: boolean;
+  /** "shared": read by its link, by someone who cannot change it. */
+  mode?: "owner" | "shared";
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -275,6 +278,24 @@ export function PageView({
   const [body, setBody] = useState(page.body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sharedUrl, setSharedUrl] = useState(page.shared_url);
+  const [copied, setCopied] = useState(false);
+  const owner = mode === "owner";
+
+  const share = async (on: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/assistant/pages/${page.id}/share`, { method: on ? "POST" : "DELETE" });
+      const data = await res.json();
+      if (!res.ok) setError(data.error ?? "That did not go through.");
+      else setSharedUrl(on ? data.page.shared_url : null);
+    } catch {
+      setError("That did not go through.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const parts = useMemo(() => segments(page.body), [page.body]);
   // One numbering for the whole page, in order of first citation.
@@ -400,7 +421,7 @@ export function PageView({
         )
       )}
       <p className="ask-manage kept-manage">
-        {embedded ? (
+        {!owner ? null : embedded ? (
           <Link href={`/ask/pages/${page.id}`}>Open and edit</Link>
         ) : (
           <button className="linklike" onClick={() => setEditing(true)}>
@@ -410,15 +431,48 @@ export function PageView({
         <button className="linklike" onClick={download}>
           Export as markdown
         </button>
-        {!embedded && (
+        {owner && !embedded && !sharedUrl && (
+          <button className="linklike" onClick={() => void share(true)} disabled={busy}>
+            Share by link
+          </button>
+        )}
+        {owner && !embedded && (
           <button className="linklike danger" onClick={() => void remove()}>
             Delete this page
           </button>
         )}
       </p>
+      {owner && sharedUrl && !embedded && (
+        <div className="kept-share">
+          <p>
+            Anyone with this link can read the page, signed in or not. It shows the page as it is
+            now, edits included, and nothing about your account.
+          </p>
+          <div className="kept-share-row">
+            <input readOnly value={sharedUrl} aria-label="Link to this page" onFocus={(e) => e.currentTarget.select()} />
+            <button
+              className="order-button"
+              onClick={() => {
+                void navigator.clipboard.writeText(sharedUrl).then(() => setCopied(true));
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <button className="linklike danger" onClick={() => void share(false)} disabled={busy}>
+              Stop sharing
+            </button>
+          </div>
+        </div>
+      )}
       <p className="order-caption">
-        Private to you. Embedded nodes are read from the graph each time the page is opened.
-        {page.versions.length > 0 &&
+        {owner
+          ? sharedUrl
+            ? "Shared by link. "
+            : "Private to you. "
+          : "Shared by its author. "}
+        Embedded nodes are read from the graph each time the page is opened.
+        {owner &&
+          page.versions.length > 0 &&
           ` ${page.versions.length} earlier ${page.versions.length === 1 ? "version is" : "versions are"} kept.`}
       </p>
       {error && <p className="form-error">{error}</p>}

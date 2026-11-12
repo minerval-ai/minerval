@@ -1108,9 +1108,9 @@ const configSchema = z.object({
   // for a conversation.
   assistantModel: modelId(MODELS.frontier),
   assistantStandardModel: modelId(MODELS.strong),
-  // Names a conversation from its first message: a few words from the
-  // cheapest capable model.
-  assistantTitleModel: modelId(OPENROUTER_MODELS.flash),
+  // Names a conversation from its first message: a few words from a small
+  // model. A Claude one, so a conversation's text goes to one provider.
+  assistantTitleModel: modelId(MODELS.haiku),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
