@@ -245,29 +245,31 @@ export default async function LabelsPage() {
             material the graph will hold.
           </p>
         ) : (
-          <table className="account-table acct-table">
-            <thead>
-              <tr>
-                <th>party</th>
-                <th className="admin-num">sources</th>
-                <th>who holds release for it</th>
-                <th>added</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parties.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    {p.name}
-                    {p.is_own_organization && <span className="acct-detail">this organisation</span>}
-                  </td>
-                  <td className="admin-num">{(sourcesBy.get(p.id) ?? 0).toLocaleString("en-GB")}</td>
-                  <td>{holdersOf(grants.filter((g) => g.permission === "release" && g.party?.id === p.id))}</td>
-                  <td className="acct-num-left">{dateish(p.created_at)}</td>
+          <div className="acct-scroll">
+            <table className="account-table acct-table">
+              <thead>
+                <tr>
+                  <th>party</th>
+                  <th className="admin-num">sources</th>
+                  <th>who holds release for it</th>
+                  <th>added</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {parties.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      {p.name}
+                      {p.is_own_organization && <span className="acct-detail">this organisation</span>}
+                    </td>
+                    <td className="admin-num">{(sourcesBy.get(p.id) ?? 0).toLocaleString("en-GB")}</td>
+                    <td>{holdersOf(grants.filter((g) => g.permission === "release" && g.party?.id === p.id))}</td>
+                    <td className="acct-num-left">{dateish(p.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div className="acct-cols">

@@ -187,46 +187,48 @@ export default async function PeoplePage() {
                 names lets membership be managed there.
               </p>
             ) : (
-              <table className="account-table acct-table">
-                <thead>
-                  <tr>
-                    <th>group</th>
-                    <th>holds</th>
-                    <th>people whose sign-in carried it</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupNames.map((name) => {
-                    const members = accounts.filter((a) => a.groups.some((m) => m.name === name));
-                    return (
-                      <tr key={name}>
-                        <td>{name}</td>
-                        <td>
-                          <Grants grants={groupGrants.filter((g) => g.group === name)} removable />
-                        </td>
-                        <td>
-                          {members.length === 0
-                            ? "Nobody has signed in with this group yet."
-                            : members.map((a) => {
-                                const current = a.groups.find((m) => m.name === name)?.current;
-                                return (
-                                  <div key={a.id}>
-                                    {a.display_name}
-                                    {!current && (
-                                      <span className="acct-detail">
-                                        their sign-in has lapsed, so this does not reach them until they
-                                        sign in again
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="acct-scroll">
+                <table className="account-table acct-table">
+                  <thead>
+                    <tr>
+                      <th>group</th>
+                      <th>holds</th>
+                      <th>people whose sign-in carried it</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupNames.map((name) => {
+                      const members = accounts.filter((a) => a.groups.some((m) => m.name === name));
+                      return (
+                        <tr key={name}>
+                          <td>{name}</td>
+                          <td>
+                            <Grants grants={groupGrants.filter((g) => g.group === name)} removable />
+                          </td>
+                          <td>
+                            {members.length === 0
+                              ? "Nobody has signed in with this group yet."
+                              : members.map((a) => {
+                                  const current = a.groups.find((m) => m.name === name)?.current;
+                                  return (
+                                    <div key={a.id}>
+                                      {a.display_name}
+                                      {!current && (
+                                        <span className="acct-detail">
+                                          their sign-in has lapsed, so this does not reach them until they
+                                          sign in again
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
 
@@ -320,26 +322,28 @@ export default async function PeoplePage() {
                   nothing. Each was shown the identity below and told that an administrator grants
                   permissions.
                 </p>
-                <table className="account-table acct-table">
-                  <thead>
-                    <tr>
-                      <th>person</th>
-                      <th>groups their sign-in carried</th>
-                      <th>last here</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {holdingNothing.map((a) => (
-                      <tr key={a.id}>
-                        <td>
-                          <Person account={a} you={false} />
-                        </td>
-                        <td>{a.groups.length === 0 ? "None" : a.groups.map((g) => g.name).join(", ")}</td>
-                        <td className="acct-num-left">{when(a.last_active_at)}</td>
+                <div className="acct-scroll">
+                  <table className="account-table acct-table">
+                    <thead>
+                      <tr>
+                        <th>person</th>
+                        <th>groups their sign-in carried</th>
+                        <th>last here</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {holdingNothing.map((a) => (
+                        <tr key={a.id}>
+                          <td>
+                            <Person account={a} you={false} />
+                          </td>
+                          <td>{a.groups.length === 0 ? "None" : a.groups.map((g) => g.name).join(", ")}</td>
+                          <td className="acct-num-left">{when(a.last_active_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </>
             )}
           </section>
@@ -412,22 +416,24 @@ function Grants({
 function Log({ entries, more }: { entries: LogEntry[]; more: boolean }) {
   return (
     <>
-      <table className="account-table acct-table">
-        <thead>
-          <tr>
-            <th>when</th>
-            <th>what happened</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry, i) => (
-            <tr key={`${entry.at}-${i}`}>
-              <td className="acct-num-left">{when(entry.at)}</td>
-              <td>{logSentence(entry)}</td>
+      <div className="acct-scroll">
+        <table className="account-table acct-table">
+          <thead>
+            <tr>
+              <th>when</th>
+              <th>what happened</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((entry, i) => (
+              <tr key={`${entry.at}-${i}`}>
+                <td className="acct-num-left">{when(entry.at)}</td>
+                <td>{logSentence(entry)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {more && (
         <p className="acct-note">
           The newest {entries.length} entries are shown. Earlier ones are kept, and the API serves

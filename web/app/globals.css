@@ -262,6 +262,11 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   margin: -1.75rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule-soft);
   font-family: var(--sans); font-size: 0.72rem; font-weight: 500; line-height: 1.4;
 }
+/* the Ask section fills the window with no frame padding, so there the line
+   takes a row of its own above the shell */
+.frame:has(.ask-shell):has(.members-band) { display: flex; flex-direction: column; }
+.frame:has(.ask-shell) .members-band { flex: none; margin: 0; padding: 0.35rem 1.6rem; }
+.frame:has(.ask-shell) .members-band + .ask-shell { flex: 1; height: auto; min-height: 0; }
 .members-band a, .members-band a:visited { color: var(--ink-soft); }
 .members-band a:hover { color: var(--link); text-decoration: none; }
 
@@ -280,6 +285,8 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 .admin-nav span[aria-current] { color: var(--ink); font-weight: 600; }
 .admin-first { margin-top: 2rem; }
 .admin-page .account-empty { margin-top: 0.8rem; }
+/* a long address, identity or path breaks where it must, and never widens the page */
+.admin-page code, .admin-page .admin-pre { overflow-wrap: anywhere; }
 /* a figure in a column that is not the table's last: right-aligned, with room after it */
 .admin-page th.admin-num, .admin-page td.admin-num {
   text-align: right; white-space: nowrap; padding-right: 1.6rem;

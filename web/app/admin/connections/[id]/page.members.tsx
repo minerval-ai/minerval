@@ -160,26 +160,28 @@ export default async function ConnectionPage({
               what an administrator picked is no longer what the server has. Look at the server
               above, read the tool as it now is, and pick it again if it should be offered.
             </p>
-            <table className="account-table acct-table">
-              <thead>
-                <tr>
-                  <th>tool</th>
-                  <th>withdrawn</th>
-                  <th>because</th>
-                </tr>
-              </thead>
-              <tbody>
-                {withdrawn.map((t) => (
-                  <tr key={t.name}>
-                    <td>
-                      <code>{t.name}</code>
-                    </td>
-                    <td className="acct-num-left">{when(t.withdrawn!.at)}</td>
-                    <td>{capitalised(withdrawnWords(t.withdrawn!.reason))}</td>
+            <div className="acct-scroll">
+              <table className="account-table acct-table">
+                <thead>
+                  <tr>
+                    <th>tool</th>
+                    <th>withdrawn</th>
+                    <th>because</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {withdrawn.map((t) => (
+                    <tr key={t.name}>
+                      <td>
+                        <code>{t.name}</code>
+                      </td>
+                      <td className="acct-num-left">{when(t.withdrawn!.at)}</td>
+                      <td>{capitalised(withdrawnWords(t.withdrawn!.reason))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
         {unlisted.length > 0 && (
@@ -279,70 +281,72 @@ function StateLines({
 }) {
   const { state, credential } = connection;
   return (
-    <table className="account-table acct-table admin-facts">
-      <tbody>
-        <tr>
-          <td>Server</td>
-          <td>
-            <code>{connection.url}</code>
-            <span className="acct-detail">
-              {connection.transport === "sse" ? "SSE" : "streamable HTTP"}
-            </span>
-          </td>
-        </tr>
-        <tr>
-          <td>State</td>
-          <td>
-            {state.status === "answering" && <>Answering. Last asked {when(state.last_checked_at)}.</>}
-            {state.status === "never_checked" && <>The server has never been asked for its tools.</>}
-            {state.status === "off" && <>Switched off.</>}
-            {state.status === "failing" && (
-              <>
-                Not answering. {state.last_error?.message}
-                <span className="acct-detail">{when(state.last_error?.at)}</span>
-              </>
-            )}
-          </td>
-        </tr>
-        <tr>
-          <td>Credential</td>
-          <td>
-            {credential.env === null ? (
-              "The server is asked for none."
-            ) : (
-              <>
-                Read from <code>{credential.env}</code> at the moment of each call, and sent in the{" "}
-                <code>{credential.header}</code> header.{" "}
-                {credential.set
-                  ? "That variable is set where the deployment runs."
-                  : "That variable is not set where the deployment runs."}{" "}
-                The credential itself is never stored, shown or logged.
-              </>
-            )}
-          </td>
-        </tr>
-        <tr>
-          <td>The party&rsquo;s stake</td>
-          <td>{connection.stake}</td>
-        </tr>
-        <tr>
-          <td>Limits agents are told</td>
-          <td>
-            {connection.calls_per_minute === null
-              ? "No rate: nothing bounds calls but each run's own budget and judgment."
-              : `${count(connection.calls_per_minute, "call")} a minute across all runs.`}{" "}
-            A call unanswered after {connection.timeout_seconds} seconds is given up.
-          </td>
-        </tr>
-        <tr>
-          <td>Offered to agents</td>
-          <td>
-            {offered === 0 ? "No tool yet." : `${count(offered, "tool")}, under names starting ${connection.tool_prefix}__.`}
-            {withdrawn > 0 && <> {count(withdrawn, "tool")} withdrawn and waiting for you to look again.</>}
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div className="acct-scroll">
+      <table className="account-table acct-table admin-facts">
+        <tbody>
+          <tr>
+            <td>Server</td>
+            <td>
+              <code>{connection.url}</code>
+              <span className="acct-detail">
+                {connection.transport === "sse" ? "SSE" : "streamable HTTP"}
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td>State</td>
+            <td>
+              {state.status === "answering" && <>Answering. Last asked {when(state.last_checked_at)}.</>}
+              {state.status === "never_checked" && <>The server has never been asked for its tools.</>}
+              {state.status === "off" && <>Switched off.</>}
+              {state.status === "failing" && (
+                <>
+                  Not answering. {state.last_error?.message}
+                  <span className="acct-detail">{when(state.last_error?.at)}</span>
+                </>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <td>Credential</td>
+            <td>
+              {credential.env === null ? (
+                "The server is asked for none."
+              ) : (
+                <>
+                  Read from <code>{credential.env}</code> at the moment of each call, and sent in the{" "}
+                  <code>{credential.header}</code> header.{" "}
+                  {credential.set
+                    ? "That variable is set where the deployment runs."
+                    : "That variable is not set where the deployment runs."}{" "}
+                  The credential itself is never stored, shown or logged.
+                </>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <td>The party&rsquo;s stake</td>
+            <td>{connection.stake}</td>
+          </tr>
+          <tr>
+            <td>Limits agents are told</td>
+            <td>
+              {connection.calls_per_minute === null
+                ? "No rate: nothing bounds calls but each run's own budget and judgment."
+                : `${count(connection.calls_per_minute, "call")} a minute across all runs.`}{" "}
+              A call unanswered after {connection.timeout_seconds} seconds is given up.
+            </td>
+          </tr>
+          <tr>
+            <td>Offered to agents</td>
+            <td>
+              {offered === 0 ? "No tool yet." : `${count(offered, "tool")}, under names starting ${connection.tool_prefix}__.`}
+              {withdrawn > 0 && <> {count(withdrawn, "tool")} withdrawn and waiting for you to look again.</>}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 

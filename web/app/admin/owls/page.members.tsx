@@ -203,57 +203,61 @@ export default async function OwlsPage() {
             ) : (
               <div className="acct-cols">
                 <div className="acct-main">
-                  <table className="account-table acct-table">
-                    <thead>
-                      <tr>
-                        <th>when</th>
-                        <th>who</th>
-                        <th>into</th>
-                        <th className="acct-num">owls</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {created.recent.map((act, i) => (
-                        <tr key={`${act.at}-${i}`}>
-                          <td className="acct-num-left">{when(act.at)}</td>
-                          <td>{act.by ?? ""}</td>
-                          <td>
-                            {act.mandate ? (
-                              <>
-                                the budget of <Link href={`/mandates/${act.mandate.id}`}>{act.mandate.title}</Link>
-                                {act.standing_mandate && <span className="acct-detail">when it was set up</span>}
-                              </>
-                            ) : (
-                              <>{act.account}&rsquo;s balance</>
-                            )}
-                            {act.note && (
-                              <>
-                                <br />
-                                <span className="acct-note">{act.note}</span>
-                              </>
-                            )}
-                          </td>
-                          <td className="acct-num">{owls(act.amount_owls)}</td>
+                  <div className="acct-scroll">
+                    <table className="account-table acct-table">
+                      <thead>
+                        <tr>
+                          <th>when</th>
+                          <th>who</th>
+                          <th>into</th>
+                          <th className="acct-num">owls</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {created.recent.map((act, i) => (
+                          <tr key={`${act.at}-${i}`}>
+                            <td className="acct-num-left">{when(act.at)}</td>
+                            <td>{act.by ?? ""}</td>
+                            <td>
+                              {act.mandate ? (
+                                <>
+                                  the budget of <Link href={`/mandates/${act.mandate.id}`}>{act.mandate.title}</Link>
+                                  {act.standing_mandate && <span className="acct-detail">when it was set up</span>}
+                                </>
+                              ) : (
+                                <>{act.account}&rsquo;s balance</>
+                              )}
+                              {act.note && (
+                                <>
+                                  <br />
+                                  <span className="acct-note">{act.note}</span>
+                                </>
+                              )}
+                            </td>
+                            <td className="acct-num">{owls(act.amount_owls)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
                 <aside className="acct-side">
                   <h3>By administrator</h3>
-                  <table className="account-table acct-table">
-                    <tbody>
-                      {created.created.by_administrator.map((a) => (
-                        <tr key={a.administrator}>
-                          <td>
-                            {a.administrator}
-                            <span className="acct-detail">{count(a.acts, "act")}</span>
-                          </td>
-                          <td className="acct-num">{owls(a.owls)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="acct-scroll">
+                    <table className="account-table acct-table">
+                      <tbody>
+                        {created.created.by_administrator.map((a) => (
+                          <tr key={a.administrator}>
+                            <td>
+                              {a.administrator}
+                              <span className="acct-detail">{count(a.acts, "act")}</span>
+                            </td>
+                            <td className="acct-num">{owls(a.owls)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                   {created.entered_by_setting.length > 0 && (
                     <>
                       <h3 className="acct-gap">Entered by a setting</h3>
@@ -261,16 +265,18 @@ export default async function OwlsPage() {
                         Owls that reached a balance because the deployment is set to grant them, and
                         not by an administrator&rsquo;s act.
                       </p>
-                      <table className="account-table acct-table">
-                        <tbody>
-                          {created.entered_by_setting.map((row) => (
-                            <tr key={row.reason}>
-                              <td>{words(row.reason)}</td>
-                              <td className="acct-num">{owls(row.owls)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div className="acct-scroll">
+                        <table className="account-table acct-table">
+                          <tbody>
+                            {created.entered_by_setting.map((row) => (
+                              <tr key={row.reason}>
+                                <td>{words(row.reason)}</td>
+                                <td className="acct-num">{owls(row.owls)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </>
                   )}
                 </aside>
@@ -310,26 +316,28 @@ export default async function OwlsPage() {
                 rate table or by its provider.
               </p>
             ) : (
-              <table className="account-table acct-table">
-                <thead>
-                  <tr>
-                    <th>model</th>
-                    <th className="acct-num">dollars per million tokens in</th>
-                    <th className="acct-num">out</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {created.prices.stated.map((p) => (
-                    <tr key={p.model}>
-                      <td>
-                        <code>{p.model}</code>
-                      </td>
-                      <td className="acct-num">{p.input_usd_per_mtok}</td>
-                      <td className="acct-num">{p.output_usd_per_mtok}</td>
+              <div className="acct-scroll">
+                <table className="account-table acct-table">
+                  <thead>
+                    <tr>
+                      <th>model</th>
+                      <th className="acct-num">dollars per million tokens in</th>
+                      <th className="acct-num">out</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {created.prices.stated.map((p) => (
+                      <tr key={p.model}>
+                        <td>
+                          <code>{p.model}</code>
+                        </td>
+                        <td className="acct-num">{p.input_usd_per_mtok}</td>
+                        <td className="acct-num">{p.output_usd_per_mtok}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         </>
