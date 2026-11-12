@@ -3,10 +3,10 @@
  * label_columns migration).
  *
  * The migration adds `sensitivity_label` to eighty-one tables and nothing
- * else, and nothing reads the column. The writes that stamp it come after
- * it, a group of tables at a time (label-graph.test.ts and
- * label-sources.test.ts for the first two). So there are two things to
- * check here, against real Postgres:
+ * else, and nothing reads the column. The writes that stamp it came after
+ * it, a group of tables at a time (label-graph.test.ts,
+ * label-sources.test.ts, label-runs.test.ts, label-governance.test.ts). So
+ * there are two things to check here, against real Postgres:
  *
  *  - The catalog: which tables have the column, its default and its key to
  *    `labels`, the two keys that are not validated yet, the views, and the

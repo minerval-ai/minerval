@@ -220,8 +220,9 @@ function recordPromptStep(step: {
       resolveProvider(step.model)
     );
     const agent = context.agent ?? "unknown";
+    // A part is stored at the label of the run this step belongs to.
     void import("../services/setup-service.js")
-      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent)))
+      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent), trace.label))
       .catch((err) =>
         console.error("[trace] failed to store setup parts:", err instanceof Error ? err.message : err)
       );

@@ -172,7 +172,7 @@ describe("logBountyEvent", () => {
       "opened",
       "offered"
     );
-    expect(runner.query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO audit_log"), ["claim-1", "bounty:opened", "bounty b-1: offered", "prize_service"]);
+    expect(runner.query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO audit_log"), ["claim-1", "bounty:opened", "bounty b-1: offered", "prize_service", "public"]);
     expect(state.events).toHaveLength(1);
     expect(state.events[0]).toMatchObject({
       kind: "prize",

@@ -56,10 +56,11 @@ export async function labelIsDefined(name: string): Promise<boolean> {
  * label is the one the work runs at, whatever context the sweep itself is in.
  *
  * This is a floor and not the whole rule. It keeps work on a restricted
- * claim from being written as public. It does not cover restricted work on
- * a public claim (a restricted pass that left the claim pending would be
- * taken up here as public), which needs the claim's pending slot, or one
- * judgment per label, to say what label the work was asked for at.
+ * claim from being written as public. It does not by itself cover
+ * restricted work on a public claim. Where that work left messages waiting
+ * on the claim, their label is used (pendingPassLabel below); where it did
+ * not, the claim's pending slot cannot say what label the work was asked
+ * for at, which takes a slot, or a judgment, per label.
  *
  * A claim that does not exist has nothing to run at: `fn` runs as it would
  * have and finds that out for itself.
@@ -71,18 +72,6 @@ export async function runAtClaimLabel<T>(claimId: string, fn: () => Promise<T>):
   );
   if (!claim) return fn();
   return runAtLabel(claim.sensitivity_label, `claim ${claimId}`, fn);
-}
-
-/**
- * runAtClaimLabel for code that is reached both from a sweep and from inside
- * a run (placing a mandate's standing order, for one). Inside a run the work
- * is that run's and keeps its label, as all work a run creates does. Only
- * where nothing has set a label (a sweep, or a request that carries none)
- * does the claim's label stand in.
- */
-export async function runAtClaimLabelOutsideAnyRun<T>(claimId: string, fn: () => Promise<T>): Promise<T> {
-  if (getUsageContext().label !== undefined) return fn();
-  return runAtClaimLabel(claimId, fn);
 }
 
 /**
@@ -122,15 +111,83 @@ export async function runAtSourceLabel<T>(sourceId: string, fn: () => Promise<T>
 }
 
 /**
- * runAtSourceLabel for code that is reached both from a sweep and from
- * inside a run (noting, in a mandate's pipeline, a source someone else
- * ingested). Inside a run the work is that run's and keeps its label, as
- * all work a run does. Only where nothing has set a label (a sweep, a
- * script, a request that carries none) does the source's label stand in.
+ * Run `fn` at a mandate's label: for the mandate's own work.
+ *
+ * A mandate decides for its work. Its plan becomes ledger rows, its review
+ * and planning passes are opened, its inbox is worked and its events are
+ * collected by sweeps that run outside any run, and that work used to be
+ * written as public, or at the label of whichever claim a plan item named.
+ * The mandate carries a label of its own now (grants.sensitivity_label, the
+ * label of the request or run that created it), and the mandate is what
+ * says whose work this is, so its label is the one the work runs at.
+ *
+ * A mandate that does not exist has nothing to run at: `fn` runs as it
+ * would have and finds that out for itself.
  */
-export async function runAtSourceLabelOutsideAnyRun<T>(sourceId: string, fn: () => Promise<T>): Promise<T> {
+export async function runAtMandateLabel<T>(grantId: string, fn: () => Promise<T>): Promise<T> {
+  const [grant] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM grants WHERE id = $1`,
+    [grantId]
+  );
+  if (!grant) return fn();
+  return runAtLabel(grant.sensitivity_label, `mandate ${grantId}`, fn);
+}
+
+/**
+ * runAtMandateLabel for code that is reached both from a sweep and from
+ * inside a run (materializing a plan, placing a standing order: the
+ * scheduler does both, and so does a Grantmaker's tool). Inside a run the
+ * work is that run's and keeps its label, and a Grantmaker's run was itself
+ * opened at its mandate's label. Only where nothing has set a label does
+ * the mandate's stand in.
+ */
+export async function runAtMandateLabelOutsideAnyRun<T>(grantId: string, fn: () => Promise<T>): Promise<T> {
   if (getUsageContext().label !== undefined) return fn();
-  return runAtSourceLabel(sourceId, fn);
+  return runAtMandateLabel(grantId, fn);
+}
+
+/**
+ * Run `fn` at a lookout's label, where nothing has set one: for the feed
+ * poll, which a timer runs for the lookout outside any run. What the poll
+ * records (the items it sees, the wake it queues, the ingests an
+ * auto_ingest feed raises) is the lookout's work. Inside a run (a
+ * Grantmaker adding a feed, the lookout reading one) the run's label stays.
+ */
+export async function runAtLookoutLabelOutsideAnyRun<T>(lookoutId: string, fn: () => Promise<T>): Promise<T> {
+  if (getUsageContext().label !== undefined) return fn();
+  const [lookout] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM lookouts WHERE id = $1`,
+    [lookoutId]
+  );
+  if (!lookout) return fn();
+  return runAtLabel(lookout.sensitivity_label, `lookout ${lookoutId}`, fn);
+}
+
+/**
+ * The label a pending claim's next pass is opened at, when no ledger row
+ * says: for the sweeps that find a claim pending and start its pass there
+ * and then (the reconcile sweep, the Steward's fallback lane).
+ *
+ * A claim is usually pending because messages wait in its inbox, and a
+ * message carries the label of whoever sent it. When every unread message
+ * on the claim carries the same label, the pass is theirs and is opened at
+ * that label: a pass asked for at a restricted label on a public claim is
+ * no longer taken up as public once its row has closed. When there is no
+ * unread message, or the unread messages carry more than one label, the
+ * claim's own label is used, as before (runAtClaimLabel): the claim has one
+ * pending slot, not one per label, and it cannot say which of two labels
+ * the next pass is for. That pass reads every unread message, whatever its
+ * label, and marks them all read. Telling them apart takes a slot, or a
+ * judgment, per label, which is later work.
+ */
+export async function pendingPassLabel(claimId: string, claimLabel: string): Promise<string> {
+  const waiting = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT DISTINCT sensitivity_label FROM node_messages
+      WHERE node_id = $1 AND read_at IS NULL
+      LIMIT 2`,
+    [claimId]
+  );
+  return waiting.length === 1 ? waiting[0]!.sensitivity_label : claimLabel;
 }
 
 /**
