@@ -595,6 +595,18 @@ async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string)
     }
   }
 
+  const sourceFacts = await rawQuery<{ id: string; source_type: string; content_hash: string | null; party: string | null; own: boolean | null }>(
+    `SELECT s.id, s.source_type, s.content_hash, p.name AS party, p.is_own_organization AS own
+       FROM sources s LEFT JOIN parties p ON p.id = s.party_id
+      WHERE s.id = ANY($1::uuid[]) ORDER BY s.retrieved_at, s.id`,
+    [[...new Set(instances.map((i) => i.source_id))]]
+  );
+  const interests = await rawQuery<{ source_id: string; party: string; stake: string }>(
+    `SELECT source_id, party, stake FROM source_interests
+      WHERE source_id = ANY($1::uuid[]) AND (claim_id IS NULL OR claim_id = $2) ORDER BY created_at, id`,
+    [sourceFacts.map((s) => s.id), node.id]
+  );
+
   for (const i of instances) {
     if (i.statement !== null) {
       const text = [`Stated view (${i.view_stance ?? i.stance})`, i.statement, ...(i.reasons ? [`Reasons: ${i.reasons}`] : []), ...(i.stake ? [`Stake: ${i.stake}`] : [])];
@@ -612,6 +624,21 @@ async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string)
     whole("reading", text.join("\n\n"), null, [i.source_id]);
   }
 
+  // Who supplied each source, by name, and what interest is recorded for it,
+  // in words: a part of its own for each source, so that a name or a stake
+  // that cannot be shown is held where a reader can see it is held. That an
+  // outside party supplied the source, and that an interest is recorded, are
+  // always shown (below).
+  sourceFacts.forEach((s, n) => {
+    const stakes = interests.filter((i) => i.source_id === s.id);
+    if (s.party === null && stakes.length === 0) return;
+    const text = [
+      `Supplier of source ${n + 1}: ${s.party ?? "not on record"}`,
+      ...stakes.map((i) => `Recorded interest: ${i.party}. ${i.stake}`),
+    ];
+    whole("supplier", text.join("\n\n"), null, [s.id]);
+  });
+
   const edges = await rawQuery<{ id: string; child: string; relation_type: string; reasoning: string; child_text: string; child_label: string }>(
     `SELECT r.id, r.child_claim_id AS child, r.relation_type, r.reasoning, c.text AS child_text, c.sensitivity_label AS child_label
        FROM claim_relationships r JOIN claims c ON c.id = r.child_claim_id
@@ -628,17 +655,6 @@ async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string)
   // What is always shown when the page is shown.
   const { summarizeCoverage } = await import("./coverage-service.js");
   const coverage = (await summarizeCoverage([node.id])).get(node.id);
-  const sourceFacts = await rawQuery<{ id: string; source_type: string; content_hash: string | null; party: string | null }>(
-    `SELECT s.id, s.source_type, s.content_hash, p.name AS party
-       FROM sources s LEFT JOIN parties p ON p.id = s.party_id
-      WHERE s.id = ANY($1::uuid[]) ORDER BY s.retrieved_at, s.id`,
-    [[...new Set(instances.map((i) => i.source_id))]]
-  );
-  const interests = await rawQuery<{ source_id: string; party: string; stake: string }>(
-    `SELECT source_id, party, stake FROM source_interests
-      WHERE source_id = ANY($1::uuid[]) AND (claim_id IS NULL OR claim_id = $2) ORDER BY created_at, id`,
-    [sourceFacts.map((s) => s.id), node.id]
-  );
   const verdict =
     judgmentKind === "assessment"
       ? { status: version.status, confidence: version.confidence, credence: version.claim_credence ?? null }
@@ -651,11 +667,12 @@ async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string)
     verdict,
     judged_at: new Date(version.assessed_at as string | Date).toISOString(),
     coverage: { examined: coverage?.examined ?? true, on: coverage?.on ?? [] },
-    sources: sourceFacts.map((s) => ({
+    sources: sourceFacts.map((s, n) => ({
+      source: n + 1,
       kind: s.source_type,
-      supplied_by: s.party,
-      interest: interests.filter((i) => i.source_id === s.id).map((i) => ({ party: i.party, stake: i.stake })),
       fingerprint: s.content_hash,
+      supplied_by: s.own === null ? "not_recorded" : s.own ? "the_organization_itself" : "an_outside_party",
+      interest_recorded: interests.some((i) => i.source_id === s.id),
     })),
     gaps: {
       requests: requests.map((q) => ({ state: q.state, addressed_to_someone: q.addressed_to !== null, filed: q.created_at.toISOString().slice(0, 10) })),

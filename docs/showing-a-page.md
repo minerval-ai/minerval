@@ -85,6 +85,7 @@ kinds.
 | `gap` | A request the page records, or a paragraph of what a question's assessment says remains open |
 | `argument` | An argument with its written form, its stance and this label's evaluation of it. Its kind says which way it bears (`argument:against`) |
 | `reading` | A source's reading: the passage, its context and how it was read |
+| `supplier` | Who supplied one source, by name, and the words of any interest recorded for it |
 | `stated_view` | A stated view recorded on the node |
 | `subclaim` | A subclaim with how it bears |
 
@@ -94,12 +95,19 @@ contributes this label's evaluation and not the argument's text.
 **What is always shown** is not a part. It is the page's first leaf, shown
 whenever the page is shown and never without it: the verdict with its
 confidence and any credence or estimate; coverage; that each source read at
-the page's label exists, with its kind, who supplied it, their recorded
-interest and its fingerprint; the gaps the page records (that each request
+the page's label exists, with its kind, its fingerprint, whether the
+organization itself or an outside party supplied it, and whether an interest
+in the node is recorded for it; the gaps the page records (that each request
 exists and where it stands, and whether the assessment says what remains
 open); how the page was made (the prompt set, the policy version, the model
 that assessed and the model that redacted); and the count of removals by
 category. Holding it holds the page.
+
+A reader needs to know that an interested outside party supplied a source in
+order to weigh the page, and does not always need the name. So the
+supplier's name and the words of the interest are a part, resting on that
+source's party: a name that cannot be shown is held where the reader sees it
+is held, and the page is still shown.
 
 ## The policy
 
@@ -216,7 +224,8 @@ After the check, people decide part by part.
 A part rests on the parties whose material it draws on, worked out from the
 record when the page is opened (`partiesFor`):
 
-- a reading rests on its source's party;
+- a reading, and the part that names a source's supplier and interest, rest
+  on that source's party;
 - an argument rests on the sources of the passages recorded for it and on
   everything the nodes it cites as premises rest on;
 - a subclaim rests on everything that node rests on;

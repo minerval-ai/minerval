@@ -187,16 +187,21 @@ describe("the Redactor's pass", () => {
     const page = await tool(id.page!, "get_page_to_redact");
     expect(page.success).toBe(true);
     expect(page.parts.map((p: any) => p.kind)).toEqual([
-      "summary", "summary", "reasoning", "reasoning", "reasoning", "argument", "argument", "reading", "reading", "subclaim",
+      "summary", "summary", "reasoning", "reasoning", "reasoning", "argument", "argument", "reading", "reading", "supplier", "supplier", "subclaim",
     ]);
     expect(page.parts[2].text).toBe(`The meter data shows ${SECRET} against a target of 4500.`);
     expect(page.parts[5].text).toBe("Argument (for): From the meters\n\nThe meters record more than the target.\n\nEvaluation: likely if the premises hold\n\nThe meters are direct evidence.");
-    expect(page.parts[9].text).toMatch(/^Subclaim \(supports\): The night shift logs are complete/);
+    expect(page.parts[11].text).toMatch(/^Subclaim \(supports\): The night shift logs are complete/);
+    // Who supplied a source, by name, and the words of its interest are a part; that an outside party supplied it and that an interest is recorded are always shown.
+    expect(page.parts[9].text).toMatch(/^Supplier of source 1: Acme \d+\n\nRecorded interest: Acme\. Acme is paid by output\.$/);
+    expect(page.parts[10].text).toMatch(/^Supplier of source 2: Borealis \d+$/);
     expect(page.always_shown.verdict).toEqual({ status: "supported", confidence: 0.8, credence: 0.85 });
     expect(page.always_shown.sources).toHaveLength(2);
-    expect(page.always_shown.sources[0].supplied_by).toMatch(/^Acme/);
-    expect(page.always_shown.sources[0].interest).toEqual([{ party: "Acme", stake: "Acme is paid by output." }]);
-    expect(page.always_shown.sources[0].fingerprint).toBe("aaaa1111");
+    expect(page.always_shown.sources).toEqual([
+      { source: 1, kind: "unknown", fingerprint: "aaaa1111", supplied_by: "an_outside_party", interest_recorded: true },
+      { source: 2, kind: "unknown", fingerprint: null, supplied_by: "an_outside_party", interest_recorded: false },
+    ]);
+    expect(JSON.stringify(page.always_shown)).not.toMatch(/Acme|Borealis|paid by output/);
     expect(page.sources.map((s: any) => s.label).sort()).toEqual([A, C, C].sort());
     const source = await tool(id.page!, "get_page_to_redact", { source_id: id.acmeSource });
     expect(source.success).toBe(true);
@@ -227,7 +232,7 @@ describe("the Redactor's pass", () => {
     expect((await tool(id.page!, "redact", { part: 4, passage: "March", category: "commercial figures", note: "x" })).code).toBe("NOT_BEING_REDACTED");
 
     const shape = await atA(() => rawQuery<{ position: number; descriptor: string; commitment: string; text: string | null; salt: string | null }>(`SELECT position, descriptor, commitment, text, salt FROM shown_parts WHERE page_id = $1 ORDER BY position`, [id.page]));
-    expect(shape.map((p) => p.descriptor)).toEqual(["summary", "summary", "reasoning", "reasoning", "reasoning", "argument:for", "argument:against", "reading", "reading", "subclaim"]);
+    expect(shape.map((p) => p.descriptor)).toEqual(["summary", "summary", "reasoning", "reasoning", "reasoning", "argument:for", "argument:against", "reading", "reading", "supplier", "supplier", "subclaim"]);
     expect(shape.every((p) => p.text === null && p.salt === null && /^[0-9a-f]{64}$/.test(p.commitment))).toBe(true);
     const [page] = await atA(() => rawQuery<{ root: string; header: string | null; stage: string }>(`SELECT root, header, stage FROM shown_pages WHERE id = $1`, [id.page]));
     expect(page!.root).toBe(finished.root);
@@ -286,7 +291,7 @@ describe("the gate", () => {
   it("shows each holder of release the items that rest on their party, least sure first, with the text only where they read the page's label", async () => {
     const forAcme = (await releaseQueue(actor.acme!)) as { items: any[] };
     // The verdict, the paragraphs of the summary and the reasoning, and Acme's own reading. Not Borealis's reading, and not the organization's parts.
-    expect(forAcme.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 8]);
+    expect(forAcme.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 8, 10]);
     expect(forAcme.items[1].redactor_least_sure).toBe(true);
     expect(forAcme.items[1].why_least_sure).toEqual(["The calibration month may identify the auditor."]);
     const figure = forAcme.items.find((i) => i.part === 3);
@@ -297,7 +302,7 @@ describe("the gate", () => {
     expect(figure.rests_on.map((r: any) => r.standing)).toEqual(["waiting", "waiting"]);
 
     const forBorealis = (await releaseQueue(actor.borealis!)) as { items: any[] };
-    expect(forBorealis.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 9]);
+    expect(forBorealis.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 9, 11]);
     expect(JSON.stringify(forBorealis)).not.toContain(SECRET);
     expect(JSON.stringify(forBorealis)).not.toContain("meter");
     expect(forBorealis.items[1].text_withheld).toMatch(/not the permission to read at the label/);
@@ -310,8 +315,8 @@ describe("the gate", () => {
     expect(notTheirs.refused[0]!.why).toBe("This item does not rest on that party's material, so it is not that party's to release or hold.");
     await expect(decideAtGate({ actor: actor.acme!, partyId: id.borealis!, items: all([9]), decision: "release" })).rejects.toThrow(/do not hold the permission to release/);
 
-    const acme = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null, 1, 2, 3, 4, 5, 8]), decision: "release" });
-    expect(acme.decided).toBe(7);
+    const acme = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null, 1, 2, 3, 4, 5, 8, 10]), decision: "release" });
+    expect(acme.decided).toBe(8);
     expect(acme.shown).toEqual([]);
     expect((await atA(() => shownPage(id.page!)))!.state).toBe("held");
     expect(await atA(() => rawQuery(`SELECT 1 FROM shown_parts WHERE page_id = $1 AND text IS NOT NULL`, [id.page]))).toEqual([]);
@@ -319,9 +324,9 @@ describe("the gate", () => {
     // Borealis holds one paragraph and releases the rest; the organization holds the argument against.
     await expect(decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([4]), decision: "hold", reason: "because" })).rejects.toThrow(/reason from this list/);
     await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([4]), decision: "hold", reason: "confidentiality" });
-    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 10]), decision: "release" });
+    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 12]), decision: "release" });
     await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([7]), decision: "hold", reason: "under_review" });
-    const borealis = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null, 1, 2, 3, 5, 9]), decision: "release" });
+    const borealis = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null, 1, 2, 3, 5, 9, 11]), decision: "release" });
     expect(borealis.shown).toEqual([id.page]);
   });
 
@@ -337,7 +342,8 @@ describe("what the destination sees", () => {
     const page = (await atA(() => shownPage(id.page!)))!;
     expect(page.state).toBe("released_in_part");
     expect(page.parts_held).toBe(2);
-    expect(page.of_parts).toBe(10);
+    expect(page.of_parts).toBe(12);
+    expect((page.parts as any[])[9].text).toMatch(/^Supplier of source 1: Acme/);
     expect(page.held_kinds).toBe("a paragraph of reasoning, an argument against");
     const parts = page.parts as any[];
     expect(parts[2].text).toBe("The meter data shows [redacted: commercial figures] against [redacted: commercial figures].");
@@ -349,7 +355,7 @@ describe("what the destination sees", () => {
     expect((page.always_shown as any).removals).toEqual({ "commercial figures": 3 });
     expect((page.always_shown as any).made.policy.version).toBe(1);
     expect((page.always_shown as any).made.prompt_set).toMatch(/^[0-9a-f]{64}$/);
-    expect(page.verification).toEqual({ ok: true, problems: [], checked: 9, held: 2 });
+    expect(page.verification).toEqual({ ok: true, problems: [], checked: 11, held: 2 });
     const whole = JSON.stringify(page);
     for (const hidden of [SECRET, "target of", "in March", "Unread logs", "An output figure"]) expect(whole).not.toContain(hidden);
   });
@@ -430,7 +436,9 @@ describe("arrival at the destination label", () => {
     expect(source!.sensitivity_label).toBe(A);
     expect(source!.raw_content).toContain("Status: supported. Confidence: 0.8. Credence: 0.85.");
     expect(source!.raw_content).toContain("Removals under the policy: commercial figures: 3.");
-    expect(source!.raw_content).toContain("Parts: 10, of which 2 are held (a paragraph of reasoning, an argument against).");
+    expect(source!.raw_content).toContain("source 1: unknown, supplied by an outside party, an interest in this node is recorded for it, fingerprint aaaa1111");
+    expect(source!.raw_content).toContain("source 2: unknown, supplied by an outside party, no interest in this node is recorded for it");
+    expect(source!.raw_content).toContain("Parts: 12, of which 2 are held (a paragraph of reasoning, an argument against).");
     expect(source!.raw_content).toContain("Audit's check of the redaction: The reasoning shown supports the verdict in part.");
     expect(source!.raw_content).toContain("[redacted: commercial figures]");
     expect(source!.raw_content).not.toContain(SECRET);
@@ -441,7 +449,7 @@ describe("arrival at the destination label", () => {
     const messages = await system(() => rawQuery<{ trigger: string; sensitivity_label: string; body: string }>(`SELECT trigger, sensitivity_label, body FROM node_messages WHERE node_id = $1 AND trigger = 'page_shown'`, [id.node]));
     expect(messages).toHaveLength(1);
     expect(messages[0]!.sensitivity_label).toBe(A);
-    expect(messages[0]!.body).toContain("3 passages were removed under the boundary's policy and marked in place, and 2 of its 10 parts are held.");
+    expect(messages[0]!.body).toContain("3 passages were removed under the boundary's policy and marked in place, and 2 of its 12 parts are held.");
     const slots = await system(() => rawQuery<{ l: string; s: string }>(`SELECT sensitivity_label AS l, steward_state AS s FROM steward_slots WHERE claim_id = $1 ORDER BY 1`, [id.node]));
     expect(slots).toEqual([{ l: A, s: "pending" }]);
     const [own] = await system(() => rawQuery<{ steward_state: string }>(`SELECT steward_state FROM claims WHERE id = $1`, [id.node]));

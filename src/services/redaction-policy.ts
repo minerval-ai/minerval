@@ -87,7 +87,7 @@ export const ALWAYS_SHOWN: readonly string[] = [
   "The verdict: the status, the estimate or the answer, with its confidence and any credence.",
   "Coverage: whether the node was examined, and on what kinds of evidence.",
   "That something was removed, in the place it was removed from.",
-  "That each source exists: its kind, who supplied it, their recorded interest, and its fingerprint.",
+  "That each source exists: its kind, its fingerprint, whether the organization itself or an outside party supplied it, and whether an interest in the node is recorded for it. The supplier's name and the words of the interest are a part of the page like any other.",
   "The gaps the page itself records: that each exists, and where it stands.",
   "How the page was made: the prompt set, the version of this policy, the model, and any addition a deployment made to a role's prompt.",
   "The number of removals in each category.",

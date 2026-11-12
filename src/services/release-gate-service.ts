@@ -292,6 +292,13 @@ function verdictLine(header: Record<string, unknown>): string {
   return `Standing: ${String(v.standing)}.${v.confidence !== null && v.confidence !== undefined ? ` Confidence: ${String(v.confidence)}.` : ""}`;
 }
 
+/** Who supplied a source, as far as is always shown: which side of the organization's own edge, and never the name. */
+const SUPPLIED_BY: Record<string, string> = {
+  the_organization_itself: "supplied by the organization itself",
+  an_outside_party: "supplied by an outside party",
+  not_recorded: "its supplier is not on record",
+};
+
 /** The held parts counted by kind, in words: "2 arguments against, a paragraph of reasoning". */
 function heldByKind(parts: readonly { descriptor: string }[]): string {
   const counts = new Map<string, number>();
@@ -309,7 +316,7 @@ function renderShownPage(
   const header = JSON.parse(page.header!) as Record<string, unknown>;
   const held = parts.filter((p) => p.released_at === null);
   const removals = Object.entries((header.removals ?? {}) as Record<string, number>);
-  const sources = (header.sources ?? []) as Array<{ kind: string; supplied_by: string | null; interest: Array<{ party: string; stake: string }>; fingerprint: string | null }>;
+  const sources = (header.sources ?? []) as Array<{ source: number; kind: string; supplied_by: string; interest_recorded: boolean; fingerprint: string | null }>;
   const gaps = (header.gaps ?? {}) as { requests?: Array<{ state: string }>; names_what_remains_open?: boolean };
   const made = (header.made ?? {}) as Record<string, unknown>;
   const lines = [
@@ -324,8 +331,8 @@ function renderShownPage(
       : `Sources read at its label: ${sources
           .map(
             (s) =>
-              `${s.kind.replace(/_/g, " ")}, supplied by ${s.supplied_by ?? "a party not on record"}` +
-              (s.interest.length > 0 ? `, recorded interest: ${s.interest.map((i) => `${i.party} (${i.stake})`).join("; ")}` : "") +
+              `source ${s.source}: ${s.kind.replace(/_/g, " ")}, ${SUPPLIED_BY[s.supplied_by] ?? SUPPLIED_BY.not_recorded}, ` +
+              `${s.interest_recorded ? "an interest in this node is recorded for it" : "no interest in this node is recorded for it"}` +
               (s.fingerprint ? `, fingerprint ${s.fingerprint.slice(0, 16)}` : "")
           )
           .join(" | ")}.`,

@@ -484,17 +484,20 @@ readers can read them before anyone decides what to release, so that what
 they are later shown can be checked against what you left.
 
 The page comes already divided into parts: a paragraph of the summary or
-of the reasoning, an argument with its evaluation, a source's reading, a
-subclaim with how it bears, a request the page records. A part is
+of the reasoning, an argument with its evaluation, a source's reading, who
+supplied a source and what interest is recorded for it, a subclaim with
+how it bears, a request the page records. A part is
 released or held whole, and a held part is shown as a gap that says what
 kind of part it was. Your removals sit inside the parts, where the
 protected words were.
 
 Some things are shown whenever the page is shown, and the policy lists
 them: the verdict with its confidence and any credence or estimate, the
-coverage, that each source exists with who supplied it and their recorded
-interest, the gaps the page records, how the page was made, and the count
-of your removals. get_page_to_redact gives them under always_shown. No
+coverage, that each source exists with its kind and fingerprint, whether
+the organization itself or an outside party supplied it and whether an
+interest is recorded for it, the gaps the page records, how the page was
+made, and the count of your removals. A supplier's name and the words of
+an interest are a part of the page like any other. get_page_to_redact gives them under always_shown. No
 tool removes anything from them. If one of them could not be shown
 without giving away what a category protects, the page cannot be shown
 under this policy: say so with cannot_cross, naming the category and

@@ -23,7 +23,8 @@ import { markOf, type Mark } from "./page-fingerprint.js";
  * `wording` is the node's own wording, present when the node itself is at
  * the page's label and so cannot be read on the other side. `gap` is
  * something the page records as missing: a request it keeps, or what a
- * question's assessment says remains open.
+ * question's assessment says remains open. `supplier` is the name of who
+ * supplied one source and the words of any interest recorded for it.
  */
 export const PART_KINDS = [
   "wording",
@@ -32,6 +33,7 @@ export const PART_KINDS = [
   "gap",
   "argument",
   "reading",
+  "supplier",
   "stated_view",
   "subclaim",
 ] as const;
@@ -58,6 +60,7 @@ const KIND_WORDS: Record<string, [one: string, several: string]> = {
   "argument:against": ["an argument against", "arguments against"],
   "argument:neutral": ["an argument that takes neither side", "arguments that take neither side"],
   reading: ["a source's reading", "sources' readings"],
+  supplier: ["a source's supplier and recorded interest, by name", "sources' suppliers and recorded interests, by name"],
   stated_view: ["a stated view", "stated views"],
   subclaim: ["a subclaim with how it bears", "subclaims with how they bear"],
 };

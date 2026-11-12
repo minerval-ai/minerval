@@ -56,6 +56,7 @@ describe("what a held part says", () => {
     expect(heldWords("argument:against", ["Acme"])).toBe("[An argument against, held by Acme]");
     expect(heldWords("reasoning", ["Acme", "Borealis"])).toBe("[A paragraph of reasoning, held by Acme and Borealis]");
     expect(heldWords("subclaim", [])).toBe("[A subclaim with how it bears, held]");
+    expect(heldWords("supplier", ["Acme"])).toBe("[A source's supplier and recorded interest, by name, held by Acme]");
     expect(kindWords("argument:against", 2)).toBe("2 arguments against");
     expect(kindWords("reading", 3)).toBe("3 sources' readings");
   });
