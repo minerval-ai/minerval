@@ -5,21 +5,41 @@ import type { TreeNode } from "./types";
 //   [[claim:<id>|inline text]]  — rendered as the authored phrasing
 // The backend validates ids as uuids; the parser here is looser so design
 // fixtures with slug ids render the same way.
+//
+// Prose may point at two other kinds of record the same way (a finding's
+// account does): [[argument:<id>|phrase]] and [[source:<id>|phrase]]. They
+// are links and nothing more: an argument's written form is still made of
+// its claims, so hasClaimLinks and orderByMention read claim links only.
 const CLAIM_LINK = /\[\[claim:([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+const RECORD_LINK = /\[\[(claim|argument|source):([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+
+export type RecordKind = "argument" | "source";
 
 export type WrittenFormSegment =
   | { kind: "text"; text: string }
-  | { kind: "link"; claimId: string; display: string | null };
+  | { kind: "link"; claimId: string; display: string | null }
+  | { kind: "record"; record: RecordKind; id: string; display: string | null };
 
 export type ProseSegment = WrittenFormSegment | { kind: "url"; href: string };
 
-/** Split a written form into plain-text and claim-link segments, in order. */
+/** Where a linked record's page is. */
+export function recordHref(record: RecordKind, id: string): string {
+  return record === "argument" ? `/arguments/${id}` : `/sources/${id}`;
+}
+
+/** Split a written form into plain-text and link segments, in order. */
 export function parseWrittenForm(content: string): WrittenFormSegment[] {
   const segments: WrittenFormSegment[] = [];
   let last = 0;
-  for (const m of content.matchAll(CLAIM_LINK)) {
+  for (const m of content.matchAll(RECORD_LINK)) {
     if (m.index! > last) segments.push({ kind: "text", text: content.slice(last, m.index) });
-    segments.push({ kind: "link", claimId: m[1]!, display: m[2] ?? null });
+    const id = m[2]!.trim();
+    const display = m[3] ?? null;
+    segments.push(
+      m[1] === "claim"
+        ? { kind: "link", claimId: m[2]!, display }
+        : { kind: "record", record: m[1] as RecordKind, id, display }
+    );
     last = m.index! + m[0].length;
   }
   if (last < content.length) segments.push({ kind: "text", text: content.slice(last) });
