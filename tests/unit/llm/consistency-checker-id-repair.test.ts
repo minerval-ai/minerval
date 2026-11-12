@@ -47,8 +47,8 @@ vi.mock("../../../src/llm/tools/finding-tools.js", () => ({
 vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
   createSkillLoadTools: () => ({ definitions: [], execute: async () => null, pointed: [], pointerNote: "" }),
 }));
-vi.mock("../../../src/services/curation-service.js", () => ({
-  CURATION_CONCERN_MAX_CHARS: 4_000,
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/curation-service.js")>()),
   requestCuration: vi.fn(async () => ({ ok: true, requestId: "r", actionId: "a", repeat: false })),
 }));
 vi.mock("../../../src/services/claim-view-service.js", async (importOriginal) => ({
