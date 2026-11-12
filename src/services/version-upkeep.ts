@@ -174,3 +174,79 @@ export function versionsMovedMessage(
     `log_stewardship_decision, and it goes on being shown as made against the earlier one.`
   );
 }
+
+const REASON_MATERIAL =
+  "The upkeep of versions finds, at every label, the versions on a node at another label whose material at their own label is gone; each node's reassessment is then opened at its own version's label.";
+
+/**
+ * Open a reassessment, at its own label, for every current version on a
+ * node at another label that no longer has material at its own label
+ * bearing on the node (minerval_material_at). The database refuses such a
+ * version when it is recorded; it cannot refuse the later statement that
+ * detaches the source or removes the edge the version rested on, so the
+ * version is found here and its Steward told. Once for each version: a
+ * Steward that looks and leaves it is not asked again. Returns how many it
+ * opened. On the public graph there is one label and nothing is asked.
+ */
+export async function openReassessmentsForVersionsWithoutMaterial(): Promise<number> {
+  if (oneLabelOnly()) return 0;
+  const found = await withSystemClearance(REASON_MATERIAL, async () => {
+    const rows: Array<{ version_id: string; claim_id: string; label: string }> = [];
+    for (const { table } of NODE_JUDGMENTS) {
+      rows.push(
+        ...(await rawQuery<{ version_id: string; claim_id: string; label: string }>(
+          `SELECT v.id AS version_id, v.claim_id, v.sensitivity_label AS label
+             FROM ${table}_versions v
+             JOIN claims c ON c.id = v.claim_id AND c.state = 'active'
+            WHERE v.sensitivity_label <> c.sensitivity_label
+              AND NOT minerval_material_at(v.claim_id, v.sensitivity_label)
+              AND NOT EXISTS (SELECT 1 FROM node_messages m
+                               WHERE m.node_id = v.claim_id AND m.trigger = 'version_material_gone'
+                                 AND m.sender_ref = 'material-gone:' || v.id::text
+                                 AND m.sensitivity_label = v.sensitivity_label)
+            LIMIT ${PER_SWEEP}`
+        ))
+      );
+    }
+    return rows;
+  });
+  let opened = 0;
+  for (const { version_id, claim_id, label } of found) {
+    try {
+      await runAtLabel(label, `the version of node ${claim_id} at ${label}`, async () => {
+        const { enqueueSteward } = await import("./queue-service.js");
+        await enqueueSteward({
+          claimId: claim_id,
+          trigger: "version_material_gone",
+          context: versionMaterialGoneMessage(label),
+          sender: { kind: "system", ref: `material-gone:${version_id}` },
+        });
+      });
+      opened++;
+    } catch (err) {
+      console.error(
+        `[version-upkeep] could not open the reassessment of node ${claim_id} at ${label}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
+  }
+  return opened;
+}
+
+/** What the Steward at `label` is told of a version whose material at that label is gone. */
+export function versionMaterialGoneMessage(label: string): string {
+  return (
+    `The version of this node's judgment at \`${label}\` no longer has anything at \`${label}\` to rest on. ` +
+    `This node carries another label, and a version at \`${label}\` is recorded on it only where material at ` +
+    `\`${label}\` bears on it: a source labeled \`${label}\` attached to the node, a node labeled \`${label}\` ` +
+    `under it, or a node under it that carries a version at \`${label}\`. There was such material when the ` +
+    `version was recorded, and there is none now: it was detached or removed since. The version still ` +
+    `stands, and readers at \`${label}\` are shown it.\n` +
+    `Whether it should stand is yours to judge. If material at \`${label}\` does bear on this node, attach it ` +
+    `again (a source with record_claim_instance, or the node that carries it as a subclaim or a premise) ` +
+    `and record the version again, saying what the material shows. A version cannot be recorded here ` +
+    `while nothing at \`${label}\` is attached. If nothing at \`${label}\` bears on this node any longer, say ` +
+    `so with log_stewardship_decision. You are told this once for each version.`
+  );
+}

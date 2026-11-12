@@ -48,7 +48,10 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
-import { openReassessmentsForVersionsMadeBesideEarlier } from "../services/version-upkeep.js";
+import {
+  openReassessmentsForVersionsMadeBesideEarlier,
+  openReassessmentsForVersionsWithoutMaterial,
+} from "../services/version-upkeep.js";
 import { withSystemClearance } from "../db/clearance.js";
 
 export interface AllocationTickResult {
@@ -152,6 +155,12 @@ export async function allocationSchedulerTick(
   await openReassessmentsForVersionsMadeBesideEarlier().catch((err: unknown) =>
     console.error(
       `[allocation-scheduler] version upkeep failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+  // And versions whose material at their own label has since been removed.
+  await openReassessmentsForVersionsWithoutMaterial().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] version upkeep (material) failed: ${err instanceof Error ? err.message : String(err)}`
     )
   );
 

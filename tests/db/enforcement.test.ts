@@ -922,7 +922,7 @@ describe("a node's judgment in force", () => {
     );
     expect(sqlState(err)).toBe("MVL07");
     expect((err as Error).message).toBe(
-      `this version was not recorded: nothing at the label "${A}" bears on the node, which carries the label "public"`
+      `this version was not recorded: nothing at the label "${A}" bears on the node`
     );
     expect(await inForce(claimId)).toEqual([{ sensitivity_label: B }]);
   });

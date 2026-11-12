@@ -2408,7 +2408,16 @@ label is stored only where material at the version's own label bears on the
 node (`minerval_material_at`: a source at that label attached to it, a node
 at that label under it, or a node under it with a version at that label);
 otherwise the tool refuses, says what would satisfy it, and the version that
-label reads stands for its readers. A node's own label needs none.
+label reads stands for its readers. A node's own label needs none. The
+database tests it whenever a version becomes current, by an insert or by an
+update, and its refusal (`MVL07`) names the writer's own label and no
+other, in the same words for a node the writer does not read or that does
+not exist. Material removed after a version was recorded is not a write of
+the version and is not refused: the scheduler finds a version left with
+none and opens its reassessment at the version's own label, once, with a
+message that says the material it rested on is gone
+(`openReassessmentsForVersionsWithoutMaterial` in
+`src/services/version-upkeep.ts`).
 
 On a deployment that mirrors the public graph, the `public` version of a
 mirrored node is the mirrored row. Nothing local records one or opens work

@@ -103,6 +103,10 @@ export interface StewardMessage {
     // first recorded (version-upkeep.ts). The context names the labels and
     // nothing else; whether it matters is the Steward's judgment.
     | "version_beside_changed"
+    // A version at this label on a node that carries another label rested
+    // on material at this label, and that material has since been detached
+    // or removed (version-upkeep.ts). The context says so in fixed words.
+    | "version_material_gone"
     // The public graph merged or withdrew a node that work at this label
     // rests on, and the batch of the mirror that says so is in
     // (mirror-upkeep.ts). The context says what happened and what of this

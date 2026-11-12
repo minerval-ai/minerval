@@ -181,6 +181,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "The upkeep of versions finds, at every label, the versions made beside one that has since been replaced; each node's reassessment is then opened at its own version's label.",
       "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the label of the version that is out of date, and the message names only labels that label reads (the versions it was made beside), in fixed words.",
     ],
+    [
+      "The upkeep of versions finds, at every label, the versions on a node at another label whose material at their own label is gone; each node's reassessment is then opened at its own version's label.",
+      "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the version's own label, and the message is fixed words that name that label and no other.",
+    ],
   ],
   "src/workers/correspondent-triggers.ts": [
     [
