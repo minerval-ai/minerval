@@ -191,7 +191,7 @@ describe("the labels table", () => {
         "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events",
         "reputation_events", "request_targets", "request_work", "requests", "research_runs",
         "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
-        "source_relationships", "source_segments", "sources", "taggings", "tags",
+        "source_relationships", "source_segments", "sources", "stated_views", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });
