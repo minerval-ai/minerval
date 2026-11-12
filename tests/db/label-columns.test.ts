@@ -94,7 +94,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-six tables, public by default, each with a key to labels", async () => {
+  it("is on ninety-nine tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -102,9 +102,9 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(96);
+    expect(columns).toHaveLength(99);
     for (const column of columns) {
-      expect(column, column.table_name).toMatchObject({ column_default: "'public'::text", is_nullable: "NO", data_type: "text" });
+      expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
     // One key each, and on no table that lacks the column.
     expect((await keys()).map((k) => k.table_name)).toEqual(columns.map((c) => c.table_name));
@@ -174,9 +174,6 @@ describe("the label column, in the catalog", () => {
     expect(rows.map((r) => r.table_name)).toEqual([
       // The groups a person's latest sign-in carried, which decide what they may read. Not itself read at a label.
       "account_groups",
-      // Money placed on the ledger. It also carries a commission's brief
-      // and reason, so it is not settled that it should stay without one.
-      "action_allocations",
       // The log of what administrators changed about who may read what. Not itself read at a label.
       "administrative_events",
       // Accounts and their keys.
@@ -189,8 +186,6 @@ describe("the label column, in the catalog", () => {
       // The labels themselves.
       "label_reads",
       "labels",
-      // Nothing writes or reads it any more. Not settled, as action_allocations.
-      "mandate_valuations",
       // A deployment's bookkeeping about its feed of public rows, with no text of their own.
       "mirror_applied_batches",
       "mirror_feed_batches",
@@ -212,8 +207,6 @@ describe("the label column, in the catalog", () => {
       "prize_payouts",
       // Counts of what waits, with no content.
       "queue_depth_snapshots",
-      // Money moved between two mandates, with a note. Not settled, as action_allocations.
-      "regrants",
       // Database time used by query_sql, per account and day.
       "sql_usage",
     ]);

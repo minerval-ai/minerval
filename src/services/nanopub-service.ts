@@ -1,4 +1,5 @@
 import { loadConfig } from "../config.js";
+import { SIDELESS_STATED_STANCES } from "../schemas/common.js";
 import {
   CITATION_AUTHOR,
   assembleEvidenceRecord,
@@ -212,10 +213,12 @@ function buildGraphs(
           // A posing source (#445) states the proposition without taking a
           // side: it discusses the claim, it neither supports nor disputes it.
           // A mentioning source only refers to the claim: it cites it.
+          // A stated view that qualifies the claim or only gives it a
+          // probability (§4) takes no side either.
           p:
             inst.stance === "denies"
               ? "cito:disputes"
-              : inst.stance === "poses"
+              : inst.stance === "poses" || SIDELESS_STATED_STANCES.has(inst.stance)
                 ? "cito:discusses"
                 : inst.stance === "mentions"
                   ? "cito:cites"

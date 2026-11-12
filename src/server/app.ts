@@ -54,6 +54,7 @@ import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
+import { statedViewRoutes } from "../routes/stated-views.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -148,6 +149,8 @@ export async function buildApp() {
   if (mirror.publisher || mirror.applier) {
     await app.register(mirrorRoutes, { prefix: "/mirror" });
   }
+  // Spans /claims and /stated-views, so no prefix.
+  await app.register(statedViewRoutes);
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool

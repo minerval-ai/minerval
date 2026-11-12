@@ -911,6 +911,13 @@
       "when": 1794497263933,
       "tag": "0129_stated_views",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1794502560220,
+      "tag": "0130_label_enforcement",
+      "breakpoints": true
     }
   ]
 }
