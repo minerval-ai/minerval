@@ -36,7 +36,15 @@ export function BuyOwls({ packs, returnTo }: { packs: OwlPack[]; returnTo?: stri
               <OwlMark size={14} className="owl-mark" />
               {pack.owls} owls
             </span>
-            <span className="owl-pack-price">{packPrice(pack.price_cents)}</span>
+            <span className="owl-pack-price">
+              {packPrice(pack.price_cents)}
+              {pack.owls > 0 && (
+                <span className="owl-pack-each">
+                  {" "}
+                  · {packPrice(Math.round(pack.price_cents / pack.owls))} each
+                </span>
+              )}
+            </span>
             {pack.discount_percent > 0 && (
               <span className="owl-pack-discount">
                 save {pack.discount_percent}%
