@@ -108,6 +108,191 @@ const sensitivityLabelColumn = () =>
     .references(() => labels.name);
 
 // ---------------------------------------------------------------------------
+// parties: whose material a source is (src/permissions.ts)
+//
+// Every private source belongs to a party: the organization that runs the
+// deployment, or an outside party that supplied the material (a customer, a
+// supplier, a developer whose system is being evaluated). A deployment holds
+// material from as many parties as it deals with, so a party is a row and an
+// engagement is never a new graph or a new account. The permission to
+// release is granted for one party's material (permission_grants.party_id).
+//
+// At most one row is the organization itself (is_own_organization). The
+// public graph has no parties and its sources have none.
+// ---------------------------------------------------------------------------
+export const parties = pgTable(
+  "parties",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    isOwnOrganization: boolean("is_own_organization").notNull().default(false),
+    // The administrator who added it. Null only for a row no person added.
+    createdBy: uuid("created_by").references((): AnyPgColumn => contributors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // One party per name, however it is capitalized.
+    uniqueIndex("uq_parties_name").on(sql`lower(${table.name})`),
+    uniqueIndex("uq_parties_own_organization")
+      .on(table.isOwnOrganization)
+      .where(sql`is_own_organization`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// permission_grants: who may do what in a private deployment
+// (src/permissions.ts)
+//
+// One row is one grant of one permission to one subject, and the same row
+// later records its removal. Rows are never deleted or rewritten, so the
+// table is the log of every grant and removal as well as the state: a grant
+// is live while removed_at is null.
+//
+// The subject is an account or a named group, never both. A group is a name
+// the identity provider put in a person's sign-in (account_groups); the
+// grant reaches whoever's latest sign-in carried that name.
+//
+// The scope depends on the permission: the two reading permissions are held
+// at a label, releasing is held for one party's material, and the rest have
+// no scope. The CHECKs hold a row to that, so a grant that reads as wider
+// than it was meant cannot be written.
+//
+// granted_via says how the grant came to be when no administrator made it:
+// the deployment's first-administrator setting, or the operator key. Those
+// are the two cases where granted_by is null.
+//
+// The public graph grants nothing and the table stays empty there.
+// ---------------------------------------------------------------------------
+export const permissionGrants = pgTable(
+  "permission_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    permission: text("permission").notNull(),
+    accountId: uuid("account_id").references((): AnyPgColumn => contributors.id),
+    groupName: text("group_name"),
+    label: text("label").references(() => labels.name),
+    partyId: uuid("party_id").references(() => parties.id),
+    grantedBy: uuid("granted_by").references((): AnyPgColumn => contributors.id),
+    grantedVia: text("granted_via").notNull().default("administrator"),
+    grantedAt: timestamp("granted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    removedBy: uuid("removed_by").references((): AnyPgColumn => contributors.id),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "ck_permission_grants_permission",
+      sql`${table.permission} IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer')`
+    ),
+    check(
+      "ck_permission_grants_subject",
+      sql`(${table.accountId} IS NULL) <> (${table.groupName} IS NULL)`
+    ),
+    check(
+      "ck_permission_grants_label_scope",
+      sql`(${table.label} IS NOT NULL) = (${table.permission} IN ('read', 'read_sources'))`
+    ),
+    check(
+      "ck_permission_grants_party_scope",
+      sql`(${table.partyId} IS NOT NULL) = (${table.permission} = 'release')`
+    ),
+    check(
+      "ck_permission_grants_granted_via",
+      sql`${table.grantedVia} IN ('administrator', 'first_administrator', 'operator')`
+    ),
+    check(
+      "ck_permission_grants_granted_by",
+      sql`(${table.grantedBy} IS NOT NULL) = (${table.grantedVia} = 'administrator')`
+    ),
+    check(
+      "ck_permission_grants_removal",
+      sql`(${table.removedBy} IS NULL) OR (${table.removedAt} IS NOT NULL)`
+    ),
+    // One live grant of a permission, at a scope, per subject: granting what
+    // is already held is refused, not stacked.
+    uniqueIndex("uq_permission_grants_live_account")
+      .on(
+        table.accountId,
+        table.permission,
+        sql`coalesce(${table.label}, '')`,
+        sql`coalesce(${table.partyId}, '00000000-0000-0000-0000-000000000000'::uuid)`
+      )
+      .where(sql`removed_at IS NULL AND account_id IS NOT NULL`),
+    uniqueIndex("uq_permission_grants_live_group")
+      .on(
+        table.groupName,
+        table.permission,
+        sql`coalesce(${table.label}, '')`,
+        sql`coalesce(${table.partyId}, '00000000-0000-0000-0000-000000000000'::uuid)`
+      )
+      .where(sql`removed_at IS NULL AND group_name IS NOT NULL`),
+    index("idx_permission_grants_log").on(table.grantedAt),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// account_groups: the groups a person's latest sign-in carried
+//
+// The API never asks the identity provider anything. The web tier passes
+// the group names from the sign-in's claims when it provisions the account,
+// and they replace the account's rows here. asserted_at is that sign-in's
+// time: a membership counts toward group grants only while it is recent
+// (SIGN_IN_VALID_HOURS, src/permissions.ts), because a person removed from
+// a group at the provider is not reported here by anything but their next
+// sign-in.
+// ---------------------------------------------------------------------------
+export const accountGroups = pgTable(
+  "account_groups",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    groupName: text("group_name").notNull(),
+    assertedAt: timestamp("asserted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.groupName] }),
+    index("idx_account_groups_group").on(table.groupName),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// administrative_events: what administrators changed besides grants
+//
+// Append-only. A grant and its removal are logged in permission_grants
+// itself. The other acts an administrator's permission covers change who
+// may read or release without leaving a row that says so: defining a label,
+// saying which label reads which (label_reads holds only what is true now),
+// adding a party, and setting whose material a source is. Each writes one
+// row here in the same transaction as the change, with what was changed in
+// `detail`.
+//
+// `action` is a name the code gives the act ('label_defined',
+// 'label_read_added', 'label_read_removed', 'party_added',
+// 'source_party_set'). It is not held to a list here, so that a later kind
+// of administrative act is a new name and not a migration. actor_id is the
+// administrator who did it; null only for a change no person made.
+// ---------------------------------------------------------------------------
+export const administrativeEvents = pgTable(
+  "administrative_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    action: text("action").notNull(),
+    actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
+    detail: jsonb("detail").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_administrative_events_time").on(table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
 // claims
 // ---------------------------------------------------------------------------
 export const claims = pgTable(
@@ -867,6 +1052,11 @@ export const sources = pgTable("sources", {
   // Who may read this document (src/labels.ts): the label of the run or
   // request that first recorded it.
   sensitivityLabel: sensitivityLabelColumn(),
+  // Whose material this is (parties above): the organization itself or an
+  // outside party that supplied it. Null on the public graph, where no
+  // source belongs to a party, and until an administrator says. Each change
+  // is logged in administrative_events.
+  partyId: uuid("party_id").references(() => parties.id),
 }, (table) => [
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
