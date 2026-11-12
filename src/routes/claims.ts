@@ -14,7 +14,8 @@ import {
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
-import { COVERAGE_DESCRIPTION, COVERAGE_EVIDENCE, coverage, summarizeCoverage } from "../services/coverage-service.js";
+import { membersOnly } from "../permissions.js";
+import { COVERAGE_DESCRIPTION, COVERAGE_EVIDENCE, READER_COVERAGE_EVIDENCE, coverage, summarizeCoverage } from "../services/coverage-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
@@ -669,7 +670,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               claim: claimSchema,
               assessment: assessmentSchema,
-              coverage: coverageSchema,
+              // A members-only deployment can hold more than one label, and coverage is
+              // then said to its reader, in words of its own (coverage-service.ts).
+              coverage: membersOnly()
+                ? {
+                    ...coverageSchema,
+                    properties: {
+                      ...coverageSchema.properties,
+                      on: { type: "array", items: { type: "string", enum: [...COVERAGE_EVIDENCE, ...READER_COVERAGE_EVIDENCE] } },
+                    },
+                  }
+                : coverageSchema,
               since_assessed: sinceAssessedSchema,
               // On a deployment that mirrors the public graph: that this
               // node is the public graph's, and as of when. The schema has

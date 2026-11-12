@@ -547,7 +547,12 @@ async function sourcesUnder(nodeIds: readonly string[], memo: Map<string, string
  * as the rows there stand, and divide it into its parts. Only rows written
  * at this label are parts of this page.
  */
-async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string): Promise<RecordedPage> {
+async function readPage(
+  node: NodeRow,
+  judgmentKind: string,
+  judgmentId: string,
+  saidTo: { reads: readonly string[]; outside: boolean }
+): Promise<RecordedPage> {
   const label = currentLabel();
   const memo = new Map<string, string[]>();
   const parts: RecordedPart[] = [];
@@ -681,7 +686,8 @@ async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string)
 
   // What is always shown when the page is shown.
   const { summarizeCoverage } = await import("./coverage-service.js");
-  const coverage = (await summarizeCoverage([node.id])).get(node.id);
+  // Said to the readers the page is shown to, not to the run that reads it here.
+  const coverage = (await summarizeCoverage([node.id], { saidTo })).get(node.id);
   const verdict =
     judgmentKind === "assessment"
       ? { status: version.status, confidence: version.confidence, credence: version.claim_credence ?? null }
@@ -765,8 +771,10 @@ async function openPage(
 ): Promise<string> {
   const ownOrganization = (await ownOrganizationParty())!.id;
   const policy = (await ensureBoundaryPolicy(boundaryOf(showing)))!;
+  const [reach] = await rawQuery<{ reads: string[] }>(`SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads`, [destination]);
+  const saidTo = { reads: reach!.reads, outside: showing.to_outside };
   const page = await runAtLabel(showing.page_label, `the page of node ${node.id} under showing ${showing.id}`, async () => {
-    const recorded = await readPage(node, judgmentKind, version.id);
+    const recorded = await readPage(node, judgmentKind, version.id, saidTo);
     const needs = await partiesFor(recorded.sources, showing, ownOrganization);
     const partNeeds: string[][] = [];
     for (const p of recorded.parts) partNeeds.push(await partiesFor(p.sources, showing, ownOrganization));

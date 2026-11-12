@@ -48,12 +48,31 @@
  * costs what one node does, and the read of one node is the same query with
  * one id: the two cannot come to disagree.
  */
-import { rawQuery } from "../db/client.js";
+import { currentReadClearance, rawQuery } from "../db/client.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
 import { JUDGED_CTE } from "./judgment-inputs-service.js";
 
 /** What a judgment can have been made on. Values are added here, never renamed. */
 export const COVERAGE_EVIDENCE = ["public_evidence", "evidence_not_shown"] as const;
-export type CoverageEvidence = (typeof COVERAGE_EVIDENCE)[number];
+
+/**
+ * What a judgment can have been made on where a deployment holds material
+ * at more than one label. There "public evidence" would be false of a
+ * judgment made on sources only some readers read, so coverage is said to
+ * the reader it is served to: evidence that reader can read, and evidence
+ * that was examined and that reader cannot read. The second is true of a
+ * judgment that took in a page shown from a label the reader does not read
+ * (services/showing-service.ts), and of a shown page's own coverage as its
+ * destination reads it. `evidence_not_shown` keeps its meaning. The public
+ * graph has one label and none of these is ever said there.
+ */
+export const READER_COVERAGE_EVIDENCE = ["evidence_this_reader_can_read", "evidence_this_reader_cannot_read"] as const;
+
+export type CoverageEvidence = (typeof COVERAGE_EVIDENCE)[number] | (typeof READER_COVERAGE_EVIDENCE)[number];
+
+/** The words that say only that the judgment was made on what its reader can read: the ordinary case, left off a row. */
+const ORDINARY: ReadonlySet<string> = new Set(["public_evidence", "evidence_this_reader_can_read"]);
 
 /**
  * What the record says of one node: whether it is examined, and everything
@@ -80,7 +99,7 @@ export type Coverage = CoverageSummary & { note?: string };
  */
 export interface CoverageRow {
   examined: boolean;
-  on?: Exclude<CoverageEvidence, "public_evidence">[];
+  on?: Exclude<CoverageEvidence, "public_evidence" | "evidence_this_reader_can_read">[];
 }
 
 export const COVERAGE_UNEXAMINED_NOTE =
@@ -93,7 +112,18 @@ const UNEXAMINED: CoverageSummary = { examined: false, on: [] };
  * entry, keyed as the database writes a uuid (lower case): a node with no
  * judgment in force (or an id no node has) is not examined.
  */
-export async function summarizeCoverage(nodeIds: readonly string[]): Promise<Map<string, CoverageSummary>> {
+export async function summarizeCoverage(
+  nodeIds: readonly string[],
+  opts: {
+    /**
+     * Say it to another reader than the one asking: the readers a page is
+     * shown to (the labels they read, or nothing inside the deployment but
+     * the mirrored public graph when it is shown outside). The judgment is
+     * still the one in force for the asker.
+     */
+    saidTo?: { reads: readonly string[]; outside: boolean };
+  } = {}
+): Promise<Map<string, CoverageSummary>> {
   const ids = [...new Set(nodeIds.map((id) => id.toLowerCase()))];
   const out = new Map<string, CoverageSummary>(ids.map((id) => [id, { ...UNEXAMINED, on: [] }]));
   if (ids.length === 0) return out;
@@ -128,6 +158,51 @@ export async function summarizeCoverage(nodeIds: readonly string[]): Promise<Map
       on: row.evidence_not_shown ? ["public_evidence", "evidence_not_shown"] : ["public_evidence"],
     });
   }
+  // Where `public` is the only label, that is the whole of it, as it always was.
+  if (oneLabelOnly() || rows.length === 0) return out;
+
+  const reads = opts.saidTo?.reads ?? (await currentReadClearance()) ?? [PUBLIC_LABEL];
+  const sources = await rawQuery<{ node_id: string; readable: boolean; unreadable: boolean }>(
+    // What the judgment was made on: the sources recorded against it, or,
+    // for one whose inputs were not recorded, the sources attached to its
+    // node now. A page shown from another label is read here and stands for
+    // evidence that was examined where this reader cannot read.
+    `WITH ${JUDGED_CTE}, made_on AS (
+       SELECT j.node_id, s.sensitivity_label AS label, s.source_type, s.origin, s.url
+         FROM judged j
+         JOIN judgment_inputs i ON i.judgment_kind = j.kind AND i.judgment_id = j.id AND i.input_kind = 'source'
+         JOIN sources s ON s.id = i.source_id
+        WHERE j.inputs_recorded
+       UNION ALL
+       SELECT j.node_id, s.sensitivity_label, s.source_type, s.origin, s.url
+         FROM judged j
+         JOIN claim_instances ci ON ci.claim_id = j.node_id AND ci.detached_at IS NULL
+         JOIN sources s ON s.id = ci.source_id
+        WHERE NOT j.inputs_recorded
+     )
+     SELECT j.node_id,
+            EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id AND m.source_type <> 'shown_page'
+                       AND (m.label = ANY($2::text[]) OR ($3::boolean AND m.origin = 'mirror'))) AS readable,
+            EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id
+                       AND ((m.source_type = 'shown_page'
+                             -- unless this reader also reads the label the page was shown from
+                             AND NOT EXISTS (SELECT 1 FROM showing_pages pp
+                                              WHERE m.url LIKE 'minerval:shown-page/' || pp.id::text || '/%'
+                                                AND pp.sensitivity_label = ANY($2::text[])))
+                            OR NOT (m.label = ANY($2::text[]) OR ($3::boolean AND m.origin = 'mirror')))) AS unreadable
+       FROM judged j`,
+    [ids, opts.saidTo?.outside ? [] : [...reads], opts.saidTo?.outside === true]
+  );
+  for (const row of sources) {
+    const was = out.get(row.node_id);
+    if (!was?.examined) continue;
+    const on: CoverageEvidence[] = [];
+    // A reader's own judgment in force is in front of them with what it cites, whether or not a source is recorded.
+    if (row.readable || !opts.saidTo) on.push("evidence_this_reader_can_read");
+    if (row.unreadable) on.push("evidence_this_reader_cannot_read");
+    if (was.on.includes("evidence_not_shown")) on.push("evidence_not_shown");
+    out.set(row.node_id, { examined: true, on });
+  }
   return out;
 }
 
@@ -155,7 +230,7 @@ export function coverage(summary: CoverageSummary | undefined): Coverage | undef
 export function coverageRow(summary: CoverageSummary | undefined): CoverageRow | undefined {
   if (!summary) return undefined;
   const beyond = summary.on.filter(
-    (e): e is Exclude<CoverageEvidence, "public_evidence"> => e !== "public_evidence"
+    (e): e is Exclude<CoverageEvidence, "public_evidence" | "evidence_this_reader_can_read"> => !ORDINARY.has(e)
   );
   return beyond.length > 0 ? { examined: summary.examined, on: beyond } : { examined: summary.examined };
 }

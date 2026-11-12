@@ -202,6 +202,8 @@ describe("the Redactor's pass", () => {
       { source: 2, kind: "unknown", fingerprint: null, supplied_by: "an_outside_party", interest_recorded: false },
     ]);
     expect(JSON.stringify(page.always_shown)).not.toMatch(/Acme|Borealis|paid by output/);
+    // Coverage is said to the readers the page is shown to: the memo at a is theirs to read, the two sources at c are not.
+    expect(page.always_shown.coverage).toEqual({ examined: true, on: ["evidence_this_reader_can_read", "evidence_this_reader_cannot_read"] });
     expect(page.sources.map((s: any) => s.label).sort()).toEqual([A, C, C].sort());
     const source = await tool(id.page!, "get_page_to_redact", { source_id: id.acmeSource });
     expect(source.success).toBe(true);
@@ -473,6 +475,13 @@ describe("arrival at the destination label", () => {
       id.x2 = x2!.id;
       await rawQuery(`INSERT INTO judgment_inputs (judgment_kind, judgment_id, input_kind, source_id, sensitivity_label) VALUES ('assessment', $1, 'source', $2, $3), ('assessment', $1, 'source', $4, $3)`, [id.x2, id.aSource, A, id.shownSource]);
     });
+    // The version at a that took the shown page in was made, in part, on evidence a reader at a cannot read, and its coverage says so.
+    const { summarizeCoverage, coverageRow } = await import("../../src/services/coverage-service.js");
+    const atADoes = (await atA(() => summarizeCoverage([id.node!]))).get(id.node!)!;
+    expect(atADoes).toEqual({ examined: true, on: ["evidence_this_reader_can_read", "evidence_this_reader_cannot_read"] });
+    expect(coverageRow(atADoes)).toEqual({ examined: true, on: ["evidence_this_reader_cannot_read"] });
+    // A reader at c reads everything its version was made on.
+    expect((await atC(() => summarizeCoverage([id.node!]))).get(id.node!)).toEqual({ examined: true, on: ["evidence_this_reader_can_read"] });
     expect(await openReassessmentsForVersionsMadeBesideEarlier({ claimIds: [id.node!] })).toBe(0);
     const beside = await runAtLabel(C, "a read at c", () => madeBesideOf("assessments", "assessment", [id.v!]));
     expect(beside.get(id.v!)!.beside).toEqual([{ label: A, judgment_id: id.x1, replaced: false }]);

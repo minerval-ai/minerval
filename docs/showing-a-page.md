@@ -106,6 +106,16 @@ open); how the page was made (the prompt set, the policy version, the model
 that assessed and the model that redacted); and the count of removals by
 category. Holding it holds the page.
 
+Coverage is said to the reader it is served to. Where a deployment has more
+than one label, a judgment's coverage lists `evidence_this_reader_can_read`
+and `evidence_this_reader_cannot_read` in place of `public_evidence`, which
+would be false of a judgment made on sources only some readers read
+(`src/services/coverage-service.ts`). On a shown page the reader is the
+destination: a page made on sources at its own label says the second. A
+judgment at the destination label that took a shown page in says both, on
+that node's ordinary page as well. Where `public` is the only label coverage
+reads as it always did.
+
 A reader needs to know that an interested outside party supplied a source in
 order to weigh the page, and does not always need the name. So the
 supplier's name and the words of the interest are a part, resting on that
