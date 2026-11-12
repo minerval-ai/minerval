@@ -28,10 +28,11 @@
 --     the next time it runs, and it changes nothing that is already right.
 --  5. A trigger on labels that runs the step when a label is added or
 --     removed, so a second label cannot exist without enforcement.
---  6. Three guards the step installs with the policies, for what a policy
+--  6. Four guards the step installs with the policies, for what a policy
 --     cannot say: a node's judgment in force is retired only by work at its
 --     own label, an insert that collides with a row the writer cannot read
---     is refused with the reason, and a row's label is never changed.
+--     is refused with the reason, a row's label is never changed, and
+--     neither is the sign-in an account belongs to.
 --  7. Views, in their own schema, that the policies do not bind: two that
 --     apply a connection's clearance as an ordinary condition, so that
 --     keyword search keeps its index where the policies are on, and two
@@ -413,6 +414,15 @@ SELECT r.id, r.text_search
 -- The application reads them whether or not enforcement is on; a view this
 -- simple is planned as the table it is over. Rows are added to the tables,
 -- never through the views, so a new row is held to its writer's label.
+--
+-- A cleared connection may change through them only what settling money
+-- changes, column by column (the step grants exactly these): on an
+-- allocation its amount, what of it is spent, and when it was released; on
+-- a regrant its amount and what of it came back. It may delete a regrant,
+-- which is what returning one in full does (mandate-terms-service.ts), and
+-- no allocation. The ledger key and who commissioned are in the allocation
+-- view because every money statement finds its rows by them, and they
+-- cannot be changed through it.
 CREATE SCHEMA IF NOT EXISTS minerval_whole;
 --> statement-breakpoint
 CREATE OR REPLACE VIEW minerval_whole.allocation_money AS
@@ -560,11 +570,20 @@ $$;
 -- One change is let through, because it is how the ledger has worked since
 -- its rows got labels (LABEL_ON_REOPEN_SQL in services/action-service.ts):
 -- a ledger row stands for its group's next piece of work, so a finished row
--- that is opened again takes the label of the work that reopens it, and
--- only that label. The connection must already read the row, so nobody is
--- shown anything by it; what it can do is take a finished row out of the
--- sight of readers of the old label, which is the cost of one row per
--- group until each label keeps its own.
+-- that is opened again takes the label of the work that reopens it. The
+-- trigger lets through exactly that and nothing near it:
+--   - the row was finished, by name: done, superseded or cancelled;
+--   - the same statement opens it: its new status is open;
+--   - its new label is the connection's own;
+--   - and the new label reads the old one, so the row only ever moves to
+--     where fewer people read it. A request, which writes at 'public',
+--     cannot take a private row this way, and nothing moves sideways.
+-- The statement that reopens a row also replaces its display text and its
+-- target (the same fragment sets them), so nothing written at the old
+-- label is carried under the new one. What this can still do is take a
+-- finished public row out of public readers' sight, and a public reopening
+-- of a finished private row is refused: the cost of one row per group
+-- until each label keeps its own.
 --
 -- It is a trigger on the column and not a grant on the other columns,
 -- because a grant would have to be given again for each column a later
@@ -580,8 +599,10 @@ BEGIN
     RETURN NEW;
   END IF;
   IF TG_TABLE_NAME = 'actions' THEN
-    IF OLD.status::text NOT IN ('open', 'running')
-       AND NEW.sensitivity_label = public.minerval_write_label() THEN
+    IF OLD.status IN ('done', 'superseded', 'cancelled')
+       AND NEW.status = 'open'
+       AND NEW.sensitivity_label = public.minerval_write_label()
+       AND OLD.sensitivity_label = ANY (public.minerval_labels_readable_from(ARRAY[NEW.sensitivity_label])) THEN
       RETURN NEW;
     END IF;
   END IF;
@@ -590,6 +611,29 @@ BEGIN
     USING ERRCODE = 'MVL04',
           TABLE = TG_TABLE_NAME,
           HINT = 'A row stays at the label it was written at. Moving one to a label more people read is a release, which is not built yet. Nothing was changed.';
+END
+$$;
+--> statement-breakpoint
+-- Which sign-in an account is does not change on a cleared connection.
+--
+-- contributors.external_id is the identity a verified sign-in is matched
+-- to, and a service caller names the person it acts for by it. A connection
+-- that could rewrite it could hand one person's account, with its grants,
+-- to another sign-in. The rest of the row (a display name, a reputation) is
+-- the application's to change as it always has, so this is a trigger on
+-- the one column and not a grant on the others.
+CREATE OR REPLACE FUNCTION minerval_identity_fixed_guard() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF session_user <> 'minerval_cleared' THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'which sign-in an account belongs to does not change on a connection held to a clearance'
+    USING ERRCODE = 'MVL05',
+          TABLE = TG_TABLE_NAME,
+          HINT = 'contributors.external_id is set when the account is made. Nothing was changed.';
 END
 $$;
 --> statement-breakpoint
@@ -618,9 +662,13 @@ $$;
 --   - then, and only then, the table is granted to minerval_cleared, so a
 --     table is never reachable before it is covered.
 -- The tables that say what a clearance is (labels, label_reads,
--- permission_grants, account_groups) are granted to minerval_cleared to
--- read and nothing else: a connection held to a clearance must not be able
--- to widen it, its own or anyone's. Their administration is the owner's.
+-- permission_grants, account_groups) and the ones that say who a request
+-- is (api_keys, oauth_tokens, oauth_clients, oauth_authorization_requests)
+-- are granted to minerval_cleared to read and nothing else: a connection
+-- held to a clearance must not be able to widen it, its own or anyone's,
+-- or make itself a key to an account that reads more. Their administration
+-- is the owner's. On contributors, the column that says which sign-in an
+-- account is (external_id) is held by a trigger, as a row's label is.
 -- The administrators' log (administrative_events) it may read and add to,
 -- and not change.
 -- Every view in public is made to run with its caller's rights
@@ -647,8 +695,11 @@ DECLARE
     'sensitivity_label = ANY ((SELECT public.minerval_clearance())::text[])';
   sql_test constant text :=
     'sensitivity_label = ANY ((SELECT public.minerval_sql_clearance())::text[])';
-  -- What a clearance is made of: read by a cleared connection, written by the owner alone.
-  wall constant text[] := ARRAY['labels', 'label_reads', 'permission_grants', 'account_groups'];
+  -- What a clearance is made of, and what says who a request is (a key or
+  -- a token is as good as the account it names): read by a cleared
+  -- connection, written by the owner alone.
+  wall constant text[] := ARRAY['labels', 'label_reads', 'permission_grants', 'account_groups',
+                                'api_keys', 'oauth_tokens', 'oauth_clients', 'oauth_authorization_requests'];
   -- The administrators' log: read and added to, never changed.
   append_only constant text[] := ARRAY['administrative_events'];
 BEGIN
@@ -698,6 +749,10 @@ BEGIN
         RETURN NEXT format('- %s: row-level security off', t.relname);
       END IF;
     END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g
+                WHERE g.tgrelid = 'public.contributors'::pg_catalog.regclass AND g.tgname = 'identity_fixed_guard') THEN
+      DROP TRIGGER identity_fixed_guard ON public.contributors;
+    END IF;
     RETURN;
   END IF;
 
@@ -837,6 +892,14 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- The column that says which sign-in an account is.
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g
+                  WHERE g.tgrelid = 'public.contributors'::pg_catalog.regclass AND g.tgname = 'identity_fixed_guard') THEN
+    CREATE TRIGGER identity_fixed_guard BEFORE UPDATE OF external_id ON public.contributors
+      FOR EACH ROW WHEN (OLD.external_id IS DISTINCT FROM NEW.external_id)
+      EXECUTE FUNCTION public.minerval_identity_fixed_guard();
+  END IF;
+
   -- Sequences the tables draw from.
   FOR t IN
     SELECT c.oid, c.relname
@@ -893,10 +956,31 @@ BEGIN
      WHERE n.nspname = 'minerval_whole' AND c.relkind = 'v'
      ORDER BY c.relname
   LOOP
-    IF NOT (has_table_privilege('minerval_cleared', t.oid, 'SELECT')
-            AND has_table_privilege('minerval_cleared', t.oid, 'UPDATE')
-            AND has_table_privilege('minerval_cleared', t.oid, 'DELETE')) THEN
-      EXECUTE format('GRANT SELECT, UPDATE, DELETE ON minerval_whole.%I TO minerval_cleared', t.relname);
+    IF NOT has_table_privilege('minerval_cleared', t.oid, 'SELECT') THEN
+      EXECUTE format('GRANT SELECT ON minerval_whole.%I TO minerval_cleared', t.relname);
+    END IF;
+    -- Never the whole row: only the columns that settling money writes.
+    IF has_table_privilege('minerval_cleared', t.oid, 'UPDATE')
+       OR has_table_privilege('minerval_cleared', t.oid, 'INSERT')
+       OR has_table_privilege('minerval_cleared', t.oid, 'TRUNCATE')
+       OR (has_table_privilege('minerval_cleared', t.oid, 'DELETE') AND t.relname <> 'regrant_money') THEN
+      EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON minerval_whole.%I FROM minerval_cleared', t.relname);
+      RETURN NEXT format('+ minerval_whole.%s: minerval_cleared may change its money columns only', t.relname);
+    END IF;
+    IF t.relname = 'allocation_money'
+       AND NOT (has_column_privilege('minerval_cleared', t.oid, 'amount_micro_usd', 'UPDATE')
+                AND has_column_privilege('minerval_cleared', t.oid, 'spent_micro_usd', 'UPDATE')
+                AND has_column_privilege('minerval_cleared', t.oid, 'released_at', 'UPDATE')) THEN
+      GRANT UPDATE (amount_micro_usd, spent_micro_usd, released_at) ON minerval_whole.allocation_money TO minerval_cleared;
+    END IF;
+    IF t.relname = 'regrant_money' THEN
+      IF NOT (has_column_privilege('minerval_cleared', t.oid, 'amount_micro_usd', 'UPDATE')
+              AND has_column_privilege('minerval_cleared', t.oid, 'refunded_micro_usd', 'UPDATE')) THEN
+        GRANT UPDATE (amount_micro_usd, refunded_micro_usd) ON minerval_whole.regrant_money TO minerval_cleared;
+      END IF;
+      IF NOT has_table_privilege('minerval_cleared', t.oid, 'DELETE') THEN
+        GRANT DELETE ON minerval_whole.regrant_money TO minerval_cleared;
+      END IF;
     END IF;
   END LOOP;
 

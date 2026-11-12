@@ -397,6 +397,8 @@ export interface AgentFindingRow {
   sighting_count: number;
   first_noted_at: Date;
   last_noted_at: Date;
+  /** The topics of the claim the finding is about, by name. */
+  tags: Array<{ slug: string; name: string }> | null;
   /**
    * True when the finding cites an assessment, a question's standing or a
    * quantity's estimate that is no longer the node's current one: the graph
@@ -410,6 +412,11 @@ const FINDING_SELECT = `
          f.refs, f.importance, f.agent, f.model, f.run_id, f.skills,
          f.status, f.withdrawn_note, f.sighting_count,
          f.first_noted_at, f.last_noted_at,
+         (SELECT COALESCE(jsonb_agg(jsonb_build_object('slug', t.slug, 'name', t.name)
+                                    ORDER BY t.name), '[]'::jsonb)
+            FROM taggings tg JOIN tags t ON t.id = tg.tag_id
+           WHERE tg.subject_kind = 'claim' AND tg.subject_id = f.claim_id
+             AND t.merged_into IS NULL) AS tags,
          EXISTS (
            SELECT 1 FROM jsonb_array_elements(f.refs) r
             WHERE (r->>'kind' = 'assessment' AND EXISTS (
@@ -425,56 +432,281 @@ const FINDING_SELECT = `
     FROM agent_findings f
     JOIN claims c ON c.id = f.claim_id`;
 
-export interface ListFindingsParams {
+const FINDING_FROM = `
+    FROM agent_findings f
+    JOIN claims c ON c.id = f.claim_id`;
+
+/** What narrows the findings list. Every filter is optional and they combine. */
+export interface FindingFilters {
   claimId?: string;
   status?: string;
   minImportance?: number;
   /** Findings on claims carrying this tag slug (through the claim's taggings). */
   tag?: string;
   since?: Date;
-  limit?: number;
-  offset?: number;
-  /** 'recent' (default) or 'importance'. */
-  order?: "recent" | "importance";
+  /** Findings noted by any of these agents, by the name each run recorded. */
+  agents?: string[];
+  /** Findings on claims whose assessment in force has this status. */
+  claimStatus?: string;
+  /**
+   * Words to search by: a finding matches when its headline, its account or
+   * its claim's text has the words, or when it is close to them in meaning.
+   */
+  q?: string;
 }
 
-export async function listFindings(
-  params: ListFindingsParams = {}
-): Promise<AgentFindingRow[]> {
+export interface ListFindingsParams extends FindingFilters {
+  limit?: number;
+  offset?: number;
+  /**
+   * 'recent' (default), 'importance', or 'relevance': closest in meaning to
+   * `q` first, which is 'recent' when there is no `q` or no embedding of it.
+   */
+  order?: "recent" | "importance" | "relevance";
+}
+
+/** A search must be at least this close in meaning to match without the words. */
+const FINDING_SEARCH_MIN_SIMILARITY = 0.3;
+
+type FilterKey = "agents" | "claimStatus" | "tag" | "minImportance";
+
+/**
+ * The WHERE clause for a set of filters, leaving out the one named in
+ * `without`: a facet counts what each of its values would leave, so it is
+ * counted under every filter but its own.
+ */
+function findingWhere(
+  filters: FindingFilters,
+  embedding: number[] | null,
+  without?: FilterKey
+): { where: string; values: unknown[]; embeddingAt: number | null } {
   const conditions: string[] = [];
   const values: unknown[] = [];
   const add = (clause: (n: number) => string, value: unknown) => {
     values.push(value);
     conditions.push(clause(values.length));
   };
-  add((n) => `f.status = $${n}`, params.status ?? "published");
-  if (params.claimId) add((n) => `f.claim_id = $${n}`, params.claimId);
-  if (typeof params.minImportance === "number") {
-    add((n) => `f.importance >= $${n}`, params.minImportance);
+  add((n) => `f.status = $${n}`, filters.status ?? "published");
+  if (filters.claimId) add((n) => `f.claim_id = $${n}`, filters.claimId);
+  if (typeof filters.minImportance === "number" && without !== "minImportance") {
+    add((n) => `f.importance >= $${n}`, filters.minImportance);
   }
-  if (params.since) add((n) => `f.last_noted_at >= $${n}`, params.since);
-  if (params.tag) {
+  if (filters.since) add((n) => `f.last_noted_at >= $${n}`, filters.since);
+  if (filters.tag && without !== "tag") {
     add(
       (n) => `EXISTS (
         SELECT 1 FROM taggings tg JOIN tags t ON t.id = tg.tag_id
          WHERE tg.subject_kind = 'claim' AND tg.subject_id = f.claim_id
            AND (t.slug = $${n} OR t.merged_into IN (SELECT id FROM tags WHERE slug = $${n})))`,
-      params.tag
+      filters.tag
     );
   }
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  if (filters.agents && filters.agents.length > 0 && without !== "agents") {
+    add((n) => `f.agent = ANY($${n}::text[])`, filters.agents);
+  }
+  if (filters.claimStatus && without !== "claimStatus") {
+    add(
+      (n) => `EXISTS (
+        SELECT 1 FROM assessments_in_force a
+         WHERE a.claim_id = f.claim_id AND a.status = $${n})`,
+      filters.claimStatus
+    );
+  }
+  let embeddingAt: number | null = null;
+  const q = filters.q?.trim();
+  if (q) {
+    values.push(q);
+    const words = `to_tsvector('english', f.headline || ' ' || f.account || ' ' || c.text)
+                   @@ websearch_to_tsquery('english', $${values.length})`;
+    if (embedding) {
+      values.push(toVectorLiteral(embedding));
+      embeddingAt = values.length;
+      values.push(FINDING_SEARCH_MIN_SIMILARITY);
+      conditions.push(
+        `(${words} OR (f.embedding IS NOT NULL
+            AND 1 - (f.embedding <=> $${embeddingAt}::vector) > $${values.length}))`
+      );
+    } else {
+      conditions.push(`(${words})`);
+    }
+  }
+  return {
+    where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
+    values,
+    embeddingAt,
+  };
+}
+
+/**
+ * The embedding of a search, or null when there is none to make. A failure
+ * to embed leaves the search to the words alone; it does not fail the list.
+ */
+async function searchEmbedding(q: string | undefined): Promise<number[] | null> {
+  const query = q?.trim();
+  if (!query) return null;
+  try {
+    return await generateEmbedding(query.slice(0, 4000));
+  } catch {
+    return null;
+  }
+}
+
+function clampPage(params: ListFindingsParams): { limit: number; offset: number } {
+  return {
+    limit: Math.max(1, Math.min(100, params.limit ?? 20)),
+    offset: Math.max(0, params.offset ?? 0),
+  };
+}
+
+async function selectFindings(
+  params: ListFindingsParams,
+  embedding: number[] | null
+): Promise<AgentFindingRow[]> {
+  const { where, values, embeddingAt } = findingWhere(params, embedding);
   const order =
     params.order === "importance"
       ? "ORDER BY f.importance DESC, f.last_noted_at DESC"
-      : "ORDER BY f.last_noted_at DESC";
-  const limit = Math.max(1, Math.min(100, params.limit ?? 20));
-  const offset = Math.max(0, params.offset ?? 0);
+      : params.order === "relevance" && embeddingAt !== null
+        ? `ORDER BY COALESCE(1 - (f.embedding <=> $${embeddingAt}::vector), 0) DESC,
+                    f.last_noted_at DESC`
+        : "ORDER BY f.last_noted_at DESC";
+  const { limit, offset } = clampPage(params);
   values.push(limit, offset);
   return rawQuery<AgentFindingRow>(
     `${FINDING_SELECT} ${where} ${order}
      LIMIT $${values.length - 1} OFFSET $${values.length}`,
     values
   );
+}
+
+export async function listFindings(
+  params: ListFindingsParams = {}
+): Promise<AgentFindingRow[]> {
+  return selectFindings(params, await searchEmbedding(params.q));
+}
+
+/**
+ * What each value of a filter would leave, counted under the other filters
+ * in force: the numbers a reader sees beside the choices on the findings
+ * page. Tags are the commonest dozen; the page links to the full vocabulary.
+ */
+export interface FindingFacets {
+  agents: Array<{ agent: string; count: number }>;
+  claim_statuses: Array<{ status: string; count: number }>;
+  tags: Array<{ slug: string; name: string; count: number }>;
+  importance: Array<{ importance: number; count: number }>;
+}
+
+const FACET_TAGS = 12;
+
+async function findingFacets(
+  filters: FindingFilters,
+  embedding: number[] | null
+): Promise<FindingFacets> {
+  const under = (without: FilterKey) => findingWhere(filters, embedding, without);
+  const agents = under("agents");
+  const statuses = under("claimStatus");
+  const tags = under("tag");
+  const importance = under("minImportance");
+  const [agentRows, statusRows, tagRows, importanceRows] = await Promise.all([
+    rawQuery<{ agent: string; count: string }>(
+      `SELECT f.agent, count(*) AS count ${FINDING_FROM} ${agents.where}
+        GROUP BY f.agent ORDER BY count(*) DESC, f.agent`,
+      agents.values
+    ),
+    rawQuery<{ status: string; count: string }>(
+      `SELECT a.status, count(*) AS count ${FINDING_FROM}
+         JOIN assessments_in_force a ON a.claim_id = f.claim_id
+        ${statuses.where}
+        GROUP BY a.status ORDER BY count(*) DESC, a.status`,
+      statuses.values
+    ),
+    rawQuery<{ slug: string; name: string; count: string }>(
+      `SELECT t.slug, t.name, count(*) AS count ${FINDING_FROM}
+         JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = f.claim_id
+         JOIN tags t ON t.id = tg.tag_id AND t.merged_into IS NULL
+        ${tags.where}
+        GROUP BY t.slug, t.name ORDER BY count(*) DESC, t.name
+        LIMIT ${FACET_TAGS}`,
+      tags.values
+    ),
+    rawQuery<{ importance: number; count: string }>(
+      `SELECT f.importance, count(*) AS count ${FINDING_FROM} ${importance.where}
+        GROUP BY f.importance ORDER BY f.importance`,
+      importance.values
+    ),
+  ]);
+  return {
+    agents: agentRows.map((r) => ({ agent: r.agent, count: Number(r.count) })),
+    claim_statuses: statusRows.map((r) => ({ status: r.status, count: Number(r.count) })),
+    tags: tagRows.map((r) => ({ slug: r.slug, name: r.name, count: Number(r.count) })),
+    importance: importanceRows.map((r) => ({
+      importance: Number(r.importance),
+      count: Number(r.count),
+    })),
+  };
+}
+
+/**
+ * One page of the list with how many findings match in all and, when asked,
+ * the facets. The search is embedded once and used for all of it.
+ */
+export async function findingsPage(
+  params: ListFindingsParams & { facets?: boolean } = {}
+): Promise<{ rows: AgentFindingRow[]; total: number; facets: FindingFacets | null }> {
+  const embedding = await searchEmbedding(params.q);
+  const counted = findingWhere(params, embedding);
+  const [rows, totals, facets] = await Promise.all([
+    selectFindings(params, embedding),
+    rawQuery<{ count: string }>(
+      `SELECT count(*) AS count ${FINDING_FROM} ${counted.where}`,
+      counted.values
+    ),
+    params.facets ? findingFacets(params, embedding) : Promise.resolve(null),
+  ]);
+  return { rows, total: Number(totals[0]?.count ?? 0), facets };
+}
+
+/**
+ * What a finding's cited assessments are of, for the finding's page: an
+ * assessment is cited by id so the finding still points at what it rested on
+ * after a reassessment, and a reader is owed its claim, its verdict as it was
+ * written, and whether it is still the claim's current one. The other kinds
+ * of ref are named by the page from what it already reads.
+ */
+export interface FindingAssessmentRef {
+  id: string;
+  claim_id: string;
+  claim_text: string;
+  status: string;
+  confidence: number | null;
+  /** False once the claim has been assessed again. */
+  current: boolean;
+}
+
+export async function describeAssessmentRefs(refs: FindingRef[]): Promise<FindingAssessmentRef[]> {
+  const ids = refs.filter((r) => r.kind === "assessment").map((r) => r.id);
+  if (ids.length === 0) return [];
+  const rows = await rawQuery<{
+    id: string;
+    claim_id: string;
+    claim_text: string;
+    status: string;
+    confidence: string | number | null;
+    current: boolean;
+  }>(
+    `SELECT a.id, a.claim_id, c.text AS claim_text, a.status, a.confidence,
+            EXISTS (SELECT 1 FROM assessments_in_force inf WHERE inf.id = a.id) AS current
+       FROM assessments a
+       JOIN claims c ON c.id = a.claim_id
+      WHERE a.id = ANY($1::uuid[])`,
+    [ids]
+  );
+  return rows.map((r) => ({
+    ...r,
+    confidence: r.confidence == null ? null : Number(r.confidence),
+    current: r.current === true,
+  }));
 }
 
 export async function getFindingById(id: string): Promise<AgentFindingRow | null> {
@@ -547,6 +779,7 @@ export function formatFinding(row: AgentFindingRow): Record<string, unknown> {
     sighting_count: Number(row.sighting_count),
     first_noted_at: iso(row.first_noted_at),
     last_noted_at: iso(row.last_noted_at),
+    tags: Array.isArray(row.tags) ? row.tags : [],
     stale: row.stale === true,
   };
 }

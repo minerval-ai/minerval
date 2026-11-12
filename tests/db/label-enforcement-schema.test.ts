@@ -233,7 +233,8 @@ describe("defining a second label", () => {
                                CASE WHEN has_table_privilege('minerval_cleared', c.oid, 'TRUNCATE') THEN 'truncate' END) AS rights
            FROM pg_class c
           WHERE c.relnamespace = 'public'::regnamespace
-            AND c.relname IN ('labels', 'label_reads', 'permission_grants', 'account_groups', 'administrative_events', 'claims')
+            AND c.relname IN ('labels', 'label_reads', 'permission_grants', 'account_groups', 'administrative_events', 'claims',
+                              'api_keys', 'oauth_tokens', 'oauth_clients', 'oauth_authorization_requests', 'contributors')
           ORDER BY c.relname`
       );
     });
@@ -241,17 +242,24 @@ describe("defining a second label", () => {
       account_groups: "select",
       // The administrators' log: added to, never changed.
       administrative_events: "select insert",
+      // What says who a request is: a key or a token is as good as the account it names.
+      api_keys: "select",
       // Any other table, for comparison.
       claims: "select insert update delete",
+      // An account's row, all but the sign-in it belongs to (the trigger below).
+      contributors: "select insert update delete",
       label_reads: "select",
       labels: "select",
+      oauth_authorization_requests: "select",
+      oauth_clients: "select",
+      oauth_tokens: "select",
       permission_grants: "select",
     };
     const found = Object.fromEntries(rights.map((r) => [r.name, r.rights]));
     // The grants, the groups and the log come with the permissions
     // migration; where this runs before it, the step has nothing of theirs
     // to hold and the rest is checked.
-    expect(Object.keys(found)).toEqual(expect.arrayContaining(["claims", "label_reads", "labels"]));
+    expect(Object.keys(found)).toEqual(expect.arrayContaining(["api_keys", "claims", "label_reads", "labels", "oauth_tokens"]));
     expect(found).toEqual(Object.fromEntries(Object.keys(found).map((name) => [name, expected[name]])));
     // And nothing at all in the schema that holds the signing key.
     const key = await rolledBack(async (tx) => {
@@ -260,6 +268,49 @@ describe("defining a second label", () => {
       return tx.query<{ usage: boolean }>(`SELECT has_schema_privilege('minerval_cleared', 'minerval_private', 'USAGE') AS usage`);
     });
     expect(key).toEqual([{ usage: false }]);
+  });
+
+  it("lets that role change through the money views only what settling money writes, column by column", async () => {
+    const rights = await rolledBack(async (tx) => {
+      await publicOnly(tx);
+      await defineSecondLabel(tx);
+      return tx.query<{ view: string; whole_row: string; columns: string | null }>(
+        `SELECT c.relname::text AS view,
+                concat_ws(' ', CASE WHEN has_table_privilege('minerval_cleared', c.oid, 'SELECT') THEN 'select' END,
+                               CASE WHEN has_table_privilege('minerval_cleared', c.oid, 'INSERT') THEN 'insert' END,
+                               CASE WHEN has_table_privilege('minerval_cleared', c.oid, 'UPDATE') THEN 'update' END,
+                               CASE WHEN has_table_privilege('minerval_cleared', c.oid, 'DELETE') THEN 'delete' END) AS whole_row,
+                (SELECT string_agg(a.attname::text, ', ' ORDER BY a.attnum) FROM pg_attribute a
+                  WHERE a.attrelid = c.oid AND a.attnum > 0
+                    AND has_column_privilege('minerval_cleared', c.oid, a.attnum, 'UPDATE')) AS columns
+           FROM pg_class c WHERE c.relnamespace = 'minerval_whole'::regnamespace ORDER BY c.relname`
+      );
+    });
+    expect(rights).toEqual([
+      // No allocation is deleted through the view, and its key and its commissioner are not written.
+      { view: "allocation_money", whole_row: "select", columns: "amount_micro_usd, spent_micro_usd, released_at" },
+      // A regrant returned in full is deleted (mandate-terms-service.ts).
+      { view: "regrant_money", whole_row: "select delete", columns: "amount_micro_usd, refunded_micro_usd" },
+    ]);
+  });
+
+  it("holds the sign-in an account belongs to, with a trigger on that one column", async () => {
+    const guards = await rolledBack(async (tx) => {
+      await publicOnly(tx);
+      const before = await tx.query(`SELECT 1 FROM pg_trigger WHERE tgname = 'identity_fixed_guard'`);
+      await defineSecondLabel(tx);
+      const during = await tx.query<{ on_table: string; def: string }>(
+        `SELECT tgrelid::regclass::text AS on_table, pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgname = 'identity_fixed_guard'`
+      );
+      await tx.query(`DELETE FROM labels WHERE name = 'schema-probe'`);
+      const after = await tx.query(`SELECT 1 FROM pg_trigger WHERE tgname = 'identity_fixed_guard'`);
+      return { before, during, after };
+    });
+    expect(guards.before).toEqual([]);
+    expect(guards.during).toHaveLength(1);
+    expect(guards.during[0]!.on_table).toBe("contributors");
+    expect(guards.during[0]!.def).toContain("BEFORE UPDATE OF external_id");
+    expect(guards.after).toEqual([]);
   });
 
   it("leaves temporary tables to the database's owner", async () => {

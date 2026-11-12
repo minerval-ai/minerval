@@ -182,6 +182,12 @@ describe("the label column, in the catalog", () => {
       // The labels themselves.
       "label_reads",
       "labels",
+      // A deployment's bookkeeping about its feed of public rows, with no text of their own.
+      "mirror_applied_batches",
+      "mirror_feed_batches",
+      "mirror_feed_rows",
+      "mirror_refusals",
+      "mirror_snapshot_rows",
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
