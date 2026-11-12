@@ -30,6 +30,8 @@ import {
   type GateActor,
 } from "../../src/services/release-gate-service.js";
 import { ShowingError, askShowing, endShowing, followShowings } from "../../src/services/showing-service.js";
+import { withTransaction } from "../../src/db/client.js";
+import { noteMirrorApplied, resetMirrorHeldForTests } from "../../src/services/mirrored-node-service.js";
 import { openReassessmentsForVersionsMadeBesideEarlier } from "../../src/services/version-upkeep.js";
 import { A, B, C, asPerson, attachSource, caught, seedNode, seedUser, system, unwall, wall } from "./review-3-common.js";
 
@@ -119,17 +121,30 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
-  // A showing outside keeps its destination side at `public`, which the review labels' cleanup leaves.
+  // A showing outside, and one to `public`, keep their destination side at `public`, which the review labels' cleanup leaves.
   await system(async () => {
-    if (!id.outside) return;
-    const [showing] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_showings WHERE id = $1`, [id.outside]);
-    await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [id.outside]);
-    for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [id.outside]);
-    await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [id.outside]);
-    await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [showing?.boundary_id ?? null]);
+    for (const showingId of [id.outside, id.toPublic]) {
+      if (!showingId) continue;
+      const [showing] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_showings WHERE id = $1`, [showingId]);
+      await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
+      await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
+      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
+      for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [showingId]);
+      await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [showingId]);
+      await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [showing?.boundary_id ?? null]);
+    }
   }).catch((err: unknown) => console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err));
   // Everything else this file wrote is at one of the review labels, on either side of a boundary, and goes with them.
   await unwall();
+  if (id.mirrored) {
+    await system(() =>
+      withTransaction(async (tx) => {
+        await tx.query(`SELECT set_config('minerval.mirror_applier', 'on', true)`);
+        await tx.query(`DELETE FROM assessments WHERE claim_id = $1`, [id.mirrored]);
+        await tx.query(`DELETE FROM claims WHERE id = $1`, [id.mirrored]);
+      })
+    ).catch((err: unknown) => console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err));
+  }
   await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.acme, id.borealis, ...(id.orgMadeHere ? [id.org] : [])]])).catch((err: unknown) =>
     console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err)
   );
@@ -307,7 +322,13 @@ describe("the gate", () => {
     expect(forBorealis.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 9, 11]);
     expect(JSON.stringify(forBorealis)).not.toContain(SECRET);
     expect(JSON.stringify(forBorealis)).not.toContain("meter");
-    expect(forBorealis.items[1].text_withheld).toMatch(/not the permission to read at the label/);
+    expect(forBorealis.items[1].text_withheld).toBe(
+      "You are deciding this without reading it. You hold the permission to release this party's material and not the permission to read at the label this page was written at, so its text is not shown to you: you see what kind of part it is, what was removed from it by category, and Audit's answer. An administrator of this deployment can grant you reading at that label, and you can leave the item held until one has."
+    );
+    expect((forBorealis as any).deciding_without_reading).toBe(
+      "8 of these 8 items are shown to you without their text, because you do not hold the permission to read at the label they were written at. A release of one is a release of text you have not read. An administrator of this deployment grants reading at a label."
+    );
+    expect((forAcme as any).deciding_without_reading).toBeUndefined();
     expect(forBorealis.items[1].removals_by_category).toEqual({});
   });
 
@@ -749,5 +770,146 @@ describe("a page shown outside the deployment", () => {
     // Nothing has left the deployment and nothing arrived anywhere inside it: carrying it out is not built here.
     expect(page.source_id).toBeNull();
     expect(await system(() => rawQuery(`SELECT 1 FROM sources WHERE url LIKE $1`, [`minerval:shown-page/${pageId}/%`]))).toEqual([]);
+  });
+});
+
+/** Release everything on a page that waits on one party. */
+async function releaseAllFor(who: GateActor, party: string, pageId: string, except: number[] = []) {
+  const queue = (await releaseQueue(who, { limit: 200 })) as { items: any[] };
+  const mine = queue.items.filter((i) => i.page_id === pageId && !except.includes(i.part));
+  return decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
+}
+
+describe("a quantity's page and a question's page", () => {
+  it("a quantity's page is shown with its estimate, and a supplier's name that cannot be shown is held where the reader sees it", async () => {
+    const quantity = await seedNode(C, "Units the plant made in the third quarter", "quantity");
+    const meter = await attachSource(quantity, C, "The meter export for the quarter.");
+    await system(async () => {
+      await rawQuery(`UPDATE sources SET party_id = $2 WHERE id = $1`, [meter.source, id.acme]);
+      await rawQuery(`INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, sensitivity_label) VALUES ($1, $2, 'Acme', 'Acme is paid by output.', 'steward', $3)`, [meter.source, quantity, C]);
+      await rawQuery(
+        `INSERT INTO quantity_estimates (claim_id, estimate, summary, work, model, is_current, sensitivity_label)
+         VALUES ($1, $2::jsonb, 'About thirteen thousand units.', $3, 'a-model', true, $4)`,
+        [quantity, JSON.stringify({ central: 13200, low: 12800, high: 13600, unit: "units" }), "Three monthly meter totals were added.\n\nThe September total was corrected for a stoppage.", C]
+      );
+    });
+    const asked = await askShowing({ nodeId: quantity, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+    const pageId = ((await atA(() => shownShowing(asked.showing_id)))!.nodes as any[])[0].versions[0].page_id as string;
+    const page = await tool(pageId, "get_page_to_redact");
+    expect(page.parts.map((p: any) => p.kind)).toEqual(["wording", "summary", "reasoning", "reasoning", "reading", "supplier"]);
+    expect(page.always_shown.node_kind).toBe("quantity");
+    expect(page.always_shown.verdict).toEqual({ estimate: { central: 13200, low: 12800, high: 13600, unit: "units" } });
+    expect(page.always_shown.sources).toEqual([{ source: 1, kind: "unknown", fingerprint: null, supplied_by: "an_outside_party", interest_recorded: true }]);
+    await throughTheCheck(pageId, { answer: "supports" });
+
+    // Acme releases everything of its own but its name and the words of its interest.
+    await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: [{ page_id: pageId, part: 6 }], decision: "hold", reason: "confidentiality" });
+    await releaseAllFor(actor.acme!, id.acme!, pageId, [6]);
+    const shown = (await atA(() => shownPage(pageId)))!;
+    expect(shown.state).toBe("released_in_part");
+    expect(shown.held_kinds).toBe("a source's supplier and recorded interest, by name");
+    const parts = shown.parts as any[];
+    expect(parts[5].held).toMatch(/^\[A source's supplier and recorded interest, by name, held by Acme \d+\]$/);
+    expect(parts[3].text).toBe("The September total was corrected for a stoppage.");
+    expect((shown.always_shown as any).sources[0]).toMatchObject({ supplied_by: "an_outside_party", interest_recorded: true });
+    expect(shown.verification!.ok).toBe(true);
+    const [source] = await atA(() => rawQuery<{ raw_content: string }>(`SELECT raw_content FROM sources WHERE id = $1`, [shown.source_id]));
+    expect(source!.raw_content).toContain('Estimate: {"low":12800,"high":13600,"unit":"units","central":13200}.');
+    expect(source!.raw_content).toContain("source 1: unknown, supplied by an outside party, an interest in this node is recorded for it");
+    expect(source!.raw_content).not.toContain("paid by output");
+  });
+
+  it("a question's page is shown with its standing, what it says remains open, and the request it records", async () => {
+    const question = await seedNode(C, "Why did the third line stop in September?", "question");
+    await system(async () => {
+      await rawQuery(
+        `INSERT INTO question_assessments (claim_id, standing, favored_claim_ids, summary, reasoning_trace, incomplete, confidence, model, is_current, sensitivity_label)
+         VALUES ($1, 'leaning', ARRAY[$2]::uuid[], 'Most likely a gearbox fault.', 'The maintenance log points to the gearbox.', 'Whether the fault was reported before the stoppage is not known.', 0.6, 'a-model', true, $3)`,
+        [question, id.child, C]
+      );
+      await rawQuery(
+        `INSERT INTO requests (ask, why, satisfied_by, filer_kind, filer_agent, keeper_kind, keeper_claim_id, addressed_to, sensitivity_label)
+         VALUES ('The fault reports for August.', 'They would settle whether the fault was known.', 'The reports, dated.', 'admin', 'question_steward', 'steward', $1, 'The maintenance team', $2)`,
+        [question, C]
+      );
+    });
+    const asked = await askShowing({ nodeId: question, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+    const pageId = ((await atA(() => shownShowing(asked.showing_id)))!.nodes as any[])[0].versions[0].page_id as string;
+    const page = await tool(pageId, "get_page_to_redact");
+    expect(page.parts.map((p: any) => p.kind)).toEqual(["wording", "summary", "reasoning", "gap", "gap"]);
+    expect(page.parts[3].text).toBe("Whether the fault was reported before the stoppage is not known.");
+    expect(page.parts[4].text).toBe("Request (open)\n\nAsks for: The fault reports for August.\n\nWhy: They would settle whether the fault was known.\n\nWhat would satisfy it: The reports, dated.");
+    expect(page.always_shown.verdict).toEqual({ standing: "leaning", confidence: 0.6, favored_answers: [id.child] });
+    expect(page.always_shown.gaps.names_what_remains_open).toBe(true);
+    expect(page.always_shown.gaps.requests).toHaveLength(1);
+    expect(page.always_shown.gaps.requests[0]).toMatchObject({ state: "open", addressed_to_someone: true });
+    expect(JSON.stringify(page.always_shown)).not.toContain("maintenance team");
+    await throughTheCheck(pageId, { answer: "supports" });
+    await releaseAllFor(actor.org!, id.org!, pageId);
+    const shown = (await atA(() => shownPage(pageId)))!;
+    expect(shown.state).toBe("released_whole");
+    expect(shown.verification).toEqual({ ok: true, problems: [], checked: 6, held: 0 });
+    const [source] = await atA(() => rawQuery<{ raw_content: string }>(`SELECT raw_content FROM sources WHERE id = $1`, [shown.source_id]));
+    expect(source!.raw_content).toContain("Standing: leaning. Confidence: 0.6.");
+    expect(source!.raw_content).toContain("Gaps it records: 1 request (open); it says what remains open.");
+  });
+});
+
+describe("a mirrored node's page shown to the public label", () => {
+  it("arrives as a source of this deployment's own beside the public graph's rows, and opens no pass at the public label", async () => {
+    // A node of the public graph, as the mirror's applier writes one, with a version at c beside it.
+    const mirrored = await system(() =>
+      withTransaction(async (tx) => {
+        await tx.query(`SELECT set_config('minerval.mirror_applier', 'on', true)`);
+        const [claim] = await tx.query<{ id: string }>(
+          `INSERT INTO claims (text, kind, steward_state, decomposition_status, tagged_at, sensitivity_label, origin)
+           VALUES ($1, 'claim', 'done', 'complete', now(), 'public', 'mirror') RETURNING id`,
+          [`A claim of the public graph, mirrored here (${Date.now()})`]
+        );
+        await tx.query(
+          `INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label, origin)
+           VALUES ($1, 'inconclusive', 0.5, 'The public graph has it open.', 'The public graph has it open.', true, 'public', 'mirror')`,
+          [claim!.id]
+        );
+        return claim!.id;
+      })
+    );
+    id.mirrored = mirrored;
+    noteMirrorApplied();
+    try {
+      await attachSource(mirrored, C, "A record held at c that settles it.");
+      await system(() =>
+        rawQuery(
+          `INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label)
+           VALUES ($1, 'verified', 0.9, 'The record at c settles it.', 'The record at c settles it.', true, $2)`,
+          [mirrored, C]
+        )
+      );
+      const asked = await askShowing({ nodeId: mirrored, pageLabel: C, toLabel: "public", form: "once", scope: "node", actor: actor.director! });
+      id.toPublic = asked.showing_id;
+      const forEveryone = (await asPerson(["public"], () => shownShowing(asked.showing_id)))!;
+      expect(forEveryone.shown_to).toBe('readers at "public"');
+      const pageId = (forEveryone.nodes as any[])[0].versions[0].page_id as string;
+      await throughTheCheck(pageId, { answer: "supports" });
+      await releaseAllFor(actor.org!, id.org!, pageId);
+      const shown = (await asPerson(["public"], () => shownPage(pageId)))!;
+      expect(shown.state).toBe("released_whole");
+      expect((shown.always_shown as any).coverage).toEqual({ examined: true, on: ["evidence_this_reader_cannot_read"] });
+
+      // The source and its instance are this deployment's own rows at `public`; the mirrored rows are as they were.
+      const [arrived] = await system(() => rawQuery<{ origin: string; sensitivity_label: string; attached: number }>(
+        `SELECT s.origin, s.sensitivity_label, (SELECT count(*)::int FROM claim_instances i WHERE i.source_id = s.id AND i.claim_id = $2 AND i.origin = 'local') AS attached
+           FROM sources s WHERE s.id = $1`, [shown.source_id, mirrored]));
+      expect(arrived).toEqual({ origin: "local", sensitivity_label: "public", attached: 1 });
+      const [publicVersion] = await system(() => rawQuery<{ status: string; origin: string }>(`SELECT status, origin FROM assessments WHERE claim_id = $1 AND sensitivity_label = 'public' AND is_current`, [mirrored]));
+      expect(publicVersion).toEqual({ status: "inconclusive", origin: "mirror" });
+      // The judgment of a mirrored node at `public` is the public graph's: no pass is queued, no message kept, no ledger row opened here.
+      expect(await system(() => rawQuery(`SELECT 1 FROM node_messages WHERE node_id = $1`, [mirrored]))).toEqual([]);
+      expect(await system(() => rawQuery(`SELECT 1 FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess')`, [mirrored]))).toEqual([]);
+      const [node] = await system(() => rawQuery<{ steward_state: string }>(`SELECT steward_state FROM claims WHERE id = $1`, [mirrored]));
+      expect(node!.steward_state).toBe("done");
+    } finally {
+      resetMirrorHeldForTests();
+    }
   });
 });
