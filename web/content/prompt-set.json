@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "0df046fed3ca17c63aa218bc026b64bf4a1eced74530cef6154996cefeb83db7",
+  "hash": "d99243f4017730f01c7173d0c3a2d6709d8d4458b0a8dd91ec131e931492ba82",
   "constitution": {
     "hash": "2cc5f0e4a13b1b0c71a8dca9723c1800441d646ca0b46a0d1876f3570db06a55",
     "source_path": "admin_constitution.md"
@@ -38,7 +38,7 @@
       "name": "contribution-reviewer",
       "source_path": "src/llm/prompts/contribution-reviewer.ts",
       "blocks": [
-        "000ba42b2410b0b6a88a6237e1aceb34f542e0c7baf6b781245bcdd3418397e2"
+        "87ee55e29dc899313a17dc79fb7037ca6efb59fd10d38a49fe31bf2284e60a29"
       ]
     },
     {

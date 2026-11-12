@@ -10,6 +10,7 @@
  * makes a retired argument belongs on it rather than on a duplicate.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import type { ArgumentInstanceStance, ArgumentReading } from "../schemas/common.js";
 import type { ValueShown } from "../schemas/kinds.js";
 
@@ -73,8 +74,8 @@ export async function insertArgumentInstance(input: ArgumentInstanceInput): Prom
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO argument_instances
        (argument_id, source_id, verbatim_text, context, stance, reading, stated_shows,
-        speaker, publication, source_date, link, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        speaker, publication, source_date, link, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id`,
     [
       input.argumentId,
@@ -89,6 +90,7 @@ export async function insertArgumentInstance(input: ArgumentInstanceInput): Prom
       input.sourceDate ?? null,
       input.link ?? null,
       input.createdBy,
+      currentLabel(),
     ]
   );
   return row!.id;
@@ -171,10 +173,20 @@ export async function insertUnplacedPassage(input: {
 }): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO argument_instances
-       (claim_id, source_id, verbatim_text, context, stance, direction, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (claim_id, source_id, verbatim_text, context, stance, direction, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id`,
-    [input.claimId, input.sourceId, input.verbatimText, input.context, input.stance, input.direction, INGEST_RECORDER]
+    [
+      input.claimId,
+      input.sourceId,
+      input.verbatimText,
+      input.context,
+      input.stance,
+      input.direction,
+      INGEST_RECORDER,
+      // The ingestion that found the passage runs at its job's label.
+      currentLabel(),
+    ]
   );
   return row!.id;
 }

@@ -371,7 +371,8 @@ storage past about 5 GB, or a second region.
   operator key") for the eight operator routes: the fund deposit, the
   bounty confirmation, the prize-claim sign-off, the void, the sanctions
   screening, the owl grant, the release of a `check_error` hold, and the
-  operator page, plus the platform-mandate routes (#529). The API task
+  operator page, plus the platform-mandate routes (#529) and the
+  deployment's preflight (`GET /setup/preflight`, docs/deployment.md). The API task
   reads it from the Secrets Manager entry `episteme/operator-key`, which
   the operator creates by hand before deploying (the secrets stack imports
   it by name, so its value never passes through CloudFormation). The web
@@ -484,6 +485,26 @@ on `main` (Settings → Rules → Rulesets, not classic branch protection,
 since the workflow reads the ruleset API) requiring the status checks
 `check`, `db-tests`, `web` and `extension`; the workflow refuses to act
 without the ruleset.
+
+**Migration renumbering.** Two open PRs that each add a migration take the
+same number, so whichever merges second conflicts in `src/db/migrations`
+(CLAUDE.md). `.github/workflows/renumber-migrations.yml` runs on every push
+to `main`. For each open PR from this repository whose conflicts with main
+are all inside the migrations folder, it merges main, runs
+`npm run db:renumber`, and pushes the merge to the PR's branch. CI then
+runs on the result as it would on any push. A PR that also conflicts
+elsewhere is left alone and named in the run's summary; so is one where
+`db:renumber` cannot reconcile the schema, such as when main changed a
+default that a table new on the branch was created without. It never
+rebases or force-pushes: a push that loses a race is rejected and the next
+run tries again.
+
+It pushes with the repository secret `MIGRATION_RENUMBER_TOKEN`, because a
+push made with the built-in token starts no workflows, so CI would never run
+on the renumbered branch. Use a fine-grained personal access token (or a
+GitHub App's token) for this repository only, with **Contents: read and
+write** and **Pull requests: read**. Without the secret every run fails and
+says why.
 
 **The weekly maintenance pass** takes what the workflow leaves: major
 bumps, maintainer changes (check the release's npm provenance:

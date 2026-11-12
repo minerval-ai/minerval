@@ -20,6 +20,13 @@ describe("modelDeveloper", () => {
     expect(modelDeveloper("google/gemini-3-pro")?.key).toBe("google");
   });
 
+  it("reads a model served from the deployment's own endpoint as the model the endpoint knows", () => {
+    expect(modelDeveloper("endpoint:local/meta-llama/Llama-3.3-70B-Instruct")?.key).toBe("meta");
+    expect(modelDeveloper("endpoint:gpu_2/qwen/qwen3-235b-a22b")?.key).toBe("alibaba");
+    // A name with no vendor in it says nothing about who built the model.
+    expect(modelDeveloper("endpoint:local/llama3.3:70b")).toBeNull();
+  });
+
   it("returns null for missing or unknown ids", () => {
     expect(modelDeveloper(null)).toBeNull();
     expect(modelDeveloper("")).toBeNull();

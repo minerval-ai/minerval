@@ -25,6 +25,7 @@ import { commissionNodePass, liveNodeCommission, type CommissionTier } from "./c
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { microUsdToOwls } from "./owl.js";
+import { runAtClaimLabelOutsideAnyRun } from "./label-service.js";
 
 /** Who placed it, on the allocation and in the mandate's commission list. */
 export const PLAN_ORDER_COMMISSIONER = "plan";
@@ -75,7 +76,17 @@ async function estimateMicroUsd(claimId: string, tier: CommissionTier): Promise<
  * already paid for, is found and left alone, and nothing is posted to the
  * node's inbox for it a second time.
  */
-export async function placeStandingOrder(input: {
+export async function placeStandingOrder(input: StandingOrderInput): Promise<OrderStanding> {
+  // An order is placed by the scheduler's sweep as well as from inside a
+  // Grantmaker's run. From the sweep nothing says what label the plan item
+  // was written at (a mandate carries none yet), so the pass is ordered at
+  // the claim's label: a restricted claim's pass is never opened as public
+  // (runAtClaimLabel in label-service.ts). From inside a run the order is
+  // that run's work and keeps its label.
+  return runAtClaimLabelOutsideAnyRun(input.claimId, () => placeOrder(input));
+}
+
+interface StandingOrderInput {
   grantId: string;
   claimId: string;
   tier: CommissionTier;
@@ -83,7 +94,9 @@ export async function placeStandingOrder(input: {
   budgetMicroUsd?: number | null;
   /** What the Steward reads. Never the mandate or its reasons (§19). */
   brief: string;
-}): Promise<OrderStanding> {
+}
+
+async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
   const owls = (micro: number) => microUsdToOwls(micro);
   const live = await liveNodeCommission(input.claimId);
   if (live) {

@@ -41,12 +41,15 @@ loop or single call has one for each), and its content carries a `setup`
 object: the commit the code was built from, the hash of the prompt set
 (`promptSet`), the model and its settings, the parts the setup was made of
 (the constitution, the role prompt, each tool) by hash, the `label` the
-run wrote at, and the features that were switched off for it
-(`featuresOff`).
+run wrote at, the `provider` that served it, and the features that were
+switched off for it (`featuresOff`).
 
 A label says who may read a row (`src/labels.ts`). Every judgment and source
-a run writes is stamped with the run's label (the `sensitivity_label`
-column), and so is its `agent_runs` row. Recording the label in the setup puts it under the chain: the label a
+a run writes, every row of the graph's own content (a node, an edge, an
+argument, a tag, a formal statement), and everything it records from or
+about a source (an instance, a reading, a provenance edge, an examination's
+findings), is stamped with the run's label (the
+`sensitivity_label` column), and so is its `agent_runs` row. Recording the label in the setup puts it under the chain: the label a
 sealed run worked at cannot be changed afterwards without the log no longer
 reaching its seal. The public graph has one label, `public`, so every run
 there records `"label": "public"`; a run logged before labels existed has
@@ -57,7 +60,23 @@ waited in (a job, a ledger action, an order, a contribution, a paused
 session) was stamped with the label of the run or request that created it,
 and the worker that picks the row up opens the run at that label. So the
 label in a run's setup is the label of whatever asked for the run, through
-however many hand-overs, and never something the agent chose.
+however many hand-overs, and never something the agent chose. A run that
+starts from a claim itself, with no such row (the Tagger's, or a pass the
+scheduler's sweep opens for a pending claim), works at the claim's label.
+Work that starts from a source the same way (the source backfill) is done
+at the source's label; it opens no run. Two kinds of row are not the run's
+at all: a document's segments and the notices against it are derived from
+the document, the same whoever asks, and carry the document's label even
+when a run's fetch produced them.
+
+`provider` is what served the run's model: `anthropic`, `openai`,
+`openrouter`, or `endpoint:<name>` for an endpoint the deployment runs
+itself, as the model id resolved (docs/architecture.md, "Providers"). A run
+is served only by a provider cleared for the label it works at
+(docs/architecture.md, "Providers cleared by label"), and the label and the
+provider together are what a later reader needs to check that this held for
+a given run. The field is always recorded; a setup with no `provider` is
+from before the field existed.
 
 `featuresOff` names the features the deployment had switched off when the
 run was set up (docs/architecture.md, "Features"): `["mathematics",
@@ -115,9 +134,18 @@ run is unsealed as unfinished is later work.
 
 Two things record mode does not change yet: the paths that are untraced on
 purpose because they handle a reader's own page or conversation (the
-browser extension, the MCP's on-demand analysis, #356), and work that
-returns without a promise, which has nothing to hold its result behind. A
-private graph switches the first off instead of exempting it.
+browser extension, the MCP's on-demand analysis, the naming of an Assistant
+conversation, #356), and work that returns without a promise, which has
+nothing to hold its result behind. A private graph switches the first off
+instead of exempting it, where there is a switch: the browser extension is
+a feature and can be switched off, and the other two have no switch yet.
+
+A deployment's preflight (docs/deployment.md) holds it to this. It tests the
+log by writing a run, sealing it, checking its chain and removing it. Where
+the deployment holds private material, agent work does not start unless
+that test passes and the log is in record mode, and the preflight fails,
+without stopping work, while the extension is on and for the two paths that
+have no switch.
 
 The public graph runs best-effort until record mode has run somewhere in
 earnest.

@@ -18,6 +18,7 @@ import { FindingCard } from "./Findings";
 import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
+import { StatedViews } from "./claim/StatedViews";
 import { CiteClaim } from "./claim/CiteClaim";
 import { EmbedClaim } from "./claim/EmbedClaim";
 import { AskBox } from "./AskBox";
@@ -100,7 +101,13 @@ export function ClaimView({
   features?: Features;
 }) {
   const { claim, tree, instances, trajectory, record } = detail;
-  const { voices, mentions } = splitInstances(instances ?? []);
+  // Views stated to the graph directly (§4) have a section of their own, so
+  // their instances are left out of the list below instead of showing twice.
+  const statedViews = detail.stated_views ?? [];
+  const statedInstanceIds = new Set(statedViews.map((v) => v.instance_id));
+  const { voices, mentions } = splitInstances(
+    (instances ?? []).filter((i) => !statedInstanceIds.has(i.id)),
+  );
   // Mathematics (docs/mathematics.md §8.3): the formal statement, the derived
   // machine-checked badge, the bounty, the attempts, and the prize claims.
   // Each is null or empty until the API serves it, and each section renders
@@ -403,6 +410,14 @@ export function ClaimView({
       {isQuantity && <QuantityEstimates detail={detail} />}
       {isQuantity && <QuantityCuts detail={detail} />}
 
+      {/* stated views (§4): what a person or an organisation has told the
+          graph it holds, in its own words, beside the assessment and never
+          inside it. The section says that its place gives it no weight. A
+          design fixture has no API to state a view to. */}
+      {!fixture && (
+        <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={statedViews} />
+      )}
+
       {/* findings (#394): what an administrator found on this claim that
           people who hold the question would be better for knowing, published
           as written. Below the verdict because a finding rests on it and is
@@ -496,7 +511,7 @@ export function ClaimView({
       </section>
 
       {/* provenance */}
-      {((instances && instances.length > 0) || (detail.quantity?.readings.length ?? 0) > 0) && (
+      {(voices.length > 0 || mentions.length > 0 || (detail.quantity?.readings.length ?? 0) > 0) && (
         <section>
           <h2>Provenance</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
