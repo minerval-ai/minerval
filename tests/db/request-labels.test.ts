@@ -98,7 +98,7 @@ import { recordAgentStep } from "../../src/services/trace-service.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import crypto from "node:crypto";
-import { creditOwls, OWL } from "./helpers.js";
+import { creditOwls, OWL, readViewsAs } from "./helpers.js";
 
 const A = "rl-a";
 const B = "rl-b";
@@ -927,6 +927,608 @@ describe("opening raw sources", () => {
 
     const open = (await as(opener, { url: `/runs/${runId}/steps/${toolStep}` })).json();
     expect(open.content[0].output).toBe(JSON.stringify({ text: TEXT }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nothing a request writes lands anywhere but at its label.
+//
+// A request reaches many rows through services several calls down from its
+// route: a ledger row, an allocation, a message to a node's Steward, an
+// event. Before a request had a label every one of them was stamped
+// `public`, and a ledger row's display text is the first words of the node
+// it is for, so funding a private node told the public ledger what the
+// node says. So the check is on the database, not on the route: count the
+// rows of every labelled table at every label, make the request, count
+// again, and nothing may have changed at any label but the one the request
+// was for.
+
+let labelledTables: string[] | null = null;
+
+/** Rows per table per label, as the owner sees them. */
+async function census(): Promise<Map<string, number>> {
+  labelledTables ??= (
+    await rawQuery<{ t: string }>(
+      `SELECT c.relname::text AS t
+         FROM pg_catalog.pg_attribute a
+         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attname = 'sensitivity_label' AND NOT a.attisdropped`
+    )
+  ).map((r) => r.t).sort();
+  const rows = await rawQuery<{ t: string; l: string; n: number }>(
+    labelledTables
+      .map((t) => `SELECT '${t}' AS t, sensitivity_label AS l, count(*)::int AS n FROM "${t}" GROUP BY sensitivity_label`)
+      .join(" UNION ALL ")
+  );
+  return new Map(rows.map((r) => [`${r.t} at ${r.l}`, r.n]));
+}
+
+/**
+ * Make a request, and check that the only label any row count moved at is
+ * `label`. Returns the response and the tables that changed there.
+ */
+async function writesOnlyAt<T>(label: string, what: string, act: () => Promise<T>): Promise<{ res: T; wrote: string[] }> {
+  const before = await census();
+  const res = await act();
+  await settleAssistantTurns();
+  await settleGrantConversationTurns();
+  // What a request writes without waiting for it (an enqueue event) lands a moment later.
+  await new Promise((r) => setTimeout(r, 80));
+  const after = await census();
+  const elsewhere: string[] = [];
+  const wrote: string[] = [];
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    const delta = (after.get(key) ?? 0) - (before.get(key) ?? 0);
+    if (delta === 0) continue;
+    if (key.endsWith(` at ${label}`)) wrote.push(key.slice(0, -` at ${label}`.length));
+    else elsewhere.push(`${key}: ${delta > 0 ? "+" : ""}${delta}`);
+  }
+  expect(elsewhere, `${what}: rows changed at a label other than ${label}`).toEqual([]);
+  return { res, wrote: wrote.sort() };
+}
+
+/** A mandate at `label`, funded by `funder`, with its budget job and escrow. */
+async function mandateAt(label: string, funder: Person): Promise<{ grantId: string; jobId: string }> {
+  const [job] = await rawQuery<{ id: string }>(
+    `INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status, sensitivity_label)
+     VALUES ($1, 'grant', $2, 'running', $3) RETURNING id`,
+    [funder.id, 20 * OWL, label]
+  );
+  await rawQuery(`INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id) VALUES ($1, $2, 'escrow_hold', $3)`, [
+    funder.id,
+    -20 * OWL,
+    job!.id,
+  ]);
+  const [g] = await rawQuery<{ id: string }>(
+    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, daily_budget_micro_usd, sensitivity_label)
+     VALUES ($1, $2, $3, 'agent', 'active', 0, $4) RETURNING id`,
+    [funder.id, job!.id, `A request-labels mandate ${randomUUID().slice(0, 8)}`, label]
+  );
+  return { grantId: g!.id, jobId: job!.id };
+}
+
+describe("the leak a request without a label made", () => {
+  const visibleLedger = (labels: string[], claimId: string) =>
+    readViewsAs(labels, `SELECT status, label FROM ledger WHERE target_node_id = $1`, [claimId]);
+
+  it("is closed: funding a private node writes its ledger row, allocation, message and event at the node's label", async () => {
+    const secret = `A-ONLY ${randomUUID()}: the first partner will miss its covenant`;
+    const [claim] = await rawQuery<{ id: string }>(
+      `INSERT INTO claims (text, steward_state, tagged_at, sensitivity_label) VALUES ($1, 'done', now(), $2) RETURNING id`,
+      [secret, A]
+    );
+    const publicOnly = await member("reads-public", []);
+    expect((await as(publicOnly, { url: `/claims/${claim!.id}` })).statusCode).toBe(404);
+
+    const { res, wrote } = await writesOnlyAt(A, "funding a node at rl-a", () =>
+      as(onlyA, { method: "POST", url: `/claims/${claim!.id}/contribute`, payload: { owls: 3 } })
+    );
+    expect(res.statusCode, res.body).toBe(200);
+    expect(wrote).toEqual(expect.arrayContaining(["action_allocations", "actions"]));
+
+    for (const [table, column] of [
+      ["actions", "claim_id"],
+      ["action_allocations", "claim_id"],
+      ["node_messages", "node_id"],
+      ["enqueue_events", "claim_id"],
+    ] as const) {
+      const labels = await rawQuery<{ sensitivity_label: string }>(
+        `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${column} = $1`,
+        [claim!.id]
+      );
+      expect(labels.map((l) => l.sensitivity_label), table).toEqual(labels.length > 0 ? [A] : []);
+    }
+    // The ledger row's display text is the node's own words. A reader of
+    // public alone is shown no such row; a reader of rl-a is.
+    expect(await visibleLedger(["public"], claim!.id)).toEqual([]);
+    expect(JSON.stringify(await readViewsAs(["public"], `SELECT label FROM ledger`))).not.toContain("A-ONLY");
+    expect((await visibleLedger([A, "public"], claim!.id)).map((r) => r.label)).toEqual([secret.slice(0, 300)]);
+  });
+
+  it("leaves a finished ledger row for the node at the node's label when it is opened again", async () => {
+    const claimId = await seedClaimAt(A);
+    const [action] = await rawQuery<{ id: string }>(
+      `INSERT INTO actions (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd, status, sensitivity_label)
+       VALUES ('assess', $1, 'standard', $2, 'A finished pass', 1000000, 'done', $3) RETURNING id`,
+      [`assess:${claimId}`, claimId, A]
+    );
+    const { res } = await writesOnlyAt(A, "funding a node whose last pass is finished", () =>
+      as(onlyA, { method: "POST", url: `/claims/${claimId}/contribute`, payload: { owls: 3 } })
+    );
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await labelOf("actions", action!.id)).toBe(A);
+    expect(await visibleLedger(["public"], claimId)).toEqual([]);
+  });
+
+  it("stays closed whichever of two unrelated labels the person funds at", async () => {
+    for (const label of [A, B]) {
+      const claimId = await seedClaimAt(label);
+      const { res } = await writesOnlyAt(label, `funding a node at ${label}`, () =>
+        as(both, { method: "POST", url: `/claims/${claimId}/contribute`, payload: { owls: 2 } })
+      );
+      expect(res.statusCode, res.body).toBe(200);
+    }
+  });
+});
+
+describe("every route that writes, driven against a private target", () => {
+  type Drive = () => Promise<{ statusCode: number; body: string; json: () => any }>;
+
+  /** A rejected contribution at rl-a by `both`, with its review, to appeal. */
+  async function rejectedContribution(): Promise<string> {
+    const [c] = await rawQuery<{ id: string }>(
+      `INSERT INTO contributions (claim_id, contributor_id, contribution_type, content, review_status, sensitivity_label)
+       VALUES ($1, $2, 'challenge', 'A challenge that was rejected.', 'rejected', $3) RETURNING id`,
+      [claimAt[A], both.id, A]
+    );
+    await rawQuery(
+      `INSERT INTO contribution_reviews (contribution_id, decision, reasoning, confidence, sensitivity_label)
+       VALUES ($1, 'reject', 'Not sound.', 0.9, $2)`,
+      [c!.id, A]
+    );
+    return c!.id;
+  }
+
+  async function grantConversationAt(label: string, drafted: boolean): Promise<string> {
+    agents.mandate = drafted
+      ? { title: "A drafted mandate", objective: "Assess it.", expected_cost_owls: 5, plan: { items: [] } }
+      : null;
+    const res = await as(both, { method: "POST", url: "/grant-conversations", payload: { message: "Draft.", label } });
+    expect(res.statusCode, res.body).toBe(201);
+    await settleGrantConversationTurns();
+    agents.mandate = null;
+    return res.json().conversation.id;
+  }
+
+  async function assistantConversationAt(label: string, script?: (input: AssistantInput) => Promise<void>): Promise<string> {
+    agents.assistant = (script ?? null) as never;
+    const res = await as(both, { method: "POST", url: "/assistant/conversations", payload: { message: "Hello.", label } });
+    expect(res.statusCode, res.body).toBe(201);
+    await settleAssistantTurns();
+    agents.assistant = null;
+    return res.json().conversation.id;
+  }
+
+  async function pageAt(label: string): Promise<string> {
+    const res = await as(both, { method: "POST", url: "/pages", payload: { title: "A page", body: "Some text.", label } });
+    expect(res.statusCode, res.body).toBe(201);
+    return res.json().page.id;
+  }
+
+  /** A claim at rl-a with a published formal statement, an open bounty, and a prize claim by `both`. */
+  async function prizeClaimAtA(): Promise<{ claimId: string; prizeClaimId: string; attemptId: string }> {
+    const claimId = await seedClaimAt(A);
+    const [f] = await rawQuery<{ id: string }>(
+      `INSERT INTO claim_formalizations
+         (claim_id, version, pin_id, lean_toolchain, mathlib_rev, image_digest, namespace, statement_source,
+          source_hash, expr_hash, pp_type, constants, definitions_axioms, witness_present, status, authored_by, sensitivity_label)
+       VALUES ($1, 1, 'mathlib-v4.33.1', 'leanprover/lean4:v4.33.1', $2, 'sha256:img', $3, 'def Statement : Prop := True',
+               $4, $5, 'True', '[]', '[]', false, 'published', 'claim_steward', $6) RETURNING id`,
+      [claimId, randomUUID().replace(/-/g, ""), `Minerval.S${randomUUID().slice(0, 8)}_v1`, `src-${randomUUID()}`, `expr-${randomUUID()}`, A]
+    );
+    const mandate = await mandateAt(A, both);
+    const [bounty] = await rawQuery<{ id: string }>(
+      `INSERT INTO bounties (claim_id, formalization_id, posted_by_grant_id, amount_micro_usd, status, rules_version, rationale, sensitivity_label)
+       VALUES ($1, $2, $3, 250000000, 'open', 'rules-v1', 'A test bounty', $4) RETURNING id`,
+      [claimId, f!.id, mandate.grantId, A]
+    );
+    const [contribution] = await rawQuery<{ id: string }>(
+      `INSERT INTO contributions (claim_id, contributor_id, contribution_type, content, review_status, sensitivity_label)
+       VALUES ($1, $2, 'claim_prize', 'A prize claim.', 'checking', $3) RETURNING id`,
+      [claimId, both.id, A]
+    );
+    const [prizeClaim] = await rawQuery<{ id: string }>(
+      `INSERT INTO prize_claims
+         (contribution_id, bounty_id, claim_id, formalization_id, claimant_id, direction, status, rules_version, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, 'proof', 'accepted', 'rules-v1', $6) RETURNING id`,
+      [contribution!.id, bounty!.id, claimId, f!.id, both.id, A]
+    );
+    const [attempt] = await rawQuery<{ id: string }>(
+      `INSERT INTO proof_attempts (claim_id, formalization_id, model, variant, effort, status, ceiling_micro_usd, spent_micro_usd, sensitivity_label)
+       VALUES ($1, $2, 'solver', 'max', 'max', 'running', 100000000, 0, $3) RETURNING id`,
+      [claimId, f!.id, A]
+    );
+    return { claimId, prizeClaimId: prizeClaim!.id, attemptId: attempt!.id };
+  }
+
+  const post = (person: Person, url: string, payload?: unknown) => as(person, { method: "POST", url, payload: payload ?? {} });
+
+  /**
+   * One request for each route whose label comes from a row, against a row
+   * at rl-a, made by the person who also reads rl-b. Each entry builds what
+   * the route needs first (not counted) and returns the request to count.
+   */
+  const FROM_A_ROW: Record<string, () => Promise<Drive>> = {
+    "POST /claims/:claim_id/order": async () => {
+      const id = await seedClaimAt(A);
+      return () => post(both, `/claims/${id}/order`);
+    },
+    "POST /claims/:claim_id/contribute": async () => {
+      const id = await seedClaimAt(A);
+      return () => post(both, `/claims/${id}/contribute`, { owls: 2 });
+    },
+    "POST /claims/:claim_id/decompose": async () => {
+      const id = await seedClaimAt(A);
+      return () => post(both, `/claims/${id}/decompose`, { budget_owls: 6 });
+    },
+    "PATCH /claims/:claim_id": async () => {
+      // Open to a direct service caller alone: a service key of the person's, minted for rl-a.
+      const { createApiKey } = await import("../../src/services/api-key-service.js");
+      const key = await createApiKey({ userId: both.id, name: "seeding at a", scope: "service", workLabel: A });
+      const id = await seedClaimAt(A);
+      return () =>
+        withKey(key.plaintext, {
+          method: "PATCH",
+          url: `/claims/${id}`,
+          payload: { argument: { stance: "for", content: "An argument written straight onto the node." } },
+        });
+    },
+    "POST /claims/:claim_id/prize-claims": async () => {
+      const { claimId } = await prizeClaimAtA();
+      return () => post(both, `/claims/${claimId}/prize-claims`, {});
+    },
+    "POST /contributions": async () => {
+      const id = await seedClaimAt(A);
+      return () => post(both, "/contributions", { claim_id: id, contribution_type: "challenge", content: "A challenge." });
+    },
+    "POST /appeals": async () => {
+      const id = await rejectedContribution();
+      return () => post(both, "/appeals", { contribution_id: id, appeal_reasoning: "The review missed the second table." });
+    },
+    "DELETE /orders/:id": async () => {
+      const made = await post(both, `/claims/${await seedClaimAt(A)}/order`);
+      expect(made.statusCode, made.body).toBe(201);
+      return () => as(both, { method: "DELETE", url: `/orders/${made.json().order.id}` });
+    },
+    "POST /budget-jobs/:id/topup": async () => {
+      const { jobId } = await mandateAt(A, both);
+      return () => post(both, `/budget-jobs/${jobId}/topup`, { owls: 2 });
+    },
+    "POST /budget-jobs/:id/cancel": async () => {
+      const { jobId } = await mandateAt(A, both);
+      return () => post(both, `/budget-jobs/${jobId}/cancel`);
+    },
+    "POST /requests/:request_id/contribute": async () => {
+      const { fileRequest } = await import("../../src/services/request-service.js");
+      const request = await runAtLabel(A, "a test", () =>
+        fileRequest({
+          ask: `Find the first partner's own count (${randomUUID()}).`,
+          why: "The node turns on it.",
+          satisfiedBy: "The count, with its date.",
+          claimIds: [claimAt[A]!],
+          filer: { kind: "admin", agent: "claim_steward" },
+        })
+      );
+      return () => post(both, `/requests/${request.id}/contribute`, { owls: 2 });
+    },
+    "POST /grants/:id/approve": async () => {
+      const { grantId } = await mandateAt(A, both);
+      return () => post(both, `/grants/${grantId}/approve`);
+    },
+    "POST /grants/:id/topup": async () => {
+      const { grantId } = await mandateAt(A, both);
+      return () => post(both, `/grants/${grantId}/topup`, { owls: 2 });
+    },
+    "POST /grants/:id/cancel": async () => {
+      const { grantId } = await mandateAt(A, both);
+      return () => post(both, `/grants/${grantId}/cancel`);
+    },
+    "POST /mandates/:id/contribute": async () => {
+      const { grantId } = await mandateAt(A, onlyA);
+      return () => post(both, `/mandates/${grantId}/contribute`, { owls: 2 });
+    },
+    "POST /mandates/:id/withdraw": async () => {
+      const { grantId } = await mandateAt(A, onlyA);
+      const backed = await post(both, `/mandates/${grantId}/contribute`, { owls: 2 });
+      expect(backed.statusCode, backed.body).toBe(200);
+      return () => post(both, `/mandates/${grantId}/withdraw`, {});
+    },
+    "POST /grant-conversations/:id/messages": async () => {
+      const id = await grantConversationAt(A, false);
+      return () => post(both, `/grant-conversations/${id}/messages`, { message: "One more thing." });
+    },
+    "POST /grant-conversations/:id/fund": async () => {
+      const id = await grantConversationAt(A, true);
+      return () => post(both, `/grant-conversations/${id}/fund`, { budget_owls: 5 });
+    },
+    "POST /correspondents/:id/poke": async () => {
+      const { grantId } = await mandateAt(A, both);
+      const [c] = await rawQuery<{ id: string }>(
+        `INSERT INTO correspondents (grant_id, title, brief, audience, heartbeat_hours, created_by, sensitivity_label)
+         VALUES ($1, 'The first partner, weekly', $2, 'The partner team', 168, 'grantmaker', $3) RETURNING id`,
+        [grantId, "Report what changed on the first partner's nodes, plainly, for the people who manage the account.", A]
+      );
+      return () => post(both, `/correspondents/${c!.id}/poke`, { note: "An update now, please." });
+    },
+    "POST /assistant/conversations/:id/messages": async () => {
+      const id = await assistantConversationAt(A);
+      return () => post(both, `/assistant/conversations/${id}/messages`, { message: "And now?" });
+    },
+    "POST /assistant/conversations/:id/stop": async () => {
+      const id = await assistantConversationAt(A);
+      return () => post(both, `/assistant/conversations/${id}/stop`);
+    },
+    "PATCH /assistant/conversations/:id": async () => {
+      const id = await assistantConversationAt(A);
+      const models = (await as(both, { url: `/assistant/conversations/${id}` })).json().conversation.models as Array<{ id: string }>;
+      return () => as(both, { method: "PATCH", url: `/assistant/conversations/${id}`, payload: { model: models[0]!.id } });
+    },
+    "DELETE /assistant/conversations/:id": async () => {
+      const id = await assistantConversationAt(A);
+      return () => as(both, { method: "DELETE", url: `/assistant/conversations/${id}` });
+    },
+    "POST /assistant/conversations/:id/held/:action_id": async () => {
+      const claimId = await seedClaimAt(A);
+      const id = await assistantConversationAt(A, async (input) => {
+        await input.hold("fund_claim_assessment", "assess", { claim_id: claimId, owls: 2 });
+      });
+      const held = (await as(both, { url: `/assistant/conversations/${id}` })).json().conversation.held_actions as Array<{ id: string }>;
+      return () => post(both, `/assistant/conversations/${id}/held/${held[0]!.id}`, { decision: "run" });
+    },
+    "POST /pages": async () => {
+      const id = await pageAt(A);
+      return () => post(both, "/pages", { id, title: "A page, revised", body: "Other text." });
+    },
+    "DELETE /pages/:id": async () => {
+      const id = await pageAt(A);
+      return () => as(both, { method: "DELETE", url: `/pages/${id}` });
+    },
+    "PATCH /reports/:id": async () => {
+      const [r] = await rawQuery<{ id: string }>(
+        `INSERT INTO agent_reports (dedupe_key, title, body, agent, severity, kind, sensitivity_label)
+         VALUES ($1, 'A report at a', 'details', 'claim_steward', 'medium', 'tool_gap', $2) RETURNING id`,
+        [`request-labels-${randomUUID()}`, A]
+      );
+      return () => as(both, { method: "PATCH", url: `/reports/${r!.id}`, payload: { status: "triaged" } });
+    },
+    "PATCH /findings/:id": async () => {
+      const [f] = await rawQuery<{ id: string }>(
+        `INSERT INTO agent_findings (headline, account, claim_id, importance, agent, sensitivity_label)
+         VALUES ('A finding at a', 'What was found.', $1, 5, 'steward', $2) RETURNING id`,
+        [claimAt[A], A]
+      );
+      return () => as(both, { method: "PATCH", url: `/findings/${f!.id}`, payload: { status: "withdrawn", note: "Superseded." } });
+    },
+    "POST /admin/attempts/:id/cancel": async () => {
+      const { attemptId } = await prizeClaimAtA();
+      return () => post(both, `/admin/attempts/${attemptId}/cancel`);
+    },
+    "POST /prize-claims/:id/attachments": async () => {
+      const { prizeClaimId } = await prizeClaimAtA();
+      return () => post(both, `/prize-claims/${prizeClaimId}/attachments`, {});
+    },
+    "POST /prize-claims/:id/code": async () => {
+      const { prizeClaimId } = await prizeClaimAtA();
+      return () => post(both, `/prize-claims/${prizeClaimId}/code`);
+    },
+    "POST /prize-claims/:id/withdraw": async () => {
+      const { prizeClaimId } = await prizeClaimAtA();
+      return () => post(both, `/prize-claims/${prizeClaimId}/withdraw`, { code: "000000" });
+    },
+    "POST /prize-claims/:id/payee": async () => {
+      const { prizeClaimId } = await prizeClaimAtA();
+      return () => post(both, `/prize-claims/${prizeClaimId}/payee`, { code: "000000", legal_name: "A Person", country: "GB" });
+    },
+    "POST /prize-claims/:id/challenge": async () => {
+      const { prizeClaimId } = await prizeClaimAtA();
+      return () =>
+        post(onlyA, `/prize-claims/${prizeClaimId}/challenge`, {
+          ground: "statement_defect",
+          content: "The statement does not say what the node says.",
+          evidence_urls: [],
+        });
+    },
+  };
+
+  /** One request for each route that starts something new, with rl-a named. */
+  const NEW_AT_A: Record<string, () => Promise<Drive>> = {
+    "POST /claims/propose": async () => () =>
+      post(both, "/claims/propose", { claim: `The first partner renewed ${randomUUID()}`, label: A }),
+    "POST /sources": async () => () =>
+      post(both, "/sources", { url: `https://example.org/request-labels/sweep/${randomUUID()}`, content: "Text.", label: A }),
+    "POST /contributions": async () => () =>
+      post(both, "/contributions", { contribution_type: "propose_request", content: "Someone should count this.", label: A }),
+    "POST /grants": async () => {
+      const { createApiKey } = await import("../../src/services/api-key-service.js");
+      const key = await createApiKey({ userId: both.id, name: "seeding at a", scope: "service", workLabel: A });
+      return () =>
+        withKey(key.plaintext, { method: "POST", url: "/grants", payload: { name: "A direct mandate", policy: "agent", budget_owls: 5, scope_query: "the first partner" } });
+    },
+    "POST /grant-conversations": async () => () => post(both, "/grant-conversations", { message: "Draft.", label: A }),
+    "POST /assistant/conversations": async () => () => post(both, "/assistant/conversations", { message: "Hello.", label: A }),
+    "POST /pages": async () => () => post(both, "/pages", { title: "A new page", body: "Some text.", label: A }),
+    "POST /extension/analyze": async () => () =>
+      post(both, "/extension/analyze", { url: `https://example.org/${randomUUID()}`, title: "A page", text: "Some page text to analyze. ".repeat(20), label: A }),
+    "POST /extension/chat": async () => () =>
+      post(both, "/extension/chat", { question: "What is this?", page: { url: null, title: null, text: "Some page text." }, label: A }),
+  };
+
+  /**
+   * The routes a request must really get through for this to mean anything.
+   * Each of these has to answer 2xx, and each in ADDS_ROWS has to add or
+   * remove a row of some labelled table (the others change rows that are
+   * already there, or the owl ledger, which carries no label). The routes
+   * in neither list are driven all the same and held to the same check;
+   * they may be refused by a rule of their own (a one-time code, an
+   * upload's form, a bounty's window).
+   */
+  const ADDS_ROWS = [
+    "POST /claims/:claim_id/order",
+    "POST /claims/:claim_id/contribute",
+    "POST /claims/:claim_id/decompose",
+    "PATCH /claims/:claim_id",
+    "POST /contributions",
+    "POST /appeals",
+    "POST /requests/:request_id/contribute",
+    "POST /grant-conversations/:id/fund",
+    "POST /correspondents/:id/poke",
+    "DELETE /assistant/conversations/:id",
+    "POST /assistant/conversations/:id/held/:action_id",
+    "DELETE /pages/:id",
+    "POST /claims/propose",
+    "POST /sources",
+    "POST /grants",
+    "POST /grant-conversations",
+    "POST /assistant/conversations",
+  ];
+  const MUST_SUCCEED = [
+    ...ADDS_ROWS,
+    "DELETE /orders/:id",
+    "POST /budget-jobs/:id/topup",
+    "POST /grants/:id/topup",
+    "POST /grants/:id/cancel",
+    "POST /mandates/:id/contribute",
+    "POST /grant-conversations/:id/messages",
+    "POST /assistant/conversations/:id/messages",
+    "POST /pages",
+    "PATCH /reports/:id",
+    "PATCH /findings/:id",
+  ];
+
+  it("has a request here for every rule that takes its label from a row or from the person", () => {
+    const fromRow = Object.entries(REQUEST_LABELS).filter(([, r]) => r.rule === "from").map(([k]) => k).sort();
+    expect(Object.keys(FROM_A_ROW).sort()).toEqual(fromRow);
+    const chosen = Object.entries(REQUEST_LABELS)
+      .filter(([, r]) => r.rule === "chosen" || (r.rule === "from" && r.otherwise === "chosen"))
+      .map(([k]) => k)
+      .sort();
+    expect(Object.keys(NEW_AT_A).sort()).toEqual(chosen);
+  });
+
+  const outcomes: Record<string, { status: number; wrote: string[] }> = {};
+
+  for (const [group, drives] of [
+    ["about a row at rl-a", FROM_A_ROW],
+    ["new, at rl-a", NEW_AT_A],
+  ] as const) {
+    for (const key of Object.keys(drives)) {
+      it(`${key} (${group}) changes nothing at any other label`, async () => {
+        const drive = await drives[key]!();
+        await settleAssistantTurns();
+        await settleGrantConversationTurns();
+        await new Promise((r) => setTimeout(r, 80));
+        const { res, wrote } = await writesOnlyAt(A, key, drive);
+        outcomes[`${key} (${group})`] = { status: res.statusCode, wrote };
+        if (MUST_SUCCEED.includes(key)) {
+          expect(res.statusCode, `${key}: ${res.body}`).toBeLessThan(300);
+          if (ADDS_ROWS.includes(key)) expect(wrote.length, `${key} wrote nothing`).toBeGreaterThan(0);
+        } else {
+          // Refused by a rule of its own, or done: never a fault.
+          expect(res.statusCode, `${key}: ${res.body}`).toBeLessThan(500);
+        }
+      });
+    }
+  }
+
+  it("got through on the routes that matter", async () => {
+    // Written to the file REQUEST_LABEL_SWEEP names, when set: what each route answered and wrote.
+    if (process.env.REQUEST_LABEL_SWEEP) {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(process.env.REQUEST_LABEL_SWEEP, JSON.stringify(outcomes, null, 1));
+    }
+    expect(Object.keys(outcomes).length).toBe(Object.keys(FROM_A_ROW).length + Object.keys(NEW_AT_A).length);
+  });
+});
+
+describe("a route the table says adds no labelled row", () => {
+  /** Make a request and check that no labelled table changed at any label. */
+  async function writesNothingLabelled(what: string, act: () => Promise<{ statusCode: number; body: string }>) {
+    const before = await census();
+    const res = await act();
+    await new Promise((r) => setTimeout(r, 80));
+    const after = await census();
+    const changed = [...new Set([...before.keys(), ...after.keys()])].filter((k) => (before.get(k) ?? 0) !== (after.get(k) ?? 0));
+    expect(changed, what).toEqual([]);
+    expect(res.statusCode, `${what}: ${res.body}`).toBeLessThan(300);
+    return res;
+  }
+
+  it("adds none: accounts, keys, consents, allowances and the administrators' writes", async () => {
+    const person = await signIn("none-rules");
+    await writesNothingLabelled("POST /users/provision", () =>
+      app.inject({
+        method: "POST",
+        url: "/users/provision",
+        headers: { "x-api-key": SERVICE_KEY },
+        payload: { external_id: person.externalId, display_name: "none-rules again" },
+      })
+    );
+    const granted = await writesNothingLabelled("POST /permissions/grants", () =>
+      as(admin, { method: "POST", url: "/permissions/grants", payload: { permission: "read", account_id: person.id, label: A } })
+    );
+    const key = await writesNothingLabelled("POST /api-keys", () =>
+      as(person, { method: "POST", url: "/api-keys", payload: { name: "a key", label: A } })
+    );
+    await writesNothingLabelled("DELETE /api-keys/:key_id", () =>
+      as(person, { method: "DELETE", url: `/api-keys/${(key as unknown as { json: () => { id: string } }).json().id}` })
+    );
+    await writesNothingLabelled("PUT /assistant/allowance", () =>
+      as(person, { method: "PUT", url: "/assistant/allowance", payload: { kinds: ["propose"] } })
+    );
+    const { client } = await registerClient({
+      name: `none-rules ${randomUUID()}`,
+      redirectUris: ["https://client.example/callback"],
+      tokenEndpointAuthMethod: "none",
+    });
+    const consent = await createAuthorizationRequest({
+      client,
+      redirectUri: "https://client.example/callback",
+      scope: "mcp",
+      state: null,
+      codeChallenge: crypto.createHash("sha256").update("verifier", "ascii").digest("base64url"),
+      resource: null,
+    });
+    await writesNothingLabelled("POST /oauth/requests/:request_id/approve", () =>
+      as(person, { method: "POST", url: `/oauth/requests/${consent.id}/approve`, payload: { label: A } })
+    );
+    const party = await writesNothingLabelled("POST /parties", () =>
+      as(admin, { method: "POST", url: "/parties", payload: { name: `A partner ${randomUUID().slice(0, 8)}` } })
+    );
+    const [source] = await rawQuery<{ id: string }>(
+      `INSERT INTO sources (url, title, sensitivity_label) VALUES ($1, 'A partner''s page', $2) RETURNING id`,
+      [`https://example.org/request-labels/party/${randomUUID()}`, A]
+    );
+    await writesNothingLabelled("PUT /sources/:source_id/party", () =>
+      as(admin, {
+        method: "PUT",
+        url: `/sources/${source!.id}/party`,
+        payload: { party_id: (party as unknown as { json: () => { party: { id: string } } }).json().party.id },
+      })
+    );
+    expect(await labelOf("sources", source!.id)).toBe(A);
+    await writesNothingLabelled("DELETE /permissions/grants/:grant_id", () =>
+      as(admin, {
+        method: "DELETE",
+        url: `/permissions/grants/${(granted as unknown as { json: () => { grant: { id: string } } }).json().grant.id}`,
+      })
+    );
+    await writesNothingLabelled("POST /labels/:label/reads", () =>
+      as(admin, { method: "POST", url: `/labels/${B}/reads`, payload: { reads: A } })
+    );
+    await writesNothingLabelled("DELETE /labels/:label/reads/:reads", () =>
+      as(admin, { method: "DELETE", url: `/labels/${B}/reads/${A}` })
+    );
   });
 });
 
