@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "hash": "fa83d2d0df36e3524ed5718f1460cc5a832700582ddbbd23c16a3de456ad8fbb",
+  "hash": "2dfa2886cfd789c88dcc14fbdd0f5806327b9aa5b76b47edd88ba112c57bea0b",
   "constitution": {
-    "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
+    "hash": "2cc5f0e4a13b1b0c71a8dca9723c1800441d646ca0b46a0d1876f3570db06a55",
     "source_path": "admin_constitution.md"
   },
   "roles": [

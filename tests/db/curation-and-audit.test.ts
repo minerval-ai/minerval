@@ -70,7 +70,9 @@ async function placements(actionGroup: string) {
 
 beforeAll(async () => {
   // Earlier files may leave platform mandates active; this file's General
-  // and Governance are the only ones the formulas and prompt funding see.
+  // is the only one prompt funding sees. The 'governance' row stands for a
+  // database seeded before Governance was folded into General: nothing is
+  // routed to it any more.
   await rawQuery(
     `UPDATE grants SET status = 'completed'
       WHERE is_platform = true OR policy IN ('general', 'governance')`
@@ -341,33 +343,34 @@ describe("audits on the ledger (#363)", () => {
     return run!.action_id;
   }
 
-  it("opens an audit row and puts it in front of the Governance mandate's officers", async () => {
+  it("opens an audit row and puts it in front of the General mandate's officers", async () => {
     const runId = (await requestAudit({
       auditType: "decision_audit",
       triggeredBy: "bad_faith_flag",
       context: "A bad-faith flag on contribution X.",
     }))!;
     const actionId = await auditAction(runId);
-    const items = await raised(governance.grantId, actionId);
+    const items = await raised(general.grantId, actionId);
     expect(items).toHaveLength(1);
     expect(items[0]!.summary).toContain("An audit is wanted");
-    expect(await raised(general.grantId, actionId)).toHaveLength(0);
+    expect(await raised(governance.grantId, actionId)).toHaveLength(0);
     expect(await placements(`audit:${runId}`)).toEqual([]);
   });
 
-  it("recuses Governance from an audit of itself: General's officers are asked instead", async () => {
+  it("never puts an audit of General to General: it waits on the ledger for anyone else", async () => {
     const runId = (await requestAudit({
       auditType: "anomaly_investigation",
       triggeredBy: "manual",
-      context: "Governance declined a run of overturn audits.",
-      subjectGrantId: governance.grantId,
+      context: "General's officers declined a run of overturn audits.",
+      subjectGrantId: general.grantId,
     }))!;
     const actionId = await auditAction(runId);
+    expect(await raised(general.grantId, actionId)).toHaveLength(0);
     expect(await raised(governance.grantId, actionId)).toHaveLength(0);
-    expect(await raised(general.grantId, actionId)).toHaveLength(1);
+    expect(await placements(`audit:${runId}`)).toEqual([]);
   });
 
-  it("funds a prize audit from the bounty's reserve, and asks Governance for what a short reserve cannot cover", async () => {
+  it("funds a prize audit from the bounty's reserve, and asks General for what a short reserve cannot cover", async () => {
     const claimId = await claim("prize");
     const ns = `Minerval.S${randomUUID().slice(0, 8)}_v1`;
     const [f] = await rawQuery<{ id: string }>(
@@ -412,7 +415,7 @@ describe("audits on the ledger (#363)", () => {
     expect(reserveShare!.commissioned_by).toBeNull();
     expect((await reserveRoomMicroUsd(b!.id)).room).toBe(0);
     const actionId = await auditAction(runId);
-    const items = await raised(governance.grantId, actionId);
+    const items = await raised(general.grantId, actionId);
     expect(items).toHaveLength(1);
     expect(items[0]!.summary).toContain("review reserve holds");
   });

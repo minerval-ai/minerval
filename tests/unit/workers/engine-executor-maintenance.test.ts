@@ -26,7 +26,6 @@ const { state } = vi.hoisted(() => ({
     funder: { jobId: "job-1", grantId: "g-1" } as Record<string, unknown>,
     fallbackLane: false,
     generalMandate: null as null | Record<string, unknown>,
-    governance: [] as string[],
     contexts: [] as Array<Record<string, unknown>>,
     budgets: [] as Array<{ microUsd: number; source: string }>,
     curatorCalls: [] as Array<Record<string, unknown>>,
@@ -110,7 +109,6 @@ vi.mock("../../../src/services/curation-service.js", async (importOriginal) => (
 
 vi.mock("../../../src/services/allocation-policy-service.js", () => ({
   getGeneralMandate: vi.fn(async () => state.generalMandate),
-  getGovernanceMandateIds: vi.fn(async () => state.governance),
 }));
 
 vi.mock("../../../src/services/bounty-service.js", () => ({
@@ -216,7 +214,6 @@ beforeEach(() => {
   state.funder = { jobId: "job-1", grantId: "g-1" };
   state.fallbackLane = false;
   state.generalMandate = null;
-  state.governance = [];
   state.contexts = [];
   state.curatorCalls = [];
   state.auditCalls = [];
@@ -389,9 +386,17 @@ describe("the unfunded fallback lane", () => {
   it("never runs unfunded work a seeded mandate could fund", async () => {
     state.fallbackLane = true;
     state.generalMandate = { grantId: "g-general" };
-    state.governance = ["g-gov"];
     state.fallback = [{ ...curateAction(), coverage_micro_usd: 0 }];
     const r = await processNextEngineAction();
     expect(r.status).toBe("empty");
+  });
+
+  it("leaves an uncovered audit to the General mandate when there is one", async () => {
+    state.fallbackLane = true;
+    state.generalMandate = { grantId: "g-general" };
+    state.fallback = [{ ...auditAction(), coverage_micro_usd: 0 }];
+    const r = await processNextEngineAction();
+    expect(r.status).toBe("empty");
+    expect(state.auditCalls).toHaveLength(0);
   });
 });

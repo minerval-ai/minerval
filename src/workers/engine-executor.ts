@@ -36,7 +36,7 @@
  *    live curation request on it, under the largest funder. Metered and
  *    consumed like the rest; the requests it read are marked consumed.
  *  - audit (#363): one Audit Agent run for the audit_runs row named in
- *    target_ref, under its funder (a Governance mandate, or the bounty's
+ *    target_ref, under its funder (the General mandate, or the bounty's
  *    prize-review reserve for a prize audit). The run row records its
  *    completion and findings count.
  *  - request (Part VIII): one Researcher run on the request named in
@@ -46,8 +46,8 @@
  *    outcome as work for the request's keeper to judge.
  *
  * The unfunded fallback lane: with BACKGROUND_FALLBACK_LANE_ENABLED and no
- * mandate that could fund the kind (no active General mandate for curate,
- * no active Governance mandate for audit), an uncovered curate or audit row
+ * mandate that could fund the kind (no active General mandate, which owns
+ * both curation and audit), an uncovered curate or audit row
  * runs attributed to nobody, as the Steward's fallback lane does. It exists
  * for fresh dev databases and corpus runs; a deployment with its mandates
  * seeded never takes it.
@@ -76,7 +76,6 @@ import {
 } from "../services/curation-service.js";
 import {
   getGeneralMandate,
-  getGovernanceMandateIds,
 } from "../services/allocation-policy-service.js";
 import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.js";
 import { loadConfig } from "../config.js";
@@ -257,18 +256,19 @@ export function resetFallbackCuratorRuns(): void {
 /**
  * The oldest uncovered curate or audit row the fallback lane may run, or
  * null. Only with BACKGROUND_FALLBACK_LANE_ENABLED, and only for a kind no
- * mandate could fund: an active General mandate owns curation's funding,
- * an active Governance mandate (or a bounty's reserve) owns audit's.
+ * mandate could fund: an active General mandate owns curation's funding
+ * and audit's (a bounty's reserve also pays for its own audits).
  */
 async function nextFallbackAction(): Promise<RunnableAction | null> {
   const config = loadConfig();
   if (!config.backgroundFallbackLaneEnabled) return null;
   const kinds: string[] = [];
   const curatorCap = config.curatorMaxRuns ?? 0;
-  if (!(await getGeneralMandate()) && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
+  const general = await getGeneralMandate();
+  if (!general && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
     kinds.push("curate");
   }
-  if ((await getGovernanceMandateIds()).length === 0) kinds.push("audit");
+  if (!general) kinds.push("audit");
   if (kinds.length === 0) return null;
   const [row] = await rawQuery<RunnableAction>(
     `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
