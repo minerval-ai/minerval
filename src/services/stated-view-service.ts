@@ -240,9 +240,12 @@ export async function createStatedView(input: {
       ]
     );
     const [row] = await tx.query<{ id: string }>(
+      // The row holds the statement, the reasons and the stake as text, so
+      // it carries the label of the request that files it, as the source
+      // and the contribution above do (src/labels.ts).
       `INSERT INTO stated_views
-         (contribution_id, stance, stated_probability, stated_estimate, statement, reasons, stake)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (contribution_id, stance, stated_probability, stated_estimate, statement, reasons, stake, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         contribution!.id,
@@ -252,6 +255,7 @@ export async function createStatedView(input: {
         view.statement,
         view.reasons,
         view.stake,
+        label,
       ]
     );
     return { statedViewId: row!.id, contributionId: contribution!.id, sourceId: source!.id };
@@ -279,6 +283,7 @@ interface PendingRow {
   merged_into: string | null;
   speaker: string | null;
   is_verified: boolean;
+  sensitivity_label: string;
 }
 
 async function loadForAdmission(
@@ -288,7 +293,7 @@ async function loadForAdmission(
 ): Promise<PendingRow | null> {
   const [row] = await run.query<PendingRow>(
     `SELECT sv.id, sv.instance_id, sv.stance, sv.stated_probability, sv.stated_estimate,
-            sv.statement, sv.reasons, sv.stake, sv.created_at,
+            sv.statement, sv.reasons, sv.stake, sv.created_at, sv.sensitivity_label,
             c.claim_id, c.source_id, c.evidence_urls,
             n.state AS node_state, n.kind AS node_kind, n.merged_into,
             s.authors[1] AS speaker, p.is_verified
@@ -366,10 +371,13 @@ export async function admitStatedView(
     const kind = row.node_kind as NodeKind;
     const speaker = row.speaker ?? "An account with no name";
     const [instance] = await tx.query<{ id: string }>(
+      // The instance and the interest below are made from the stated view
+      // and nothing else, the same whoever admits it, so they carry its
+      // label (src/labels.ts).
       `INSERT INTO claim_instances
          (claim_id, source_id, verbatim_text, context, stance, stated_probability, stated_estimate,
-          confidence, speaker, source_date, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0, $8, $9, 'speaker')
+          confidence, speaker, source_date, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0, $8, $9, 'speaker', $10)
        RETURNING id`,
       [
         row.claim_id,
@@ -381,6 +389,7 @@ export async function admitStatedView(
         row.stated_estimate ? JSON.stringify(row.stated_estimate) : null,
         speaker,
         new Date(row.created_at).toISOString().slice(0, 10),
+        row.sensitivity_label,
       ]
     );
     await tx.query(`UPDATE stated_views SET instance_id = $2 WHERE id = $1`, [row.id, instance!.id]);
@@ -389,9 +398,9 @@ export async function admitStatedView(
       // that finds a stake the speaker did not declare records it the usual
       // way, and the newer record is the one readers are shown.
       await tx.query(
-        `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id)
-         VALUES ($1, $2, $3, $4, 'speaker', $5)`,
-        [row.source_id, row.claim_id, speaker, row.stake, getUsageContext().runId ?? null]
+        `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id, sensitivity_label)
+         VALUES ($1, $2, $3, $4, 'speaker', $5, $6)`,
+        [row.source_id, row.claim_id, speaker, row.stake, getUsageContext().runId ?? null, row.sensitivity_label]
       );
     }
     return { row, instanceId: instance!.id, alreadyAdmitted: false };

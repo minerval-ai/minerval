@@ -68,6 +68,7 @@ import {
   updateLookoutWorkspace,
   LOOKOUT_BOUNDS,
   type LookoutEventRow,
+  LOOKOUT_COLUMNS,
   type LookoutRow,
 } from "../../services/lookout-service.js";
 import { createLookoutFeedTools, getReadListingToolDefinition } from "../tools/feed-tools.js";
@@ -175,7 +176,8 @@ async function runLookoutImpl(input: {
       scope_query: string | null;
     }
   >(
-    `SELECT l.*, g.skills AS grant_skills, g.status AS grant_status,
+    `SELECT ${LOOKOUT_COLUMNS.map((c) => `l.${c}`).join(", ")},
+            g.skills AS grant_skills, g.status AS grant_status,
             COALESCE(g.mandate->>'title', g.name) AS mandate_title,
             g.mandate->>'objective' AS mandate_objective,
             g.scope_claim_id, g.scope_query

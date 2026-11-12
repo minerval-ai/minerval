@@ -63,7 +63,7 @@ description: >-
 | `/runs/:id`, `/runs/:id/steps/:seq` | One agent run, linked as "the run" beside a verdict: its setup by version and its steps; one step in full. A run that read private data is withheld, with the reasons (`get_run`, `list_run_steps`, `get_run_step`) |
 | `/requests`, `/requests/:id` | Open requests for work, each fundable |
 | `/mandates`, `/mandates/:id` | Public mandates; one mandate's plan, spend, policy and decisions, with a box to back it |
-| `/findings`, `/findings/:id`, `/tags` | What the administrators noted in their work; topics |
+| `/findings`, `/findings/:id`, `/tags` | What the administrators noted in their work: a list to search and to filter by topic, the claim's status, importance, who noted it and when; one finding, its account with the records it links beside it; topics |
 | `/prizes`, `/prizes/rules` | Open prizes and their rules |
 | `/account` | Owl balance, packs and history; prizes; grants; ordered assessments and funded jobs; API keys; usage by agent and key; contributor standing |
 | `/account/grants`, `/account/grants/new`, `/account/grants/:id` | The user's mandates; a direct conversation with the Grantmaker; one grant |

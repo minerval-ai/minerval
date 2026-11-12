@@ -94,11 +94,20 @@ export interface LookoutRow {
   updated_at: Date;
 }
 
+/**
+ * The columns a lookout is read with, named, so that a column the table
+ * gains (its label, src/labels.ts) does not ride along into a run's brief
+ * or a route's reply. Every read of a whole lookout uses these.
+ */
+export const LOOKOUT_COLUMNS = [
+  "id", "grant_id", "title", "brief", "status", "heartbeat_hours", "triggers", "model",
+  "commission_limit_micro_usd", "territory_claim_ids", "territory_tag_ids",
+  "changes_cursor", "workspace", "last_note", "last_run_at",
+  "next_due_at", "runs", "flags", "created_by", "created_at", "updated_at",
+] as const;
+
 const LOOKOUT_SELECT = `
-  SELECT id, grant_id, title, brief, status, heartbeat_hours, triggers, model,
-         commission_limit_micro_usd, territory_claim_ids, territory_tag_ids,
-         changes_cursor, workspace, last_note, last_run_at,
-         next_due_at, runs, flags, created_by, created_at, updated_at
+  SELECT ${LOOKOUT_COLUMNS.join(", ")}
     FROM lookouts`;
 
 export type LookoutWriteResult =

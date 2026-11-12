@@ -31,6 +31,7 @@ import { applyAcceptanceEffects } from "../../src/services/contribution-acceptan
 import { getClaimInstances } from "../../src/services/claim-service.js";
 import { sourceContentHash } from "../../src/services/source-content.js";
 import { answerMessages, openInbox } from "../../src/services/inbox-service.js";
+import { runAtLabel } from "../../src/llm/usage-context.js";
 
 function view(kind: "claim" | "quantity" | "question", body: Record<string, unknown>): StatedViewInput {
   const parsed = parseStatedView(kind, body);
@@ -302,6 +303,59 @@ describe("stating a view", () => {
     expect(result.success).toBe(true);
     expect(await getClaimInstances(claim)).toEqual([]);
     expect(await statedViewsForClaim(claim)).toEqual([]);
+  });
+});
+
+describe("the label a stated view carries", () => {
+  it("is the label of the request that files it, carried to what admission makes, and shown to no reader", async () => {
+    const second = "stated-views-second";
+    await rawQuery(
+      `INSERT INTO labels (name, description) VALUES ($1, 'A second label, for this test.') ON CONFLICT (name) DO NOTHING`,
+      [second]
+    );
+    const claim = await seedClaim("sv-labelled");
+    const filed = await runAtLabel(second, "a stated view filed in a test", () =>
+      createStatedView({
+        claimId: claim,
+        contributorId: speaker,
+        speakerDisplayName: speakerName,
+        view: view("claim", { statement: "We hold that this is so.", stance: "affirms", stake: "We sell it." }),
+      })
+    );
+    const labelOf = async (table: string, id: string) =>
+      (await rawQuery<{ sensitivity_label: string }>(`SELECT sensitivity_label FROM ${table} WHERE id = $1`, [id]))[0]!
+        .sensitivity_label;
+    expect(await labelOf("stated_views", filed.statedViewId)).toBe(second);
+    expect(await labelOf("contributions", filed.contributionId)).toBe(second);
+    expect(await labelOf("sources", filed.sourceId)).toBe(second);
+
+    // Admitted from outside any run: the instance and the interest take the
+    // stated view's label, not the label of whoever admitted it.
+    const admitted = await admitStatedView(filed.contributionId);
+    expect(await labelOf("claim_instances", admitted.instanceId)).toBe(second);
+    const [interest] = await rawQuery<{ sensitivity_label: string }>(
+      `SELECT sensitivity_label FROM source_interests WHERE source_id = $1`,
+      [filed.sourceId]
+    );
+    expect(interest!.sensitivity_label).toBe(second);
+
+    // A statement filed outside any run is public, as every row is on the public graph.
+    const plain = await createStatedView({
+      claimId: claim,
+      contributorId: speaker,
+      speakerDisplayName: speakerName,
+      view: view("claim", { statement: "Still so.", stance: "affirms", no_stake: true }),
+    });
+    expect(await labelOf("stated_views", plain.statedViewId)).toBe("public");
+
+    // No read serves the column.
+    const served = JSON.stringify([
+      await statedViewsForClaim(claim),
+      await listStatedViews({ claimId: claim, limit: 20, offset: 0 }),
+      await statedViewForContribution(filed.contributionId),
+    ]);
+    expect(served).not.toContain("sensitivity_label");
+    expect(served).not.toContain(second);
   });
 });
 
