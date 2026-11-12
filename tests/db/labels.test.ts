@@ -147,7 +147,7 @@ describe("the labels table", () => {
     expect(pairs!.n).toBe("0");
   });
 
-  it("gives every labelled table a sensitivity_label that defaults to public and points here", async () => {
+  it("gives every labelled table a sensitivity_label that defaults to the connection's label and points here", async () => {
     // The column has its own name because `label` is already a display name
     // on two tables that carry one (actions, source_segments).
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
@@ -173,7 +173,7 @@ describe("the labels table", () => {
     // the tables that carry no label, each with its reason).
     expect(rows).toEqual(
       [
-        "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
+        "action_allocations", "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
         "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals",
         "arbitration_results", "argument_evaluations", "argument_evidence_backlog", "argument_instances",
         "argument_subclaims", "arguments", "assessment_orders", "assessments", "assistant_conversations",
@@ -187,13 +187,13 @@ describe("the labels table", () => {
         "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants",
         "ingest_focuses", "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events",
         "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
-        "mandate_events", "mandate_inbox", "mandate_policy_versions", "node_messages", "petitions",
+        "mandate_events", "mandate_inbox", "mandate_policy_versions", "mandate_valuations", "node_messages", "petitions",
         "prize_claims", "proof_attempts", "quantity_cuts", "quantity_definitions", "quantity_estimates",
         "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events",
-        "reputation_events", "request_targets", "request_work", "requests", "research_runs",
+        "regrants", "reputation_events", "request_targets", "request_work", "requests", "research_runs",
         "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
         "source_relationships", "source_segments", "sources", "stated_views", "taggings", "tags",
-      ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 
