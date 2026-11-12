@@ -108,6 +108,11 @@ export interface StewardMessage {
     // (mirror-upkeep.ts). The context says what happened and what of this
     // label's is where; what to make of it is the Steward's judgment.
     | "public_graph_changed"
+    // A merge made at another label moved what this label had recorded on
+    // the merged node onto this one, or its undo moved it back
+    // (reconciliation-service.ts, carryMergeToOtherLabels). The context is
+    // composed at this label: what moved, and this label's own version.
+    | "merge_carried"
     // A mandate's plan asked for a pass on this claim (an assess, reassess
     // or deepen item, materialized by the reconcile sweep or by the
     // Grantmaker's extend_plan in the same turn, #416). The context names

@@ -10,13 +10,14 @@
  * undoes a logged event.
  */
 import { mirroredNode, mirroredRowMessage } from "./mirrored-node-service.js";
-import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
+import { sameLabelOnly, withSystemClearance, writtenAtOwnLabel } from "../db/clearance.js";
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
 import { insertRelationshipEdge } from "./relationship-service.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
 import {
   quantityDefinitionSchema,
   quantityEstimateSchema,
@@ -129,33 +130,42 @@ interface KindRefsMoved {
   keeper_request_ids: string[];
 }
 
-async function moveKindRefs(survivorId: string, loserId: string): Promise<KindRefsMoved> {
+/**
+ * SQL that keeps a statement of a merge to the rows at the label of the
+ * work in progress. Empty for the merge itself, whose statements are what
+ * they were; set where the merge is carried to another label's rows
+ * (carryMergeToOtherLabels).
+ */
+const atOwnLabel = (own: boolean, alias?: string) =>
+  own ? ` AND ${alias ? `${alias}.` : ""}sensitivity_label = minerval_write_label()` : "";
+
+async function moveKindRefs(survivorId: string, loserId: string, own = false): Promise<KindRefsMoved> {
   const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
   const reading_ids = ids(
     await rawQuery<{ id: string }>(
-      `UPDATE quantity_readings SET claim_id = $1 WHERE claim_id = $2 RETURNING id`,
+      `UPDATE quantity_readings SET claim_id = $1 WHERE claim_id = $2${atOwnLabel(own)} RETURNING id`,
       [survivorId, loserId]
     )
   );
   const cut_claim_ids = (
     await rawQuery<{ claim_id: string }>(
-      `UPDATE quantity_cuts SET quantity_id = $1 WHERE quantity_id = $2 AND claim_id != $1 RETURNING claim_id`,
+      `UPDATE quantity_cuts SET quantity_id = $1 WHERE quantity_id = $2 AND claim_id != $1${atOwnLabel(own)} RETURNING claim_id`,
       [survivorId, loserId]
     )
   ).map((r) => r.claim_id);
   // A cut claim merged into another: its cut moves only when the survivor
   // has none of its own.
   const loserCut = await rawQuery<{ claim_id: string }>(
-    `UPDATE quantity_cuts SET claim_id = $1
-      WHERE claim_id = $2 AND quantity_id != $1
-        AND NOT EXISTS (SELECT 1 FROM quantity_cuts WHERE claim_id = $1)
-      RETURNING claim_id`,
+    `UPDATE quantity_cuts qc SET claim_id = $1
+      WHERE qc.claim_id = $2 AND qc.quantity_id != $1${atOwnLabel(own, "qc")}
+        AND NOT EXISTS (SELECT 1 FROM quantity_cuts o WHERE o.claim_id = $1)
+      RETURNING qc.claim_id`,
     [survivorId, loserId]
   );
   const answer_relation_ids = ids(
     await rawQuery<{ id: string }>(
       `UPDATE answer_relations ar SET question_id = $1
-        WHERE ar.question_id = $2
+        WHERE ar.question_id = $2${atOwnLabel(own, "ar")}
           AND NOT EXISTS (SELECT 1 FROM answer_relations o
                            WHERE o.question_id = $1 AND o.claim_a_id = ar.claim_a_id AND o.claim_b_id = ar.claim_b_id)
         RETURNING ar.id`,
@@ -164,27 +174,27 @@ async function moveKindRefs(survivorId: string, loserId: string): Promise<KindRe
   );
   const answer_instance_ids = ids(
     await rawQuery<{ id: string }>(
-      `UPDATE claim_instances SET answer_claim_id = $1 WHERE answer_claim_id = $2 RETURNING id`,
+      `UPDATE claim_instances SET answer_claim_id = $1 WHERE answer_claim_id = $2${atOwnLabel(own)} RETURNING id`,
       [survivorId, loserId]
     )
   );
   // A request that already bears on the survivor keeps one target.
   const dropped_request_targets = await rawQuery<{ request_id: string }>(
     `DELETE FROM request_targets t
-      WHERE t.claim_id = $2
+      WHERE t.claim_id = $2${atOwnLabel(own, "t")}
         AND EXISTS (SELECT 1 FROM request_targets o WHERE o.request_id = t.request_id AND o.claim_id = $1)
       RETURNING t.request_id`,
     [survivorId, loserId]
   );
   const request_target_ids = ids(
     await rawQuery<{ id: string }>(
-      `UPDATE request_targets SET claim_id = $1 WHERE claim_id = $2 RETURNING id`,
+      `UPDATE request_targets SET claim_id = $1 WHERE claim_id = $2${atOwnLabel(own)} RETURNING id`,
       [survivorId, loserId]
     )
   );
   const keeper_request_ids = ids(
     await rawQuery<{ id: string }>(
-      `UPDATE requests SET keeper_claim_id = $1, updated_at = now() WHERE keeper_claim_id = $2 RETURNING id`,
+      `UPDATE requests SET keeper_claim_id = $1, updated_at = now() WHERE keeper_claim_id = $2${atOwnLabel(own)} RETURNING id`,
       [survivorId, loserId]
     )
   );
@@ -379,10 +389,67 @@ export async function mergeClaims(input: {
     throw new Error("A merge across kinds has no opposed reading: use stance_relation \"same\".");
   }
 
+  const moved = await moveOntoSurvivor({ survivorId, loserId, opposed, crossKind, survivorKind, stanceMap, own: false });
+
+  // 5. Mark the loser a merged alias of the survivor.
+  await rawQuery(
+    `UPDATE claims SET merged_into = $1, state = 'merged', updated_at = now() WHERE id = $2`,
+    [survivorId, loserId]
+  );
+
+  const eventId = await logEvent("merge", reasoning, {
+    survivor_id: survivorId,
+    loser_id: loserId,
+    stance_relation: stanceRelation,
+    loser_prev_state: loserPrevState,
+    ...moved,
+  });
+
+  // 6. What other labels recorded on the loser goes with it, each row at
+  //    its own label, and each such label's Steward is told.
+  if (!oneLabelOnly()) {
+    await carryMergeToOtherLabels({ survivorId, loserId, stanceRelation, crossKind, survivorKind, stanceMap, eventId });
+  }
+
+  return { merged: true, survivorId, loserId, eventId };
+}
+
+/** What a merge moved, as its event records it for the undo. */
+interface MergeMoved {
+  moved_instance_ids: string[];
+  moved_argument_ids: string[];
+  moved_argument_passages: Array<{ id: string; direction: string | null }>;
+  repointed_child_edge_ids: string[];
+  repointed_parent_edge_ids: string[];
+  deleted_edges: EdgeRow[];
+  repointed_memberships: MembershipRef[];
+  moved_links: ClaimLinkRow[];
+  merged_link_ids: string[];
+  remapped_stances: StanceRef[];
+  neutralized_arguments: StanceRef[];
+  kind_refs: KindRefsMoved;
+}
+
+/**
+ * Steps 1 to 4b of a merge: the loser's instances, arguments, passages,
+ * kinds' rows, edges and links onto the survivor. With `own`, only the rows
+ * at the label of the work in progress.
+ */
+async function moveOntoSurvivor(input: {
+  survivorId: string;
+  loserId: string;
+  opposed: boolean;
+  crossKind: boolean;
+  survivorKind: string;
+  stanceMap: Record<string, string> | undefined;
+  own: boolean;
+}): Promise<MergeMoved> {
+  const { survivorId, loserId, opposed, crossKind, survivorKind, stanceMap, own } = input;
+
   // 1. Instances onto the survivor (flip if opposed).
   const movedInstances = await rawQuery<{ id: string }>(
     `UPDATE claim_instances SET claim_id = $1, stance = ${FLIP_INSTANCE_STANCE}, display_rank = NULL
-      WHERE claim_id = $2 RETURNING id`,
+      WHERE claim_id = $2${atOwnLabel(own)} RETURNING id`,
     [survivorId, loserId, opposed]
   );
 
@@ -394,7 +461,7 @@ export async function mergeClaims(input: {
   const movedArguments = await rawQuery<{ id: string; stance: string }>(
     `UPDATE arguments a SET claim_id = $1, stance = ${FLIP_ARGUMENT_STANCE}
       FROM (SELECT id, stance AS prior_stance FROM arguments WHERE claim_id = $2) p
-      WHERE a.id = p.id RETURNING a.id, p.prior_stance AS stance`,
+      WHERE a.id = p.id${atOwnLabel(own, "a")} RETURNING a.id, p.prior_stance AS stance`,
     [survivorId, loserId, opposed]
   );
   const neutralizedArguments =
@@ -417,7 +484,7 @@ export async function mergeClaims(input: {
               WHEN $3::boolean THEN (CASE p.direction WHEN 'for' THEN 'against' WHEN 'against' THEN 'for' ELSE p.direction END)
               ELSE p.direction END
        FROM (SELECT id, direction FROM argument_instances WHERE claim_id = $2) p
-      WHERE ai.id = p.id
+      WHERE ai.id = p.id${atOwnLabel(own, "ai")}
       RETURNING ai.id, p.direction`,
     [survivorId, loserId, opposed, crossKind && survivorKind === "quantity"]
   );
@@ -425,7 +492,7 @@ export async function mergeClaims(input: {
   // 2b. The kinds' rows that point at the loser: a quantity's readings and
   //     cuts, a question's answer relations, the answers sources gave, and
   //     the requests that bear on it.
-  const kindRefs = await moveKindRefs(survivorId, loserId);
+  const kindRefs = await moveKindRefs(survivorId, loserId, own);
 
   // 3. Edges where the loser is the CHILD: drop self/duplicate edges (captured,
   //    with their argument memberships, so they can be restored; a duplicate's
@@ -435,7 +502,7 @@ export async function mergeClaims(input: {
   const childDupIds = (
     await rawQuery<{ id: string }>(
       `SELECT cr.id FROM claim_relationships cr
-        WHERE cr.child_claim_id = $2
+        WHERE cr.child_claim_id = $2${atOwnLabel(own, "cr")}
           AND (cr.parent_claim_id = $1
                OR EXISTS (SELECT 1 FROM claim_relationships e
                             WHERE e.child_claim_id = $1
@@ -452,7 +519,7 @@ export async function mergeClaims(input: {
   );
   const deletedChildEdges = await captureAndDeleteEdges(childDupIds);
   const repointedChild = await rawQuery<{ id: string }>(
-    `UPDATE claim_relationships SET child_claim_id = $1 WHERE child_claim_id = $2 RETURNING id`,
+    `UPDATE claim_relationships SET child_claim_id = $1 WHERE child_claim_id = $2${atOwnLabel(own)} RETURNING id`,
     [survivorId, loserId]
   );
 
@@ -462,7 +529,7 @@ export async function mergeClaims(input: {
   const parentDupIds = (
     await rawQuery<{ id: string }>(
       `SELECT cr.id FROM claim_relationships cr
-        WHERE cr.parent_claim_id = $2
+        WHERE cr.parent_claim_id = $2${atOwnLabel(own, "cr")}
           AND (cr.child_claim_id = $1
                OR EXISTS (SELECT 1 FROM claim_relationships e
                             WHERE e.parent_claim_id = $1
@@ -479,7 +546,7 @@ export async function mergeClaims(input: {
   );
   const deletedParentEdges = await captureAndDeleteEdges(parentDupIds);
   const repointedParent = await rawQuery<{ id: string }>(
-    `UPDATE claim_relationships SET parent_claim_id = $1 WHERE parent_claim_id = $2 RETURNING id`,
+    `UPDATE claim_relationships SET parent_claim_id = $1 WHERE parent_claim_id = $2${atOwnLabel(own)} RETURNING id`,
     [survivorId, loserId]
   );
 
@@ -490,7 +557,7 @@ export async function mergeClaims(input: {
   //     originals back.
   const movedLinks = await rawQuery<ClaimLinkRow>(
     `DELETE FROM claim_links
-      WHERE claim_a_id = $1 OR claim_b_id = $1
+      WHERE (claim_a_id = $1 OR claim_b_id = $1)${atOwnLabel(own)}
       RETURNING id, claim_a_id, claim_b_id, kind, reasoning, created_by`,
     [loserId]
   );
@@ -508,35 +575,214 @@ export async function mergeClaims(input: {
     if (created) mergedLinkIds.push(id);
   }
 
-  // 5. Mark the loser a merged alias of the survivor.
-  await rawQuery(
-    `UPDATE claims SET merged_into = $1, state = 'merged', updated_at = now() WHERE id = $2`,
-    [survivorId, loserId]
-  );
-
-  const eventId = await logEvent("merge", reasoning, {
-    survivor_id: survivorId,
-    loser_id: loserId,
-    stance_relation: stanceRelation,
-    loser_prev_state: loserPrevState,
+  return {
     moved_instance_ids: movedInstances.map((r) => r.id),
     moved_argument_ids: movedArguments.map((r) => r.id),
     moved_argument_passages: movedPassages,
     repointed_child_edge_ids: repointedChild.map((r) => r.id),
     repointed_parent_edge_ids: repointedParent.map((r) => r.id),
     deleted_edges: [...deletedChildEdges, ...deletedParentEdges],
-    repointed_memberships: [
-      ...repointedChildMemberships,
-      ...repointedParentMemberships,
-    ],
+    repointed_memberships: [...repointedChildMemberships, ...repointedParentMemberships],
     moved_links: movedLinks,
     merged_link_ids: mergedLinkIds,
     remapped_stances: remappedStances,
     neutralized_arguments: neutralizedArguments,
     kind_refs: kindRefs,
-  });
+  };
+}
 
-  return { merged: true, survivorId, loserId, eventId };
+/** Why a merge, and its undo, look at every label (tests/unit/db/system-clearance.test.ts). */
+const MERGE_CARRY_REASON =
+  "A merge moves what every label recorded on the merged node, and finding which labels did means reading every label; each label's rows are then moved, and its Steward told, at that label.";
+
+/** The labels, other than `except`, with a row of their own that names a node. */
+async function otherLabelsWithRowsOn(nodeId: string, except: string): Promise<string[]> {
+  const rows = await rawQuery<{ label: string }>(
+    `SELECT DISTINCT x.label FROM (
+       SELECT sensitivity_label AS label FROM claim_instances WHERE claim_id = $1 OR answer_claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM arguments WHERE claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM argument_instances WHERE claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM quantity_readings WHERE claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM quantity_cuts WHERE claim_id = $1 OR quantity_id = $1
+       UNION ALL SELECT sensitivity_label FROM answer_relations WHERE question_id = $1
+       UNION ALL SELECT sensitivity_label FROM request_targets WHERE claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM requests WHERE keeper_claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM claim_relationships WHERE parent_claim_id = $1 OR child_claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM claim_links WHERE claim_a_id = $1 OR claim_b_id = $1
+       UNION ALL SELECT sensitivity_label FROM assessments_versions WHERE claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM quantity_estimates_versions WHERE claim_id = $1
+       UNION ALL SELECT sensitivity_label FROM question_assessments_versions WHERE claim_id = $1) x
+      WHERE x.label <> $2
+      ORDER BY 1`,
+    [nodeId, except]
+  );
+  return rows.map((r) => r.label);
+}
+
+const shortText = (text: string | null | undefined, max = 200) =>
+  !text ? "" : text.length > max ? `${text.slice(0, max)}...` : text;
+const counted = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The version at the label of the work in progress on a node, in a sentence; null where there is none. */
+async function ownVersionLine(nodeId: string): Promise<string | null> {
+  const [v] = await rawQuery<{ status: string | null; summary: string | null; assessed_at: Date }>(
+    `SELECT status, COALESCE(summary, reasoning_trace) AS summary, assessed_at FROM assessments_versions
+      WHERE claim_id = $1 AND sensitivity_label = minerval_write_label()
+     UNION ALL
+     SELECT NULL, summary, assessed_at FROM quantity_estimates_versions
+      WHERE claim_id = $1 AND sensitivity_label = minerval_write_label()
+     UNION ALL
+     SELECT standing, summary, assessed_at FROM question_assessments_versions
+      WHERE claim_id = $1 AND sensitivity_label = minerval_write_label()
+     LIMIT 1`,
+    [nodeId]
+  );
+  if (!v) return null;
+  return (
+    `recorded ${new Date(v.assessed_at).toISOString().slice(0, 10)}` +
+    (v.status ? `: ${v.status}` : "") +
+    (v.summary ? `. Its summary: "${shortText(v.summary, 600)}"` : "")
+  );
+}
+
+/**
+ * What the Steward of the node a merge ended in is told at a label, other
+ * than the merge's own, that had rows on the merged node. Composed at that
+ * label, from rows read there and from what was moved there.
+ */
+async function mergeCarriedMessage(input: {
+  survivorId: string;
+  loserId: string;
+  opposed: boolean;
+  label: string;
+  moved: MergeMoved;
+}): Promise<string> {
+  const { survivorId, loserId, opposed, label, moved } = input;
+  const [loser] = await rawQuery<{ text: string }>(`SELECT text FROM claims WHERE id = $1`, [loserId]);
+  const parts = [
+    moved.moved_instance_ids.length ? counted(moved.moved_instance_ids.length, "source passage", "source passages") : null,
+    moved.moved_argument_ids.length ? counted(moved.moved_argument_ids.length, "argument", "arguments") : null,
+    moved.moved_argument_passages.length
+      ? counted(moved.moved_argument_passages.length, "argument passage waiting to be placed", "argument passages waiting to be placed")
+      : null,
+    moved.repointed_child_edge_ids.length + moved.repointed_parent_edge_ids.length
+      ? counted(moved.repointed_child_edge_ids.length + moved.repointed_parent_edge_ids.length, "edge", "edges")
+      : null,
+    moved.deleted_edges.length
+      ? `${counted(moved.deleted_edges.length, "edge", "edges")} this node already had, kept once`
+      : null,
+    moved.moved_links.length ? counted(moved.moved_links.length, "link", "links") : null,
+    moved.kind_refs.reading_ids.length ? counted(moved.kind_refs.reading_ids.length, "reading", "readings") : null,
+  ].filter((x): x is string => x !== null);
+  const loserVersion = await ownVersionLine(loserId);
+  const survivorVersion = await ownVersionLine(survivorId);
+  return (
+    `Another node has been merged into this one: ${loserId}${loser?.text ? ` "${shortText(loser.text)}"` : ""}` +
+    `${opposed ? ", as this node's denial" : ""}. A read of the merged node by its id now gives this node.\n\n` +
+    (parts.length
+      ? `What was recorded on the merged node at \`${label}\` has moved here with it, and is still at ` +
+        `\`${label}\`: ${parts.join(", ")}. A merge moves every label's rows the same way, because a row left ` +
+        `on a merged node is read by nobody.` +
+        (opposed
+          ? ` The two nodes are a claim and its denial, so each moved passage that affirmed now denies, each ` +
+            `that denied now affirms, and each moved argument has changed sides. Check that each reads ` +
+            `correctly against this node as it is worded.`
+          : "") +
+        `\n\n`
+      : "") +
+    (loserVersion
+      ? `The version of the merged node's judgment at \`${label}\`, ${loserVersion}, stays with the merged node. ` +
+        `It judged that node as it was worded` +
+        (opposed ? `, which is the denial of this one, so it does not carry over as it stands` : "") +
+        `.\n\n`
+      : "") +
+    `This node has ${survivorVersion ? "a version" : "no version"} of its judgment at \`${label}\`. ` +
+    `Whether what moved changes how this node is judged at \`${label}\` is yours to decide: reassess it, and ` +
+    `record a version at \`${label}\` where material at \`${label}\` bears on it.`
+  );
+}
+
+/**
+ * The part of a merge that the run making it cannot do: rows on the merged
+ * node at labels the run does not read. Left there they would be read by
+ * nobody, and after a merge with the claim's denial their stances would be
+ * the wrong way round, so they move as the run's own rows did, each at its
+ * own label, and that label's Steward is told. Which labels have such rows
+ * is found seeing every label; the moving, the record of it and the message
+ * are each label's own work, inside runAtLabel, where the database holds
+ * them to that label's rows.
+ */
+async function carryMergeToOtherLabels(input: {
+  survivorId: string;
+  loserId: string;
+  stanceRelation: "same" | "opposed";
+  crossKind: boolean;
+  survivorKind: string;
+  stanceMap: Record<string, string> | undefined;
+  eventId: string | undefined;
+}): Promise<void> {
+  const { survivorId, loserId, stanceRelation, crossKind, survivorKind, stanceMap, eventId } = input;
+  const opposed = stanceRelation === "opposed";
+  const labels = await withSystemClearance(MERGE_CARRY_REASON, () => otherLabelsWithRowsOn(loserId, currentLabel()));
+  for (const label of labels) {
+    await runAtLabel(label, `what ${label} recorded on merged node ${loserId}`, async () => {
+      const moved = await moveOntoSurvivor({ survivorId, loserId, opposed, crossKind, survivorKind, stanceMap, own: true });
+      await logEvent("merge_carried", "A merge moved the rows at this label with the node they were recorded on.", {
+        survivor_id: survivorId,
+        loser_id: loserId,
+        stance_relation: stanceRelation,
+        of_event: eventId ?? null,
+        ...moved,
+      });
+      const { enqueueSteward } = await import("./queue-service.js");
+      await enqueueSteward({
+        claimId: survivorId,
+        trigger: "merge_carried",
+        context: await mergeCarriedMessage({ survivorId, loserId, opposed, label, moved }),
+        sender: { kind: "system", ref: `merge:${loserId}` },
+      });
+    });
+  }
+}
+
+/**
+ * Undo the part of a merge carried to other labels, after the merge itself
+ * has been undone: each label's rows go back, at that label, and its
+ * Steward on the restored node is told.
+ */
+async function undoCarriedMerge(eventId: string, survivorId: string, loserId: string): Promise<void> {
+  const carried = await withSystemClearance(MERGE_CARRY_REASON, () =>
+    rawQuery<{ id: string; label: string }>(
+      `SELECT id, sensitivity_label AS label FROM reconciliation_events
+        WHERE operation = 'merge_carried' AND payload->>'of_event' = $1 AND reversed = false
+        ORDER BY created_at DESC`,
+      [eventId]
+    )
+  );
+  for (const c of carried) {
+    await runAtLabel(c.label, `what ${c.label} recorded on node ${loserId}, whose merge is undone`, async () => {
+      const [event] = await rawQuery<{ payload: Record<string, unknown> }>(
+        `SELECT payload FROM reconciliation_events WHERE id = $1`,
+        [c.id]
+      );
+      if (!event) return;
+      await undoMergeMoves(event.payload);
+      await rawQuery(`UPDATE reconciliation_events SET reversed = true WHERE id = $1`, [c.id]);
+      const [survivor] = await rawQuery<{ text: string }>(`SELECT text FROM claims WHERE id = $1`, [survivorId]);
+      const { enqueueSteward } = await import("./queue-service.js");
+      await enqueueSteward({
+        claimId: loserId,
+        trigger: "merge_carried",
+        context:
+          `The merge of this node into ${survivorId}${survivor?.text ? ` "${shortText(survivor.text)}"` : ""} has been undone, ` +
+          `and this node is active again. What was recorded on it at \`${c.label}\` and moved with the merge is back ` +
+          `here, with the stances it had before the merge. Anything recorded at \`${c.label}\` on the other node ` +
+          `since the merge is still there. Whether this node's judgment at \`${c.label}\` needs another look is ` +
+          `yours to decide.`,
+        sender: { kind: "system", ref: `merge-undone:${survivorId}` },
+      });
+    });
+  }
 }
 
 /**
@@ -1466,6 +1712,86 @@ export async function reassignInstance(input: {
   });
 }
 
+/** Put back what a merge moved (its event's payload), all but the merged node's own state. */
+async function undoMergeMoves(p: Record<string, unknown>): Promise<void> {
+  const survivorId = p.survivor_id as string;
+  const loserId = p.loser_id as string;
+  const opposed = p.stance_relation === "opposed";
+  const movedInstances = (p.moved_instance_ids as string[]) ?? [];
+  const movedArguments = (p.moved_argument_ids as string[]) ?? [];
+  const repointedChild = (p.repointed_child_edge_ids as string[]) ?? [];
+  const repointedParent = (p.repointed_parent_edge_ids as string[]) ?? [];
+  const deletedEdges = (p.deleted_edges as EdgeRow[]) ?? [];
+  const repointedMemberships = (p.repointed_memberships as MembershipRef[]) ?? [];
+  const movedLinks = (p.moved_links as ClaimLinkRow[]) ?? [];
+  const mergedLinkIds = (p.merged_link_ids as string[]) ?? [];
+
+  // Move instances/arguments back (un-flipping stance for an opposed merge).
+  // Param order matches FLIP_*_STANCE, which references $3::boolean.
+  if (movedInstances.length) {
+    await rawQuery(
+      `UPDATE claim_instances SET claim_id = $1, stance = ${FLIP_INSTANCE_STANCE}
+        WHERE id = ANY($2::uuid[]) AND claim_id = $4`,
+      [loserId, movedInstances, opposed, survivorId]
+    );
+  }
+  if (movedArguments.length) {
+    await rawQuery(
+      `UPDATE arguments SET claim_id = $1, stance = ${FLIP_ARGUMENT_STANCE}
+        WHERE id = ANY($2::uuid[]) AND claim_id = $4`,
+      [loserId, movedArguments, opposed, survivorId]
+    );
+  }
+  // Argument passages still waiting on the survivor go back with their
+  // prior side; any its Steward placed since stay where they were put.
+  for (const ap of (p.moved_argument_passages as Array<{ id: string; direction: string | null }>) ?? []) {
+    await rawQuery(
+      `UPDATE argument_instances SET claim_id = $2, direction = $3 WHERE id = $1 AND claim_id = $4`,
+      [ap.id, loserId, ap.direction, survivorId]
+    );
+  }
+  // A merge across kinds: the stances it rewrote, and its kinds' rows.
+  await restoreStances((p.remapped_stances as StanceRef[]) ?? []);
+  for (const a of (p.neutralized_arguments as StanceRef[]) ?? []) {
+    await rawQuery(`UPDATE arguments SET stance = $2 WHERE id = $1`, [a.id, a.stance]);
+  }
+  await restoreKindRefs(loserId, survivorId, (p.kind_refs as Partial<KindRefsMoved>) ?? {});
+  // Repoint the survivor-side edges back to the loser.
+  if (repointedChild.length) {
+    await rawQuery(
+      `UPDATE claim_relationships SET child_claim_id = $1 WHERE id = ANY($2::uuid[])`,
+      [loserId, repointedChild]
+    );
+  }
+  if (repointedParent.length) {
+    await rawQuery(
+      `UPDATE claim_relationships SET parent_claim_id = $1 WHERE id = ANY($2::uuid[])`,
+      [loserId, repointedParent]
+    );
+  }
+  // Drop the memberships the merge carried onto the survivor's edges (and
+  // only those), then restore the deleted duplicates with their own.
+  if (repointedMemberships.length) {
+    await rawQuery(
+      `DELETE FROM argument_subclaims
+        WHERE (argument_id, relationship_id) IN
+              (SELECT unnest($1::uuid[]), unnest($2::uuid[]))`,
+      [
+        repointedMemberships.map((m) => m.argument_id),
+        repointedMemberships.map((m) => m.relationship_id),
+      ]
+    );
+  }
+  await reinsertEdges(deletedEdges);
+  // Lateral links: drop what the merge created, restore the originals.
+  if (mergedLinkIds.length) {
+    await rawQuery(`DELETE FROM claim_links WHERE id = ANY($1::uuid[])`, [
+      mergedLinkIds,
+    ]);
+  }
+  await reinsertLinks(movedLinks);
+}
+
 /**
  * Reverse a logged reconciliation event, restoring the prior state as faithfully
  * as the recorded payload allows. Idempotent: a `reversed` event is a no-op.
@@ -1491,6 +1817,14 @@ export async function reverseReconciliation(
   if (event.operation === "reverse") {
     return { reversed: false, reason: "a reversal cannot itself be reversed; redo the operation instead" };
   }
+  if (event.operation === "merge_carried") {
+    return {
+      reversed: false,
+      reason:
+        "this event is the part of a merge that moved the rows at this label with the merged node; it is undone " +
+        "with the merge, by reversing the merge's own event",
+    };
+  }
 
   const p = event.payload;
   // A copied instance leaves the node it was copied from as it was, so a
@@ -1512,6 +1846,7 @@ export async function reverseReconciliation(
         WHERE e.id <> $1
           AND e.created_at > (SELECT created_at FROM reconciliation_events WHERE id = $1)
           AND e.reversed = false AND e.operation <> 'reverse'
+          AND NOT (e.operation = 'merge_carried' AND e.payload->>'of_event' = $1::text)
           AND e.payload::text LIKE ANY($2::text[])
           AND NOT (e.operation = 'reassign_instance' AND e.payload->>'mode' = 'copy'
                    AND NOT (e.payload->>'to_claim_id' = ANY($3::text[])))
@@ -1532,85 +1867,14 @@ export async function reverseReconciliation(
     case "merge": {
       const survivorId = p.survivor_id as string;
       const loserId = p.loser_id as string;
-      const opposed = p.stance_relation === "opposed";
-      const movedInstances = (p.moved_instance_ids as string[]) ?? [];
-      const movedArguments = (p.moved_argument_ids as string[]) ?? [];
-      const repointedChild = (p.repointed_child_edge_ids as string[]) ?? [];
-      const repointedParent = (p.repointed_parent_edge_ids as string[]) ?? [];
-      const deletedEdges = (p.deleted_edges as EdgeRow[]) ?? [];
-      const repointedMemberships = (p.repointed_memberships as MembershipRef[]) ?? [];
-      const movedLinks = (p.moved_links as ClaimLinkRow[]) ?? [];
-      const mergedLinkIds = (p.merged_link_ids as string[]) ?? [];
-
-      // Move instances/arguments back (un-flipping stance for an opposed merge).
-      // Param order matches FLIP_*_STANCE, which references $3::boolean.
-      if (movedInstances.length) {
-        await rawQuery(
-          `UPDATE claim_instances SET claim_id = $1, stance = ${FLIP_INSTANCE_STANCE}
-            WHERE id = ANY($2::uuid[]) AND claim_id = $4`,
-          [loserId, movedInstances, opposed, survivorId]
-        );
-      }
-      if (movedArguments.length) {
-        await rawQuery(
-          `UPDATE arguments SET claim_id = $1, stance = ${FLIP_ARGUMENT_STANCE}
-            WHERE id = ANY($2::uuid[]) AND claim_id = $4`,
-          [loserId, movedArguments, opposed, survivorId]
-        );
-      }
-      // Argument passages still waiting on the survivor go back with their
-      // prior side; any its Steward placed since stay where they were put.
-      for (const ap of (p.moved_argument_passages as Array<{ id: string; direction: string | null }>) ?? []) {
-        await rawQuery(
-          `UPDATE argument_instances SET claim_id = $2, direction = $3 WHERE id = $1 AND claim_id = $4`,
-          [ap.id, loserId, ap.direction, survivorId]
-        );
-      }
-      // A merge across kinds: the stances it rewrote, and its kinds' rows.
-      await restoreStances((p.remapped_stances as StanceRef[]) ?? []);
-      for (const a of (p.neutralized_arguments as StanceRef[]) ?? []) {
-        await rawQuery(`UPDATE arguments SET stance = $2 WHERE id = $1`, [a.id, a.stance]);
-      }
-      await restoreKindRefs(loserId, survivorId, (p.kind_refs as Partial<KindRefsMoved>) ?? {});
-      // Repoint the survivor-side edges back to the loser.
-      if (repointedChild.length) {
-        await rawQuery(
-          `UPDATE claim_relationships SET child_claim_id = $1 WHERE id = ANY($2::uuid[])`,
-          [loserId, repointedChild]
-        );
-      }
-      if (repointedParent.length) {
-        await rawQuery(
-          `UPDATE claim_relationships SET parent_claim_id = $1 WHERE id = ANY($2::uuid[])`,
-          [loserId, repointedParent]
-        );
-      }
-      // Drop the memberships the merge carried onto the survivor's edges (and
-      // only those), then restore the deleted duplicates with their own.
-      if (repointedMemberships.length) {
-        await rawQuery(
-          `DELETE FROM argument_subclaims
-            WHERE (argument_id, relationship_id) IN
-                  (SELECT unnest($1::uuid[]), unnest($2::uuid[]))`,
-          [
-            repointedMemberships.map((m) => m.argument_id),
-            repointedMemberships.map((m) => m.relationship_id),
-          ]
-        );
-      }
-      await reinsertEdges(deletedEdges);
-      // Lateral links: drop what the merge created, restore the originals.
-      if (mergedLinkIds.length) {
-        await rawQuery(`DELETE FROM claim_links WHERE id = ANY($1::uuid[])`, [
-          mergedLinkIds,
-        ]);
-      }
-      await reinsertLinks(movedLinks);
+      await undoMergeMoves(p);
       // Un-merge the loser.
       await rawQuery(
         `UPDATE claims SET merged_into = NULL, state = $2, updated_at = now() WHERE id = $1`,
         [loserId, (p.loser_prev_state as string) ?? "active"]
       );
+      // What the merge carried to other labels goes back as well.
+      if (!oneLabelOnly()) await undoCarriedMerge(eventId, survivorId, loserId);
       break;
     }
 

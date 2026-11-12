@@ -2451,6 +2451,24 @@ own row stays the slot for work at the node's own label
 (`src/services/steward-lease.ts`). An order is one for each person, node and
 label. A message waits for a pass at the label it was sent at.
 
+**A merge under more than one label.** A merge made here moves what was
+recorded on the merged node onto the node it ends in. The run that makes it
+moves the rows it reads; the rows at a label it does not read move the same
+way, each at its own label, with the same reversal of stances where the two
+nodes are a claim and its denial (`carryMergeToOtherLabels` in
+`src/services/reconciliation-service.ts`). A row left on a merged node would
+be read by nobody, so this is a consequence of the merge and not a judgment.
+Which labels have such rows is found seeing every label; each label's rows
+are then moved by work at that label, which records its own
+`merge_carried` event and sends the surviving node's Steward at that label a
+message composed there: what moved, that the stances were reversed, and
+that label's own version, which stays with the merged node. Undoing the
+merge puts each label's rows back and tells its Steward on the restored
+node. A merge the mirror brings is different, because a batch does not say
+whether the public graph merged a claim with its denial: nothing is moved,
+and each label's Steward is told where its rows are
+([mirror.md](mirror.md), "Beside a deployment's own rows").
+
 **A request's label.** A person's request has a clearance and, until it is
 given one, no label to write at. Each request that writes is given one
 (`src/server/request-labels.ts`, one rule for every route that is not a

@@ -166,6 +166,16 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing while it sees every label: it pairs each of the deployment's own nodes with the nearest node that arrived, by their vectors. The request to the Curator is then raised inside runAtLabel at the deployment's node's label, through requestCuration, and names the public node's id and a similarity, in fixed words.",
     ],
   ],
+  "src/services/reconciliation-service.ts": [
+    [
+      "A merge moves what every label recorded on the merged node, and finding which labels did means reading every label; each label's rows are then moved, and its Steward told, at that label.",
+      "Nothing while it sees every label: it reads which labels, other than the merge's own, have a row that names the merged node. Each such label's rows are then moved to the surviving node inside runAtLabel at that label, by the merge's own statements kept to that label's rows; the record of the move and the message to the surviving node's Steward are written there, and the message names what moved and that label's own version, read there.",
+    ],
+    [
+      "A merge moves what every label recorded on the merged node, and finding which labels did means reading every label; each label's rows are then moved, and its Steward told, at that label.",
+      "Nothing while it sees every label: when a merge is undone it reads the ids and labels of the records of what the merge carried to other labels. Each is then undone inside runAtLabel at its label, from that label's own record, and the restored node's Steward at that label is told in fixed words that name the other node.",
+    ],
+  ],
   "src/services/version-upkeep.ts": [
     [
       "The upkeep of versions finds, at every label, the versions made beside one that has since been replaced; each node's reassessment is then opened at its own version's label.",
