@@ -12,7 +12,7 @@
  * Variants a launcher can choose (the Researcher with and without the
  * constitution) are separate entries under one name.
  */
-import { getAssistantSystemPromptBlocks } from "./assistant.js";
+import { getAssistantSystemPromptBlocks, getAssistantTitleSystemPrompt } from "./assistant.js";
 import { getAuditAgentSystemPromptBlocks } from "./audit-agent.js";
 import { getClaimStewardSystemPromptBlocks } from "./claim-steward.js";
 import { getConsistencyCheckerSystemPromptBlocks } from "./consistency-checker.js";
@@ -56,4 +56,7 @@ export const KNOWN_ROLES: readonly KnownRole[] = [
   // Not an administrator: the agent that works for a user (#646). Its
   // prompt is published like the rest.
   { name: "assistant", sourcePath: "src/llm/prompts/assistant.ts", blocks: getAssistantSystemPromptBlocks },
+  // The small model that names an Assistant conversation from its first
+  // message. Its run is logged in record mode, under this name.
+  { name: "assistant-title", sourcePath: "src/llm/prompts/assistant.ts", blocks: () => [getAssistantTitleSystemPrompt()] },
 ];

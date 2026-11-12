@@ -344,7 +344,9 @@ read is free, an agent which signals allocation turns on.
   so far, for `assess_text` the judgments made so far), `complete` with the
   full result (`{claims}` / `{claims_extracted, judgments}`), or `failed`
   with an `error`. Only the account that started an analysis can read it,
-  and the text itself is not stored. The public `GET /jobs/:id` does not
+  and the text itself is not stored (a deployment that keeps its run log
+  as a record logs the analysis, privately: [run-log.md](run-log.md)). The
+  public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id?, contribution_type, content,

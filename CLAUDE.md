@@ -12,6 +12,8 @@ Two open PRs that each add a migration take the same number, so the second to me
 
 Read a node's current judgment through the four `*_in_force` views (`src/db/schema.ts`), not by filtering on `is_current` by hand: a file under `src` that mentions `is_current` must be listed with its reason in `tests/unit/db/judgment-in-force.test.ts`, which fails until it is.
 
+Call a model only through `src/llm/client.ts`, from inside a run that `withAgent` opened: that is what puts the call on the run log. `tests/unit/llm/logged-runs.test.ts` fails on a file that calls the client without opening a run, reaches a provider around the client, or keeps work off the log with `untraced()`, until the file is listed there with its reason. Where the log is kept as a record (`RUN_LOG_MODE=record`) the provider seam refuses a call with no run open. See docs/run-log.md, "No model call outside a run".
+
 ## Constraints on agents
 
 Agents, like anyone, need to know their affordances and the constraints they work under.

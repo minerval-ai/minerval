@@ -719,13 +719,14 @@ describe("features and work the run log leaves out", () => {
     );
   });
 
-  it("fails the extension being on where private material is held, and passes once it is off", () => {
+  it("fails the extension being on where private material is held and the log is best-effort, and passes once it is off", () => {
     expect(check("features", { holdsPrivate: true })).toMatchObject({
       status: "fail",
       blocking: false,
       message:
-        "The extension feature is on, and its page analysis and chat are never written to the run log; " +
-        "switch it off (features.off) while this deployment holds private material.",
+        "The extension feature is on, and its page analysis and chat are not written to a best-effort run log; " +
+        'put the log in record mode (run_log.mode = "record"), or switch it off (features.off), ' +
+        "while this deployment holds private material.",
     });
     expect(check("features", { holdsPrivate: true, config: config({ featuresOff: ["extension"] }) })).toMatchObject({
       status: "pass",
@@ -733,7 +734,14 @@ describe("features and work the run log leaves out", () => {
     });
   });
 
-  it("fails the unlogged work that has no switch where private material is held, and only there", () => {
+  it("passes the extension being on in record mode, which logs its work", () => {
+    expect(check("features", { holdsPrivate: true, config: config({ runLogMode: "record" }) })).toMatchObject({
+      status: "pass",
+      message: "No feature is switched off; the run log is in record mode, which logs every feature's work.",
+    });
+  });
+
+  it("fails the unlogged work that has no switch where private material is held and the log is best-effort, and only there", () => {
     expect(check("work_outside_the_run_log")).toMatchObject({
       status: "not_applicable",
       message:
@@ -746,9 +754,22 @@ describe("features and work the run log leaves out", () => {
       blocking: false,
       message:
         "The MCP tools match_claim, extract_claims and assess_text, and the naming of an Assistant conversation " +
-        "run without a log and have no switch, so on this deployment they handle private material unlogged, " +
-        "whatever the run log's mode.",
+        "are not written to a best-effort run log and have no switch, so on this deployment they handle private " +
+        'material unlogged; put the log in record mode (run_log.mode = "record").',
     });
+  });
+
+  it("passes the work with no switch in record mode, which logs it", () => {
+    for (const holdsPrivate of [true, false, null]) {
+      expect(
+        check("work_outside_the_run_log", { holdsPrivate, config: config({ runLogMode: "record" }) })
+      ).toMatchObject({
+        status: "pass",
+        message:
+          "The run log is in record mode, where the MCP tools match_claim, extract_claims and assess_text, " +
+          "and the naming of an Assistant conversation are logged runs like any other.",
+      });
+    }
   });
 
   it("lists the work that runs untraced as the code has it", () => {
