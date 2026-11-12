@@ -2642,6 +2642,18 @@ export const actions = pgTable(
     // opened again takes the label of the work that reopens it
     // (LABEL_ON_REOPEN_SQL in services/action-service.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // The wait of a row whose last attempt a platform fault stopped (#971;
+    // services/deployment-fault.ts): the fault's public class
+    // (credits_fault | credentials_fault | provider_unavailable), when the
+    // row first failed on it, how many attempts it has stopped in a row,
+    // and when the executors may pick the row again. Set by releaseAction,
+    // cleared when the row leaves open/running (trigger
+    // actions_clear_fault, so no closing statement can forget to). All null
+    // or zero on a row that is not waiting on a fault.
+    faultReason: text("fault_reason"),
+    faultSince: timestamp("fault_since", { withTimezone: true }),
+    faultAttempts: integer("fault_attempts").notNull().default(0),
+    retryAfter: timestamp("retry_after", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2661,6 +2673,44 @@ export const actions = pgTable(
 );
 
 export type Action = typeof actions.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// deployment_faults — a fault the operator must fix, while it lasts (#971).
+//
+// One open row per (class, provider): a provider that refuses calls because
+// the deployment's account is out of credits, or rejects its key
+// (services/deployment-fault-service.ts). Every failure of that class
+// collapses onto the open row, so a fault that fails a thousand calls is one
+// record, one report to maintainers, and one line on /monitors. The row
+// closes when the provider serves a call again after a quiet spell. The raw
+// provider text is kept here for maintainers and is never served publicly;
+// public surfaces show the class.
+// ---------------------------------------------------------------------------
+
+export const deploymentFaults = pgTable(
+  "deployment_faults",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // credits_fault | credentials_fault
+    reason: text("reason").notNull(),
+    // anthropic | openai | openrouter | endpoint:<name> | embeddings | unknown
+    provider: text("provider").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    occurrences: integer("occurrences").notNull().default(1),
+    // The provider's own words on the latest failure. Service-only.
+    lastError: text("last_error"),
+    // When maintainers were told (the agents' report channel, #366).
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_deployment_faults_open")
+      .on(table.reason, table.provider)
+      .where(sql`${table.clearedAt} IS NULL`),
+    index("idx_deployment_faults_first_seen").on(table.firstSeenAt),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // mandate_valuations — each mandate's own opinions, sparse.

@@ -279,6 +279,39 @@ describe("Steward DB-backed drain", () => {
     expect(state.attempts).toEqual({}); // and no attempt counted against any claim
   });
 
+  it("requeues on a provider account out of credits, parking nothing and counting nothing (#971)", async () => {
+    // 2026-11-12, as the SDK throws it for an OpenAI-compatible provider.
+    state.pending = ["a", "b", "c"];
+    state.throwFor = () =>
+      Object.assign(
+        new Error("402 This request's maximum cost exceeds your available credits. Add credits, or lower max_tokens or prompt size."),
+        { status: 402 }
+      );
+    const res = await drainStewardQueue();
+    expect(res.processed).toBe(0);
+    expect(state.markedError).toEqual([]);
+    expect(state.attempts).toEqual({});
+    expect(state.markedPendingAgain.length).toBeGreaterThan(0);
+  });
+
+  it("puts a covered pass's ledger row into its wait on the fault, and tells the drain so (#971)", async () => {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    vi.mocked(rawQuery).mockClear();
+    state.fundedPending = ["f1"];
+    state.throwFor = () => Object.assign(new Error("402 Insufficient credits"), { status: 402 });
+    const r = await processNextStewardTask();
+    expect(r.status).toBe("transient");
+    expect(state.markedError).toEqual([]);
+    // The row is released with the fault's class, to wait (releaseAction),
+    // not handed back to be picked again at once.
+    const release = vi
+      .mocked(rawQuery)
+      .mock.calls.find(([q]) => String(q).includes("UPDATE actions t") && String(q).includes("retry_after"));
+    expect(release?.[1]).toEqual(expect.arrayContaining(["act:f1", "credits_fault"]));
+    // The failure text the lane returns is for logs; the class is what is stored.
+    expect(release?.[1]).not.toEqual(expect.arrayContaining([expect.stringContaining("402")]));
+  });
+
   it("parks on the first model refusal rather than paying for three (#846)", async () => {
     const { LlmRefusalError } = await import("../../../src/llm/errors.js");
     state.pending = ["a"];

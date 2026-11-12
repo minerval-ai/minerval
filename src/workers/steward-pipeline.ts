@@ -36,6 +36,13 @@
  * a claim parks as 'error' only after MAX_STEWARD_ATTEMPTS of them. A run of
  * consecutive transient failures trips a circuit breaker that stops the drain,
  * so a credit outage can never again silently strand half the graph as 'error'.
+ *
+ * A covered pass a platform fault stops leaves its ledger row waiting, with
+ * the fault's class on it, and the funded rows of its kind and tier wait
+ * with it (#971; action-service.ts releaseAction, deployment-fault.ts). When
+ * the fault is the deployment's (a provider account out of credits, a
+ * rejected key) the drain goes on to whatever else is covered, since the
+ * other tier or the other lanes may run on a provider that is healthy.
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
@@ -45,6 +52,7 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { getGeneralMandate } from "../services/allocation-policy-service.js";
 import {
   actionBudgetMicroUsd,
+  actionWaitingOn,
   claimAction,
   completeAction,
   largestActionFunder,
@@ -58,6 +66,8 @@ import { commissionFollowUps } from "../services/petition-service.js";
 /** The budget a lane sets on a Steward pass, or none. */
 type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
 import { classifyStewardFailure } from "../services/steward-park-reason.js";
+import { isDeploymentFaultReason, type PlatformFaultReason } from "../services/deployment-fault.js";
+import { noteDeploymentFault } from "../services/deployment-fault-service.js";
 import {
   MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
@@ -93,6 +103,12 @@ export interface StewardProcessResult {
   trigger?: string;
   ok?: boolean;
   error?: string;
+  /**
+   * With 'transient': the class of the platform fault the pass's ledger row
+   * now waits on (action-service.ts, releaseAction). The row paces itself,
+   * so the drain may go on to other work; absent, the drain stops.
+   */
+  waitingOn?: PlatformFaultReason;
 }
 
 /**
@@ -155,9 +171,20 @@ export async function processNextStewardTask(
     // is the label of the work that opened the row (src/labels.ts). The
     // bookkeeping after the run is inside too, so a follow-up it commissions
     // carries the same label.
-    return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () =>
+    const result = await runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () =>
       runCoveredAction(action, opts)
     );
+    if (result.status === "transient") {
+      // Unreadable is read as "not waiting": the drain then stops, as before.
+      let waitingOn: PlatformFaultReason | null = null;
+      try {
+        waitingOn = await actionWaitingOn(action.id);
+      } catch {
+        waitingOn = null;
+      }
+      if (waitingOn) return { ...result, waitingOn };
+    }
+    return result;
   }
 
   // Fallback mode (no ACTIVE General mandate): direct budgeted runs on the
@@ -366,7 +393,7 @@ async function runStewardOnClaim(
     // Whatever the failure, the action returns to open: coverage is
     // unspent, and the next pass (or the recovery sweep) decides again.
     if (action) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
     }
 
     // Budget tracker (internal circuit breaker) or a transient API/infra failure
@@ -395,6 +422,9 @@ async function runStewardOnClaim(
       console.warn(
         `[steward] transient failure on claim ${task.id}; requeued (not counted): ${msg}`
       );
+      // A pass with no ledger row (the fallback lane) has no row to record
+      // the fault from; a no-op for any failure that is not a deployment fault.
+      if (!action) await noteDeploymentFault(err, { surface: "the Steward's fallback lane" });
       return { status: "transient", claimId: task.id, trigger, ok: false, error: msg };
     }
 
@@ -472,6 +502,11 @@ export async function drainStewardQueue(
     opts.onResult?.(r);
     if (r.status === "empty") return { processed, budgetHit: false };
     if (r.status === "budget") return { processed, budgetHit: true };
+    if (r.status === "transient" && isDeploymentFaultReason(r.waitingOn)) {
+      // The row waits on a deployment fault and paces itself, with the
+      // funded rows of its kind and tier: go on to whatever else is covered.
+      continue;
+    }
     if (r.status === "transient") {
       // The API itself is failing (e.g. a credit outage). After a short run of
       // consecutive transient failures, stop the drain rather than churn through

@@ -46,6 +46,9 @@ import { withRunDate } from "./run-date.js";
 import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
 import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
 import { assertProviderCleared } from "./provider-clearance.js";
+import { stampErrorProvider } from "./errors.js";
+import { deploymentFaultOf } from "../services/deployment-fault.js";
+import { noteDeploymentFault } from "../services/deployment-fault-service.js";
 import { offFeatures } from "../features.js";
 import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
 import { observeRun, type SeenIds } from "./seen-ids.js";
@@ -112,8 +115,43 @@ function withRunBrief(messages: MessageParam[], model: string): MessageParam[] {
  */
 async function clearedAdapter(model: string): Promise<ProviderAdapter> {
   const adapter = getAdapter(model);
-  await assertProviderCleared(resolveProvider(model) ?? adapter.name);
-  return adapter;
+  const provider = resolveProvider(model) ?? adapter.name;
+  await assertProviderCleared(provider);
+  return namingProvider(adapter, provider);
+}
+
+/**
+ * The adapter, with every failure of a call stamped with the provider that
+ * answered it and, when it is a deployment fault (the account out of
+ * credits, the key rejected), put on record for the operator
+ * (deployment-fault-service.ts). The error is rethrown unchanged: what a
+ * lane does with it is the lane's business. Every call takes its adapter
+ * from clearedAdapter, so a fault is recorded whichever agent met it,
+ * including one whose failure a tool turns into a result (match_claim).
+ */
+function namingProvider(adapter: ProviderAdapter, provider: string): ProviderAdapter {
+  const watch = <A extends unknown[], R>(call: ((...args: A) => Promise<R>) | undefined) =>
+    call &&
+    (async (...args: A): Promise<R> => {
+      try {
+        return await call.apply(adapter, args);
+      } catch (err) {
+        stampErrorProvider(err, provider);
+        if (deploymentFaultOf(err)) {
+          void noteDeploymentFault(err, { surface: `the ${getUsageContext().agent ?? "unattributed"} agent` });
+        }
+        throw err;
+      }
+    });
+  return {
+    name: adapter.name,
+    complete: watch(adapter.complete),
+    completeWithTools: watch(adapter.completeWithTools),
+    completeStructured: watch(adapter.completeStructured),
+    ...(adapter.completeWithToolsStreaming
+      ? { completeWithToolsStreaming: watch(adapter.completeWithToolsStreaming) }
+      : {}),
+  } as ProviderAdapter;
 }
 
 export async function complete(options: {

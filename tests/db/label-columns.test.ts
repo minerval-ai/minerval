@@ -184,6 +184,8 @@ describe("the label column, in the catalog", () => {
       // A per-account allowance: a number.
       "assistant_allowances",
       "contributors",
+      // The operator's record of a provider fault: a class, a provider and counts.
+      "deployment_faults",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
       // The labels themselves.

@@ -24,6 +24,20 @@ import { loadConfig } from "../config.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
+  FAULT_RETRY_BASE_SECONDS,
+  FAULT_RETRY_MAX_SECONDS,
+  faultWait,
+  faultWaitSentence,
+  isDeploymentFaultReason,
+  isPlatformFaultReason,
+  platformFaultOf,
+  type FaultWait,
+  type FaultWaitRow,
+  type PlatformFaultReason,
+} from "./deployment-fault.js";
+import { errorProvider } from "../llm/errors.js";
+import { noteDeploymentFault } from "./deployment-fault-service.js";
+import {
   estimateConsistencyNodeCostMicroUsd,
   estimateLedgerKindCostMicroUsd,
   stewardTierCostEstimates,
@@ -187,6 +201,15 @@ export const COVERAGE_SQL = `
              WHERE al.exclusion_group = a.exclusion_group
                AND al.released_at IS NULL
                AND (al.action_id IS NULL OR al.action_id = a.id)), 0)`;
+
+/**
+ * Whether actions row `a` may be picked now (SQL fragment): it is not inside
+ * the wait a platform fault put on it (releaseAction; the wait and its
+ * reason are in deployment-fault.ts). Every executor's selection carries
+ * this, so a row a dead provider keeps failing is passed over for the rows
+ * behind it instead of being picked first every time (#971).
+ */
+export const NOT_WAITING_ON_FAULT_SQL = `(a.retry_after IS NULL OR a.retry_after <= now())`;
 
 /**
  * What an upsert that can reopen a finished row does with the row's label
@@ -1262,11 +1285,18 @@ async function formalizeToolGap(claimId: string): Promise<string | null> {
 /** The ledger status one exclusion group (or one row) reads as. */
 async function groupLedger(
   where: { group: string } | { actionId: string }
-): Promise<{ status: "open" | "running" | "done" | "cancelled"; action_id: string; exclusion_group: string } | null> {
+): Promise<{
+  status: "open" | "running" | "done" | "cancelled";
+  action_id: string;
+  exclusion_group: string;
+  /** The row's wait on a platform fault, when it is open and has one. */
+  fault?: FaultWait;
+} | null> {
+  type Row = { id: string; status: string; exclusion_group: string } & FaultWaitRow;
   const rows =
     "group" in where
-      ? await rawQuery<{ id: string; status: string; exclusion_group: string }>(
-          `SELECT id, status, exclusion_group FROM actions
+      ? await rawQuery<Row>(
+          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after FROM actions
             WHERE exclusion_group = $1
             ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'open' THEN 1
                                  WHEN 'done' THEN 2 WHEN 'superseded' THEN 3
@@ -1274,8 +1304,9 @@ async function groupLedger(
             LIMIT 1`,
           [where.group]
         )
-      : await rawQuery<{ id: string; status: string; exclusion_group: string }>(
-          `SELECT id, status, exclusion_group FROM actions WHERE id = $1`,
+      : await rawQuery<Row>(
+          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after
+             FROM actions WHERE id = $1`,
           [where.actionId]
         );
   const row = rows[0];
@@ -1284,7 +1315,8 @@ async function groupLedger(
     row.status === "running" || row.status === "open" || row.status === "cancelled"
       ? row.status
       : "done";
-  return { status, action_id: row.id, exclusion_group: row.exclusion_group };
+  const fault = status === "open" ? faultWait(row) : null;
+  return { status, action_id: row.id, exclusion_group: row.exclusion_group, ...(fault ? { fault } : {}) };
 }
 
 interface ClaimStanding {
@@ -1333,15 +1365,20 @@ const nowIso = () => new Date().toISOString();
 const waiting = (reason: string): PlanItemLedger => ({ status: "waiting", reason, checked_at: nowIso() });
 const blocked = (reason: string): PlanItemLedger => ({ status: "blocked", reason, checked_at: nowIso() });
 const fromRow = (
-  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string },
+  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string; fault?: FaultWait },
   reason?: string
-): PlanItemLedger => ({
-  status: row.status,
-  action_id: row.action_id,
-  exclusion_group: row.exclusion_group,
-  ...(reason ? { reason } : {}),
-  checked_at: nowIso(),
-});
+): PlanItemLedger => {
+  // An open row a platform fault is holding says so (#971): the item reads
+  // open, with the reason a payer would otherwise have to guess.
+  const why = reason ?? (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined);
+  return {
+    status: row.status,
+    action_id: row.action_id,
+    exclusion_group: row.exclusion_group,
+    ...(why ? { reason: why } : {}),
+    checked_at: nowIso(),
+  };
+};
 
 /**
  * Materialize one mandate's whole plan: cursor bookkeeping and ingest rows
@@ -2431,6 +2468,7 @@ export async function nextRunnableAction(
       WHERE a.status = 'open' AND a.kind = ANY($1)
         AND ${COVERAGE_SQL} > 0
         AND (${COVERAGE_SQL} >= a.cost_est_micro_usd OR ${COMMISSIONED_SQL})
+        AND ${NOT_WAITING_ON_FAULT_SQL}
       ORDER BY coverage_micro_usd DESC, a.updated_at ASC
       LIMIT 20`,
     [kinds]
@@ -2481,12 +2519,135 @@ export async function claimAction(actionId: string, atLabel?: string): Promise<b
   return rows.length > 0;
 }
 
-/** Return a running action to open (transient failure; not its fault). */
-export async function releaseAction(actionId: string): Promise<void> {
-  await rawQuery(
-    `UPDATE actions SET status = 'open', updated_at = now()
-      WHERE id = $1 AND status = 'running'`,
+/**
+ * Return a running action to open: its run did not happen, through no fault
+ * of the work, and coverage is unspent.
+ *
+ * `cause` is the failure that ended the attempt, when there was one. If it
+ * is a platform fault (a provider out of credits, rejected credentials, a
+ * provider that stayed unavailable through the client's retries), the row
+ * waits before the executors pick it again and says so: the fault's public
+ * class, since when, and when it is tried next (deployment-fault.ts, which
+ * also says why this is a wait and why money cannot pace it). The funded
+ * rows of the same kind and tier wait with it. The wait doubles with each
+ * consecutive fault on that kind of work, from 30 seconds to 10 minutes,
+ * and ends as soon as one of the rows runs (completeAction). A deployment
+ * fault is also recorded for maintainers (deployment-fault-service.ts).
+ * Returns the fault's class, or null when the row is simply open again.
+ *
+ * With no cause, or a cause that is not a platform fault (a budget stop, a
+ * busy claim), the row is simply open again.
+ */
+export async function releaseAction(actionId: string, cause?: unknown): Promise<PlatformFaultReason | null> {
+  const reason = cause === undefined ? null : platformFaultOf(cause);
+  if (!reason) {
+    await rawQuery(
+      `UPDATE actions SET status = 'open', updated_at = now()
+        WHERE id = $1 AND status = 'running'`,
+      [actionId]
+    );
+    return null;
+  }
+  // The count is the kind's, not the row's: whichever row is tried next
+  // continues the same doubling.
+  const [released] = await rawQuery<{ id: string }>(
+    `UPDATE actions t
+        SET status = 'open', updated_at = now(),
+            fault_reason = $2,
+            fault_since = COALESCE(t.fault_since, now()),
+            fault_attempts = lane.attempts + 1,
+            retry_after = now() + make_interval(secs =>
+              LEAST($4::int, $3::int * power(2, LEAST(lane.attempts, 10)))::int)
+       FROM (SELECT COALESCE(MAX(o.fault_attempts), 0) AS attempts
+               FROM actions me JOIN actions o ON o.kind = me.kind AND o.variant = me.variant
+                                             AND o.status IN ('open', 'running')
+              WHERE me.id = $1) lane
+      WHERE t.id = $1 AND t.status = 'running'
+      RETURNING t.id`,
+    [actionId, reason, FAULT_RETRY_BASE_SECONDS, FAULT_RETRY_MAX_SECONDS]
+  );
+  if (released) {
+    // The funded rows of the same kind and tier wait with it (the same
+    // model serves them), and say so.
+    await rawQuery(
+      `UPDATE actions a
+          SET fault_reason = t.fault_reason,
+              fault_since = COALESCE(a.fault_since, t.fault_since),
+              fault_attempts = t.fault_attempts,
+              retry_after = t.retry_after
+         FROM actions t
+        WHERE t.id = $1 AND a.id <> t.id AND a.status = 'open'
+          AND a.kind = t.kind AND a.variant = t.variant
+          AND ${COVERAGE_SQL} > 0`,
+      [actionId]
+    );
+  }
+  // The client's seam has already recorded a fault it stamped with a provider.
+  if (isDeploymentFaultReason(reason) && !errorProvider(cause)) {
+    await noteDeploymentFault(cause, { surface: `ledger action ${actionId}` });
+  }
+  return reason;
+}
+
+/**
+ * The class of the platform fault `actionId` is waiting on right now, or
+ * null: the row is open, carries a fault, and its next attempt is still
+ * ahead. An executor reads it after a transient failure to tell a row that
+ * now paces itself (the drain may go on to other work) from one that could
+ * be picked again at once (the drain must stop, as it always has).
+ */
+export async function actionWaitingOn(actionId: string): Promise<PlatformFaultReason | null> {
+  const [row] = await rawQuery<{ fault_reason: string | null }>(
+    `SELECT fault_reason FROM actions
+      WHERE id = $1 AND status = 'open' AND fault_reason IS NOT NULL AND retry_after > now()`,
     [actionId]
+  );
+  return isPlatformFaultReason(row?.fault_reason) ? row.fault_reason : null;
+}
+
+/**
+ * A row that has just been paid for joins the wait its kind and tier are
+ * already in, if they are in one: the same model serves it, so trying it at
+ * once would be one more refused call, and its payer should read why it is
+ * not starting. Returns the wait it joined, or null when there is none.
+ */
+export async function joinFaultWait(actionId: string): Promise<FaultWait | null> {
+  const [row] = await rawQuery<FaultWaitRow>(
+    `UPDATE actions a
+        SET fault_reason = t.fault_reason, fault_since = COALESCE(a.fault_since, t.fault_since),
+            fault_attempts = t.fault_attempts, retry_after = t.retry_after
+       FROM (SELECT o.fault_reason, o.fault_since, o.fault_attempts, o.retry_after
+               FROM actions me JOIN actions o ON o.kind = me.kind AND o.variant = me.variant
+              WHERE me.id = $1 AND o.id <> me.id AND o.status = 'open'
+                AND o.fault_reason IS NOT NULL AND o.retry_after > now()
+              ORDER BY o.retry_after DESC LIMIT 1) t
+      WHERE a.id = $1 AND a.status = 'open'
+      RETURNING a.fault_reason, a.fault_since, a.fault_attempts, a.retry_after`,
+    [actionId]
+  );
+  return faultWait(row);
+}
+
+/**
+ * A row that waited on a platform fault has just run, so the fault is over
+ * for its kind of work: the rows of the same kind and tier stop waiting, and
+ * rows of other kinds waiting on the same class are tried now rather than at
+ * the end of their own wait (one whose provider is still down fails and
+ * waits again, having cost one refused call).
+ */
+async function endFaultWaits(actionId: string, reason: string): Promise<void> {
+  await rawQuery(
+    `UPDATE actions a
+        SET fault_reason = NULL, fault_since = NULL, fault_attempts = 0, retry_after = NULL
+       FROM actions t
+      WHERE t.id = $1 AND a.status = 'open' AND a.fault_reason IS NOT NULL
+        AND a.kind = t.kind AND a.variant = t.variant`,
+    [actionId]
+  );
+  await rawQuery(
+    `UPDATE actions SET retry_after = now()
+      WHERE status = 'open' AND fault_reason = $1 AND retry_after > now()`,
+    [reason]
   );
 }
 
@@ -2515,21 +2676,27 @@ export async function completeAction(
   meteredMicroUsd: number,
   opts: { meteredJobId?: string | null } = {}
 ): Promise<number> {
-  return withTransaction(async (tx) => {
+  // The platform fault this row had been waiting on, if any: a row that
+  // runs after such a wait ends the wait of the others (endFaultWaits).
+  let waitedOn: string | null = null;
+  const consumed = await withTransaction(async (tx) => {
     // Guarded transition: only a live (running, or reconcile-reopened)
     // action completes; a done/superseded/cancelled row is already closed
     // and its coverage already consumed — return 0 and touch nothing.
     const [action] = await tx.query<{
       id: string;
       exclusion_group: string;
+      waited_on: string | null;
     }>(
-      `UPDATE actions SET status = 'done', metered_cost_micro_usd = $2,
+      `UPDATE actions a SET status = 'done', metered_cost_micro_usd = $2,
               metered_job_id = $3, updated_at = now()
-        WHERE id = $1 AND status IN ('running', 'open')
-        RETURNING id, exclusion_group`,
+         FROM (SELECT id, fault_reason FROM actions WHERE id = $1 FOR UPDATE) prior
+        WHERE a.id = prior.id AND a.status IN ('running', 'open')
+        RETURNING a.id, a.exclusion_group, prior.fault_reason AS waited_on`,
       [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
     );
     if (!action) return 0;
+    waitedOn = action.waited_on;
 
     await tx.query(
       `UPDATE actions SET status = 'superseded', updated_at = now()
@@ -2693,6 +2860,12 @@ export async function completeAction(
     }
     return consumed;
   });
+  if (waitedOn) {
+    await endFaultWaits(actionId, waitedOn).catch((err) =>
+      console.warn(`[actions] ending fault waits failed: ${err instanceof Error ? err.message : err}`)
+    );
+  }
+  return consumed;
 }
 
 /**
