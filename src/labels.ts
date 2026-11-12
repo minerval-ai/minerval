@@ -23,7 +23,13 @@
  * page kept for a user, a review and a ruling, an audit's findings and the
  * audit trail on a claim, a sweep and its flags, a bounty and a prize
  * claim, a lookout and a correspondent with what each queues, flags and
- * publishes. The tables that carry none are the accounts and their keys,
+ * publishes, a view stated to the graph, money placed on a piece of work
+ * with its brief and reason, and money moved between two mandates with its
+ * note. A placement and a regrant take the label of the work that made
+ * them. Two placements are worked out and not written by anyone: a
+ * mandate's money put on its own row by the scheduler is at the mandate's
+ * label, and a share of a settled row's cost is at the row's. The tables
+ * that carry none are the accounts and their keys,
  * the owl ledger and what is paid from it, the platform's own switches and
  * counters, and the labels themselves.
  * The column is not simply `label` because that name is already a display
@@ -172,10 +178,14 @@
  * the table, so the worker checks that the label it carries is defined and
  * refuses the message if it is not (UndefinedLabelError).
  *
- * The public graph has one label, the one named here, and no pairs. No
- * reader and no run is held to a clearance yet: the rows carry their
- * labels and the writes stamp them, and what a holder of one label may
- * read of another is later work.
+ * The public graph has one label, the one named here, and no pairs. No read
+ * of a row is held to a label yet: the rows carry them and the writes stamp
+ * them, and holding a reader or a run to its clearance is later work.
+ *
+ * One thing is held to a run's label already: where its text may be sent.
+ * A model provider or an outside service receives text only from runs at
+ * the labels it is cleared for (src/provider-labels.ts), and one that
+ * nobody has cleared for a label other than this one is sent none of it.
  */
 
 /** The label of everything on the public graph, and of any write made outside a run. */

@@ -15,6 +15,8 @@ import type {
   PrizeListItem, PrizeMandateNumbers,
   Finding,
   FindingSighting,
+  FindingFacets,
+  CitedAssessment,
   SearchResultItem,
   SourcePage,
   TagSummary,
@@ -31,6 +33,9 @@ import type {
   WithheldRun,
   RunStepSummary,
   RunStep,
+  StatedView,
+  StatedViewList,
+  StatedViewRelation,
 } from "./types";
 import { ALL_FEATURES_ON, featuresFromResponse, type Features } from "./features";
 
@@ -150,7 +155,7 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
   // Detail (deep), trajectory, and the contribution record (#171) are separate
   // endpoints; fetch in parallel. Trajectory and record degrade to absent
   // rather than failing the page (e.g. an API deploy racing the frontend).
-  const [detail, trajectory, record, findings, provenanceStory] = await Promise.all([
+  const [detail, trajectory, record, findings, provenanceStory, statedViews] = await Promise.all([
     apiGet<RawDetail>(`/claims/${seg}?information_depth=deep`),
     apiGet<TrajectoryResponse>(`/claims/${seg}/assessments/trajectory`).catch(() => null),
     apiGet<{ record: ContributionExchange[] }>(`/claims/${seg}/record`).catch(() => null),
@@ -158,12 +163,18 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
     fetchFindings({ claimId: id, limit: 10 }).catch(() => [] as Finding[]),
     // The origins-first provenance map (#507); absent rather than failing the page.
     apiGet<ProvenanceStory>(`/claims/${seg}/provenance`).catch(() => null),
+    // Views stated to the graph directly on this node (§4), every statement
+    // with the earlier ones; absent rather than failing the page.
+    apiGet<{ stated_views: StatedView[] }>(
+      `/stated-views?claim_id=${seg}&earlier=true`,
+    ).catch(() => null),
   ]);
   return {
     ...withMathDefaults(detail),
     provenance_story: provenanceStory,
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),
+    ...(statedViews ? { stated_views: statedViews.stated_views } : {}),
     findings,
   };
 }
@@ -300,13 +311,62 @@ export async function fetchFindings(
   }
 }
 
+// One page of the findings list with its total and facets: what the index
+// at /findings reads. An API that predates totals and facets answers with the
+// findings alone; the page then shows the list without counts.
+export interface FindingsQuery {
+  q?: string;
+  tag?: string;
+  minImportance?: number;
+  agents?: string[];
+  claimStatus?: string;
+  since?: string;
+  order?: "recent" | "importance" | "relevance";
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchFindingsPage(
+  opts: FindingsQuery = {},
+): Promise<{ findings: Finding[]; total: number | null; facets: FindingFacets | null }> {
+  const p = new URLSearchParams({ limit: String(opts.limit ?? 50), facets: "true" });
+  if (opts.q) p.set("q", opts.q);
+  if (opts.tag) p.set("tag", opts.tag);
+  if (typeof opts.minImportance === "number") p.set("min_importance", String(opts.minImportance));
+  if (opts.agents && opts.agents.length > 0) p.set("agent", opts.agents.join(","));
+  if (opts.claimStatus) p.set("claim_status", opts.claimStatus);
+  if (opts.since) p.set("since", opts.since);
+  if (opts.order) p.set("order", opts.order);
+  if (opts.offset) p.set("offset", String(opts.offset));
+  try {
+    const r = await apiGet<{ findings: Finding[]; total?: number; facets?: FindingFacets | null }>(
+      `/findings?${p.toString()}`,
+    );
+    return {
+      findings: r.findings,
+      total: typeof r.total === "number" ? r.total : null,
+      facets: r.facets ?? null,
+    };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return { findings: [], total: 0, facets: null };
+    throw err;
+  }
+}
+
 export async function fetchFinding(
   id: string,
-): Promise<{ finding: Finding; sightings: FindingSighting[] } | null> {
+): Promise<{
+  finding: Finding;
+  sightings: FindingSighting[];
+  cited_assessments: CitedAssessment[];
+} | null> {
   try {
-    return await apiGet<{ finding: Finding; sightings: FindingSighting[] }>(
-      `/findings/${encodeURIComponent(id)}`,
-    );
+    const r = await apiGet<{
+      finding: Finding;
+      sightings: FindingSighting[];
+      cited_assessments?: CitedAssessment[];
+    }>(`/findings/${encodeURIComponent(id)}`);
+    return { ...r, cited_assessments: r.cited_assessments ?? [] };
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
     throw err;
@@ -439,14 +499,15 @@ export async function fetchClaimCard(id: string): Promise<ClaimCard | null> {
   }
 }
 
-// The wording of several claims at once (GET /claims/cards), for pages that
-// hold claim ids and want to name them: the account page's history, orders
-// and contributions. An id the graph no longer holds, or a failed read, is
-// simply absent from the map; the caller falls back to a plain link.
+// The cards of several claims at once (GET /claims/cards), for pages that
+// hold claim ids and want to name them and say where they stand: the account
+// page's history, the findings list. An id the graph no longer holds, or a
+// failed read, is simply absent from the map; the caller falls back to a
+// plain link.
 const CLAIM_CARDS_PER_REQUEST = 100;
 
-export async function fetchClaimTexts(ids: string[]): Promise<Map<string, string>> {
-  const texts = new Map<string, string>();
+export async function fetchClaimCards(ids: string[]): Promise<Map<string, ClaimCard>> {
+  const cards = new Map<string, ClaimCard>();
   const unique = [...new Set(ids)];
   const batches: string[][] = [];
   for (let i = 0; i < unique.length; i += CLAIM_CARDS_PER_REQUEST) {
@@ -458,13 +519,50 @@ export async function fetchClaimTexts(ids: string[]): Promise<Map<string, string
         const r = await apiGet<{ cards: ClaimCard[] }>(
           `/claims/cards?ids=${batch.map(encodeURIComponent).join(",")}`
         );
-        for (const card of r.cards) texts.set(card.id, card.text);
+        for (const card of r.cards) cards.set(card.id, card);
       } catch {
         // Names are a courtesy; the page reads without them.
       }
     })
   );
-  return texts;
+  return cards;
+}
+
+/** The wording alone of several claims at once. */
+export async function fetchClaimTexts(ids: string[]): Promise<Map<string, string>> {
+  const cards = await fetchClaimCards(ids);
+  return new Map([...cards].map(([id, card]) => [id, card.text]));
+}
+
+// A source's facts alone (GET /sources/:id), for naming a source linked in
+// prose. Null when there is no such source or the read fails.
+export async function fetchSourceFacts(id: string): Promise<SourceFacts | null> {
+  try {
+    return await apiGet<SourceFacts>(`/sources/${pathSegment(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+// Where stated views and the assessments in force differ (§4): the current
+// statement of each speaker on each node, for one speaker or for all. The
+// counts in `summary` cover the whole selection; the rows are one page.
+export async function fetchStatedViews(opts: {
+  speakerId?: string;
+  relation?: StatedViewRelation;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<StatedViewList | null> {
+  const qs = new URLSearchParams();
+  if (opts.speakerId) qs.set("speaker_id", opts.speakerId);
+  if (opts.relation) qs.set("relation", opts.relation);
+  qs.set("limit", String(opts.limit ?? 100));
+  if (opts.offset) qs.set("offset", String(opts.offset));
+  try {
+    return await apiGet<StatedViewList>(`/stated-views?${qs.toString()}`);
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchContribution(

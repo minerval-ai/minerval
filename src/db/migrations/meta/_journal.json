@@ -890,6 +890,34 @@
       "when": 1794440640590,
       "tag": "0126_label_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1794494323629,
+      "tag": "0127_mirror",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1794495765868,
+      "tag": "0128_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1794497263933,
+      "tag": "0129_stated_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1794502560220,
+      "tag": "0130_label_enforcement",
+      "breakpoints": true
     }
   ]
 }

@@ -2595,8 +2595,12 @@ export async function completeAction(
           await tx.query(
             `INSERT INTO action_allocations
                (exclusion_group, action_id, claim_id, grant_id,
-                amount_micro_usd, spent_micro_usd, released_at)
-             VALUES ($1, $2, $3, $4, $5, $5, now())`,
+                amount_micro_usd, spent_micro_usd, released_at, sensitivity_label)
+             VALUES ($1, $2, $3, $4, $5, $5, now(), (SELECT sensitivity_label FROM actions WHERE id = $2))`,
+            // A share of a settled row's cost is worked out from the row,
+            // the same whoever settles it, so it carries the row's label
+            // and not the settler's (src/labels.ts). It holds no brief or
+            // reason.
             [action.exclusion_group, actionId, claimId, grantId, share]
           );
           assigned += share;

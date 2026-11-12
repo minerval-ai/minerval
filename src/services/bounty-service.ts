@@ -1167,12 +1167,14 @@ export async function fundPrizeAuditFromReserve(
   const whole = amount >= cost;
   await r.query(
     `INSERT INTO action_allocations
-       (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       action.exclusion_group, actionId, action.claim_id, job.user_id, amount,
       whole ? "prize_reserve" : null,
       whole ? "The prize's review reserve pays for its audits." : null,
+      // The label of the work that placed the money (src/labels.ts).
+      currentLabel(),
     ]
   );
   if (!whole) {

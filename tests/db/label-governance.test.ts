@@ -165,6 +165,8 @@ import {
 } from "../../src/services/grant-conversation-service.js";
 import { createGrant, getGrant, serializeGrant } from "../../src/services/grant-service.js";
 import { openInbox } from "../../src/services/inbox-service.js";
+import { createRegrant } from "../../src/services/regrant-service.js";
+import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { recordIngestFocus } from "../../src/services/ingest-focus-service.js";
 import { pendingPassLabel, runAtMandateLabel, runAtMandateLabelOutsideAnyRun } from "../../src/services/label-service.js";
 import { createLookout, flagNote, getLookout, listLookoutFlags, queueLookoutEvent } from "../../src/services/lookout-service.js";
@@ -530,7 +532,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table of work and governance, public by default, and point at labels", async () => {
+  it("are on every table of work and governance, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -547,50 +549,8 @@ describe("the columns", () => {
       [GOVERNANCE_TABLES]
     );
     expect(rows).toEqual(
-      GOVERNANCE_TABLES.map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      GOVERNANCE_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
-  });
-
-  it("are on every table but the ones that are left without one on purpose", async () => {
-    const rows = await rawQuery<{ table_name: string }>(
-      `SELECT t.table_name FROM information_schema.tables t
-        WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-          AND NOT EXISTS (SELECT 1 FROM information_schema.columns c
-                           WHERE c.table_schema = 'public' AND c.table_name = t.table_name
-                             AND c.column_name = 'sensitivity_label')
-        ORDER BY t.table_name`
-    );
-    expect(rows.map((r) => r.table_name)).toEqual([
-      // Money placed on the ledger. It also carries a commission's brief
-      // and reason, so it is not settled that it should stay without one.
-      "action_allocations",
-      // Accounts and their keys.
-      "api_keys",
-      // A per-account allowance: a number.
-      "assistant_allowances",
-      "contributors",
-      // Scorecards of the corpus harness, written by scripts into its own database.
-      "eval_runs",
-      // The labels themselves.
-      "label_reads",
-      "labels",
-      // Nothing writes or reads it any more.
-      "mandate_valuations",
-      "oauth_authorization_requests",
-      "oauth_clients",
-      "oauth_tokens",
-      // The owl ledger and what is paid out of it.
-      "owl_ledger",
-      // Switches and marks the platform keeps for itself.
-      "platform_flags",
-      "prize_payouts",
-      // Counts of what waits, with no content.
-      "queue_depth_snapshots",
-      // Money moved between two mandates, with a note: as action_allocations.
-      "regrants",
-      // Database time used by query_sql, per account and day.
-      "sql_usage",
-    ]);
   });
 
   it("cannot carry a label no row defines", async () => {
@@ -677,6 +637,9 @@ describe("a mandate's work", () => {
     expect(new Set(await assessLabels(claim))).toEqual(new Set([SECOND]));
     expect(await labelsWhere("actions", "exclusion_group = $1", [`ingest:${url}`])).toEqual([SECOND]);
     expect(await labelsWhere("actions", "exclusion_group = $1", [REVIEW_GROUP(grantId)])).toEqual([SECOND]);
+    // So is the money the scheduler places on the mandate's own rows, also from outside any run.
+    expect(await fundGrantSelfActions()).toBeGreaterThanOrEqual(1);
+    expect(await labelsWhere("action_allocations", "grant_id = $1", [grantId])).toEqual([SECOND]);
     // The message the order left for the node's Steward is the mandate's too.
     expect(await labelsWhere("node_messages", "node_id = $1", [claim])).toEqual([SECOND]);
 
@@ -995,6 +958,18 @@ describe("a claim left pending by the messages waiting on it", () => {
   });
 });
 
+describe("money moved between two mandates", () => {
+  it("carries the label of the work that moved it, with its note", async () => {
+    const from = await mandateAt(PUBLIC_LABEL);
+    const to = await mandateAt(PUBLIC_LABEL);
+    const inRun = await inRunAt(SECOND, () => createRegrant({ fromGrantId: from, toGrantId: to, owls: 2, note: "For the replications." }));
+    const outside = await createRegrant({ fromGrantId: from, toGrantId: to, owls: 1, note: "A second slice." });
+    if (!inRun.ok || !outside.ok) throw new Error(JSON.stringify([inRun, outside]));
+    expect(await labelOf("regrants", inRun.regrantId)).toBe(SECOND);
+    expect(await labelOf("regrants", outside.regrantId)).toBe(PUBLIC_LABEL);
+  });
+});
+
 describe("work a timer or another run starts for a row", () => {
   it("is a petition's follow-up, commissioned by the sweep at the petition's label", async () => {
     const grantId = await mandateAt(PUBLIC_LABEL);
@@ -1008,6 +983,8 @@ describe("work a timer or another run starts for a row", () => {
     expect(currentLabel()).toBe(PUBLIC_LABEL);
     expect(await sweepFollowUps()).toBeGreaterThanOrEqual(1);
     expect(new Set(await assessLabels(node))).toEqual(new Set([SECOND]));
+    // The money placed on the follow-up, with its brief and reason, is at the petition's label too.
+    expect(await labelsWhere("action_allocations", "claim_id = $1 AND grant_id = $2", [node, grantId])).toEqual([SECOND]);
     expect(await labelsWhere("node_messages", "node_id = $1", [node])).toEqual([SECOND]);
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [node]);
   });

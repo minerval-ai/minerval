@@ -217,7 +217,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table that stands for work waiting, public by default, and point at labels", async () => {
+  it("are on every table that stands for work waiting, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -235,7 +235,7 @@ describe("the columns", () => {
     );
     expect(rows).toEqual(
       ["actions", "agent_sessions", "appeals", "assessment_orders", "assistant_held_actions", "budget_jobs", "contributions", "jobs"].map(
-        (table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true })
+        (table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true })
       )
     );
   });

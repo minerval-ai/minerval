@@ -57,6 +57,7 @@ vi.mock("../../src/services/github-issue-service.js", async (orig) => ({
 }));
 
 import { rawQuery } from "../../src/db/client.js";
+import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { complete } from "../../src/llm/client.js";
 import { createFindingTools } from "../../src/llm/tools/finding-tools.js";
@@ -261,6 +262,10 @@ async function labelsOf(tables: Record<string, { where: string; params: unknown[
 }
 const everyTableAt = (label: string) => Object.fromEntries(RUN_TABLES.map((t) => [t, [label]]));
 
+// The deployment's PROVIDER_LABELS as config loading parsed it.
+const deployment = loadConfig() as unknown as { providerLabels: Record<string, string[]> };
+const loadedProviderLabels = deployment.providerLabels;
+
 beforeAll(async () => {
   // A second label, as a deployment would define one: a row, nothing else.
   await rawQuery(
@@ -272,10 +277,18 @@ beforeAll(async () => {
   // open rows of theirs beside the ones this file opens.
   await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`);
   resetAllocationPolicyCache();
+  // A run at a label other than public is served only once its model's
+  // provider is cleared for that label (src/provider-labels.ts;
+  // tests/db/provider-labels.test.ts), so this deployment clears it.
+  deployment.providerLabels = { ...loadedProviderLabels, anthropic: [PUBLIC_LABEL, SECOND] };
+});
+
+afterAll(() => {
+  deployment.providerLabels = loadedProviderLabels;
 });
 
 describe("the columns", () => {
-  it("are on every table of run material, public by default, and point at labels", async () => {
+  it("are on every table of run material, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean; validated: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, k.oid IS NOT NULL AS fk, COALESCE(k.convalidated, false) AS validated
          FROM information_schema.columns c
@@ -290,7 +303,7 @@ describe("the columns", () => {
     );
     expect(rows).toEqual(
       RUN_TABLES.map((table_name) => ({
-        table_name, column_default: "'public'::text", is_nullable: "NO", fk: true,
+        table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true,
         // The keys on agent_steps and llm_usage were added NOT VALID (the
         // label_columns migration): every live run appends to both, and
         // neither is scanned under the lock that adds the column. When a

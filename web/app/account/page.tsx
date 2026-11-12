@@ -33,14 +33,16 @@ import { clip, dateish, owlParts, owls, tokens, usd, words } from "../../lib/acc
 import { loadFeatures } from "../../lib/data";
 import { featureOn } from "../../lib/features";
 import type { ContributorProfile, OpenPrizeClaim } from "../../lib/types";
+import { MastheadHeight } from "@/components/MastheadHeight";
 import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
 
-// How much of the ledger the history reads. Enough that a hold and the
-// return from it are nearly always both in view; the API's own default is 50.
-const LEDGER_ENTRIES = 200;
+// How much of the ledger the history reads: the most the API returns in one
+// read, so that a hold and the return from it are both in hand and the
+// history can be paged through here. The page shows a screenful at a time.
+const LEDGER_ENTRIES = 500;
 // How many ordered assessments are listed before the rest fold away.
 const ORDERS_SHOWN = 6;
 
@@ -68,9 +70,10 @@ function sentence(s: string): string {
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ purchase?: string; return?: string; history?: string }>;
+  searchParams: Promise<{ purchase?: string; return?: string; history?: string; hp?: string }>;
 }) {
-  const { purchase, return: back, history } = await searchParams;
+  const { purchase, return: back, history, hp } = await searchParams;
+  const historyPage = Number.isInteger(Number(hp)) && Number(hp) > 1 ? Number(hp) : 1;
   // Sent here to buy owls for something (a decomposition the balance could
   // not cover): checkout brings the reader back there. Same-site paths only.
   const returnTo = back && /^\/(?![\/\\])/.test(back) ? back : null;
@@ -210,6 +213,7 @@ export default async function AccountPage({
 
   return (
     <div className="account-home">
+      <MastheadHeight />
       <PageHead
         kicker="Account"
         title={user.display_name}
@@ -322,6 +326,7 @@ export default async function AccountPage({
               entries={ledger}
               view={history === "entries" ? "entries" : "work"}
               limit={LEDGER_ENTRIES}
+              page={historyPage}
               owlCost={entitlement.owl_cost_micro_usd}
               claimTexts={claimTexts}
               jobNames={jobNames}

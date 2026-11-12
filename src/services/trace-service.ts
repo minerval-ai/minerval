@@ -182,6 +182,16 @@ export function startAgentRun(
   attribution: RunAttribution
 ): AgentTrace | null {
   if (!traceable(agent)) return null;
+  return openAgentRun(agent, attribution);
+}
+
+/**
+ * Open a run without asking whether `agent` is traced here. startAgentRun is
+ * the way in for the agents' work. The one other caller is the preflight's
+ * test of the log itself (src/preflight.ts), which has to write a run and
+ * check it where TRACE_LEVEL is off too.
+ */
+export function openAgentRun(agent: string, attribution: RunAttribution): AgentTrace {
   const runId = randomUUID();
   const agentReason = agentPrivateReason(agent);
   const initialReasons = agentReason ? [agentReason] : [];

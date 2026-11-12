@@ -295,10 +295,12 @@ export async function createRegrant(input: {
       };
     }
     const [row] = await tx.query<{ id: string }>(
-      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note)
-       VALUES ($1, $2, $3, $4)
+      // The note is the regranting run's words, so the row carries that
+      // run's label (src/labels.ts).
+      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [source.id, input.toGrantId, amountMicro, input.note ?? null]
+      [source.id, input.toGrantId, amountMicro, input.note ?? null, currentLabel()]
     );
     return {
       ok: true as const,

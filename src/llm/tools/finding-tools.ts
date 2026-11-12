@@ -87,8 +87,13 @@ export function getFindingToolDefinitions(options: { mandate?: boolean } = {}): 
             type: "string",
             description:
               "A few paragraphs: what people generally think, what the " +
-              "graph's record shows, and why. Cite records by id. Published " +
-              "as written.",
+              "graph's record shows, and why. Where a sentence names a " +
+              "claim, question or quantity on the graph, link it inline as " +
+              "[[claim:<uuid>|the phrase you would use anyway]]; an " +
+              "argument or a source the same way, as [[argument:<uuid>|...]] " +
+              "or [[source:<uuid>|...]]. Link what a reader would want to " +
+              "follow, not every node, and keep bare ids out of the prose: " +
+              "those go in refs. Published as written.",
           },
           claim_id: {
             type: "string",

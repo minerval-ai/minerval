@@ -24,6 +24,17 @@ export async function publicIsTheOnlyLabel(): Promise<boolean> {
 }
 
 /**
+ * The labels this deployment defines besides `public`, by name, sorted here
+ * and not by the database, whose order for text depends on its locale. Empty
+ * on the public graph. For the preflight (src/preflight.ts), which says of
+ * each such label whether the providers a run would use are cleared for it.
+ */
+export async function labelsBesidesPublic(): Promise<string[]> {
+  const rows = await rawQuery<{ name: string }>(`SELECT name FROM labels WHERE name <> $1`, [PUBLIC_LABEL]);
+  return rows.map((r) => r.name).sort();
+}
+
+/**
  * Whether a label is defined: a row in `labels` has this name. The rows
  * that carry a label never need to ask, because their foreign key answers
  * it when they are written. A queue message has no foreign key, so what
@@ -177,4 +188,18 @@ export async function pendingPassLabel(claimId: string, claimLabel: string): Pro
     [claimId]
   );
   return waiting.length === 1 ? waiting[0]!.sensitivity_label : claimLabel;
+}
+
+/**
+ * The names among `names` that are not defined: no row in `labels` has
+ * them. For a setting that names labels (PROVIDER_LABELS,
+ * src/provider-labels.ts), which has no foreign key either.
+ */
+export async function undefinedLabels(names: readonly string[]): Promise<string[]> {
+  if (names.length === 0) return [];
+  const rows = await rawQuery<{ name: string }>(`SELECT name FROM labels WHERE name = ANY($1::text[])`, [
+    [...names],
+  ]);
+  const defined = new Set(rows.map((r) => r.name));
+  return names.filter((name) => !defined.has(name));
 }

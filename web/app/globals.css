@@ -531,6 +531,207 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .finding-controls { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); }
 .finding-controls .sc { color: var(--faint); }
 .finding-sightings { margin-top: 2rem; }
+
+/* ---- the findings index and a finding's page (app/findings) -----------------
+   The index is a list to scan and click into: a search and an order above
+   it, the filters beside it, each finding a few lines. A finding's page is
+   its account at reading measure with what it links to in the margin. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+  white-space: nowrap;
+}
+.fnd .page-lede { margin-bottom: 1.5rem; }
+.fnd-cols { display: flex; flex-wrap: wrap; gap: 1.6rem 3rem; }
+.fnd-list { flex: 999 1 28rem; min-width: 0; order: 1; }
+.fnd-filters { flex: 1 1 13rem; min-width: 0; order: 2; }
+
+.fnd-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.7rem;
+  padding-bottom: 0.6rem; border-bottom: 1px solid var(--ink);
+}
+.fnd-search { flex: 1 1 14rem; min-width: 0; display: flex; gap: 0.4rem; margin: 0; }
+.fnd-search input[type="search"] {
+  flex: 1; min-width: 0; height: 2.1rem; padding: 0 0.65rem;
+  font-family: var(--sans); font-size: 0.76rem; color: var(--ink);
+  border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper-card);
+}
+.fnd-search button {
+  height: 2.1rem; padding: 0 0.8rem; cursor: pointer;
+  font-family: var(--sans); font-size: 0.7rem; font-weight: 600; color: var(--ink);
+  border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper-card);
+}
+.fnd-search button:hover { background: var(--paper-sunk); }
+.fnd-bar .acct-switch a { padding: 0.5rem 0.75rem; }
+
+.fnd-active {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+  padding: 0.55rem 0; border-bottom: 1px solid var(--rule);
+}
+.fnd-count { font-family: var(--sans); font-size: 0.72rem; font-weight: 600; margin-right: 0.3rem; }
+a.fnd-chip, a.fnd-chip:visited {
+  display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.45rem 0.15rem 0.55rem;
+  font-family: var(--sans); font-size: 0.66rem; font-weight: 500; color: var(--ink);
+  border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-sunk);
+}
+a.fnd-chip:hover { text-decoration: none; border-color: var(--ink-soft); }
+.fnd-chip span { color: var(--muted); font-size: 0.8rem; line-height: 1; }
+
+/* one finding in the list */
+.fnd-item { display: flex; gap: 0.3rem 1.15rem; padding: 0.8rem 0 0.85rem; border-bottom: 1px solid var(--rule); }
+.fnd-rail { flex: 0 0 3.2rem; padding-top: 0.12rem; }
+.fnd-rail-n { font-size: 1.1rem; font-weight: 600; line-height: 1.1; font-variant-numeric: lining-nums; }
+.fnd-rail-n span { font-family: var(--sans); font-size: 0.6rem; font-weight: 400; color: var(--muted); }
+.fnd-ticks { display: flex; gap: 1px; margin-top: 0.3rem; }
+.fnd-ticks span { width: 0.26rem; height: 0.38rem; border-radius: 1px; background: var(--rule); }
+.fnd-ticks span.on { background: var(--ink-soft); }
+.fnd-body { flex: 1 1 0; min-width: 0; }
+.fnd-headline {
+  margin: 0; padding: 0; border: 0;
+  font-size: 0.98rem; font-weight: 600; line-height: 1.32; letter-spacing: -0.004em;
+}
+.fnd-headline a.plain:hover { text-decoration: underline; text-underline-offset: 2px; }
+.fnd-on {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.5rem;
+  margin: 0.35rem 0 0; font-size: 0.78rem; line-height: 1.4;
+}
+.fnd-standing { display: inline-flex; align-items: baseline; gap: 0.35rem; white-space: nowrap; }
+.fnd-credence {
+  font-family: var(--sans); font-size: 0.66rem; color: var(--muted);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.fnd-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.45rem;
+  margin: 0.35rem 0 0; font-family: var(--sans); font-size: 0.66rem; color: var(--muted);
+}
+.fnd-foot > span:first-child { margin-right: 0.2rem; }
+.fnd-flag {
+  padding: 0.05rem 0.4rem; border-radius: 2px;
+  color: var(--st-inconclusive); background: var(--st-inconclusive-tint);
+}
+.fnd-empty { padding: 1.4rem 0; }
+.fnd-empty p:first-child { margin: 0 0 0.3rem; }
+.fnd-pages {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  padding-top: 0.9rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
+
+/* the filters */
+.fnd-filters-switch, .fnd-filters-label { display: none; }
+.fnd-filters-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  height: 2.1rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ink);
+  font-family: var(--sans); font-size: 0.7rem;
+}
+.fnd-facet { padding: 0.75rem 0 0.7rem; border-bottom: 1px solid var(--rule); }
+.fnd-facet > .sc { margin-bottom: 0.25rem; display: block; }
+a.fnd-choice, a.fnd-choice:visited {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  margin: 0 -0.4rem; padding: 0.24rem 0.4rem; border-radius: 3px;
+  font-family: var(--sans); font-size: 0.72rem; color: var(--ink);
+}
+a.fnd-choice:hover { background: var(--paper-sunk); text-decoration: none; }
+a.fnd-choice.on { background: var(--paper-sunk); font-weight: 600; }
+.fnd-choice-label { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+.fnd-choice-mark {
+  flex: 0 0 0.5rem; width: 0.5rem; height: 0.5rem; border-radius: 2px;
+  border: 1px solid var(--rule-heavy);
+}
+.fnd-choice.on .fnd-choice-mark { background: var(--ink); border-color: var(--ink); }
+.fnd-choice-count {
+  font-size: 0.66rem; font-weight: 400; color: var(--muted);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.fnd-facet-more, .fnd-facet-note {
+  margin: 0.4rem 0 0; font-family: var(--sans); font-size: 0.66rem; line-height: 1.45; color: var(--muted);
+}
+.fnd-facet-more { font-size: 0.7rem; font-weight: 500; }
+.fnd-scale { display: flex; gap: 2px; margin-top: 0.4rem; }
+.fnd-scale a, .fnd-scale a:visited {
+  flex: 1 1 0; min-width: 0; height: 1.7rem; display: flex; align-items: center; justify-content: center;
+  font-family: var(--sans); font-size: 0.66rem; font-weight: 600; color: var(--ink-soft);
+  border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--paper-card);
+  font-variant-numeric: lining-nums;
+}
+.fnd-scale a:hover { background: var(--paper-sunk); text-decoration: none; }
+.fnd-scale a.on, .fnd-scale a.on:visited {
+  background: var(--ink-soft); border-color: var(--ink-soft); color: var(--paper);
+}
+
+/* a finding's own page */
+.fnd-one .page-title.statement { max-width: 46rem; }
+.fnd-claim {
+  padding: 0.7rem 0 0.8rem; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule);
+}
+/* A status badge's glossary note is laid out, hidden, centred on the badge
+   until it is opened (and then pinned to an edge if it would run off). On a
+   phone a badge at the right edge would otherwise widen the page by half a
+   note; clipping sideways only leaves the note free to open upward. */
+.fnd-claim, .fnd-item, .fnd-under { overflow-x: clip; }
+.fnd-claim p {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem;
+  margin: 0.2rem 0 0; font-size: 0.95rem; line-height: 1.4;
+}
+.fnd-account { display: flex; flex-direction: column; gap: 1.1rem; margin-top: 1.6rem; }
+.fnd-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.7rem 3rem; }
+.fnd-row > p { flex: 999 1 26rem; min-width: 0; max-width: 36rem; margin: 0; line-height: 1.6; }
+.fnd-notes { flex: 1 1 14.5rem; min-width: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+a.annot, a.annot:visited { color: inherit; }
+a.annot:hover { text-decoration: none; background: color-mix(in srgb, var(--link) 16%, transparent); }
+a.fnd-card, a.fnd-card:visited {
+  display: block; padding: 0.5rem 0.65rem 0.55rem;
+  background: var(--paper-card); border: 1px solid var(--rule); border-radius: 3px;
+  font-size: 0.74rem; line-height: 1.42; color: var(--ink);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+a.fnd-card:hover, a.fnd-card:target {
+  text-decoration: none; border-color: var(--link); box-shadow: 0 2px 8px rgb(var(--shadow) / 0.08);
+}
+.fnd-card-kind {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.25rem;
+  font-family: var(--sans); font-size: 0.56rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--link);
+}
+.fnd-card-kind .badge, .fnd-card-kind .fnd-credence { text-transform: none; letter-spacing: 0; }
+.fnd-card-meta {
+  display: block; margin-top: 0.25rem; font-family: var(--sans); font-size: 0.64rem; color: var(--muted);
+}
+.fnd-under { max-width: 36rem; margin-top: 2.4rem; }
+.fnd-under .acct-head { margin-bottom: 0.1rem; }
+.fnd-under .acct-head h2 { font-size: 1.15rem; }
+.fnd-under .finding-footing { margin-top: 0.7rem; }
+.fnd-under .finding-sightings h2 { font-size: 1.15rem; }
+
+@media (max-width: 760px) {
+  /* the filters fold behind a switch, above the list */
+  .fnd-filters { order: 0; flex-basis: 100%; }
+  .fnd-filters-label {
+    display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0 0.9rem; cursor: pointer;
+    font-family: var(--sans); font-size: 0.74rem; font-weight: 600;
+    border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper-card);
+  }
+  .fnd-filters-switch {
+    display: block; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+  }
+  .fnd-filters-switch:focus-visible + .fnd-filters-label { outline: 2px solid var(--link); outline-offset: 2px; }
+  .fnd-filters-body { display: none; margin-top: 0.8rem; }
+  .fnd-filters-switch:checked ~ .fnd-filters-body { display: block; }
+  /* a finding's importance moves from a rail beside it to a line above it,
+     so the headline has the full width */
+  .fnd-item { display: block; }
+  .fnd-rail { display: flex; align-items: center; gap: 0.5rem; padding: 0; margin-bottom: 0.25rem; }
+  .fnd-rail-n { font-size: 0.9rem; }
+  .fnd-ticks { margin-top: 0; }
+  .fnd-bar .acct-switch { flex: 1 1 100%; }
+  .fnd-bar .acct-switch a { flex: 1 1 0; text-align: center; }
+  /* a finding's page: a headline that fits a phone, and margin cards, now
+     under their paragraph, drawn smaller */
+  .fnd-one .page-title.statement { font-size: 1.3rem; line-height: 1.28; }
+  .fnd-account { gap: 0.9rem; }
+  .fnd-notes { gap: 0.3rem; }
+  a.fnd-card { padding: 0.4rem 0.55rem 0.45rem; font-size: 0.7rem; }
+  .fnd-card-kind { margin-bottom: 0.15rem; }
+}
+
 .finding-sighting { border-top: 1px solid var(--rule-soft); padding-top: 0.7rem; margin-top: 0.7rem; }
 
 /* the vocabulary listing on /tags and the strip on /claims */
@@ -1317,11 +1518,20 @@ a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
   display: flex; flex-wrap: wrap; gap: 0.2rem 1.4rem;
   font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
 }
-.acct-nav { padding: 0.65rem 0; border-bottom: 1px solid var(--rule); }
+/* The section links stay with the reader down a long page, under the
+   masthead, which is itself stuck to the top. */
+.acct-nav {
+  position: sticky; top: var(--masthead-height, 3.22rem); z-index: 10;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--rule); background: var(--paper);
+}
+.acct-pager {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  padding-top: 0.8rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
 
 /* a section's anchor clears the sticky masthead */
-.acct-section { margin-top: 3.2rem; scroll-margin-top: 4rem; }
-#buy-owls { scroll-margin-top: 4rem; }
+.acct-section { margin-top: 3.2rem; scroll-margin-top: 6.2rem; }
+#buy-owls { scroll-margin-top: 6.2rem; }
 .acct-head {
   display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
   gap: 0.4rem 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule);
@@ -1466,6 +1676,12 @@ p.acct-main.acct-prose { margin: 0; }
   }
   .acct-figure:first-child { border-top: 0; }
   .acct-balance { font-size: 2rem; }
+  /* the masthead's links wrap to a second line at this width */
+  .acct-nav {
+    top: var(--masthead-height, 4.7rem);
+    /* one line that scrolls sideways, so the bar stays a single row */
+    flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: 0 1.2rem;
+  }
   .acct-line-3 { grid-template-columns: minmax(0, 1fr) auto; }
   .acct-line-3 > div:first-child { grid-column: 1 / -1; }
   .acct-agent { grid-template-columns: 6rem minmax(0, 1fr) 3.7rem 2.4rem; }
@@ -1474,6 +1690,37 @@ p.acct-main.acct-prose { margin: 0; }
 /* ---- contribution entry points (#174) ------------------------------------- */
 /* Visible to every reader, quiet on the page: the prompt advertises that the
    page is challengeable; the action itself is gated behind sign-in. */
+
+/* ----- stated views (constitution §4) -----
+   An instance in the instance's own markup, with the speaker's line above
+   the words and the facts about the statement beneath. */
+.stated-view-head {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--muted);
+  display: flex; gap: 0.55rem; align-items: baseline; flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.stated-view-head a { color: var(--ink); font-weight: 600; }
+.stated-view-stands {
+  font-family: var(--sans); font-size: 0.84rem; color: var(--ink-soft); margin: 0 0 0.45rem;
+}
+.stated-view-facts p {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  margin: 0 0 0.3rem; max-width: 36rem;
+}
+.stated-view-facts .sc, .stated-view-stands .sc { color: var(--muted); margin-right: 0.3rem; }
+.stated-view-links { color: var(--muted); }
+.stated-rows { list-style: none; padding: 0; margin: 0.6rem 0 1.6rem; }
+.stated-rows > li { border-top: 1px solid var(--rule-soft); padding: 0.75rem 0 0.7rem; }
+.stated-rows .stated-node { font-size: 1rem; margin: 0 0 0.3rem; }
+.stated-rows .stated-pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1.4rem;
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft);
+}
+.stated-rows .stated-pair blockquote { margin: 0.2rem 0 0; font-style: italic; color: var(--ink); }
+.stated-rows .stated-summary {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0;
+}
+@media (max-width: 640px) { .stated-rows .stated-pair { grid-template-columns: 1fr; } }
 
 .contribute-lede { font-family: var(--sans); font-size: 0.86rem; color: var(--muted); max-width: 36rem; }
 .contribute-open {

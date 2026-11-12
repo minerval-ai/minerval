@@ -23,6 +23,7 @@
  *    payer (a mandate's stays the mandate's, a person's the person's) and
  *    parent_action_id records the chain a petition is later routed along.
  */
+import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { allocationDayUseSql } from "./day-use.js";
@@ -469,13 +470,16 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
         // petition's top-up, adds to that placement.
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd,
-            commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            commissioned_by, brief, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason]
+        // The brief and the reason are the commissioning run's words, so
+        // the row carries that run's label (src/labels.ts). More money on
+        // a placement already there leaves its label as it was.
+        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return { ok: true, allocationId: row!.id } as const;
     });
@@ -497,9 +501,9 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.userId, budget, input.commissionedBy, input.brief, input.reason]
+            commissioned_by, brief, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [input.group, input.actionId, input.claimId, payer.userId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return row!.id;
     });
@@ -562,14 +566,14 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason, parent_action_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            commissioned_by, brief, reason, parent_action_id, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
         [input.group, input.actionId, input.claimId, src.grant_id, src.user_id, take,
-         input.commissionedBy, input.brief, input.reason, payer.actionId]
+         input.commissionedBy, input.brief, input.reason, payer.actionId, currentLabel()]
       );
       first ??= row!.id;
       left -= take;

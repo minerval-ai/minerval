@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, onTestFinished } from "vitest";
 import { getPromptSet } from "../../../src/services/prompt-set.js";
 
 // toolUseLoop should record one 'assistant' step per model turn and one
@@ -31,9 +31,17 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
   checkBudget: vi.fn(),
 }));
 
+// A run at a label other than public is served only by a provider cleared
+// for it (src/provider-labels.ts). Whether the label the setting names is
+// defined is asked of the database, answered from here.
+vi.mock("../../../src/services/label-service.js", () => ({
+  undefinedLabels: async () => [],
+}));
+
 import { complete, completeStructured, toolUseLoop } from "../../../src/llm/client.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { runDateLine } from "../../../src/llm/run-date.js";
+import { loadConfig } from "../../../src/config.js";
 
 // What the model is sent: the caller's system prompt, dated at the seam (#771).
 const DATED_SYSTEM = `the constitution\n\n${runDateLine()}`;
@@ -153,6 +161,13 @@ describe("toolUseLoop step recording", () => {
     const tools = [
       { name: "search", description: "find things", input_schema: { type: "object" as const } },
     ];
+    // The run works at `internal`, so its model's provider is cleared for it.
+    const deployment = loadConfig() as { providerLabels: Record<string, string[]> };
+    const loaded = deployment.providerLabels;
+    onTestFinished(() => {
+      deployment.providerLabels = loaded;
+    });
+    deployment.providerLabels = { anthropic: ["public", "internal"] };
     await runWithUsageContext({ trace, label: "internal" }, () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: "go" }],
@@ -170,10 +185,10 @@ describe("toolUseLoop step recording", () => {
       "assistant",
     ]);
     // The prompt step carries the whole setup: system prompt, initial
-    // messages and the tool descriptors, verbatim, and the label the run
-    // writes at, taken from the context.
+    // messages and the tool descriptors, verbatim, the label the run writes
+    // at, taken from the context, and the provider that served it.
     expect(await calls[0]![2]).toMatchObject({
-      setup: { label: "internal", featuresOff: [] },
+      setup: { label: "internal", featuresOff: [], provider: "anthropic" },
       system: DATED_SYSTEM,
       initialMessages: [{ role: "user", content: "go" }],
       tools: [{ name: "search", description: "find things", input_schema: { type: "object" } }],
