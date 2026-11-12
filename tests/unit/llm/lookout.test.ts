@@ -95,6 +95,8 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
 }));
 vi.mock("../../../src/services/lookout-service.js", () => ({
   LOOKOUT_BOUNDS: { workspaceChars: 50_000, noteChars: 2_000 },
+  // The columns the run reads its lookout with, by name.
+  LOOKOUT_COLUMNS: ["id", "grant_id", "title", "brief", "status", "model"],
   pendingLookoutEvents: vi.fn(async () => state.events),
   countPendingLookoutEvents: vi.fn(async () => state.pendingCount),
   listLookoutFlags: vi.fn(async () => state.flags),
@@ -383,6 +385,16 @@ describe("runLookout", () => {
     const b = state.loop!.briefing;
     expect(b).toContain("The 20 most recent of the 45 you have raised");
     expect(b).toContain("Map what is known about dietary fat.");
+  });
+
+  it("reads its lookout by named columns, so a column the table gains (its label) is not handed to the run", async () => {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    vi.mocked(rawQuery).mockClear();
+    await runLookout({ lookoutId: LOOKOUT });
+    const read = vi.mocked(rawQuery).mock.calls.map((c) => String(c[0])).find((q) => q.includes("FROM lookouts l JOIN grants g"))!;
+    expect(read).toContain("SELECT l.id, l.grant_id, l.title, l.brief, l.status, l.model,");
+    expect(read).not.toMatch(/\bl\.\*/);
+    expect(read).not.toContain("sensitivity_label");
   });
 
   it("refuses to run a lookout that is paused or whose mandate is not active", async () => {
