@@ -910,10 +910,26 @@ async function reconcileConsistencySweeps(): Promise<void> {
   // A sweep whose process died leaves its row 'running'; close it so the
   // coverage record reads true and the partition can be due again.
   await reclaimAbandonedSweeps();
+  // Where a deployment has more than one label the rows are opened label
+  // by label. A row names its partition's tag and is priced by how many
+  // judged nodes the partition holds, so it is made from what the label it
+  // is at reads: the partitions are listed inside each label, and a label
+  // opens a row only for a partition where a judgment of its own has been
+  // recorded since that label last swept it. Each label's rows have that
+  // label's own key (CONSISTENCY_GROUP).
+  if (oneLabelOnly()) return openDueConsistencySweeps(config.consistencyMinTagClaims);
+  const { everyLabel } = await import("./label-service.js");
+  for (const label of await everyLabel()) {
+    await runAtLabel(label, `consistency sweeps at ${label}`, () => openDueConsistencySweeps(config.consistencyMinTagClaims));
+  }
+}
+
+/** Open the rows of the partitions due a sweep at the label of the work in progress, and close those no longer due. */
+async function openDueConsistencySweeps(minTagClaims: number): Promise<void> {
   // Every due partition gets its rows: a partition is due at most once
   // per re-sweep interval, and the General mandate's escrow and day room
   // decide how many are bought.
-  const due = await duePartitions(config.consistencyMinTagClaims);
+  const due = (await duePartitions(minTagClaims)).filter((p) => oneLabelOnly() || p.changedAtOwnLabel > 0);
   const refs = due.map((p) => CONSISTENCY_GROUP(partitionRef(p)));
   // A partition no longer due loses its open rows, so open rows never
   // pile up across days, unless a live mandate's plan names it (a sweep
@@ -921,7 +937,7 @@ async function reconcileConsistencySweeps(): Promise<void> {
   // to fund, and the plan materializer reopens them anyway.
   await rawQuery(
     `UPDATE actions a SET status = 'cancelled', updated_at = now()
-      WHERE a.kind = 'consistency_sweep' AND a.status = 'open'
+      WHERE a.kind = 'consistency_sweep' AND a.status = 'open'${oneLabelOnly() ? "" : " AND a.sensitivity_label = minerval_write_label()"}
         AND NOT (a.exclusion_group = ANY($1::text[]))
         AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group

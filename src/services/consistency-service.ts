@@ -31,6 +31,7 @@
  * conclusion: it writes no assessment, no edge, no importance and no
  * valuation, and it moves no money.
  */
+import { oneLabelOnly } from "./judgment-version-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { slotColumnSql } from "./steward-lease.js";
@@ -142,6 +143,12 @@ function normalizeClaimIds(primary: string, raw: unknown): string[] {
  * id is what a flag snapshots (assessment_id_at_flag carries no foreign
  * key, so it holds any of the three).
  */
+/**
+ * SQL condition: a sweep's row is at the label of the work in progress.
+ * Empty where `public` is the only label, and the statement is what it was.
+ */
+const OWN_LABEL_ONLY = () => (oneLabelOnly() ? "" : ` AND sensitivity_label = minerval_write_label()`);
+
 const CURRENT_RECORD_JOINS = `
   LEFT JOIN assessments_in_force a ON a.claim_id = c.id AND c.kind = 'claim'
   LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id AND c.kind = 'quantity'
@@ -178,6 +185,13 @@ export interface PartitionStatus {
   last_swept_at: Date | null;
   /** Verdicts, estimates and standings written in the partition since its last sweep. */
   changed_since: number;
+  /**
+   * Of those, the ones recorded at the label of the work in progress. Where
+   * a deployment has more than one label a partition is swept at each
+   * label that has judgments of its own in it (reconcileConsistencySweeps
+   * in action-service.ts); with one label this is changed_since.
+   */
+  changed_at_own_label: number;
 }
 
 /**
@@ -186,6 +200,11 @@ export interface PartitionStatus {
  * claims no such tag covers. A two-claim tag cannot hold a cross-claim
  * tension worth a sweep of its own, so the long tail of small tags is
  * swept through the bucket instead.
+ *
+ * It lists what the work in progress reads: the nodes, tags and judgments
+ * of its label and the labels that reads. A partition's last sweep is the
+ * last one at the work's own label, since a sweep at another label did not
+ * read this label's judgments. With one label that is every sweep.
  */
 export async function listPartitions(minTagClaims: number): Promise<PartitionStatus[]> {
   const rows = await rawQuery<{
@@ -197,6 +216,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     importance_mass: number;
     last_swept_at: Date | null;
     changed_since: number;
+    changed_at_own_label: number;
   }>(
     `WITH live AS (
        SELECT id, importance FROM claims WHERE state = 'active' AND merged_into IS NULL
@@ -222,7 +242,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
      ),
      last_sweep AS (
        SELECT tag_id, partition, MAX(started_at) AS at
-         FROM consistency_sweeps WHERE status = 'done'
+         FROM consistency_sweeps WHERE status = 'done'${OWN_LABEL_ONLY()}
         GROUP BY tag_id, partition
      ),
      keyed AS (
@@ -233,12 +253,13 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
                AND ls.partition = CASE WHEN m.tag_id IS NULL THEN 'residual' ELSE 'tag' END
      ),
      records AS (
-       SELECT claim_id, assessed_at FROM assessments
-       UNION ALL SELECT claim_id, assessed_at FROM quantity_estimates
-       UNION ALL SELECT claim_id, assessed_at FROM question_assessments
+       SELECT claim_id, assessed_at, sensitivity_label FROM assessments
+       UNION ALL SELECT claim_id, assessed_at, sensitivity_label FROM quantity_estimates
+       UNION ALL SELECT claim_id, assessed_at, sensitivity_label FROM question_assessments
      ),
      changed AS (
-       SELECT k.tag_id, COUNT(*)::int AS n
+       SELECT k.tag_id, COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE r.sensitivity_label = minerval_write_label())::int AS own
          FROM keyed k
          JOIN records r ON r.claim_id = k.claim_id
                        AND (k.at IS NULL OR r.assessed_at > k.at)
@@ -253,7 +274,8 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
                WHERE c.id = k.claim_id AND ${RECORD_ID} IS NOT NULL))::int AS assessed,
             COALESCE(SUM(k.importance), 0)::real AS importance_mass,
             k.at AS last_swept_at,
-            COALESCE(MAX(ch.n), 0)::int AS changed_since
+            COALESCE(MAX(ch.n), 0)::int AS changed_since,
+            COALESCE(MAX(ch.own), 0)::int AS changed_at_own_label
        FROM keyed k
        LEFT JOIN tags t ON t.id = k.tag_id
        LEFT JOIN changed ch ON ch.tag_id IS NOT DISTINCT FROM k.tag_id
@@ -266,6 +288,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     assessed: Number(r.assessed),
     importance_mass: Number(r.importance_mass),
     changed_since: Number(r.changed_since),
+    changed_at_own_label: Number(r.changed_at_own_label),
   }));
 }
 
@@ -286,8 +309,8 @@ export async function duePartitions(minTagClaims: number): Promise<DuePartition[
     // day's cap by looking never-swept).
     rawQuery<{ tag_id: string | null; partition: string }>(
       `SELECT tag_id, partition FROM consistency_sweeps
-        WHERE (status = 'running' AND started_at > now() - make_interval(hours => $1))
-           OR (status = 'error' AND started_at > now() - make_interval(hours => $2))`,
+        WHERE ((status = 'running' AND started_at > now() - make_interval(hours => $1))
+           OR (status = 'error' AND started_at > now() - make_interval(hours => $2)))${OWN_LABEL_ONLY()}`,
       [CONSISTENCY_BOUNDS.reclaimHours, CONSISTENCY_BOUNDS.resweepHours]
     ),
   ]);
@@ -308,11 +331,11 @@ export async function duePartitions(minTagClaims: number): Promise<DuePartition[
       if (a.changed_since !== b.changed_since) return b.changed_since - a.changed_since;
       return b.importance_mass - a.importance_mass;
     });
-  return due.map((p) => ({ ...toSweepPartition(p), assessed: p.assessed }));
+  return due.map((p) => ({ ...toSweepPartition(p), assessed: p.assessed, changedAtOwnLabel: p.changed_at_own_label }));
 }
 
-/** A partition due a sweep, with the size its sweep is priced by (#756). */
-export type DuePartition = SweepPartition & { assessed: number };
+/** A partition due a sweep, with the size its sweep is priced by (#756) and how much of what changed is this label's own. */
+export type DuePartition = SweepPartition & { assessed: number; changedAtOwnLabel: number };
 
 function toSweepPartition(p: PartitionStatus): SweepPartition {
   return p.partition === "tag"

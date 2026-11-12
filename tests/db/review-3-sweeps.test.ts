@@ -18,6 +18,8 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { rawQuery } from "../../src/db/client.js";
+import { loadConfig } from "../../src/config.js";
+import { reconcileActions } from "../../src/services/action-service.js";
 import { auditSchedulerTick } from "../../src/workers/audit-scheduler.js";
 import { flagMonitorCandidates } from "../../src/workers/monitor-scheduler.js";
 import { A, B, asPerson, attachSource, seedNode, system, tag, unwall, version, wall } from "./review-3-common.js";
@@ -98,3 +100,48 @@ describe("the audit scheduler", () => {
   });
 });
 
+describe("the consistency sweeps the ledger opens", () => {
+  it("opens a partition named by a's tag at a, priced by what a reads, and no row at public that names it", async () => {
+    const config = loadConfig() as unknown as { consistencySweepsEnabled: boolean; consistencyMinTagClaims: number };
+    const was = { ...config };
+    const slug = `a-only-partner-topic-${tag}`;
+    try {
+      config.consistencySweepsEnabled = true;
+      config.consistencyMinTagClaims = 2;
+      const nodes = [await seedNode(A, "A-ONLY: first node under a's tag"), await seedNode(A, "A-ONLY: second node under a's tag")];
+      await system(async () => {
+        const [t] = await rawQuery<{ id: string }>(
+          `INSERT INTO tags (slug, name, sensitivity_label) VALUES ($1, $2, $3) RETURNING id`,
+          [slug, `A-only partner topic ${tag}`, A]
+        );
+        for (const n of nodes) {
+          await rawQuery(`INSERT INTO taggings (tag_id, subject_kind, subject_id, source, sensitivity_label) VALUES ($1, 'claim', $2, 'tagger', $3)`, [t!.id, n, A]);
+        }
+      });
+      for (const n of nodes) await version(n, A, "supported", "A reading.");
+      // As the scheduler runs it: at system clearance.
+      await system(() => reconcileActions());
+      const rows = await system(() =>
+        rawQuery<{ l: string; exclusion_group: string }>(
+          `SELECT DISTINCT sensitivity_label AS l, exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND label LIKE '%' || $1 || '%'`,
+          [slug]
+        )
+      );
+      expect(rows.map((r) => r.l)).toEqual([A]);
+      expect(rows[0]!.exclusion_group.endsWith(` @${A}`)).toBe(true);
+      expect(await asPerson(["public"], () => rawQuery(`SELECT 1 FROM actions WHERE label LIKE '%' || $1 || '%'`, [slug]))).toEqual([]);
+      // No row at public, or at b, was opened because of what a recorded:
+      // a row is opened at a label only where that label's own judgments moved.
+      const elsewhere = await system(() =>
+        rawQuery<{ l: string }>(
+          `SELECT DISTINCT sensitivity_label AS l FROM actions WHERE kind = 'consistency_sweep' AND status = 'open' AND sensitivity_label = ANY($1::text[])`,
+          [[B]]
+        )
+      );
+      expect(elsewhere).toEqual([]);
+    } finally {
+      Object.assign(config, was);
+      await system(() => rawQuery(`DELETE FROM tags WHERE slug = $1`, [slug])).catch(() => undefined);
+    }
+  });
+});
