@@ -32,7 +32,6 @@ vi.mock("../../../src/config.js", () => ({
 }));
 vi.mock("../../../src/llm/agents/extension-agent.js", () => ({
   assessPageClaims: vi.fn(),
-  extensionChat: vi.fn(),
 }));
 
 import { loadMatchedClaim } from "../../../src/services/extension-service.js";

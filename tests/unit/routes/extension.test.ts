@@ -5,7 +5,6 @@ import type { RequestAuth } from "../../../src/server/plugins/auth.js";
 const mocks = vi.hoisted(() => ({
   startAnalysis: vi.fn(),
   getAnalysisByHash: vi.fn(),
-  chatAboutPage: vi.fn(),
   whenAnalysisSettles: vi.fn(),
   shareIfPublic: vi.fn(),
   listSharedHashes: vi.fn(),
@@ -20,7 +19,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../src/services/extension-service.js", () => ({
   startAnalysis: mocks.startAnalysis,
   getAnalysisByHash: mocks.getAnalysisByHash,
-  chatAboutPage: mocks.chatAboutPage,
   whenAnalysisSettles: mocks.whenAnalysisSettles,
 }));
 
@@ -104,7 +102,6 @@ describe("extension routes", () => {
   beforeEach(() => {
     mocks.startAnalysis.mockReset();
     mocks.getAnalysisByHash.mockReset();
-    mocks.chatAboutPage.mockReset();
     mocks.whenAnalysisSettles.mockReset();
     mocks.shareIfPublic.mockReset().mockResolvedValue({ shared: true });
     mocks.listSharedHashes.mockReset();
@@ -302,116 +299,6 @@ describe("extension routes", () => {
     });
     expect(res.statusCode).toBeGreaterThanOrEqual(400);
     expect(mocks.getAnalysisByHash).not.toHaveBeenCalled();
-  });
-
-  it("POST /extension/chat forwards history + page context and returns citations", async () => {
-    mocks.chatAboutPage.mockResolvedValue({
-      reply: "Grounded answer [claim:11111111-2222-3333-4444-555555555555]",
-      citations: [
-        {
-          id: "11111111-2222-3333-4444-555555555555",
-          canonical_form: "C",
-          status: "verified",
-          url: "https://minerval.ai/claims/11111111-2222-3333-4444-555555555555",
-        },
-      ],
-    });
-    const { app, gates } = await buildTestApp();
-
-    const res = await app.inject({
-      method: "POST",
-      url: "/extension/chat",
-      payload: {
-        messages: [{ role: "user", content: "is this true?" }],
-        page: { url: "https://example.com/a", title: "A", claims: [] },
-      },
-    });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.json().citations).toHaveLength(1);
-    expect(gates.quota).toBe(1);
-    expect(mocks.chatAboutPage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        messages: [{ role: "user", content: "is this true?" }],
-      })
-    );
-  });
-
-  it("POST /extension/chat streams the reply as it forms when asked for an event stream", async () => {
-    mocks.chatAboutPage.mockImplementation(
-      async (input: { onText?: (delta: string, turn: number) => void }) => {
-        input.onText?.("Checking the graph.", 0);
-        input.onText?.("Grounded ", 1);
-        input.onText?.("answer.", 1);
-        return { reply: "Grounded answer.", citations: [] };
-      }
-    );
-    const { app, gates } = await buildTestApp();
-
-    const res = await app.inject({
-      method: "POST",
-      url: "/extension/chat",
-      headers: { accept: "text/event-stream" },
-      payload: {
-        messages: [{ role: "user", content: "is this true?" }],
-        page: { url: "https://example.com/a", title: "A", claims: [] },
-      },
-    });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.headers["content-type"]).toContain("text/event-stream");
-    expect(gates.quota).toBe(1);
-    const events = res.body
-      .trim()
-      .split("\n\n")
-      .map((block) => {
-        const [event, data] = block.split("\n");
-        return { event: event!.slice("event: ".length), data: JSON.parse(data!.slice("data: ".length)) };
-      });
-    expect(events).toEqual([
-      { event: "text", data: { delta: "Checking the graph.", turn: 0 } },
-      { event: "text", data: { delta: "Grounded ", turn: 1 } },
-      { event: "text", data: { delta: "answer.", turn: 1 } },
-      { event: "done", data: { reply: "Grounded answer.", citations: [] } },
-    ]);
-  });
-
-  it("POST /extension/chat ends the stream with an error event when the agent fails mid-answer", async () => {
-    mocks.chatAboutPage.mockImplementation(
-      async (input: { onText?: (delta: string, turn: number) => void }) => {
-        input.onText?.("Half an", 0);
-        throw new Error("provider went away");
-      }
-    );
-    const { app } = await buildTestApp();
-    const res = await app.inject({
-      method: "POST",
-      url: "/extension/chat",
-      headers: { accept: "text/event-stream" },
-      payload: {
-        messages: [{ role: "user", content: "is this true?" }],
-        page: { url: "https://example.com/a", title: "A", claims: [] },
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("event: text");
-    expect(res.body.trim().split("\n\n").at(-1)).toMatch(/^event: error\n/);
-  });
-
-  it("rejects a chat whose last message is not from the user", async () => {
-    const { app } = await buildTestApp();
-    const res = await app.inject({
-      method: "POST",
-      url: "/extension/chat",
-      payload: {
-        messages: [
-          { role: "user", content: "hi" },
-          { role: "assistant", content: "hello" },
-        ],
-      },
-    });
-    expect(res.statusCode).toBeGreaterThanOrEqual(400);
-    expect(mocks.chatAboutPage).not.toHaveBeenCalled();
   });
 
   it("rejects content that is too short to analyze", async () => {

@@ -103,11 +103,6 @@ vi.mock("../../../src/llm/agents/extension-agent.js", async () => {
         mocks.seen.push({ ...getUsageContext() });
         return [{ index: 0, verdict: "fine", why: "", confidence: 0.9 }];
       }),
-    extensionChat: () =>
-      withAgent("extension", async () => {
-        mocks.seen.push({ ...getUsageContext() });
-        return { reply: "The graph holds this claim as inconclusive." };
-      }),
   };
 });
 
@@ -124,13 +119,12 @@ vi.mock("../../../src/services/assessment-service.js", () => ({
 }));
 
 import {
-  chatAboutPage,
   resetAnalysisCache,
   startAnalysis,
 } from "../../../src/services/extension-service.js";
 import { extractClaims } from "../../../src/llm/agents/extractor.js";
 import { matchClaim } from "../../../src/llm/agents/matcher.js";
-import { extensionChat } from "../../../src/llm/agents/extension-agent.js";
+import { assessPageClaims } from "../../../src/llm/agents/extension-agent.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { traceLevel } from "../../../src/services/trace-service.js";
 
@@ -178,20 +172,6 @@ describe("extension transience (#356)", () => {
     }
   });
 
-  it("chat writes nothing either", async () => {
-    const { reply } = await asUser(() =>
-      chatAboutPage({
-        messages: [{ role: "user", content: "is this true? my doctor says otherwise" }],
-        page: { url: PAGE.url, title: PAGE.title, claims: [] },
-      })
-    );
-    expect(reply).toContain("inconclusive");
-    expect(mocks.insertValues).not.toHaveBeenCalled();
-    expect(mocks.updateWhere).not.toHaveBeenCalled();
-    expect(mocks.seen).toHaveLength(1);
-    expect(mocks.seen[0]).toMatchObject({ agent: "extension", untraced: true });
-  });
-
   it("negative control: the same agents outside the extension path do open runs", async () => {
     // The extractor and matcher trace on the ingestion path, where the source
     // is public by construction — so the mocks above would have written a row
@@ -208,7 +188,7 @@ describe("extension transience (#356)", () => {
     // The extension agent is untraced by name, whoever calls it.
     mocks.insertValues.mockClear();
     await asUser(() =>
-      extensionChat({ messages: [], pageUrl: null, pageTitle: null, pageClaims: [] })
+      assessPageClaims({ pageUrl: PAGE.url, pageTitle: PAGE.title, claims: [] })
     );
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
@@ -246,19 +226,6 @@ describe("the extension in record mode", () => {
       expect(ctx.trace).toBeDefined();
       expect(typeof ctx.runId).toBe("string");
     }
-  });
-
-  it("chat opens a run too", async () => {
-    mocks.runLogMode = "record";
-    await asUser(() =>
-      chatAboutPage({
-        messages: [{ role: "user", content: "is this true? my doctor says otherwise" }],
-        page: { url: PAGE.url, title: PAGE.title, claims: [] },
-      })
-    );
-    expect(openedRuns()).toEqual([
-      expect.objectContaining({ agent: "extension", privateReasons: ["agent:extension", "input:readers-own-content"] }),
-    ]);
   });
 
   it("still writes no source and no instance: the runs and their seals are the only rows", async () => {

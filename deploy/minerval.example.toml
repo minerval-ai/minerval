@@ -172,5 +172,4 @@ cap_claim_proposal_owls = 2
 cap_assessment_owls = 2
 cap_source_ingest_owls = 0.1
 cap_extension_analysis_owls = 1
-cap_extension_chat_owls = 0.1
 cap_text_analysis_owls = 0.1

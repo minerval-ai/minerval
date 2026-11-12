@@ -360,7 +360,6 @@ spent (§15):
 | order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
 | submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
-| extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
 
 A page analysis's cap is above its average run on purpose: it is also the
@@ -623,10 +622,9 @@ with a section of the prompt for the narrow panel in place of the site's.
 The extension reads the conversation until the turn is idle, shows what the
 reply cost, and can stop it. It holds only an API key, so it cannot release
 a held action: the reply says one is waiting and links to the conversation
-on minerval.ai, which is the same conversation. The older
-`POST /extension/chat`, with its own flat price and prompt, is kept for
-installed versions of the extension that still call it and can be removed
-once they have updated.
+on minerval.ai, which is the same conversation. Versions of
+the extension before 0.4.0 called `POST /extension/chat`, which had its own
+flat price and prompt and is gone: their chat tab fails until they update.
 
 **Sharing a page.** A page is private until its user shares it:
 `POST /pages/:id/share` gives it a link (`/p/:token`, a random token, not

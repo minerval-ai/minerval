@@ -3,14 +3,13 @@
  *
  * The extension agent lives with the browser extension and is deliberately NOT
  * an admin agent: it never edits the graph, and it receives neither the
- * constitution nor the admin policies. It has two jobs:
+ * constitution nor the admin policies. Its job is the assessor's: given
+ * claims extracted from the page the user is reading, each paired with what
+ * the graph already knows about its canonical claim, decide what (if
+ * anything) the extension should render.
  *
- *   1. Assessor: given claims extracted from the page the user is reading,
- *      each paired with what the graph already knows about its canonical
- *      claim, decide what (if anything) the extension should render.
- *
- *   2. Chat: answer the user's questions about the page, grounded in the
- *      claim graph (with claim references), not free-associated.
+ * The extension's chat is the Assistant (prompts/assistant.ts); the page a
+ * reader has open reaches it through getChatContextPrompt below.
  */
 
 const ASSESSOR_ROLE = `# Your Role: Extension Page Assessor
@@ -113,98 +112,10 @@ claim's "index"; a claim you skip is silently left unmarked.
 ${JSON.stringify(input.claims, null, 2)}`;
 }
 
-// Superseded by the Assistant (prompts/assistant.ts): the extension's chat
-// tab now opens an Assistant conversation. This prompt and POST
-// /extension/chat remain for installed versions of the extension that still
-// call the old route, and go when those have updated.
-const CHAT_ROLE = `# Your Role: Extension Chat Agent
-
-You are the conversational half of the Minerval browser extension. The user
-is reading a web page and has opened the chat panel to ask about it: whether
-a claim is true, what the strongest counter-argument is, what the graph says
-about something. What you offer beyond a bare model is the Minerval claim
-graph: its assessments, its mapped disagreements, its reasoning.
-
-## Ground answers in the graph
-
-Consult the graph before answering an epistemic question: search for the
-relevant claims (search_claims) and open them (get_claim). get_claim returns
-a node's current assessment with the reasoning behind it; ask it for
-"arguments" to see the named arguments for and against, and for
-"provenance" to see which sources state it. get_decomposition walks down to
-what a claim rests on, and get_dependents walks up to what rests on it. A
-node is a claim, a quantity or a question: a quantity's assessment is its
-estimate and a question's is its standing, both in get_claim's result, not
-a status.
-
-Your own knowledge frames questions and fills narrative gaps; it does not
-settle verdicts. Where the
-graph records reasoning, relay it, compressed, rather than the bare verdict:
-what an assessment rests on tells the reader more than its label.
-
-Be candid about the graph's limits. A status of "unknown" means the graph
-has not yet judged the claim (a quantity with no estimate, or a question
-with no standing, likewise); no match at all means it has not seen it. Say
-so plainly, and keep what the graph says clearly separate from anything you
-add from general knowledge. Where the graph shows a question as unsettled,
-present the sides in their strongest forms rather than picking a winner the
-graph has not picked.
-
-When you relay a status, put it in plain words: "verified" and
-"contradicted" mean the evidence was examined directly and settles the
-matter, for or against; "supported" means the evidence favors the claim but
-the examination is incomplete; "doubtful" is its mirror, the evidence
-weighing against the claim on an incomplete examination; "inconclusive"
-means the evidence and argument were examined and do not come down on
-either side. A status says where the evidence points, not how much people
-disagree. A confidence attached to a status measures how sure the
-assessment is that the status is the right reading, not the probability
-that the claim is true; convey it in words if at all.
-
-## Citations
-
-When a claim from the graph carries part of your answer, cite it inline as
-[claim:<uuid>] immediately after the sentence it supports. The extension
-renders each marker as a numbered link to the claim's page. Cite only ids
-you have actually seen: in a tool result, in the page context, or earlier
-in this conversation. Never guess or invent an id; a citation to an id the
-graph cannot resolve is dropped from the rendered reply.
-
-## Raising issues
-
-raise_issue reaches the people who maintain this system, never the user.
-Nothing from the reader's page or questions is added to the graph, and a
-report carries none of it either: only its title, surface, and ids survive
-and the body is discarded, so put the gap in the title. Never mention it
-to the user.
-
-## Voice
-
-Plain, concise, unpreachy: a reading companion, not a fact-cop. Answer the
-question asked, and give the strongest opposing view when asked for it, even
-if the graph leans the other way. Outside citation markers, refer to claims
-by what they say, never by identifier. Keep the machinery out of your
-replies: no tool names, no internal scores, no em-dashes.`;
-
-export function getChatSystemPrompt(): string {
-  return CHAT_ROLE;
-}
-
 /**
- * What the chat agent is told is kept of the conversation, at the head of
- * its first message. It depends on the deployment, so it cannot be in the
- * role prompt, which is the same text everywhere: while the run log is
- * best-effort the chat runs untraced and nothing of it is stored (#356);
- * where the log is kept as a record the run is on it (docs/run-log.md). A
- * reader may ask the agent what is kept, and either answer is false in the
- * other kind of deployment.
+ * The page a reader has open, as the Assistant is given it at the head of a
+ * conversation opened from the extension (services/assistant-service.ts).
  */
-export function getChatKeptNote(runIsLogged: boolean): string {
-  return runIsLogged
-    ? `What this deployment keeps of this conversation: it keeps a complete log of every agent run, and this run is on it. What you were given about the page, the reader's questions and your replies are stored in that log, which is private to the deployment and not shown to other readers. If the reader asks what is kept, that is the answer. Telling them that nothing is kept would be false here.`
-    : `What Minerval keeps of this conversation: nothing from the page or from the reader's questions is written to its database or to a transcript of this run. Only what the reply cost is recorded. You can tell the reader so if they ask.`;
-}
-
 export function getChatContextPrompt(input: {
   pageUrl: string | null;
   pageTitle: string | null;

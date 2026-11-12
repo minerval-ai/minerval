@@ -175,7 +175,7 @@ earnest.
 
 ## Work the best-effort log leaves out, and record mode does not
 
-While the log is best-effort, four kinds of model work are kept off it on
+While the log is best-effort, three kinds of model work are kept off it on
 purpose (#356). Each handles a reader's own content, which the public
 service's terms say is never stored:
 
@@ -183,7 +183,6 @@ service's terms say is never stored:
   analyze a passage the caller hands over;
 - the browser extension's page analysis, which reads whatever page the
   reader has open;
-- the extension's page chat;
 - the naming of an Assistant conversation from its first message. The
   message itself is kept, in the conversation and in the log of the
   Assistant's reply; what keeps the naming off the log is that deleting a
@@ -217,13 +216,9 @@ the `assistant` agent is private, the others with the reason
 from such work still leaves its body out, in either mode: a report travels
 further than the log does.
 
-Of these, only the page chat's agent speaks to the reader, who may ask it
-what is kept. Its role prompt is the same text in every deployment and
-says only what holds in all of them (nothing from the page or the
-questions is added to the graph). Which of the two holds where it runs is
-said at the head of each conversation's first message
-(`getChatKeptNote` in `src/llm/prompts/extension-agent.ts`): that nothing
-is stored, or that the run is on the deployment's log.
+None of these agents speaks to the reader. The extension's chat is the
+Assistant, whose conversations are kept in the user's account and whose
+runs are logged privately in either mode (docs/accounts.md).
 
 What a caller gets back and what they are charged are the same in both
 modes. The charge is the metered cost of the model calls, which logging

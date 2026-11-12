@@ -291,12 +291,6 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
     field: "capExtensionAnalysisOwls",
   },
   {
-    key: "pricing.cap_extension_chat_owls",
-    env: "CAP_EXTENSION_CHAT_OWLS",
-    kind: "number",
-    field: "capExtensionChatOwls",
-  },
-  {
     key: "pricing.cap_text_analysis_owls",
     env: "CAP_TEXT_ANALYSIS_OWLS",
     kind: "number",

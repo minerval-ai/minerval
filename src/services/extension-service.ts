@@ -50,7 +50,6 @@ import {
   type ClaimForAssessment,
   type ClaimVerdict,
 } from "../llm/agents/extension-agent.js";
-import { extensionChat, type ChatTurn } from "../llm/agents/extension-agent.js";
 import { getClaimById } from "./claim-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import {
@@ -272,76 +271,6 @@ export function buildAnnotations(input: {
       },
     };
   });
-}
-
-const CITATION_RE =
-  /\[claim:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi;
-
-/** Claim ids cited inline in a chat reply as [claim:<uuid>]. Exported for tests. */
-export function extractCitedClaimIds(reply: string): string[] {
-  return [...new Set([...reply.matchAll(CITATION_RE)].map((m) => m[1]!.toLowerCase()))];
-}
-
-export interface ChatCitation {
-  id: string;
-  canonical_form: string;
-  status: string | null;
-  url: string;
-}
-
-export async function chatAboutPage(input: {
-  /** The reply's text as it is written, with the model turn it belongs to. */
-  onText?: (delta: string, turn: number) => void;
-  messages: ChatTurn[];
-  page: {
-    url: string | null;
-    title: string | null;
-    claims: Array<{
-      verbatim_text: string;
-      verdict: string;
-      claim_id: string | null;
-      canonical_form: string | null;
-      status: string | null;
-    }>;
-  };
-}): Promise<{ reply: string; citations: ChatCitation[] }> {
-  const config = loadConfig();
-  // The conversation is the reader's own: no transcript of it is kept
-  // (in record mode it is logged, privately; see the module comment).
-  const result = await untraced(() =>
-    extensionChat({
-      messages: input.messages,
-      pageUrl: input.page.url,
-      pageTitle: input.page.title,
-      pageClaims: input.page.claims,
-      model: config.extensionModel,
-      ...(input.onText ? { onText: input.onText } : {}),
-    })
-  );
-
-  // Hydrate every cited id that resolves in the graph. An id fabricated from
-  // thin air virtually never resolves, so it is still dropped; an id the
-  // agent legitimately saw anywhere (search results, other tool outputs, the
-  // page context, an earlier turn) links correctly instead of being silently
-  // deleted from the rendered reply (#181).
-  const citedIds = extractCitedClaimIds(result.reply);
-
-  const citations: ChatCitation[] = [];
-  for (const id of citedIds.slice(0, 20)) {
-    const [claim, assessment] = await Promise.all([
-      getClaimById(id),
-      getCurrentAssessment(id),
-    ]);
-    if (!claim) continue;
-    citations.push({
-      id,
-      canonical_form: claim.text,
-      status: assessment?.status ?? null,
-      url: claimPageUrl(id),
-    });
-  }
-
-  return { reply: result.reply, citations };
 }
 
 export interface MatchedClaim {

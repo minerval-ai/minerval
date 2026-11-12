@@ -160,10 +160,9 @@ export function traceLevel(agent?: string): "off" | "full" {
 
 /**
  * Agents never traced while the log is best-effort, at any TRACE_LEVEL:
- * everything they are given is a reader's own page or conversation (#356).
- * The extension agent judges the phrasings on whatever page is open in the
- * browser and answers questions typed about it; neither is the public
- * graph's to keep.
+ * everything they are given is a reader's own page (#356). The extension
+ * agent judges the phrasings on whatever page is open in the browser, which
+ * is not the public graph's to keep.
  */
 const NEVER_TRACED: ReadonlySet<string> = new Set(["extension"]);
 

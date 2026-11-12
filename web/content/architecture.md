@@ -1152,8 +1152,7 @@ These agents, the officers, lookouts and the Researcher also carry
 `query_sql`, one read-only SELECT over the `public_read` views
 (services/sql-service.ts).
 
-Every one of these agents, the Matcher and the Extension Agent's chat
-included, also carries the **issue tools**: `raise_issue`, one channel, in
+Every one of these agents, the Matcher included, also carries the **issue tools**: `raise_issue`, one channel, in
 the agent's own words, for a system failure, a gap in its own tools, or a
 concrete improvement idea arrived at from having just done the work;
 `update_issue`, the reporter's own edit path (re-rate the severity, add
@@ -1249,7 +1248,7 @@ and by meaning and filters on topic, the claim's status, importance, the
 role that noted it and how recently (`GET /findings`: `q`, `tag`,
 `claim_status`, `min_importance`, `agent`, `since`, with `total` and, on
 `facets=true`, the count each choice would leave). The
-extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
+Extension Agent, the MCP surface, the Extractor, the Matcher, the Lookout,
 and the solver do not carry the tool: an outside agent's discovery is a
 contribution, and a Lookout's is a flag for a Steward to judge.
 
@@ -2244,9 +2243,6 @@ keeps its log as a record (`RUN_LOG_MODE=record`) logs the analysis
 pipeline's runs and the on-demand tools' like any others, private to the
 reader (docs/run-log.md, "Work the best-effort log leaves out, and record
 mode does not"); it still writes no sources and no instances from them.
-The older page chat, which installed versions of the extension may still
-call, is told at the head of each conversation which of the two holds, so
-that what it tells a reader about what is kept is true where it runs.
 Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)

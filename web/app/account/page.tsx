@@ -201,12 +201,7 @@ export default async function AccountPage({
     ["Propose a claim (reviewed, then assessed)", caps.claim_proposal],
     ["Order a claim assessment", caps.assessment],
     ["Submit a source for extraction", caps.source_ingest],
-    ...(extensionOn
-      ? [
-          ["Extension page analysis", caps.extension_analysis],
-          ["Extension chat exchange", caps.extension_chat],
-        ]
-      : []),
+    ...(extensionOn ? [["Extension page analysis", caps.extension_analysis]] : []),
     ["API text analysis (match, extract, assess)", caps.text_analysis],
   ].filter((row): row is [string, number] => typeof row[1] === "number");
   const contributionDays = [...new Set(recent.map((r) => dateish(r.submitted_at)))];

@@ -12,7 +12,6 @@ function entitlement(owlBalance: number, creditsEnabled = false) {
       assessment: 1,
       source_ingest: 0.1,
       extension_analysis: 0.1,
-      extension_chat: 0.1,
       text_analysis: 0.1,
     },
     creditsEnabled,
@@ -240,7 +239,7 @@ describe("charge-at-start helpers", () => {
     await expect(
       withAgenticCharge(
         { userId: "user-1", apiKeyId: null, method: "api_key" },
-        "extension_chat",
+        "text_analysis",
         {},
         async () => {
           throw new Error("provider outage");
@@ -250,7 +249,7 @@ describe("charge-at-start helpers", () => {
     expect(mocks.refundOwls).toHaveBeenCalledWith({
       userId: "user-1",
       priceOwls: 0.1,
-      op: "extension_chat",
+      op: "text_analysis",
       claimId: null,
       contributionId: null,
     });
@@ -260,7 +259,7 @@ describe("charge-at-start helpers", () => {
     const { withAgenticCharge } = await loadQuota();
     const run = await withAgenticCharge(
       { userId: "user-1", apiKeyId: null, method: "api_key" },
-      "extension_chat",
+      "text_analysis",
       {},
       async () => "result"
     );
@@ -272,7 +271,7 @@ describe("charge-at-start helpers", () => {
     const { withAgenticCharge } = await loadQuota();
     await withAgenticCharge(
       { userId: "user-1", apiKeyId: null, method: "api_key" },
-      "extension_chat",
+      "text_analysis",
       { claimId: "claim-3" },
       async () => "done"
     );
@@ -280,7 +279,7 @@ describe("charge-at-start helpers", () => {
       expect.objectContaining({
         userId: "user-1",
         settleKey: "entry-1",
-        op: "extension_chat",
+        op: "text_analysis",
         claimId: "claim-3",
       })
     );
@@ -291,7 +290,7 @@ describe("charge-at-start helpers", () => {
     await expect(
       withAgenticCharge(
         { userId: "user-1", apiKeyId: null, method: "api_key" },
-        "extension_chat",
+        "text_analysis",
         {},
         async () => {
           throw new Error("boom");

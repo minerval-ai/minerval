@@ -46,7 +46,6 @@ export type PricedOp =
   | "assessment"
   | "source_ingest"
   | "extension_analysis"
-  | "extension_chat"
   | "text_analysis"
   | "lookout_run"
   | "correspondent_run"
@@ -90,9 +89,8 @@ export function capListOwls(): Record<PricedOp, number> {
     assessment: c.capAssessmentOwls,
     // Ingest a URL: extraction + matching over one source.
     source_ingest: c.capSourceIngestOwls,
-    // Browser-extension page analysis / chat exchange.
+    // Browser-extension page analysis.
     extension_analysis: c.capExtensionAnalysisOwls,
-    extension_chat: c.capExtensionChatOwls,
     // MCP text tools (match_claim, extract_claims, assess_text).
     text_analysis: c.capTextAnalysisOwls,
     // One run of a mandate's lookout: cheap model, brief + graph + web.
