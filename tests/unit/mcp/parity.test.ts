@@ -6,9 +6,12 @@
  * ROUTE_TOOLS in src/mcp/route-tools.ts, or, if MCP genuinely should not
  * have it, to MCP_EXCLUDED_ROUTES with the reason.
  *
- * The app is built twice: with every feature on, which is what the tables
- * decide, and with every feature off (src/features.ts), to check that a
- * feature's routes and tools go together and nothing else goes with them.
+ * The app is built three times: with every feature on, which is what the
+ * tables decide for the public graph; with every feature off
+ * (src/features.ts), to check that a feature's routes and tools go together
+ * and nothing else goes with them; and members-only (src/permissions.ts),
+ * which mounts the routes for permissions, parties and labels that the
+ * public graph does not have.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -42,6 +45,19 @@ beforeAll(async () => {
 afterAll(async () => {
   await app?.close();
 });
+
+/**
+ * The routes only a members-only deployment mounts, by URL: the test's own
+ * statement of them, as FEATURE_ROUTES is of the features' below. The
+ * tables name them, the app built here does not have them, and the last
+ * block builds the app that does.
+ */
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
+const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(key.slice(key.indexOf(" ") + 1));
+const openRouteTools = () =>
+  Object.entries(ROUTE_TOOLS)
+    .filter(([key]) => !membersOnlyRoute(key))
+    .map(([, tool]) => tool);
 
 function excludedByPrefix(key: string): boolean {
   const url = key.slice(key.indexOf(" ") + 1);
@@ -84,8 +100,10 @@ describe("MCP parity with the REST API", () => {
       ...Object.keys(ROUTE_TOOLS),
       ...Object.keys(NATIVE_TOOL_ROUTES),
       ...Object.keys(MCP_EXCLUDED_ROUTES),
-    ].filter((key) => !known.has(key));
+    ].filter((key) => !known.has(key) && !membersOnlyRoute(key));
     expect(stale).toEqual([]);
+    // The public graph mounts none of the members-only routes.
+    expect(keys.filter(membersOnlyRoute)).toEqual([]);
   });
 
   it("gives every exclusion a reason", () => {
@@ -184,10 +202,8 @@ describe("MCP parity with the REST API", () => {
     );
     const native = new Set(Object.values(NATIVE_TOOL_ROUTES).flat());
     for (const name of native) expect(registered).toContain(name);
-    for (const tool of Object.values(ROUTE_TOOLS)) {
-      expect(registered).toContain(tool.name);
-      expect(native.has(tool.name)).toBe(false);
-    }
+    for (const tool of Object.values(ROUTE_TOOLS)) expect(native.has(tool.name)).toBe(false);
+    for (const tool of openRouteTools()) expect(registered).toContain(tool.name);
     const names = Object.values(ROUTE_TOOLS).map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -210,7 +226,7 @@ describe("MCP parity with the REST API", () => {
     const client = new Client({ name: "parity-test", version: "0.0.0" });
     await client.connect(clientSide);
     const { tools } = await client.listTools();
-    for (const tool of Object.values(ROUTE_TOOLS)) {
+    for (const tool of openRouteTools()) {
       const listed = tools.find((t) => t.name === tool.name);
       expect(listed?.inputSchema.type).toBe("object");
       expect(listed?.description).toBeTruthy();
@@ -380,5 +396,118 @@ describe("with every feature switched off", () => {
       { name: "mathematics", on: true },
       { name: "prizes", on: true },
     ]);
+  });
+});
+
+/**
+ * The same app as a members-only deployment (src/permissions.ts). It mounts
+ * everything the public graph does and the routes for permissions, parties
+ * and labels besides, each decided in the tables. A tool whose route asks
+ * for a permission is offered only to a caller who holds it.
+ */
+describe("in a members-only deployment", () => {
+  const caller = (permissions: string[]) => ({
+    method: "api_key" as const,
+    userId: "u",
+    apiKeyId: "k",
+    contributorExternalId: "x:u",
+    isService: false,
+    isSession: false,
+    standing: {
+      member: true,
+      grants: [
+        { permission: "read" as const, label: "internal", partyId: null, group: null },
+        ...permissions.map((permission) => ({
+          permission: permission as "direct",
+          label: null,
+          partyId: null,
+          group: null,
+        })),
+      ],
+      clearance: ["internal", "public"],
+      rawSourceLabels: ["public"],
+      groups: [],
+    },
+  });
+
+  let membersApp: FastifyInstance;
+  let membersKeys: string[];
+  let toolsOf: (permissions: string[]) => string[];
+  let saved: Record<string, string | undefined>;
+
+  beforeAll(async () => {
+    saved = { READS: process.env.READS, API_KEYS: process.env.API_KEYS };
+    process.env.READS = "members";
+    process.env.API_KEYS = "parity-members-key";
+    vi.resetModules();
+    const { buildApp } = await import("../../../src/server/app.js");
+    const mcp = await import("../../../src/mcp/server.js");
+    membersApp = await buildApp();
+    await membersApp.ready();
+    membersKeys = membersApp.routeCatalog.map((r) => routeKey(r.method, r.url));
+    toolsOf = (permissions) =>
+      Object.keys(
+        (
+          mcp.buildMcpServer({ auth: caller(permissions), requestId: "r", app: membersApp }) as unknown as {
+            _registeredTools: Record<string, unknown>;
+          }
+        )._registeredTools
+      );
+  });
+
+  afterAll(async () => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await membersApp?.close();
+  });
+
+  it("mounts every route the public graph does, and its own besides", () => {
+    const own = membersKeys.filter(membersOnlyRoute);
+    expect(own.length).toBeGreaterThan(10);
+    expect(membersKeys.filter((key) => !membersOnlyRoute(key)).sort()).toEqual([...keys].sort());
+  });
+
+  it("decides each of its own routes once, and the tables name no other", () => {
+    const own = membersKeys.filter(membersOnlyRoute);
+    for (const key of own) {
+      const decisions = [key in ROUTE_TOOLS, key in NATIVE_TOOL_ROUTES, key in MCP_EXCLUDED_ROUTES];
+      expect(decisions.filter(Boolean).length, key).toBe(1);
+    }
+    const named = [
+      ...Object.keys(ROUTE_TOOLS),
+      ...Object.keys(NATIVE_TOOL_ROUTES),
+      ...Object.keys(MCP_EXCLUDED_ROUTES),
+    ].filter(membersOnlyRoute);
+    expect(named.sort()).toEqual([...own].sort());
+  });
+
+  it("offers a caller who holds every permission every tool", () => {
+    const tools = toolsOf(["direct", "fund", "administer"]);
+    for (const tool of Object.values(ROUTE_TOOLS)) expect(tools, tool.name).toContain(tool.name);
+    expect(new Set(tools).size).toBe(tools.length);
+  });
+
+  it("leaves out the tools of a permission the caller lacks, and nothing else", () => {
+    const all = toolsOf(["direct", "fund", "administer"]);
+    const needing = (permission: string) =>
+      membersApp.routeCatalog
+        .filter((r) => r.permissions.includes(permission as "direct"))
+        .flatMap((r) => {
+          const tool = ROUTE_TOOLS[routeKey(r.method, r.url)];
+          return tool ? [tool.name] : [];
+        });
+    expect(needing("fund").length).toBeGreaterThan(5);
+    expect(needing("direct").length).toBeGreaterThan(3);
+    expect(needing("administer").length).toBeGreaterThan(3);
+
+    const reader = toolsOf([]);
+    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer")]);
+    expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());
+
+    const funder = toolsOf(["fund"]);
+    for (const name of needing("fund")) expect(funder, name).toContain(name);
+    for (const name of needing("direct")) expect(funder, name).not.toContain(name);
   });
 });

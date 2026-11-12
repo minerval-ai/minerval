@@ -103,6 +103,15 @@ export interface UsageContext {
    * any run, which is all the public graph has.
    */
   label?: string;
+  /**
+   * The labels the enclosing request may read (src/permissions.ts): set once
+   * per request in a members-only deployment, from the grants that reach
+   * the account (server/plugins/members-only.ts), and read with
+   * currentClearance below. Absent means `public` alone. It is a request's,
+   * never a run's: runAtLabel clears it, so work a request starts does not
+   * read with the clearance of whoever asked for it.
+   */
+  clearance?: readonly string[];
 }
 
 export interface PassBudget {
@@ -151,6 +160,19 @@ export function currentLabel(): string {
   return getUsageContext().label ?? PUBLIC_LABEL;
 }
 
+const PUBLIC_CLEARANCE: readonly string[] = Object.freeze([PUBLIC_LABEL]);
+
+/**
+ * The labels a read made now may see: the enclosing request's clearance,
+ * and `public` alone where none was set. So a read outside any request, a
+ * read in a run, and a read on a path that never resolved a standing all
+ * see what anyone may see and nothing more: a missing clearance fails
+ * closed. Nothing holds a read to this yet (src/permissions.ts).
+ */
+export function currentClearance(): readonly string[] {
+  return getUsageContext().clearance ?? PUBLIC_CLEARANCE;
+}
+
 /**
  * Run `fn` at the label of the work that started it. Every worker and
  * executor calls this with the label of the row it picked up (a job, a
@@ -164,7 +186,10 @@ export function currentLabel(): string {
  */
 export function runAtLabel<T>(label: string | null | undefined, work: string, fn: () => T): T {
   if (typeof label !== "string" || label.length === 0) throw new MissingLabelError(work);
-  return runWithUsageContext({ label }, fn);
+  // A run is not a request: where the in-process runner picks work up inside
+  // the request that enqueued it, the request's clearance must not carry on
+  // into the run. What a run may read follows from its own label.
+  return runWithUsageContext({ label, clearance: undefined }, fn);
 }
 
 export function runWithUsageContext<T>(

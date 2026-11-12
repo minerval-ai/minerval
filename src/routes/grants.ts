@@ -26,6 +26,7 @@ import {
 import { topUpBudgetJob } from "../services/budget-job-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 import { isDirectService } from "../server/plugins/auth.js";
+import { requirePermission } from "../server/require-permission.js";
 
 export async function grantRoutes(app: FastifyInstance): Promise<void> {
   app.post<{
@@ -54,7 +55,14 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    preHandler: [app.authenticate, app.requireUser],
+    // Creating a mandate this way both opens it and funds it, so in a
+    // members-only deployment it takes both permissions.
+    preHandler: [
+      app.authenticate,
+      app.requireUser,
+      requirePermission("direct"),
+      requirePermission("fund"),
+    ],
     handler: async (request, reply) => {
       if (!isDirectService(request.auth)) {
         return reply.code(403).send({
@@ -131,7 +139,7 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
         properties: { id: { type: "string", format: "uuid" } },
       },
     },
-    preHandler: [app.authenticate, app.requireUser],
+    preHandler: [app.authenticate, app.requireUser, requirePermission("direct")],
     handler: async (request, reply) => {
       const result = await approveGrantPlan({
         grantId: request.params.id,
@@ -160,7 +168,7 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
         properties: { owls: { type: "number", exclusiveMinimum: 0 } },
       },
     },
-    preHandler: [app.authenticate, app.requireUser],
+    preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
     handler: async (request, reply) => {
       const grant = await getGrant(request.params.id);
       if (!grant || grant.funderUserId !== request.auth!.userId!) {

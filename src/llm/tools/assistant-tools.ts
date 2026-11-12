@@ -22,6 +22,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestAuth } from "../../server/plugins/auth.js";
 import { buildMcpServer } from "../../mcp/server.js";
+import { withheldRouteTools } from "../../mcp/route-tools.js";
+import { membersOnly, type PermissionName } from "../../permissions.js";
+import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
 import { runAsAssistant } from "../assistant-acting.js";
 
@@ -188,6 +191,12 @@ export interface AccountTools {
   definitions: Tool[];
   /** Tools whose MCP annotation says they only read. */
   readOnly: Set<string>;
+  /**
+   * Tools left out because the user lacks the permission each needs, in a
+   * members-only deployment (mcp/route-tools.ts). The run is told of them
+   * (llm/permissions-note.ts). Absent or empty when nothing is withheld.
+   */
+  withheld?: Array<{ tool: string; permission: PermissionName }>;
   call(name: string, input: Record<string, unknown>): Promise<AccountToolResult>;
   close(): Promise<void>;
 }
@@ -215,6 +224,13 @@ export async function openAccountTools(
   auth: RequestAuth,
   requestId: string
 ): Promise<AccountTools> {
+  // In a members-only deployment the tools depend on what the user holds,
+  // so their standing is resolved here, once for the run, and carried by
+  // every call the run makes.
+  if (membersOnly() && auth.userId && !auth.standing) {
+    auth = { ...auth, standing: await resolveStanding(auth.userId) };
+  }
+  const withheld = withheldRouteTools(app, auth);
   const server = buildMcpServer({ auth, requestId, app });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -234,6 +250,7 @@ export async function openAccountTools(
   return {
     definitions,
     readOnly,
+    withheld,
     async call(name, input) {
       const result = await runAsAssistant(() => client.callTool({ name, arguments: input }));
       const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
