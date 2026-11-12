@@ -86,6 +86,7 @@ import {
 import { ownershipRefusal } from "./steward-ownership.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
+import { malformedIdRefusal, writeIdCandidates } from "./id-repair.js";
 import {
   executeStewardStructureTool,
   getStewardStructureToolDefinitions,
@@ -1465,10 +1466,19 @@ export async function executeStewardTool(
           if (unknown.length > 0) {
             return JSON.stringify({
               success: false,
+              code: "CLAIM_NOT_FOUND",
               message:
                 `These linked claims do not exist: ${unknown.join(", ")}. ` +
                 `Link only real claims (ids from get_claim or from ` +
-                `this run), or drop the link and name the claim in plain text.`,
+                `this run), or drop the link and name the claim in plain text. ` +
+                `Nothing was written, and no link is corrected for you: ` +
+                `\`unresolved\` lists, for each, the nearest ids this run has seen.`,
+              unresolved: await Promise.all(
+                unknown.map(async (id) => {
+                  const { code: _code, ...candidates } = await writeIdCandidates(id);
+                  return candidates;
+                })
+              ),
             });
           }
         }
@@ -1631,6 +1641,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Claim not found: ${claimId}`,
+            ...(await writeIdCandidates(claimId)),
           });
         }
         // A figure is an instance of its quantity, and a question is asked or
@@ -2270,6 +2281,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Argument not found: ${argumentId}`,
+            ...(await writeIdCandidates(argumentId, "argument")),
           });
         }
         if (argument.retiredAt) {
@@ -2381,6 +2393,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Argument not found: ${argumentId}`,
+            ...(await writeIdCandidates(argumentId, "argument")),
           });
         }
         if (argument.retiredAt) {
@@ -2532,6 +2545,7 @@ export async function executeStewardTool(
             return JSON.stringify({
               success: false,
               message: `Argument not found: ${argumentId}`,
+              ...(await writeIdCandidates(argumentId, "argument")),
             });
           }
           if (argument.claimId !== parentId) {
@@ -2556,6 +2570,7 @@ export async function executeStewardTool(
             message:
               `Claim not found: ${childId}. Link only real claims (ids from ` +
               `match_claim, get_claim, or add_decomposition_edge).`,
+            ...(await writeIdCandidates(childId)),
           });
         }
 
@@ -2630,6 +2645,7 @@ export async function executeStewardTool(
             message:
               `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
               `match_claim or get_claim).`,
+            ...(await writeIdCandidates(otherClaimId)),
           });
         }
         const { linked, linkId } = await linkClaims({
@@ -2672,6 +2688,7 @@ export async function executeStewardTool(
             return JSON.stringify({
               success: false,
               message: `Argument not found: ${argumentId}`,
+              ...(await writeIdCandidates(argumentId, "argument")),
             });
           }
           if (argument.claimId !== parentId) {
@@ -2986,6 +3003,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Claim not found: ${claimId}. Pass the id of the node you steward.`,
+            ...(await writeIdCandidates(claimId)),
           });
         }
         const childKind = ((child.kind as NodeKind | undefined) ?? "claim") as NodeKind;
@@ -3163,6 +3181,7 @@ export async function executeStewardTool(
               `Claim not found: ${parentId}. Propose edges only into real claims ` +
               `(ids from match_claim or get_claim); if the proposition ` +
               `does not exist, mint it with add_parent_claim.`,
+            ...(await writeIdCandidates(parentId)),
           });
         }
         const parentKind = ((parent.kind as NodeKind | undefined) ?? "claim") as NodeKind;
@@ -3285,6 +3304,10 @@ export async function executeStewardTool(
       }
     }
   } catch (err) {
+    // A malformed uuid reaches the database as a syntax error (22P02).
+    // Nothing was written; say which id is malformed and offer the ids the
+    // run has seen nearest it, rather than the bare database message.
+    if ((err as { code?: string } | null)?.code === "22P02") return malformedIdRefusal(input);
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }

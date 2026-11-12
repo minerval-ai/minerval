@@ -44,6 +44,7 @@ import { getUsageContext, withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
+import { unresolvedNodeIds } from "../tools/id-repair.js";
 import {
   requestCuration,
   isCurationDefect,
@@ -97,6 +98,21 @@ export interface ConsistencyCheckerResult {
 const MAX_ITERATIONS = RUN_TURN_GUARD;
 /** Claims per list_partition_claims page. */
 const PAGE = 15;
+
+/**
+ * A flag refused for an id that names no node, with the nearest ids this
+ * sweep has seen for each such id (id-repair.ts). A flag is a write, so a
+ * mistyped id is never corrected: the checker picks and calls again.
+ */
+async function withUnresolvedIds<T extends { ok: false; code: string }>(
+  refused: T,
+  toolInput: Record<string, unknown>
+): Promise<T & { unresolved?: Awaited<ReturnType<typeof unresolvedNodeIds>> }> {
+  if (refused.code !== "CLAIM" && refused.code !== "CLAIMS") return refused;
+  const ids = [toolInput.primary_claim_id, ...(Array.isArray(toolInput.claim_ids) ? toolInput.claim_ids : [])];
+  const unresolved = await unresolvedNodeIds(ids);
+  return unresolved.length > 0 ? { ...refused, unresolved } : refused;
+}
 
 export function runConsistencyChecker(
   input: Parameters<typeof runConsistencyCheckerImpl>[0],
@@ -425,7 +441,7 @@ async function runConsistencyCheckerImpl(input: {
             claimIds: proposal.claim_ids,
             rationale: proposal.rationale,
           });
-          if (!checked.ok) return JSON.stringify(checked);
+          if (!checked.ok) return JSON.stringify(await withUnresolvedIds(checked, toolInput));
           if (proposed.some((p) => p.primary_claim_id === proposal.primary_claim_id)) {
             repeats++;
             return JSON.stringify({ ok: true, duplicate: true, note: "Already flagged this sweep." });
@@ -445,7 +461,7 @@ async function runConsistencyCheckerImpl(input: {
         });
         if (res.ok && res.duplicate) repeats++;
         else if (res.ok) flagsRaised++;
-        return JSON.stringify(res);
+        return JSON.stringify(res.ok ? res : await withUnresolvedIds(res, toolInput));
       }
       if (name === "escalate_to_curator") {
         const claimId = String(toolInput.claim_id ?? "").trim();
