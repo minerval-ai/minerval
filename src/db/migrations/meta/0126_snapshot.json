@@ -1,5 +1,5 @@
 {
-  "id": "07d9356b-4654-4179-ae82-884a3af385eb",
+  "id": "57e691c1-e4a8-48f1-88fe-4cc69368562e",
   "prevId": "65106fbf-023c-452b-a217-bf39ae0521f0",
   "version": "7",
   "dialect": "postgresql",
@@ -581,7 +581,7 @@
           "name": "actor_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "detail": {
           "name": "detail",
@@ -632,12 +632,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "ck_administrative_events_action": {
-          "name": "ck_administrative_events_action",
-          "value": "\"administrative_events\".\"action\" IN ('label_defined', 'label_read_added', 'label_read_removed', 'party_added', 'source_party_set')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agent_finding_sightings": {

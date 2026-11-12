@@ -14,10 +14,9 @@ CREATE TABLE "account_groups" (
 CREATE TABLE "administrative_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"action" text NOT NULL,
-	"actor_id" uuid NOT NULL,
+	"actor_id" uuid,
 	"detail" jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "ck_administrative_events_action" CHECK ("administrative_events"."action" IN ('label_defined', 'label_read_added', 'label_read_removed', 'party_added', 'source_party_set'))
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "parties" (

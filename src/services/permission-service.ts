@@ -527,15 +527,16 @@ export async function listAccounts(input: { q?: string; limit?: number } = {}): 
  * each other, and label and party names can say who they are. That an act
  * happened, who did it, to whom, and when, is never withheld.
  */
+/** The administrative acts logged besides grants (administrative_events.action). */
+export type AdministrativeAction =
+  | "label_defined"
+  | "label_read_added"
+  | "label_read_removed"
+  | "party_added"
+  | "source_party_set";
+
 export interface LogEntry {
-  event:
-    | "granted"
-    | "removed"
-    | "label_defined"
-    | "label_read_added"
-    | "label_read_removed"
-    | "party_added"
-    | "source_party_set";
+  event: "granted" | "removed" | AdministrativeAction;
   at: string;
   /** Who did it; null for a grant no administrator made (see `via`). */
   by: string | null;
@@ -612,7 +613,7 @@ export async function permissionLog(
               NULL, NULL, NULL, NULL, NULL,
               e.detail, e.id::text
          FROM administrative_events e
-         JOIN contributors actor ON actor.id = e.actor_id
+         LEFT JOIN contributors actor ON actor.id = e.actor_id
      ) log
      WHERE ($2::timestamptz IS NULL OR log.at < $2::timestamptz)
      ORDER BY log.at DESC, log.tiebreak DESC
@@ -647,7 +648,7 @@ export async function permissionLog(
 /** Write one administrative event inside the transaction that makes the change. */
 export async function logAdministrativeEvent(
   tx: TxQuery,
-  action: Exclude<LogEntry["event"], "granted" | "removed">,
+  action: AdministrativeAction,
   actorId: string,
   detail: Record<string, string | null>
 ): Promise<void> {

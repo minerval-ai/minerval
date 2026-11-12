@@ -135,7 +135,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account && user) {
         const externalId = `${account.provider}:${account.providerAccountId}`;
         token.externalId = externalId;
-        token.signedInAt = Date.now();
+        // When this sign-in happened, for the fixed age below.
+        if (membersOnly()) token.signedInAt = Date.now();
         try {
           await provisionUser({
             externalId,

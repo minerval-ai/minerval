@@ -271,27 +271,25 @@ export const accountGroups = pgTable(
 // adding a party, and setting whose material a source is. Each writes one
 // row here in the same transaction as the change, with what was changed in
 // `detail`.
+//
+// `action` is a name the code gives the act ('label_defined',
+// 'label_read_added', 'label_read_removed', 'party_added',
+// 'source_party_set'). It is not held to a list here, so that a later kind
+// of administrative act is a new name and not a migration. actor_id is the
+// administrator who did it; null only for a change no person made.
 // ---------------------------------------------------------------------------
 export const administrativeEvents = pgTable(
   "administrative_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     action: text("action").notNull(),
-    actorId: uuid("actor_id")
-      .notNull()
-      .references((): AnyPgColumn => contributors.id),
+    actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
     detail: jsonb("detail").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [
-    check(
-      "ck_administrative_events_action",
-      sql`${table.action} IN ('label_defined', 'label_read_added', 'label_read_removed', 'party_added', 'source_party_set')`
-    ),
-    index("idx_administrative_events_time").on(table.createdAt),
-  ]
+  (table) => [index("idx_administrative_events_time").on(table.createdAt)]
 );
 
 // ---------------------------------------------------------------------------
