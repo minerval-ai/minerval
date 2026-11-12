@@ -201,9 +201,9 @@ export const MIRROR_REFUSAL_CODES = [
   "chain_broken",
   /** A mirror that has applied nothing was given a batch that is not the start of a snapshot. */
   "not_a_snapshot",
-  /** Cut from a newer schema than this deployment's code. */
+  /** Cut from a newer schema in which the mirrored tables have a different shape: this deployment must upgrade. */
   "schema_newer",
-  /** Cut when the mirrored tables had a different shape. */
+  /** Cut from the same or an older schema, when the mirrored tables had a different shape. */
   "shape_differs",
   /** Its vectors were made with a different embedding model. */
   "embedding_differs",

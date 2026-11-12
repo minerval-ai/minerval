@@ -19,9 +19,15 @@
  *    hash and changes nothing. The one way past a batch is the start of a
  *    later snapshot, which holds every public row and so needs nothing
  *    before it;
- *  - it was cut from a schema no newer than this deployment's code, with
- *    the mirrored tables in exactly the shape this code expects, and with
- *    vectors from this deployment's embedding model.
+ *  - the mirrored tables had, where it was cut, exactly the shape this
+ *    deployment's code writes (replicatedShape in mirror-manifest.ts), and
+ *    its vectors come from this deployment's embedding model. The schema
+ *    migration it was cut from is recorded and is not itself a reason to
+ *    refuse: the public graph takes several migrations a day and few of
+ *    them touch a mirrored table, so a mirror that stopped at each one
+ *    would be stopped most of the time. What decides is whether the rows
+ *    fit, and the shape says that. A batch whose shape differs is refused,
+ *    with a message that says to upgrade when the batch is the newer side.
  *
  * A batch is applied in one transaction. The applier writes the replicated
  * columns and nothing else (mirror-manifest.ts): a claim's queue state and
@@ -140,6 +146,8 @@ export interface ApplyOptions {
   receivedFrom?: string;
   /** This deployment's schema migration; read from the journal when absent. */
   migration?: MigrationHead;
+  /** The shape of the mirrored tables as this deployment's code writes them; computed when absent. */
+  shape?: string;
 }
 
 /** The keys MIRROR_FEED_PUBLIC_KEYS names. */
@@ -439,21 +447,28 @@ async function applyVerified(tx: MirrorQuery, batch: MirrorBatch, options: Apply
     );
   }
 
+  // The migration a batch was cut from does not decide whether it is
+  // applied: the shape of the mirrored tables does. A batch from a newer
+  // migration with the same shape fits these tables row for row, and is
+  // applied. The migration number says which side has to move when the
+  // shapes differ.
   const mine = options.migration ?? migrationHead();
-  if (batch.migration.number > mine.number) {
-    throw refuse(
-      "schema_newer",
-      `it was cut from schema migration ${batch.migration.number} (${batch.migration.tag}), and this deployment's code is at ` +
-        `migration ${mine.number} (${mine.tag}). Upgrade this deployment to a release that includes migration ` +
-        `${batch.migration.number}, then apply the batch again. The mirror stays ${head ? `at batch ${headSequence}` : "empty"} until then.`
-    );
-  }
-  if (batch.shape !== replicatedShape()) {
+  if (batch.shape !== (options.shape ?? replicatedShape())) {
+    if (batch.migration.number > mine.number) {
+      throw refuse(
+        "schema_newer",
+        `it was cut from schema migration ${batch.migration.number} (${batch.migration.tag}), and this deployment's code is at ` +
+          `migration ${mine.number} (${mine.tag}). Between the two the mirrored tables changed (their columns, or what a ` +
+          `column's values mean), so its rows do not fit here. Upgrade this deployment to a release that includes migration ` +
+          `${batch.migration.number}, then apply the batch again. The mirror stays ${head ? `at batch ${headSequence}` : "empty"} until then.`
+      );
+    }
     throw refuse(
       "shape_differs",
       `it was cut at schema migration ${batch.migration.number} (${batch.migration.tag}), when the mirrored tables had a ` +
-        `different set of columns from the one this deployment's code (migration ${mine.number}) writes, so its rows do not ` +
-        `fit. The publisher cuts a full snapshot once it runs the same schema; the mirror goes on from that snapshot.`
+        `different shape (their columns, or what a column's values mean) from the one this deployment's code (migration ` +
+        `${mine.number}) writes, so its rows do not fit. The publisher cuts a full snapshot once it runs the same schema; ` +
+        `the mirror goes on from that snapshot.`
     );
   }
   if (batch.embedding.model !== EMBEDDING_MODEL || batch.embedding.dimensions !== EMBEDDING_DIMENSIONS) {
@@ -800,9 +815,10 @@ export interface SyncResult {
  * Bring the mirror up to the source: apply the next batch, and the next,
  * until the source has no more or one is refused. A mirror that has applied
  * nothing starts at the source's latest snapshot. A mirror whose next batch
- * was cut in an older shape of the tables than its code expects cannot
- * apply it, and goes on from the latest snapshot instead when there is a
- * later one.
+ * was cut in an older shape of the tables than its code writes cannot apply
+ * it, and goes on from the latest snapshot instead when there is a later
+ * one. (A batch in a newer shape is not passed over this way: every later
+ * snapshot is in that shape too, and the deployment has to upgrade.)
  */
 export async function syncMirror(source: BatchSource, options: ApplyOptions & { maxBatches?: number } = {}): Promise<SyncResult> {
   const db = options.db ?? appDb;

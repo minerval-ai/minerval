@@ -108,15 +108,19 @@ A batch is applied only when all of this holds. Otherwise nothing of it is writt
 
 1. Its hash is the hash of its contents, and its signature verifies under a key in `MIRROR_FEED_PUBLIC_KEYS`. The key a batch carries is never trusted.
 2. It is the next batch of the feed this mirror follows, naming the last applied batch's hash. A batch already applied is recognized by its hash and changes nothing. The one way past a batch is the first batch of a later snapshot.
-3. It was cut from a schema no newer than this deployment's code, with the mirrored tables in exactly this code's shape, and with this deployment's embedding model.
+3. The mirrored tables had, where it was cut, exactly the shape this deployment's code writes, and its vectors come from this deployment's embedding model.
 
 Each batch is applied in one transaction. The applier writes replicated columns only, and only rows whose origin is `mirror`. A row in a batch with the id of a local row stops the batch.
 
 ### Schema compatibility
 
-- **Newer than this deployment's code: refused**, with a message that says to upgrade. The mirror stays where it is until then.
-- **Same or older, same shape: applied.** The shape hash covers each mirrored table's columns, types and nullability, and a version raised by hand when a migration changes what a column's values mean. Equal shapes mean every row fits the tables it is written to.
-- **Older, different shape: refused.** When the publisher upgrades it cuts a snapshot in the new shape, and the mirror goes on from there.
+A batch states the migration it was cut from and the shape of the mirrored tables there. The shape decides; the migration number is recorded with the applied batch and says which side has to move when the shapes differ. The public graph takes several migrations a day and few of them touch a mirrored table, so a mirror that stopped at every one would be stopped most of the time.
+
+- **Same shape: applied**, whether the batch's migration is older than this deployment's code, the same, or newer. The shape hash covers each mirrored table's columns, types and nullability, and a version raised by hand when a migration changes what a column's values mean (`REPLICATED_MEANING_VERSION`). Equal shapes mean every row fits the tables it is written to.
+- **Different shape, batch from a newer migration: refused**, with a message that says to upgrade to a release that includes that migration. The mirror stays where it is until then.
+- **Different shape, batch from the same or an older migration: refused.** When the publisher upgrades it cuts a snapshot in the new shape, and the mirror goes on from there.
+
+A migration that rewrites the values of a mirrored column without changing any column must raise `REPLICATED_MEANING_VERSION` in the same change. Nothing else can tell an older deployment that such a batch no longer means what it reads.
 
 ### Deletions, retractions and merges
 

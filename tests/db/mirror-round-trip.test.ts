@@ -736,26 +736,58 @@ describe("changes on the public graph, with local rows beside the mirror", () =>
     expect((await mirrorStatus()).sequence).toBe(head);
   });
 
-  it("refuses a batch cut from a newer schema, and says to upgrade", async () => {
+  it("refuses a batch whose tables have a different shape, and says to upgrade when the batch is the newer side", async () => {
     const mine = migrationHead();
-    const err = await refusal(async () =>
-      apply(await getBatchText(changes, pub), { migration: { number: mine.number - 1, tag: "0000_older" } })
+    const mirrorBefore = await replicated(priv, "");
+    const otherShape = "e".repeat(64);
+
+    // The batch comes from a newer migration than this deployment's code,
+    // and the mirrored tables changed in between: this side has to upgrade.
+    const newer = await refusal(async () =>
+      apply(await getBatchText(changes, pub), { migration: { number: mine.number - 1, tag: "0000_older" }, shape: otherShape })
     );
-    expect(err.code).toBe("schema_newer");
-    expect(err.message).toBe(
+    expect(newer.code).toBe("schema_newer");
+    expect(newer.message).toBe(
       `Batch ${changes} was not applied: it was cut from schema migration ${mine.number} (${mine.tag}), and this ` +
-        `deployment's code is at migration ${mine.number - 1} (0000_older). Upgrade this deployment to a release that ` +
-        `includes migration ${mine.number}, then apply the batch again. The mirror stays at batch ${head} until then.`
+        `deployment's code is at migration ${mine.number - 1} (0000_older). Between the two the mirrored tables changed ` +
+        `(their columns, or what a column's values mean), so its rows do not fit here. Upgrade this deployment to a ` +
+        `release that includes migration ${mine.number}, then apply the batch again. The mirror stays at batch ${head} until then.`
     );
-    // A deployment ahead of the publisher applies it: the tables have the same shape.
+
+    // The batch comes from an older migration, or the same one: upgrading
+    // here would not help, and the publisher's next snapshot is the way on.
+    for (const ahead of [0, 3]) {
+      const older = await refusal(async () =>
+        apply(await getBatchText(changes, pub), { migration: { number: mine.number + ahead, tag: "9999_here" }, shape: otherShape })
+      );
+      expect(older.code).toBe("shape_differs");
+      expect(older.message).toBe(
+        `Batch ${changes} was not applied: it was cut at schema migration ${mine.number} (${mine.tag}), when the mirrored ` +
+          `tables had a different shape (their columns, or what a column's values mean) from the one this deployment's code ` +
+          `(migration ${mine.number + ahead}) writes, so its rows do not fit. The publisher cuts a full snapshot once it runs ` +
+          `the same schema; the mirror goes on from that snapshot.`
+      );
+    }
+
+    expect(await replicated(priv, "")).toEqual(mirrorBefore);
     expect((await mirrorStatus()).sequence).toBe(head);
   });
 
-  it("applies the changes, and the mirror again holds the public graph row for row", async () => {
+  it("applies a batch cut from a newer migration when the mirrored tables have the same shape", async () => {
+    // The publisher is several migrations ahead of this deployment's code,
+    // none of which touched a mirrored table: the rows fit, so they are applied.
+    const mine = migrationHead();
     const result = await apply(await getBatchText(changes, pub), {
-      migration: { number: migrationHead().number + 3, tag: "9999_ahead" },
+      migration: { number: mine.number - 5, tag: "0000_behind" },
     });
     expect(result.status).toBe("applied");
+    // The migration the batch was cut from is recorded with it.
+    const [recorded] = await rawQuery<{ migration_number: number }>(
+      `SELECT migration_number FROM mirror_applied_batches WHERE sequence = $1`,
+      [changes]
+    );
+    expect(recorded!.migration_number).toBe(mine.number);
+    expect((await mirrorStatus()).last_refusal).toBeNull();
     expect(result.counts.claims).toEqual({ inserted: 0, updated: 2, removed: 1, kept: 1 });
     expect(result.counts.claim_relationships).toMatchObject({ inserted: 1, removed: 3 });
     // Which rows moved, for whatever will act on a mirror update.
@@ -767,7 +799,8 @@ describe("changes on the public graph, with local rows beside the mirror", () =>
     expect(result.changed.claims!.written).toHaveLength(2);
     expect(result.changed.assessments!.written).toHaveLength(2);
     expect(result.changed.sources).toEqual({ written: [], removed: [id.page], kept: [] });
-    await apply(await getBatchText(later, pub));
+    // And a deployment ahead of the publisher applies the next one the same way.
+    await apply(await getBatchText(later, pub), { migration: { number: mine.number + 3, tag: "9999_ahead" } });
     // The one row the mirror holds that the public graph no longer does: the kept claim.
     await expectMirrorEqualsPublic({ extraOnMirror: { claims: [id.doomedReferenced] } });
   });
