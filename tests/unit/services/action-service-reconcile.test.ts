@@ -166,8 +166,11 @@ describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
     expect(due.q).toContain("g.status = 'active'");
     const rows = inserts("lookout_run");
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000]);
+    // The last parameter is the row's label: the sweep runs outside any run, so public.
+    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "public"]);
     expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
+    // A closed row opened again takes the label of the work that reopens it.
+    expect(rows[0]!.q).toContain("sensitivity_label = EXCLUDED.sensitivity_label");
   });
 
   it("opens nothing when no lookout is due", async () => {
@@ -186,7 +189,7 @@ describe("formalize rows from plan items", () => {
     await reconcileActions();
     const rows = inserts("formalize");
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.params).toEqual([FORMALIZE_GROUP(CLAIM_A), CLAIM_A, 3_000_000]);
+    expect(rows[0]!.params).toEqual([FORMALIZE_GROUP(CLAIM_A), CLAIM_A, 3_000_000, "public"]);
     // Opened only while no published statement exists, and never a second
     // variant.
     expect(rows[0]!.q).toContain("NOT EXISTS (SELECT 1 FROM claim_formalizations f");
@@ -222,6 +225,7 @@ describe("attempt_proof rows from plan items", () => {
       "3",
       60_000_000,
       CLAIM_B,
+      "public",
     ]);
     expect(rows[1]!.params).toEqual([
       ATTEMPT_GROUP(FORMALIZATION_B, 3),
@@ -230,6 +234,7 @@ describe("attempt_proof rows from plan items", () => {
       "3",
       150_000_000,
       CLAIM_B,
+      "public",
     ]);
     expect(rows[0]!.q).toContain("ON CONFLICT (exclusion_group, variant) DO NOTHING");
   });

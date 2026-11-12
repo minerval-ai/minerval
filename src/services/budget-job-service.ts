@@ -21,6 +21,7 @@ import {
 } from "./owl-ledger-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /**
  * Escrow owls into a job behind the balance guard: the hold is written only
@@ -85,6 +86,8 @@ export async function createDeepDecompositionJob(input: {
       claimId: input.claimId,
       budgetMicroUsd: 0, // set by the hold below, so a failed hold leaves 0
       status: "running",
+      // The passes the job pays for run at this (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 

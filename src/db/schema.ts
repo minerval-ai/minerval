@@ -70,7 +70,11 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // The public graph has one label, 'public' (seeded by the migration that
 // created the table), and no pairs. The rows that carry a label hold it in
 // sensitivity_label, stamped from the run or request that writes them
-// (currentLabel in llm/usage-context.ts); nothing reads the column yet.
+// (currentLabel in llm/usage-context.ts). Two kinds of row carry one:
+// what a run writes (judgments, sources, the run itself), and work waiting
+// to be done or resumed (a job, a ledger action, an order, a paused
+// session), which hands its label to the run that later takes it up
+// (runAtLabel). No reader is held to a label yet.
 // ---------------------------------------------------------------------------
 export const labels = pgTable("labels", {
   name: text("name").primaryKey(),
@@ -1589,6 +1593,10 @@ export const jobs = pgTable(
     apiKeyId: uuid("api_key_id").references(() => apiKeys.id, {
       onDelete: "set null",
     }),
+    // The label of the work that made this job (src/labels.ts). The worker
+    // that picks the job up runs at it, so what it extracts and enqueues
+    // keeps the label the request or run had.
+    sensitivityLabel: sensitivityLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2192,6 +2200,9 @@ export const assessmentOrders = pgTable(
     // pending | running | done | cancelled | failed
     status: text("status").notNull().default("pending"),
     error: text("error"),
+    // The label of the request or run that placed the order (src/labels.ts);
+    // the Steward pass the order buys runs at it.
+    sensitivityLabel: sensitivityLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2256,6 +2267,13 @@ export const actions = pgTable(
     // subtract ledger-consumed metering from a job's llm_usage total so a
     // self-funded run is never counted twice.
     meteredJobId: uuid("metered_job_id"),
+    // The label of the work that opened this row (src/labels.ts), which the
+    // run that executes it works at. Not `label`, which is the display name
+    // above. A row is reused for the next piece of work on its group: while
+    // it is open or running it keeps its label, and a finished row that is
+    // opened again takes the label of the work that reopens it
+    // (LABEL_ON_REOPEN_SQL in services/action-service.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2436,6 +2454,9 @@ export const budgetJobs = pgTable(
     // page renders ("assessed 7 of ~12, budget exhausted at claim X").
     checkpoint: jsonb("checkpoint"),
     error: text("error"),
+    // The label of the request or run that funded this job (src/labels.ts).
+    // The passes a deep-decomposition job pays for run at it.
+    sensitivityLabel: sensitivityLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2521,12 +2542,13 @@ export const grants = pgTable(
     dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
       .notNull()
       .default(0),
-    // The mandate's own allocation rules, owned and amended by ITS
-    // Grantmaker (update_allocation_policy), never edited directly in
-    // code: value-formula knobs, cost priors, tier threshold, cadence.
-    // Null = inherit the shared defaults (config). The General mandate's
-    // policy governs the platform's own lane — when we learn something
-    // about allocation, we ask its Grantmaker to change the formula.
+    // The mandate's own figures for pricing and pacing work: cost priors,
+    // the re-check cadence, attempt bounds, sweep and scan settings
+    // (services/allocation-policy-service.ts). Null = the shared defaults.
+    // The General mandate's row governs the platform's own work. No agent
+    // writes this column; scripts/seed-platform-mandates.ts is the one
+    // writer. A row from before #855, when a Grantmaker tool set it, may
+    // hold keys since removed, which the loader ignores.
     allocationPolicy: jsonb("allocation_policy"),
     // The Grantmaker's own working memory: a document it reads in full at
     // the start of every review pass and rewrites as it works — its map
@@ -3497,6 +3519,9 @@ export const assistantHeldActions = pgTable(
     auto: boolean("auto").notNull().default(false),
     // The tool's answer once it ran: {ok, status, body}.
     result: jsonb("result"),
+    // The label of the Assistant's turn that made the call (src/labels.ts).
+    // The call runs at it when the user presses, however long after.
+    sensitivityLabel: sensitivityLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -3745,6 +3770,10 @@ export const contributions = pgTable(
     // recovery sweep stops re-driving a row at the attempt cap so a poisoned
     // contribution cannot burn LLM spend forever.
     reviewAttempts: integer("review_attempts").notNull().default(0),
+    // The label of the request or run that submitted this (src/labels.ts).
+    // Its review runs at it, whichever worker or sweep picks it up, and so
+    // does its arbitration when the reviewer escalates.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_contributions_claim").on(table.claimId),
@@ -3807,6 +3836,9 @@ export const appeals = pgTable(
     // contributions.review_claimed_at (#218).
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     arbitrationAttempts: integer("arbitration_attempts").notNull().default(0),
+    // The label of the request or run that filed the appeal (src/labels.ts);
+    // the arbitration it asks for runs at it.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_appeals_contribution").on(table.contributionId),
@@ -5677,6 +5709,10 @@ export const agentSessions = pgTable(
     // The transcript is the resumed run's opening, so the resumed run takes
     // these reasons on; nothing a run read is made public by resuming it.
     privateReasons: text("private_reasons").array().notNull().default(sql`'{}'::text[]`),
+    // The label the paused run worked at (src/labels.ts). The transcript is
+    // the resumed run's opening, so the run that resumes it works at the
+    // same label, whoever delivers the answer it waited for.
+    sensitivityLabel: sensitivityLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

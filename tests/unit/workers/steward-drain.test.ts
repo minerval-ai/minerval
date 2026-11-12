@@ -60,6 +60,7 @@ const { handleQuery } = vi.hoisted(() => ({
               target_ref: null,
               cost_est_micro_usd: 150_000,
               coverage_micro_usd: 150_000,
+              sensitivity_label: "public",
             },
           ]
         : [];

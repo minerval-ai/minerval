@@ -14,17 +14,25 @@ const state = vi.hoisted(() => ({
   voids: [] as Array<Record<string, unknown>>,
   forfeits: ["pc-old"],
   expireThrows: false,
+  // The label the prize claim's contribution was filed at (null: not found).
+  filedLabel: "public" as string | null,
+  stewardLabels: [] as string[],
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (sql: string) => {
     if (sql.includes("status = 'in_challenge_window' AND window_ends_at")) return state.elapsed;
     if (sql.includes("challenged_prize_claim_id AS prize_claim_id")) return state.overturned;
+    if (sql.includes("SELECT sensitivity_label FROM contributions")) {
+      return state.filedLabel ? [{ sensitivity_label: state.filedLabel }] : [];
+    }
     return [];
   }),
 }));
 vi.mock("../../../src/workers/steward-direct.js", () => ({
   invokeStewardDirect: vi.fn(async (input: Record<string, unknown>) => {
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.stewardLabels.push(currentLabel());
     state.steward.push(input);
     return { model: "strong", billedMicroUsd: 5 };
   }),
@@ -62,6 +70,34 @@ beforeEach(() => {
   state.voids = [];
   state.forfeits = ["pc-old"];
   state.expireThrows = false;
+  state.filedLabel = "public";
+  state.stewardLabels = [];
+});
+
+// The closer runs on a timer, outside any run. The Steward's pass it opens
+// works at the label the prize claim was filed at (src/labels.ts).
+describe("the label the Steward's pass works at", () => {
+  it("is the filing's, when a window closes and when a claim is voided", async () => {
+    state.filedLabel = "internal";
+    state.elapsed = [{ id: "pc-1" }];
+    state.overturned = [{ prize_claim_id: "pc-2", content: "[ground: ineligibility] a contractor", contribution_id: "ch-1" }];
+    expect(await promoteElapsedWindows()).toEqual({ promoted: 1, stewardRuns: 1 });
+    expect(await voidUpheldChallenges()).toEqual({ voided: 1, stewardRuns: 1 });
+    expect(state.stewardLabels).toEqual(["internal", "internal"]);
+  });
+
+  it("is public for a claim filed by a plain request", async () => {
+    state.elapsed = [{ id: "pc-1" }];
+    await promoteElapsedWindows();
+    expect(state.stewardLabels).toEqual(["public"]);
+  });
+
+  it("is never assumed: with no filing to read it from, the Steward is not invoked", async () => {
+    state.filedLabel = null;
+    state.elapsed = [{ id: "pc-1" }];
+    expect(await promoteElapsedWindows()).toEqual({ promoted: 1, stewardRuns: 0 });
+    expect(state.steward).toEqual([]);
+  });
 });
 
 describe("promotion", () => {

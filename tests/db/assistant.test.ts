@@ -70,6 +70,7 @@ import {
   settleGrantConversationTurns,
 } from "../../src/services/grant-conversation-service.js";
 import { seedUser, creditOwls, owlBalance, OWL } from "./helpers.js";
+import { runWithUsageContext } from "../../src/llm/usage-context.js";
 
 let app: FastifyInstance;
 
@@ -449,6 +450,47 @@ describe("held actions", () => {
     await addAssistantMessage({ app, user: u, conversationId: convo.id, message: "Propose it." });
     await settleAssistantTurns();
     expect(ran).toBeNull();
+  });
+
+  // A held call is work the Assistant's turn made, done later by a press
+  // (src/labels.ts): it runs at the label the turn worked at, so what it
+  // creates is the turn's work and not the public work of a bare request.
+  it("runs at the label of the turn that made the call, however it is pressed", async () => {
+    await rawQuery(
+      `INSERT INTO labels (name, description) VALUES ('internal', 'Readable inside the organization.')
+       ON CONFLICT (name) DO NOTHING`
+    );
+    const heldThenPressed = async (label: string | null) => {
+      const u = await user(`held-at-${label ?? "none"}`, 50);
+      const [claim] = await rawQuery<{ id: string }>(
+        `INSERT INTO claims (text) VALUES ($1) RETURNING id`,
+        [`DB-test claim (held order ${Math.random()})`]
+      );
+      script(async (input) => {
+        await input.hold("order_assessment", "assess", { claim_id: claim!.id });
+        return { reply: "Held.", stopped: null, toolUses: [], runId: null };
+      });
+      // The turn starts in the context of the request that sent the message.
+      const convo = label ? await runWithUsageContext({ label }, () => start(u)) : await start(u);
+      await settleAssistantTurns();
+      const card = (await read(convo.id, u.id)).held_actions[0]!;
+      const [held] = await rawQuery<{ sensitivity_label: string }>(
+        `SELECT sensitivity_label FROM assistant_held_actions WHERE id = $1`,
+        [card.id]
+      );
+      // The press comes from a request of its own, outside the turn.
+      const pressed = await decideHeldAction({ app, user: u, conversationId: convo.id, actionId: card.id, decision: "run" });
+      expect(pressed.ok && pressed.action.status).toBe("done");
+      const [order] = await rawQuery<{ sensitivity_label: string }>(
+        `SELECT sensitivity_label FROM assessment_orders WHERE user_id = $1 AND claim_id = $2`,
+        [u.id, claim!.id]
+      );
+      // The label is the row's alone: the card the user is shown does not carry it.
+      expect(JSON.stringify(card)).not.toContain("sensitivity");
+      return { held: held!.sensitivity_label, order: order?.sensitivity_label };
+    };
+    expect(await heldThenPressed("internal")).toEqual({ held: "internal", order: "internal" });
+    expect(await heldThenPressed(null)).toEqual({ held: "public", order: "public" });
   });
 
   it("keeps an account-wide allowance across conversations, and only known kinds", async () => {

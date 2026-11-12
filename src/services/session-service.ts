@@ -23,10 +23,16 @@
  * The limits are stated to the agent in the tools that pause it: a session
  * waits at most SESSION_WAIT_HOURS, and a transcript longer than
  * SESSION_MAX_TRANSCRIPT_CHARS is not resumed (its answers go to the inbox).
+ *
+ * A session keeps the label its run worked at (src/labels.ts), and is
+ * resumed at it. The answer that wakes a session is often delivered by
+ * other work (a research run reporting, the sweep), so the resumption is
+ * commissioned at the session's label, not the deliverer's, and a pass
+ * resumes only a session of the label it is running at.
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type MessageParam = Anthropic.MessageParam;
 import { postMessage, type MessageSender } from "./inbox-service.js";
@@ -69,11 +75,13 @@ export interface SessionRow {
   extra_funding: Array<{ grantId: string; microUsd: number }>;
   /** Why the paused run's transcript was private; the resumed run takes them on. */
   private_reasons: string[];
+  /** The label the session's run worked at; it resumes at the same one. */
+  sensitivity_label: string;
 }
 
 const COLUMNS = `id, role, node_id, context, status, transcript, model, awaiting, replies, payer,
   budget_left_micro_usd::bigint AS budget_left_micro_usd, suspended_at::text AS suspended_at,
-  deadline::text AS deadline, resumes, extra_funding, private_reasons`;
+  deadline::text AS deadline, resumes, extra_funding, private_reasons, sensitivity_label`;
 
 /** Where a session stands, for a decider that must know whether its run is still live. */
 export async function sessionStatus(id: string | null): Promise<SessionRow["status"] | null> {
@@ -97,12 +105,14 @@ export function outstanding(s: Pick<SessionRow, "awaiting" | "replies">): Array<
 export async function registerAwait(kind: AwaitKind, ref: string): Promise<string | null> {
   const session = getUsageContext().session;
   if (!session) return null;
+  // The row is made by the run's first request that waits, so it takes the
+  // run's label; a later request, or one after a resumption, leaves it.
   await rawQuery(
-    `INSERT INTO agent_sessions (id, role, node_id, status, awaiting)
-     VALUES ($1, $2, $3, 'running', $4::jsonb)
+    `INSERT INTO agent_sessions (id, role, node_id, status, awaiting, sensitivity_label)
+     VALUES ($1, $2, $3, 'running', $4::jsonb, $5)
      ON CONFLICT (id) DO UPDATE
        SET awaiting = agent_sessions.awaiting || $4::jsonb, updated_at = now()`,
-    [session.id, session.role, session.nodeId, JSON.stringify([{ kind, ref }])]
+    [session.id, session.role, session.nodeId, JSON.stringify([{ kind, ref }]), currentLabel()]
   );
   return session.id;
 }
@@ -324,6 +334,12 @@ const MIN_RESUME_MICRO_USD = 100_000;
  * is spent), the session stays ready and the node's next pass resumes it.
  */
 async function commissionResumption(s: SessionRow): Promise<void> {
+  // Whoever delivered the answer, the pass that resumes the session is the
+  // session's work: its ledger row is opened at the session's label.
+  return runAtLabel(s.sensitivity_label, `paused session ${s.id}`, () => commissionResumptionAtLabel(s));
+}
+
+async function commissionResumptionAtLabel(s: SessionRow): Promise<void> {
   const { commissionNodePass, placeCommission } = await import("./commission-service.js");
   const { ASSESS_GROUP } = await import("./action-service.js");
   const extras = (s.extra_funding ?? []).filter((e) => e.grantId && Number(e.microUsd) > 0);
@@ -392,11 +408,11 @@ async function commissionResumeRow(
     const group = RESUME_GROUP(s.id, Number(s.resumes ?? 0) + 1);
     const total = first.budget + first.rest.reduce((t, e) => t + Number(e.microUsd), 0);
     const [row] = await rawQuery<{ id: string }>(
-      `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
-       VALUES ('resume', $1, 'standard', $2, $3, $4, $5)
+      `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('resume', $1, 'standard', $2, $3, $4, $5, $6)
        ON CONFLICT (exclusion_group, variant) DO NOTHING
        RETURNING id`,
-      [group, s.node_id, s.id, `Resume a paused ${s.role.replace(/_/g, " ")} session`, total]
+      [group, s.node_id, s.id, `Resume a paused ${s.role.replace(/_/g, " ")} session`, total, currentLabel()]
     );
     if (!row) return; // Already commissioned.
     const placed = await placeCommission({
@@ -483,6 +499,12 @@ async function sendRepliesToInbox(nodeId: string | null, replies: SessionReply[]
  * resume (running again, its answers marked shown). Null when there is none,
  * or when its transcript is too long to resume, in which case its answers go
  * to the inbox and it closes.
+ *
+ * A Steward's pass is opened by its ledger row before it looks for a session,
+ * so it cannot take the session's label the way a `resume` row's run does.
+ * It takes only a session of the label it is already running at: resuming
+ * another label's transcript would write what that session read at this
+ * pass's label. A session of another label waits for a pass at its own.
  */
 export async function takeReadySession(nodeId: string, role: string): Promise<{ session: SessionRow; replies: SessionReply[] } | null> {
   const config = loadConfig();
@@ -490,9 +512,10 @@ export async function takeReadySession(nodeId: string, role: string): Promise<{ 
     const [s] = await tx.query<SessionRow>(
       `SELECT ${COLUMNS} FROM agent_sessions
         WHERE node_id = $1 AND role = $2 AND status = 'ready'
+          AND sensitivity_label = $3
         ORDER BY suspended_at ASC LIMIT 1
         FOR UPDATE SKIP LOCKED`,
-      [nodeId, role]
+      [nodeId, role, currentLabel()]
     );
     if (!s) return null;
     const replies = s.replies.filter((r) => !r.delivered);

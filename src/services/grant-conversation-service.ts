@@ -27,7 +27,7 @@ import {
   grantConversations,
   type GrantConversation,
 } from "../db/schema.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { currentLabel, runWithUsageContext } from "../llm/usage-context.js";
 import {
   runGrantmakerTurn,
   type GrantMandate,
@@ -519,6 +519,7 @@ export async function fundConversationMandate(input: {
       claimId: mandate.scope_claim_id ?? null,
       budgetMicroUsd: 0,
       status: "running",
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 
