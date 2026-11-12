@@ -1783,10 +1783,9 @@ export const sourceInterests = pgTable(
 //     reading kept from it: the source belongs to the party, and the stake
 //     is recorded on it in source_interests.
 //   - its one label (sensitivity_label): who may read what comes through it.
-//     A run is offered the connection only when its label reads this one,
-//     and every call and every reading kept carries it. The column has the
-//     shared default like every labelled table; the service that adds a
-//     connection always states the label.
+//     A run is offered the connection only when its label reads this one.
+//     The column has the shared default like every labelled table; the
+//     service that adds a connection always states the label.
 //   - calls_per_minute: a rate its administrator may set, across all runs,
 //     because calls cost the organization's system and no owls, so a run's
 //     budget does not bound them. NULL sets none.
@@ -1899,11 +1898,12 @@ export const connectionTools = pgTable(
 // and kept_at when. Calls nobody kept stay here as the record of what was
 // asked of the organization's system, and are what calls_per_minute counts.
 //
-// sensitivity_label and party_id are the connection's when the call was
-// made, not the run's: what comes back is the connection's material whoever
-// asked, and the arguments were handed to that system when the call was
-// sent. A source kept from the call takes both from here, so a later change
-// to the connection does not relabel what was already read.
+// sensitivity_label is the label of the run that made the call, like
+// anything a run writes: the arguments are the run's own words, stored with
+// what came back. That label always reads the connection's, or the run
+// would not have been offered the tool. party_id is the connection's when
+// the call was made: whose material came back does not depend on who asked.
+// A source kept from the call takes both from here.
 //
 // run_id, agent and claim_id are the calling run's, from the usage context,
 // with no foreign keys, like llm_usage.

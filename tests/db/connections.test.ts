@@ -714,13 +714,13 @@ describe("what a run is told", () => {
 });
 
 describe("a reading", () => {
-  it("is stored whole with its hash and the time, at the connection's label, whoever asked", async () => {
+  it("is stored whole with its hash and the time, at the label of the run that made it", async () => {
     await switchAllOff();
     const c = await connect({ tool_prefix: "stored" });
     await pick(c, ["read_rows", "search_notes"]);
     const claimId = await seedClaim("reading");
     const runId = randomUUID();
-    // A run at a label that reads the connection's.
+    // A run at a label that reads more than the connection's.
     const bundle = await bundleAt(RESTRICTED);
     const out = await run(RESTRICTED, bundle, "stored__read_rows", { table: "refunds" }, { runId, agent: "steward", claimId });
 
@@ -754,8 +754,9 @@ describe("a reading", () => {
       claim_id: claimId,
       party_id: ownParty,
       source_id: null,
-      // The connection's label, not the label of the run that asked.
-      sensitivity_label: INTERNAL,
+      // The run's label, not the connection's: the arguments are the run's
+      // own words, and they are stored with what came back.
+      sensitivity_label: RESTRICTED,
     });
     expect(new Date(row!.called_at as string).toISOString()).toBe(out.read_at);
 
@@ -823,12 +824,13 @@ describe("a reading", () => {
     expect(failed).toEqual({ outcome: "failed", result: null });
   });
 
-  it("becomes a source when kept: hashed, labelled as the connection, the party's, with its stake recorded", async () => {
+  it("becomes a source when kept: hashed, at the label of the run that read it, the party's, with its stake recorded", async () => {
     await switchAllOff();
     const c = await connect({ name: "Kept warehouse", tool_prefix: "kept" });
     await pick(c, ["read_rows", "broken"]);
     const runId = randomUUID();
-    // Kept by a run at a higher label: the source is still the connection's.
+    // Read and kept by a run at a label above the connection's: the source
+    // is at the run's label, and still the connection's party's.
     const bundle = await bundleAt(RESTRICTED);
     const made = await run(RESTRICTED, bundle, "kept__read_rows", { table: "refunds", zeta: 1, alpha: 2 });
     const kept = await run(RESTRICTED, bundle, "keep_reading", { reading: made.reading }, { runId });
@@ -863,7 +865,7 @@ describe("a reading", () => {
       title: kept.title,
       content_hash: sha256(source!.raw_content as string),
       source_type: "unknown",
-      sensitivity_label: INTERNAL,
+      sensitivity_label: RESTRICTED,
       party_id: ownParty,
       page_url_hash: "",
     });
@@ -894,6 +896,23 @@ describe("a reading", () => {
     const [n] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM sources WHERE url = $1`, [address]);
     expect(n!.n).toBe(1);
 
+    // A run at the connection's own label does not read the label above it,
+    // so it is told nothing of that reading. It makes its own, which is a
+    // source at its own label.
+    const lower = await bundleAt(INTERNAL);
+    expect(await run(INTERNAL, lower, "keep_reading", { reading: made.reading })).toEqual({
+      success: false,
+      message: `No reading ${made.reading} is known to this run. A reading's id is the "reading" field of the call that made it.`,
+    });
+    const own = await run(INTERNAL, lower, "kept__read_rows", { table: "refunds" });
+    const ownKept = await run(INTERNAL, lower, "keep_reading", { reading: own.reading });
+    expect(ownKept.source_id).not.toBe(kept.source_id);
+    const [ownSource] = await rawQuery<{ sensitivity_label: string; party_id: string }>(
+      `SELECT sensitivity_label, party_id FROM sources WHERE id = $1`,
+      [ownKept.source_id]
+    );
+    expect(ownSource).toEqual({ sensitivity_label: INTERNAL, party_id: ownParty });
+
     // The system's own error is an answer, and can be kept as one.
     const broken = await run(RESTRICTED, bundle, "kept__broken", {});
     expect(broken).toMatchObject({ success: true, system_error: true, content: 'relation "refunds_2027" does not exist' });
@@ -904,11 +923,11 @@ describe("a reading", () => {
 
     // The administrator's view counts the calls and the readings kept, and shows no result.
     const view = await read(c.id);
-    expect(view.tools.find((t) => t.name === "read_rows")).toMatchObject({ calls: 1, readings_kept: 1 });
+    expect(view.tools.find((t) => t.name === "read_rows")).toMatchObject({ calls: 2, readings_kept: 2 });
     const calls = await as(admin, { url: `/connections/${c.id}/calls?kept=true` });
     const listed = calls.json().calls as Array<Record<string, unknown>>;
-    expect(listed.map((x) => x.tool).sort()).toEqual(["broken", "read_rows"]);
-    expect(listed.find((x) => x.tool === "read_rows")).toMatchObject({
+    expect(listed.map((x) => x.tool).sort()).toEqual(["broken", "read_rows", "read_rows"]);
+    expect(listed.find((x) => x.id === made.reading)).toMatchObject({
       id: made.reading,
       outcome: "answered",
       result_chars: text.length,
@@ -1161,6 +1180,13 @@ describe("a connection's rate", () => {
     expect(server.calls.length).toBe(sent);
     const [n] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM connection_calls WHERE connection_id = $1`, [c.id]);
     expect(n!.n).toBe(2);
+
+    // The count is of every call, whatever label the run that made it worked at.
+    const labels = await rawQuery<{ sensitivity_label: string }>(
+      `SELECT sensitivity_label FROM connection_calls WHERE connection_id = $1`,
+      [c.id]
+    );
+    expect(labels.map((l) => l.sensitivity_label).sort()).toEqual([INTERNAL, RESTRICTED].sort());
 
     // A minute on, the next call goes.
     await rawQuery(`UPDATE connection_calls SET called_at = called_at - interval '61 seconds' WHERE connection_id = $1`, [c.id]);

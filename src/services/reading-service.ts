@@ -12,13 +12,21 @@
  * A call is not a source. Agents probe: they list tables, try a query,
  * narrow it. Sources are what assessments rest on, so the agent says which
  * readings those are: keepReading turns one call into a source row that a
- * judgment can cite like any other. The row is labelled with the label the
- * connection had when the call was made and belongs to the connection's
- * party, by the derived-row rule (src/labels.ts): what came back is the
- * connection's material whoever asked, and the arguments were handed to
- * that party's system when the call was sent. The party's stake is recorded
- * on the source (source_interests), as a fact about it and never a finding
- * against it.
+ * judgment can cite like any other.
+ *
+ * A call, and the source kept from it, carry the label of the run that made
+ * the call (currentLabel, the first stamping rule in src/labels.ts). What
+ * came back is the connection's material, but the arguments are the run's
+ * own words, and the two are stored together: a run at a label that reads
+ * more than the connection's label would otherwise write what it composed
+ * down to readers who were never cleared for what that run knows. The run's
+ * label always reads the connection's, or the run would not have the tool,
+ * so nothing of the connection's is put where it may not be read. A run at
+ * another label that needs the same data makes its own reading.
+ *
+ * Whose material it is does not depend on who asked: the source belongs to
+ * the connection's party, and that party's stake is recorded on it
+ * (source_interests), as a fact about it and never a finding against it.
  *
  * The one limit on calls is a rate an administrator may set on a
  * connection. There is no count of calls per run: a run is bounded by its
@@ -28,7 +36,7 @@
  * and when the next call can go in a refusal (llm/tools/connection-tools.ts).
  */
 import { createHash } from "node:crypto";
-import { rawQuery, withTransaction } from "../db/client.js";
+import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { CONNECTION_RESULT_MAX_CHARS, readingAddress } from "../connections.js";
 import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { canonicalContent } from "./run-log.js";
@@ -80,6 +88,28 @@ export type ReadingMade =
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 
 /**
+ * How many calls were made through a connection in the last minute, by
+ * every run at every label, and when the oldest of them was made.
+ *
+ * This is the service counting, not a run reading: the rate protects the
+ * organization's system from all runs together, so a call made at a label
+ * the calling run cannot read counts as much as one it can. Nothing holds a
+ * read to a clearance yet. When the database does (row-level security keyed
+ * to the run's clearance), this one query must run with the system's
+ * clearance, or a run would count only the calls it may read and the rate
+ * would be per label. It returns a number and a time and no row's content.
+ */
+async function callsInLastMinute(tx: TxQuery, connectionId: string): Promise<{ n: number; oldest: Date | null }> {
+  const [recent] = await tx.query<{ n: number; oldest: Date | null }>(
+    `SELECT count(*)::int AS n, min(called_at) AS oldest
+       FROM connection_calls
+      WHERE connection_id = $1 AND called_at > now() - interval '60 seconds'`,
+    [connectionId]
+  );
+  return { n: recent?.n ?? 0, oldest: recent?.oldest ?? null };
+}
+
+/**
  * Record a call that is about to be sent, or refuse it when the connection
  * is at its rate. Where a rate is set, the count and the insert happen
  * under one lock for the connection, so two runs calling at the same moment
@@ -102,7 +132,8 @@ async function beginCall(
     context.agent ?? null,
     context.claimId ?? null,
     connection.partyId,
-    connection.label,
+    // The run's label, not the connection's: the arguments are the run's words.
+    currentLabel(),
   ];
   const INSERT = `INSERT INTO connection_calls
        (connection_id, tool, arguments, run_id, agent, claim_id, party_id, sensitivity_label)
@@ -115,15 +146,10 @@ async function beginCall(
   }
   return withTransaction(async (tx) => {
     await tx.query(`SELECT pg_advisory_xact_lock(hashtext('minerval:connection:' || $1::text))`, [connection.id]);
-    const [recent] = await tx.query<{ n: number; oldest: Date | null }>(
-      `SELECT count(*)::int AS n, min(called_at) AS oldest
-         FROM connection_calls
-        WHERE connection_id = $1 AND called_at > now() - interval '60 seconds'`,
-      [connection.id]
-    );
-    const n = recent?.n ?? 0;
+    const recent = await callsInLastMinute(tx, connection.id);
+    const n = recent.n;
     if (n >= perMinute) {
-      const oldest = recent?.oldest ? new Date(recent.oldest).getTime() : Date.now();
+      const oldest = recent.oldest ? new Date(recent.oldest).getTime() : Date.now();
       return { ok: false as const, rate: { perMinute, inLastMinute: n }, nextAt: new Date(oldest + 60_000) };
     }
     const [row] = await tx.query<{ id: string; called_at: Date }>(INSERT, insert);
@@ -300,8 +326,9 @@ export interface KeptReading {
 /**
  * Keep a reading as a source: one row a judgment can cite, made from the
  * call as it was recorded. The same reading kept twice is one source. The
- * source carries the label and the party the connection had when the call
- * was made, and the party's stake is recorded on it.
+ * source carries the call's label, which is the label of the run that made
+ * the call, and the party the connection had then, with that party's stake
+ * recorded on it.
  *
  * Its facts are marked as checked, so the worker that looks sources up at
  * Crossref and the Wayback Machine (workers/source-backfill.ts) leaves it

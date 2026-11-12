@@ -235,11 +235,17 @@ cite like any other:
   <the result, exactly as stored>
   ```
 
-- **Its label** is the label the connection had when the call was made, not
-  the label of the run that asked. What came back is the connection's
-  material whoever asked, and the arguments were handed to that party's
-  system when the call was sent, which is why every run's brief says that
-  a call's arguments are sent to that system and kept with the result.
+- **Its label** is the label of the run that made the call, as for
+  anything a run writes, and so is the call's own row. What came back is
+  the connection's material, but the arguments are the run's own words and
+  the two are stored together: a run at a label that reads more than the
+  connection's would otherwise write what it composed down to readers who
+  were never cleared for what that run knows. The run's label always reads
+  the connection's, or it would not have the tool. So a reading kept by a
+  run at one label is a source at that label, and a run at another label
+  that needs the same data makes its own reading, which costs it nothing.
+  The arguments do go to the system itself when the call is sent, which is
+  the one outward flow here, and every run's brief says so.
 - **Its party** is the connection's, and the party's stake is recorded on
   it (`source_interests`, recorded by `connection`): a fact about the
   source, never a finding against it. What the system shows is evidence of
@@ -258,7 +264,7 @@ cite like any other:
   Wayback Machine leaves it alone and never sends its address out.
 
 The same reading kept twice is one source. A later change to the
-connection's label or party does not relabel what was already read, and a
+connection's label or party changes nothing about what was already read, and a
 connection that stops answering, loses its credential or is switched off
 takes nothing away: stored readings stand, because they were hashed when
 read.
@@ -345,8 +351,20 @@ Unlike the preflight's other checks this one calls out, to the
 organization's own servers. A connection that fails it is one whose tools
 no run will be offered; the runs say so in their briefs.
 
-## Not built here
+## Open points, and what is not built here
 
-Sets of files explored in a sandbox. Pages for adding and reading
-connections: the routes return what a page needs. Publishing a reading
-outward. Connections on the public graph.
+- **Calls nobody kept are not expired.** Every call's result stays in
+  `connection_calls` whether or not it was kept. Whether those should
+  expire, and when, is not decided.
+- **Servers that ask for OAuth are not supported.** A connection
+  authenticates with one static credential in a header. A server that
+  wants an OAuth flow is a follow-up, as is a server run as a local
+  process.
+- **The rate is counted across every label.** The count is the service's,
+  not a run's read. Once the database holds reads to a clearance, that one
+  query has to run with the system's clearance, or the rate would become a
+  rate per label (`callsInLastMinute` in `reading-service.ts`).
+
+Not built here: sets of files explored in a sandbox; pages for adding and
+reading connections (the routes return what a page needs); publishing a
+reading outward; connections on the public graph.

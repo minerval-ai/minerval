@@ -31,9 +31,10 @@
  *    whose system each is (llm/tools/connection-tools.ts).
  *  - Every call is stored whole with its hash (connection_calls). A call is
  *    not a source until an agent's work rests on it: keep_reading then makes
- *    the source row a judgment can cite, labelled with the connection's
- *    label, belonging to the connection's party, with that party's stake
- *    recorded (services/reading-service.ts).
+ *    the source row a judgment can cite, belonging to the connection's
+ *    party, with that party's stake recorded. The call and the source carry
+ *    the label of the run that made the call, since the arguments are that
+ *    run's own words (services/reading-service.ts).
  *
  * This file holds what the rest shares and needs no database: the names,
  * the shape of a tool's name as an agent sees it, the hash a pick is held
