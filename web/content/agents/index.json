@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 29979,
-    "fullChars": 128303,
+    "roleChars": 30588,
+    "fullChars": 128912,
     "skills": [
       {
         "name": "costing",
@@ -164,8 +164,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12704,
-    "fullChars": 111028,
+    "roleChars": 12851,
+    "fullChars": 111175,
     "skills": [
       {
         "name": "costing",
