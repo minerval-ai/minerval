@@ -314,7 +314,7 @@ const BUDGET_SESSION =
   "Creates a budget in a members-only deployment: owls for an account or a mandate, or one " +
   "of the deployment's standing mandates. It takes a signed-in dashboard session as well as " +
   "the permission to administer, so that a leaked key, an access token, or an agent following " +
-  "text it read can never create money to spend. The matching reads (get_created_owls, " +
+  "text it read can never create a budget for itself. The matching reads (get_created_owls, " +
   "list_standing_mandates) are tools.";
 
 /** Routes deliberately not on MCP, each with its reason. */
