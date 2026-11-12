@@ -28,6 +28,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { loadConfig, type Config } from "../../config.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
 import { budgetRefusal } from "../usage-context.js";
+import { providerClearedHere } from "../provider-clearance.js";
 
 export const ELICIT_TOOL_PREFIX = "elicit_";
 
@@ -38,6 +39,16 @@ const ALLOWED_ELICIT_TOOLS = new Set(["search_papers", "search_trials"]);
 /** Whether the Elicit connector is configured at all (deploy-level switch). */
 export function elicitConfigured(config: Config = loadConfig()): boolean {
   return config.elicitApiKey.length > 0;
+}
+
+/**
+ * Whether a run here may be given the Elicit tools: the connector is
+ * configured, and Elicit is cleared for the label the run works at
+ * (src/provider-labels.ts). A run at a label it is not cleared for gets no
+ * definitions, so its task message says nothing of Elicit either.
+ */
+export function elicitAvailable(config: Config = loadConfig()): boolean {
+  return elicitConfigured(config) && providerClearedHere("elicit", config);
 }
 
 export function isElicitTool(name: string): boolean {
@@ -86,7 +97,7 @@ export function resetElicitClientForTests(): void {
 export async function getElicitToolDefinitions(
   config: Config = loadConfig()
 ): Promise<Tool[]> {
-  if (!elicitConfigured(config)) return [];
+  if (!elicitAvailable(config)) return [];
   try {
     const client = await getElicitClient(config);
     const { tools } = await client.listTools();
@@ -125,6 +136,11 @@ export async function executeElicitTool(
       success: false,
       message: `Unknown Elicit tool: ${toolName}`,
     });
+  }
+  // The query is the run's text. A run at a label Elicit is not cleared for
+  // was not offered the tool, and a call it makes anyway sends nothing.
+  if (!providerClearedHere("elicit", config)) {
+    return JSON.stringify({ success: false, message: `${toolName} is not in this run's toolset.` });
   }
   const refusal = budgetRefusal(toolName, config.elicitUsdPerCall * 1_000_000);
   if (refusal) return refusal;

@@ -10,6 +10,8 @@ import {
   unknownFeaturesMessage,
 } from "./features.js";
 import { applyConfigFile } from "./config-file.js";
+import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
+import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
 
 /**
  * Requests per minute one IP address may make without credentials. The one
@@ -161,6 +163,36 @@ const configSchema = z.object({
   // run on a cheap-tier model wants (a slow host there turns an hour into a
   // day). Any value still routes only to data_collection: deny hosts.
   openrouterProviderSort: z.enum(["price", "throughput", "latency"]).optional(),
+
+  // Endpoints this deployment serves models from itself (vLLM, llama.cpp's
+  // server, TGI, Ollama): a JSON list, one object per endpoint, with its
+  // name, its base URL, the name of the environment variable that holds its
+  // key if it takes one, and what a call costs
+  // (src/llm/providers/endpoint-config.ts). A model id of the shape
+  // "endpoint:<name>/<model>" routes to one. Empty by default: none.
+  modelEndpoints: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseModelEndpoints(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseModelEndpoints(raw).endpoints)
+    .prefault(""),
+  // The labels each model provider and outside service may receive text at
+  // (src/provider-labels.ts): a JSON object from a provider's name to a
+  // list of label names. Empty by default, and a provider it does not name
+  // is cleared for `public` alone, so a deployment with another label
+  // serves nothing at it until this says who may.
+  providerLabels: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseProviderLabels(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseProviderLabels(raw).labels)
+    .prefault(""),
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / owls (#70, owl economy)
@@ -1252,6 +1284,8 @@ export function loadConfig(): Config {
     host: process.env.HOST,
     logLevel: process.env.LOG_LEVEL,
     featuresOff: process.env.FEATURES_OFF,
+    modelEndpoints: process.env.MODEL_ENDPOINTS,
+    providerLabels: process.env.PROVIDER_LABELS,
     databaseUrl: rawDatabaseUrl,
     dbHost: process.env.DB_HOST,
     dbPort: process.env.DB_PORT,
@@ -1492,6 +1526,15 @@ export function loadConfig(): Config {
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
   });
+
+  // What the two provider settings can only be checked for together: a name
+  // in PROVIDER_LABELS that is no provider here, and a model field that
+  // routes to an endpoint MODEL_ENDPOINTS does not declare.
+  const providerProblems = providerSettingProblems(_config);
+  if (providerProblems.length > 0) {
+    _config = null;
+    throw new Error(providerProblems.join("\n"));
+  }
 
   // If DATABASE_URL is the default and individual DB fields are set, construct URL
   if (_config.databaseUrl === DEFAULT_DB_URL && _config.dbHost) {

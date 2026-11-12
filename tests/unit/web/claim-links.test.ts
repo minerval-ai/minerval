@@ -48,4 +48,24 @@ describe("parseProse", () => {
       { kind: "text", text: "The https:// prefix alone links nothing." },
     ]);
   });
+
+  it("links an argument or a source named in prose, beside claims", () => {
+    expect(
+      parseProse("See [[argument:a-1|the main argument]], [[source:s-1|the 2018 paper]] and [[claim:c-1]].")
+    ).toEqual([
+      { kind: "text", text: "See " },
+      { kind: "record", record: "argument", id: "a-1", display: "the main argument" },
+      { kind: "text", text: ", " },
+      { kind: "record", record: "source", id: "s-1", display: "the 2018 paper" },
+      { kind: "text", text: " and " },
+      { kind: "link", claimId: "c-1", display: null },
+      { kind: "text", text: "." },
+    ]);
+  });
+
+  it("leaves a link of a kind it does not know as the text it is", () => {
+    expect(parseProse("[[mandate:m-1|a mandate]]")).toEqual([
+      { kind: "text", text: "[[mandate:m-1|a mandate]]" },
+    ]);
+  });
 });

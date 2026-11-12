@@ -12,10 +12,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { findingStatusEnum, uuidSchema } from "../schemas/common.js";
 import {
+  describeAssessmentRefs,
   formatFinding,
+  findingsPage,
   formatFindingSighting,
   getFindingById,
-  listFindings,
   listFindingSightings,
   setFindingStatus,
 } from "../services/finding-service.js";
@@ -24,8 +25,21 @@ const listFindingsParams = z.object({
   claim_id: uuidSchema.optional(),
   tag: z.string().max(80).optional(),
   min_importance: z.coerce.number().int().min(1).max(10).optional(),
-  order: z.enum(["recent", "importance"]).default("recent"),
+  order: z.enum(["recent", "importance", "relevance"]).optional(),
   since: z.coerce.date().optional(),
+  q: z.string().trim().max(300).optional(),
+  // One agent or several, comma-separated: a role has had more than one
+  // name on the record (steward, claim_steward), and a reader filters by role.
+  agent: z
+    .string()
+    .max(400)
+    .transform((v) => v.split(",").map((a) => a.trim()).filter(Boolean))
+    .optional(),
+  claim_status: z.string().trim().max(40).optional(),
+  facets: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -75,8 +89,42 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
           claim_id: { type: "string" },
           tag: { type: "string" },
           min_importance: { type: "integer" },
-          order: { type: "string", enum: ["recent", "importance"], default: "recent" },
+          order: {
+            type: "string",
+            enum: ["recent", "importance", "relevance"],
+            description:
+              "recent (newest first), importance, or relevance (closest in " +
+              "meaning to q first). Left out, it is relevance when q is given " +
+              "and recent otherwise.",
+          },
           since: { type: "string", format: "date-time" },
+          q: {
+            type: "string",
+            description:
+              "Search: findings whose headline, account or claim has these " +
+              "words, or that are close to them in meaning.",
+          },
+          agent: {
+            type: "string",
+            description:
+              "Only findings noted by this agent, by the name on the record " +
+              "(steward, grantmaker, curator, ...); several, comma-separated.",
+          },
+          claim_status: {
+            type: "string",
+            description:
+              "Only findings on claims whose current assessment has this " +
+              "status (verified, supported, inconclusive, doubtful, " +
+              "contradicted, unknown).",
+          },
+          facets: {
+            type: "string",
+            enum: ["true", "false"],
+            description:
+              "true adds `facets`: for agents, claim statuses, tags and " +
+              "importance, how many findings each value would leave under " +
+              "the other filters in force.",
+          },
           limit: { type: "integer", minimum: 1, maximum: 100, default: 20 },
           offset: { type: "integer", minimum: 0, default: 0 },
         },
@@ -84,7 +132,14 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       response: {
         200: {
           type: "object",
-          properties: { findings: { type: "array", items: FINDING_SCHEMA } },
+          properties: {
+            findings: { type: "array", items: FINDING_SCHEMA },
+            total: {
+              type: "integer",
+              description: "How many findings match the filters, whatever the page size.",
+            },
+            facets: { type: "object", additionalProperties: true, nullable: true },
+          },
         },
         400: ERROR_SCHEMA,
       },
@@ -98,16 +153,24 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       const q = parsed.data;
-      const rows = await listFindings({
+      const page = await findingsPage({
         claimId: q.claim_id,
         tag: q.tag,
         minImportance: q.min_importance,
-        order: q.order,
+        order: q.order ?? (q.q ? "relevance" : "recent"),
         since: q.since,
+        q: q.q || undefined,
+        agents: q.agent,
+        claimStatus: q.claim_status || undefined,
+        facets: q.facets,
         limit: q.limit,
         offset: q.offset,
       });
-      return { findings: rows.map(formatFinding) };
+      return {
+        findings: page.rows.map(formatFinding),
+        total: page.total,
+        ...(page.facets ? { facets: page.facets } : {}),
+      };
     },
   });
 
@@ -130,6 +193,13 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
               type: "array",
               items: { type: "object", additionalProperties: true },
             },
+            cited_assessments: {
+              type: "array",
+              description:
+                "The assessments the finding cites: each one's claim, its " +
+                "verdict as written, and whether it is still the claim's current one.",
+              items: { type: "object", additionalProperties: true },
+            },
           },
         },
         404: ERROR_SCHEMA,
@@ -144,10 +214,16 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       if (!finding) {
         return reply.code(404).send({ error: "Finding not found", code: "NOT_FOUND" });
       }
-      const sightings = await listFindingSightings(finding.id);
+      const [sightings, assessments] = await Promise.all([
+        listFindingSightings(finding.id),
+        // Naming what is cited is a courtesy to the reader: without it the
+        // page shows the ids, as it always has.
+        describeAssessmentRefs(Array.isArray(finding.refs) ? finding.refs : []).catch(() => []),
+      ]);
       return {
         finding: formatFinding(finding),
         sightings: sightings.map(formatFindingSighting),
+        cited_assessments: assessments,
       };
     },
   });

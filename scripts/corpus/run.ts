@@ -164,7 +164,9 @@ function missingKeys(): string[] {
   const needed = new Set<string>(["OPENAI_API_KEY"]);
   for (const model of [cfg.extractorModel, cfg.matcherModel, cfg.stewardModel, cfg.curatorModel]) {
     const provider = resolveProvider(model);
-    if (provider) needed.add(keyFor[provider]);
+    // A hosted API's key. An endpoint the deployment declares names its own
+    // key, if it takes one, and the adapter says when that is missing.
+    if (provider && Object.hasOwn(keyFor, provider)) needed.add(keyFor[provider as keyof typeof keyFor]);
   }
   return [...needed].filter((k) => !process.env[k]);
 }
