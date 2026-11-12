@@ -56,7 +56,8 @@ unknown.
   decision, target, owls, reason, petition_id, action_id, created_at
 - `plan_items`: each item of a mandate's plan, as its page shows it, with
   the standing the plan materializer last wrote on it. mandate_id,
-  item_index, plan_cursor (items before it have been taken up), action,
+  item_index, plan_cursor (it stands past the last item whose work has
+  run or is running; an item before it can still be waiting), action,
   node_id, url, partition, variant, focus, rationale, ledger_status,
   ledger_reason, action_id (the ledger row it names), exclusion_group,
   ledger_checked_at, proposed_kind, proposed_text, proposal_ref, node_ref,
@@ -72,8 +73,12 @@ unknown.
   standing order its mandate commissions: once placed, its money is the
   row in `commissions` on that action_id with commissioned_by `plan`. A
   ledger_status of `waiting` on one is an order the mandate's daily rate
-  or escrow has no room for yet, and `blocked` one that could never fit;
-  ledger_reason gives the figures.
+  or escrow has no room for yet, and `blocked` one that could never fit,
+  or one stored with no variant, which commissions nothing until its
+  Grantmaker names a tier; ledger_reason gives the tier and the figures.
+  `cancelled` with a ledger_reason beginning "withdrawn" is an item its
+  Grantmaker withdrew before its pass began. A deepen item orders passes
+  only on the node's children that carry no assessment.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at

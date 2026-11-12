@@ -225,8 +225,13 @@ conversation.
    your user's agreement.
 5. Follow it with `get_grant` (spend, plan progress, the assessments it
    funded). You can keep talking to the Grantmaker in the same
-   conversation to adjust the unexecuted part of the plan; it holds the
-   same refusal duties then as at design time.
+   conversation to adjust the part of the plan whose work has not
+   started: it can replace that remainder, or change the model tier or
+   budget of a single planned pass, or withdraw it, until that pass is
+   running, and a budget the pass held comes back to the escrow. Each
+   plan item in `get_grant` says its tier and, when it is waiting,
+   blocked or cancelled, why. It holds the same refusal duties then as at
+   design time.
 
 **Something made from the graph.** If your user wants something produced
 from the graph on a schedule or as it changes,

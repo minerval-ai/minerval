@@ -119,7 +119,10 @@ with a budget and a mission would need:
 - **grow its own plan** (extend_plan): append the ingest/assess items it
   discovered; each is priced, escrow-bounded, and executes through the
   ledger, a stewarding item as a standing order the mandate commissions
-  (below, "A plan item is a standing order");
+  (below, "A plan item is a standing order"); and **change what the plan
+  has ordered** (amend_plan_items): the tier or budget of a standing
+  order whose pass is not yet running, or its withdrawal, with any budget
+  it held returned;
 - **pace itself** (set_daily_rate), **add to the pass in hand**
   (add_to_pass_budget) and **chain passes** (continue_review): a pass
   that has more to do adds to its own budget from the escrow, or ends and
@@ -1025,22 +1028,44 @@ for a Steward pass, and the mandate commissions it
 (`src/services/standing-order-service.ts`, from the plan materializer):
 whole, from its escrow and within its daily rate, at the item's
 `budget_owls` or, naming none, the row's estimate, on the item's
-`variant` (standard or strong; strong when it names none, which is what
-a plan item has always bought and what a paid order gets). The
-allocation's `commissioned_by` is `plan`, and it shows in the mandate's
-commissions like any other. Before this, an item only queued the node
-and opened its rows; nothing placed money on them, so an item read
-"open" for weeks and ran only if someone else happened to pay (#849).
+`variant` (standard or strong). The allocation's `commissioned_by` is
+`plan`, and it shows in the mandate's commissions like any other. Before
+this, an item only queued the node and opened its rows; nothing placed
+money on them, so an item read "open" for weeks and ran only if someone
+else happened to pay (#849).
+
+**An order names its tier.** Every stewarding item is stored with a
+variant: the one its author names, or standard when it names none
+(`normalizePlanItems`). The strong model costs several times the
+standard one, so it is bought where a Grantmaker asks for it and nowhere
+else. For a day this was the other way round: an item that named no
+variant was commissioned strong, which is how items appended before
+plan items were orders at all became strong orders at the estimate and
+took most of a mandate's day (#956). An item stored without a variant
+(any written before this rule) is therefore not commissioned on a tier
+nobody chose: it reads `blocked`, its reason gives both tiers' current
+estimates, and it places nothing, and releases none of a deepen's
+children, until its Grantmaker gives it a variant (`amend_plan_items`).
+An order it had already placed is left exactly as it was placed: its
+tier and budget are on the item (`ledger.order`), and its Grantmaker can
+change it like any other order that has not started.
 
 `commission` is now-or-refused: its caller is in a turn and reads the
 refusal. A plan item has no turn to come back in, so the mechanism keeps
 asking for it:
 
-- an order today's rate cannot cover reads `waiting`, with the budget,
-  what the day has left and the rate, and is placed by the first look that
-  finds the room. Orders are placed in plan order: once the rate has
-  turned one away, the later ones wait behind it, so the plan's order is
-  its priority and the items that have started form its opening run;
+- an order today's rate cannot cover reads `waiting`, with its tier, the
+  budget, what the day has left and the rate, and is placed by the first
+  look that finds room for it whole. **It does not hold the items after
+  it.** Each look goes through the plan in order and places every order
+  the room covers, so plan order is first claim on the day's room and
+  never a queue with one head. (For a day it was one: once the rate turned
+  an order away every later one waited behind it, and a 5.9-owl order
+  kept twenty-nine 0.8-owl orders waiting beside 1.2 owls of unused room,
+  #956, #961.) The cost of this choice is stated on the order that pays
+  it: a large order can be passed over, look after look, while smaller
+  ones after it take the room. What moves it is the Grantmaker's: the
+  rate, the order's budget or tier, or withdrawing what takes the room;
 - an order the escrow cannot cover beside the budgets held by work that
   is waiting or running reads `waiting` too, with what is free and what is
   held, since held budgets return what they do not spend;
@@ -1061,13 +1086,54 @@ approved, a decomposition's plan drafted) and at the start of every
 review pass. Every limit here is money the Grantmaker sees, and an item
 that is not running says which one and by how much.
 
-A `deepen` item is two things: the pass on its node, and a pass on each
-of the node's direct children that is waiting for one, at the same budget
-and tier under the same rate and escrow. It releases the node's deferred
-children (the stubs the importance brake held out) and orders them, most
+**What a plan commits stays its Grantmaker's to change until it is being
+spent** (`amend_plan_items`, `src/services/plan-amend-service.ts`; in
+review passes and the funder's conversation alike). An item's work has
+*started* once its pass is running. Until then, whether the order is
+waiting for room, blocked, or placed and waiting its turn in the queue,
+and wherever the item sits in the plan, the Grantmaker may give it
+another variant or budget, or withdraw it. A budget the order already
+holds is released at once, back to the escrow and the day's room; an
+amended order is asked for again on its new terms in the same call, and
+a withdrawn item reads `cancelled` with the Grantmaker's note, stays in
+the plan as a record, and is never asked for again. A pass that is
+running or has run is left as it is: money being spent is not taken from
+under a run. A deepen item is several passes, so the rule holds for each:
+a change reaches every pass of the item that has not started. Items are
+named by index and node, both checked, and a call is refused whole, with
+each reason, if any of its changes cannot be made. Before this a plan
+was append-only for the review pass, and `adjust_plan` could replace
+only what followed the last started item, so the one way to stop an
+order was to raise the rate and buy a throwaway pass on the same node
+(#956). `adjust_plan` uses the same meaning of started: it keeps the plan
+up to the last item whose work has run or is running, replaces the rest,
+and withdraws the orders the replaced items had placed.
+
+A Grantmaker can see what a list of items would commission before it
+writes them: `extend_plan` and `adjust_plan` take `preview: true`, which
+returns each stewarding item's tier and budget per pass, whether its
+node's pass would be bought or is already met, the children a deepen
+item would order by id, and the total against the day's room and the
+escrow, and writes nothing (`previewPlanOrders`).
+
+A `deepen` item is two things: the pass on its node, and a **first
+assessment for each of the node's direct children that carries no
+judgment** and is queued for a pass, at the same budget and tier under
+the same rate and escrow. It releases the node's deferred children (the
+stubs the importance brake held out) and orders the unjudged ones, most
 important first, each once per item, and looks again after the node's
-own pass has run, which is when the children that pass minted exist. It
-goes one level; deeper is another item, by the Grantmaker's judgment.
+own pass has run, which is when the children that pass minted exist. A
+child that already carries a verdict, estimate or standing is never
+ordered a fresh pass by a deepen item, however it came to be queued: the
+cadence queues judged nodes as candidates all the time, and a deepen
+item that took every queued child bought strong re-passes of week-old
+verdicts (#961). A fresh pass on a child is a `reassess` item on that
+child. The item's standing names the children it ordered (`children`)
+and those it has not been able to commission yet (`children_waiting`),
+and says how many judged children it left alone. A child the room cannot
+cover does not hold its siblings. It goes one level; deeper is another
+item, by the Grantmaker's judgment. The mechanical `deepen` policy
+(mandate-lifecycle-service.ts) orders by the same rule across its scope.
 
 When the Steward parks a node after repeated failures, the item reads
 cancelled with the failure, and its order's budget goes back to the
@@ -1421,7 +1487,10 @@ Design principles, in force in the implementation:
   elsewhere while the row sat open reads done from the assessment's date;
   an `assess` item on a claim that already carries an assessment reads
   done, `reassess` being the ask for a fresh pass; `deepen` also releases
-  the claim's deferred subclaims and orders a pass on each; a row retired
+  the claim's deferred subclaims and orders a first assessment for each
+  direct child that carries no judgment; an item stored without a
+  variant reads `blocked` until its Grantmaker names one; an item its
+  Grantmaker withdrew reads `cancelled` with the note; a row retired
   because the claim parked as `error` reads cancelled with the class
   of the park's failure named (never its raw text, #846) and the order's
   budget returned, since another item would
@@ -1432,7 +1501,8 @@ Design principles, in force in the implementation:
   focus (an ingest item the cursor passed before its row ran stays funded
   and reads from its row; the cursor marks the plan's started prefix, the
   items `adjust_plan` keeps, and moves past the last item whose work has
-  run, is running, or has the mandate's commission on it);
+  run or is running: an order that is placed and waiting its turn has
+  not started, and can still be amended, withdrawn or replaced);
   `formalize` needs an active claim with no
   published statement whose recorded domains carry the Steward's
   `publish_formalization` tool, else it is blocked (a run would be
@@ -1517,7 +1587,10 @@ is a mandate, funded and started in one step
   linked claims), most consequential first. Nothing the funder wrote is in
   it, so it is neutral by construction.
 - **Paying is the approval.** Its Grantmaker drafts the plan, which always
-  opens with the pass on the claim, and the plan runs at once on the
+  opens with the pass on the claim (added on the standard tier when the
+  Grantmaker leaves it out; it puts its own first, with the variant and
+  budget it chooses, where the claim warrants the strong model), and the
+  plan runs at once on the
   ledger: each item's pass is commissioned from the escrow as the plan is
   drafted, like any plan's standing orders. It has no daily rate, so the
   escrow is the bound, and an order waits while earlier passes hold the
