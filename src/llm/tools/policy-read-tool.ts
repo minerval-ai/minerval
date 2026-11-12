@@ -55,7 +55,7 @@ export async function executePolicyReadTool(name: string, input: Record<string, 
       categories: r.categories.map((c) => c.name),
     })),
     ...(rows.length === 0
-      ? { note: "No page written at this label has been asked to be shown below it, so no boundary has a policy yet. One starts from the same text at every boundary." }
+      ? { note: "No page written at this label has been asked to be shown to readers who do not read it, so no boundary has a policy yet. Every boundary starts from the same text." }
       : {}),
   });
 }

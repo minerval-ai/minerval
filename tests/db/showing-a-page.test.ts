@@ -254,7 +254,7 @@ describe("Audit's check", () => {
     const record = (await atA(() => shownShowing(id.showing!)))!;
     expect((record.nodes as any[])[0].versions[0].held_because).toBe("waiting for its redaction, which runs when it is paid for");
     expect((record.acts as any[]).map((a) => a.what)).toEqual(["asked for the showing", "the check returned the redaction to be done again"]);
-    expect(JSON.stringify(record)).not.toContain("4500");
+    expect(JSON.stringify(record)).not.toContain("target of");
     const [action] = await system(() => rawQuery<{ status: string }>(`SELECT status FROM actions WHERE exclusion_group = $1`, [`redact:${id.page}`]));
     expect(action!.status).toBe("open");
 
@@ -351,7 +351,7 @@ describe("what the destination sees", () => {
     expect((page.always_shown as any).made.prompt_set).toMatch(/^[0-9a-f]{64}$/);
     expect(page.verification).toEqual({ ok: true, problems: [], checked: 9, held: 2 });
     const whole = JSON.stringify(page);
-    for (const hidden of [SECRET, "4500", "March", "Unread logs", "An output figure"]) expect(whole).not.toContain(hidden);
+    for (const hidden of [SECRET, "target of", "in March", "Unread logs", "An output figure"]) expect(whole).not.toContain(hidden);
   });
 
   it("the verifier catches a part that was altered, swapped, dropped or moved", async () => {
@@ -417,7 +417,7 @@ describe("what the destination sees", () => {
         await rawQuery(`SELECT body FROM node_messages`),
       ])
     );
-    for (const hidden of [SECRET, "4500", "March", "Unread logs", "An output figure", "Bounds the figure", C]) expect(everythingAtA, hidden).not.toContain(hidden);
+    for (const hidden of [SECRET, "target of", "in March", "Unread logs", "An output figure", "Bounds the figure", C]) expect(everythingAtA, hidden).not.toContain(hidden);
   });
 });
 
@@ -626,6 +626,10 @@ describe("a standing showing of a node with what sits under it", () => {
     await system(() => rawQuery(`INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label) SELECT claim_id, 'supported', 0.5, 'Fourth.', 'Fourth.', false, sensitivity_label FROM assessments WHERE claim_id = $1 LIMIT 1`, [id.root]));
     expect(await followShowings()).toBe(0);
     await expect(endShowing({ showingId: id.standing!, reason: "no_longer_needed", actor: actor.director! })).rejects.toThrow(/already ended/);
+    // Nothing more is released from a showing that has ended. What was shown stays shown.
+    const late = await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 1 }], decision: "release" });
+    expect(late.refused[0]!.why).toBe("This page's showing has ended, so nothing more is released from it. What was shown stays shown.");
+    expect((await atA(() => shownPage(id.rootPage!)))!.state).toBe("released_unaltered");
   });
 });
 

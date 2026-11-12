@@ -477,6 +477,8 @@ export async function pageReachedGate(pageId: string): Promise<void> {
     const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
     if (!page || page.stage !== "at_gate") return;
     const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
+    // A showing that has ended releases nothing more, by a rule or by a person.
+    if (showing!.ended_at) return;
     const destination = destinationOf(showing!);
     const rules = await rawQuery<RuleRow>(
       `SELECT id, party_id, boundary_id, condition, covers_verdict, set_by, set_at, ended_at
@@ -615,6 +617,10 @@ export async function decideAtGate(input: {
         continue;
       }
       const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
+      if (showing!.ended_at && input.decision === "release") {
+        refused.push({ item, why: "This page's showing has ended, so nothing more is released from it. What was shown stays shown." });
+        continue;
+      }
       let partId: string | null = null;
       let needs = page.rests_on;
       if (item.part !== null && item.part !== undefined) {

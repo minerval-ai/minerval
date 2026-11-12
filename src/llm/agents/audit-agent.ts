@@ -24,6 +24,10 @@ import {
   isSkillTool,
 } from "../tools/skill-tools.js";
 import { withoutOffFeatureTools } from "../tools/feature-tools.js";
+import { oneLabelOnly } from "../../services/judgment-version-service.js";
+
+/** The tools of a redaction_fidelity audit, which exist only where a deployment has more than one label. */
+const REDACTION_CHECK_TOOLS: ReadonlySet<string> = new Set(["get_redaction_to_check", "record_fidelity_outcome"]);
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -89,7 +93,11 @@ async function runAuditImpl(input: {
   const tools = [
     ...getGovernanceToolDefinitions(),
     // Less the prize tools while the prizes feature is off (src/features.ts).
-    ...withoutOffFeatureTools(getAuditToolDefinitions()),
+    // And less the two that check a redaction where the graph has one label
+    // and nothing is redacted (services/showing-service.ts).
+    ...withoutOffFeatureTools(getAuditToolDefinitions()).filter(
+      (t) => !oneLabelOnly() || !REDACTION_CHECK_TOOLS.has(t.name)
+    ),
     ...getSpendToolDefinitions(),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
