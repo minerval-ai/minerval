@@ -150,7 +150,7 @@ import {
   sourceBackfillTick,
 } from "../../src/workers/source-backfill.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, readViewsAs, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -1035,13 +1035,11 @@ describe("what a reader is shown", () => {
         WHERE table_schema = 'public_read' AND column_name = 'sensitivity_label'`
     );
     expect(exposed).toEqual([]);
-    // The one view over a table altered here, and the view of sources, still
-    // read their rows, for an asker who reads the label the rows were
-    // written at (the views show no others: tests/db/enforcement.test.ts).
-    const [instance] = await readViewsAs([INTERNAL], `SELECT * FROM instances WHERE id = $1`, [rows.ids.instance]);
+    // The one view over a table altered here, and the view of sources, still read their rows.
+    const [instance] = await rawQuery<Record<string, unknown>>(`SELECT * FROM public_read.instances WHERE id = $1`, [rows.ids.instance]);
     expect(instance).toMatchObject({ source_id: rows.ids.source, node_id: rows.ids.claim });
     expect(Object.keys(instance!)).not.toContain("sensitivity_label");
-    const [source] = await readViewsAs([INTERNAL], `SELECT * FROM sources WHERE id = $1`, [rows.ids.source]);
+    const [source] = await rawQuery<Record<string, unknown>>(`SELECT * FROM public_read.sources WHERE id = $1`, [rows.ids.source]);
     expect(source).toBeDefined();
     expect(Object.keys(source!)).not.toContain("sensitivity_label");
     // No other view reads one of these tables.

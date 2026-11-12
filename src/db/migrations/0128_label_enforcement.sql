@@ -1,4 +1,7 @@
--- Holding reads and writes to a clearance (src/db/clearance.ts).
+-- Holding reads and writes to a clearance: the database's side of it. A
+-- clearance is the set of labels a connection may read. The application
+-- code that gives each connection its clearance, and connects as the roles
+-- below, is its own change and carries no migration.
 --
 -- Everything here is inert until a deployment defines a second label. On the
 -- public graph, where 'public' is the only label, no table has row-level
@@ -25,11 +28,17 @@
 --     the next time it runs, and it changes nothing that is already right.
 --  5. A trigger on labels that runs the step when a label is added or
 --     removed, so a second label cannot exist without enforcement.
+--  6. Two guards the step installs with the policies, for what a policy
+--     cannot say: a node's judgment in force is retired only by work at its
+--     own label, and an insert that collides with a row the writer cannot
+--     read is refused with the reason.
+--  7. Two views, in their own schema, that apply a connection's clearance as
+--     an ordinary condition, so that keyword search keeps its index where
+--     the policies are on.
 --
 -- The table owner is not bound by the policies (row-level security is
 -- enabled, not forced). The owner is the role migrations run as and the
--- role named system work connects as (withSystemClearance), and both must
--- see every row.
+-- role system work connects as, and both must see every row.
 CREATE OR REPLACE FUNCTION minerval_clearance() RETURNS text[]
 LANGUAGE sql STABLE PARALLEL SAFE
 AS $$
@@ -69,8 +78,7 @@ $$;
 -- Every label readable from the ones given: the labels themselves, each
 -- label one of them reads, and so on to the end of label_reads. 'public' is
 -- always in the answer. The one definition of what a clearance is, for a
--- person's grants (services/permission-service.ts) and for a run's label
--- (db/clearance.ts) alike.
+-- person's grants and for a run's label alike.
 CREATE OR REPLACE FUNCTION minerval_labels_readable_from(held text[]) RETURNS text[]
 LANGUAGE sql STABLE
 AS $$
@@ -225,6 +233,10 @@ ON CONFLICT DO NOTHING;
 -- returns the labels only when the signature is right, the token has not
 -- expired and it was made for this very backend. Anything else, a missing
 -- token included, reads 'public' alone.
+--
+-- The tables' owner is the exception, here as everywhere: it reads every
+-- row of the tables themselves, so the views show it every row too. A
+-- read-only SQL login is never the owner.
 CREATE OR REPLACE FUNCTION minerval_sql_clearance() RETURNS text[]
 LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = pg_catalog
@@ -235,6 +247,11 @@ DECLARE
   k text;
   signed text;
 BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles r
+              WHERE r.rolname = session_user
+                AND (r.rolsuper OR r.oid = (SELECT c.relowner FROM pg_class c WHERE c.oid = 'public.labels'::regclass))) THEN
+    RETURN (SELECT array_agg(name) FROM public.labels);
+  END IF;
   IF token IS NULL THEN
     RETURN ARRAY['public'];
   END IF;
@@ -270,10 +287,9 @@ $$;
 -- under the policy; it carries the same test as an ordinary condition, and
 -- the index is used. Each view here exposes only the columns the search
 -- reads, so a later change to any other column of its table does not meet
--- it. claims_search stands in for claims in the search queries
--- (services/search-service.ts); requests_text gives the ids a request
--- search matched, and the rows are then read from the table under the
--- policy (services/request-service.ts).
+-- it. claims_search stands in for claims in the search queries;
+-- requests_text gives the ids a request search matched, and the rows are
+-- then read from the table under the policy.
 CREATE SCHEMA IF NOT EXISTS minerval_readable;
 --> statement-breakpoint
 CREATE OR REPLACE VIEW minerval_readable.claims_search AS

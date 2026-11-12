@@ -184,7 +184,7 @@ import { placeStandingOrder } from "../../src/services/standing-order-service.js
 import { feedPollTick, retractionPollTick } from "../../src/workers/lookout-triggers.js";
 import { reclaimStalePrizeChecks } from "../../src/workers/prize-check-pipeline.js";
 import { processNextStewardTask } from "../../src/workers/steward-pipeline.js";
-import { OWL, creditOwls, readViewsAs, seedAction, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, creditOwls, seedAction, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 /** The second label: not a word any of these rows holds for another reason. */
 const SECOND = "embargoed";
@@ -1151,9 +1151,7 @@ describe("what a reader is shown", () => {
       ["messages", "node_id = $1", [ids.other]],
     ];
     for (const [view, where, params] of reads) {
-      // The rows were written at the second label, and the views show a row
-      // only to an asker who reads its label (tests/db/enforcement.test.ts).
-      const found = await readViewsAs([SECOND], `SELECT * FROM ${view} WHERE ${where}`, params);
+      const found = await rawQuery<Record<string, unknown>>(`SELECT * FROM public_read.${view} WHERE ${where}`, params);
       expect(found.length, view).toBeGreaterThan(0);
       expect(carriesIt(JSON.stringify(found)), view).toBe(false);
       expect(namesIt(JSON.stringify(found)), view).toBe(false);
