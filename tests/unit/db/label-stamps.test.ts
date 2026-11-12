@@ -48,8 +48,8 @@ describe("an insert into a labelled table", () => {
   const tables = labelledTables();
 
   it("finds the labelled tables in the schema", () => {
-    // Ninety-nine of the schema's tables carry a label; tests/db/labels.test.ts lists them.
-    expect(tables.sql.size).toBe(99);
+    // One hundred and six of the schema's tables carry a label; tests/db/labels.test.ts lists them.
+    expect(tables.sql.size).toBe(106);
     // Among them the tables that hold a commission's brief, a regrant's note and a stated view.
     for (const t of ["action_allocations", "regrants", "stated_views"]) expect(tables.sql.has(t)).toBe(true);
     expect(tables.sql.has("agent_steps")).toBe(true);
