@@ -3,9 +3,11 @@
  * that pays for that kind of work at once (#363), rather than waiting for a
  * sweep.
  *
- * Curations and work on requests go to the General mandate's program
- * officers, audits to the Governance mandates' (General's, for an audit of a
- * Governance mandate, so no mandate funds an audit of itself). The officers
+ * Curations, audits and work on requests go to the General mandate's
+ * program officers: all three are the graph's upkeep. An audit whose subject
+ * is General itself is raised to no one, so no mandate funds an audit of
+ * itself (a trigger on action_allocations enforces it too); it stays open
+ * on the ledger with its age, for anyone to commission. The officers
  * decide under their mandate's operating policy whether to commission the
  * row and at what budget. Nothing here prices or funds anything.
  *
@@ -13,7 +15,7 @@
  * or a later sitting can find it.
  */
 import { rawQuery } from "../db/client.js";
-import { getGeneralMandate, getGovernanceMandateIds } from "./allocation-policy-service.js";
+import { getGeneralMandate } from "./allocation-policy-service.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
 
 interface Row {
@@ -90,8 +92,9 @@ export async function fundCurationNow(actionId: string, opts: { requestId?: stri
 }
 
 /**
- * A fresh audit row: to each Governance mandate that isn't its subject, and
- * to General for an audit of a Governance mandate.
+ * A fresh audit row: to the General mandate's officers, unless General is
+ * the audit's subject (audit_runs.subject_grant_id: today only a bounty's
+ * audit names one, its posting mandate, and General posts none).
  */
 export async function fundAuditNow(actionId: string, opts: { note?: string } = {}): Promise<void> {
   try {
@@ -101,13 +104,10 @@ export async function fundAuditNow(actionId: string, opts: { note?: string } = {
       `SELECT subject_grant_id FROM audit_runs WHERE id::text = $1`,
       [r.target_ref ?? ""]
     );
-    const governance = await getGovernanceMandateIds();
     const general = await getGeneralMandate();
-    const subject = run?.subject_grant_id ?? null;
-    const funders = governance.filter((g) => g !== subject);
-    if (funders.length === 0 && general && general.grantId !== subject) funders.push(general.grantId);
+    if (!general || general.grantId === (run?.subject_grant_id ?? null)) return;
     const summary = `An audit is wanted: ${r.label}` + (opts.note ? ` ${opts.note}` : "");
-    for (const grantId of funders) await raise(grantId, r, summary);
+    await raise(general.grantId, r, summary);
   } catch (err) {
     console.warn(`[maintenance] raising audit ${actionId} failed:`, err instanceof Error ? err.message : err);
   }

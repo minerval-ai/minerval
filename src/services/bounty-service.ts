@@ -1128,7 +1128,7 @@ export async function reserveRoomMicroUsd(bountyId: string, tx?: Runner): Promis
  * Commission a prize audit's `audit` action from the bounty's reserve
  * (§8.6, #363), whole: one payer, one budget, as every commission is. A
  * reserve that holds the audit's whole budget pays for it. One that holds
- * less places nothing, and the audit goes to the Governance mandates'
+ * less places nothing, and the audit goes to the General mandate's
  * officers, who commission it whole from their own money, told what the
  * reserve holds. Idempotent: a second call places nothing already placed.
  * Returns the amount placed.
@@ -1161,7 +1161,7 @@ export async function fundPrizeAuditFromReserve(
   if (cost <= 0) return 0;
   if (room < cost) {
     // Never part of a budget from here and the rest from a mandate: the
-    // Governance officers commission the whole audit or decline it.
+    // General mandate's officers commission the whole audit or decline it.
     const { fundAuditNow } = await import("./maintenance-funding.js");
     await fundAuditNow(actionId, {
       note:

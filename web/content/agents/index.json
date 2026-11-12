@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 8778,
-    "fullChars": 107425,
+    "fullChars": 107420,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 8146,
-    "fullChars": 106793,
+    "fullChars": 106788,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 16616,
-    "fullChars": 115263,
+    "fullChars": 115258,
     "skills": [
       {
         "name": "costing",
@@ -101,7 +101,7 @@
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
     "roleChars": 30075,
-    "fullChars": 128722,
+    "fullChars": 128717,
     "skills": [
       {
         "name": "costing",
@@ -152,7 +152,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19551,
-    "fullChars": 118198,
+    "fullChars": 118193,
     "skills": []
   },
   {
@@ -165,7 +165,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 12144,
-    "fullChars": 110791,
+    "fullChars": 110786,
     "skills": [
       {
         "name": "costing",
@@ -212,7 +212,7 @@
     "model": "Claude Fable 5.2",
     "hasConstitution": true,
     "roleChars": 9014,
-    "fullChars": 107661,
+    "fullChars": 107656,
     "skills": [
       {
         "name": "costing",
@@ -254,11 +254,11 @@
     "stage": 7,
     "group": "governance",
     "tagline": "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
-    "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
+    "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the General mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 10358,
-    "fullChars": 109005,
+    "fullChars": 109000,
     "skills": [
       {
         "name": "costing",
@@ -317,7 +317,7 @@
     "model": "Claude Fable 5.2",
     "hasConstitution": true,
     "roleChars": 22340,
-    "fullChars": 120987,
+    "fullChars": 120982,
     "skills": [
       {
         "name": "costing",
@@ -363,7 +363,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 8990,
-    "fullChars": 107637,
+    "fullChars": 107632,
     "skills": [
       {
         "name": "costing",
@@ -407,7 +407,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 4904,
-    "fullChars": 103551,
+    "fullChars": 103546,
     "skills": [
       {
         "name": "costing",
@@ -451,7 +451,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 2962,
-    "fullChars": 101609,
+    "fullChars": 101604,
     "skills": [
       {
         "name": "costing",
@@ -495,7 +495,7 @@
     "model": "GPT-6 Luna (standard sweep), Claude Sonnet 5.5 (strong sweep)",
     "hasConstitution": true,
     "roleChars": 12169,
-    "fullChars": 110816,
+    "fullChars": 110811,
     "skills": [
       {
         "name": "costing",
@@ -554,7 +554,7 @@
     "model": "Chosen per launch: Claude Fable 5.2 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
     "roleChars": 16245,
-    "fullChars": 114892,
+    "fullChars": 114887,
     "skills": [
       {
         "name": "costing",
@@ -601,7 +601,7 @@
     "model": "Claude Fable 5.2 by default; the user may choose Claude Opus 5.5 for a conversation",
     "hasConstitution": true,
     "roleChars": 7843,
-    "fullChars": 106747,
+    "fullChars": 106742,
     "skills": []
   }
 ]

@@ -157,6 +157,19 @@ const sensitivityLabelColumn = () =>
     .default(sql`minerval_default_label()`)
     .references(() => labels.name);
 
+// The one label a credential works at (src/server/request-labels.ts): an API
+// key's, and an access token's. It is `work_label` and not sensitivity_label
+// because it does not say who may read the row. A key and a token are the
+// account's own and carry no label of that kind, and the step that holds
+// every table with a sensitivity_label column to a clearance must not take
+// these tables for labelled ones. A credential minted before a deployment
+// had a second label works at 'public', which was the only label there was.
+const workLabelColumn = () =>
+  text("work_label")
+    .notNull()
+    .default("public")
+    .references(() => labels.name);
+
 // ---------------------------------------------------------------------------
 // origin: which graph a row belongs to
 //
@@ -1950,6 +1963,408 @@ export const sourceInterests = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// connections: an organization's data, read where it lives
+// (src/connections.ts)
+//
+// A connection points the deployment at one MCP server over a system the
+// organization or one of its parties runs: a warehouse, a wiki, a ticket or
+// log store. Administrators add and change them, and each change is a row in
+// administrative_events. The public graph has none.
+//
+// What a connection holds:
+//   - where the server is and how to speak to it (url, transport). The
+//     transport is a name the code knows ('streamable_http', 'sse') and is
+//     not held to a list here, so that a later one is not a migration.
+//   - how to authenticate: credential_env is the NAME of the environment
+//     variable that holds the credential, never the credential, and
+//     credential_header the header it is sent in. NULL credential_env means
+//     the server asks for none.
+//   - whose system it is (party_id) and what that party stands to gain or
+//     lose from what the system shows (stake). Both are carried by every
+//     reading kept from it: the source belongs to the party, and the stake
+//     is recorded on it in source_interests.
+//   - its one label (sensitivity_label): who may read what comes through it.
+//     A run is offered the connection only when its label reads this one.
+//     The column has the shared default like every labelled table; the
+//     service that adds a connection always states the label.
+//   - calls_per_minute: a rate its administrator may set, across all runs,
+//     because calls cost the organization's system and no owls, so a run's
+//     budget does not bound them. NULL sets none.
+//   - timeout_seconds: how long a call may go unanswered before it is given
+//     up, since the run that made it waits.
+//   - the state an administrator sees: when the server last answered, and
+//     the last failure to reach it.
+//
+// tool_prefix names the connection in tool names: an agent is offered the
+// server's tool `run_query` as `<tool_prefix>__run_query`, so two
+// connections' tools cannot collide with each other or with a built-in tool.
+// ---------------------------------------------------------------------------
+export const connections = pgTable(
+  "connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    toolPrefix: text("tool_prefix").notNull(),
+    transport: text("transport").notNull().default("streamable_http"),
+    url: text("url").notNull(),
+    credentialEnv: text("credential_env"),
+    credentialHeader: text("credential_header").notNull().default("Authorization"),
+    partyId: uuid("party_id")
+      .notNull()
+      .references(() => parties.id),
+    stake: text("stake").notNull(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    callsPerMinute: integer("calls_per_minute"),
+    timeoutSeconds: integer("timeout_seconds").notNull().default(120),
+    // Off: no run is offered its tools. A connection is never deleted, since
+    // calls and kept readings refer to it.
+    enabled: boolean("enabled").notNull().default(true),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastAnsweredAt: timestamp("last_answered_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references((): AnyPgColumn => contributors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_connections_name").on(sql`lower(${table.name})`),
+    uniqueIndex("uq_connections_tool_prefix").on(table.toolPrefix),
+    check("ck_connections_rate", sql`${table.callsPerMinute} IS NULL OR ${table.callsPerMinute} > 0`),
+    check("ck_connections_timeout", sql`${table.timeoutSeconds} > 0`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// connection_tools: a connection's tools as an administrator last saw them,
+// and which of them are offered to agents
+//
+// One row per tool the server listed when an administrator last looked:
+// its name, description, input schema and the server's own markings
+// (annotations, where `readOnlyHint` is the server's word that the tool
+// only reads: a hint, shown beside the tool, never proof). definition_hash
+// is taken over those four, so a later change to any of them shows.
+//
+// `offered` is the administrator's choice, tool by tool, and nothing is
+// offered that was not picked. A pick holds for the definition it was made
+// on: when the server's tool no longer matches definition_hash, or is no
+// longer listed, or the connection's address changes, the tool stops being
+// offered (offered false, withdrawn_at and withdrawn_reason set) until an
+// administrator looks again and picks it again. `listed` says whether the
+// server still listed the tool at the last look.
+//
+// sensitivity_label is the connection's: a tool's name, description and
+// input schema are the organization's system describing itself, the same
+// whoever looks, so the row is derived from the connection and carries its
+// label (src/labels.ts). Whoever may not read the connection may not read
+// what its tools are called.
+// ---------------------------------------------------------------------------
+export const connectionTools = pgTable(
+  "connection_tools",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    inputSchema: jsonb("input_schema").notNull(),
+    annotations: jsonb("annotations"),
+    definitionHash: text("definition_hash").notNull(),
+    listed: boolean("listed").notNull().default(true),
+    seenAt: timestamp("seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    offered: boolean("offered").notNull().default(false),
+    offeredBy: uuid("offered_by").references((): AnyPgColumn => contributors.id),
+    offeredAt: timestamp("offered_at", { withTimezone: true }),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    // 'changed' | 'missing' | 'address_changed': a name the code gives.
+    withdrawnReason: text("withdrawn_reason"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_connection_tools_name").on(table.connectionId, table.name)]
+);
+
+// ---------------------------------------------------------------------------
+// connection_calls: every call an agent made through a connection
+//
+// One row per call: which tool, with what arguments, when, and what came
+// back. The result is stored whole as text with its SHA-256, whatever part
+// of it the agent was shown, so that a reading kept later is the reading as
+// it was made. outcome is NULL while the call is in flight, then
+// 'answered', 'tool_error' (the system answered with an error) or 'failed'
+// (no answer: unreachable, credential refused, timed out), with `error`
+// saying which.
+//
+// A call is not a source. When an agent's work rests on one it keeps it
+// (keep_reading): source_id then names the source row made from the call,
+// and kept_at when. Calls nobody kept stay here as the record of what was
+// asked of the organization's system, and are what calls_per_minute counts.
+//
+// sensitivity_label is the label of the run that made the call, like
+// anything a run writes: the arguments are the run's own words, stored with
+// what came back. That label always reads the connection's, or the run
+// would not have been offered the tool. party_id is the connection's when
+// the call was made: whose material came back does not depend on who asked.
+// A source kept from the call takes both from here.
+//
+// run_id, agent and claim_id are the calling run's, from the usage context,
+// with no foreign keys, like llm_usage.
+// ---------------------------------------------------------------------------
+export const connectionCalls = pgTable(
+  "connection_calls",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    tool: text("tool").notNull(),
+    arguments: jsonb("arguments").notNull(),
+    calledAt: timestamp("called_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    durationMs: integer("duration_ms"),
+    outcome: text("outcome"),
+    error: text("error"),
+    result: text("result"),
+    resultHash: text("result_hash"),
+    resultChars: integer("result_chars"),
+    runId: uuid("run_id"),
+    agent: text("agent"),
+    claimId: uuid("claim_id"),
+    partyId: uuid("party_id").references(() => parties.id),
+    sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    // The rate check counts a connection's calls in the last minute, and an
+    // administrator's list reads them newest first.
+    index("idx_connection_calls_connection_time").on(table.connectionId, table.calledAt),
+    index("idx_connection_calls_source")
+      .on(table.sourceId)
+      .where(sql`source_id IS NOT NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// file_sets: files of any kind, taken in as a set (src/file-sets.ts)
+//
+// The third way material comes into a private deployment, beside a document
+// and a connection: data exports, logs, evaluation transcripts, code, too
+// large or too raw to be documents. Agents explore a set by running
+// commands in a sandbox the deployment runs, with no network. The public
+// graph has none.
+//
+// What a set holds:
+//   - a name people and agents know it by, and a slug: a short lower-case
+//     word that is the set's directory name in the store and in the
+//     sandbox, and the first part of the address of every file kept from
+//     it. `description` is what whoever added it says it holds.
+//   - where its files are. origin is 'upload' (files streamed in through
+//     the route and kept in the deployment's store) or 'directory' (a
+//     directory already under the root the operator configured, read where
+//     it lies). storage_key is the set's path under the store or under that
+//     root, never an absolute path: the API and the sandbox mount the same
+//     files at different places. Both names are the code's and not held to
+//     a list here.
+//   - whose material it is (party_id) and what that party stands to gain or
+//     lose from what the files show (stake), as a connection has. Both are
+//     carried by every source kept from the set.
+//   - its one label (sensitivity_label): who may read its files. A run is
+//     offered the set only when the label it works at reads this one. The
+//     column has the shared default like every labelled table; the service
+//     that adds a set always states the label.
+//   - state: 'open' while files are being uploaded, 'hashing' while a
+//     registered directory is walked, then 'closed', or 'failed' with
+//     `problem` saying why. A set is closed once filled: no file is added,
+//     changed or removed afterwards, and new files are a new set. Only a
+//     closed set is offered to a run.
+//   - file_count, total_bytes and manifest_hash, written when it closes.
+//     manifest_hash is one SHA-256 over every file's hash and path, so it
+//     fixes the whole set.
+//   - enabled: false switches it off, so no run is offered it. A set is
+//     never deleted, since calls and kept sources refer to it.
+// ---------------------------------------------------------------------------
+export const fileSets = pgTable(
+  "file_sets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description").notNull().default(""),
+    origin: text("origin").notNull(),
+    storageKey: text("storage_key").notNull(),
+    partyId: uuid("party_id")
+      .notNull()
+      .references(() => parties.id),
+    stake: text("stake").notNull(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    state: text("state").notNull().default("open"),
+    problem: text("problem"),
+    fileCount: integer("file_count").notNull().default(0),
+    totalBytes: bigint("total_bytes", { mode: "number" }).notNull().default(0),
+    manifestHash: text("manifest_hash"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    enabled: boolean("enabled").notNull().default(true),
+    createdBy: uuid("created_by").references((): AnyPgColumn => contributors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_file_sets_name").on(sql`lower(${table.name})`),
+    uniqueIndex("uq_file_sets_slug").on(table.slug),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// file_set_files: a set's manifest
+//
+// One row per file: its path inside the set, its size, and the SHA-256
+// taken when it was added. Rows are written while the set fills and never
+// changed afterwards.
+//
+// sensitivity_label is the set's: a path can say as much as the file it
+// names (a person, a customer, a project), and a hash answers whether a
+// known file is in the set. The row is derived from the set, the same
+// whoever asks, so it carries the set's label (src/labels.ts).
+// ---------------------------------------------------------------------------
+export const fileSetFiles = pgTable(
+  "file_set_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fileSetId: uuid("file_set_id")
+      .notNull()
+      .references(() => fileSets.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    sha256: text("sha256").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_file_set_files_path").on(table.fileSetId, table.path)]
+);
+
+// ---------------------------------------------------------------------------
+// sandbox_calls: every command an agent ran in the sandbox
+//
+// One row per command: the command line, the files the agent gave with it
+// (a script, usually; `files` holds each one's path, text and SHA-256), the
+// sets it could read (`file_sets`: each one's id, name, slug, manifest hash
+// and where it was mounted), when, and what came back. The output is stored
+// whole as text with its SHA-256, whatever part of it the agent was shown.
+// outcome is NULL while the command is running, then how it ended:
+// 'exited' (with exit_code), 'timed_out', 'memory', 'output_ceiling',
+// 'scratch_full', 'killed', or 'failed' when the sandbox gave no answer
+// (`error` says why). `written` lists the files the command wrote in its
+// scratch directory, each with its size and hash; their contents are not
+// kept. sandbox_version, sandbox_image and python name what it ran in.
+//
+// A call is not a source. When an agent's work rests on one it keeps it
+// (keep_analysis): source_id then names the source row made from the call,
+// and kept_at when.
+//
+// sensitivity_label is the label of the run that ran the command, like
+// anything a run writes: the command and any script are the run's own
+// words, stored with what they produced. That label always reads the label
+// of every set the command could read, or the run would not have been
+// offered them. A source kept from the call takes its label from here.
+//
+// run_id, agent and claim_id are the calling run's, from the usage context,
+// with no foreign keys, like llm_usage.
+// ---------------------------------------------------------------------------
+export const sandboxCalls = pgTable(
+  "sandbox_calls",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    command: text("command").notNull(),
+    files: jsonb("files").notNull().default([]),
+    fileSets: jsonb("file_sets").notNull().default([]),
+    calledAt: timestamp("called_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    durationMs: integer("duration_ms"),
+    outcome: text("outcome"),
+    exitCode: integer("exit_code"),
+    error: text("error"),
+    output: text("output"),
+    outputHash: text("output_hash"),
+    outputChars: integer("output_chars"),
+    written: jsonb("written"),
+    writtenNotListed: integer("written_not_listed"),
+    sandboxVersion: text("sandbox_version"),
+    sandboxImage: text("sandbox_image"),
+    python: text("python"),
+    runId: uuid("run_id"),
+    agent: text("agent"),
+    claimId: uuid("claim_id"),
+    sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    // The lists read them newest first.
+    index("idx_sandbox_calls_time").on(table.calledAt),
+    // A set's page lists and counts the commands that had it mounted
+    // (file_sets @> '[{"id": ...}]').
+    index("idx_sandbox_calls_file_sets").using("gin", table.fileSets),
+    index("idx_sandbox_calls_source")
+      .on(table.sourceId)
+      .where(sql`source_id IS NOT NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// file_set_keeps: a file of a set, or a passage of one, kept as a source
+//
+// One row per source made by keep_file: which file, and for a passage which
+// lines (first_line and last_line, counted from 1; both NULL for the whole
+// file). The source is derived mechanically from the file and is the same
+// whoever asks, so it carries the set's label and party, and the same file
+// or passage kept twice is one source and one row. For the same reason the
+// row does not say which run kept it or for which node: a run at a label
+// that reads the set's may keep a file, and the row is at the set's label
+// (sensitivity_label): it says which file of the set work has rested on,
+// and which lines of it.
+// ---------------------------------------------------------------------------
+export const fileSetKeeps = pgTable(
+  "file_set_keeps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fileSetId: uuid("file_set_id")
+      .notNull()
+      .references(() => fileSets.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => fileSetFiles.id, { onDelete: "cascade" }),
+    firstLine: integer("first_line"),
+    lastLine: integer("last_line"),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    keptAt: timestamp("kept_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_file_set_keeps_source").on(table.sourceId),
+    index("idx_file_set_keeps_set").on(table.fileSetId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // jobs
 // ---------------------------------------------------------------------------
 export const jobs = pgTable(
@@ -2075,6 +2490,10 @@ export const apiKeys = pgTable(
     keyPrefix: text("key_prefix").notNull(),
     keyHash: text("key_hash").notNull().unique(),
     scope: text("scope").notNull().default("user"),
+    // The label every request made with this key works at, fixed when the
+    // key is minted and never changed: an outside agent holding the key
+    // does not choose a label call by call.
+    workLabel: workLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2553,6 +2972,110 @@ export const owlLedger = pgTable(
   (table) => [
     index("idx_owl_ledger_user_time").on(table.userId, table.createdAt),
     index("idx_owl_ledger_contribution").on(table.contributionId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// usage_reports: what this deployment reports of its own owl spend
+//
+// A members-only deployment on the metered price reports, for each closed
+// UTC day, the owls its runs spent: one total and nothing else
+// (docs/usage-report.md; src/services/usage-report-service.ts). A row is
+// one report. `body` is the report exactly as it is sent, character for
+// character, written when the report is prepared and never changed, so an
+// administrator can read before sending what will leave, and afterwards
+// what left. It is text and not jsonb for that reason: jsonb would reorder
+// it.
+//
+// A period's report is not rewritten. If a later count of the same day
+// differs, the correction is a new row with the next `revision`, and both
+// are sent. `deployment_id` is minted with the first report and repeated on
+// every one, so that two deployments reporting under one account are told
+// apart.
+//
+// The sending columns are the only ones that change: when the public graph
+// acknowledged the report (`sent_at`, `sent_via` 'online', `receipt`), or
+// when it was written to a file to be handed over (`sent_via` 'file',
+// `receipt` holding the file's name), and the last failed attempt. Empty
+// on the public graph, which reports to no one.
+//
+// The table carries no label. A report is a day, a total and identifiers,
+// taken over runs at every label, and it is made to leave the deployment:
+// nothing in it is a run's or a person's words.
+// ---------------------------------------------------------------------------
+export const usageReports = pgTable(
+  "usage_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deploymentId: uuid("deployment_id").notNull(),
+    // The UTC day the report is of.
+    period: date("period").notNull(),
+    // 0 for the day's first report; each correction takes the next number.
+    revision: integer("revision").notNull().default(0),
+    body: text("body").notNull(),
+    // sha256 of `body`, hex.
+    bodyHash: text("body_hash").notNull(),
+    // The total the body states, in millionths of an owl, kept beside it so
+    // that a recount can be compared without parsing the body.
+    spentMicroOwls: bigint("spent_micro_owls", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    // 'online' | 'file'; null until sent.
+    sentVia: text("sent_via"),
+    receipt: jsonb("receipt"),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+  },
+  (table) => [
+    uniqueIndex("uq_usage_reports_period_revision").on(table.period, table.revision),
+    index("idx_usage_reports_unsent").on(table.period).where(sql`${table.sentAt} IS NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// usage_reports_received: what other deployments reported to this one
+//
+// The receiving side of the same report (POST /usage-reports): a private
+// deployment sends its report to the public graph under the organization's
+// account, and it is recorded here against that account, as it was sent.
+// Nothing reads these rows to bill yet. One row per account, deployment,
+// period and revision: the same report sent again is recognized by its
+// hash and changes nothing, and a different report for a period already
+// reported is refused unless it is the next revision. Empty on a
+// deployment nobody reports to.
+//
+// No label here either: the same day, total and identifiers, held against
+// the account that sent them, as the owl ledger holds an account's money.
+// ---------------------------------------------------------------------------
+export const usageReportsReceived = pgTable(
+  "usage_reports_received",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    deploymentId: uuid("deployment_id").notNull(),
+    period: date("period").notNull(),
+    revision: integer("revision").notNull().default(0),
+    // The report as received, in canonical form (keys sorted, no spaces),
+    // which is the form a deployment sends it in.
+    body: text("body").notNull(),
+    bodyHash: text("body_hash").notNull(),
+    // The total the body states, in millionths of an owl.
+    spentMicroOwls: bigint("spent_micro_owls", { mode: "number" }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_usage_reports_received").on(
+      table.accountId,
+      table.deploymentId,
+      table.period,
+      table.revision
+    ),
   ]
 );
 
@@ -4099,6 +4622,10 @@ export const oauthAuthorizationRequests = pgTable(
       onDelete: "cascade",
     }),
     codeHash: text("code_hash").unique(),
+    // The label the person approving named for the tokens this consent
+    // issues; null until it is approved, and where the approval named none
+    // (a deployment whose only label is 'public').
+    workLabel: text("work_label").references(() => labels.name),
     // The consent window: an unapproved request dies after this.
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     // The minted code's own (shorter) lifetime.
@@ -4131,6 +4658,10 @@ export const oauthTokens = pgTable(
     tokenHash: text("token_hash").notNull().unique(),
     tokenType: text("token_type").notNull(), // 'access' | 'refresh'
     scope: text("scope"),
+    // The label every request made with this token works at: the one the
+    // person named when they approved the consent, carried through each
+    // refresh. Fixed for the life of the grant.
+    workLabel: workLabelColumn(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

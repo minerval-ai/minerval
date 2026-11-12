@@ -873,18 +873,27 @@ The first live epoch's lesson stands as guidance for those policies: 122
 unconditional sweeps of claims the Matcher had just declared novel cost
 about 13 owls and wrote nothing.
 
-**Who funds audits.** The platform's **Governance** mandate (policy
-`governance`, seeded beside General) pays for audits. A fresh audit row is
-put in front of its officers (`fundAuditNow`), whose operating policy puts
-prize acceptances and bad-faith flags first and periodic sweeps last, and
-lets an audit that has waited move up. It has its own escrow and pace, so
-audits never compete with assessments for General's money, and its own
-page. Any other mandate may commission an audit in its territory.
+**Who funds audits.** The General mandate, as upkeep. A fresh audit row is
+put in front of its officers (`fundAuditNow`), whose operating policy funds
+every audit that is not a duplicate and, when the pace leaves little room, takes
+prize acceptances and bad-faith flags first and periodic sweeps last,
+letting an audit that has waited move up. Any other mandate may commission
+an audit in its territory.
+
+A separate Governance mandate (policy `governance`) used to pay for audits,
+so that audits would not compete with assessments for General's money
+and so that General would never decide whether an audit of it ran. Neither
+reason held up: audits are upkeep, which is what General's money is for, and
+nothing audits General's decisions (the only audit that names a mandate as
+its subject is a bounty's, and General posts none). It cost a second
+mandate's sittings and review passes to fund about two owls of audits a
+month, and production ran without it. It was folded into General; a row
+seeded with policy `governance` is left alone, and nothing is routed to it.
 
 **Recusal.** An audit whose subject is a mandate (`audit_runs.subject_grant_id`:
-a posted bounty names its posting mandate) is never put to that mandate:
-an audit of a Governance mandate goes to General's officers instead, so
-each platform mandate pays for audits of the other. Declining an audit is
+a posted bounty names its posting mandate) is never paid for by that
+mandate: a trigger on `action_allocations` refuses it, and an audit whose
+subject is General is raised to no one. Declining an audit is
 visible, not prevented: an audit no one commissions sits open on the
 ledger with its age, on the mandate's page and in `query_sql`'s `ledger`, and an
 officer's decline is logged with its reason.
@@ -895,7 +904,7 @@ the docs always said pays for them: an audit requested with a bounty
 once from the reserve. A reserve that holds the audit's whole estimated
 budget commissions it (`commissioned_by = 'prize_reserve'`,
 `fundPrizeAuditFromReserve`); a short one places nothing, and the audit
-goes to the Governance mandates' officers, told what the reserve holds,
+goes to the General mandate's officers, told what the reserve holds,
 who commission the whole of it or decline it. One run never has part of
 its budget from the reserve and the rest from a mandate. The reserve's accounting (its
 room, its release, the mandate's committed money) counts it beside the
@@ -907,8 +916,8 @@ officer sittings are enabled, a sitting starts at once rather than waiting
 for the scheduler.
 
 **The fallback lane.** With `BACKGROUND_FALLBACK_LANE_ENABLED` and no
-mandate that could fund the kind (no active General mandate for curate,
-no active Governance mandate for audit), an uncovered row runs
+mandate that could fund the kind (no active General mandate, which owns
+both curation and audit), an uncovered row runs
 attributed to nobody, as the Steward's fallback lane does, so a fresh dev
 database and a corpus run still exercise both agents; `CURATOR_MAX_RUNS`
 caps the lane's Curator runs per process. A deployment with its mandates
@@ -1746,10 +1755,10 @@ posting at or above the autonomy threshold; that confirmation stays the
 operator key's. Once it's funded, a platform mandate is stewarded like
 every other.
 
-The standing mandates (General, Governance, Mathematics, Mathematics
-prizes, AI Economics) were seeded before this path existed
+The standing mandates (General, Mathematics, Mathematics prizes, AI
+Economics) were seeded before this path existed
 (`scripts/seed-platform-mandates.ts`), with their text written in code.
-General and Governance are seeded with a starting operating policy and
+General is seeded with a starting operating policy and
 officers' limit, and General with its two lookouts; a re-seed never
 overwrites a policy the Grantmaker has since written. The seed finds each
 row by its key (`mandate.seed_key`), so a mandate can be renamed in the
@@ -1765,7 +1774,7 @@ is a follow-up.
 
 **General is a maintenance mandate.** Its money is the platform's, and
 it buys what no topical funder would: consistency sweeps, curation,
-audits that come to it, work someone is waiting on, passes where
+audits, work someone is waiting on, passes where
 something under a published verdict changed, and the unassessed premises
 of published verdicts. It does not pay to extend coverage; first
 assessments are for the mandates and readers whose scope they are. Its
