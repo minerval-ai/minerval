@@ -189,9 +189,15 @@ describe("the label on a ledger row", () => {
     expect(insert[0]).toContain("sensitivity_label)");
     expect(insert[0]).toContain(LABEL_ON_REOPEN_SQL);
     expect(insert[1]!.at(-1)).toBe("internal");
-    // An open or running row keeps the label of the work already waiting on it.
-    expect(LABEL_ON_REOPEN_SQL).toContain("WHEN actions.status IN ('open', 'running') THEN actions.sensitivity_label");
-    expect(LABEL_ON_REOPEN_SQL).toContain("ELSE EXCLUDED.sensitivity_label");
+    // A finished row, by name, takes the reopener's label; any other keeps
+    // the label of the work already waiting on it. The display text and the
+    // target go the same way, in the same statement.
+    expect(LABEL_ON_REOPEN_SQL).toContain(
+      "WHEN actions.status IN ('done', 'superseded', 'cancelled') THEN EXCLUDED.sensitivity_label"
+    );
+    expect(LABEL_ON_REOPEN_SQL).toContain("ELSE actions.sensitivity_label END");
+    expect(LABEL_ON_REOPEN_SQL).toContain("THEN EXCLUDED.label ELSE actions.label END");
+    expect(LABEL_ON_REOPEN_SQL).toContain("THEN EXCLUDED.target_ref");
   });
 });
 

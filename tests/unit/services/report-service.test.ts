@@ -402,7 +402,11 @@ describe("raiseIssue: sightings", () => {
     });
     expect(mocks.generateEmbedding).not.toHaveBeenCalled();
     const [updateSql, updateParams] = calls("occurrence_count = r.occurrence_count + 1")[0]!;
-    expect(updateSql).toContain("WHEN r.status = 'actioned' THEN 'new'");
+    // The sighting's words and its reopening go into the report's row only
+    // where the sighting is at the report's own label ($9).
+    expect(updateSql).toContain("WHEN r.sensitivity_label = $9 AND r.status = 'actioned' THEN 'new'");
+    expect(updateSql).toContain("WHEN r.sensitivity_label = $9 AND $2::text <> '' THEN $2::text ELSE r.body");
+    expect(updateParams[8]).toBe("public");
     expect(updateSql).toContain("AND origin = $8");
     expect(updateParams[0]).toBe(OTHER_ID);
     expect(updateParams[1]).toBe(GOOD.body);
@@ -484,6 +488,8 @@ describe("updateReport", () => {
       "the cause is the relation enum missing 'counterpart'",
       "agent:steward",
       "internal",
+      // The label of the work in progress: it re-rates only a report at its own.
+      "public",
     ]);
     const [sightingSql, sightingParams] = calls("INSERT INTO agent_report_sightings")[0]!;
     expect(sightingSql).toContain("'note'");
@@ -793,7 +799,9 @@ describe("triageAgentReport", () => {
     expect(missing).toBeNull();
     const [sql, params] = mocks.rawQuery.mock.calls[0]!;
     expect(String(sql)).toContain("UPDATE agent_reports");
-    expect(params).toEqual([REPORT_ID, "wontfix", "not a defect", null, "audit:run-1"]);
+    // Only a report at the triager's own label: a triage note is read by that label's readers.
+    expect(String(sql)).toContain("WHERE id = $1 AND sensitivity_label = $6");
+    expect(params).toEqual([REPORT_ID, "wontfix", "not a defect", null, "audit:run-1", "public"]);
     expect(mocks.syncTriageToIssue).not.toHaveBeenCalled();
   });
 

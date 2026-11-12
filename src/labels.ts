@@ -52,7 +52,11 @@
  * public document is restricted, and so are its reading of it, the
  * examination it opens and the stake it records. A write that lands on a
  * row already there (an upsert) leaves that row's label as it was, and so
- * does the text or the facts a fetch writes into a source's own row.
+ * does the text or the facts a fetch writes into a source's own row. Where
+ * the row already there is at another label than the writer's, an upsert
+ * that carries the writer's words (a reasoning, a note, a summary) writes
+ * nothing and says so: those words would be read by the row's readers
+ * (sameLabelOnly in db/clearance.ts).
  *
  * A step of a run's transcript is the run's in the strictest sense: it
  * carries the label the run was opened at, which the run's handle keeps

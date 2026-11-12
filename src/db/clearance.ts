@@ -118,6 +118,37 @@ export function refusalForCaller(err: unknown): string | null {
   return e.hint ? `${sentence} ${e.hint}` : sentence;
 }
 
+/**
+ * An upsert writes only into a row at its writer's own label.
+ *
+ * A table holds one row for each identity whatever the labels, so an upsert
+ * by work at one label can land on a row another label wrote. The policy
+ * allows the update where the writer reads that row, and the update then
+ * puts the writer's words (a reasoning, a note, a summary) into a row its
+ * own readers were never the only readers of: a private run's reasoning
+ * into a public edge, where everyone reads it. So an upsert that carries
+ * text from its writer says, in its DO UPDATE, that it applies only where
+ * the row's label is the incoming row's (`sameLabelOnly`), and treats no
+ * row coming back as what it is: the row is there at another label, and
+ * nothing was written (`writtenAtOwnLabel`). The writer is told, with the
+ * reason. Each label keeping its own row is later work.
+ *
+ * A row at a label the writer does not read never gets this far: the
+ * database refuses that insert first (the unseen collision guard, MVL03).
+ */
+export const sameLabelOnly = (table: string): string =>
+  `WHERE ${table}.sensitivity_label = EXCLUDED.sensitivity_label`;
+
+/** The rows such an upsert returned, or a refusal when it returned none. `what` names the row for whoever is told. */
+export function writtenAtOwnLabel<T>(rows: T[], what: string): T[] {
+  if (rows.length > 0) return rows;
+  throw new ClearanceError(
+    `This was not written: ${what} already exists at another label than this work's. Work at one label does not ` +
+      `write its words into a row at another, where that label's readers would read them, and each label ` +
+      `keeping its own is not built yet. Nothing was changed.`
+  );
+}
+
 // ---- system work ------------------------------------------------------------
 
 const systemStore = new AsyncLocalStorage<{ reason: string } | null>();
@@ -320,11 +351,17 @@ async function readEnforcement(ownerQuery: OwnerQuery): Promise<boolean> {
   // The policy the step creates (minerval_enforcement_sync) is the fact:
   // enforcement is on exactly when it exists. pg_policy is in every
   // database, so this needs no migration to have run.
+  // The answer is as old as the question, not as its arrival: a check that
+  // was in flight while enforcement was turned on comes back "off" with a
+  // time from before the switch, so the wait in armEnforcement outlasts it.
+  // Stamped on arrival, a slow check could have kept this process on the
+  // owner's pool for a whole interval after the switch.
+  const asked = Date.now();
   const [row] = await ownerQuery<{ on: boolean }>(
     `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'label_clearance') AS on`
   );
   const on = row?.on === true;
-  enforcement = { on, at: Date.now() };
+  enforcement = { on, at: asked };
   return on;
 }
 

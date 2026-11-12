@@ -9,6 +9,7 @@
  * Writers validate through src/schemas/kinds.ts and refuse a write on the
  * wrong kind of node with a KindError (node-kind.ts).
  */
+import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import {
@@ -34,12 +35,15 @@ export async function defineQuantity(input: {
     await convertKind(tx, input.claimId, "quantity");
     // A first definition takes this run's label; a revision of one keeps
     // the label the definition has (src/labels.ts).
-    await tx.query(
+    writtenAtOwnLabel(
+      await tx.query(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (claim_id) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
-             conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
+             conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
+       ${sameLabelOnly("quantity_definitions")}
+       RETURNING 1 AS written`,
       [
         input.claimId,
         def.measures,
@@ -49,6 +53,8 @@ export async function defineQuantity(input: {
         input.createdBy,
         currentLabel(),
       ]
+    ),
+      "this quantity's definition"
     );
   });
 }

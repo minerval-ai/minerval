@@ -33,6 +33,7 @@ import { registerErrorHandler } from "../../src/server/plugins/error-handler.js"
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { currentLabel, runAtLabel, runWithUsageContext, untraced, withAgent } from "../../src/llm/usage-context.js";
+import { LABEL_ON_REOPEN_SQL } from "../../src/services/action-service.js";
 import { labelsReadableFrom } from "../../src/services/permission-service.js";
 import { keywordClaimSearch } from "../../src/services/search-service.js";
 import { runReadOnlyQuery, sqlClearanceToken } from "../../src/services/sql-service.js";
@@ -692,49 +693,76 @@ describe("a write", () => {
   // The one change of label there is: a ledger row stands for its group's
   // next piece of work, so a finished row that is opened again takes the
   // label of the work that reopens it (LABEL_ON_REOPEN_SQL in
-  // services/action-service.ts). The trigger lets exactly that through.
-  it("lets a finished ledger row take the label of the work that reopens it, and nothing else", async () => {
+  // services/action-service.ts). The trigger lets exactly that through: the
+  // row was finished by name, the statement opens it, the new label is the
+  // connection's own, and the new label reads the old one. A second review
+  // found the first version of this let any update move a row that was not
+  // open or running, down to public included.
+  it("lets a finished ledger row take the label of the work that reopens it, and nothing near that", async () => {
     const group = `enf-reopen:${randomUUID()}`;
     const [row] = await system(() =>
       rawQuery<{ id: string }>(
-        `INSERT INTO actions (kind, exclusion_group, variant, label, cost_est_micro_usd, status, sensitivity_label)
-         VALUES ('assess', $1, 'standard', 'Enforcement reopen', 1, 'done', 'public') RETURNING id`,
+        `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, status, sensitivity_label)
+         VALUES ('assess', $1, 'standard', 'the public work''s target', 'The public work''s words', 1, 'done', 'public') RETURNING id`,
         [group]
       )
     );
     const state = async () =>
       (await system(() =>
-        rawQuery<{ status: string; l: string }>(`SELECT status, sensitivity_label AS l FROM actions WHERE id = $1`, [row!.id])
-      ))[0]!;
-    const reopenAt = (label: string, stamp: string) =>
-      at(label, () =>
-        rawQuery(
-          `INSERT INTO actions (kind, exclusion_group, variant, label, cost_est_micro_usd, sensitivity_label)
-           VALUES ('assess', $1, 'standard', 'Enforcement reopen', 1, $2)
-           ON CONFLICT (exclusion_group, variant) DO UPDATE
-             SET status = 'open',
-                 sensitivity_label = CASE WHEN actions.status IN ('open', 'running')
-                                          THEN actions.sensitivity_label ELSE EXCLUDED.sensitivity_label END`,
-          [group, stamp]
+        rawQuery<{ status: string; l: string; label: string; target_ref: string | null }>(
+          `SELECT status, sensitivity_label AS l, label, target_ref FROM actions WHERE id = $1`,
+          [row!.id]
         )
+      ))[0]!;
+    const set = (status: string, label: string) =>
+      system(() => rawQuery(`UPDATE actions SET status = $2, sensitivity_label = $3 WHERE id = $1`, [row!.id, status, label]));
+    /** The application's own upsert, as every producer writes it. */
+    const reopen = (stamp: string, words: string) =>
+      rawQuery(
+        `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+         VALUES ('assess', $1, 'standard', $3, $4, 1, $2)
+         ON CONFLICT (exclusion_group, variant) DO UPDATE
+           SET status = CASE WHEN actions.status = 'running' THEN actions.status ELSE 'open' END,
+               ${LABEL_ON_REOPEN_SQL}`,
+        [group, stamp, `${words} (target)`, words]
       );
     try {
-      // Finished at public; work at a reopens it, and it is that work's row now.
-      await reopenAt(A, A);
-      expect(await state()).toEqual({ status: "open", l: A });
-      // Open: work at c, which reads a, joins it and the row keeps its label.
-      await reopenAt(C, C);
-      expect(await state()).toEqual({ status: "open", l: A });
+      // Finished at public; work at a reopens it. It is that work's row now,
+      // and nothing of the public work's text is left in it.
+      await at(A, () => reopen(A, "Words at a"));
+      expect(await state()).toEqual({ status: "open", l: A, label: "Words at a", target_ref: "Words at a (target)" });
+      // Open: work at c, which reads a, joins it. The row keeps its label
+      // and its text; c's words do not go into a's row.
+      await at(C, () => reopen(C, "Words at c"));
+      expect(await state()).toEqual({ status: "open", l: A, label: "Words at a", target_ref: "Words at a (target)" });
       // An open row is not handed over by a plain update either.
       await labelStays(() => at(C, () => rawQuery(`UPDATE actions SET sensitivity_label = $2 WHERE id = $1`, [row!.id, C])));
-      // A finished row takes the reopener's own label and no other: not one it merely reads.
-      await system(() => rawQuery(`UPDATE actions SET status = 'done' WHERE id = $1`, [row!.id]));
+
+      // Finished again, at a. None of these is a reopening by work whose label reads a:
+      await set("done", A);
+      // a relabel with no reopening (the status stays as it was);
+      await labelStays(() => at(C, () => rawQuery(`UPDATE actions SET sensitivity_label = $2 WHERE id = $1`, [row!.id, C])));
+      // a reopening to a label other than the connection's own;
       await labelStays(() =>
         at(C, () => rawQuery(`UPDATE actions SET status = 'open', sensitivity_label = 'public' WHERE id = $1`, [row!.id]))
       );
-      expect(await state()).toEqual({ status: "done", l: A });
-      await reopenAt(C, C);
-      expect(await state()).toEqual({ status: "open", l: C });
+      // a person cleared for a, whose request writes at public: down, to where everyone reads it;
+      const asPerson = <T>(fn: () => Promise<T>) => runWithUsageContext({ clearance: [PUBLIC_LABEL, A] }, fn);
+      await labelStays(() => asPerson(() => rawQuery(`UPDATE actions SET sensitivity_label = 'public' WHERE id = $1`, [row!.id])));
+      await labelStays(() => asPerson(() => reopen(PUBLIC_LABEL, "Words of a public request")));
+      // and a row in a status that is not one of the finished ones by name.
+      await set("blocked", A);
+      await labelStays(() =>
+        at(C, () => rawQuery(`UPDATE actions SET status = 'open', sensitivity_label = $2 WHERE id = $1`, [row!.id, C]))
+      );
+      expect(await state()).toMatchObject({ status: "blocked", l: A, label: "Words at a" });
+      // A public-only reader never came to read the row.
+      expect(await rawQuery(`SELECT 1 FROM actions WHERE id = $1`, [row!.id])).toEqual([]);
+
+      // Finished at a; work at c, which reads a, reopens it.
+      await set("cancelled", A);
+      await at(C, () => reopen(C, "Words at c"));
+      expect(await state()).toEqual({ status: "open", l: C, label: "Words at c", target_ref: "Words at c (target)" });
     } finally {
       await system(() => rawQuery(`DELETE FROM actions WHERE id = $1`, [row!.id]));
     }

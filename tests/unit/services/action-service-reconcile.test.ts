@@ -293,7 +293,9 @@ describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
     expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "internal"]);
     expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
     // A closed row opened again takes the label of the work that reopens it.
-    expect(rows[0]!.q).toContain("sensitivity_label = EXCLUDED.sensitivity_label");
+    // A reopened row takes the reopener's label, and its text and target with it.
+    expect(rows[0]!.q).toContain("THEN EXCLUDED.sensitivity_label");
+    expect(rows[0]!.q).toContain("THEN EXCLUDED.label ELSE actions.label");
   });
 
   it("opens nothing when no lookout is due", async () => {

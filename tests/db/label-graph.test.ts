@@ -101,6 +101,7 @@ vi.mock("../../src/services/source-facts-service.js", async (orig) => ({
   refreshSourceFactsOnce: vi.fn(async () => {}),
 }));
 
+import { ClearanceError } from "../../src/db/clearance.js";
 import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
@@ -580,10 +581,40 @@ describe("a row of the graph's content", () => {
     const first = await write();
     const asWritten = await read(first);
     expect(new Set(Object.values(asWritten).flat())).toEqual(new Set([PUBLIC_LABEL]));
-    // The same writes again, from a run at another label: each lands on the row already there.
-    const again = await inRunAt(INTERNAL, write);
-    expect(again).toEqual(first);
-    expect(await read(again)).toEqual(asWritten);
+    // The same writes again, from a run at the rows' own label: each lands on the row already there.
+    expect(await write()).toEqual(first);
+    // From a run at another label, the ones that only find the row (an
+    // edge, a link, a cut, a tag) land on it and write nothing of the run's.
+    await inRunAt(INTERNAL, async () => {
+      const edge = await insertRelationshipEdge({
+        parentId: parent, childId: child, relationType: "requires", reasoning: "A restricted reasoning.", createdBy: "claim_steward",
+      });
+      const link = await linkClaims({ claimId: parent, otherClaimId: child, kind: "related", reasoning: "A restricted reasoning.", createdBy: "curator" });
+      expect({ edge: edge.id, link: link.id }).toEqual({ edge: first.edge, link: first.link });
+      await recordCut({ claimId: parent, quantityId: quantity, direction: "below", value: 3, createdBy: "claim_steward" });
+      await setSubjectTags({ kind: "claim", subjectId: parent, source: "steward", assignments: [{ name }] });
+      // The two that would put the run's words into the row (a quantity's
+      // definition, an answer's reasoning) are refused, and say why.
+      for (const write of [
+        () => defineQuantity({ claimId: quantity, definition: { ...DEFINITION, measures: "A restricted definition." }, createdBy: "claim_steward" }),
+        () => addAnswer({ questionId: question, answerId: child, basis: "quality", reasoning: "A restricted reasoning.", createdBy: "question_steward" }),
+      ]) {
+        const err = await write().then(
+          () => null,
+          (e: unknown) => e
+        );
+        expect(err).toBeInstanceOf(ClearanceError);
+        expect((err as Error).message).toMatch(/already exists at another label than this work's/);
+      }
+    });
+    expect(await read(first)).toEqual(asWritten);
+    const words = await rawQuery<{ text: string }>(
+      `SELECT measures AS text FROM quantity_definitions WHERE claim_id = $1
+       UNION ALL SELECT reasoning FROM claim_relationships WHERE id = ANY($2::uuid[])
+       UNION ALL SELECT reasoning FROM claim_links WHERE id = $3`,
+      [quantity, [first.edge, first.answer], first.link]
+    );
+    expect(words.filter((w) => /restricted/i.test(w.text ?? ""))).toEqual([]);
   });
 });
 

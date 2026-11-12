@@ -18,6 +18,7 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, withTransaction, type TxQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import {
   contributors,
   oauthAuthorizationRequests,
@@ -49,6 +50,18 @@ export const SUPPORTED_AUTH_METHODS = [
   "client_secret_post",
 ] as const;
 export type TokenEndpointAuthMethod = (typeof SUPPORTED_AUTH_METHODS)[number];
+
+/**
+ * A token is as good as the account it names, and a client and a pending
+ * authorization are how one comes to exist. Where the database holds
+ * connections to a clearance, such a connection may read these tables and
+ * may not write them (db/clearance.ts), so that work which reads `public`
+ * alone cannot mint itself a token for an account that reads more. Every
+ * write here is made on the owner's connection.
+ */
+const TOKEN_REASON =
+  "OAuth clients, authorizations and tokens say who a request is, so they are written on the owner's connection. The flow has verified the client, the code or the token.";
+const asOwner = <T>(fn: () => Promise<T>): Promise<T> => withSystemClearance(TOKEN_REASON, fn);
 
 export function isOAuthAccessToken(token: string): boolean {
   return token.startsWith(ACCESS_TOKEN_PREFIX);
@@ -90,24 +103,26 @@ export async function registerClient(input: {
   logoUri?: string | null;
   clientUri?: string | null;
 }): Promise<RegisteredClient> {
-  const db = getDb();
-  const clientSecret =
-    input.tokenEndpointAuthMethod === "none"
-      ? null
-      : randomToken(CLIENT_SECRET_PREFIX);
-  const [client] = await db
-    .insert(oauthClients)
-    .values({
-      clientId: crypto.randomUUID(),
-      clientSecretHash: clientSecret ? hashToken(clientSecret) : null,
-      name: input.name,
-      redirectUris: input.redirectUris,
-      tokenEndpointAuthMethod: input.tokenEndpointAuthMethod,
-      logoUri: input.logoUri ?? null,
-      clientUri: input.clientUri ?? null,
-    })
-    .returning();
-  return { client: client!, clientSecret };
+  return asOwner(async () => {
+    const db = getDb();
+    const clientSecret =
+      input.tokenEndpointAuthMethod === "none"
+        ? null
+        : randomToken(CLIENT_SECRET_PREFIX);
+    const [client] = await db
+      .insert(oauthClients)
+      .values({
+        clientId: crypto.randomUUID(),
+        clientSecretHash: clientSecret ? hashToken(clientSecret) : null,
+        name: input.name,
+        redirectUris: input.redirectUris,
+        tokenEndpointAuthMethod: input.tokenEndpointAuthMethod,
+        logoUri: input.logoUri ?? null,
+        clientUri: input.clientUri ?? null,
+      })
+      .returning();
+    return { client: client!, clientSecret };
+  });
 }
 
 export async function getClientByClientId(
@@ -132,21 +147,23 @@ export async function createAuthorizationRequest(input: {
   codeChallenge: string;
   resource: string | null;
 }): Promise<OAuthAuthorizationRequest> {
-  const db = getDb();
-  const [row] = await db
-    .insert(oauthAuthorizationRequests)
-    .values({
-      clientId: input.client.id,
-      redirectUri: input.redirectUri,
-      scope: input.scope,
-      state: input.state,
-      codeChallenge: input.codeChallenge,
-      codeChallengeMethod: "S256",
-      resource: input.resource,
-      expiresAt: new Date(Date.now() + CONSENT_TTL_MS),
-    })
-    .returning();
-  return row!;
+  return asOwner(async () => {
+    const db = getDb();
+    const [row] = await db
+      .insert(oauthAuthorizationRequests)
+      .values({
+        clientId: input.client.id,
+        redirectUri: input.redirectUri,
+        scope: input.scope,
+        state: input.state,
+        codeChallenge: input.codeChallenge,
+        codeChallengeMethod: "S256",
+        resource: input.resource,
+        expiresAt: new Date(Date.now() + CONSENT_TTL_MS),
+      })
+      .returning();
+    return row!;
+  });
 }
 
 export interface AuthorizationRequestView {
@@ -184,52 +201,56 @@ export async function approveAuthorizationRequest(input: {
   requestId: string;
   userId: string;
 }): Promise<ConsentOutcome | null> {
-  const db = getDb();
-  const code = randomToken(AUTH_CODE_PREFIX);
-  const [row] = await db
-    .update(oauthAuthorizationRequests)
-    .set({
-      status: "approved",
-      userId: input.userId,
-      codeHash: hashToken(code),
-      codeExpiresAt: new Date(Date.now() + CODE_TTL_MS),
-    })
-    .where(
-      and(
-        eq(oauthAuthorizationRequests.id, input.requestId),
-        eq(oauthAuthorizationRequests.status, "pending")
+  return asOwner(async () => {
+    const db = getDb();
+    const code = randomToken(AUTH_CODE_PREFIX);
+    const [row] = await db
+      .update(oauthAuthorizationRequests)
+      .set({
+        status: "approved",
+        userId: input.userId,
+        codeHash: hashToken(code),
+        codeExpiresAt: new Date(Date.now() + CODE_TTL_MS),
+      })
+      .where(
+        and(
+          eq(oauthAuthorizationRequests.id, input.requestId),
+          eq(oauthAuthorizationRequests.status, "pending")
+        )
       )
-    )
-    .returning();
-  if (!row || row.expiresAt.getTime() < Date.now()) return null;
+      .returning();
+    if (!row || row.expiresAt.getTime() < Date.now()) return null;
 
-  const url = new URL(row.redirectUri);
-  url.searchParams.set("code", code);
-  if (row.state !== null) url.searchParams.set("state", row.state);
-  return { redirectTo: url.toString() };
+    const url = new URL(row.redirectUri);
+    url.searchParams.set("code", code);
+    if (row.state !== null) url.searchParams.set("state", row.state);
+    return { redirectTo: url.toString() };
+  });
 }
 
 export async function denyAuthorizationRequest(
   requestId: string
 ): Promise<ConsentOutcome | null> {
-  const db = getDb();
-  const [row] = await db
-    .update(oauthAuthorizationRequests)
-    .set({ status: "denied" })
-    .where(
-      and(
-        eq(oauthAuthorizationRequests.id, requestId),
-        eq(oauthAuthorizationRequests.status, "pending")
+  return asOwner(async () => {
+    const db = getDb();
+    const [row] = await db
+      .update(oauthAuthorizationRequests)
+      .set({ status: "denied" })
+      .where(
+        and(
+          eq(oauthAuthorizationRequests.id, requestId),
+          eq(oauthAuthorizationRequests.status, "pending")
+        )
       )
-    )
-    .returning();
-  if (!row) return null;
+      .returning();
+    if (!row) return null;
 
-  const url = new URL(row.redirectUri);
-  url.searchParams.set("error", "access_denied");
-  url.searchParams.set("error_description", "The user denied the request");
-  if (row.state !== null) url.searchParams.set("state", row.state);
-  return { redirectTo: url.toString() };
+    const url = new URL(row.redirectUri);
+    url.searchParams.set("error", "access_denied");
+    url.searchParams.set("error_description", "The user denied the request");
+    if (row.state !== null) url.searchParams.set("state", row.state);
+    return { redirectTo: url.toString() };
+  });
 }
 
 // --- token issuance -----------------------------------------------------------
@@ -303,45 +324,47 @@ export async function exchangeAuthorizationCode(input: {
   redirectUri: string;
   codeVerifier: string;
 }): Promise<IssuedTokens> {
-  const db = getDb();
-  // Atomically claim the code: the status flip in the WHERE clause means a
-  // replayed code loses the race instead of double-issuing.
-  const [row] = await db
-    .update(oauthAuthorizationRequests)
-    .set({ status: "consumed", consumedAt: new Date() })
-    .where(
-      and(
-        eq(oauthAuthorizationRequests.codeHash, hashToken(input.code)),
-        eq(oauthAuthorizationRequests.status, "approved")
+  return asOwner(async () => {
+    const db = getDb();
+    // Atomically claim the code: the status flip in the WHERE clause means a
+    // replayed code loses the race instead of double-issuing.
+    const [row] = await db
+      .update(oauthAuthorizationRequests)
+      .set({ status: "consumed", consumedAt: new Date() })
+      .where(
+        and(
+          eq(oauthAuthorizationRequests.codeHash, hashToken(input.code)),
+          eq(oauthAuthorizationRequests.status, "approved")
+        )
       )
-    )
-    .returning();
-  if (!row) {
-    throw new OAuthTokenError(
-      "invalid_grant",
-      "Unknown, expired, or already-used authorization code"
-    );
-  }
-  if (
-    row.clientId !== input.client.id ||
-    row.redirectUri !== input.redirectUri ||
-    !row.codeExpiresAt ||
-    row.codeExpiresAt.getTime() < Date.now() ||
-    !row.userId
-  ) {
-    throw new OAuthTokenError(
-      "invalid_grant",
-      "Authorization code does not match this client and redirect_uri, or has expired"
-    );
-  }
-  if (!verifyPkceS256(input.codeVerifier, row.codeChallenge)) {
-    throw new OAuthTokenError("invalid_grant", "PKCE verification failed");
-  }
-  return issueTokenPair({
-    grantId: crypto.randomUUID(),
-    clientId: row.clientId,
-    userId: row.userId,
-    scope: row.scope,
+      .returning();
+    if (!row) {
+      throw new OAuthTokenError(
+        "invalid_grant",
+        "Unknown, expired, or already-used authorization code"
+      );
+    }
+    if (
+      row.clientId !== input.client.id ||
+      row.redirectUri !== input.redirectUri ||
+      !row.codeExpiresAt ||
+      row.codeExpiresAt.getTime() < Date.now() ||
+      !row.userId
+    ) {
+      throw new OAuthTokenError(
+        "invalid_grant",
+        "Authorization code does not match this client and redirect_uri, or has expired"
+      );
+    }
+    if (!verifyPkceS256(input.codeVerifier, row.codeChallenge)) {
+      throw new OAuthTokenError("invalid_grant", "PKCE verification failed");
+    }
+    return issueTokenPair({
+      grantId: crypto.randomUUID(),
+      clientId: row.clientId,
+      userId: row.userId,
+      scope: row.scope,
+    });
   });
 }
 
@@ -355,66 +378,70 @@ export async function refreshAccessToken(input: {
   refreshToken: string;
   client: OAuthClient;
 }): Promise<IssuedTokens> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(oauthTokens)
-    .where(eq(oauthTokens.tokenHash, hashToken(input.refreshToken)))
-    .limit(1);
-  if (!row || row.tokenType !== "refresh" || row.clientId !== input.client.id) {
-    throw new OAuthTokenError("invalid_grant", "Unknown refresh token");
-  }
-  if (row.revokedAt) {
-    await revokeGrant(row.grantId);
-    throw new OAuthTokenError(
-      "invalid_grant",
-      "Refresh token was already used; the grant has been revoked. Re-authorize."
-    );
-  }
-  if (row.expiresAt.getTime() < Date.now()) {
-    throw new OAuthTokenError("invalid_grant", "Refresh token expired");
-  }
-  // Atomically claim the token: the revoked_at guard in the WHERE clause
-  // means a concurrent refresh with the same token loses the race instead
-  // of double-issuing, and is then treated as reuse. The claim and the new
-  // pair commit together: the losing UPDATE comes back empty only once the
-  // winner has committed, so the loser's grant revocation below also
-  // catches the pair the winner just minted.
-  const issued = await withTransaction(async (tx) => {
-    const [claimed] = await tx.db
-      .update(oauthTokens)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(oauthTokens.id, row.id), isNull(oauthTokens.revokedAt)))
-      .returning({ id: oauthTokens.id });
-    if (!claimed) return null;
-    return issueTokenPair(
-      {
-        grantId: row.grantId,
-        clientId: row.clientId,
-        userId: row.userId,
-        scope: row.scope,
-      },
-      tx.db
-    );
+  return asOwner(async () => {
+    const db = getDb();
+    const [row] = await db
+      .select()
+      .from(oauthTokens)
+      .where(eq(oauthTokens.tokenHash, hashToken(input.refreshToken)))
+      .limit(1);
+    if (!row || row.tokenType !== "refresh" || row.clientId !== input.client.id) {
+      throw new OAuthTokenError("invalid_grant", "Unknown refresh token");
+    }
+    if (row.revokedAt) {
+      await revokeGrant(row.grantId);
+      throw new OAuthTokenError(
+        "invalid_grant",
+        "Refresh token was already used; the grant has been revoked. Re-authorize."
+      );
+    }
+    if (row.expiresAt.getTime() < Date.now()) {
+      throw new OAuthTokenError("invalid_grant", "Refresh token expired");
+    }
+    // Atomically claim the token: the revoked_at guard in the WHERE clause
+    // means a concurrent refresh with the same token loses the race instead
+    // of double-issuing, and is then treated as reuse. The claim and the new
+    // pair commit together: the losing UPDATE comes back empty only once the
+    // winner has committed, so the loser's grant revocation below also
+    // catches the pair the winner just minted.
+    const issued = await withTransaction(async (tx) => {
+      const [claimed] = await tx.db
+        .update(oauthTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(oauthTokens.id, row.id), isNull(oauthTokens.revokedAt)))
+        .returning({ id: oauthTokens.id });
+      if (!claimed) return null;
+      return issueTokenPair(
+        {
+          grantId: row.grantId,
+          clientId: row.clientId,
+          userId: row.userId,
+          scope: row.scope,
+        },
+        tx.db
+      );
+    });
+    if (!issued) {
+      await revokeGrant(row.grantId);
+      throw new OAuthTokenError(
+        "invalid_grant",
+        "Refresh token was already used; the grant has been revoked. Re-authorize."
+      );
+    }
+    return issued;
   });
-  if (!issued) {
-    await revokeGrant(row.grantId);
-    throw new OAuthTokenError(
-      "invalid_grant",
-      "Refresh token was already used; the grant has been revoked. Re-authorize."
-    );
-  }
-  return issued;
 }
 
 export async function revokeGrant(grantId: string): Promise<void> {
-  const db = getDb();
-  await db
-    .update(oauthTokens)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(eq(oauthTokens.grantId, grantId), isNull(oauthTokens.revokedAt))
-    );
+  return asOwner(async () => {
+    const db = getDb();
+    await db
+      .update(oauthTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(eq(oauthTokens.grantId, grantId), isNull(oauthTokens.revokedAt))
+      );
+  });
 }
 
 // --- resource-server side: bearer resolution ----------------------------------
@@ -455,10 +482,9 @@ function touchLastUsed(tokenId: string): void {
   const prev = lastTouched.get(tokenId) ?? 0;
   if (now - prev < 60_000) return;
   lastTouched.set(tokenId, now);
-  getDb()
-    .update(oauthTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(oauthTokens.id, tokenId))
+  asOwner(async () => {
+    await getDb().update(oauthTokens).set({ lastUsedAt: new Date() }).where(eq(oauthTokens.id, tokenId));
+  })
     .then(
       () => {},
       (err) => console.error("[oauth] lastUsedAt update failed:", err)
@@ -493,16 +519,18 @@ export async function revokeGrants(
   userId: string,
   grantIds: string[]
 ): Promise<void> {
-  if (grantIds.length === 0) return;
-  const db = getDb();
-  await db
-    .update(oauthTokens)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(oauthTokens.userId, userId),
-        inArray(oauthTokens.grantId, grantIds),
-        isNull(oauthTokens.revokedAt)
-      )
-    );
+  return asOwner(async () => {
+    if (grantIds.length === 0) return;
+    const db = getDb();
+    await db
+      .update(oauthTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(oauthTokens.userId, userId),
+          inArray(oauthTokens.grantId, grantIds),
+          isNull(oauthTokens.revokedAt)
+        )
+      );
+  });
 }

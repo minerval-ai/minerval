@@ -1,4 +1,17 @@
 /**
+ * A key is as good as the account it names: whoever holds one reads what
+ * that account reads. So where the database holds connections to a
+ * clearance, such a connection may read `api_keys` and may not write it
+ * (db/clearance.ts): work that reads `public` alone must not be able to make
+ * itself a key to an administrator's account. Minting, revoking and the
+ * last-used mark are written on the owner's connection, by the functions
+ * here, for the account the caller has already been checked to be.
+ */
+const KEY_REASON =
+  "An API key says who a request is, so keys are written on the owner's connection. The caller has checked whose key it is.";
+const asOwner = <T>(fn: () => Promise<T>): Promise<T> => withSystemClearance(KEY_REASON, fn);
+
+/**
  * API-key service (#70): mint, list, revoke, and resolve DB-backed API keys.
  *
  * Key material: "epk_" + 32 random bytes base64url (~43 chars, >250 bits of
@@ -10,6 +23,7 @@
 import crypto from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { apiKeys, contributors, type ApiKey, type Contributor } from "../db/schema.js";
 import type { PLATFORM_GRANTMAKING_SCOPE } from "./platform-account.js";
 
@@ -40,19 +54,21 @@ export async function createApiKey(input: {
    */
   scope?: "user" | "service" | typeof PLATFORM_GRANTMAKING_SCOPE;
 }): Promise<CreatedApiKey> {
-  const plaintext = generateApiKeyPlaintext();
-  const db = getDb();
-  const [key] = await db
-    .insert(apiKeys)
-    .values({
-      userId: input.userId,
-      name: input.name,
-      keyPrefix: plaintext.slice(0, DISPLAY_PREFIX_LENGTH),
-      keyHash: hashApiKey(plaintext),
-      scope: input.scope ?? "user",
-    })
-    .returning();
-  return { key: key!, plaintext };
+  return asOwner(async () => {
+    const plaintext = generateApiKeyPlaintext();
+    const db = getDb();
+    const [key] = await db
+      .insert(apiKeys)
+      .values({
+        userId: input.userId,
+        name: input.name,
+        keyPrefix: plaintext.slice(0, DISPLAY_PREFIX_LENGTH),
+        keyHash: hashApiKey(plaintext),
+        scope: input.scope ?? "user",
+      })
+      .returning();
+    return { key: key!, plaintext };
+  });
 }
 
 export async function listApiKeys(userId: string): Promise<ApiKey[]> {
@@ -74,19 +90,21 @@ export async function revokeApiKey(
   userId: string,
   keyId: string
 ): Promise<ApiKey | null> {
-  const db = getDb();
-  const [revoked] = await db
-    .update(apiKeys)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(apiKeys.id, keyId),
-        eq(apiKeys.userId, userId),
-        isNull(apiKeys.revokedAt)
+  return asOwner(async () => {
+    const db = getDb();
+    const [revoked] = await db
+      .update(apiKeys)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(apiKeys.id, keyId),
+          eq(apiKeys.userId, userId),
+          isNull(apiKeys.revokedAt)
+        )
       )
-    )
-    .returning();
-  return revoked ?? null;
+      .returning();
+    return revoked ?? null;
+  });
 }
 
 export interface ResolvedApiKey {
@@ -123,10 +141,9 @@ function touchLastUsed(keyId: string): void {
   const prev = lastTouched.get(keyId) ?? 0;
   if (now - prev < 60_000) return;
   lastTouched.set(keyId, now);
-  getDb()
-    .update(apiKeys)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(apiKeys.id, keyId))
+  asOwner(async () => {
+    await getDb().update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, keyId));
+  })
     .then(
       () => {},
       (err) => console.error("[api-keys] lastUsedAt update failed:", err)

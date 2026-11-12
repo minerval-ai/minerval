@@ -476,9 +476,15 @@ describe("a write that lands on a row already there", () => {
       `SELECT occurrence_count, body FROM agent_reports WHERE id = $1`,
       [first]
     );
-    // The row was written: the count went up and the freshest account is on it.
-    expect(report).toMatchObject({ occurrence_count: 2, body: "Seen again, at a second label." });
-    expect(await labelsWhere("agent_report_sightings", "report_id = $1", [first])).toEqual([SECOND]);
+    // The count went up. The account of a run at another label is not put
+    // into the report's row, which that label's readers do not only read:
+    // it is in the sighting's own row, at the sighting's label.
+    expect(report).toMatchObject({ occurrence_count: 2, body: "First seen." });
+    const sightings = await rawQuery<{ body: string; sensitivity_label: string }>(
+      `SELECT body, sensitivity_label FROM agent_report_sightings WHERE report_id = $1`,
+      [first]
+    );
+    expect(sightings).toEqual([{ body: "Seen again, at a second label.", sensitivity_label: SECOND }]);
   });
 
   // The finding is public and is met again by a run at the second label,

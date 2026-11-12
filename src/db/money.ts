@@ -26,8 +26,18 @@
  *
  *   action_allocations, regrants      the tables, under the label policies.
  *                                     For adding a row, which is held to
- *                                     its writer's label, and for reading
- *                                     the text.
+ *                                     its writer's label, for reading the
+ *                                     text, and for a listing or a feed
+ *                                     shown to a reader, who is shown the
+ *                                     rows at the labels they read.
+ *
+ * The views are not read-only, because settling money changes rows at every
+ * label. A connection held to a clearance may update through them exactly
+ * the columns settlement writes (an allocation's amount, what of it is
+ * spent and when it was released; a regrant's amount and what came back),
+ * and may delete a regrant that is returned in full. It may change no other
+ * column through them (not the ledger key, not who commissioned), add no
+ * row, and delete no allocation. The database grants it that and no more.
  *
  * The views exist on every deployment (the migration that labelled the
  * tables made them) and are planned as the tables they are over, so on the
