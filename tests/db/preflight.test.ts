@@ -21,11 +21,19 @@ import {
 } from "../../src/preflight.js";
 import { startGatedWork } from "../../src/workers/agent-work-gate.js";
 
-const config = loadConfig() as { runLogMode: "best_effort" | "record"; githubIssuesRepo: string };
+const config = loadConfig() as {
+  runLogMode: "best_effort" | "record";
+  githubIssuesRepo: string;
+  providerLabels: Record<string, string[]>;
+  modelEndpoints: Array<{ name: string; baseUrl: string; keyEnv?: string; inputUsdPerMtok: number; outputUsdPerMtok: number }>;
+};
 const configured = { ...config };
 afterEach(() => {
   config.runLogMode = configured.runLogMode;
   config.githubIssuesRepo = configured.githubIssuesRepo;
+  config.providerLabels = configured.providerLabels;
+  config.modelEndpoints = configured.modelEndpoints;
+  delete process.env.PREFLIGHT_TEST_ENDPOINT_KEY;
 });
 
 /**
@@ -180,6 +188,11 @@ describe("a deployment that holds only public material", () => {
       expect(report.agent_work).toBe("allowed");
       expect(check(report, "run_log").status).toBe("pass");
       expect(check(report, "reports_stay_inside").status).toBe("not_applicable");
+      // Nothing is asked about clearing a provider where there is no other label to clear one for.
+      for (const name of ["model_clearance", "embeddings_clearance", "outside_service_clearance"]) {
+        expect(check(report, name).status, name).toBe("not_applicable");
+      }
+      expect(check(report, "provider_labels").status).toBe("not_applicable");
       expect(await agentWorkGate()).toEqual({ open: true, holdsPrivate: false, failed: [] });
     });
   });
@@ -226,8 +239,11 @@ describe("a deployment that holds private material", () => {
         expect(report.checks.filter((c) => c.blocking).map((c) => c.name)).toEqual([
           "database",
           "run_log",
+          "provider_labels",
           "reports_stay_inside",
         ]);
+        // Nobody has cleared a provider for the new label, which fails without closing the gate.
+        expect(check(report, "model_clearance")).toMatchObject({ status: "fail", blocking: false });
 
         // Record mode, and the same seam starts the work it refused.
         config.runLogMode = "record";
@@ -238,6 +254,56 @@ describe("a deployment that holds private material", () => {
         work.stop();
       }
       expect(await testRunsLeft()).toBe(0);
+    });
+  });
+
+  it("reads its labels by name, sorted here, and which endpoint keys are not set", async () => {
+    await whereOnlyPublicIsDefined(async (defineLabel) => {
+      expect((await gatherPreflightFacts()).privateLabels).toEqual([]);
+      // Underscores and case sort differently under the database's locale than here.
+      for (const name of ["restricted", "internal_b", "Internal", "internal-a"]) await defineLabel(name);
+      config.modelEndpoints = [
+        { name: "keyed", baseUrl: "http://a.test/v1", keyEnv: "PREFLIGHT_TEST_ENDPOINT_KEY", inputUsdPerMtok: 0, outputUsdPerMtok: 0 },
+        { name: "open", baseUrl: "http://b.test/v1", inputUsdPerMtok: 0, outputUsdPerMtok: 0 },
+      ];
+      const facts = await gatherPreflightFacts();
+      expect(facts.holdsPrivate).toBe(true);
+      expect(facts.privateLabels).toEqual(["Internal", "internal-a", "internal_b", "restricted"].sort());
+      expect(facts.endpointKeysMissing).toEqual(["PREFLIGHT_TEST_ENDPOINT_KEY"]);
+      process.env.PREFLIGHT_TEST_ENDPOINT_KEY = "k";
+      expect((await gatherPreflightFacts()).endpointKeysMissing).toEqual([]);
+    });
+  });
+
+  it("is refused while provider_labels names a label nobody has defined, and starts once it is defined", async () => {
+    await whereOnlyPublicIsDefined(async (defineLabel) => {
+      await defineLabel("internal");
+      config.runLogMode = "record";
+      config.githubIssuesRepo = "";
+      config.providerLabels = { anthropic: ["public", "internal", "restricted"] };
+
+      const gate = await agentWorkGate();
+      expect(gate.open).toBe(false);
+      expect(gate.failed.map((c) => c.name)).toEqual(["provider_labels"]);
+      expect(gate.failed[0]!.message).toBe(
+        'provider_labels names "restricted" (for anthropic), which this deployment does not define as a label, ' +
+          "so every model call and every call to an outside service is refused, at every label, until it is " +
+          "defined or the name is corrected."
+      );
+
+      await defineLabel("restricted");
+      expect((await agentWorkGate()).open).toBe(true);
+      const report = await runPreflight();
+      expect(check(report, "provider_labels")).toMatchObject({
+        status: "pass",
+        message: 'Every label provider_labels names is defined ("internal", "restricted").',
+      });
+      // Anthropic is cleared for both; the roles on other providers are named, label by label.
+      expect(check(report, "model_clearance").status).toBe("fail");
+      expect(check(report, "embeddings_clearance")).toMatchObject({
+        status: "pass",
+        message: expect.stringMatching(/^Embeddings are not cleared for the labels "internal" and "restricted", /),
+      });
     });
   });
 

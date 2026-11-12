@@ -3,8 +3,10 @@
  * label_columns migration).
  *
  * The migration adds `sensitivity_label` to eighty-one tables and nothing
- * else: no write stamps it yet and nothing reads it. So there are two things
- * to check, against real Postgres:
+ * else, and nothing reads the column. The writes that stamp it come after
+ * it, a group of tables at a time (label-graph.test.ts and
+ * label-sources.test.ts for the first two). So there are two things to
+ * check here, against real Postgres:
  *
  *  - The catalog: which tables have the column, its default and its key to
  *    `labels`, the two keys that are not validated yet, the views, and the
@@ -15,8 +17,9 @@
  *    claim view and an agent's read of a claim are asked for rows that
  *    carry a second label, and none may show it.
  *
- * What stamps the column, and the fuller checks of every route and every
- * agent's read, come with the code that uses it.
+ * What stamps the column on each table is checked with the code that
+ * stamps it, and the fuller checks of every route and every agent's read
+ * come with the code that uses it.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -94,7 +97,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-eight tables, public by default, each with a key to labels", async () => {
+  it("is on one hundred and one tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -102,9 +105,9 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(98);
+    expect(columns).toHaveLength(101);
     for (const column of columns) {
-      expect(column, column.table_name).toMatchObject({ column_default: "'public'::text", is_nullable: "NO", data_type: "text" });
+      expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
     // One key each, and on no table that lacks the column.
     expect((await keys()).map((k) => k.table_name)).toEqual(columns.map((c) => c.table_name));
@@ -174,9 +177,6 @@ describe("the label column, in the catalog", () => {
     expect(rows.map((r) => r.table_name)).toEqual([
       // The groups a person's latest sign-in carried, which decide what they may read. Not itself read at a label.
       "account_groups",
-      // Money placed on the ledger. It also carries a commission's brief
-      // and reason, so it is not settled that it should stay without one.
-      "action_allocations",
       // The log of what administrators changed about who may read what. Not itself read at a label.
       "administrative_events",
       // Accounts and their keys.
@@ -191,8 +191,6 @@ describe("the label column, in the catalog", () => {
       // The labels themselves.
       "label_reads",
       "labels",
-      // Nothing writes or reads it any more. Not settled, as action_allocations.
-      "mandate_valuations",
       // A deployment's bookkeeping about its feed of public rows, with no text of their own.
       "mirror_applied_batches",
       "mirror_feed_batches",
@@ -214,8 +212,6 @@ describe("the label column, in the catalog", () => {
       "prize_payouts",
       // Counts of what waits, with no content.
       "queue_depth_snapshots",
-      // Money moved between two mandates, with a note. Not settled, as action_allocations.
-      "regrants",
       // Database time used by query_sql, per account and day.
       "sql_usage",
     ]);

@@ -4,6 +4,7 @@ import {
   contributionTypeEnum,
   intakeContributionTypeEnum,
   prizeContributionTypeEnum,
+  statedViewContributionTypeEnum,
   anyContributionTypeEnum,
 } from "../../../src/schemas/common.js";
 
@@ -35,7 +36,15 @@ describe("contribution type enums", () => {
       ...contributionTypeEnum.options,
       ...intakeContributionTypeEnum.options,
       ...prizeContributionTypeEnum.options,
+      ...statedViewContributionTypeEnum.options,
     ]);
+  });
+
+  it("state_view is a type of its own that POST /contributions does not accept", () => {
+    expect(statedViewContributionTypeEnum.options).toEqual(["state_view"]);
+    expect(anyContributionTypeEnum.safeParse("state_view").success).toBe(true);
+    expect(contributionTypeEnum.safeParse("state_view").success).toBe(false);
+    expect(intakeContributionTypeEnum.options).not.toContain("state_view");
   });
 
   it("claim_prize is NOT a type POST /contributions accepts", () => {
@@ -49,6 +58,7 @@ describe("contribution type enums", () => {
       contributionTypeEnum.options,
       intakeContributionTypeEnum.options,
       prizeContributionTypeEnum.options,
+      statedViewContributionTypeEnum.options,
     ];
     for (const type of anyContributionTypeEnum.options) {
       const n = families.filter((f) => (f as readonly string[]).includes(type)).length;

@@ -588,6 +588,21 @@ process, and what changes on the page stays the owning admins' judgment.
   judgment, and what it shows is the node's Steward's. Material obtained by
   intrusion, or by violating someone's reasonable expectation of privacy,
   is rejected whatever it shows.
+- **state_view**: the filer's own view on the node, stated to the graph
+  directly (§4); get_contribution_details shows it as stated_view. Your
+  accept records the statement as an instance of the node, in the filer's
+  words, with the stake it declared, and puts any reasons it gave in the
+  inbox of the node's Steward, who answers them (§14). There is no handoff
+  for you to make. The gate is form and good faith, never whether the view
+  is right: a view the assessment contradicts is what this is for, and the
+  Steward weighs it, not you. Admit a statement that is its filer's view on
+  this node as the node is worded. Reject one that is about something else,
+  that is promotion or spam, or that carries personal detail about a private
+  person (§2), and say what a restatement would need. The statement is shown
+  under the account's own name, with whether anyone has checked who is
+  behind the account. An account presenting itself as a person or an
+  organization it evidently is not is fabricating a source, which is bad
+  faith (§13).
 
 Accepting a structural proposal (merge, split, edit, argument) admits the
 case for it, not the change itself. The claim's Steward applies edits and

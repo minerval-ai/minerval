@@ -46,6 +46,8 @@ function config(over: Partial<Config> = {}): Config {
     githubAppInstallationId: "",
     githubAppPrivateKey: "",
     stewardStrongModel: "",
+    modelEndpoints: [],
+    providerLabels: {},
     ...over,
   } as Config;
 }
@@ -58,16 +60,41 @@ const FOLDER = [
 
 const CURRENT: DatabaseFacts = { reachable: true, pgvector: true, folder: FOLDER, applied: [100, 200, 300] };
 
+/**
+ * Facts for a deployment that is in order. One made to hold private
+ * material has the one other label "internal" unless the test names its own.
+ */
 function facts(over: Partial<PreflightFacts> = {}): PreflightFacts {
+  const holdsPrivate = over.holdsPrivate === undefined ? false : over.holdsPrivate;
   return {
     config: config(),
     configFile: null,
-    holdsPrivate: false,
+    holdsPrivate,
+    privateLabels: holdsPrivate === null ? null : holdsPrivate ? ["internal"] : [],
+    endpointKeysMissing: [],
     database: CURRENT,
     runLog: { ok: true, steps: 2 },
     ...over,
   };
 }
+
+/** A deployment with these labels besides `public`. */
+function withLabels(privateLabels: string[], over: Partial<Config> = {}): Partial<PreflightFacts> {
+  return { holdsPrivate: privateLabels.length > 0, privateLabels, config: config(over) };
+}
+
+/** Every role on one Anthropic model, so a test can move the roles it is about. */
+const ALL_ANTHROPIC: Partial<Config> = {
+  matcherModel: MODELS.sonnet,
+  taggerModel: MODELS.sonnet,
+  lookoutModel: MODELS.sonnet,
+  programOfficerModel: MODELS.sonnet,
+  consistencyModel: MODELS.sonnet,
+  assistantTitleModel: MODELS.sonnet,
+  researcherCheapModel: MODELS.sonnet,
+};
+
+const LOCAL = { name: "local", baseUrl: "http://vllm.internal:8000/v1", inputUsdPerMtok: 0.5, outputUsdPerMtok: 1.5 };
 
 function check(name: string, over: Partial<PreflightFacts> = {}) {
   const result = evaluatePreflight(facts(over)).checks.find((c) => c.name === name);
@@ -231,6 +258,296 @@ describe("models", () => {
     expect(check("models", { config: config({ stewardStrongModel: "no-such-model" }) })).toMatchObject({
       status: "fail",
       message: 'No provider this check knows serves the model named for steward_strong ("no-such-model").',
+    });
+  });
+});
+
+describe("models on an endpoint the deployment runs itself", () => {
+  const onLocal = { ...ALL_ANTHROPIC, matcherModel: "endpoint:local/org/model", taggerModel: "endpoint:local/org/model" };
+
+  it("passes when the endpoint is declared and takes no key, or its key is set", () => {
+    expect(check("models", { config: config({ ...onLocal, modelEndpoints: [LOCAL] }) })).toMatchObject({
+      status: "pass",
+      message: expect.stringMatching(
+        /^Each of the \d+ roles names a model whose provider has what it needs: Anthropic has its key set; the endpoint "local" is declared and takes no key\.$/
+      ),
+    });
+    expect(
+      check("models", { config: config({ ...onLocal, modelEndpoints: [{ ...LOCAL, keyEnv: "LOCAL_LLM_KEY" }] }) }).message
+    ).toMatch(/Anthropic has its key set; the endpoint "local" is declared and its key \(LOCAL_LLM_KEY\) is set\.$/);
+  });
+
+  it("fails naming the endpoint that is not declared and the roles on it", () => {
+    expect(check("models", { config: config(onLocal) })).toMatchObject({
+      status: "fail",
+      message:
+        'The endpoint "local" is not declared in model_providers.endpoints, and 2 roles run on its models (matcher, tagger).',
+    });
+  });
+
+  it("fails naming the variable an endpoint reads its key from when that is not set", () => {
+    expect(
+      check("models", {
+        config: config({ ...onLocal, modelEndpoints: [{ ...LOCAL, keyEnv: "LOCAL_LLM_KEY" }] }),
+        endpointKeysMissing: ["LOCAL_LLM_KEY"],
+      })
+    ).toMatchObject({
+      status: "fail",
+      message:
+        'LOCAL_LLM_KEY is not set, and 2 roles run on the endpoint "local", which reads its key from that variable (matcher, tagger).',
+    });
+  });
+
+  it("searches the web through OpenRouter for a searching role on an endpoint", () => {
+    const result = check("web_search", {
+      config: config({ lookoutModel: "endpoint:local/org/model", modelEndpoints: [LOCAL], openrouterApiKey: "" }),
+    });
+    expect(result.status).toBe("fail");
+    expect(result.message).toMatch(/^Open-web search for .*lookout.* goes through OpenRouter, and OPENROUTER_API_KEY is not set/);
+  });
+});
+
+describe("providers cleared by label", () => {
+  const CLEARANCE = ["model_clearance", "embeddings_clearance", "outside_service_clearance"];
+
+  it("does not apply where public is the only label, and says so", () => {
+    expect(check("model_clearance")).toMatchObject({
+      status: "not_applicable",
+      message:
+        "This deployment defines no label besides public, so there is no other label for a model provider to be cleared for.",
+    });
+    expect(check("embeddings_clearance").message).toBe(
+      "This deployment defines no label besides public, so there is no other label for embeddings to be cleared for."
+    );
+    expect(check("outside_service_clearance").message).toBe(
+      "This deployment defines no label besides public, so there is no other label for an outside service to be cleared for."
+    );
+    expect(check("provider_labels")).toMatchObject({
+      status: "not_applicable",
+      message:
+        "provider_labels is not set, so every model provider and outside service is cleared for public and for no other label.",
+    });
+  });
+
+  it("fails each of them when the labels could not be read", () => {
+    for (const name of CLEARANCE) {
+      expect(check(name, { holdsPrivate: null }), name).toMatchObject({
+        status: "fail",
+        message:
+          "This could not be checked: the labels could not be read, so it is not known whether " +
+          "this deployment holds private material.",
+      });
+    }
+    expect(
+      check("provider_labels", { holdsPrivate: null, config: config({ providerLabels: { anthropic: ["internal"] } }) })
+    ).toMatchObject({
+      status: "fail",
+      message:
+        "This could not be checked: the labels could not be read, so it is not known whether the labels " +
+        "provider_labels names are defined.",
+    });
+  });
+
+  describe("provider_labels: every label the setting names is defined", () => {
+    it("passes when each is, and when it names none besides public", () => {
+      expect(
+        check(
+          "provider_labels",
+          withLabels(["internal", "restricted"], {
+            providerLabels: { anthropic: ["public", "internal"], embeddings: ["restricted", "internal"] },
+          })
+        )
+      ).toMatchObject({
+        status: "pass",
+        message: 'Every label provider_labels names is defined ("internal", "restricted").',
+      });
+      expect(check("provider_labels", { config: config({ providerLabels: { pangram: [], openai: ["public"] } }) })).toMatchObject({
+        status: "pass",
+        message: "provider_labels names no label besides public, which every deployment has.",
+      });
+    });
+
+    it("fails, blocking, on a name that is not a label, saying who it was for and what it stops", () => {
+      const result = check(
+        "provider_labels",
+        withLabels(["internal"], { providerLabels: { anthropic: ["public", "internl"], embeddings: ["internl", "internal"] } })
+      );
+      expect(result).toMatchObject({
+        status: "fail",
+        blocking: true,
+        message:
+          'provider_labels names "internl" (for anthropic, embeddings), which this deployment does not define as a ' +
+          "label, so every model call and every call to an outside service is refused, at every label, until it is " +
+          "defined or the name is corrected.",
+      });
+    });
+
+    it("fails on a deployment whose only label is public too, where nothing blocks", () => {
+      const result = check("provider_labels", {
+        config: config({ providerLabels: { anthropic: ["public", "internal"], openai: ["secret"] } }),
+      });
+      expect(result).toMatchObject({ status: "fail", blocking: false });
+      expect(result.message).toMatch(
+        /^provider_labels names "internal" \(for anthropic\) and "secret" \(for openai\), which .* until they are defined or the names are corrected\.$/
+      );
+    });
+  });
+
+  describe("model_clearance: no role would be refused at a label", () => {
+    it("fails when nothing is cleared for a label, which is how a new label starts, and does not block", () => {
+      const result = check("model_clearance", withLabels(["internal"]));
+      expect(result).toMatchObject({
+        status: "fail",
+        blocking: false,
+        message:
+          "None of the providers the roles' models are on (Anthropic, OpenRouter) is cleared for the label " +
+          '"internal", so every agent run there would be refused before anything is sent. Clear the provider for ' +
+          "the label in provider_labels, or name the role a model on a provider that is cleared. This check does " +
+          "not stop agent work, because that would also stop the work at labels that are served, and a refused " +
+          "run sends nothing.",
+      });
+    });
+
+    it("names the provider that is not cleared and the roles on it, label by label", () => {
+      const result = check(
+        "model_clearance",
+        withLabels(["internal", "restricted"], {
+          ...ALL_ANTHROPIC,
+          matcherModel: OPENROUTER_MODELS.flash,
+          taggerModel: "endpoint:local/org/model",
+          modelEndpoints: [LOCAL],
+          providerLabels: {
+            anthropic: ["public", "internal", "restricted"],
+            openrouter: ["public", "restricted"],
+            "endpoint:local": ["restricted"],
+          },
+        })
+      );
+      expect(result.status).toBe("fail");
+      expect(result.message).toMatch(
+        /^At the label "internal", OpenRouter is not cleared \(matcher\) and the endpoint "local" is not cleared \(tagger\), so those roles' runs there would be refused before anything is sent\. Clear the provider /
+      );
+      expect(result.message).not.toContain('"restricted"');
+    });
+
+    it("passes when the provider of every role's model is cleared for every label", () => {
+      expect(
+        check(
+          "model_clearance",
+          withLabels(["internal", "restricted"], {
+            providerLabels: {
+              anthropic: ["public", "internal", "restricted"],
+              openrouter: ["internal", "restricted", "public"],
+            },
+          })
+        )
+      ).toMatchObject({
+        status: "pass",
+        message: 'The provider of every role\'s model is cleared for the labels "internal" and "restricted".',
+      });
+    });
+
+    it("reads clearance by name only: being cleared for one label says nothing of another", () => {
+      const result = check(
+        "model_clearance",
+        withLabels(["internal", "restricted"], {
+          ...ALL_ANTHROPIC,
+          providerLabels: { anthropic: ["public", "restricted"] },
+        })
+      );
+      expect(result.message).toMatch(
+        /^None of the providers the roles' models are on \(Anthropic\) is cleared for the label "internal"/
+      );
+    });
+
+    it("leaves out the roles of features that are off", () => {
+      const over = {
+        ...ALL_ANTHROPIC,
+        extensionModel: "gpt-example",
+        providerLabels: { anthropic: ["public", "internal"] },
+      };
+      expect(check("model_clearance", withLabels(["internal"], over)).message).toMatch(
+        /^At the label "internal", OpenAI is not cleared \(extension\), so /
+      );
+      expect(check("model_clearance", withLabels(["internal"], { ...over, featuresOff: ["extension"] }))).toMatchObject({
+        status: "pass",
+        message: 'The provider of every role\'s model is cleared for the label "internal".',
+      });
+    });
+  });
+
+  describe("embeddings_clearance", () => {
+    it("passes when embeddings are cleared for every label", () => {
+      expect(
+        check("embeddings_clearance", withLabels(["internal"], { providerLabels: { embeddings: ["public", "internal"] } }))
+      ).toMatchObject({ status: "pass", message: 'Embeddings are cleared for the label "internal".' });
+    });
+
+    it("passes where they are not, saying what the label goes without and what clearing them sends", () => {
+      expect(
+        check(
+          "embeddings_clearance",
+          withLabels(["internal", "restricted"], { providerLabels: { embeddings: ["public", "internal"] } })
+        )
+      ).toMatchObject({
+        status: "pass",
+        message:
+          'Embeddings are not cleared for the label "restricted", so what is written there is stored without a ' +
+          "vector, and a search there matches on keywords where it can and returns an error where it cannot. " +
+          "This passes because nothing is sent out and it may be what the deployment chose; clearing them " +
+          "(embeddings, in provider_labels) sends the text of each claim, tag, finding, request and report there, " +
+          "and each search query, to OpenAI.",
+      });
+    });
+  });
+
+  describe("outside_service_clearance", () => {
+    it("says which services a label goes without, and passes: leaving one uncleared is a choice", () => {
+      expect(check("outside_service_clearance", withLabels(["internal"]))).toMatchObject({
+        status: "pass",
+        message:
+          'At the label "internal", open-web search through OpenRouter and page reading are not cleared, so runs ' +
+          "there are not offered their tools and are told so, and a source submitted there by its address is not " +
+          "fetched. Elicit and Pangram are not in use at any label. Nothing here fails: a service that is not " +
+          "cleared for a label is sent nothing from it, and which services may be sent private text is the " +
+          "deployment's choice (provider_labels).",
+      });
+    });
+
+    it("says which are cleared, and that searches Anthropic runs go under Anthropic's clearance", () => {
+      const result = check(
+        "outside_service_clearance",
+        withLabels(["internal"], {
+          elicitApiKey: "k",
+          pangramApiKey: "k",
+          pangramEnabled: "false",
+          providerLabels: {
+            anthropic: ["public", "internal"],
+            web_pages: ["public", "internal"],
+            elicit: ["public", "internal"],
+          },
+        })
+      );
+      expect(result.status).toBe("pass");
+      expect(result.message).toMatch(
+        /^At the label "internal", open-web search through OpenRouter is not cleared, so runs there are not offered its tools and are told so; page reading and Elicit are cleared; the \d+ roles whose models Anthropic searches for still search the web there, inside Anthropic's API, which Anthropic's clearance covers\. Pangram is not in use at any label\. Nothing here fails: /
+      );
+    });
+
+    it("says so when every service in use is cleared, for each label", () => {
+      const all = ["public", "internal", "restricted"];
+      const result = check(
+        "outside_service_clearance",
+        withLabels(["internal", "restricted"], {
+          ...ALL_ANTHROPIC,
+          elicitApiKey: "k",
+          providerLabels: { web_search: all, web_pages: all, elicit: ["public", "internal"] },
+        })
+      );
+      // Every searching role is on a model Anthropic searches for, so the OpenRouter search is not in use.
+      expect(result.message).toMatch(
+        /^At the label "internal", every outside service that is on is cleared \(page reading and Elicit\)\. At the label "restricted", Elicit is not cleared, so runs there are not offered its tools and are told so; page reading is cleared\. Open-web search through OpenRouter and Pangram are not in use at any label\. /
+      );
     });
   });
 });
@@ -475,6 +792,7 @@ describe("the report as a whole", () => {
     expect(report.checks.filter((c) => c.blocking).map((c) => c.name)).toEqual([
       "database",
       "run_log",
+      "provider_labels",
       "reports_stay_inside",
     ]);
     expect(report.agent_work).toBe("refused");

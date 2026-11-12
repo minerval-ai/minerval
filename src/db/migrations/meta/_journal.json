@@ -915,43 +915,57 @@
     {
       "idx": 130,
       "version": "7",
-      "when": 1794508695923,
-      "tag": "0130_mandate_pace",
+      "when": 1794502560220,
+      "tag": "0130_label_enforcement",
       "breakpoints": true
     },
     {
       "idx": 131,
       "version": "7",
-      "when": 1794508698044,
-      "tag": "0131_drop_daily_rate",
+      "when": 1794516077438,
+      "tag": "0131_mandate_pace",
       "breakpoints": true
     },
     {
       "idx": 132,
       "version": "7",
-      "when": 1794509649804,
-      "tag": "0132_event_log_and_subscriptions",
+      "when": 1794516077439,
+      "tag": "0132_drop_daily_rate",
       "breakpoints": true
     },
     {
       "idx": 133,
       "version": "7",
-      "when": 1794510127045,
-      "tag": "0133_grantmaker_session",
+      "when": 1794516077440,
+      "tag": "0133_event_log_and_subscriptions",
       "breakpoints": true
     },
     {
       "idx": 134,
       "version": "7",
-      "when": 1794511020179,
-      "tag": "0134_subscription_label",
+      "when": 1794516077441,
+      "tag": "0134_grantmaker_session",
       "breakpoints": true
     },
     {
       "idx": 135,
       "version": "7",
-      "when": 1794512521820,
-      "tag": "0135_holds",
+      "when": 1794516077442,
+      "tag": "0135_subscription_label",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1794516077443,
+      "tag": "0136_holds",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1794516090141,
+      "tag": "0137_label_default_new_tables",
       "breakpoints": true
     }
   ]

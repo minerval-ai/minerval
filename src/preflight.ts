@@ -24,6 +24,17 @@
  * gathering (the database, the run log's test) is tested against a real
  * database. No check calls a model provider or any outside service: a key
  * being present is what is checked, not whether it works.
+ *
+ * Four checks are about which providers may be sent private text
+ * (src/provider-labels.ts). One blocks: a label that provider_labels names
+ * and nobody has defined refuses every call at every label, so holding the
+ * work back loses nothing. A role whose model's provider is not cleared for
+ * a label fails without blocking: its runs there are refused before anything
+ * is sent, and the gate is one gate for the whole deployment, so closing it
+ * would stop the work at the labels that are served as well. Embeddings and
+ * the outside services pass either way and say what a label goes without:
+ * leaving one uncleared sends nothing out, and which outside party may read
+ * private text is the deployment's to choose, not a state to be corrected.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,9 +42,11 @@ import { loadConfig, type Config } from "./config.js";
 import { appliedConfigFile, CONFIG_FILE_KEYS, type AppliedConfigFile } from "./config-file.js";
 import { rawQuery } from "./db/client.js";
 import { featureOn, offFeatures, type FeatureName } from "./features.js";
-import { resolveProvider } from "./llm/providers/routing.js";
+import { PUBLIC_LABEL } from "./labels.js";
+import { ENDPOINT_ID_PREFIX, parseEndpointModelId, resolveProvider } from "./llm/providers/routing.js";
 import { anthropicServerWebSearch } from "./llm/tools/web-search-tool.js";
-import { publicIsTheOnlyLabel } from "./services/label-service.js";
+import { providerClearedFor, type OutsideServiceName } from "./provider-labels.js";
+import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-service.js";
 import { verifyRunLog } from "./services/run-view-service.js";
 import { openAgentRun, recordAgentStep, sealAgentRun } from "./services/trace-service.js";
 
@@ -88,6 +101,13 @@ export interface PreflightFacts {
   configFile: AppliedConfigFile | null;
   /** Whether a label other than `public` is defined; null when that could not be read. */
   holdsPrivate: boolean | null;
+  /** The labels defined besides `public`, by name; null when the labels could not be read. */
+  privateLabels: string[] | null;
+  /**
+   * The environment variables that declared model endpoints read their keys
+   * from (keyEnv) and that are not set.
+   */
+  endpointKeysMissing: string[];
   database: DatabaseFacts;
   runLog: RunLogSelfTest;
 }
@@ -112,6 +132,21 @@ const PRIVATE_UNKNOWN =
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** `the label "internal"`, `the labels "internal" and "restricted"`. */
+function theLabels(labels: readonly string[]): string {
+  return `the ${labels.length === 1 ? "label" : "labels"} ${listed(labels.map((l) => `"${l}"`))}`;
+}
+
+function sentence(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,12 +281,42 @@ function roleModels(config: Config): RoleModel[] {
   return roles;
 }
 
-function checkModels({ config }: PreflightFacts): Outcome {
+/** A provider as a sentence names it: a hosted API by its name, an endpoint by the name it was declared under. */
+function providerName(provider: string): string {
+  if (provider.startsWith(ENDPOINT_ID_PREFIX)) return `the endpoint "${provider.slice(ENDPOINT_ID_PREFIX.length)}"`;
+  return PROVIDER_NEEDS[provider]?.name ?? provider;
+}
+
+function checkModels({ config, endpointKeysMissing }: PreflightFacts): Outcome {
   const roles = roleModels(config);
+  const endpoints = config.modelEndpoints ?? [];
   const unserved: string[] = [];
   const missing = new Map<string, string[]>();
   const used = new Set<string>();
+  // A model on an endpoint the deployment runs itself: the endpoint must be
+  // declared, and its key present if it was declared with one.
+  const undeclared = new Map<string, string[]>();
+  const keyMissing = new Map<string, { env: string; roles: string[] }>();
+  const endpointsReady = new Map<string, string>();
   for (const { role, model } of roles) {
+    const onEndpoint = parseEndpointModelId(model);
+    if (onEndpoint) {
+      const name = onEndpoint.endpoint;
+      const endpoint = endpoints.find((e) => e.name === name);
+      if (!endpoint) {
+        undeclared.set(name, [...(undeclared.get(name) ?? []), role]);
+      } else if (endpoint.keyEnv && endpointKeysMissing.includes(endpoint.keyEnv)) {
+        keyMissing.set(name, { env: endpoint.keyEnv, roles: [...(keyMissing.get(name)?.roles ?? []), role] });
+      } else {
+        endpointsReady.set(
+          name,
+          endpoint.keyEnv
+            ? `the endpoint "${name}" is declared and its key (${endpoint.keyEnv}) is set`
+            : `the endpoint "${name}" is declared and takes no key`
+        );
+      }
+      continue;
+    }
     const provider = resolveProvider(model);
     const needs = provider ? PROVIDER_NEEDS[provider] : undefined;
     if (!provider || !needs) {
@@ -272,12 +337,127 @@ function checkModels({ config }: PreflightFacts): Outcome {
         `${needs.name} models (${itsRoles.join(", ")})`
     );
   }
+  for (const [name, itsRoles] of undeclared) {
+    problems.push(
+      `the endpoint "${name}" is not declared in model_providers.endpoints, and ` +
+        `${plural(itsRoles.length, "role runs", "roles run")} on its models (${itsRoles.join(", ")})`
+    );
+  }
+  for (const [name, { env, roles: itsRoles }] of keyMissing) {
+    problems.push(
+      `${env} is not set, and ${plural(itsRoles.length, "role runs", "roles run")} on the endpoint "${name}", ` +
+        `which reads its key from that variable (${itsRoles.join(", ")})`
+    );
+  }
   if (problems.length > 0) {
     const said = problems.join("; ");
     return fail(`${said.charAt(0).toUpperCase()}${said.slice(1)}.`);
   }
+  const hosted = [...used].sort();
+  if (endpointsReady.size === 0) {
+    return pass(`Each of the ${roles.length} roles names a model whose provider has its key set (${hosted.join(", ")}).`);
+  }
+  const has = [
+    ...(hosted.length > 0 ? [`${listed(hosted)} ${hosted.length === 1 ? "has its key" : "have their keys"} set`] : []),
+    ...[...endpointsReady.keys()].sort().map((name) => endpointsReady.get(name)!),
+  ];
+  return pass(`Each of the ${roles.length} roles names a model whose provider has what it needs: ${has.join("; ")}.`);
+}
+
+// ---------------------------------------------------------------------------
+// Which providers may be sent private text (src/provider-labels.ts)
+// ---------------------------------------------------------------------------
+
+/** What each of the three checks below says where `public` is the only label. */
+function noOtherLabel(what: string): Outcome {
+  return notApplicable(
+    `This deployment defines no label besides public, so there is no other label for ${what} to be cleared for.`
+  );
+}
+
+function checkProviderLabels({ config, privateLabels }: PreflightFacts): Outcome {
+  const setting = config.providerLabels ?? {};
+  if (Object.keys(setting).length === 0) {
+    return notApplicable(
+      "provider_labels is not set, so every model provider and outside service is cleared for public and for no other label."
+    );
+  }
+  const providersByLabel = new Map<string, string[]>();
+  for (const [provider, labels] of Object.entries(setting)) {
+    for (const label of labels) {
+      if (label === PUBLIC_LABEL) continue;
+      providersByLabel.set(label, [...(providersByLabel.get(label) ?? []), provider]);
+    }
+  }
+  const named = [...providersByLabel.keys()].sort();
+  if (named.length === 0) return pass("provider_labels names no label besides public, which every deployment has.");
+  if (privateLabels === null) {
+    return fail(
+      "This could not be checked: the labels could not be read, so it is not known whether the labels " +
+        "provider_labels names are defined."
+    );
+  }
+  const undefinedHere = named.filter((label) => !privateLabels.includes(label));
+  if (undefinedHere.length === 0) {
+    return pass(`Every label provider_labels names is defined (${named.map((l) => `"${l}"`).join(", ")}).`);
+  }
+  const one = undefinedHere.length === 1;
+  return fail(
+    `provider_labels names ${listed(
+      undefinedHere.map((label) => `"${label}" (for ${providersByLabel.get(label)!.join(", ")})`)
+    )}, which this deployment does not define as a label, so every model call and every call to an outside ` +
+      `service is refused, at every label, until ${one ? "it is defined or the name is" : "they are defined or the names are"} corrected.`
+  );
+}
+
+function checkModelClearance({ config, privateLabels }: PreflightFacts): Outcome {
+  if (privateLabels === null) return fail(PRIVATE_UNKNOWN);
+  if (privateLabels.length === 0) return noOtherLabel("a model provider");
+  const rolesByProvider = new Map<string, string[]>();
+  for (const { role, model } of roleModels(config)) {
+    // A model no provider serves is the models check's to report.
+    const provider = resolveProvider(model);
+    if (provider) rolesByProvider.set(provider, [...(rolesByProvider.get(provider) ?? []), role]);
+  }
+  const providers = [...rolesByProvider.keys()];
+  const problems: string[] = [];
+  for (const label of privateLabels) {
+    const uncleared = providers.filter((provider) => !providerClearedFor(provider, label, config));
+    if (uncleared.length === 0) continue;
+    if (uncleared.length === providers.length) {
+      problems.push(
+        `none of the providers the roles' models are on (${providers.map(providerName).join(", ")}) is cleared for ` +
+          `the label "${label}", so every agent run there would be refused before anything is sent`
+      );
+      continue;
+    }
+    problems.push(
+      `at the label "${label}", ${listed(
+        uncleared.map((provider) => `${providerName(provider)} is not cleared (${rolesByProvider.get(provider)!.join(", ")})`)
+      )}, so those roles' runs there would be refused before anything is sent`
+    );
+  }
+  if (problems.length === 0) {
+    return pass(`The provider of every role's model is cleared for ${theLabels(privateLabels)}.`);
+  }
+  return fail(
+    `${sentence(problems.join("; "))} Clear the provider for the label in provider_labels, or name the role a model ` +
+      "on a provider that is cleared. This check does not stop agent work, because that would also stop the work " +
+      "at labels that are served, and a refused run sends nothing."
+  );
+}
+
+function checkEmbeddingsClearance({ config, privateLabels }: PreflightFacts): Outcome {
+  if (privateLabels === null) return fail(PRIVATE_UNKNOWN);
+  if (privateLabels.length === 0) return noOtherLabel("embeddings");
+  const uncleared = privateLabels.filter((label) => !providerClearedFor("embeddings", label, config));
+  if (uncleared.length === 0) return pass(`Embeddings are cleared for ${theLabels(privateLabels)}.`);
   return pass(
-    `Each of the ${roles.length} roles names a model whose provider has its key set (${[...used].sort().join(", ")}).`
+    `Embeddings are not cleared for ${theLabels(uncleared)}, so what is written there is stored without a vector, ` +
+      "and a search there matches on keywords where it can and returns an error where it cannot. This passes " +
+      "because nothing is sent out and it may be what the deployment chose; clearing them (embeddings, in " +
+      "provider_labels) sends the text of each claim, tag, finding, request and report there, and each search " +
+      "query, to OpenAI."
   );
 }
 
@@ -378,6 +558,77 @@ function checkPangram({ config }: PreflightFacts): Outcome {
     config.pangramEnabled,
     config.pangramApiKey.length > 0
   );
+}
+
+/** Whether a service with one key and a switch is on, as keyedService above reads it. */
+function keyedServiceOn(enabled: "true" | "false" | undefined, keyPresent: boolean): boolean {
+  return enabled !== "false" && keyPresent;
+}
+
+/** The roles that search the web, split by where their search runs. */
+function searchingRoles(config: Config): { insideAnthropic: RoleModel[]; viaOpenRouter: RoleModel[] } {
+  const fields = new Set(Object.values(WEB_SEARCH_AGENT_MODELS).flat());
+  const searching = roleModels(config).filter((r) => fields.has(r.field));
+  return {
+    insideAnthropic: searching.filter((r) => anthropicServerWebSearch(r.model)),
+    viaOpenRouter: searching.filter((r) => !anthropicServerWebSearch(r.model)),
+  };
+}
+
+function checkOutsideServiceClearance({ config, privateLabels }: PreflightFacts): Outcome {
+  if (privateLabels === null) return fail(PRIVATE_UNKNOWN);
+  if (privateLabels.length === 0) return noOtherLabel("an outside service");
+  const { insideAnthropic, viaOpenRouter } = searchingRoles(config);
+  // Each service an agent's tools reach, as a sentence names it, and whether
+  // this deployment uses it at all. Embeddings have a check of their own.
+  const services: Array<{ service: OutsideServiceName; name: string; on: boolean }> = [
+    { service: "web_search", name: "open-web search through OpenRouter", on: viaOpenRouter.length > 0 },
+    { service: "web_pages", name: "page reading", on: true },
+    { service: "elicit", name: "Elicit", on: keyedServiceOn(config.elicitEnabled, config.elicitApiKey.length > 0) },
+    { service: "pangram", name: "Pangram", on: keyedServiceOn(config.pangramEnabled, config.pangramApiKey.length > 0) },
+  ];
+  const inUse = services.filter((s) => s.on);
+  const said: string[] = [];
+  for (const label of privateLabels) {
+    const cleared = inUse.filter((s) => providerClearedFor(s.service, label, config));
+    const withheld = inUse.filter((s) => !providerClearedFor(s.service, label, config));
+    let text: string;
+    if (withheld.length === 0) {
+      text = `at the label "${label}", every outside service that is on is cleared (${listed(cleared.map((s) => s.name))})`;
+    } else {
+      const one = withheld.length === 1;
+      text =
+        `at the label "${label}", ${listed(withheld.map((s) => s.name))} ${one ? "is" : "are"} not cleared, ` +
+        `so runs there are not offered ${one ? "its" : "their"} tools and are told so`;
+      if (withheld.some((s) => s.service === "web_pages")) {
+        text += ", and a source submitted there by its address is not fetched";
+      }
+      if (cleared.length > 0) {
+        text += `; ${listed(cleared.map((s) => s.name))} ${cleared.length === 1 ? "is" : "are"} cleared`;
+      }
+    }
+    // A search Anthropic runs inside a turn goes where the model's text
+    // goes, so leaving web_search uncleared does not stop it.
+    if (
+      insideAnthropic.length > 0 &&
+      !providerClearedFor("web_search", label, config) &&
+      providerClearedFor("anthropic", label, config)
+    ) {
+      text +=
+        `; the ${plural(insideAnthropic.length, "role")} whose ${insideAnthropic.length === 1 ? "model" : "models"} ` +
+        "Anthropic searches for still search the web there, inside Anthropic's API, which Anthropic's clearance covers";
+    }
+    said.push(sentence(text));
+  }
+  const off = services.filter((s) => !s.on).map((s) => s.name);
+  if (off.length > 0) {
+    said.push(sentence(`${listed(off)} ${off.length === 1 ? "is" : "are"} not in use at any label`));
+  }
+  said.push(
+    "Nothing here fails: a service that is not cleared for a label is sent nothing from it, and which services " +
+      "may be sent private text is the deployment's choice (provider_labels)."
+  );
+  return pass(said.join(" "));
 }
 
 function checkPayments({ config }: PreflightFacts): Outcome {
@@ -509,11 +760,15 @@ export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
   { name: "database", blocking: true, run: checkDatabase },
   { name: "run_log", blocking: true, run: checkRunLog },
   { name: "models", blocking: false, run: checkModels },
+  { name: "provider_labels", blocking: true, run: checkProviderLabels },
+  { name: "model_clearance", blocking: false, run: checkModelClearance },
   { name: "embeddings", blocking: false, run: checkEmbeddings },
+  { name: "embeddings_clearance", blocking: false, run: checkEmbeddingsClearance },
   { name: "web_search", blocking: false, run: checkWebSearch },
   { name: "page_reading", blocking: false, run: checkPageReading },
   { name: "elicit", blocking: false, run: checkElicit },
   { name: "pangram", blocking: false, run: checkPangram },
+  { name: "outside_service_clearance", blocking: false, run: checkOutsideServiceClearance },
   { name: "payments", blocking: false, run: checkPayments },
   { name: "github_issues", blocking: false, run: checkGithubIssues },
   { name: "reports_stay_inside", blocking: true, run: checkReportsStayInside },
@@ -653,16 +908,28 @@ export async function runLogSelfTest(): Promise<RunLogSelfTest> {
 export async function gatherPreflightFacts(): Promise<PreflightFacts> {
   const config = loadConfig();
   const database = await readDatabaseFacts();
-  let holdsPrivate: boolean | null = null;
+  let privateLabels: string[] | null = null;
   try {
-    holdsPrivate = await holdsPrivateMaterial();
+    privateLabels = await labelsBesidesPublic();
   } catch {
     // Left null: the checks that turn on it say that it could not be read.
   }
+  const holdsPrivate = privateLabels === null ? null : privateLabels.length > 0;
+  const endpointKeysMissing = (config.modelEndpoints ?? [])
+    .map((endpoint) => endpoint.keyEnv)
+    .filter((env): env is string => !!env && !process.env[env]);
   const runLog: RunLogSelfTest = database.reachable
     ? await runLogSelfTest()
     : { ok: false, reason: "the database cannot be reached" };
-  return { config, configFile: appliedConfigFile(), holdsPrivate, database, runLog };
+  return {
+    config,
+    configFile: appliedConfigFile(),
+    holdsPrivate,
+    privateLabels,
+    endpointKeysMissing,
+    database,
+    runLog,
+  };
 }
 
 /** Run the preflight against the running deployment. */

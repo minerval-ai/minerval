@@ -27,6 +27,7 @@
  * structured refusal.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { EXAMINATION_SCOPES, EXAMINATION_TRIGGERS } from "../schemas/common.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
 import { htmlToText } from "./source-map-service.js";
@@ -146,10 +147,25 @@ export async function openExamination(input: {
       );
     }
   }
+  // The examination is the run's that opens it, whatever the document's
+  // label: a restricted review of a public document is restricted
+  // (src/labels.ts).
   const rows = await rawQuery<{ id: string; created_at: Date }>(
-    `INSERT INTO examinations (scope, trigger, claim_id, grant_id, source_id, brief, facets, requested_by, request_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at`,
-    [input.scope, input.trigger, input.claimId, input.grantId, sourceId, brief, facets, input.requestedBy, requestId]
+    `INSERT INTO examinations
+       (scope, trigger, claim_id, grant_id, source_id, brief, facets, requested_by, request_id, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, created_at`,
+    [
+      input.scope,
+      input.trigger,
+      input.claimId,
+      input.grantId,
+      sourceId,
+      brief,
+      facets,
+      input.requestedBy,
+      requestId,
+      currentLabel(),
+    ]
   );
   return {
     id: rows[0]!.id,
@@ -384,11 +400,11 @@ export async function recordCoverage(input: {
   if (ids.length > 500) throw new ExaminationError("At most 500 segments per call.");
   await segmentsOfSource(exam.source_id, ids);
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO examination_coverage (examination_id, segment_id, facet)
-     SELECT $1, unnest($2::uuid[]), $3
+    `INSERT INTO examination_coverage (examination_id, segment_id, facet, sensitivity_label)
+     SELECT $1, unnest($2::uuid[]), $3, $4
      ON CONFLICT (examination_id, segment_id, facet) DO NOTHING
      RETURNING id`,
-    [exam.id, ids, facet]
+    [exam.id, ids, facet, currentLabel()]
   );
   return { recorded: rows.length, facet };
 }
@@ -412,15 +428,17 @@ export async function recordFinding(input: {
     throw new ExaminationError("Findings are read on the source page: no em-dashes. Use a comma, a colon, or a new sentence.");
   }
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO examination_findings (examination_id, segment_id, facet, statement, evidence, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [exam.id, segmentId, facet, statement, evidence, input.createdBy]
+    `INSERT INTO examination_findings
+       (examination_id, segment_id, facet, statement, evidence, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [exam.id, segmentId, facet, statement, evidence, input.createdBy, currentLabel()]
   );
   // A finding on a passage means the passage was examined for that facet.
   await rawQuery(
-    `INSERT INTO examination_coverage (examination_id, segment_id, facet) VALUES ($1, $2, $3)
+    `INSERT INTO examination_coverage (examination_id, segment_id, facet, sensitivity_label)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (examination_id, segment_id, facet) DO NOTHING`,
-    [exam.id, segmentId, facet]
+    [exam.id, segmentId, facet, currentLabel()]
   );
   return { id: row!.id, covered: true };
 }
@@ -471,10 +489,10 @@ export async function citeFindings(input: {
     throw new ExaminationError("Every finding cited must be about this instance's source. Take finding ids from provenance_get_map.");
   }
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO reading_citations (reading_id, finding_id, created_by)
-     SELECT $1, unnest($2::uuid[]), $3
+    `INSERT INTO reading_citations (reading_id, finding_id, created_by, sensitivity_label)
+     SELECT $1, unnest($2::uuid[]), $3, $4
      ON CONFLICT (reading_id, finding_id) DO NOTHING RETURNING id`,
-    [inst.reading_id, ids, input.createdBy]
+    [inst.reading_id, ids, input.createdBy, currentLabel()]
   );
   return { reading_id: inst.reading_id, cited: rows.length };
 }
@@ -486,8 +504,8 @@ export async function noteFinding(input: { findingId: unknown; note: unknown; cr
   const [exists] = await rawQuery<{ id: string }>(`SELECT id FROM examination_findings WHERE id = $1`, [findingId]);
   if (!exists) throw new ExaminationError(`No finding ${findingId} exists.`);
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO audit_notes (finding_id, note, created_by) VALUES ($1, $2, $3) RETURNING id`,
-    [findingId, note, input.createdBy]
+    `INSERT INTO audit_notes (finding_id, note, created_by, sensitivity_label) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [findingId, note, input.createdBy, currentLabel()]
   );
   return { id: row!.id };
 }

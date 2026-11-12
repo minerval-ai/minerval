@@ -667,6 +667,14 @@ have to cover (#356), so the promise stays keepable as tables are added.
   `external_id`, `display_name`, `email`, and `avatar_url` so the row
   survives as an anonymous contributor, rather than unpublishing the
   exchange; the same treatment Wikipedia gives a vanished editor.
+- **Stated views** (constitution §4). An account that states its view on a
+  node publishes a statement under its own name: the source's title and
+  author and the instance's speaker carry the name the account had then. The
+  form says so before anything is submitted, and that a statement is not
+  withdrawn. Deleting the account detaches the `contributions` row like any
+  other and leaves the statement standing as a source under the name it was
+  made with, the way a signed letter outlives its author's membership.
+  `stated_views` holds what was submitted and is keyed to the contribution.
 - **The claim layer** carries no account identity: claims, instances, and
   assessments name sources and speakers, never users. Personal detail there
   is a constitutional violation (§2), handled as a correction to the graph,

@@ -25,6 +25,7 @@ import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { claims, tags, taggings, TAG_SUBJECT_KINDS, type TagSubjectKind } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /**
  * Cosine similarity above which a proposed tag is the same topic as an
@@ -431,7 +432,9 @@ export async function findOrCreateTag(input: {
   // it to one row; the loser re-reads.
   const inserted = await db
     .insert(tags)
-    .values({ slug, name, description, embedding, createdBy: input.createdBy })
+    // A tag is minted at the label of the run that first needed it
+    // (src/labels.ts). A tag already in the vocabulary keeps its own.
+    .values({ slug, name, description, embedding, createdBy: input.createdBy, sensitivityLabel: currentLabel() })
     .onConflictDoNothing({ target: tags.slug })
     .returning();
   if (inserted.length > 0) {
@@ -526,6 +529,9 @@ export async function setSubjectTags(input: {
           confidence: a.confidence ?? null,
           reasoning: a.reasoning ?? null,
           runId: input.runId ?? null,
+          // Each tagging is the writing run's, whatever label the tag or
+          // the subject carries. One already there is left as it is.
+          sensitivityLabel: currentLabel(),
         }))
       )
       .onConflictDoNothing();

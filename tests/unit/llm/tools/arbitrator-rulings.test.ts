@@ -160,7 +160,9 @@ describe("an overturn takes effect", () => {
     expect(out.message).toContain("Request req-1 filed.");
     expect(mocks.applyAcceptanceEffects).toHaveBeenCalledWith(
       CONTRIBUTION_ID,
-      expect.objectContaining({ request: { ask: "a", why: "b", satisfied_by: "c" } })
+      expect.objectContaining({ request: { ask: "a", why: "b", satisfied_by: "c" } }),
+      // The Arbitrator says who is accepting, so a stated view's reasons reach the Steward as a ruling.
+      "dispute_arbitrator"
     );
   });
 
