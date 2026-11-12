@@ -193,3 +193,37 @@ describe("composeClaimEvents", () => {
     });
   });
 });
+
+describe("composeClaimEvents: the node's lifecycle (#962)", () => {
+  it("shows an archive with who, why, cohort and successors, after what happened that instant", () => {
+    const at = new Date("2026-10-29T22:07:53.917Z");
+    const events = composeClaimEvents({
+      ...emptyInput(),
+      assessments: [assessment({ assessedAt: at })],
+      stateChanges: [
+        {
+          id: "s1",
+          fromState: "active",
+          toState: "archived",
+          actor: "operator:jackson",
+          reason: "minted before #523",
+          successorIds: ["c0000000-0000-0000-0000-000000000002"],
+          cohort: "2026-10-ai-pre-assessment-as-thinking",
+          createdAt: at,
+        },
+      ],
+    });
+    expect(events[0]).toEqual({
+      kind: "state_change",
+      id: "state_change:s1",
+      at: at.toISOString(),
+      actor: "operator:jackson",
+      from_state: "active",
+      to_state: "archived",
+      reason: "minted before #523",
+      successor_ids: ["c0000000-0000-0000-0000-000000000002"],
+      cohort: "2026-10-ai-pre-assessment-as-thinking",
+    });
+    expect(events[1]!.kind).toBe("assessment");
+  });
+});

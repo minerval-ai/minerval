@@ -23,7 +23,7 @@ import { allocationDayUseSql } from "./day-use.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { REQUEST_GROUP, ensureRequestActions } from "./action-service.js";
-import { commissionAction, commissionNodePass } from "./commission-service.js";
+import { commissionAction, commissionNodePass, commissionNoteField } from "./commission-service.js";
 import {
   POLICY_BOUNDS,
   getEffectiveAllocationPolicy,
@@ -105,7 +105,7 @@ export async function allocateToClaimAssessment(input: {
     unspentOwls: microUsdToOwls(budget),
     covered: true,
     actionId: result.actionId,
-    ...(result.parked ? { note: result.parked.note } : {}),
+    ...commissionNoteField(result),
   };
 }
 

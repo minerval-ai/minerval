@@ -70,13 +70,18 @@ export function planItemState(
   return item.action === "ingest" && index === cursor ? "current" : "queued";
 }
 
-/** Every item with its state and its ledger standing (null before the first sweep). */
+/**
+ * Every item with its position in the plan, its state and its ledger
+ * standing (null before the first sweep). The index is how an item is
+ * named when it is changed or withdrawn (amend_plan_items).
+ */
 export function describePlanItems<T extends PlanItemLike>(
   items: readonly T[],
   cursor: number
-): Array<T & { state: PlanItemState; ledger: PlanItemLedger | null }> {
+): Array<T & { index: number; state: PlanItemState; ledger: PlanItemLedger | null }> {
   return items.map((item, i) => ({
     ...item,
+    index: i,
     state: planItemState(item, i, cursor),
     ledger: item.ledger ?? null,
   }));

@@ -91,9 +91,10 @@ describe("propose plan items", () => {
       text: "What limits the supply of new housing?",
       ref: "root",
     });
-    expect(dependent).toEqual({ action: "assess", rationale: "r", claim_ref: "root" });
+    // A stewarding item is stored with its tier: standard when it names none (#956).
+    expect(dependent).toEqual({ action: "assess", rationale: "r", claim_ref: "root", variant: "standard" });
     // An item that already has its node is an ordinary item.
-    expect(plain).toEqual({ action: "assess", rationale: "r", claim_id: CLAIM_ID });
+    expect(plain).toEqual({ action: "assess", rationale: "r", claim_id: CLAIM_ID, variant: "standard" });
   });
 });
 

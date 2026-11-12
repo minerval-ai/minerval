@@ -67,7 +67,8 @@ vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => undefined),
   requestAudit: vi.fn(async () => "audit-1"),
 }));
-vi.mock("../../../src/services/curation-service.js", () => ({
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   requestCuration: vi.fn(async () => ({ ok: true, requestId: "r", actionId: "a", repeat: false })),
 }));
 vi.mock("../../../src/services/owl-ledger-service.js", () => ({ settleMeteredCharge: vi.fn() }));
@@ -173,9 +174,26 @@ describe("ingestion", () => {
     await handleUrlExtraction(MESSAGE);
     const calls = vi.mocked(requestCuration).mock.calls.map((c) => c[0]);
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ otherClaimId: "alt-3", source: "matcher" });
+    expect(calls[0]).toMatchObject({ otherClaimId: "alt-3", source: "matcher", defect: "duplicate" });
     expect(calls[0]!.concern).toMatch(/narrower grain[\s\S]*alt-3 is a specification/);
     expect(lastJobResult()).toMatchObject({ curation_requests: 1 });
+  });
+
+  it("raises only the near-misses the review names, and every one when it names none (#955)", async () => {
+    h.extracted = [proposal("A"), proposal("B")];
+    h.decisions = [
+      decision({
+        alternative_matches: ["alt-1", "alt-2"],
+        curator_review: "alt-2 may be this claim's negation",
+      }),
+      decision({
+        alternative_matches: ["alt-3", "alt-4"],
+        curator_review: "one of the near-misses may be the same proposition",
+      }),
+    ];
+    await handleUrlExtraction(MESSAGE);
+    const others = vi.mocked(requestCuration).mock.calls.map((c) => c[0].otherClaimId);
+    expect(others).toEqual(["alt-2", "alt-3", "alt-4"]);
   });
 
   it("keeps the kind of document the Extractor read, as a correction, and never for a problem document", async () => {

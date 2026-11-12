@@ -60,7 +60,8 @@ vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
     pointerNote: "",
   }),
 }));
-vi.mock("../../../src/services/curation-service.js", () => ({
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   CURATION_CONCERN_MAX_CHARS: 4_000,
   requestCuration: vi.fn(async (input: Record<string, unknown>) => {
     state.curation.push(input);
@@ -218,20 +219,28 @@ describe("runConsistencyChecker", () => {
   it("sends a structural defect to the Curator as a consistency_sweep request (#742)", async () => {
     state.script = [{
       name: "escalate_to_curator",
-      input: { claim_id: PRIMARY, other_claim_id: OTHER, concern: "These two nodes are one claim." },
+      input: { claim_id: PRIMARY, other_claim_id: OTHER, defect: "duplicate", concern: "These two nodes are one claim." },
     }];
     const res = await runConsistencyChecker(base);
     expect(state.curation[0]).toMatchObject({
-      anchorClaimId: PRIMARY, otherClaimId: OTHER, source: "consistency_sweep", requestedByRunId: "run-1",
+      anchorClaimId: PRIMARY, otherClaimId: OTHER, source: "consistency_sweep", defect: "duplicate",
+      requestedByRunId: "run-1",
     });
     expect(res.escalations).toBe(1);
   });
 
   it("sends nothing to the Curator in a dry run", async () => {
-    state.script = [{ name: "escalate_to_curator", input: { claim_id: PRIMARY, concern: "Duplicate." } }];
+    state.script = [{ name: "escalate_to_curator", input: { claim_id: PRIMARY, defect: "duplicate", concern: "Duplicate." } }];
     const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true });
     expect(state.curation).toHaveLength(0);
     expect(res.escalations).toBe(1);
+  });
+
+  it("holds a dry run's escalation to a named defect, as a live one is (#955)", async () => {
+    state.script = [{ name: "escalate_to_curator", input: { claim_id: PRIMARY, concern: "Something is off." } }];
+    const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true });
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ ok: false });
+    expect(res.escalations).toBe(0);
   });
 
   it("lists the partition from the last sweep's start, paginated", async () => {

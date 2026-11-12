@@ -3185,6 +3185,18 @@ export const actions = pgTable(
     // opened again takes the label of the work that reopens it
     // (LABEL_ON_REOPEN_SQL in services/action-service.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // The wait of a row whose last attempt a platform fault stopped (#971;
+    // services/deployment-fault.ts): the fault's public class
+    // (credits_fault | credentials_fault | provider_unavailable), when the
+    // row first failed on it, how many attempts it has stopped in a row,
+    // and when the executors may pick the row again. Set by releaseAction,
+    // cleared when the row leaves open/running (trigger
+    // actions_clear_fault, so no closing statement can forget to). All null
+    // or zero on a row that is not waiting on a fault.
+    faultReason: text("fault_reason"),
+    faultSince: timestamp("fault_since", { withTimezone: true }),
+    faultAttempts: integer("fault_attempts").notNull().default(0),
+    retryAfter: timestamp("retry_after", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -3204,6 +3216,44 @@ export const actions = pgTable(
 );
 
 export type Action = typeof actions.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// deployment_faults — a fault the operator must fix, while it lasts (#971).
+//
+// One open row per (class, provider): a provider that refuses calls because
+// the deployment's account is out of credits, or rejects its key
+// (services/deployment-fault-service.ts). Every failure of that class
+// collapses onto the open row, so a fault that fails a thousand calls is one
+// record, one report to maintainers, and one line on /monitors. The row
+// closes when the provider serves a call again after a quiet spell. The raw
+// provider text is kept here for maintainers and is never served publicly;
+// public surfaces show the class.
+// ---------------------------------------------------------------------------
+
+export const deploymentFaults = pgTable(
+  "deployment_faults",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // credits_fault | credentials_fault
+    reason: text("reason").notNull(),
+    // anthropic | openai | openrouter | endpoint:<name> | embeddings | unknown
+    provider: text("provider").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    occurrences: integer("occurrences").notNull().default(1),
+    // The provider's own words on the latest failure. Service-only.
+    lastError: text("last_error"),
+    // When maintainers were told (the agents' report channel, #366).
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_deployment_faults_open")
+      .on(table.reason, table.provider)
+      .where(sql`${table.clearedAt} IS NULL`),
+    index("idx_deployment_faults_first_seen").on(table.firstSeenAt),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // mandate_valuations — each mandate's own opinions, sparse.
@@ -5006,6 +5056,12 @@ export const curationRequests = pgTable(
     // steward_escalation | consistency_sweep | audit | matcher | reconcile_candidate | operator
     source: text("source").notNull(),
     concern: text("concern").notNull(),
+    // What the requester suspects is wrong (#955), from CURATION_DEFECTS in
+    // services/curation-service.ts: duplicate | conflation | wrong_kind |
+    // mislabeled_edge | missing_link | bad_merge | other. Every request
+    // records one; null only on requests recorded before it existed (the
+    // migration classified the Matcher's and the scan's as duplicate).
+    defect: text("defect"),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
     signal: real("signal"),
     // The claim whose Steward escalated (bounds live escalations per claim).
@@ -5044,6 +5100,10 @@ export const curationRequests = pgTable(
       "ck_curation_requests_source",
       sql`source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')`
     ),
+    check(
+      "ck_curation_requests_defect",
+      sql`defect IS NULL OR defect IN ('duplicate', 'conflation', 'wrong_kind', 'mislabeled_edge', 'missing_link', 'bad_merge', 'other')`
+    ),
   ]
 );
 
@@ -5075,6 +5135,46 @@ export const reconciliationEvents = pgTable("reconciliation_events", {
   // when it is written.
   sensitivityLabel: sensitivityLabelColumn(),
 });
+
+// ---------------------------------------------------------------------------
+// claim_state_changes
+//
+// One row per change to a node's lifecycle state (claims.state): archived,
+// restored, merged, un-merged, deprecated (#962). The state column says what a
+// node is now; this says when it became so, who did it, why, and which nodes
+// carry on what it stated (`successor_ids`: a merge's survivor, a split's
+// parts). Before it, an archive was a bare UPDATE and left a node reading as
+// dead with nothing to say who retired it or where its proposition went.
+// Append-only. The node's history (claim events), the changes stream and the
+// refusal a write to a retired node meets all read it.
+// ---------------------------------------------------------------------------
+export const claimStateChanges = pgTable(
+  "claim_state_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    fromState: text("from_state").notNull(),
+    toState: text("to_state").notNull(),
+    // Who made the change: 'curator' for surgery, 'operator:<name>' for a
+    // script an operator ran.
+    actor: text("actor").notNull(),
+    reason: text("reason").notNull(),
+    // Nodes that carry on what this one stated, when there are any.
+    successorIds: uuid("successor_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // The cohort an archive script retired the node with (its file's name or
+    // epoch tag), so one retirement reads as one act.
+    cohort: text("cohort"),
+    // The Curator's reversible-surgery event the change was part of.
+    reconciliationEventId: uuid("reconciliation_event_id").references(() => reconciliationEvents.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_claim_state_changes_claim").on(table.claimId, table.createdAt)]
+);
 
 // ---------------------------------------------------------------------------
 // audit_log

@@ -57,6 +57,7 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
+import { deploymentFaultsTick } from "../services/deployment-fault-service.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
@@ -126,8 +127,10 @@ import {
   nextRunnableAction,
   releaseAction,
   actionBudgetMicroUsd,
+  actionWaitingOn,
   type RunnableAction,
 } from "../services/action-service.js";
+import type { PlatformFaultReason } from "../services/deployment-fault.js";
 
 export type EngineDrainStatus =
   | "processed"
@@ -142,6 +145,13 @@ export interface EngineProcessResult {
   grantId?: string;
   ok?: boolean;
   error?: string;
+  /**
+   * With 'transient': the class of the platform fault the row now waits on
+   * (action-service.ts, releaseAction). The row paces itself, so the drain
+   * may go on to other work; absent, the row could be picked again at once
+   * and the drain stops.
+   */
+  waitingOn?: PlatformFaultReason;
 }
 
 /** Cancel a group whose subject is gone; the ledger must not spin on it. */
@@ -169,6 +179,9 @@ export async function processNextEngineAction(
   // A mandate whose work produced something since its last review gets its
   // review reopened here, then funded just below like its other own rows.
   await mandateEventsTick().catch(() => ({ recorded: 0, woken: 0 }));
+  // A deployment fault that is over is closed here, and the rows that
+  // waited on it are tried at once (deployment-fault-service.ts).
+  await deploymentFaultsTick();
   await fundGrantSelfActions().catch(() => 0);
 
   // Request rows wait, funded, while the operator has the researcher off
@@ -196,7 +209,26 @@ export async function processNextEngineAction(
   // handler is inside, not only the agent's run: what it enqueues before
   // and after (a job for an ingest, a follow-up, a reopened row) is work
   // this row started, and takes its label the same way.
-  return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, async (): Promise<EngineProcessResult> => {
+  const result = await runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () => runEngineAction(action, opts));
+  if (result.status === "transient") {
+    const waitingOn = await waitingOnOrNull(action.id);
+    if (waitingOn) return { ...result, waitingOn };
+  }
+  return result;
+}
+
+/** The fault the row now waits on; null when it cannot be read (the drain then stops, as before). */
+async function waitingOnOrNull(actionId: string): Promise<PlatformFaultReason | null> {
+  try {
+    return await actionWaitingOn(actionId);
+  } catch {
+    return null;
+  }
+}
+
+/** Claim one engine row and run its kind's handler. */
+async function runEngineAction(action: RunnableAction, opts: { model?: string }): Promise<EngineProcessResult> {
+  {
     if (!(await claimAction(action.id, action.sensitivity_label))) return { status: "empty" };
 
     if (action.kind === "ingest") return runIngestAction(action);
@@ -210,7 +242,7 @@ export async function processNextEngineAction(
     if (action.kind === "research") return runResearchAction(action);
     if (action.kind === "resume") return runResumeAction(action);
     return runGrantAgentAction(action, opts);
-  });
+  }
 }
 
 /** Unfunded fallback-lane Curator runs this process (CURATOR_MAX_RUNS). */
@@ -244,6 +276,9 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
             0::bigint AS coverage_micro_usd
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
+        -- Not inside the wait a platform fault put on it (action-service.ts,
+        -- NOT_WAITING_ON_FAULT_SQL).
+        AND (a.retry_after IS NULL OR a.retry_after <= now())
         AND NOT EXISTS (SELECT 1 FROM action_allocations al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL)
@@ -360,7 +395,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
             context:
               `${requests.length} structural concern${requests.length === 1 ? "" : "s"} ` +
               `about this claim are waiting, and this run was funded to answer them:\n` +
-              describeCurationRequests(requests),
+              describeCurationRequests(requests, anchorClaimId),
           })
         )
     );
@@ -376,11 +411,11 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -442,11 +477,11 @@ async function runRequestCurateAction(action: RunnableAction): Promise<EnginePro
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "transient", actionId: action.id, kind: "curate", grantId: funder.grantId, error: msg };
     }
     await settle(billedMicroUsd);
@@ -496,7 +531,9 @@ export function requestKeeperBrief(request: RequestView): string {
  * A decomposition's plan opens with a pass on its claim: a reassessment
  * when the claim has been assessed, else its first (the item's kind is
  * resolved when it materializes). Prepended unless the Grantmaker already
- * put one first.
+ * put one first. On the standard tier, as any item that names none is
+ * stored (#956): a Grantmaker that wants the strong model on the claim puts
+ * its own first item there and says so, at a budget its escrow can hold.
  */
 function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: string }> }>(
   plan: P,
@@ -514,6 +551,7 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
       {
         action: "reassess",
         claim_id: claimId,
+        variant: "standard",
         rationale: "The claim this decomposition was funded for: a fresh pass on it comes first.",
       },
       ...items,
@@ -591,7 +629,7 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
     // Nothing ran: the session is ready again, and the row waits.
     await rawQuery(`UPDATE agent_sessions SET status = 'ready', updated_at = now() WHERE id = $1 AND status = 'running'`, [session.id]);
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
       actionId: action.id,
@@ -671,7 +709,7 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
 
   if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
     // Nothing ran and it was not the research's fault: the row waits again.
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
       actionId: action.id,
@@ -876,7 +914,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
     // Nothing ran and it was not the request's fault: the row goes back to
     // waiting on its funding.
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
       actionId: action.id,
@@ -1052,11 +1090,11 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1168,11 +1206,11 @@ async function runFormalizeAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1262,11 +1300,11 @@ async function runLookoutAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1347,11 +1385,11 @@ async function runCorrespondentAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "transient", actionId: action.id, kind: "correspondent_run", grantId: row.grant_id, error: msg };
     }
     await recordCorrespondentRun({
@@ -1438,11 +1476,11 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1590,11 +1628,11 @@ async function runGrantAgentAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1681,7 +1719,7 @@ async function runIngestAction(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, err).catch(() => {});
     return {
       status: "transient",
       actionId: action.id,

@@ -932,6 +932,27 @@
       "when": 1794517813062,
       "tag": "0132_page_share",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1794522121845,
+      "tag": "0133_curation_request_defect",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1794522121846,
+      "tag": "0134_claim_state_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1794522121847,
+      "tag": "0135_platform_faults",
+      "breakpoints": true
     }
   ]
 }

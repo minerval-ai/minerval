@@ -20,6 +20,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { jobs, type Job } from "../db/schema.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "./deployment-fault.js";
 
 export const TEXT_ANALYSIS_TYPES = ["extract_claims", "assess_text"] as const;
 export type TextAnalysisType = (typeof TEXT_ANALYSIS_TYPES)[number];
@@ -112,7 +113,15 @@ export async function startTextAnalysis(
         .update(jobs)
         .set({
           status: "failed",
-          error: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+          // A deployment fault is told by its class (#967): the provider's
+          // own text ("402 ... your available credits") reads to the caller
+          // as their balance, and is not theirs to see.
+          error: deploymentFaultOf(err)
+            ? `This could not run because of ${PLATFORM_FAULT_LABELS[deploymentFaultOf(err)!]}. It is not your ` +
+              `balance or your request. Try again later.`
+            : err instanceof Error
+              ? err.message.slice(0, 500)
+              : String(err).slice(0, 500),
           completedAt: new Date(),
         })
         .where(stillRunning)

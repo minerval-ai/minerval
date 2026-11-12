@@ -10,6 +10,7 @@
  * undoes a logged event.
  */
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { recordStateChange } from "./claim-lifecycle-service.js";
 import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
@@ -519,6 +520,16 @@ export async function mergeClaims(input: {
     remapped_stances: remappedStances,
     neutralized_arguments: neutralizedArguments,
     kind_refs: kindRefs,
+  });
+  // The absorbed node's own history shows the merge, naming the survivor (#962).
+  await recordStateChange({
+    claimId: loserId,
+    fromState: loserPrevState,
+    toState: "merged",
+    actor: "curator",
+    reason: reasoning,
+    successorIds: [survivorId],
+    reconciliationEventId: eventId ?? null,
   });
 
   return { merged: true, survivorId, loserId, eventId };
@@ -1577,6 +1588,14 @@ export async function reverseReconciliation(
         `UPDATE claims SET merged_into = NULL, state = $2, updated_at = now() WHERE id = $1`,
         [loserId, (p.loser_prev_state as string) ?? "active"]
       );
+      await recordStateChange({
+        claimId: loserId,
+        fromState: "merged",
+        toState: (p.loser_prev_state as string) ?? "active",
+        actor: "curator",
+        reason: opts.reasoning ?? "The merge was reversed.",
+        reconciliationEventId: eventId,
+      });
       break;
     }
 
@@ -1612,10 +1631,23 @@ export async function reverseReconciliation(
     case "create_claim": {
       // A split-off claim: deprecate it (excluded from search) rather than hard
       // delete, since downstream rows may reference it.
+      const [before] = await rawQuery<{ state: string }>(`SELECT state FROM claims WHERE id = $1`, [
+        p.claim_id as string,
+      ]);
       await rawQuery(
         `UPDATE claims SET state = 'deprecated', updated_at = now() WHERE id = $1`,
         [p.claim_id as string]
       );
+      if (before && before.state !== "deprecated") {
+        await recordStateChange({
+          claimId: p.claim_id as string,
+          fromState: before.state,
+          toState: "deprecated",
+          actor: "curator",
+          reason: opts.reasoning ?? "The Curator's creation of this node was reversed.",
+          reconciliationEventId: eventId,
+        });
+      }
       break;
     }
 
