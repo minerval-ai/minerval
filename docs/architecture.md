@@ -2555,7 +2555,10 @@ label's rows would spend the same money twice. The views are not read-only:
 settling money changes rows at every label, so a cleared connection may
 update through them exactly the columns settlement writes (an allocation's
 amount, what of it is spent and when it was released; a regrant's amount and
-what came back) and may delete a regrant that is returned in full. It may
+what came back) and may delete a regrant in one case: the mandate that made
+it takes it back whole, by work at that mandate's label, while nothing has
+been returned from it (`minerval_own_label_guard`; any other delete of a
+regrant at another label is refused). It may
 change no other column through them, add no row, and delete no allocation.
 A listing or a feed of commissions is read from the table, under the
 policies: the change feed shows a commission to the readers of the label it
@@ -2652,7 +2655,8 @@ where reads are held.
   key, or delete it. These are the only columns a connection may change on
   a row at another label: an allocation's `amount_micro_usd`,
   `spent_micro_usd` and `released_at`, a regrant's `amount_micro_usd` and
-  `refunded_micro_usd`, and the delete of a regrant returned in full.
+  `refunded_micro_usd`, and the delete of a regrant its own maker takes back
+  whole.
 - A report or a finding met again by work at another label keeps its own
   count: the sighting is a row at that work's label, and the report's row
   does not move. A reader of both labels counts the sightings.
