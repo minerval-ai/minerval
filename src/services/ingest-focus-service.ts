@@ -18,6 +18,7 @@
  * the earlier reading left out, and the Matcher links what is already
  * there.
  */
+import { oneSourceForAddressSql } from "./mirrored-node-service.js";
 import { createHash } from "node:crypto";
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
@@ -193,7 +194,7 @@ export type IngestCoverage =
  */
 export async function ingestCoverage(url: string, focus: string | null): Promise<IngestCoverage> {
   const [source] = await rawQuery<{ id: string; title: string }>(
-    `SELECT id, title FROM sources WHERE url = $1`,
+    `SELECT id, title FROM sources WHERE url = $1${oneSourceForAddressSql()}`,
     [url]
   );
   if (!source) return { covered: false };

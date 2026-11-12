@@ -46,7 +46,16 @@ import { withRunDate } from "./run-date.js";
 import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
 import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
 import { assertProviderCleared } from "./provider-clearance.js";
-import { ROLES_THAT_WRITE_JUDGMENTS, labelNote, withLabelNote } from "./label-note.js";
+import {
+  LABEL_NOTE_HEADING,
+  MIRROR_NOTE_HEADING,
+  ROLES_THAT_WRITE_JUDGMENTS,
+  labelNote,
+  mirrorNote,
+  withLabelNote,
+  type MirrorBrief,
+} from "./label-note.js";
+import { holdsMirror, publicGraphAsOf as readPublicGraphAsOf } from "../services/mirrored-node-service.js";
 import { currentReadClearance } from "../db/client.js";
 import { enforcementLastKnown } from "../db/clearance.js";
 import { offFeatures } from "../features.js";
@@ -84,8 +93,10 @@ const LONG_RUN_MAX_TOKENS = 128_000;
  * not cleared for the label the run works at
  * (uncleared-services-note.ts); and, on a graph with more than one label,
  * the note that says which label the run works at and what it reads and
- * writes (label-note.ts). Nothing when every feature is on, every service
- * is cleared and `public` is the only label, which is how the public
+ * writes (label-note.ts), which on a deployment that mirrors the public
+ * graph also says what a run may and may not do to a mirrored node.
+ * Nothing when every feature is on, every service is cleared, `public` is
+ * the only label and nothing is mirrored, which is how the public
  * deployment runs. The role prompts cannot say any of it, because they are
  * the same text in every deployment, and an agent is told the limits it
  * works under, with the reason.
@@ -116,7 +127,7 @@ async function withRunBrief(messages: MessageParam[], model: string): Promise<Me
  */
 async function withRunLabel(messages: MessageParam[]): Promise<MessageParam[]> {
   const known = enforcementLastKnown();
-  if (known === false) return messages;
+  if (known === false) return withMirrorAlone(messages);
   let reads: string[] | null;
   try {
     // Null where `public` is the only label: nothing is held and nothing is said.
@@ -125,9 +136,41 @@ async function withRunLabel(messages: MessageParam[]): Promise<MessageParam[]> {
     if (known === true) throw err;
     return messages;
   }
-  if (!reads) return messages;
+  if (!reads) return withMirrorAlone(messages);
   const writesJudgments = ROLES_THAT_WRITE_JUDGMENTS.has(getUsageContext().agent ?? "");
-  return withLabelNote(messages, labelNote(currentLabel(), reads, { writesJudgments }));
+  // On a deployment that mirrors the public graph, what a run is told of
+  // mirrored nodes is part of the same note (label-note.ts).
+  const mirror = await mirrorBrief();
+  return withLabelNote(
+    messages,
+    labelNote(currentLabel(), reads, { writesJudgments, mirror }),
+    mirror ? LABEL_NOTE_HEADING : undefined
+  );
+}
+
+/**
+ * What a run is told of the mirror, on a deployment that keeps one and has
+ * applied a batch: null everywhere else, with nothing asked of the database
+ * where no mirror is held. A failure to read it says nothing, which costs
+ * the run a sentence and not the call: the tools still refuse what the
+ * passage would have said they refuse, and say why.
+ */
+async function mirrorBrief(): Promise<MirrorBrief | null> {
+  if (!holdsMirror()) return null;
+  try {
+    const publicGraphAsOf = await readPublicGraphAsOf();
+    return publicGraphAsOf ? { publicGraphAsOf } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The passage about mirrored nodes on its own, where `public` is the only label and there is no label note. */
+async function withMirrorAlone(messages: MessageParam[]): Promise<MessageParam[]> {
+  const mirror = await mirrorBrief();
+  if (!mirror) return messages;
+  const writesJudgments = ROLES_THAT_WRITE_JUDGMENTS.has(getUsageContext().agent ?? "");
+  return withLabelNote(messages, mirrorNote(mirror, { writesJudgments }), MIRROR_NOTE_HEADING);
 }
 
 /**

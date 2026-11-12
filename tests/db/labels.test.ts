@@ -175,7 +175,10 @@ describe("the labels table", () => {
     // and the rows of work and governance, from requests and messages to
     // mandates, their lookouts and the audit trail
     // (label-governance.test.ts). The tables that carry no label are listed
-    // there too, each with its reason.
+    // there too, each with its reason. One more is the mirror's: what a
+    // batch changed on a mirrored node, which is the public graph's own
+    // text and is written as `public` by the applier
+    // (private-on-mirror.test.ts).
     expect(rows).toEqual(
       [
         "action_allocations", "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
@@ -191,7 +194,7 @@ describe("the labels table", () => {
         "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants", "ingest_focuses",
         "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events", "lookout_feed_items",
         "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events", "mandate_inbox",
-        "mandate_policy_versions", "mandate_valuations", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
+        "mandate_policy_versions", "mandate_valuations", "mirror_node_changes", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
         "reading_citations", "reconciliation_events", "regrants", "reputation_events", "request_targets", "request_work",
         "requests", "research_runs", "setup_parts", "shared_page_analyses", "source_events", "source_extractions",

@@ -22,6 +22,7 @@
  * (tests/unit/workers/curation-trigger-lockdown.test.ts) holds every other
  * path under src/ to it.
  */
+import { notMirroredSql, publicGraphJudges } from "./mirrored-node-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureCurateAction } from "./action-service.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
@@ -107,6 +108,18 @@ export async function requestCuration(
   );
   if (!anchor) {
     return { ok: false, problem: `claim ${input.anchorClaimId} is not an active claim` };
+  }
+  // A mirrored node is the public graph's to curate at its own label
+  // (mirrored-node-service.ts): the concern is anchored on this
+  // deployment's node, with the public one named beside it.
+  if (await publicGraphJudges(input.anchorClaimId)) {
+    return {
+      ok: false,
+      problem:
+        `claim ${input.anchorClaimId} belongs to the public graph and is read here through the mirror, so ` +
+        `nothing is curated around it at its own label in this deployment. Where the concern involves a ` +
+        `node of this deployment's own, make that node the claim_id and name this one as other_claim_id`,
+    };
   }
   if (input.otherClaimId) {
     const [other] = await rawQuery<{ id: string }>(
@@ -245,6 +258,12 @@ const SCAN_OUTER_LIMIT = 200;
  * Curator's run is the valuation's call, which weighs a scan's pair below an
  * agent's escalation.
  *
+ * On a deployment that mirrors the public graph, the scan starts from the
+ * deployment's own nodes: two mirrored nodes that look alike are the public
+ * graph's to reconcile. A node of the deployment's own beside a public node
+ * that arrives later is paired when the batch that brings it is applied
+ * (mirror-upkeep.ts).
+ *
  * Bounded twice: at most `reconcile_candidates_max_per_sweep` requests per
  * sweep (0, the default, is off), and a fixed window of recent claims for
  * the nearest-neighbour search, since claims.embedding carries no vector
@@ -259,7 +278,7 @@ export async function scanReconcileCandidates(policy: {
   const pairs = await rawQuery<{ anchor: string; anchor_label: string; other: string; similarity: number }>(
     `SELECT c.id AS anchor, c.sensitivity_label AS anchor_label, n.id AS other, n.similarity
        FROM (SELECT id, embedding, sensitivity_label FROM claims
-              WHERE state = 'active' AND embedding IS NOT NULL
+              WHERE state = 'active' AND embedding IS NOT NULL${notMirroredSql()}
                 AND created_at > now() - make_interval(days => $3)
               ORDER BY created_at DESC
               LIMIT ${SCAN_OUTER_LIMIT}) c

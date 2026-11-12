@@ -9,6 +9,7 @@
  * against the run's budget (#299). Acts through tools -- no structured
  * return value.
  */
+import { PublicGraphNodeError, publicGraphJudges } from "../../services/mirrored-node-service.js";
 import { toolUseLoop } from "../client.js";
 import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
 import { listSkills } from "../prompts/skills.js";
@@ -576,9 +577,19 @@ function succeeded(output: string): boolean {
 export function runClaimSteward(
   input: Parameters<typeof runClaimStewardImpl>[0]
 ): ReturnType<typeof runClaimStewardImpl> {
-  return runWithUsageContext({ claimId: input.claimId }, () =>
-    withAgent("steward", () => runClaimStewardImpl(input))
-  );
+  return runWithUsageContext({ claimId: input.claimId }, async () => {
+    // The backstop behind everything that would have opened this pass
+    // (services/mirrored-node-service.ts): a Steward's pass on a mirrored
+    // node at the node's own label is the public graph's to run. Checked
+    // before the run opens, so nothing is sent to a model and nothing spent.
+    if (await publicGraphJudges(input.claimId)) {
+      throw new PublicGraphNodeError(
+        `No Steward pass was run on ${input.claimId}: the node belongs to the public graph, and its ` +
+          `assessment at its own label is the public graph's.`
+      );
+    }
+    return withAgent("steward", () => runClaimStewardImpl(input));
+  });
 }
 
 async function runClaimStewardImpl(input: {

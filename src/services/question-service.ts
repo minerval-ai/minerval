@@ -22,6 +22,7 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
+import { holdsMirror, mirroredRowMessage, publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
 
@@ -70,6 +71,13 @@ export async function addAnswer(
     await requireQuestion(tx, input.questionId);
     const kind = await lockNodeKind(tx, input.answerId);
     if (kind === "question") throw new KindError("A question answers no question; add it as a subquestion");
+    await refuseWhereThePublicGraphHoldsIt(
+      tx,
+      `SELECT 1 FROM claim_relationships
+        WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'answers' AND origin = 'mirror'`,
+      [input.questionId, input.answerId],
+      "the edge between this question and this answer"
+    );
     // A new edge takes this run's label; one already there is revised and
     // keeps the label it has (src/labels.ts).
     const [row] = writtenAtOwnLabel(
@@ -77,7 +85,7 @@ export async function addAnswer(
       `INSERT INTO claim_relationships
          (parent_claim_id, child_claim_id, relation_type, answer_basis, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, 'answers', $3, $4, $5, $6)
-       ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
+       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO UPDATE
          SET answer_basis = EXCLUDED.answer_basis, reasoning = EXCLUDED.reasoning
        ${sameLabelOnly("claim_relationships")}
        RETURNING id`,
@@ -87,6 +95,24 @@ export async function addAnswer(
     );
     return { id: row!.id };
   });
+}
+
+/**
+ * These writes revise a row that is already there. Where the public graph
+ * holds that row it is not this deployment's to revise, and recording a
+ * second one beside it would say the same thing twice: refused, with what
+ * the run can do instead (mirrored-node-service.ts). Nothing is asked on a
+ * deployment that does not mirror.
+ */
+async function refuseWhereThePublicGraphHoldsIt(
+  tx: TxQuery,
+  mirroredSql: string,
+  params: unknown[],
+  what: string
+): Promise<void> {
+  if (!holdsMirror()) return;
+  const held = await tx.query(mirroredSql, params);
+  if (held.length > 0) throw new KindError(mirroredRowMessage(what));
 }
 
 /** Add a subquestion: a question whose answer is part of this one's. `outer` as for addAnswer. */
@@ -102,12 +128,19 @@ export async function addSubquestion(
   return inTransaction(outer, async (tx) => {
     await requireQuestion(tx, input.questionId);
     await requireQuestion(tx, input.subquestionId);
+    await refuseWhereThePublicGraphHoldsIt(
+      tx,
+      `SELECT 1 FROM claim_relationships
+        WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'part_of' AND origin = 'mirror'`,
+      [input.questionId, input.subquestionId],
+      "the edge between this question and its subquestion"
+    );
     const [row] = writtenAtOwnLabel(
       await tx.query<{ id: string }>(
       `INSERT INTO claim_relationships
          (parent_claim_id, child_claim_id, relation_type, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, 'part_of', $3, $4, $5)
-       ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
+       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO UPDATE
          SET reasoning = EXCLUDED.reasoning
        ${sameLabelOnly("claim_relationships")}
        RETURNING id`,
@@ -139,11 +172,18 @@ export async function setAnswerRelation(input: {
     for (const id of [a, b]) {
       if (!answers.has(id)) throw new KindError(`Node ${id} is not an answer to ${input.questionId}`);
     }
+    await refuseWhereThePublicGraphHoldsIt(
+      tx,
+      `SELECT 1 FROM answer_relations
+        WHERE question_id = $1 AND claim_a_id = $2 AND claim_b_id = $3 AND origin = 'mirror'`,
+      [input.questionId, a, b],
+      "the relation between these two answers"
+    );
     const [row] = writtenAtOwnLabel(
       await tx.query<{ id: string }>(
       `INSERT INTO answer_relations (question_id, claim_a_id, claim_b_id, relation, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (question_id, claim_a_id, claim_b_id) DO UPDATE
+       ON CONFLICT (question_id, claim_a_id, claim_b_id, origin) DO UPDATE
          SET relation = EXCLUDED.relation, reasoning = EXCLUDED.reasoning
        ${sameLabelOnly("answer_relations")}
        RETURNING id`,
@@ -191,6 +231,9 @@ export async function recordQuestionAssessment(input: {
   }
   // On a question that carries another label, this label's assessment rests
   // on material at this label or is not stored (judgment-version-service.ts).
+  // A mirrored question's assessment at its own label is the public graph's
+  // (mirrored-node-service.ts).
+  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An assessment"));
   const noMaterial = await versionWithoutMaterial(input.claimId);
   if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An assessment"));
   return withTransaction(async (tx) => {

@@ -143,6 +143,27 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A time, moved back, on the slot each of this process's own runs was holding (a node's own row, or its label's row in steward_slots), and the status of that run's own ledger row. No text, and nothing for another recipient.",
     ],
   ],
+  "src/services/mirror-apply-service.ts": [
+    [
+      "The mirror's applier writes the public graph's rows, which belong to no run, and must see a row at any label that points to one it removes.",
+      "Mirrored rows, each named as `public` and as the mirror's, copied from a batch whose signature was checked; its own bookkeeping; and, in mirror_node_changes at `public`, what the batch replaced on a mirrored node (a wording, an argument's name), which is the public graph's own text. " +
+        "Of this deployment's own rows it changes one thing: a judgment recorded at a mirrored node's own label, which is `public`, is retired. The batch's notes count local rows by table and name no text from them. Nothing read at a private label is written anywhere.",
+    ],
+  ],
+  "src/services/mirror-upkeep.ts": [
+    [
+      "After a batch of the mirror, finding what of this deployment's own rests on the nodes the batch touched means reading every label; each Steward's piece is then written at its own label, from rows read there.",
+      "Nothing while it sees every label: it reads the node a merge ended in, the labels that recorded something on the merged node, and the nodes that have it under them by an edge of this deployment's own. Each message, slot and ledger row is then written inside runAtLabel at that label, and what the message names is read there.",
+    ],
+    [
+      "After a batch of the mirror, finding what of this deployment's own rests on the nodes the batch touched means reading every label; each Steward's piece is then written at its own label, from rows read there.",
+      "Nothing while it sees every label: it reads which nodes have the withdrawn node under them by an edge of this deployment's own, and that edge's label. Each message is then written inside runAtLabel at that label, from rows read there.",
+    ],
+    [
+      "After a batch of the mirror, finding what of this deployment's own rests on the nodes the batch touched means reading every label; each Steward's piece is then written at its own label, from rows read there.",
+      "Nothing while it sees every label: it pairs each of the deployment's own nodes with the nearest node that arrived, by their vectors. The request to the Curator is then raised inside runAtLabel at the deployment's node's label, through requestCuration, and names the public node's id and a similarity, in fixed words.",
+    ],
+  ],
   "src/services/version-upkeep.ts": [
     [
       "The upkeep of versions finds, at every label, the versions made beside one that has since been replaced; each node's reassessment is then opened at its own version's label.",

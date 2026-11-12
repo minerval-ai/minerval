@@ -21,6 +21,7 @@ import { getClaimById, getClaimInstances } from "./claim-service.js";
 import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import { nodeVersions } from "./judgment-version-service.js";
+import { holdsMirror, mirroredFacts } from "./mirrored-node-service.js";
 import {
   getArgumentsForClaim,
   getEvaluationStateForClaim,
@@ -263,6 +264,7 @@ export async function getClaimView(
     changes,
     covered,
     labelled,
+    mirrored,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -300,6 +302,9 @@ export async function getClaimView(
     // Where the deployment has more than one label: the node's own, and
     // the versions of its judgment the reader may read (null elsewhere).
     nodeVersions(claimId, kind),
+    // Where the deployment mirrors the public graph and this node is one
+    // of the public graph's: that it is, and as of when (null elsewhere).
+    mirroredFacts(claimId),
   ]);
   const since = sinceAssessed(changes?.get(claimId));
   const examination = coverage(covered?.get(claimId.toLowerCase()));
@@ -355,6 +360,10 @@ export async function getClaimView(
     // and that the reader may read (judgment-version-service.ts). The
     // judgment served just below is the first of them.
     ...(labelled ? { versions: labelled.versions } : {}),
+    // That the node is the public graph's, read through the mirror, and as
+    // of when (mirrored-node-service.ts). Absent for a node of this
+    // deployment's own.
+    ...(mirrored ? { mirrored } : {}),
     assessment: withDeveloperDisclosure(
       formatClaimViewAssessment(assessment),
       assessment?.model,
@@ -633,8 +642,9 @@ async function listDirectSubclaims(claimId: string) {
     child_kind: string;
     child_estimate: unknown | null;
     child_standing: string | null;
+    edge_origin: string;
   } & StewardParkRow>(
-    `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
+    `SELECT cr.id AS edge_id, cr.origin AS edge_origin, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             a.claim_credence AS child_credence,
@@ -655,7 +665,26 @@ async function listDirectSubclaims(claimId: string) {
   // Whether each premise has been examined at all (#543), for every kind in
   // one read. A failure loses the field, never the section.
   const covered = await summarizeCoverage(rows.map((sc) => sc.child_id)).catch(() => null);
-  return rows.map((sc) => ({
+  // An edge this deployment recorded and the public graph's own edge for
+  // the same child and relation are the same thing recorded twice
+  // (db/schema.ts, the origin column), and are listed once: the public
+  // graph's row, with its grouping under arguments, and beside it what this
+  // deployment wrote for its own (`also_recorded_here`). The deployment's
+  // row is still listed where it is grouped under an argument, which is a
+  // fact of its own. Only a deployment that mirrors can hold such a pair.
+  const pair = (sc: { child_id: string; relation_type: string }) => `${sc.child_id}:${sc.relation_type}`;
+  const own = new Map<string, { edge_id: string; reasoning: string | null }>();
+  const mirrored = new Set<string>();
+  if (holdsMirror()) {
+    for (const sc of rows) {
+      if (sc.edge_origin === "mirror") mirrored.add(pair(sc));
+      else if (!own.has(pair(sc))) own.set(pair(sc), { edge_id: sc.edge_id, reasoning: sc.reasoning });
+    }
+  }
+  const listedOnce = rows.filter(
+    (sc) => !(sc.edge_origin !== "mirror" && sc.argument_id === null && mirrored.has(pair(sc)))
+  );
+  return listedOnce.map((sc) => ({
     id: sc.child_id,
     edge_id: sc.edge_id,
     text: sc.child_text,
@@ -663,6 +692,7 @@ async function listDirectSubclaims(claimId: string) {
     relation: sc.relation_type,
     // Why the edge holds, as its author wrote it.
     reasoning: sc.reasoning,
+    ...(sc.edge_origin === "mirror" && own.has(pair(sc)) ? { also_recorded_here: own.get(pair(sc)) } : {}),
     confidence: sc.confidence,
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,

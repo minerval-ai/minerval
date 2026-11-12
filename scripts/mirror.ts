@@ -48,6 +48,8 @@ import {
 } from "../src/services/mirror-apply-service.js";
 import { MirrorPublishError, cutBatches, exportBatches, feedKey, listBatches } from "../src/services/mirror-feed-service.js";
 import { describeCut } from "../src/workers/mirror-publisher.js";
+import { describeUpkeep } from "../src/workers/mirror-applier.js";
+import { afterMirrorApplied } from "../src/services/mirror-upkeep.js";
 
 function argValue(name: string): string | undefined {
   const arg = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -58,7 +60,7 @@ function positional(): string[] {
   return process.argv.slice(2).filter((a) => !a.startsWith("--"));
 }
 
-function reportSync(result: SyncResult): void {
+async function reportSync(result: SyncResult): Promise<void> {
   for (const applied of result.applied) {
     const rows = Object.values(applied.counts).reduce((n, c) => n + c.inserted + c.updated, 0);
     const removed = Object.values(applied.counts).reduce((n, c) => n + c.removed, 0);
@@ -78,7 +80,15 @@ function reportSync(result: SyncResult): void {
       const n = followed.local_rows.reduce((sum, r) => sum + r.rows, 0);
       console.log(`  ${n} local row(s) pointed to ${followed.table} rows this batch removed, and followed their foreign keys.`);
     }
+    for (const retired of notes.local_judgments_retired ?? []) {
+      console.log(
+        `  ${retired.count} judgment(s) in ${retired.table} that this deployment had recorded at a mirrored node's own label were retired, so that the public graph's is the one in force.`
+      );
+    }
   }
+  // What the batches mean for this deployment's own work, as the worker does after a sync.
+  const upkeep = describeUpkeep(await afterMirrorApplied(result.applied));
+  if (upkeep) console.log(upkeep.replace(/^Mirror: /, ""));
   if (result.applied.length === 0 && !result.refusal) console.log("The mirror is up to date with its source.");
   if (result.refusal) throw result.refusal;
 }
@@ -126,15 +136,15 @@ async function main(): Promise<void> {
       if (!source) {
         throw new MirrorConfigError("This deployment has no mirror feed configured. Set MIRROR_FEED_URL or MIRROR_FEED_DIR.");
       }
-      reportSync(await syncMirror(source));
+      await reportSync(await syncMirror(source));
       return;
     }
     case "apply": {
       if (!target) throw new Error("apply needs a batch file or a directory of them");
       if (statSync(target).isDirectory()) {
-        reportSync(await syncMirror(directorySource(target)));
+        await reportSync(await syncMirror(directorySource(target)));
       } else {
-        reportSync({ applied: [await applyBatch(readFileSync(target, "utf8"), { receivedFrom: target })], refusal: null });
+        await reportSync({ applied: [await applyBatch(readFileSync(target, "utf8"), { receivedFrom: target })], refusal: null });
       }
       return;
     }

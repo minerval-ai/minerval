@@ -52,7 +52,7 @@ describe("an insert into a labelled table", () => {
 
   it("finds the labelled tables in the schema", () => {
     // Ninety-five of the schema's tables carry a label; tests/db/labels.test.ts lists them.
-    expect(tables.sql.size).toBe(100);
+    expect(tables.sql.size).toBe(101);
     expect(tables.sql.has("agent_steps")).toBe(true);
     expect(tables.sql.has("owl_ledger")).toBe(false);
   });

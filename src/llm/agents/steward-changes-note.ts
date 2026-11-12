@@ -19,6 +19,7 @@ import { getJudgmentInputs, type JudgmentInputsView } from "../../services/judgm
 import type { NodeKind } from "../../schemas/kinds.js";
 import { nodeVersions, type NodeVersion } from "../../services/judgment-version-service.js";
 import { currentLabel } from "../usage-context.js";
+import { loadMirrorChangesNote } from "./mirror-changes-note.js";
 
 /**
  * How many items each list names. A handful is enough to see what kind of
@@ -151,6 +152,10 @@ export async function loadChangesSinceJudgedNote(claimId: string, kind: NodeKind
   try {
     const view = await getJudgmentInputs(claimId);
     if (!view?.judgment) return loadVersionsNote(claimId, kind);
+    // What the mirror overwrote in place since this label's version, which
+    // the record below cannot show (mirror-changes-note.ts). Empty on a
+    // deployment that does not mirror.
+    const fromThePublicGraph = await loadMirrorChangesNote(claimId, kind);
     const { nodeIds, sourceIds } = namedInChangesNote(view);
     const [nodes, sources] = await Promise.all([
       nodeIds.length > 0
@@ -170,7 +175,7 @@ export async function loadChangesSinceJudgedNote(claimId: string, kind: NodeKind
       new Map(rows.flatMap((r) => (r.name ? [[r.id, r.name] as const] : [])));
     const note = changesSinceJudgedNote(kind, view, { nodes: byId(nodes), sources: byId(sources) });
     const versions = await loadVersionsNote(claimId, kind);
-    return versions ? `${note}\n\n${versions}` : note;
+    return [note, fromThePublicGraph, versions].filter((part) => part.length > 0).join("\n\n");
   } catch (err) {
     console.warn(
       `[steward] changes since the judgment could not be read for ${claimId}:`,

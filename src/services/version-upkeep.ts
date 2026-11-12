@@ -61,9 +61,19 @@ interface Moved {
 /**
  * Open a reassessment, at its own label, for every current version made
  * beside one that has since changed. Returns how many it opened.
+ *
+ * With `claimIds` it looks at those nodes alone: the mirror's applier names
+ * the nodes whose public judgment a batch moved (services/mirror-upkeep.ts),
+ * so that their versions at other labels are asked about as soon as the
+ * batch is in, and no other node is read.
  */
-export async function openReassessmentsForVersionsMadeBesideEarlier(): Promise<number> {
+export async function openReassessmentsForVersionsMadeBesideEarlier(
+  opts: { claimIds?: readonly string[] } = {}
+): Promise<number> {
   if (oneLabelOnly()) return 0;
+  if (opts.claimIds && opts.claimIds.length === 0) return 0;
+  const only = opts.claimIds ? ` AND v.claim_id = ANY($2::uuid[])` : "";
+  const params = (kind: string) => (opts.claimIds ? [kind, [...opts.claimIds]] : [kind]);
   const moved = await withSystemClearance(REASON, async () => {
     const rows: Moved[] = [];
     for (const { table, kind } of NODE_JUDGMENTS) {
@@ -78,7 +88,7 @@ export async function openReassessmentsForVersionsMadeBesideEarlier(): Promise<n
              JOIN judgment_inputs i
                ON i.judgment_kind = $1 AND i.judgment_id = v.id AND i.input_kind = 'beside'
              JOIN claims c ON c.id = v.claim_id AND c.state = 'active'
-            WHERE NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)
+            WHERE NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)${only}
            UNION ALL
            -- ...or a label it reads has a version now and had none then.
            SELECT v.id, v.claim_id, v.sensitivity_label, o.sensitivity_label, NULL, o.id
@@ -89,9 +99,9 @@ export async function openReassessmentsForVersionsMadeBesideEarlier(): Promise<n
              JOIN claims c ON c.id = v.claim_id AND c.state = 'active'
             WHERE NOT EXISTS (SELECT 1 FROM judgment_inputs i
                                WHERE i.judgment_kind = $1 AND i.judgment_id = v.id AND i.input_kind = 'beside'
-                                 AND i.input_label = o.sensitivity_label)
+                                 AND i.input_label = o.sensitivity_label)${only}
             LIMIT ${PER_SWEEP}`,
-          [kind]
+          params(kind)
         ))
       );
     }

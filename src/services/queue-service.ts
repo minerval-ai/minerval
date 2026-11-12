@@ -7,6 +7,7 @@ import { recordEnqueueEvent } from "./enqueue-events-service.js";
 import { postMessage, type MessageSender } from "./inbox-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { stewardSlot } from "./steward-lease.js";
+import { mirroredNode } from "./mirrored-node-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -102,6 +103,11 @@ export interface StewardMessage {
     // first recorded (version-upkeep.ts). The context names the labels and
     // nothing else; whether it matters is the Steward's judgment.
     | "version_beside_changed"
+    // The public graph merged or withdrew a node that work at this label
+    // rests on, and the batch of the mirror that says so is in
+    // (mirror-upkeep.ts). The context says what happened and what of this
+    // label's is where; what to make of it is the Steward's judgment.
+    | "public_graph_changed"
     // A mandate's plan asked for a pass on this claim (an assess, reassess
     // or deepen item, materialized by the reconcile sweep or by the
     // Grantmaker's extend_plan in the same turn, #416). The context names
@@ -345,6 +351,11 @@ export async function enqueueSteward(
   // reads the node (steward-lease.ts): the message waits for a pass at its
   // own label, and work at one label does not mark another's as pending.
   const slot = await stewardSlot(message.claimId, { ensure: true });
+  // A mirrored node's Steward at the node's own label is the public
+  // graph's, and no pass at that label is opened here
+  // (mirrored-node-service.ts): nothing is queued and no message is kept,
+  // as for a node that is not active.
+  if (slot.own && (await mirroredNode(message.claimId))) return;
   const rows = await rawQuery<{ prev_state: string; prev_requeued: boolean; new_state: string }>(
     `UPDATE ${slot.rel}
         SET steward_state = CASE

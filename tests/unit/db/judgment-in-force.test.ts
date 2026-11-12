@@ -29,6 +29,8 @@ const MAY_MENTION_IS_CURRENT: Record<string, string> = {
     "Writes the flag: update_claim_assessment retires the claim's current verdict and inserts the new one.",
   "src/services/argument-service.ts":
     "Writes the flag: a new evaluation retires the current one, and a change of stance retires it too.",
+  "src/services/mirror-apply-service.ts":
+    "Writes the flag: the mirror's applier retires a judgment this deployment recorded at a mirrored node's own label before it writes the public graph's current one, and reads the flag on the rows of a batch.",
   "src/services/quantity-service.ts":
     "Writes the flag: recordEstimate retires the current estimate before inserting the new one.",
   "src/services/question-service.ts":

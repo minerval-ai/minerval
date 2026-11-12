@@ -12,6 +12,7 @@
  * and every other failure (a missing claim, a foreign-key violation, an
  * outage) propagates instead of being swallowed as success.
  */
+import { holdsMirror } from "./mirrored-node-service.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { RELATION_TYPES } from "../schemas/common.js";
@@ -28,6 +29,14 @@ export class UnknownRelationError extends Error {
     this.name = "UnknownRelationError";
   }
 }
+
+/**
+ * Where this deployment recorded an edge and the public graph later
+ * recorded the same one, a read by the edge's identity finds two rows
+ * (db/schema.ts, the origin column). It takes this deployment's own, which
+ * is the one its work wrote and may change.
+ */
+const ONE_PER_GRAPH = ` ORDER BY (origin = 'local') DESC LIMIT 1`;
 
 export interface InsertEdgeInput {
   parentId: string;
@@ -63,11 +72,22 @@ export async function insertRelationshipEdge(
   if (!EDGE_RELATION_TYPES.includes(relationType)) {
     throw new UnknownRelationError(input.relationType);
   }
+  // An edge the public graph already holds is the edge (identity is per
+  // graph, db/schema.ts): nothing is recorded beside it, as nothing is
+  // beside one of this deployment's own.
+  if (holdsMirror()) {
+    const [mirrored] = await run.query<{ id: string }>(
+      `SELECT id FROM claim_relationships
+        WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3 AND origin = 'mirror'`,
+      [input.parentId, input.childId, relationType]
+    );
+    if (mirrored) return { id: mirrored.id, created: false };
+  }
   const inserted = await run.query<{ id: string }>(
     `INSERT INTO claim_relationships
        (parent_claim_id, child_claim_id, relation_type, reasoning, confidence, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO NOTHING
+     ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO NOTHING
      RETURNING id`,
     [
       input.parentId,
@@ -85,7 +105,7 @@ export async function insertRelationshipEdge(
 
   const [existing] = await run.query<{ id: string }>(
     `SELECT id FROM claim_relationships
-      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
+      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3${ONE_PER_GRAPH}`,
     [input.parentId, input.childId, relationType]
   );
   if (!existing) {
@@ -107,7 +127,7 @@ export async function findRelationshipEdge(
   const [row] = await rawQuery<EdgeIdentity>(
     `SELECT id, parent_claim_id, child_claim_id, relation_type
        FROM claim_relationships
-      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
+      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3${ONE_PER_GRAPH}`,
     [parentId, childId, relationType.toLowerCase()]
   );
   return row ?? null;

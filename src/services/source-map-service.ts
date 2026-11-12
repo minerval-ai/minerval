@@ -21,6 +21,7 @@
  * message written for the agent; the tool executors turn that into a
  * structured refusal (§20).
  */
+import { oneSourceForAddressSql } from "./mirrored-node-service.js";
 import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
@@ -319,7 +320,7 @@ async function findSource(ref: { sourceId?: string; url?: string }): Promise<Sou
   }
   if (ref.url) {
     const [row] = await rawQuery<SourceRow>(
-      `SELECT id, url, title, source_type, raw_content FROM sources WHERE url = $1`,
+      `SELECT id, url, title, source_type, raw_content FROM sources WHERE url = $1${oneSourceForAddressSql()}`,
       [ref.url]
     );
     return row ?? null;

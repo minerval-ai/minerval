@@ -228,7 +228,7 @@ describe("C. work at one label does not write its words into a row at another", 
       rawQuery<{ id: string }>(
         `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning, created_by, sensitivity_label)
          VALUES ($1, $2, 'part_of', $3, 'review', $4)
-         ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
+         ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO UPDATE
            SET reasoning = EXCLUDED.reasoning
          ${sameLabelOnly("claim_relationships")}
          RETURNING id`,

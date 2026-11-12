@@ -59,6 +59,8 @@ import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../service
 import { CLAIM_CARDS_MAX_IDS, getClaimCard, getClaimCards } from "../services/claim-card-service.js";
 import { RESOLVED_FROM_SCHEMA } from "../services/claim-alias-service.js";
 import { requirePermission } from "../server/require-permission.js";
+import { MIRRORED_SCHEMA, mirroredFacts, refusePublicWorkOnMirroredNode } from "../services/mirrored-node-service.js";
+import { mirrorRoles } from "../services/mirror-roles.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -669,6 +671,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               assessment: assessmentSchema,
               coverage: coverageSchema,
               since_assessed: sinceAssessedSchema,
+              // On a deployment that mirrors the public graph: that this
+              // node is the public graph's, and as of when. The schema has
+              // the field only there, so every other deployment's document
+              // is what it was.
+              ...(mirrorRoles().applier ? { mirrored: MIRRORED_SCHEMA } : {}),
               subclaim_count: { type: "integer" },
               // Steward-seeded prior (#285): the parent claim's Steward's
               // preliminary credence/note, served only while this claim has
@@ -844,10 +851,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         // the versions of its judgment the reader may read. Null elsewhere,
         // and the response is then what it always was.
         const labelled = await nodeVersions(claim.id, claim.kind ?? "claim");
+        // Where the node is the public graph's, read through the mirror:
+        // that it is, and as of when. Null elsewhere.
+        const mirrored = await mirroredFacts(claim.id);
 
         const response: Record<string, unknown> = {
           claim: labelled ? { ...formatClaim(claim), label: labelled.label } : formatClaim(claim),
           ...(labelled ? { versions: labelled.versions } : {}),
+          ...(mirrored ? { mirrored } : {}),
           assessment: assessment ? formatAssessment(assessment) : null,
           // Beside the judgment, and present where there is none: it is
           // what says a quantity or a question has not been judged, which a
@@ -1707,7 +1718,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const status =
           result.code === "CLAIM_NOT_FOUND"
             ? 404
-            : result.code === "ORDER_ALREADY_OPEN"
+            : result.code === "ORDER_ALREADY_OPEN" || result.code === "PUBLIC_GRAPH_NODE"
               ? 409
               : 400;
         return reply.code(status).send({
@@ -1747,6 +1758,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       },
       preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
+        // Not on a mirrored node at its own label, where the assessment is
+        // the public graph's: refused before any owl moves, with where a
+        // public assessment is funded (services/mirrored-node-service.ts).
+        await refusePublicWorkOnMirroredNode(request.params.claim_id);
         const result = await allocateToClaimAssessment({
           userId: request.auth!.userId!,
           claimId: request.params.claim_id,
@@ -1803,6 +1818,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       },
       preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
+        // A mandate on a mirrored node at the node's own label would open
+        // with a pass that is the public graph's to run: refused before
+        // anything is escrowed (services/mirrored-node-service.ts).
+        await refusePublicWorkOnMirroredNode(request.params.claim_id);
         const result = await createClaimMandate({
           userId: request.auth!.userId!,
           claimId: request.params.claim_id,

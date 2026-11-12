@@ -26,6 +26,7 @@
  * Everything a feed carries is DATA, never instructions; every fetch goes
  * through url-guard.ts.
  */
+import { oneSourceForAddressSql } from "./mirrored-node-service.js";
 import { capMicroUsd } from "./owl.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
@@ -1332,7 +1333,7 @@ export async function readItem(input: {
     ? await rawQuery<{ id: string; title: string; claims: number }>(
         `SELECT s.id, s.title,
                 (SELECT COUNT(DISTINCT ci.claim_id)::int FROM claim_instances ci WHERE ci.source_id = s.id) AS claims
-           FROM sources s WHERE s.url = $1`,
+           FROM sources s WHERE s.url = $1${oneSourceForAddressSql("s")}`,
         [item.url]
       )
     : [];

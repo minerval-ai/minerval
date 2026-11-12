@@ -20,7 +20,9 @@
  * model's call into a service call and a refusal into a message the agent
  * can act on. `executeKindTool` returns null for a name it does not own.
  */
+import { oneSourceForAddressSql } from "../../services/mirrored-node-service.js";
 import { refusalForCaller } from "../../db/clearance.js";
+import { mirroredNode, mirroredRefusalForAgent, mirroredRowMessage } from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedAliasRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
@@ -918,11 +920,16 @@ export async function executeKindTool(
       const notOwn = await ownershipRefusal(name, input);
       if (notOwn) return notOwn;
     }
+    // A mirrored quantity's definition is the public graph's, whatever the
+    // run's label (services/mirrored-node-service.ts): the one refusal.
+    if (name === "set_quantity_definition" && (await mirroredNode(str(input.claim_id)))) {
+      return refuse(mirroredRowMessage("the quantity's definition"));
+    }
     return await executeKindToolImpl(name, input, ctx);
   } catch (err) {
     if (err instanceof ZodError) return refuse(`Not recorded: ${zodMessage(err)}.`);
     if (err instanceof KindError || err instanceof RequestError) return refuse(err.message);
-    const refusal = refusalForCaller(err);
+    const refusal = mirroredRefusalForAgent(err) ?? refusalForCaller(err);
     if (refusal) return refuse(refusal);
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
@@ -1322,7 +1329,7 @@ async function executeKindToolImpl(
       let sourceId = str(input.source_id);
       if (!sourceId && str(input.url)) {
         const [row] = await rawQuery<{ id: string }>(
-          `SELECT id FROM sources WHERE url = $1 ORDER BY retrieved_at LIMIT 1`,
+          `SELECT id FROM sources WHERE url = $1${oneSourceForAddressSql() || " ORDER BY retrieved_at LIMIT 1"}`,
           [str(input.url)]
         );
         if (!row) return refuse(`The graph holds no source at ${str(input.url)}.`);

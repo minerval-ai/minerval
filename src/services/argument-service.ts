@@ -1,3 +1,4 @@
+import { holdsMirror } from "./mirrored-node-service.js";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations, argumentEvaluationsInForce } from "../db/schema.js";
@@ -113,8 +114,8 @@ export async function getRetiredArgumentsForClaim(claimId: string) {
 export async function getArgumentSubclaims(
   argumentId: string
 ): Promise<{ id: string; text: string }[]> {
-  return rawQuery<{ id: string; text: string }>(
-    `SELECT c.id, c.text
+  const rows = await rawQuery<{ id: string; text: string; edge_id: string }>(
+    `SELECT c.id, c.text, cr.id AS edge_id
        FROM argument_subclaims am
        JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
@@ -122,6 +123,13 @@ export async function getArgumentSubclaims(
       ORDER BY am.created_at, cr.id`,
     [argumentId]
   );
+  // A grouping this deployment recorded and the public graph's own of the
+  // same edge are two rows (db/schema.ts, the origin column) and one
+  // premise. Only a deployment that mirrors can hold such a pair.
+  const seen = new Set<string>();
+  return rows
+    .filter((r) => !holdsMirror() || (!seen.has(r.edge_id) && Boolean(seen.add(r.edge_id))))
+    .map(({ id, text }) => ({ id, text }));
 }
 
 /** Overwrite an argument's written form (its `content`). */

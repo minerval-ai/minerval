@@ -25,8 +25,9 @@
  *
  * Two columns are handled once for every table and so are named in none:
  * `origin` (the applier writes 'mirror') and `sensitivity_label` (only rows
- * at the public label are published, and a mirrored row takes the column's
- * default, which is that label).
+ * at the public label are published, and the applier writes that label on
+ * every mirrored row: where a deployment has more than one label, a row is
+ * never public by omission).
  *
  * Adding a column to a replicated table means deciding here whether it
  * travels (tests/unit/services/mirror-manifest.test.ts fails until it is
@@ -88,8 +89,8 @@ interface TableEntry {
   removeBeforeWrite?: boolean;
   /**
    * The order rows are written in, as an ORDER BY over the table's columns.
-   * The judgment tables allow one current row per node, so the row that
-   * stopped being current is written before the one that became it.
+   * The judgment tables allow one current row for a node at a label, so the
+   * row that stopped being current is written before the one that became it.
    */
   writeOrder?: string;
   /**
@@ -116,8 +117,10 @@ const MONEY =
   "Names a budget job in the publisher's ledger. Money is not mirrored, so the id would resolve to nothing here.";
 
 /**
- * A current judgment is unique per node, so within a batch the rows that
- * are no longer current go first.
+ * A current judgment is unique for a node, or for a node and a label where
+ * the deployment has more than one (db/schema.ts, idx_assessments_current).
+ * Every mirrored judgment is at the one label, so either way the rows of a
+ * batch that are no longer current go first.
  */
 const NOT_CURRENT_FIRST = "is_current ASC, id ASC";
 
@@ -263,8 +266,20 @@ export interface ReplicatedParent {
 export interface ReplicatedTable {
   /** The table's SQL name. */
   name: string;
-  /** Primary key columns, in order. */
+  /**
+   * The columns that say which row of the public graph this is, in order:
+   * the primary key, without `origin`.
+   */
   key: readonly string[];
+  /**
+   * The key is not an id of its own but names other rows (an argument and
+   * an edge), so this deployment can hold a row of its own with the same
+   * key, and the table's primary key ends with `origin` to let the two
+   * stand side by side (db/schema.ts, the origin column). The applier's
+   * conflict target is then the key and the origin, and a local row with
+   * the key is no collision.
+   */
+  keyPerGraph: boolean;
   /** Replicated columns in the table's own order, key included. */
   columns: readonly string[];
   leftOut: Readonly<Record<string, LeftOut>>;
@@ -294,9 +309,10 @@ function build(): ReplicatedTable[] {
   return ENTRIES.map((entry) => {
     const config = getTableConfig(entry.table);
     const leftOut = entry.leftOut ?? {};
-    const key = config.primaryKeys[0]
+    const primaryKey = config.primaryKeys[0]
       ? config.primaryKeys[0].columns.map((c) => c.name)
       : config.columns.filter((c) => c.primary).map((c) => c.name);
+    const key = primaryKey.filter((c) => c !== "origin");
     const replicated = config.columns.filter((c) => !EVERY_TABLE.has(c.name) && !(c.name in leftOut));
     const columns = replicated.map((c) => c.name);
     const parents: ReplicatedParent[] = [];
@@ -316,6 +332,7 @@ function build(): ReplicatedTable[] {
     return {
       name: config.name,
       key,
+      keyPerGraph: primaryKey.includes("origin"),
       columns,
       leftOut,
       localColumns: kinds("local"),

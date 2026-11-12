@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { rawQuery } from "../db/client.js";
 import { normalizePageUrl, pageUrlHash } from "./page-url.js";
 import { getDb } from "../db/client.js";
@@ -8,6 +8,7 @@ import { sourceContentHash } from "./source-content.js";
 import { enqueueUrlExtraction } from "./queue-service.js";
 import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { holdsMirror } from "./mirrored-node-service.js";
 
 /**
  * Find or create the source row for a URL, without enqueueing extraction.
@@ -22,11 +23,22 @@ export async function getOrCreateSource(input: {
 }) {
   const db = getDb();
 
-  const [existing] = await db
-    .select()
-    .from(sources)
-    .where(eq(sources.url, input.url))
-    .limit(1);
+  // One row for the address: where this deployment and the public graph
+  // each hold one, the one this label wrote, else the public graph's
+  // (mirrored-node-service.ts, oneSourceForAddressSql).
+  const [existing] = holdsMirror()
+    ? await db
+        .select()
+        .from(sources)
+        .where(eq(sources.url, input.url))
+        .orderBy(
+          sql`(${sources.origin} = 'local' AND ${sources.sensitivityLabel} = ${currentLabel()}) DESC`,
+          sql`(${sources.origin} = 'mirror') DESC`,
+          sources.retrievedAt,
+          sources.id
+        )
+        .limit(1)
+    : await db.select().from(sources).where(eq(sources.url, input.url)).limit(1);
   if (existing) {
     // A row can exist with no content before anyone submits the document:
     // the Steward records the URLs it cites as sources. A later submission
@@ -37,7 +49,13 @@ export async function getOrCreateSource(input: {
     // only where the row is at the caller's own label. A row at another
     // label is that label's to fill (the database refuses another's write),
     // and its text comes from the address when a worker fetches it.
-    if (!existing.rawContent && input.content && existing.sensitivityLabel === currentLabel()) {
+    // A mirrored row is the public graph's, and its text arrives with the mirror.
+    if (
+      !existing.rawContent &&
+      input.content &&
+      existing.sensitivityLabel === currentLabel() &&
+      existing.origin !== "mirror"
+    ) {
       const [updated] = await db
         .update(sources)
         .set({

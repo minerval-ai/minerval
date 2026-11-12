@@ -21,12 +21,13 @@ import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
+import { publicGraphJudges, publicGraphPageUrl, publicWorkNotDoneHereMessage } from "./mirrored-node-service.js";
 
 export type OrderCreateResult =
   | { ok: true; order: AssessmentOrder }
   | {
       ok: false;
-      code: "CLAIM_NOT_FOUND" | "CLAIM_NOT_ACTIVE" | "ORDER_ALREADY_OPEN";
+      code: "CLAIM_NOT_FOUND" | "CLAIM_NOT_ACTIVE" | "ORDER_ALREADY_OPEN" | "PUBLIC_GRAPH_NODE";
       message: string;
       existingOrderId?: string;
     };
@@ -59,6 +60,16 @@ export async function createOrder(input: {
       ok: false,
       code: "CLAIM_NOT_ACTIVE",
       message: merged?.message ?? `Claim is ${claim.state}; only active claims can be assessed`,
+    };
+  }
+
+  // An order is for a pass at its label, and a pass on a mirrored node at
+  // the node's own label is the public graph's (mirrored-node-service.ts).
+  if (await publicGraphJudges(input.claimId)) {
+    return {
+      ok: false,
+      code: "PUBLIC_GRAPH_NODE",
+      message: publicWorkNotDoneHereMessage(currentLabel(), await publicGraphPageUrl(input.claimId)),
     };
   }
 

@@ -19,6 +19,7 @@
  *    metered cost is consumed pro rata from the winner's covering
  *    allocations.
  */
+import { oneSourceForAddressSql } from "./mirrored-node-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";
@@ -46,6 +47,7 @@ import {
 import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { ownWorkSql } from "./mirrored-node-service.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
 export { allocationDayUseSql } from "./day-use.js";
 
@@ -253,9 +255,12 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
             ${assessedHere}
               AS assessed
        FROM claims c
-      WHERE c.id = $1 AND c.state = 'active'`,
+      WHERE c.id = $1 AND c.state = 'active'${ownWorkSql("c")}`,
     oneLabelOnly() ? [claimId] : [claimId, currentLabel()]
   );
+  // No row for a node that is not active, and none for a mirrored node at
+  // its own label, where the assessment is the public graph's
+  // (mirrored-node-service.ts).
   if (!claim) return;
   const kind = claim.assessed ? "reassess" : "assess";
   const group = ASSESS_GROUP(claimId);
@@ -297,8 +302,11 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
  * claim.
  */
 export async function ensureCurateAction(anchorClaimId: string): Promise<string | null> {
+  // A mirrored node is the public graph's to curate, at its own label: a
+  // concern that involves one is anchored on this deployment's node, or
+  // raised at a label that reads it (mirrored-node-service.ts).
   const [claim] = await rawQuery<{ text: string }>(
-    `SELECT text FROM claims WHERE id = $1 AND state = 'active'`,
+    `SELECT c.text FROM claims c WHERE c.id = $1 AND c.state = 'active'${ownWorkSql("c")}`,
     [anchorClaimId]
   );
   if (!claim) return null;
@@ -978,7 +986,7 @@ export async function ensureFormalizeAction(
      SELECT 'formalize', $1, 'standard', c.id,
             'Formalize: ' || left(c.text, 280), $3, $4
        FROM claims c
-      WHERE c.id = $2 AND c.state = 'active'
+      WHERE c.id = $2 AND c.state = 'active'${ownWorkSql("c")}
         AND NOT EXISTS (SELECT 1 FROM claim_formalizations f
                          WHERE f.claim_id = c.id AND f.status = 'published')
      ON CONFLICT (exclusion_group, variant) DO UPDATE
@@ -2757,7 +2765,7 @@ async function attributeIngestedSource(grantId: string, url: string, focus: stri
     [grantId, url, INGEST_GROUP(url, focus)]
   );
   if (have) return;
-  const [source] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE url = $1 LIMIT 1`, [url]);
+  const [source] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE url = $1${oneSourceForAddressSql() || " LIMIT 1"}`, [url]);
   if (!source) return;
   const [job] = await rawQuery<{ id: string }>(
     `SELECT id FROM jobs

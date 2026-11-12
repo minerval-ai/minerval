@@ -364,6 +364,16 @@ export const administrativeEvents = pgTable(
 // deployment's own working state on a claim (its queue state and the like).
 // The triggers fire only for rows whose origin is 'mirror', so they do
 // nothing where there are none.
+//
+// Identity is per graph. Where a replicated table has a key besides its id
+// (a source's address, an edge's two nodes and relation, a link's pair, a
+// question's pair of answers, a document's segment order, an argument's
+// grouping of an edge), the unique index ends with `origin`. So a row this
+// deployment made and the public graph's row for the same thing are two
+// rows, the mirrored one always applies, and nothing this deployment holds
+// can stop its mirror. Among a deployment's own rows the key is what it
+// was, and on the public graph, where every row is 'local', the index
+// holds exactly what it held before.
 // ---------------------------------------------------------------------------
 export const ROW_ORIGINS = ["local", "mirror"] as const;
 export type RowOrigin = (typeof ROW_ORIGINS)[number];
@@ -702,10 +712,13 @@ export const claimRelationships = pgTable(
   },
   (table) => [
     originCheck("ck_claim_relationships_origin", table.origin),
+    // One edge for a parent, a child and a relation, in each graph (the
+    // origin column, above).
     uniqueIndex("idx_cr_unique").on(
       table.parentClaimId,
       table.childClaimId,
-      table.relationType
+      table.relationType,
+      table.origin
     ),
     index("idx_cr_parent").on(table.parentClaimId),
     index("idx_cr_child").on(table.childClaimId),
@@ -757,7 +770,8 @@ export const claimLinks = pgTable(
     uniqueIndex("idx_claim_links_unique").on(
       table.claimAId,
       table.claimBId,
-      table.kind
+      table.kind,
+      table.origin
     ),
     index("idx_claim_links_b").on(table.claimBId),
     check("ck_claim_links_ordered", sql`${table.claimAId} < ${table.claimBId}`),
@@ -1084,7 +1098,9 @@ export const argumentSubclaims = pgTable(
   },
   (table) => [
     originCheck("ck_argument_subclaims_origin", table.origin),
-    primaryKey({ columns: [table.argumentId, table.relationshipId] }),
+    // In each graph (the origin column, above): a grouping this deployment
+    // recorded and the public graph's own of the same edge are two rows.
+    primaryKey({ columns: [table.argumentId, table.relationshipId, table.origin] }),
     index("idx_argument_subclaims_relationship").on(table.relationshipId),
   ]
 );
@@ -1162,7 +1178,8 @@ export const argumentEvaluations = pgTable(
 // ---------------------------------------------------------------------------
 export const sources = pgTable("sources", {
   id: uuid("id").primaryKey().defaultRandom(),
-  url: text("url").unique(),
+  // One row for an address in each graph (uq_sources_url_origin, below).
+  url: text("url"),
   title: text("title").notNull(),
   // SHA-256 of raw_content, written when the text is first stored
   // (services/source-content.ts). Not unique: one document can be held at
@@ -1210,6 +1227,11 @@ export const sources = pgTable("sources", {
   partyId: uuid("party_id").references(() => parties.id),
 }, (table) => [
   originCheck("ck_sources_origin", table.origin),
+  // A document this deployment recorded and the public graph's row for the
+  // same address are two rows (the origin column, above). A read by
+  // address takes one of them (services/mirrored-node-service.ts,
+  // oneSourceForAddressSql).
+  uniqueIndex("uq_sources_url_origin").on(table.url, table.origin),
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
@@ -1313,7 +1335,7 @@ export const sourceSegments = pgTable(
   },
   (table) => [
     originCheck("ck_source_segments_origin", table.origin),
-    uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal),
+    uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal, table.origin),
     index("idx_source_segments_parent").on(table.parentId),
     check(
       "ck_source_segments_kind",
@@ -5974,7 +5996,7 @@ export const answerRelations = pgTable(
   },
   (table) => [
     originCheck("ck_answer_relations_origin", table.origin),
-    uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId),
+    uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId, table.origin),
     check("ck_answer_relations_ordered", sql`${table.claimAId} < ${table.claimBId}`),
     check("ck_answer_relations_relation", sql`${table.relation} IN ('excludes', 'compatible')`),
   ]
@@ -6607,6 +6629,60 @@ export const mirrorRefusals = pgTable(
     refusedAt: timestamp("refused_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("idx_mirror_refusals_at").on(table.refusedAt)]
+);
+
+// ---------------------------------------------------------------------------
+// mirror_node_changes: what the public graph changed on a node this
+// deployment mirrors, as each applied batch found it
+// (services/mirror-apply-service.ts, services/mirror-upkeep.ts)
+//
+// A deployment's own judgments and nodes rest on mirrored ones: a version at
+// a private label beside the public assessment, a private node with a
+// public premise. When a batch rewords such a node, adds, rewrites or
+// retires an argument on it, merges it away or withdraws it, the judgments
+// that rest on it were made against the node as it was. Edges, sources and
+// judgments are compared from the record a judgment keeps of its inputs
+// (judgment_inputs); a wording, an argument and a withdrawal leave no such
+// trace once the row is overwritten, so the applier writes what it
+// replaced here, in the batch's own transaction.
+//
+// A row is a fact about the public graph and says nothing of what this
+// deployment holds: it is written for every mirrored node the batch
+// changed in one of these ways, whether or not anything private rests on
+// it, and it carries the label `public` like the rows it describes. The
+// Steward's note of what has changed since a judgment reads it
+// (llm/agents/steward-changes-note.ts), and a read of the node says when
+// the public graph merged or withdrew it.
+// ---------------------------------------------------------------------------
+export const mirrorNodeChanges = pgTable(
+  "mirror_node_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The mirrored node. No foreign key: the row is history, and outlives a
+    // node the public graph deleted outright.
+    claimId: uuid("claim_id").notNull(),
+    // The batch that carried the change, and when the public graph cut it.
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    cutAt: timestamp("cut_at", { withTimezone: true }).notNull(),
+    // 'reworded' | 'argument_added' | 'argument_rewritten' |
+    // 'argument_retired' | 'argument_removed' | 'merged' | 'withdrawn'
+    change: text("change").notNull(),
+    // What the change was, in the public graph's own words: the wording
+    // before and after, an argument's id and name, the node it was merged
+    // into, how it was withdrawn.
+    detail: jsonb("detail").notNull().default({}),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this row (src/labels.ts): everyone, as the mirrored
+    // rows it describes. The applier names it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_mirror_node_changes_claim").on(table.claimId, table.appliedAt),
+    check(
+      "ck_mirror_node_changes_change",
+      sql`${table.change} IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'merged', 'withdrawn')`
+    ),
+  ]
 );
 
 // ---------------------------------------------------------------------------

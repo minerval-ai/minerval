@@ -23,6 +23,7 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
+import { publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
 /** Set a quantity's definition, making a fresh claim a quantity if it is not one yet. */
@@ -77,6 +78,9 @@ export async function recordEstimate(input: {
   if (!input.work.trim()) throw new KindError("An estimate records its work");
   // On a quantity that carries another label, this label's estimate rests
   // on material at this label or is not stored (judgment-version-service.ts).
+  // A mirrored quantity's estimate at its own label is the public graph's
+  // (mirrored-node-service.ts).
+  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An estimate"));
   const noMaterial = await versionWithoutMaterial(input.claimId);
   if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An estimate"));
   return withTransaction(async (tx) => {

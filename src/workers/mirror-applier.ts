@@ -10,8 +10,13 @@
  * batch already applied changes nothing, so every task may run this.
  *
  * It runs no agent and funds nothing: a batch only changes mirrored rows.
+ * After a sync it opens, on the ledger, the work the batches call for in
+ * this deployment's own rows (services/mirror-upkeep.ts): a reassessment
+ * at its own label for a version made beside a public judgment that was
+ * replaced, and the like. Opening runs nothing either.
  */
 import { loadConfig } from "../config.js";
+import { afterMirrorApplied, type MirrorUpkeepResult } from "../services/mirror-upkeep.js";
 import {
   MirrorConfigError,
   configuredSource,
@@ -31,6 +36,21 @@ export function describeSync(result: SyncResult): { info: string | null; error: 
   };
 }
 
+/** What the upkeep after a sync opened, for the log; null when it opened nothing. */
+export function describeUpkeep(upkeep: MirrorUpkeepResult): string | null {
+  const parts = [
+    upkeep.versions > 0
+      ? `${upkeep.versions} ${upkeep.versions === 1 ? "reassessment" : "reassessments"} opened for versions made beside a public judgment that was replaced`
+      : null,
+    upkeep.merges > 0 ? `${upkeep.merges} opened because the public graph merged a node` : null,
+    upkeep.withdrawals > 0 ? `${upkeep.withdrawals} opened because the public graph withdrew a node` : null,
+    upkeep.convergence > 0
+      ? `the Curator asked about ${upkeep.convergence} of this deployment's nodes that a public node may now state`
+      : null,
+  ].filter((p): p is string => p !== null);
+  return parts.length > 0 ? `Mirror: ${parts.join("; ")}. Nothing was run: each waits to be funded.` : null;
+}
+
 export function startMirrorApplier(options: {
   intervalMs?: number;
   logger: { info: (...a: unknown[]) => void; error: (...a: unknown[]) => void };
@@ -47,8 +67,13 @@ export function startMirrorApplier(options: {
     try {
       const source = configuredSource();
       if (!source) return;
-      const { info, error } = describeSync(await syncMirror(source));
+      const result = await syncMirror(source);
+      const { info, error } = describeSync(result);
       if (info) options.logger.info(info);
+      // What the batches mean for this deployment's own work: reassessments
+      // and requests opened on the ledger, nothing run (mirror-upkeep.ts).
+      const upkeep = describeUpkeep(await afterMirrorApplied(result.applied));
+      if (upkeep) options.logger.info(upkeep);
       if (error && error !== lastError) options.logger.error(error);
       lastError = error;
     } catch (err) {

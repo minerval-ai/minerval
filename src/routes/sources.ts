@@ -1,4 +1,5 @@
 import { sourceLabel } from "../services/judgment-version-service.js";
+import { sourceMirrorFacts } from "../services/mirrored-node-service.js";
 import type { FastifyInstance } from "fastify";
 import { sourceSubmitBody } from "../schemas/source.js";
 import { submitSource } from "../services/source-service.js";
@@ -133,7 +134,11 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       }
       // Who may read the source, on a deployment with more than one label.
       const label = await sourceLabel(request.params.source_id);
-      return reply.send(label ? { ...facts, label } : facts);
+      // On a deployment that mirrors: that the source is the public
+      // graph's and as of when, or, for one of the deployment's own, the
+      // public graph's row for the same address (mirrored-node-service.ts).
+      const mirror = await sourceMirrorFacts(request.params.source_id);
+      return reply.send({ ...facts, ...(label ? { label } : {}), ...(mirror ?? {}) });
     },
   });
 

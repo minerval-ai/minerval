@@ -9,6 +9,7 @@
  * same from either side. Writers report a duplicate as `created: false`;
  * every other failure propagates.
  */
+import { holdsMirror } from "./mirrored-node-service.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { CLAIM_LINK_KINDS } from "../schemas/common.js";
@@ -44,16 +45,26 @@ export async function linkClaims(input: {
     throw new Error("A claim cannot be linked to itself");
   }
   const [a, b] = orderPair(input.claimId, input.otherClaimId);
+  // A link the public graph already holds is the link (identity is per
+  // graph, db/schema.ts): nothing is recorded beside it.
+  if (holdsMirror()) {
+    const [mirrored] = await rawQuery<{ id: string }>(
+      `SELECT id FROM claim_links WHERE claim_a_id = $1 AND claim_b_id = $2 AND kind = $3 AND origin = 'mirror'`,
+      [a, b, input.kind]
+    );
+    if (mirrored) return { id: mirrored.id, created: false };
+  }
   const inserted = await rawQuery<{ id: string }>(
     `INSERT INTO claim_links (claim_a_id, claim_b_id, kind, reasoning, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (claim_a_id, claim_b_id, kind) DO NOTHING
+     ON CONFLICT (claim_a_id, claim_b_id, kind, origin) DO NOTHING
      RETURNING id`,
     [a, b, input.kind, input.reasoning, input.createdBy, currentLabel()]
   );
   if (inserted[0]) return { id: inserted[0].id, created: true };
   const [existing] = await rawQuery<{ id: string }>(
-    `SELECT id FROM claim_links WHERE claim_a_id = $1 AND claim_b_id = $2 AND kind = $3`,
+    `SELECT id FROM claim_links WHERE claim_a_id = $1 AND claim_b_id = $2 AND kind = $3
+      ORDER BY (origin = 'local') DESC LIMIT 1`,
     [a, b, input.kind]
   );
   if (!existing) {

@@ -23,6 +23,7 @@
  *    payer (a mandate's stays the mandate's, a person's the person's) and
  *    parent_action_id records the chain a petition is later routed along.
  */
+import { publicGraphJudges, publicWorkMessageForAgent } from "./mirrored-node-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
@@ -98,6 +99,7 @@ export type CommissionResult =
       ok: false;
       code:
         | "BAD_AMOUNT"
+        | "PUBLIC_GRAPH_NODE"
         | "NOT_FOUND"
         | "OVER_DAILY_RATE"
         | "OVER_ESCROW"
@@ -187,6 +189,11 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
   const budget = Math.round(input.budgetMicroUsd);
   if (!(budget > 0)) {
     return { ok: false, code: "BAD_AMOUNT", message: "A commission needs a budget above zero." };
+  }
+  // A pass on a mirrored node at its own label is the public graph's to
+  // run (mirrored-node-service.ts): refused before anything is placed.
+  if (await publicGraphJudges(input.claimId)) {
+    return { ok: false, code: "PUBLIC_GRAPH_NODE", message: publicWorkMessageForAgent() };
   }
   const [claim] = await rawQuery<{
     id: string;

@@ -9,6 +9,7 @@
  * the prior structure without erasing history). `reverseReconciliation`
  * undoes a logged event.
  */
+import { mirroredNode } from "./mirrored-node-service.js";
 import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { claims } from "../db/schema.js";
@@ -340,6 +341,19 @@ export async function mergeClaims(input: {
   const { survivorId, loserId, stanceRelation, reasoning } = input;
   if (survivorId === loserId) {
     throw new Error("Cannot merge a claim into itself");
+  }
+  // A mirrored node is the public graph's and is not merged away here: the
+  // steps below would change its rows, which the database refuses part of
+  // the way through. A node of this deployment's own is folded into it the
+  // other way round, and what was recorded on that node moves onto the
+  // public one, each row at the label it has (docs/mirror.md).
+  if (await mirroredNode(loserId)) {
+    throw new Error(
+      `Nothing was merged. ${loserId} belongs to the public graph and is read here through the mirror, ` +
+        `so it cannot be the node that is merged away. If the two are one claim, merge the other way: ` +
+        `name ${loserId} as the survivor. What is recorded on the other node then moves onto the public ` +
+        `node, each row keeping its label.`
+    );
   }
   const opposed = stanceRelation === "opposed";
 

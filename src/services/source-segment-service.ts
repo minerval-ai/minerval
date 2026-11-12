@@ -183,12 +183,22 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
  * the document shares (src/labels.ts).
  */
 export async function segmentSource(sourceId: string): Promise<{ segments: number; anchored: number }> {
-  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string }>(
-    `SELECT raw_content, sensitivity_label FROM sources WHERE id = $1`,
+  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string; origin: string }>(
+    `SELECT raw_content, sensitivity_label, origin FROM sources WHERE id = $1`,
     [sourceId]
   );
   if (!row?.raw_content?.trim()) return { segments: 0, anchored: 0 };
   const text = htmlToText(row.raw_content);
+  // A mirrored document's segments are the public graph's and arrive with
+  // the mirror (docs/mirror.md). They are not replaced here: this label's
+  // instances are anchored to them as they stand.
+  if (row.origin === "mirror") {
+    const [have] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM source_segments WHERE source_id = $1`,
+      [sourceId]
+    );
+    return { segments: have?.n ?? 0, anchored: await anchorInstances(sourceId, text) };
+  }
   const drafts = segmentText(text);
 
   // An instance's anchor is a column of the instance, which is changed only

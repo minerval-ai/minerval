@@ -5,6 +5,14 @@
  * add decomposition edges, log decisions, and notify dependent stewards.
  */
 import { refusalForCaller } from "../../db/clearance.js";
+import {
+  mirroredNode,
+  mirroredRefusalForAgent,
+  mirroredRowMessage,
+  publicGraphEvaluates,
+  publicGraphJudges,
+  publicJudgmentMessage,
+} from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
@@ -1474,6 +1482,12 @@ export async function executeStewardTool(
         // rests on material at this run's label or is not stored
         // (judgment-version-service.ts). Asked before anything is written,
         // so a refusal leaves this label's current version standing.
+        // The judgment of a mirrored node at the node's own label is the
+        // public graph's, and nothing here records one in its place
+        // (mirrored-node-service.ts).
+        if (await publicGraphJudges(claimId)) {
+          return JSON.stringify({ success: false, message: publicJudgmentMessage("An assessment") });
+        }
         const noMaterial = await versionWithoutMaterial(claimId);
         if (noMaterial) {
           return JSON.stringify({
@@ -2071,6 +2085,11 @@ export async function executeStewardTool(
         const newText = input.new_text as string;
         // A node that carries another label is that label's Steward's to
         // change (judgment-version-service.ts): refused, with the reason.
+        // So is a node the public graph holds, whatever this run's label
+        // (mirrored-node-service.ts): the one refusal, with what to do.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's wording and type") });
+        }
         const notOurs = await anotherLabelsNode(claimId);
         if (notOurs) {
           return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "wording and type") });
@@ -2151,6 +2170,9 @@ export async function executeStewardTool(
         const claimId = input.claim_id as string;
         // A node that carries another label is that label's Steward's to
         // change (judgment-version-service.ts): refused, with the reason.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's domains") });
+        }
         const notOurs = await anotherLabelsNode(claimId);
         if (notOurs) {
           return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "domains") });
@@ -2182,6 +2204,9 @@ export async function executeStewardTool(
         const claimId = input.claim_id as string;
         // A node that carries another label is that label's Steward's to
         // change (judgment-version-service.ts): refused, with the reason.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's importance and contestation") });
+        }
         const notOurs = await anotherLabelsNode(claimId);
         if (notOurs) {
           return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "importance and contestation") });
@@ -2497,6 +2522,11 @@ export async function executeStewardTool(
         // An evaluation is a version too: on an argument that carries
         // another label it is stored only where material at this run's
         // label bears on the argument's claim (judgment-version-service.ts).
+        // The evaluation of a mirrored argument at the argument's own label
+        // is the public graph's (mirrored-node-service.ts).
+        if (await publicGraphEvaluates(argumentId)) {
+          return JSON.stringify({ success: false, message: publicJudgmentMessage("An evaluation of this argument") });
+        }
         if (argument.sensitivityLabel !== currentLabel()) {
           const noMaterial = await versionWithoutMaterial(argument.claimId);
           if (noMaterial) {
@@ -3284,7 +3314,8 @@ export async function executeStewardTool(
         });
         // The node's own row is touched only by work at its own label; the
         // decision itself is the row above, at this run's label.
-        if (!(await anotherLabelsNode(claimId))) {
+        // A mirrored node's row is the public graph's, at every label.
+        if (!(await anotherLabelsNode(claimId)) && !(await mirroredNode(claimId))) {
           await db
             .update(claims)
             .set({ updatedAt: new Date() })
@@ -3350,7 +3381,7 @@ export async function executeStewardTool(
   } catch (err) {
     // The database's refusal of a write across labels is told whole, with
     // its reason: a limit the agent works under, not a fault of the tool.
-    const refusal = refusalForCaller(err);
+    const refusal = mirroredRefusalForAgent(err) ?? refusalForCaller(err);
     if (refusal) return JSON.stringify({ success: false, message: refusal });
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
