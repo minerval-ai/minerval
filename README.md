@@ -225,6 +225,8 @@ posts. See [docs/allocation.md](docs/allocation.md).
 - [docs/mathematics.md](docs/mathematics.md): mathematics as the flagship
   domain (formal statements, the Lean checker, the solver, prizes).
 - [docs/mcp.md](docs/mcp.md): the MCP server and its tools.
+- [docs/deployment.md](docs/deployment.md): a deployment's config file, and
+  the preflight that says whether it is ready to run.
 
 ## Surfaces
 
