@@ -83,7 +83,7 @@ describe("what the service says of itself", () => {
     expect(health.value.image).toBe("minerval-sandbox:test");
     expect(health.value.python).toMatch(/^3\.\d+\.\d+$/);
     expect(health.value.landlockAbi).toBeGreaterThanOrEqual(1);
-    expect(health.value.tools).toEqual(expect.arrayContaining(["bash", "grep", "sed"]));
+    expect(health.value.tools).toEqual(expect.arrayContaining(["find", "grep", "sed"]));
     expect(health.value.paths).toEqual({ store: sandbox.storeDir, directoryRoot: sandbox.directoryRoot });
     expect(health.value.limits).toEqual({ commandSeconds: 3, outputBytes: 20000, memoryMb: 150, scratchMb: 20 });
   });
@@ -145,6 +145,23 @@ describe("a command", () => {
     expect(result.output).toContain("NO_HOME");
     expect(result.output).not.toContain("the restricted plan");
     expect(result.output.trim().endsWith("alpha")).toBe(true);
+  });
+
+  it("can use threads and subprocesses, and cannot share memory with another process", async () => {
+    const script = [
+      "import concurrent.futures as cf, multiprocessing as mp, subprocess",
+      "def sq(x): return x * x",
+      "if __name__ == '__main__':",
+      "    print('threads', list(cf.ThreadPoolExecutor(2).map(sq, range(4))))",
+      "    print('subprocess', subprocess.run(['sort'], input=b'b\\na\\n', capture_output=True).stdout)",
+      "    try:",
+      "        mp.Pool(2).map(sq, range(4))",
+      "        print('pool started')",
+      "    except PermissionError:",
+      "        print('no pool')",
+    ].join("\n");
+    const result = await run("run-processes", "python3 p.py", [], [{ path: "p.py", content: script }]);
+    expect(result.output).toBe("threads [0, 1, 4, 9]\nsubprocess b'a\\nb\\n'\nno pool\n");
   });
 
   it("cannot write to a set: not a new file, not a change to one, not a removal", async () => {

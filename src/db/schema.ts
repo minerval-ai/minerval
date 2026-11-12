@@ -2100,8 +2100,11 @@ export const sandboxCalls = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    // An administrator's list reads them newest first.
+    // The lists read them newest first.
     index("idx_sandbox_calls_time").on(table.calledAt),
+    // A set's page lists and counts the commands that had it mounted
+    // (file_sets @> '[{"id": ...}]').
+    index("idx_sandbox_calls_file_sets").using("gin", table.fileSets),
     index("idx_sandbox_calls_source")
       .on(table.sourceId)
       .where(sql`source_id IS NOT NULL`),

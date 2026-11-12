@@ -1,5 +1,5 @@
 {
-  "id": "2bbe8477-5eb8-4b4a-b0c8-7a78d8275223",
+  "id": "05830f80-738e-4c31-86f6-9896ab93b090",
   "prevId": "4ba0d756-1c79-4c8a-82ef-f3156bc6a393",
   "version": "7",
   "dialect": "postgresql",
@@ -17725,6 +17725,21 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "idx_sandbox_calls_file_sets": {
+          "name": "idx_sandbox_calls_file_sets",
+          "columns": [
+            {
+              "expression": "file_sets",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         },
         "idx_sandbox_calls_source": {

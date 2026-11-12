@@ -61,9 +61,11 @@ LIBRARIES = [
     "numpy", "pandas", "scipy", "statsmodels", "sklearn", "matplotlib", "pyarrow", "polars", "duckdb",
     "openpyxl", "lxml", "bs4", "yaml",
 ]
+# The tools named are the ones worth saying: bash and the coreutils are
+# taken as read.
 TOOLS = [
-    "bash", "ls", "cat", "head", "tail", "wc", "sort", "uniq", "cut", "find", "grep", "rg", "sed", "awk", "jq",
-    "diff", "file", "tree", "tar", "gzip", "unzip", "xz", "zstd", "sqlite3", "git",
+    "find", "grep", "rg", "sed", "awk", "jq", "sqlite3", "git", "diff", "file", "tree",
+    "tar", "gzip", "unzip", "xz", "zstd",
 ]
 
 RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -442,6 +444,7 @@ class Sandbox:
 
         stopped = None
         detail = {}
+        peak = 0
         ticks = 0
         while child.poll() is None:
             time.sleep(0.1)
@@ -452,6 +455,7 @@ class Sandbox:
                 stopped = "timed_out"
             elif ticks % 5 == 0:
                 used = memory_bytes(session_processes(child.pid))
+                peak = max(peak, used)
                 if used > c.memory_mb * 1024 * 1024:
                     stopped = "memory"
                     detail["memory_mb_used"] = round(used / (1024 * 1024))
@@ -501,6 +505,9 @@ class Sandbox:
             "duration_ms": duration_ms,
             "written": written,
             "written_not_listed": max(0, len(changed) - len(written)),
+            # The most memory seen in use, looked at twice a second: 0 for a
+            # command that ended before the first look.
+            "memory_mb_peak": round(peak / (1024 * 1024)),
             "scratch_bytes": tree_bytes(scratch),
             "scratch": scratch,
             "sets": sets,

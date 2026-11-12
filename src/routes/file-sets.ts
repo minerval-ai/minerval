@@ -25,7 +25,7 @@
  * (mcp/route-tools.ts).
  */
 import type { FastifyInstance } from "fastify";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import {
   FILE_SET_DESCRIPTION_MAX_CHARS,
   FILE_SET_NAME_MAX_CHARS,
@@ -177,11 +177,11 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
         "The commands agents ran in the sandbox with a file set mounted, newest first, and which were kept as sources (holders of direct)",
       description:
         "Each command: when, how it ended, the size and SHA-256 of what it printed, the sets it could " +
-        "read, the run and node it was run for, and the source it became if an agent's work rested on " +
-        "it. What it printed is never here; a kept analysis is read as its source. A command and the " +
-        "files given with it are what an agent wrote, so they are returned only to a caller cleared " +
-        "to read at the call's label, and marked withheld otherwise. Page back with " +
-        "before=<the last command's called_at>.",
+        "read, and the source it became if an agent's work rested on it. What it printed is never " +
+        "here; a kept analysis is read as its source. A command and the files given with it are what " +
+        "an agent wrote, so they are returned, with the run and node the command was run for, only " +
+        "to a caller cleared to read at the call's label, and marked withheld otherwise. Page back " +
+        "with before=<the last command's called_at>.",
       params: FILE_SET_PARAMS,
       querystring: {
         type: "object",
@@ -334,10 +334,12 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
       },
       preHandler: directorSession,
       handler: async (request, reply) => {
+        // A request with no body at all has no stream: it is an empty file.
+        const body = request.body as Readable | undefined;
         const uploaded = await uploadFile(
           request.params.file_set_id,
           request.params["*"],
-          request.body as Readable,
+          body && typeof body.pipe === "function" ? body : Readable.from([]),
           standingOf(request.auth).clearance
         );
         if (!uploaded.ok) return reply.code(statusOf(uploaded.code)).send({ error: uploaded.message, code: uploaded.code });

@@ -129,7 +129,11 @@ The routes for connections to an organization's systems
 (docs/connections.md) are in the same case: `list_connections`,
 `get_connection` and `list_connection_calls` are tools for a caller who
 holds `administer`, and adding a connection, changing one, and picking
-which of its tools the graph's agents are offered take a session.
+which of its tools the graph's agents are offered take a session. So are
+the routes for file sets (docs/file-sets.md): `list_file_sets`,
+`get_file_set`, `list_file_set_files` and `list_file_set_commands` are
+tools for a caller who holds `direct`, and adding a set, uploading into
+one, closing one and switching one off take a session.
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's

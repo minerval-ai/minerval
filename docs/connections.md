@@ -5,7 +5,7 @@ It is in a warehouse, a wiki, a ticket system, a log store. A **connection**
 points a deployment at an MCP server over one such system, and the agents
 that weigh evidence are given the server's reading tools. It is one of the
 three ways material comes into a graph, beside a document or an address and
-a set of files (the last is not built yet).
+a set of files ([file-sets.md](file-sets.md)).
 
 Connections exist only in a members-only deployment
 ([accounts.md](accounts.md), "Members-only deployments"), because adding one
@@ -365,6 +365,7 @@ no run will be offered; the runs say so in their briefs.
   query has to run with the system's clearance, or the rate would become a
   rate per label (`callsInLastMinute` in `reading-service.ts`).
 
-Not built here: sets of files explored in a sandbox; pages for adding and
-reading connections (the routes return what a page needs); publishing a
-reading outward; connections on the public graph.
+Not built here: pages for adding and reading connections (the routes
+return what a page needs); publishing a reading outward; connections on the
+public graph. Sets of files explored in a sandbox are in
+[file-sets.md](file-sets.md).

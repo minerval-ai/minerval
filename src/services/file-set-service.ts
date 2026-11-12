@@ -676,6 +676,13 @@ export async function fillFromDirectory(id: string, config: FileSetStoreConfig =
     if (files === 0) throw new Error("the directory holds no files");
     await withTransaction(async (tx) => {
       await tx.query(`SELECT 1 FROM file_sets WHERE id = $1 FOR UPDATE`, [id]);
+      // Another process may have started the same walk (after a restart,
+      // say), and each begins by clearing the manifest. The set is closed
+      // only on a manifest that holds exactly the files this walk hashed.
+      const [rows] = await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM file_set_files WHERE file_set_id = $1`, [id]);
+      if ((rows?.n ?? 0) !== files) {
+        throw new Error("the directory was being hashed by two processes at once; start it again");
+      }
       // The walk closes the set for the person who registered the directory.
       await closeLocked(tx, id, set.created_by);
     });
@@ -787,24 +794,29 @@ export interface SandboxCallView {
   output_sha256: string | null;
   /** The sets the command could read, by id and name. */
   file_sets: Array<{ id: string; name: string }>;
-  run_id: string | null;
-  agent: string | null;
-  /** The node the run was working on, when it was working on one. */
-  claim_id: string | null;
   /** The source kept from the call, when an agent's work rested on it. */
   source_id: string | null;
   kept_at: string | null;
-  /** The command and the files given with it, for a reader cleared for the call's label; absent otherwise. */
+  /**
+   * For a reader cleared for the call's label: the command, the files given
+   * with it, and the run and node it was run for. Absent otherwise, with
+   * `withheld` in their place.
+   */
   command?: string;
   files?: Array<{ path: string; sha256: string; chars: number }>;
-  command_withheld?: true;
+  run_id?: string | null;
+  agent?: string | null;
+  /** The node the run was working on, when it was working on one. */
+  claim_id?: string | null;
+  withheld?: true;
 }
 
 /**
  * The commands agents ran in the sandbox, newest first, without their
  * output. With `fileSetId`, those that had that set mounted. A command and
- * the files given with it are what an agent wrote at the call's label, so
- * they are shown only to a reader whose clearance covers that label; that a
+ * the files given with it are what an agent wrote at the call's label, and
+ * which node a run at that label was working on is that label's to know, so
+ * those are shown only to a reader whose clearance covers the label. That a
  * command ran, when, against which sets and how it ended is shown to anyone
  * who may see the set. A kept analysis is read as the source it became.
  */
@@ -863,17 +875,17 @@ export async function listSandboxCalls(
     output_chars: r.output_chars,
     output_sha256: r.output_hash,
     file_sets: (r.file_sets ?? []).map((s) => ({ id: s.id, name: s.name })),
-    run_id: r.run_id,
-    agent: r.agent,
-    claim_id: r.claim_id,
     source_id: r.source_id,
     kept_at: iso(r.kept_at),
     ...(cleared.has(r.sensitivity_label)
       ? {
           command: r.command,
           files: (r.files ?? []).map((f) => ({ path: f.path, sha256: f.sha256, chars: f.content.length })),
+          run_id: r.run_id,
+          agent: r.agent,
+          claim_id: r.claim_id,
         }
-      : { command_withheld: true as const }),
+      : { withheld: true as const }),
   }));
 }
 

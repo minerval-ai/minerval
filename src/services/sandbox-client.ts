@@ -67,9 +67,12 @@ export interface SandboxRunResult {
   exitCode: number | null;
   signal: number | null;
   output: string;
+  outputBytes: number;
   durationMs: number;
   written: Array<{ path: string; bytes: number; sha256: string }>;
   writtenNotListed: number;
+  /** The most memory the command was seen using, in MB; 0 when it ended before it was first looked at. */
+  memoryMbPeak: number;
   scratchBytes: number;
   /** The run's scratch directory in the sandbox: where the command ran. */
   scratch: string;
@@ -224,9 +227,11 @@ interface RawRun {
   exit_code: number | null;
   signal: number | null;
   output: string;
+  output_bytes: number;
   duration_ms: number;
   written: Array<{ path: string; bytes: number; sha256: string }>;
   written_not_listed: number;
+  memory_mb_peak: number;
   scratch_bytes: number;
   scratch: string;
   sets: Array<{ name: string; path: string }>;
@@ -273,9 +278,11 @@ export async function runInSandbox(
       exitCode: r.exit_code ?? null,
       signal: r.signal ?? null,
       output: r.output,
+      outputBytes: r.output_bytes ?? Buffer.byteLength(r.output, "utf8"),
       durationMs: r.duration_ms,
       written: r.written ?? [],
       writtenNotListed: r.written_not_listed ?? 0,
+      memoryMbPeak: r.memory_mb_peak ?? 0,
       scratchBytes: r.scratch_bytes ?? 0,
       scratch: r.scratch,
       sets: r.sets ?? [],

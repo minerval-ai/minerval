@@ -317,15 +317,19 @@ export function fileSetsNote(
         `run's alone, with the sets mounted read-only at the paths above. The file sets are only there: no ` +
         `other tool you have can read them. The sandbox has Python ${health.python}` +
         (libraries.length > 0 ? ` with ${libraries.join(", ")}` : "") +
-        (health.tools.length > 0 ? `, and these shell tools: ${health.tools.join(", ")}` : "") +
+        `, and bash with the usual shell tools` +
+        (health.tools.length > 0 ? `, among them ${health.tools.join(", ")}` : "") +
         `. It has no network, because the files are not to leave this deployment and because a result ` +
-        `should depend only on the files and on what you ran.`,
+        `should depend only on the files and on what you ran. Processes there cannot share memory, so that ` +
+        `one run's command cannot pass anything to another's: a Python multiprocessing pool does not start, ` +
+        `and threads and subprocesses do.`,
       `A command that has run for ${fmt(limits.commandSeconds)} seconds is stopped, because your run waits ` +
         `on it and every run shares the sandbox. A command that has printed ${fmt(limits.outputBytes)} bytes ` +
         `is stopped, because its output is stored whole in one row: write a large result to a file in the ` +
         `scratch directory and print what matters. A command that uses more than ${fmt(limits.memoryMb)} MB ` +
         `of memory, or leaves more than ${fmt(limits.scratchMb)} MB in the scratch directory, is stopped, ` +
-        `because the sandbox is one machine that every run shares. Each result says how its command ended. ` +
+        `because the sandbox is one machine that every run shares. Each result says how its command ended ` +
+        `and how much of each limit it used. ` +
         costSentence(hourCostMicroUsd),
       `Every command is stored whole with its output, the hash of that output and the time; you are shown ` +
         `the first part of the output, and ${OPEN_OUTPUT_TOOL_NAME} shows the rest. A command is not yet a ` +
@@ -427,6 +431,13 @@ async function run(
     ...(ran.written.length > 0 ? { files_written: ran.written } : {}),
     ...(ran.writtenNotListed > 0 ? { files_written_not_listed: ran.writtenNotListed } : {}),
     scratch_directory: ran.scratch,
+    // Where the command stood against each limit, as the turn counter and
+    // the spend line say where a run stands.
+    used:
+      `${(ran.durationMs / 1000).toFixed(1)} of ${fmt(health.limits.commandSeconds)} seconds, ` +
+      `${fmt(ran.used.outputBytes)} of ${fmt(health.limits.outputBytes)} bytes of output, ` +
+      (ran.used.memoryMbPeak > 0 ? `about ${fmt(ran.used.memoryMbPeak)} of ${fmt(health.limits.memoryMb)} MB of memory, ` : "") +
+      `${sizeOf(ran.used.scratchBytes)} of ${fmt(health.limits.scratchMb)} MB in the scratch directory`,
     ...(ran.chargedMicroUsd > 0 ? { charged_usd: ran.chargedMicroUsd / 1_000_000 } : {}),
     note:
       (stopped

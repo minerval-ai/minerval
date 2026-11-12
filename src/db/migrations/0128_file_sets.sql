@@ -80,4 +80,5 @@ CREATE INDEX "idx_file_set_keeps_set" ON "file_set_keeps" USING btree ("file_set
 CREATE UNIQUE INDEX "uq_file_sets_name" ON "file_sets" USING btree (lower("name"));--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_file_sets_slug" ON "file_sets" USING btree ("slug");--> statement-breakpoint
 CREATE INDEX "idx_sandbox_calls_time" ON "sandbox_calls" USING btree ("called_at");--> statement-breakpoint
+CREATE INDEX "idx_sandbox_calls_file_sets" ON "sandbox_calls" USING gin ("file_sets");--> statement-breakpoint
 CREATE INDEX "idx_sandbox_calls_source" ON "sandbox_calls" USING btree ("source_id") WHERE source_id IS NOT NULL;

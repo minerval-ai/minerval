@@ -96,6 +96,8 @@ export type CommandRun =
       written: Array<{ path: string; bytes: number; sha256: string }>;
       writtenNotListed: number;
       scratch: string;
+      /** Where the command stood against each limit, for the line the agent is shown. */
+      used: { outputBytes: number; memoryMbPeak: number; scratchBytes: number };
       memoryMbUsed: number | null;
       /** What the command's time was charged to the run's budget, in micro-USD; 0 where nothing is charged. */
       chargedMicroUsd: number;
@@ -221,6 +223,11 @@ export async function runCommand(input: {
     written: result.written,
     writtenNotListed: result.writtenNotListed,
     scratch: result.scratch,
+    used: {
+      outputBytes: result.outputBytes,
+      memoryMbPeak: Math.max(result.memoryMbPeak, result.memoryMbUsed ?? 0),
+      scratchBytes: result.scratchBytes,
+    },
     memoryMbUsed: result.memoryMbUsed ?? null,
     chargedMicroUsd: charged,
   };

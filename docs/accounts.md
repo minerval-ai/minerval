@@ -155,7 +155,7 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources | edit an assessment or a run's log |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, sets of files among them | edit an assessment or a run's log |
 | `release` | for one party | release or hold what would leave the deployment of that party's material (publishing outward is not built; the grant records who holds the gate) | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
@@ -184,6 +184,7 @@ The routes a permission guards, in each mode (`requirePermission` in
 | `POST /grants` | a direct service caller | `direct` and `fund` |
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
 | the routes for connections ([connections.md](connections.md)) | not mounted | `administer`, and a signed-in session for every write |
+| the routes for file sets ([file-sets.md](file-sets.md)) | not mounted | `direct`, a set's label within the caller's clearance, and a signed-in session for every write |
 
 Taking money back asks for no permission in either mode: withdrawing from a
 mandate, cancelling a grant, a job or an order. A funder may take back
@@ -219,8 +220,9 @@ not MCP tools; the reads are.
 `permission_grants` is state and log in one. A row is a grant; removing it
 marks the same row with who removed it and when; no row is deleted. The
 other administrative acts (a label defined, a pair of labels added or
-removed, a party added, a source's party set, and every change to a
-connection or to the tools it offers) each write a row to
+removed, a party added, a source's party set, every change to a
+connection or to the tools it offers, and a file set added, closed or
+switched off) each write a row to
 `administrative_events` in the same transaction as the change. The last
 live grant of `administer` cannot be removed.
 
@@ -230,7 +232,8 @@ a label the reader is not cleared for, or of a party that is neither the
 organization itself nor one the reader holds `release` for, is replaced by
 `{"withheld": true}`: a deployment may hold material from parties who are
 not to learn of each other. A connection's name and its tools' names are
-withheld the same way from a reader not cleared for the connection's label. That an act happened, who did it, to whom and
+withheld the same way from a reader not cleared for the connection's label,
+and so is a file set's name. That an act happened, who did it, to whom and
 when is always shown.
 
 ### The first administrator

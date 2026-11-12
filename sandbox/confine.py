@@ -25,7 +25,12 @@ What the command is left with:
   - /dev/null, /dev/zero and the random devices.
 
 It has no /proc, so it cannot read another process's environment or
-working directory, and no path to any other run's scratch directory.
+working directory, and no path to any other run's scratch directory. It has
+no /dev/shm either: that directory is one for the whole machine, so
+granting it would let a command of one run leave something for a command
+of another, whatever labels the two work at. The cost is that POSIX
+semaphores cannot be made, so a Python multiprocessing pool does not start.
+Threads and subprocesses do.
 
 Where the kernel offers more, more is taken: TCP connections are refused
 (Landlock ABI 4, Linux 6.7) and signals to processes outside the command

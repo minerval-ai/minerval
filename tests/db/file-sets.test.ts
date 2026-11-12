@@ -707,14 +707,17 @@ describe("what a run is told", () => {
         "the sets mounted read-only at the paths above. The file sets are only there: no other tool you have " +
         `can read them. The sandbox has Python ${health.python}` +
         (libraries.length > 0 ? ` with ${libraries.join(", ")}` : "") +
-        `, and these shell tools: ${health.tools.join(", ")}. It has no network, because the files are not to ` +
-        "leave this deployment and because a result should depend only on the files and on what you ran.\n\n" +
+        `, and bash with the usual shell tools, among them ${health.tools.join(", ")}. It has no network, because the files are not to ` +
+        "leave this deployment and because a result should depend only on the files and on what you ran. " +
+        "Processes there cannot share memory, so that one run's command cannot pass anything to another's: a " +
+        "Python multiprocessing pool does not start, and threads and subprocesses do.\n\n" +
         "A command that has run for 3 seconds is stopped, because your run waits on it and every run shares the " +
         "sandbox. A command that has printed 30,000 bytes is stopped, because its output is stored whole in one " +
         "row: write a large result to a file in the scratch directory and print what matters. A command that " +
         "uses more than 2,048 MB of memory, or leaves more than 1,024 MB in the scratch directory, is stopped, " +
-        "because the sandbox is one machine that every run shares. Each result says how its command ended. A " +
-        "command's time in the sandbox is charged to this run's budget at $3600.00 an hour, which is $60.00 a minute.\n\n" +
+        "because the sandbox is one machine that every run shares. Each result says how its command ended and " +
+        "how much of each limit it used. A command's time in the sandbox is charged to this run's budget at " +
+        "$3600.00 an hour, which is $60.00 a minute.\n\n" +
         "Every command is stored whole with its output, the hash of that output and the time; you are shown the " +
         "first part of the output, and open_output shows the rest. A command is not yet a source: when a " +
         "judgment rests on an analysis, keep_analysis makes it one and returns the address to cite it by, and " +
@@ -760,6 +763,8 @@ describe("a command", () => {
     });
     expect(out.scratch_directory).toMatch(new RegExp(`^${sandbox.scratchDir}/`));
     expect(out).not.toHaveProperty("files_written");
+    // Where the command stood against each limit.
+    expect(out.used).toMatch(/^\d+\.\d of 3 seconds, 4 of 30,000 bytes of output, (about \d+ of 2,048 MB of memory, )?\d+ bytes of 1,024 MB in the scratch directory$/);
 
     const [row] = await rawQuery<Record<string, unknown>>(`SELECT * FROM sandbox_calls WHERE id = $1`, [out.call]);
     expect(row).toMatchObject({
@@ -821,9 +826,9 @@ describe("a command", () => {
     await grant({ permission: "direct", account_id: lower.id });
     await grant({ permission: "read", account_id: lower.id, label: INTERNAL });
     const forLower = (await as(lower, { url: `/file-sets/${set.id}/commands` })).json().commands as Array<Record<string, unknown>>;
-    expect(forLower[0]).toMatchObject({ id: out.call, outcome: "exited", command_withheld: true });
-    expect(forLower[0]).not.toHaveProperty("command");
-    expect(forLower[0]).not.toHaveProperty("files");
+    expect(forLower[0]).toMatchObject({ id: out.call, outcome: "exited", output_chars: 4, withheld: true });
+    // Nor the run it was for, or the node that run was working on.
+    for (const field of ["command", "files", "run_id", "agent", "claim_id"]) expect(forLower[0], field).not.toHaveProperty(field);
     expect((await read(set.id)).commands).toBe(1);
   });
 
