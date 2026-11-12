@@ -18,6 +18,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { rawQuery } from "../../src/db/client.js";
+import { auditSchedulerTick } from "../../src/workers/audit-scheduler.js";
 import { flagMonitorCandidates } from "../../src/workers/monitor-scheduler.js";
 import { A, B, asPerson, attachSource, seedNode, system, tag, unwall, version, wall } from "./review-3-common.js";
 
@@ -63,6 +64,37 @@ describe("the monitor's sweep", () => {
     // A second sweep in the same period asks for nothing more.
     const again = await flagMonitorCandidates({ maxFlags: 50 });
     expect(again.flags.filter((f) => f.claimId === node && f.runId !== null)).toEqual([]);
+  });
+});
+
+describe("the audit scheduler", () => {
+  it("asks for a triage of a's reports at a, and says nothing at public of how many a holds", async () => {
+    await system(async () => {
+      for (const n of [1, 2, 3]) {
+        await rawQuery(
+          `INSERT INTO agent_reports (kind, severity, title, agent, dedupe_key, sensitivity_label)
+           VALUES ('tool_failure', 'low', $1, 'steward', $2, $3)`,
+          [`A-ONLY report ${n} (${tag})`, `r3:${tag}:${n}`, A]
+        );
+      }
+    });
+    const before = await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM audit_runs WHERE triggered_by = 'report_triage' AND sensitivity_label = 'public'`));
+    await auditSchedulerTick();
+    const atA = await system(() =>
+      rawQuery<{ context: string }>(`SELECT context FROM audit_runs WHERE triggered_by = 'report_triage' AND sensitivity_label = $1`, [A])
+    );
+    expect(atA).toHaveLength(1);
+    expect(atA[0]!.context).toContain("Scheduled triage of the 3 report(s)");
+    // The three reports are a's: no request at public was made because of them, and none states their number.
+    const publicNow = await system(() =>
+      rawQuery<{ context: string }>(`SELECT context FROM audit_runs WHERE triggered_by = 'report_triage' AND sensitivity_label = 'public' AND requested_at > now() - interval '1 minute'`)
+    );
+    for (const r of publicNow) expect(r.context).not.toContain("of the 3 report(s)");
+    const publicReports = await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM agent_reports WHERE status = 'new' AND sensitivity_label = 'public' AND last_seen_at > now() - interval '24 hours'`));
+    if (publicReports[0]!.n === 0) {
+      expect(await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM audit_runs WHERE triggered_by = 'report_triage' AND sensitivity_label = 'public'`))).toEqual(before);
+    }
+    expect(await asPerson(["public"], () => rawQuery(`SELECT 1 FROM audit_runs WHERE context LIKE '%of the 3 report(s)%'`))).toEqual([]);
   });
 });
 

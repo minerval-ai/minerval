@@ -1310,11 +1310,13 @@ export async function listReportSightings(
 }
 
 /** Count of reports in status 'new' seen since `since`. Feeds the triage gate. */
-export async function countNewReportsSince(since: Date): Promise<number> {
+export async function countNewReportsSince(since: Date, recordedAt?: string): Promise<number> {
+  // `recordedAt` narrows the count to the reports recorded at one label,
+  // for a sweep that asks about each label's own (workers/audit-scheduler.ts).
   const [row] = await rawQuery<{ count: number }>(
     `SELECT count(*)::int AS count FROM agent_reports
-     WHERE status = 'new' AND last_seen_at > $1`,
-    [since]
+     WHERE status = 'new' AND last_seen_at > $1${recordedAt === undefined ? "" : " AND sensitivity_label = $2"}`,
+    recordedAt === undefined ? [since] : [since, recordedAt]
   );
   return row?.count ?? 0;
 }

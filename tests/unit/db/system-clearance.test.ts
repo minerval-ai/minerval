@@ -172,12 +172,6 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the label of the version that is out of date, and the message names only labels that label reads (the versions it was made beside), in fixed words.",
     ],
   ],
-  "src/workers/audit-scheduler.ts": [
-    [
-      "The audit scheduler asks for sweeps over decisions made at every label; each audit then runs at the label of its own row.",
-      "A request for an audit, in fixed words with a time window and a count's yes or no. The audit reads the decisions itself, at its own label.",
-    ],
-  ],
   "src/workers/correspondent-triggers.ts": [
     [
       "The change scan checks every correspondent, whatever its label, and wakes each at its own.",
@@ -205,12 +199,6 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
     [
       "The feed poll finds every due feed, whatever its lookout's label, and polls each at that label.",
       "Feed items and a wake, inside the lookout's label, from the feed's own URL. Nothing read from another row.",
-    ],
-  ],
-  "src/workers/monitor-scheduler.ts": [
-    [
-      "The monitor looks for candidates among claims at every label and asks for each audit at the claim's label.",
-      "A request to audit one claim, at that claim's label, naming that claim.",
     ],
   ],
   "src/workers/poller.ts": [
