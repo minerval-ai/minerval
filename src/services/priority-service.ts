@@ -67,7 +67,7 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
               WHERE a.claim_id = c.id
               ORDER BY a.assessed_at DESC LIMIT 1) AS assessed_at,
             COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
-                        FROM action_allocations a
+                        FROM minerval_whole.allocation_money a
                        WHERE a.exclusion_group = 'assess:' || c.id::text
                          AND a.released_at IS NULL), 0)
               AS backing_micro

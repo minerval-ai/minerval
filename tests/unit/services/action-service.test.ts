@@ -45,7 +45,7 @@ const { state, handleQuery } = vi.hoisted(() => {
       state.superseded.push(params[0] as string);
       return [];
     }
-    if (q.includes("FOR UPDATE") && q.includes("action_allocations")) {
+    if (q.includes("FOR UPDATE") && q.includes("minerval_whole.allocation_money")) {
       return state.allocations;
     }
     if (q.includes("SET released_at = now()")) {

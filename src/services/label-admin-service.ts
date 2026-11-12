@@ -11,9 +11,21 @@
  * Reading the two tables for work in flight stays in label-service.ts.
  */
 import { rawQuery, withTransaction } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { armEnforcement } from "../db/enforcement.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { logAdministrativeEvent } from "./permission-service.js";
+
+/**
+ * The labels and the pairs that say what each reads are the wall itself. A
+ * connection held to a clearance may read them and may not write them
+ * (db/clearance.ts): one that reads `public` alone must not be able to add
+ * a pair and widen what everyone reads. So their administration is the
+ * owner's connection's to do, once the route has checked the actor.
+ */
+const WALL_REASON =
+  "A label and what it reads are the wall itself, so they are written on the owner's connection. The caller has checked that the actor may administer.";
+const asOwner = <T>(fn: () => Promise<T>): Promise<T> => withSystemClearance(WALL_REASON, fn);
 
 /**
  * A label's name is written in settings and stamped on rows, so it is a
@@ -92,6 +104,12 @@ export async function defineLabel(input: {
       "A label's name is a short lower-case word: letters, digits, hyphens and underscores, starting with a letter."
     );
   }
+  // A connection's clearance is written as an array of names, where the
+  // bare word null is no name at all: a label called that could not read
+  // its own rows. The table refuses it too.
+  if (name === "null") {
+    return refuse("INVALID_NAME", 'A label cannot be named "null": the word means "no label" where a clearance is written.');
+  }
   const description = input.description.trim();
   if (!description || description.length > LABEL_DESCRIPTION_MAX_CHARS) {
     return refuse(
@@ -110,7 +128,7 @@ export async function defineLabel(input: {
   // so nothing can be written at the new label while any process still
   // reads unfiltered. It returns at once every other time.
   if (name !== PUBLIC_LABEL) await armEnforcement();
-  return withTransaction(async (tx): Promise<Outcome> => {
+  return asOwner(() => withTransaction(async (tx): Promise<Outcome> => {
     const existing = await tx.query(`SELECT 1 FROM labels WHERE name = $1`, [name]);
     if (existing.length > 0) return refuse("LABEL_EXISTS", `A label named "${name}" is already defined.`);
     for (const read of reads) {
@@ -124,7 +142,7 @@ export async function defineLabel(input: {
       await logAdministrativeEvent(tx, "label_read_added", input.actorId, { label: name, reads: read });
     }
     return { ok: true };
-  });
+  }));
 }
 
 /** Record that holders of `label` may also read `reads`. */
@@ -133,7 +151,7 @@ export async function addLabelRead(input: { label: string; reads: string; actorI
   const reads = input.reads.trim();
   const problem = pairProblem(label, reads);
   if (problem) return problem;
-  return withTransaction(async (tx): Promise<Outcome> => {
+  return asOwner(() => withTransaction(async (tx): Promise<Outcome> => {
     for (const name of [label, reads]) {
       const found = await tx.query(`SELECT 1 FROM labels WHERE name = $1`, [name]);
       if (found.length === 0) return refuse("UNKNOWN_LABEL", `This deployment defines no label named "${name}".`);
@@ -145,14 +163,14 @@ export async function addLabelRead(input: { label: string; reads: string; actorI
     if (inserted.length === 0) return refuse("ALREADY_READS", `"${label}" already reads "${reads}".`);
     await logAdministrativeEvent(tx, "label_read_added", input.actorId, { label, reads });
     return { ok: true };
-  });
+  }));
 }
 
 /** Take back a pair: holders of `label` no longer read `reads` through it. */
 export async function removeLabelRead(input: { label: string; reads: string; actorId: string }): Promise<Outcome> {
   const label = input.label.trim();
   const reads = input.reads.trim();
-  return withTransaction(async (tx): Promise<Outcome> => {
+  return asOwner(() => withTransaction(async (tx): Promise<Outcome> => {
     const deleted = await tx.query(
       `DELETE FROM label_reads WHERE label = $1 AND reads = $2 RETURNING label`,
       [label, reads]
@@ -160,5 +178,5 @@ export async function removeLabelRead(input: { label: string; reads: string; act
     if (deleted.length === 0) return refuse("NOT_READ", `"${label}" does not read "${reads}".`);
     await logAdministrativeEvent(tx, "label_read_removed", input.actorId, { label, reads });
     return { ok: true };
-  });
+  }));
 }

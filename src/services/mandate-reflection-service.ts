@@ -18,14 +18,14 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
             COALESCE(SUM(spent_micro_usd), 0)::bigint AS spent,
             COALESCE(SUM(amount_micro_usd), 0)::bigint AS budget,
             count(*) FILTER (WHERE spent_micro_usd >= 0.9 * amount_micro_usd)::int AS heavy
-       FROM action_allocations
+       FROM minerval_whole.allocation_money
       WHERE grant_id = $1 AND commissioned_by IS NOT NULL AND released_at IS NOT NULL
         AND released_at >= $2::timestamptz`,
     [grantId, sinceIso]
   );
   const byKind = await rawQuery<{ kind: string; runs: number; spent: number; budget: number }>(
     `SELECT a.kind, count(*)::int AS runs, SUM(al.spent_micro_usd)::bigint AS spent, SUM(al.amount_micro_usd)::bigint AS budget
-       FROM action_allocations al JOIN actions a ON a.id = al.action_id
+       FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
       WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.released_at IS NOT NULL
         AND al.released_at >= $2::timestamptz
       GROUP BY a.kind ORDER BY spent DESC`,
@@ -33,7 +33,7 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
   );
   const [outcomes] = await rawQuery<{ changed: number; stood: number }>(
     `WITH commissioned AS (
-       SELECT DISTINCT a.claim_id FROM action_allocations al JOIN actions a ON a.id = al.action_id
+       SELECT DISTINCT a.claim_id FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
         WHERE al.grant_id = $1 AND a.claim_id IS NOT NULL AND al.created_at >= $2::timestamptz
      ),
      passes AS (
@@ -57,7 +57,7 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
   );
   const short = await rawQuery<{ action_id: string; claim_id: string | null; kind: string; spent: number }>(
     `SELECT a.id AS action_id, a.claim_id, a.kind, al.spent_micro_usd AS spent
-       FROM action_allocations al JOIN actions a ON a.id = al.action_id
+       FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
       WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.released_at >= $2::timestamptz
         AND al.spent_micro_usd >= al.amount_micro_usd
         AND NOT EXISTS (SELECT 1 FROM petitions p WHERE p.requester_action_id = a.id AND p.created_at >= $2::timestamptz)
@@ -73,21 +73,21 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
   const [deciding] = await rawQuery<{ deciding: number; total: number }>(
     `SELECT COALESCE(SUM(spent_micro_usd) FILTER (WHERE exclusion_group LIKE 'officer:%' OR exclusion_group LIKE 'escalation:%'), 0)::bigint AS deciding,
             COALESCE(SUM(spent_micro_usd), 0)::bigint AS total
-       FROM action_allocations WHERE grant_id = $1 AND created_at >= $2::timestamptz`,
+       FROM minerval_whole.allocation_money WHERE grant_id = $1 AND created_at >= $2::timestamptz`,
     [grantId, sinceIso]
   );
   const [waiting] = await rawQuery<{ n: number; oldest: string | null }>(
     `SELECT count(*)::int AS n, MIN(m.created_at)::text AS oldest
        FROM node_messages m
       WHERE m.read_at IS NULL AND m.trigger <> 'message_reply'
-        AND m.node_id IN (SELECT DISTINCT a.claim_id FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        AND m.node_id IN (SELECT DISTINCT a.claim_id FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
                            WHERE al.grant_id = $1 AND a.claim_id IS NOT NULL)`,
     [grantId]
   );
   const answers = await rawQuery<{ outcome: string; n: number }>(
     `SELECT m.outcome, count(*)::int AS n FROM node_messages m
       WHERE m.answered_at >= $2::timestamptz
-        AND m.node_id IN (SELECT DISTINCT a.claim_id FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        AND m.node_id IN (SELECT DISTINCT a.claim_id FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
                            WHERE al.grant_id = $1 AND a.claim_id IS NOT NULL)
       GROUP BY m.outcome`,
     [grantId, sinceIso]
@@ -96,7 +96,7 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
     `SELECT l.title,
             (SELECT count(*) FROM mandate_inbox i WHERE i.grant_id = $1 AND i.source = 'the lookout "' || l.title || '"'
                AND i.created_at >= $2::timestamptz)::int AS raised,
-            (SELECT count(*) FROM action_allocations al WHERE al.grant_id = $1 AND al.commissioned_by = 'lookout'
+            (SELECT count(*) FROM minerval_whole.allocation_money al WHERE al.grant_id = $1 AND al.commissioned_by = 'lookout'
                AND al.created_at >= $2::timestamptz)::int AS commissioned
        FROM lookouts l WHERE l.grant_id = $1 AND l.status = 'active'`,
     [grantId, sinceIso]

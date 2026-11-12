@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "test:db": "vitest run --config vitest.db.config.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "drizzle-kit migrate && tsx scripts/enforcement-step.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:renumber": "tsx scripts/renumber-migrations.ts",

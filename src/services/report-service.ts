@@ -41,6 +41,7 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { PUBLIC_LABEL } from "../labels.js";
 import {
   reportKindEnum,
   reportOriginEnum,
@@ -1248,6 +1249,11 @@ export async function countNewReportsSince(since: Date): Promise<number> {
  * Open reports with no GitHub issue yet, oldest first: the sync worker's
  * backlog. Withdrawn reports are never filed; closed statuses are, so the
  * tracker carries the record, but after the open ones.
+ *
+ * Only reports at `public` are ever selected, whoever asks: a tracker is
+ * outside the deployment, and a report a private run filed stays inside it.
+ * The condition is in the statement so that it holds on any connection,
+ * the owner's included.
  */
 export async function listReportsAwaitingIssue(
   limit: number,
@@ -1258,9 +1264,10 @@ export async function listReportsAwaitingIssue(
       WHERE github_issue_number IS NULL
         AND status <> 'withdrawn'
         AND ($2::boolean OR origin = 'internal')
+        AND sensitivity_label = $3
       ORDER BY (status IN ('new', 'triaged')) DESC, first_seen_at ASC
       LIMIT $1`,
-    [Math.max(1, limit), opts.includeExternal]
+    [Math.max(1, limit), opts.includeExternal, PUBLIC_LABEL]
   );
 }
 

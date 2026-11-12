@@ -177,7 +177,7 @@ describe("the labels table", () => {
     // there too, each with its reason.
     expect(rows).toEqual(
       [
-        "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
+        "action_allocations", "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
         "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals", "arbitration_results",
         "argument_evaluations", "argument_evidence_backlog", "argument_instances", "argument_subclaims", "arguments",
         "assessment_orders", "assessments", "assistant_conversations", "assistant_held_actions", "assistant_pages",
@@ -190,9 +190,9 @@ describe("the labels table", () => {
         "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants", "ingest_focuses",
         "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events", "lookout_feed_items",
         "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events", "mandate_inbox",
-        "mandate_policy_versions", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
+        "mandate_policy_versions", "mandate_valuations", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
-        "reading_citations", "reconciliation_events", "reputation_events", "request_targets", "request_work",
+        "reading_citations", "reconciliation_events", "regrants", "reputation_events", "request_targets", "request_work",
         "requests", "research_runs", "setup_parts", "shared_page_analyses", "source_events", "source_extractions",
         "source_interests", "source_relationships", "source_segments", "sources", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))

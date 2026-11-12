@@ -9,6 +9,7 @@ import {
   CLEARED_ROLE,
   ClearanceError,
   clearedRolePassword,
+  scramVerifier,
   currentSession,
   describeRefusal,
   enforcementKnownOff,
@@ -131,7 +132,7 @@ function sessionConnectionString(session: Session): string {
   }
   if (session.role === "cleared") {
     url.username = CLEARED_ROLE;
-    url.password = clearedRolePassword(config.databaseUrl);
+    url.password = clearedRolePassword(config.databaseUrl, config.clearedRolePassword);
   }
   const options = [url.searchParams.get("options"), sessionOptions(session)].filter(Boolean).join(" ");
   if (options) url.searchParams.set("options", options);
@@ -187,29 +188,74 @@ async function sessionPool(): Promise<{ pool: pg.Pool; session: Session }> {
   return { pool: poolOf(session), session };
 }
 
-// The cleared role logs in with a password derived from the owner's
-// (clearedRolePassword). Whoever turned enforcement on set it; a process
-// that finds it unset (enforcement was turned on by an insert into labels
-// from a console, say) sets it itself, as the owner, and tries once more.
+// The cleared role logs in with a password every process of the deployment
+// works out the same (clearedRolePassword). The role is touched as little
+// as can be:
+//
+//   - Where a login with that password already works, nothing is sent. That
+//     is every start but a deployment's first with enforcement on.
+//   - Where it does not, the role is given the password, as the owner. The
+//     password is never in the statement: what is sent is the verifier
+//     Postgres would have stored for it (scramVerifier), so a statement
+//     that fails and is written to the server's log shows no secret.
+//   - A process that has logged in before and is then refused does not set
+//     the password back. Something newer set another one (the owner's
+//     password was rotated and a newer task derived a new one), and two
+//     processes that each put their own back would lock each other out in
+//     turn. It fails closed, says so, and works again once it is replaced
+//     or restarted. A deployment whose owner password rotates configures a
+//     secret of its own (CLEARED_ROLE_PASSWORD) so that this never happens.
 let loginEnsuredAt = 0;
+let clearedLoginWorked = false;
 
-async function ensureClearedLogin(): Promise<void> {
+const PUBLIC_SESSION: Session = { role: "cleared", clearance: ["public"] };
+
+/** Whether a connection as the cleared role can be opened with this process's password. */
+async function clearedLoginWorks(): Promise<boolean> {
+  try {
+    await poolOf(PUBLIC_SESSION).query("SELECT 1");
+    clearedLoginWorked = true;
+    return true;
+  } catch (err) {
+    if (loginRefused(err)) return false;
+    throw err;
+  }
+}
+
+async function giveClearedLogin(): Promise<void> {
   if (Date.now() - loginEnsuredAt < 30_000) return;
   loginEnsuredAt = Date.now();
-  // ALTER ROLE takes no bind parameters. The password is hex.
-  const password = clearedRolePassword(loadConfig().databaseUrl);
+  const config = loadConfig();
+  // ALTER ROLE takes no bind parameters. The verifier is base64, "$" and ":".
+  const verifier = scramVerifier(clearedRolePassword(config.databaseUrl, config.clearedRolePassword));
   try {
-    await getPool().query(`ALTER ROLE ${CLEARED_ROLE} WITH LOGIN PASSWORD '${password}'`);
+    await getPool().query(`ALTER ROLE ${CLEARED_ROLE} WITH LOGIN PASSWORD '${verifier}'`);
   } catch (err) {
     // XX000 "tuple concurrently updated": another process set it just now.
     if ((err as { code?: string }).code !== "XX000") throw err;
   }
 }
 
-/** Set the cleared role's login now, whether or not this process has tried lately. */
+/** A cleared connection was refused its login: repair it, where that is this process's to do. */
+async function ensureClearedLogin(): Promise<void> {
+  if (clearedLoginWorked) {
+    throw new ClearanceError(
+      "The database refused the login this process has used for connections held to a clearance. " +
+        "Its password was changed after this process started, so the process is out of date and " +
+        "must be restarted or replaced. Where the owner's password rotates, set CLEARED_ROLE_PASSWORD."
+    );
+  }
+  await giveClearedLogin();
+}
+
+/**
+ * Make sure the cleared role can log in: called when enforcement turns on
+ * and at every start where it is on. Sends nothing where it already can.
+ */
 export async function setClearedLogin(): Promise<void> {
+  if (await clearedLoginWorks()) return;
   loginEnsuredAt = 0;
-  await ensureClearedLogin();
+  await giveClearedLogin();
 }
 
 /**
@@ -307,6 +353,7 @@ async function onSessionPool<R>(work: (pool: pg.Pool, session: Session) => Promi
       await ensureClearedLogin();
       result = await work(pool, session);
     }
+    if (session.role === "cleared") clearedLoginWorked = true;
     // A connection handed out for a transaction is counted until released.
     if (counted) held = holdUntilReleased(result);
     return result;
@@ -402,6 +449,7 @@ export async function closeDb(): Promise<void> {
   }
   resetClearanceState();
   loginEnsuredAt = 0;
+  clearedLoginWorked = false;
   sessionConnectionsInUse = 0;
   for (const waiter of sessionWaiters.splice(0)) clearTimeout(waiter.timer);
 }

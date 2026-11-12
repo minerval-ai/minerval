@@ -28,13 +28,27 @@
 --     the next time it runs, and it changes nothing that is already right.
 --  5. A trigger on labels that runs the step when a label is added or
 --     removed, so a second label cannot exist without enforcement.
---  6. Two guards the step installs with the policies, for what a policy
+--  6. Three guards the step installs with the policies, for what a policy
 --     cannot say: a node's judgment in force is retired only by work at its
---     own label, and an insert that collides with a row the writer cannot
---     read is refused with the reason.
---  7. Two views, in their own schema, that apply a connection's clearance as
---     an ordinary condition, so that keyword search keeps its index where
---     the policies are on.
+--     own label, an insert that collides with a row the writer cannot read
+--     is refused with the reason, and a row's label is never changed.
+--  7. Views, in their own schema, that the policies do not bind: two that
+--     apply a connection's clearance as an ordinary condition, so that
+--     keyword search keeps its index where the policies are on, and two
+--     that show the money on the ledger whole, without the text beside it.
+--  8. A label on the three tables that hold text an agent wrote and had
+--     none: action_allocations, mandate_valuations and regrants.
+--  9. Every view in public reads with its caller's rights from now on,
+--     whether or not enforcement is on, so that no view is ever a way past
+--     the policies, however it comes to be replaced.
+--
+-- Every function here that runs with its owner's rights (SECURITY DEFINER)
+-- sets search_path to pg_catalog, then pg_temp, and names every relation
+-- and every function of ours with its schema. A session's temporary schema
+-- is searched first for relations unless the path lists it, so a function
+-- that named pg_roles bare could be handed a temporary table of that name.
+-- Built-in functions and operators are not spelled with pg_catalog: the
+-- temporary schema is never searched for those, and pg_catalog is first.
 --
 -- The table owner is not bound by the policies (row-level security is
 -- enabled, not forced). The owner is the role migrations run as and the
@@ -92,6 +106,46 @@ AS $$
   SELECT COALESCE(array_agg(label), '{}'::text[]) FROM reach WHERE label IS NOT NULL
 $$;
 --> statement-breakpoint
+-- The three tables 0126 left to be decided. Each holds text an agent
+-- wrote: a commission's brief and reason, a valuation's rationale, a
+-- regrant's note. They get the column as the other tables did (a catalog
+-- change, then one scan for the foreign key; 0126 says what each locks).
+--
+-- Rows that exist are 'public', as every row was when they were written,
+-- except on a database that already has another label: there a row takes
+-- the label of what it was written for, which is the nearest thing to the
+-- label of the work that wrote it. An allocation takes its ledger row's; a
+-- valuation its mandate's; a regrant the mandate's that gave. On the public
+-- graph the block finds one label and scans nothing.
+ALTER TABLE "action_allocations" ADD COLUMN "sensitivity_label" text DEFAULT 'public' NOT NULL;--> statement-breakpoint
+ALTER TABLE "mandate_valuations" ADD COLUMN "sensitivity_label" text DEFAULT 'public' NOT NULL;--> statement-breakpoint
+ALTER TABLE "regrants" ADD COLUMN "sensitivity_label" text DEFAULT 'public' NOT NULL;--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.labels WHERE name <> 'public') THEN
+    UPDATE public.action_allocations al
+       SET sensitivity_label = a.sensitivity_label
+      FROM public.actions a
+     WHERE a.id = COALESCE(al.action_id,
+                           (SELECT g.id FROM public.actions g
+                             WHERE g.exclusion_group = al.exclusion_group
+                             ORDER BY g.created_at DESC LIMIT 1))
+       AND a.sensitivity_label <> 'public';
+    UPDATE public.mandate_valuations v
+       SET sensitivity_label = g.sensitivity_label
+      FROM public.grants g
+     WHERE g.id = v.grant_id AND g.sensitivity_label <> 'public';
+    UPDATE public.regrants r
+       SET sensitivity_label = g.sensitivity_label
+      FROM public.grants g
+     WHERE g.id = r.from_grant_id AND g.sensitivity_label <> 'public';
+  END IF;
+END $$;
+--> statement-breakpoint
+ALTER TABLE "action_allocations" ADD CONSTRAINT "action_allocations_sensitivity_label_labels_name_fk" FOREIGN KEY ("sensitivity_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mandate_valuations" ADD CONSTRAINT "mandate_valuations_sensitivity_label_labels_name_fk" FOREIGN KEY ("sensitivity_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "regrants" ADD CONSTRAINT "regrants_sensitivity_label_labels_name_fk" FOREIGN KEY ("sensitivity_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "action_allocations" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "actions" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "agent_finding_sightings" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "agent_findings" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
@@ -161,6 +215,7 @@ ALTER TABLE "mandate_decisions" ALTER COLUMN "sensitivity_label" SET DEFAULT min
 ALTER TABLE "mandate_events" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "mandate_inbox" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "mandate_policy_versions" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
+ALTER TABLE "mandate_valuations" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "node_messages" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "petitions" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "prize_claims" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
@@ -175,6 +230,7 @@ ALTER TABLE "reconciliation_events" ALTER COLUMN "sensitivity_label" SET DEFAULT
 ALTER TABLE "reputation_events" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "request_targets" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "request_work" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
+ALTER TABLE "regrants" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "requests" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "research_runs" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "setup_parts" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
@@ -187,7 +243,43 @@ ALTER TABLE "source_segments" ALTER COLUMN "sensitivity_label" SET DEFAULT miner
 ALTER TABLE "sources" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "taggings" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "tags" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
-ALTER TABLE "labels" ADD CONSTRAINT "labels_name_plain" CHECK ("labels"."name" ~ '^[a-z][a-z0-9_-]{0,62}$');
+-- A label's name is written into a connection's settings as an element of
+-- an array, where the bare word null is no label at all: a label of that
+-- name could not read its own rows. No other plain name reads specially.
+ALTER TABLE "labels" ADD CONSTRAINT "labels_name_plain" CHECK ("labels"."name" ~ '^[a-z][a-z0-9_-]{0,62}$' AND "labels"."name" <> 'null');
+--> statement-breakpoint
+-- 'public' reads no other label: what it read, everyone would read. The
+-- API has always refused such a pair; the table now refuses it too. A pair
+-- that is there all the same goes, which can only narrow what is read.
+DELETE FROM "label_reads" WHERE "label" = 'public';
+--> statement-breakpoint
+ALTER TABLE "label_reads" ADD CONSTRAINT "ck_label_reads_public_reads_nothing" CHECK ("label_reads"."label" <> 'public');
+--> statement-breakpoint
+-- Every view in public reads its tables with its caller's rights, always.
+-- A view otherwise reads as its owner, whom the policies do not bind, so a
+-- view left that way would show a cleared connection every label. The step
+-- used to set this when enforcement turned on, and CREATE OR REPLACE VIEW
+-- sets it back: a later migration that replaced a view would have opened it
+-- until the step next ran. Now the four views say it in the schema
+-- (src/db/schema.ts), so a regenerated view is created with it, and a test
+-- fails a migration that makes a view here without it. Where enforcement is
+-- off every caller is the owner, and the option changes nothing.
+DO $$
+DECLARE
+  v record;
+BEGIN
+  FOR v IN
+    SELECT c.relname
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relkind = 'v'
+       AND NOT COALESCE((SELECT option_value = 'true' FROM pg_catalog.pg_options_to_table(c.reloptions)
+                          WHERE option_name = 'security_invoker'), false)
+     ORDER BY c.relname
+  LOOP
+    EXECUTE format('ALTER VIEW public.%I SET (security_invoker = true)', v.relname);
+  END LOOP;
+END $$;
 --> statement-breakpoint
 DO $$
 BEGIN
@@ -239,7 +331,7 @@ ON CONFLICT DO NOTHING;
 -- read-only SQL login is never the owner.
 CREATE OR REPLACE FUNCTION minerval_sql_clearance() RETURNS text[]
 LANGUAGE plpgsql STABLE SECURITY DEFINER
-SET search_path = pg_catalog
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   token text := NULLIF(current_setting('minerval.sql_clearance', true), '');
@@ -247,9 +339,10 @@ DECLARE
   k text;
   signed text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles r
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
               WHERE r.rolname = session_user
-                AND (r.rolsuper OR r.oid = (SELECT c.relowner FROM pg_class c WHERE c.oid = 'public.labels'::regclass))) THEN
+                AND (r.rolsuper OR r.oid = (SELECT c.relowner FROM pg_catalog.pg_class c
+                                             WHERE c.oid = 'public.labels'::pg_catalog.regclass))) THEN
     RETURN (SELECT array_agg(name) FROM public.labels);
   END IF;
   IF token IS NULL THEN
@@ -302,6 +395,36 @@ SELECT r.id, r.text_search
   FROM public.requests r
  WHERE r.sensitivity_label = ANY ((SELECT public.minerval_clearance())::text[]);
 --> statement-breakpoint
+-- The money on the ledger, whole.
+--
+-- An allocation is money placed on a ledger row, and one row is paid for by
+-- whoever placed money on it, at whatever label: work at one label joins a
+-- row another label opened. What a run costs is split across every
+-- allocation that covers it, a mandate's room is its budget less everything
+-- it has placed, and a refund is what was placed and not spent. Each of
+-- those sums is wrong if it is taken over the allocations one label reads,
+-- and wrong in the direction that spends money twice. So the money is read
+-- and settled through these views, which the policies do not bind, and
+-- which leave out the one thing on these rows that an agent wrote: a
+-- commission's brief and reason, a regrant's note. Those are read from the
+-- tables, under the policies. What the views show at every label is ids,
+-- amounts, times and the key of the ledger row.
+--
+-- The application reads them whether or not enforcement is on; a view this
+-- simple is planned as the table it is over. Rows are added to the tables,
+-- never through the views, so a new row is held to its writer's label.
+CREATE SCHEMA IF NOT EXISTS minerval_whole;
+--> statement-breakpoint
+CREATE OR REPLACE VIEW minerval_whole.allocation_money AS
+SELECT al.id, al.exclusion_group, al.action_id, al.claim_id, al.grant_id, al.user_id,
+       al.amount_micro_usd, al.spent_micro_usd, al.released_at, al.created_at,
+       al.commissioned_by, al.parent_action_id
+  FROM public.action_allocations al;
+--> statement-breakpoint
+CREATE OR REPLACE VIEW minerval_whole.regrant_money AS
+SELECT r.id, r.from_grant_id, r.to_grant_id, r.amount_micro_usd, r.refunded_micro_usd, r.created_at
+  FROM public.regrants r;
+--> statement-breakpoint
 -- Whether enforcement is on: whether the policy the step creates exists.
 CREATE OR REPLACE FUNCTION minerval_enforcement_on() RETURNS boolean
 LANGUAGE sql STABLE
@@ -326,7 +449,7 @@ $$;
 -- over its rows in force, and names that index's column as the node's.
 CREATE OR REPLACE FUNCTION minerval_judgment_label_guard() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   own text := COALESCE(NULLIF(current_setting('minerval.label', true), ''), 'public');
@@ -374,12 +497,15 @@ $$;
 -- outside the connection's clearance is refused, and says so.
 --
 -- The step below gives it the table's unique indexes as arguments, in
--- pairs: an index's columns, and its predicate where it is partial. Indexes
--- over expressions are not handled, and a lone id is left out. It does not
--- look at updates that change a key.
+-- pairs: an index's columns, and its predicate where it is partial. The
+-- step reads a predicate with only pg_catalog on its path, so a type or a
+-- function of ours in it comes spelled with its schema, which is how this
+-- function, on the same path, reads it back. Indexes over expressions are
+-- not handled, and a lone id is left out. It does not look at updates that
+-- change a key.
 CREATE OR REPLACE FUNCTION minerval_unseen_collision_guard() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   reads text[];
@@ -421,6 +547,52 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
+-- A row's label does not change.
+--
+-- The policy lets a cleared connection change a row it reads into any row
+-- it reads, the label included: down to 'public', which shows the row to
+-- everyone; across to another label it holds; or up, which takes a public
+-- row out of everyone else's sight. Moving a row to a label more people
+-- read is a release, which is later work and will be the owner's to do.
+-- Until then this trigger refuses, on a cleared connection, an update that
+-- changes the label, an upsert's DO UPDATE included.
+--
+-- One change is let through, because it is how the ledger has worked since
+-- its rows got labels (LABEL_ON_REOPEN_SQL in services/action-service.ts):
+-- a ledger row stands for its group's next piece of work, so a finished row
+-- that is opened again takes the label of the work that reopens it, and
+-- only that label. The connection must already read the row, so nobody is
+-- shown anything by it; what it can do is take a finished row out of the
+-- sight of readers of the old label, which is the cost of one row per
+-- group until each label keeps its own.
+--
+-- It is a trigger on the column and not a grant on the other columns,
+-- because a grant would have to be given again for each column a later
+-- migration adds, and a missed one would refuse a write that had nothing
+-- to do with labels. It fires only for a statement that names the column,
+-- so it costs nothing on any other update.
+CREATE OR REPLACE FUNCTION minerval_label_fixed_guard() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF session_user <> 'minerval_cleared' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_TABLE_NAME = 'actions' THEN
+    IF OLD.status::text NOT IN ('open', 'running')
+       AND NEW.sensitivity_label = public.minerval_write_label() THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+  RAISE EXCEPTION 'a row''s label does not change: this row is at "%" and the update would have made it "%"',
+      OLD.sensitivity_label, NEW.sensitivity_label
+    USING ERRCODE = 'MVL04',
+          TABLE = TG_TABLE_NAME,
+          HINT = 'A row stays at the label it was written at. Moving one to a label more people read is a release, which is not built yet. Nothing was changed.';
+END
+$$;
+--> statement-breakpoint
 -- The one step that turns enforcement on and off.
 --
 --   minerval_enforcement_sync(true)   on, whatever labels exist (used just
@@ -440,14 +612,24 @@ $$;
 --     and label_sql_read, which lets the public_read views show a row only
 --     at a label in the session's signed clearance;
 --   - a labelled table that holds judgments in force gets the trigger
---     above, and one with a unique index gets the trigger that refuses a
---     collision with a row the writer cannot read;
+--     above, one with a unique index gets the trigger that refuses a
+--     collision with a row the writer cannot read, and every one gets the
+--     trigger that keeps a row's label as it was written;
 --   - then, and only then, the table is granted to minerval_cleared, so a
 --     table is never reachable before it is covered.
+-- The tables that say what a clearance is (labels, label_reads,
+-- permission_grants, account_groups) are granted to minerval_cleared to
+-- read and nothing else: a connection held to a clearance must not be able
+-- to widen it, its own or anyone's. Their administration is the owner's.
+-- The administrators' log (administrative_events) it may read and add to,
+-- and not change.
 -- Every view in public is made to run with its caller's rights
 -- (security_invoker), because a view otherwise reads its tables as its
 -- owner, whom the policies do not bind. The public_read views are handed
--- to minerval_sql_views, which the policies do bind.
+-- to minerval_sql_views, which the policies do bind. Nobody but the
+-- database's owner makes temporary tables once enforcement is on: nothing
+-- of ours uses one, and a temporary table is a way to put a relation of a
+-- chosen name in front of a session's own queries.
 --
 -- Off: the policies and the triggers are dropped and row-level security is
 -- disabled. Grants and view options are left as they are; nothing uses them.
@@ -456,7 +638,7 @@ $$;
 -- already as it should be. It takes locks only for changes.
 CREATE OR REPLACE FUNCTION minerval_enforcement_sync(want boolean DEFAULT NULL) RETURNS SETOF text
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   enforce boolean;
@@ -465,6 +647,10 @@ DECLARE
     'sensitivity_label = ANY ((SELECT public.minerval_clearance())::text[])';
   sql_test constant text :=
     'sensitivity_label = ANY ((SELECT public.minerval_sql_clearance())::text[])';
+  -- What a clearance is made of: read by a cleared connection, written by the owner alone.
+  wall constant text[] := ARRAY['labels', 'label_reads', 'permission_grants', 'account_groups'];
+  -- The administrators' log: read and added to, never changed.
+  append_only constant text[] := ARRAY['administrative_events'];
 BEGIN
   -- One at a time: several API tasks start together, and each runs this.
   PERFORM pg_advisory_xact_lock(hashtext('minerval:enforcement'));
@@ -476,15 +662,16 @@ BEGIN
   IF NOT enforce THEN
     FOR t IN
       SELECT c.relname, c.relrowsecurity,
-             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
-             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
-             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert') AS has_own,
-             EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
-             EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS has_collision_guard
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
+             EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
+             EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
+             EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert') AS has_own,
+             EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
+             EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS has_collision_guard,
+             EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'label_fixed_guard') AS has_fixed_guard
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
-         AND EXISTS (SELECT 1 FROM pg_attribute a
+         AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
                       WHERE a.attrelid = c.oid AND a.attname = 'sensitivity_label' AND NOT a.attisdropped)
        ORDER BY c.relname
     LOOP
@@ -503,6 +690,9 @@ BEGIN
       IF t.has_collision_guard THEN
         EXECUTE format('DROP TRIGGER unseen_collision_guard ON public.%I', t.relname);
       END IF;
+      IF t.has_fixed_guard THEN
+        EXECUTE format('DROP TRIGGER label_fixed_guard ON public.%I', t.relname);
+      END IF;
       IF t.relrowsecurity THEN
         EXECUTE format('ALTER TABLE public.%I DISABLE ROW LEVEL SECURITY', t.relname);
         RETURN NEXT format('- %s: row-level security off', t.relname);
@@ -520,21 +710,25 @@ BEGIN
   IF NOT has_schema_privilege('minerval_cleared', 'minerval_readable', 'USAGE') THEN
     GRANT USAGE ON SCHEMA minerval_readable TO minerval_cleared;
   END IF;
+  IF NOT has_schema_privilege('minerval_cleared', 'minerval_whole', 'USAGE') THEN
+    GRANT USAGE ON SCHEMA minerval_whole TO minerval_cleared;
+  END IF;
 
   -- Tables: cover, then grant.
   FOR t IN
     SELECT c.oid, c.relname, c.relrowsecurity,
-           EXISTS (SELECT 1 FROM pg_attribute a
+           EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
                     WHERE a.attrelid = c.oid AND a.attname = 'sensitivity_label' AND NOT a.attisdropped) AS labelled,
-           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
-           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
-           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert') AS has_own,
-           EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
+           EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
+           EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
+           EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert') AS has_own,
+           EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
+           EXISTS (SELECT 1 FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'label_fixed_guard') AS has_fixed_guard,
            -- The node a judgment is of: the column of the unique index over
            -- the rows in force. Null on a table that holds no judgments.
            (SELECT a.attname::text
-              FROM pg_index i
-              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+              FROM pg_catalog.pg_index i
+              JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
              WHERE i.indrelid = c.oid AND i.indisunique AND i.indnatts = 1 AND i.indpred IS NOT NULL
                AND pg_get_expr(i.indpred, i.indrelid) LIKE '%is_current%'
              ORDER BY i.indexrelid
@@ -543,25 +737,25 @@ BEGIN
            -- takes them: columns, then predicate, for each. Indexes over
            -- expressions and a lone id are left out.
            (SELECT array_agg(part ORDER BY ix.relname, ord)
-              FROM pg_index i
-              JOIN pg_class ix ON ix.oid = i.indexrelid
+              FROM pg_catalog.pg_index i
+              JOIN pg_catalog.pg_class ix ON ix.oid = i.indexrelid
               CROSS JOIN LATERAL (
                 VALUES (1, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord)
                               FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
-                              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                              JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
                              WHERE k.ord <= i.indnkeyatts)),
                        (2, COALESCE(pg_get_expr(i.indpred, i.indrelid), ''))
               ) AS parts(ord, part)
              WHERE i.indrelid = c.oid AND i.indisunique AND i.indisvalid
                AND NOT (0 = ANY (i.indkey::int2[]))
                AND NOT (i.indnkeyatts = 1 AND i.indpred IS NULL
-                        AND (SELECT a.attname FROM pg_attribute a
+                        AND (SELECT a.attname FROM pg_catalog.pg_attribute a
                               WHERE a.attrelid = i.indrelid AND a.attnum = i.indkey[0]) = 'id')
            ) AS collision_keys,
            (SELECT array_remove(string_to_array(encode(g.tgargs, 'escape'), '\000'), NULL)
-              FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS guarded_keys
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
+              FROM pg_catalog.pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS guarded_keys
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
      ORDER BY c.relname
   LOOP
@@ -586,6 +780,13 @@ BEGIN
           'WITH CHECK (sensitivity_label = public.minerval_write_label())',
           t.relname);
       END IF;
+      IF NOT t.has_fixed_guard THEN
+        EXECUTE format(
+          'CREATE TRIGGER label_fixed_guard BEFORE UPDATE OF sensitivity_label ON public.%I '
+          'FOR EACH ROW WHEN (OLD.sensitivity_label IS DISTINCT FROM NEW.sensitivity_label) '
+          'EXECUTE FUNCTION public.minerval_label_fixed_guard()',
+          t.relname);
+      END IF;
       IF t.judged_node IS NOT NULL AND NOT t.has_guard THEN
         EXECUTE format(
           'CREATE TRIGGER judgment_label_guard BEFORE INSERT OR UPDATE OF is_current ON public.%I '
@@ -606,7 +807,25 @@ BEGIN
         END IF;
       END IF;
     END IF;
-    IF NOT (has_table_privilege('minerval_cleared', t.oid, 'SELECT')
+    IF t.relname = ANY (wall) OR t.relname = ANY (append_only) THEN
+      IF NOT has_table_privilege('minerval_cleared', t.oid, 'SELECT') THEN
+        EXECUTE format('GRANT SELECT ON public.%I TO minerval_cleared', t.relname);
+        RETURN NEXT format('+ %s: minerval_cleared may read it', t.relname);
+      END IF;
+      IF t.relname = ANY (append_only) AND NOT has_table_privilege('minerval_cleared', t.oid, 'INSERT') THEN
+        EXECUTE format('GRANT INSERT ON public.%I TO minerval_cleared', t.relname);
+      END IF;
+      IF has_table_privilege('minerval_cleared', t.oid, 'UPDATE')
+         OR has_table_privilege('minerval_cleared', t.oid, 'DELETE')
+         OR has_table_privilege('minerval_cleared', t.oid, 'TRUNCATE')
+         OR (t.relname = ANY (wall) AND has_table_privilege('minerval_cleared', t.oid, 'INSERT')) THEN
+        EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM minerval_cleared', t.relname);
+        IF t.relname = ANY (append_only) THEN
+          EXECUTE format('GRANT INSERT ON public.%I TO minerval_cleared', t.relname);
+        END IF;
+        RETURN NEXT format('+ %s: minerval_cleared may no longer change it', t.relname);
+      END IF;
+    ELSIF NOT (has_table_privilege('minerval_cleared', t.oid, 'SELECT')
             AND has_table_privilege('minerval_cleared', t.oid, 'INSERT')
             AND has_table_privilege('minerval_cleared', t.oid, 'UPDATE')
             AND has_table_privilege('minerval_cleared', t.oid, 'DELETE')) THEN
@@ -621,8 +840,8 @@ BEGIN
   -- Sequences the tables draw from.
   FOR t IN
     SELECT c.oid, c.relname
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'S'
      ORDER BY c.relname
   LOOP
@@ -634,10 +853,10 @@ BEGIN
   -- Views in public read their tables with their caller's rights.
   FOR t IN
     SELECT c.oid, c.relname,
-           COALESCE((SELECT option_value = 'true' FROM pg_options_to_table(c.reloptions)
+           COALESCE((SELECT option_value = 'true' FROM pg_catalog.pg_options_to_table(c.reloptions)
                       WHERE option_name = 'security_invoker'), false) AS invoker
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'v'
      ORDER BY c.relname
   LOOP
@@ -656,8 +875,8 @@ BEGIN
   -- The views that apply the clearance themselves.
   FOR t IN
     SELECT c.oid, c.relname
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'minerval_readable' AND c.relkind = 'v'
      ORDER BY c.relname
   LOOP
@@ -666,13 +885,38 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- The views that show the ledger's money whole, to read and to settle through.
+  FOR t IN
+    SELECT c.oid, c.relname
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'minerval_whole' AND c.relkind = 'v'
+     ORDER BY c.relname
+  LOOP
+    IF NOT (has_table_privilege('minerval_cleared', t.oid, 'SELECT')
+            AND has_table_privilege('minerval_cleared', t.oid, 'UPDATE')
+            AND has_table_privilege('minerval_cleared', t.oid, 'DELETE')) THEN
+      EXECUTE format('GRANT SELECT, UPDATE, DELETE ON minerval_whole.%I TO minerval_cleared', t.relname);
+    END IF;
+  END LOOP;
+
+  -- Temporary tables: the database owner's alone. Where this function's
+  -- owner does not own the database the revoke does nothing but warn, and
+  -- the enforcement check at startup reports it.
+  IF has_database_privilege('public', current_database(), 'TEMPORARY') THEN
+    EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+    IF NOT has_database_privilege('public', current_database(), 'TEMPORARY') THEN
+      RETURN NEXT '+ temporary tables: no longer anyone''s to make but the database owner''s';
+    END IF;
+  END IF;
+
   -- Read-only SQL: the views it reads are owned by a role the policies bind.
   FOR t IN
     SELECT c.relname
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public_read' AND c.relkind = 'v'
-       AND c.relowner <> (SELECT oid FROM pg_roles WHERE rolname = 'minerval_sql_views')
+       AND c.relowner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = 'minerval_sql_views')
      ORDER BY c.relname
   LOOP
     EXECUTE format('ALTER VIEW public_read.%I OWNER TO minerval_sql_views', t.relname);
@@ -688,7 +932,7 @@ REVOKE ALL ON FUNCTION minerval_enforcement_sync(boolean) FROM PUBLIC;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION minerval_labels_changed() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
   PERFORM public.minerval_enforcement_sync(false);

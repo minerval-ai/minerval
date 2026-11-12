@@ -25,7 +25,6 @@ import {
   syncIssueClosures,
 } from "../services/github-issue-service.js";
 import { listReportsAwaitingIssue } from "../services/report-service.js";
-import { withSystemClearance } from "../db/clearance.js";
 
 export interface GithubIssueSyncTickResult {
   pending: number;
@@ -85,10 +84,10 @@ export function startGithubIssueSync(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await withSystemClearance(
-        "The issue sync looks for unfiled reports at every label; which of them may leave the deployment is decided by the report's own rules, not by what the sync can see.",
-        () => githubIssueSyncTick()
-      );
+      // No system clearance: only public reports are ever filed (a tracker
+      // is outside the deployment), and a timer with nothing in context
+      // reads `public` alone, which is all this needs.
+      const result = await githubIssueSyncTick();
       if (result.pending > 0) {
         options.logger.info(
           `GitHub issue sync: ${result.filed} filed, ${result.failed} failed ` +

@@ -16,6 +16,7 @@
  * policy (program-officer.ts). Money never touches claims.importance or any
  * judgment of a claim; it buys attention, never conclusions.
  */
+import { labelInContext } from "../llm/usage-context.js";
 import { rawQuery } from "../db/client.js";
 import { allocationDayUseSql } from "./day-use.js";
 import { loadConfig } from "../config.js";
@@ -253,7 +254,7 @@ export async function grantAllocationExposureMicroUsd(
     `SELECT COALESCE(SUM(spent_micro_usd), 0)::bigint AS spent,
             COALESCE(SUM(amount_micro_usd - spent_micro_usd)
               FILTER (WHERE released_at IS NULL), 0)::bigint AS outstanding
-       FROM action_allocations WHERE grant_id = $1`,
+       FROM minerval_whole.allocation_money WHERE grant_id = $1`,
     [grantId]
   );
   return {
@@ -404,7 +405,7 @@ export async function fundGrantSelfActions(): Promise<number> {
             -- row). A sibling variant's allocation is not this row's (#756).
             GREATEST(0, a.cost_est_micro_usd -
               COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                          FROM action_allocations al
+                          FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL
                            AND (al.action_id IS NULL OR al.action_id = a.id)), 0))::bigint AS needed,
@@ -419,20 +420,20 @@ export async function fundGrantSelfActions(): Promise<number> {
             -- reserve; prize-commitment.ts).
             (j.budget_micro_usd
               - COALESCE((SELECT SUM(al.spent_micro_usd)
-                            FROM action_allocations al
+                            FROM minerval_whole.allocation_money al
                            WHERE al.grant_id = g.id), 0)
               - COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                            FROM action_allocations al
+                            FROM minerval_whole.allocation_money al
                            WHERE al.grant_id = g.id
                              AND al.released_at IS NULL), 0)
               - GREATEST(0,
                   COALESCE((SELECT SUM(u.cost_micro_usd) FROM llm_usage u
                              WHERE u.job_id = g.budget_job_id), 0)
                   - COALESCE((SELECT SUM(al.spent_micro_usd)
-                                FROM action_allocations al
+                                FROM minerval_whole.allocation_money al
                                WHERE al.grant_id = g.id), 0))
               - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
-                            FROM regrants r
+                            FROM minerval_whole.regrant_money r
                            WHERE r.from_grant_id = g.id), 0)
               - ${prizeCommitmentSql("g.id")})::bigint
               AS headroom,
@@ -442,7 +443,7 @@ export async function fundGrantSelfActions(): Promise<number> {
             (CASE WHEN g.daily_budget_micro_usd > 0
                   THEN GREATEST(0, g.daily_budget_micro_usd
                     - COALESCE((SELECT SUM(${allocationDayUseSql("al")})
-                                  FROM action_allocations al
+                                  FROM minerval_whole.allocation_money al
                                  WHERE al.grant_id = g.id
                                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0))
                   ELSE NULL END)::bigint AS day_room
@@ -520,7 +521,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- on every pass, so enough covered rows starved a new one (#838).
         AND a.cost_est_micro_usd >
             COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
+                        FROM minerval_whole.allocation_money al
                        WHERE al.exclusion_group = a.exclusion_group
                          AND al.released_at IS NULL
                          AND (al.action_id IS NULL OR al.action_id = a.id)), 0)
@@ -531,7 +532,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         AND NOT EXISTS (SELECT 1 FROM actions sib
                          WHERE sib.exclusion_group = a.exclusion_group AND sib.id <> a.id
                            AND (sib.status = 'running'
-                                OR EXISTS (SELECT 1 FROM action_allocations al
+                                OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                                             WHERE al.action_id = sib.id
                                               AND al.released_at IS NULL
                                               AND al.spent_micro_usd < al.amount_micro_usd)))
@@ -584,12 +585,14 @@ export async function fundGrantSelfActions(): Promise<number> {
           : null;
     if (amount === null) continue;
     const inserted = await rawQuery<{ id: string }>(
+      // A mandate's money on its own row, placed by the sweep: at the
+      // label of the row it pays for, where no run is in progress.
       `INSERT INTO action_allocations
-         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)
+         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, (SELECT sensitivity_label FROM actions WHERE id = $2)))
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount]
+      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, labelInContext()]
     );
     if (inserted.length === 0) continue;
     if (amount < needed) {

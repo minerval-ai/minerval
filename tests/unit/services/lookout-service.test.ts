@@ -123,7 +123,6 @@ import {
   flagReassessment,
   flagIngest,
   recordLookoutRun,
-  queueLookoutEventsByTrigger,
   updateLookout,
   LOOKOUT_BOUNDS,
 } from "../../../src/services/lookout-service.js";
@@ -361,12 +360,4 @@ describe("recordLookoutRun and triggers", () => {
     expect(queries[0]!.q).toContain("interval '6 hours'");
   });
 
-  it("fans an event out only to active lookouts on active mandates that hold the trigger, under a pending cap", async () => {
-    const res = await queueLookoutEventsByTrigger({ kind: "retraction", payload: { doi: "10.1/x" }, maxPendingPerLookout: 7 });
-    expect(res).toEqual({ queued: 1 });
-    const ins = queries.find((x) => x.q.includes("INSERT INTO lookout_events"))!;
-    expect(ins.q).toContain("l.triggers ? $1");
-    expect(ins.q).toContain("g.status = 'active'");
-    expect(ins.params).toEqual(["retraction", JSON.stringify({ doi: "10.1/x" }), 7]);
-  });
 });

@@ -23,6 +23,7 @@
  *    payer (a mandate's stays the mandate's, a person's the person's) and
  *    parent_action_id records the chain a petition is later routed along.
  */
+import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { allocationDayUseSql } from "./day-use.js";
@@ -110,7 +111,7 @@ export async function grantDayUseMicroUsd(grantId: string, tx?: TxQuery): Promis
   const q = <T,>(text: string, params: unknown[]) => (tx ? tx.query<T>(text, params) : rawQuery<T>(text, params));
   const [row] = await q<{ used: number }>(
     `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS used
-       FROM action_allocations
+       FROM minerval_whole.allocation_money
       WHERE grant_id = $1
         AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [grantId]
@@ -140,14 +141,14 @@ type Query = <T>(text: string, params?: unknown[]) => Promise<T[]>;
 async function groupLive(q: Query, group: string): Promise<LiveRow | null> {
   const [row] = await q<LiveRow>(
     `SELECT a.id AS action_id, a.status,
-            (SELECT MAX(al.created_at) FROM action_allocations al
+            (SELECT MAX(al.created_at) FROM minerval_whole.allocation_money al
               WHERE al.exclusion_group = $1
                 AND al.released_at IS NULL
                 AND al.spent_micro_usd < al.amount_micro_usd) AS commissioned_at
        FROM actions a
       WHERE a.exclusion_group = $1
         AND (a.status = 'running'
-             OR EXISTS (SELECT 1 FROM action_allocations al
+             OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = $1
                            AND al.released_at IS NULL
                            AND al.commissioned_by IS NOT NULL
@@ -469,13 +470,13 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
         // petition's top-up, adds to that placement.
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd,
-            commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            commissioned_by, brief, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason]
+        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return { ok: true, allocationId: row!.id } as const;
     });
@@ -497,9 +498,9 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.userId, budget, input.commissionedBy, input.brief, input.reason]
+            commissioned_by, brief, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [input.group, input.actionId, input.claimId, payer.userId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return row!.id;
     });
@@ -518,7 +519,7 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
     const sources = await tx.query<{ id: string; grant_id: string | null; user_id: string | null; unspent: number }>(
       `SELECT al.id, al.grant_id, al.user_id,
               (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
-         FROM action_allocations al
+         FROM minerval_whole.allocation_money al
          JOIN actions a ON a.id = $1
         WHERE al.exclusion_group = a.exclusion_group
           AND al.released_at IS NULL
@@ -547,7 +548,7 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       // lowers its amount. Either way the payer's committed total is unchanged.
       if (take === Number(src.unspent)) {
         await tx.query(
-          `UPDATE action_allocations
+          `UPDATE minerval_whole.allocation_money
               SET amount_micro_usd = CASE WHEN spent_micro_usd > 0 THEN spent_micro_usd ELSE amount_micro_usd END,
                   released_at = now()
             WHERE id = $1`,
@@ -555,21 +556,21 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
         );
       } else {
         await tx.query(
-          `UPDATE action_allocations SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`,
+          `UPDATE minerval_whole.allocation_money SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`,
           [src.id, take]
         );
       }
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason, parent_action_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            commissioned_by, brief, reason, parent_action_id, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
         [input.group, input.actionId, input.claimId, src.grant_id, src.user_id, take,
-         input.commissionedBy, input.brief, input.reason, payer.actionId]
+         input.commissionedBy, input.brief, input.reason, payer.actionId, currentLabel()]
       );
       first ??= row!.id;
       left -= take;
@@ -589,7 +590,7 @@ export async function originalPayer(): Promise<CommissionPayer | null> {
   if (!funding) return null;
   if (funding.actionId) {
     const [row] = await rawQuery<{ grant_id: string | null; user_id: string | null }>(
-      `SELECT grant_id, user_id FROM action_allocations
+      `SELECT grant_id, user_id FROM minerval_whole.allocation_money
         WHERE action_id = $1 OR exclusion_group = (SELECT exclusion_group FROM actions WHERE id = $1)
         ORDER BY amount_micro_usd DESC LIMIT 1`,
       [funding.actionId]

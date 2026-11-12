@@ -4,7 +4,13 @@
  *
  *  1. Connect to the maintenance DB (TEST_DATABASE_ADMIN_URL) and
  *     DROP + CREATE the scratch database (TEST_DATABASE_URL's db name).
- *  2. CREATE EXTENSION vector (migration 0000 needs it).
+ *     Where TEST_DATABASE_URL names another role than the maintenance
+ *     connection's, that role is made if it is not there (a login that may
+ *     create roles and is not a superuser) and owns the database: the
+ *     suite then runs as a deployment's owner does on a managed Postgres,
+ *     where no application role is a superuser (`npm run test:db:owner`).
+ *  2. CREATE EXTENSION vector (migration 0000 needs it), as the
+ *     maintenance role.
  *  3. Apply the full migration chain with drizzle-kit. Any migration
  *     failure fails the whole suite loudly, before a single test runs —
  *     migration-from-zero is itself under test.
@@ -103,16 +109,49 @@ export default async function globalSetup(project: {
     );
   }
 
+  const owner = new URL(TEST_DATABASE_URL);
+  const ownerRole = decodeURIComponent(owner.username);
+  const separateOwner = ownerRole !== decodeURIComponent(new URL(TEST_DATABASE_ADMIN_URL).username);
+  if (separateOwner && !/^[a-z0-9_]+$/.test(ownerRole)) {
+    throw new Error(`Refusing to manage suspicious test role name: ${ownerRole}`);
+  }
+
   const admin = new pg.Client({ connectionString: TEST_DATABASE_ADMIN_URL });
   await admin.connect();
   try {
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    await admin.query(`CREATE DATABASE ${dbName}`);
+    if (separateOwner) {
+      const existing = await admin.query(`SELECT rolsuper FROM pg_roles WHERE rolname = $1`, [ownerRole]);
+      if (existing.rows[0]?.rolsuper) {
+        throw new Error(`The role ${ownerRole} is a superuser; name a role of its own for a run as a plain owner`);
+      }
+      // The password travels as a parameter of format(), never in the statement's text.
+      const password = decodeURIComponent(owner.password);
+      const [statement] = (
+        await admin.query<{ sql: string }>(
+          `SELECT format('%s ROLE %I LOGIN CREATEROLE NOSUPERUSER PASSWORD %L', $1::text, $2::text, $3::text) AS sql`,
+          [existing.rows.length > 0 ? "ALTER" : "CREATE", ownerRole, password]
+        )
+      ).rows;
+      await admin.query(statement!.sql);
+      // The roles migrations make belong to the whole server. On a server
+      // where an earlier run made them as another role, this owner is given
+      // what their maker has: the right to administer them, and nothing of
+      // theirs by inheritance. On a server of its own it makes them itself.
+      const made = await admin.query<{ rolname: string }>(`SELECT rolname FROM pg_roles WHERE rolname LIKE 'minerval\\_%'`);
+      for (const { rolname } of made.rows) {
+        await admin.query(`GRANT "${rolname}" TO "${ownerRole}" WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`);
+      }
+    }
+    await admin.query(`CREATE DATABASE ${dbName}${separateOwner ? ` OWNER ${ownerRole}` : ""}`);
   } finally {
     await admin.end();
   }
 
-  const scratch = new pg.Client({ connectionString: TEST_DATABASE_URL });
+  // The extension is the maintenance role's to create; a plain owner may not.
+  const scratchUrl = new URL(TEST_DATABASE_ADMIN_URL);
+  scratchUrl.pathname = `/${dbName}`;
+  const scratch = new pg.Client({ connectionString: separateOwner ? scratchUrl.toString() : TEST_DATABASE_URL });
   await scratch.connect();
   try {
     await scratch.query("CREATE EXTENSION IF NOT EXISTS vector");

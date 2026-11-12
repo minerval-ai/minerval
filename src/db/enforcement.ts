@@ -119,6 +119,15 @@ export interface EnforcementFacts {
   viewsReadingAsOwner: string[];
   /** public_read views not owned by the role the policies bind, so read-only SQL would see every label. */
   sqlViewsUnheld: string[];
+  /**
+   * Relations the step does not cover, which hold or could hold labelled
+   * rows: a materialized view in any schema the application reads (it is a
+   * copy of rows, taken as its owner, and no policy applies to it), and a
+   * table with a sensitivity_label column outside `public`.
+   */
+  outsideTheStep: string[];
+  /** Whether anyone but the database's owner may still make temporary tables. */
+  temporaryTablesOpen: boolean;
   /** The role in DATABASE_URL. It is the tables' owner and is not bound by the policies, by design. */
   owner: { role: string; superuser: boolean; bypassesRowSecurity: boolean };
   /**
@@ -183,6 +192,22 @@ export async function enforcementFacts(): Promise<EnforcementFacts> {
         WHERE n.nspname = 'public_read' AND c.relkind = 'v' AND o.rolname <> 'minerval_sql_views'
         ORDER BY c.relname`
     );
+    const outside = await rawQuery<{ name: string }>(
+      `SELECT format('%s %I.%I', CASE c.relkind WHEN 'm' THEN 'materialized view' ELSE 'table' END,
+                     n.nspname, c.relname) AS name
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+          AND n.nspname NOT LIKE 'pg\_temp\_%' AND n.nspname NOT LIKE 'pg\_toast\_temp\_%'
+          AND ((c.relkind = 'm')
+               OR (c.relkind IN ('r', 'p') AND n.nspname <> 'public'
+                   AND EXISTS (SELECT 1 FROM pg_attribute a
+                                WHERE a.attrelid = c.oid AND a.attname = 'sensitivity_label' AND NOT a.attisdropped)))
+        ORDER BY 1`
+    );
+    const [temporary] = await rawQuery<{ open: boolean }>(
+      `SELECT has_database_privilege('public', current_database(), 'TEMPORARY') AS open`
+    );
     const [role] = await rawQuery<{
       can_login: boolean;
       superuser: boolean;
@@ -209,6 +234,8 @@ export async function enforcementFacts(): Promise<EnforcementFacts> {
       uncoveredTables: tables.filter((t) => !t.covered).map((t) => t.name),
       viewsReadingAsOwner: views.map((v) => v.name),
       sqlViewsUnheld: sqlViews.map((v) => v.name),
+      outsideTheStep: outside.map((o) => o.name),
+      temporaryTablesOpen: temporary?.open === true,
       owner: {
         role: state?.owner ?? "",
         superuser: state?.superuser === true,
@@ -269,6 +296,19 @@ export function enforcementProblems(facts: EnforcementFacts): string[] {
   }
   if (facts.sqlViewsUnheld.length > 0) {
     problems.push(`These views of read-only SQL would show rows at every label: ${list(facts.sqlViewsUnheld)}.`);
+  }
+  if (facts.outsideTheStep.length > 0) {
+    problems.push(
+      `These hold labelled rows where no policy reaches them (a materialized view is a copy taken as its owner; ` +
+        `the step covers tables in public only): ${list(facts.outsideTheStep)}.`
+    );
+  }
+  if (facts.temporaryTablesOpen) {
+    problems.push(
+      "Any role may make temporary tables in this database. The step takes that away when it can; it could not, " +
+        "which means the role in DATABASE_URL does not own the database. Run, as the database's owner: " +
+        "REVOKE TEMPORARY ON DATABASE <name> FROM PUBLIC."
+    );
   }
   if (!facts.cleared.exists) {
     problems.push(`The role ${CLEARED_ROLE} does not exist, so nothing but system work can reach the database.`);

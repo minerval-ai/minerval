@@ -329,6 +329,14 @@ const configSchema = z.object({
   // read replica. Unset, the SQL tools say they aren't configured.
   sqlAgentDatabaseUrl: z.string().optional(),
   sqlCallerDatabaseUrl: z.string().optional(),
+  // The password of the role every connection held to a clearance logs in
+  // as (db/clearance.ts, clearedRolePassword). Unset, it is derived from
+  // the owner's credentials in DATABASE_URL, which needs nothing
+  // configured. Set it, to any long random secret, where the owner's
+  // password changes while tasks run (managed rotation) or is a
+  // short-lived token: a derived password would change with it, and tasks
+  // started before the change could no longer open such a connection.
+  clearedRolePassword: z.string().optional(),
   /** The replica read-only SQL runs on, and the two login roles (infra/lib/database-stack.ts). */
   sqlDbHost: z.string().optional(),
   sqlDbPort: z.coerce.number().optional(),
@@ -1431,6 +1439,7 @@ export function loadConfig(): Config {
     officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
     sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
     sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
+    clearedRolePassword: process.env.CLEARED_ROLE_PASSWORD || undefined,
     sqlDbHost: process.env.SQL_DB_HOST,
     sqlDbPort: process.env.SQL_DB_PORT,
     sqlAgentDbUser: process.env.SQL_AGENT_DB_USERNAME,

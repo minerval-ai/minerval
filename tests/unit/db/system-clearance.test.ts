@@ -13,7 +13,8 @@ import { describe, expect, it } from "vitest";
  * owner's connection, past the policies.
  *
  * Every call of that seam under src/ and scripts/ is listed here with the
- * reason written at the call. A failure means a call was added, moved or
+ * reason written at the call, and with what the work writes while it sees
+ * every label. A failure means a call was added, moved or
  * reworded without that list changing: decide whether the work really has
  * to see every label (most work does not; a run sees what its label reads,
  * and a sweep can run each piece with runAtLabel), and if it does, add it
@@ -23,71 +24,186 @@ import { describe, expect, it } from "vitest";
  * database connection of its own is listed below, with whose connection it
  * is.
  */
-const SYSTEM_CALLERS: Record<string, string[]> = {
+/**
+ * Each call: the reason written at the call, and what the work writes or
+ * sends while it sees every label, with why that is safe.
+ *
+ * The rule the second column is held to: system clearance may find work at
+ * any label, but what it writes for a recipient (a lookout, a correspondent,
+ * a node's Steward, a mandate, anything outside the deployment) names a row
+ * only where the recipient's label reads that row's label. The way to keep
+ * it is to find with every label in sight and then put each recipient's
+ * piece together inside runAtLabel(recipient's label), from rows read
+ * there, so that the database decides what the recipient is shown. Passing
+ * rows that were read here into a write at another label is the mistake.
+ */
+type SystemCall = [reason: string, writes: string];
+
+const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   "src/index.ts": [
-    "Migrations change tables, which only their owner may do, and a migration that updates rows must see every one.",
-    "Creating and updating read-only SQL's login roles is the owner's to do.",
-    "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
-    "The page-hash fill writes a hash into every source's own row, whatever its label.",
-    "Shutdown hands back every claim this process holds a lease on, whatever its label.",
+    [
+      "Migrations change tables, which only their owner may do, and a migration that updates rows must see every one.",
+      "What each migration says. A migration that inserts into a labelled table names the label (tests/unit/db/migration-label-stamps.test.ts).",
+    ],
+    [
+      "Creating and updating read-only SQL's login roles is the owner's to do.",
+      "Roles and their passwords. No rows.",
+    ],
+    [
+      "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
+      "Nothing.",
+    ],
+    [
+      "The page-hash fill writes a hash into every source's own row, whatever its label.",
+      "A hash of the source's own URL into the source's own row. Nothing moves between rows.",
+    ],
+    [
+      "Shutdown hands back every claim this process holds a lease on, whatever its label.",
+      "The lease columns of rows this process leased. No content.",
+    ],
   ],
   "src/db/enforcement.ts": [
-    "The step that turns enforcement on changes every labelled table, which only their owner may do.",
-    "The step that turns enforcement on changes every labelled table, which only their owner may do.",
-    "Checking enforcement reads the catalog and the label table as the owner, to compare with what a cleared connection sees.",
+    [
+      "The step that turns enforcement on changes every labelled table, which only their owner may do.",
+      "Policies, triggers and grants in the catalog. No rows.",
+    ],
+    [
+      "The step that turns enforcement on changes every labelled table, which only their owner may do.",
+      "Policies, triggers and grants in the catalog. No rows.",
+    ],
+    [
+      "Checking enforcement reads the catalog and the label table as the owner, to compare with what a cleared connection sees.",
+      "Nothing. The facts go to the startup check and name tables and roles, not rows.",
+    ],
+  ],
+  "src/services/label-admin-service.ts": [
+    [
+      "A label and what it reads are the wall itself, so they are written on the owner's connection. The caller has checked that the actor may administer.",
+      "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
+    ],
+  ],
+  "src/services/permission-service.ts": [
+    [
+      "The groups a verified sign-in carried decide what the account may read, so they are written on the owner's connection.",
+      "The account's own group names, as its verified sign-in carried them.",
+    ],
+    [
+      "The first administrator's grants say what that account may read, so they are written on the owner's connection.",
+      "Grants to the one account the deployment's setting names, once, when no administrator has ever existed.",
+    ],
+    [
+      "A grant says who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
+      "One grant, as the administrator asked for it.",
+    ],
+    [
+      "Removing a grant changes who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
+      "The removal mark on one grant.",
+    ],
   ],
   "src/services/setup-service.ts": [
-    "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",
+    [
+      "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",
+      "A prompt part's text, which comes from files in the repository and is the same for every label, at the label of the run that first used it.",
+    ],
   ],
   "src/services/sql-service.ts": [
-    "The key that signs read-only SQL's clearance is readable by the tables' owner alone.",
+    ["The key that signs read-only SQL's clearance is readable by the tables' owner alone.", "Nothing. The key is read and never returned."],
   ],
   "src/services/trace-service.ts": [
-    "A run's log is written at the run's label whatever the work in progress may read, so a step is never refused by the clearance of the moment.",
+    [
+      "A run's log is written at the run's label whatever the work in progress may read, so a step is never refused by the clearance of the moment.",
+      "The run's own steps, at the run's own label. The recipient of a log is the run it is the log of.",
+    ],
   ],
   "src/workers/allocation-scheduler.ts": [
-    "The scheduler reconciles the ledger and looks for stale or pending work at every label; each piece it starts runs at its own row's label.",
+    [
+      "The scheduler reconciles the ledger and looks for stale or pending work at every label; each piece it starts runs at its own row's label.",
+      "Ledger rows, each opened inside runAtLabel at the label of the claim, mandate, lookout or correspondent it is for, from that row alone. " +
+        "A mandate's plan is materialized at the mandate's label and reads the nodes it names there. Money is placed at the label of the row it pays for. " +
+        "A follow-up is commissioned at its petition's label and an expired session's answer goes to its node at the session's label, each from its own row. " +
+        "The reconcile-candidate scan finds a pair with every label in sight, but raises the request at the anchor's label through requestCuration, " +
+        "which reads both claims there and raises nothing when it cannot read the other. Queue priorities are numbers.",
+    ],
   ],
   "src/workers/audit-scheduler.ts": [
-    "The audit scheduler asks for sweeps over decisions made at every label; each audit then runs at the label of its own row.",
+    [
+      "The audit scheduler asks for sweeps over decisions made at every label; each audit then runs at the label of its own row.",
+      "A request for an audit, in fixed words with a time window and a count's yes or no. The audit reads the decisions itself, at its own label.",
+    ],
   ],
   "src/workers/correspondent-triggers.ts": [
-    "The change scan checks every correspondent, whatever its label, and wakes each at its own.",
-  ],
-  "src/workers/github-issue-sync.ts": [
-    "The issue sync looks for unfiled reports at every label; which of them may leave the deployment is decided by the report's own rules, not by what the sync can see.",
+    [
+      "The change scan checks every correspondent, whatever its label, and wakes each at its own.",
+      "One wake for each correspondent, written inside runAtLabel at its label, naming a change that was looked for at that label. A change it does not read is not found and not named.",
+    ],
   ],
   "src/workers/local-runner.ts": [
-    "The runner finds waiting work at every label (queued jobs, covered ledger rows, pending claims); each piece then runs at the label of its own row.",
+    [
+      "The runner finds waiting work at every label (queued jobs, covered ledger rows, pending claims); each piece then runs at the label of its own row.",
+      "Nothing of its own across labels: every lane claims a row and runs it inside runAtLabel at that row's label, and what the run writes is the run's. " +
+        "A mandate's events are collected inside runAtLabel at the mandate's label, by statements that read the judgments and flags there. " +
+        "Settlement reads and updates money through the whole views (src/db/money.ts), which hold no text.",
+    ],
   ],
   "src/workers/lookout-triggers.ts": [
-    "The retraction poll matches notices against sources at every label and queues each lookout's input at that lookout's label.",
-    "The graph feed wakes every lookout that watches the graph, whatever its label; each then runs at its own.",
-    "The feed poll finds every due feed, whatever its lookout's label, and polls each at that label.",
+    [
+      "The retraction poll matches notices against sources at every label and queues each lookout's input at that lookout's label.",
+      "A source event at the source's own label. Each lookout's event is put together inside runAtLabel at the lookout's label, from the matched sources and nodes read there. " +
+        "Each Steward's letter is written at its node's label and says only how the notice reaches the node as read there. Crossref is asked for a window of dates, never for a document.",
+    ],
+    [
+      "The graph feed wakes every lookout that watches the graph, whatever its label; each then runs at its own.",
+      "One wake for each lookout, inside runAtLabel at its label, when a change it reads is waiting. The payload is the kind of that change.",
+    ],
+    [
+      "The feed poll finds every due feed, whatever its lookout's label, and polls each at that label.",
+      "Feed items and a wake, inside the lookout's label, from the feed's own URL. Nothing read from another row.",
+    ],
   ],
   "src/workers/monitor-scheduler.ts": [
-    "The monitor looks for candidates among claims at every label and asks for each audit at the claim's label.",
+    [
+      "The monitor looks for candidates among claims at every label and asks for each audit at the claim's label.",
+      "A request to audit one claim, at that claim's label, naming that claim.",
+    ],
   ],
   "src/workers/poller.ts": [
-    "A queue handler loads the row its message names, at whatever label, and then runs the work at that row's label.",
+    [
+      "A queue handler loads the row its message names, at whatever label, and then runs the work at that row's label.",
+      "Nothing of its own: the handler runs the work inside runAtLabel at the row's label. A message carries ids and a label, no content.",
+    ],
   ],
   "src/workers/queue-depth-sampler.ts": [
-    "The sampler counts waiting work at every label. It stores counts and no content.",
+    [
+      "The sampler counts waiting work at every label. It stores counts and no content.",
+      "Counts of waiting work, into a table with no label. A reader of it learns how much is waiting in all, not what or at which label.",
+    ],
   ],
   "src/workers/recovery-sweep.ts": [
-    "The recovery sweep finds stalled reviews and orders at every label and re-enqueues each at its own.",
+    [
+      "The recovery sweep finds stalled reviews and orders at every label and re-enqueues each at its own.",
+      "Queue messages that name a row by id. The handler that takes one reads the row and runs at its label.",
+    ],
   ],
   "src/workers/report-embedding-backfill.ts": [
-    "The backfill gives a vector to reports at every label that lack one. It writes into the report's own row.",
+    [
+      "The backfill gives a vector to reports at every label that lack one. It writes into the report's own row.",
+      "A vector into the report's own row. The report's text goes to the embedding provider, as the text of any run at that label does; it goes nowhere else.",
+    ],
   ],
   "src/workers/source-backfill.ts": [
-    "The backfill finds sources at every label that lack facts or segments and fills each at the source's label.",
+    [
+      "The backfill finds sources at every label that lack facts or segments and fills each at the source's label.",
+      "A source's facts, segments and notices, inside runAtSourceLabel, from that source's own document. The fetch asks the source's own address.",
+    ],
   ],
   "src/workers/tagging-pipeline.ts": [
-    "The tagging drain leases untagged claims at every label and tags each at the claim's label.",
+    [
+      "The tagging drain leases untagged claims at every label and tags each at the claim's label.",
+      "A lease on the claim's own row; the tagging itself runs inside runAtLabel at the claim's label.",
+    ],
   ],
-  "src/workers/trace-retention.ts": ["Retention deletes expired runs at every label."],
-  "scripts/enforcement-plans.ts": ["Measuring plans reads the seeded rows as the owner."],
+  "src/workers/trace-retention.ts": [["Retention deletes expired runs at every label.", "Nothing: it deletes."]],
+  "scripts/enforcement-plans.ts": [["Measuring plans reads the seeded rows as the owner.", "Nothing: it explains statements."]],
 };
 
 /** Files that open a connection themselves, and whose it is. */
@@ -148,16 +264,25 @@ describe("work that sees every label", () => {
       expect(reasons.length, `${file}: each call gives its reason as a string or a constant of the file`).toBe(calls);
       found[file] = reasons;
     }
-    expect(found).toEqual(SYSTEM_CALLERS);
+    expect(found).toEqual(
+      Object.fromEntries(Object.entries(SYSTEM_CALLERS).map(([file, calls]) => [file, calls.map(([reason]) => reason)]))
+    );
   });
 
-  it("gives a reason that is a sentence", () => {
-    for (const reasons of Object.values(SYSTEM_CALLERS)) {
-      for (const reason of reasons) {
+  it("gives a reason that is a sentence, and says what each caller writes", () => {
+    for (const calls of Object.values(SYSTEM_CALLERS)) {
+      for (const [reason, writes] of calls) {
         expect(reason.length, reason).toBeGreaterThan(30);
         expect(reason, reason).toMatch(/\.$/);
+        expect(writes.length, reason).toBeGreaterThan(5);
+        expect(writes, reason).toMatch(/\.$/);
       }
     }
+  });
+
+  it("sends nothing to a tracker outside the deployment under system clearance", () => {
+    // Only public reports are ever filed, so the sync needs to see no other.
+    expect(readFileSync(join(repo, "src/workers/github-issue-sync.ts"), "utf-8")).not.toContain("withSystemClearance(");
   });
 
   it("opens no connection of its own outside the files listed here", () => {

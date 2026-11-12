@@ -619,12 +619,12 @@ export async function getMandateAllocationView(
                  AND al.spent_micro_usd = al.amount_micro_usd) AS overage,
                 CASE WHEN al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
                           AND al.spent_micro_usd = al.amount_micro_usd
-                     THEN COALESCE((SELECT p.commissioned_by IS NOT NULL FROM action_allocations p
+                     THEN COALESCE((SELECT p.commissioned_by IS NOT NULL FROM minerval_whole.allocation_money p
                                      WHERE p.grant_id = al.grant_id AND p.action_id = al.action_id
                                        AND p.created_at < al.created_at
                                      ORDER BY p.created_at DESC LIMIT 1), false)
                      ELSE al.commissioned_by IS NOT NULL END AS commissioned
-           FROM action_allocations al JOIN actions a ON a.id = al.action_id
+           FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
           WHERE al.grant_id = $1 AND al.created_at >= ${window}
        ) x
       GROUP BY kind, commissioned

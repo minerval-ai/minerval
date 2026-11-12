@@ -21,7 +21,7 @@
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { currentLabel, runAtLabel } from "../llm/usage-context.js";
+import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";
 import { pendingPassLabel, runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
@@ -173,7 +173,7 @@ const ATTEMPT_REOPEN_HOURS = 3;
  * row's own cost estimate only gates the allocator's increments.
  */
 export const COMMISSIONED_SQL = `
-  EXISTS (SELECT 1 FROM action_allocations al
+  EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
            WHERE al.exclusion_group = a.exclusion_group
              AND al.released_at IS NULL
              AND al.commissioned_by IS NOT NULL
@@ -183,7 +183,7 @@ export const COMMISSIONED_SQL = `
 /** Coverage subquery for one actions row `a` (SQL fragment). */
 export const COVERAGE_SQL = `
   COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-              FROM action_allocations al
+              FROM minerval_whole.allocation_money al
              WHERE al.exclusion_group = a.exclusion_group
                AND al.released_at IS NULL
                AND (al.action_id IS NULL OR al.action_id = a.id)), 0)`;
@@ -450,13 +450,13 @@ export async function closeRequestActions(requestId: string): Promise<void> {
     if (running.length > 0) return;
     const live = await tx.query<{ id: string; user_id: string | null; unspent: string }>(
       `SELECT id, user_id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM action_allocations
+         FROM minerval_whole.allocation_money
         WHERE exclusion_group = $1 AND released_at IS NULL
         FOR UPDATE`,
       [group]
     );
     for (const al of live) {
-      await tx.query(`UPDATE action_allocations SET released_at = now() WHERE id = $1`, [al.id]);
+      await tx.query(`UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`, [al.id]);
       if (al.user_id && Number(al.unspent) > 0) {
         await tx.query(
           `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
@@ -653,7 +653,7 @@ export async function reconcileActions(): Promise<{
               END
         RETURNING a.exclusion_group
      )
-     UPDATE action_allocations al SET released_at = now()
+     UPDATE minerval_whole.allocation_money al SET released_at = now()
       WHERE al.exclusion_group IN (SELECT exclusion_group FROM gone)
         AND al.released_at IS NULL AND al.grant_id IS NOT NULL
         AND al.spent_micro_usd = 0`
@@ -678,7 +678,7 @@ export async function reconcileActions(): Promise<{
       WHERE a.kind = 'request' AND r.state IN ('met', 'declined', 'withdrawn', 'moot')
         AND (a.status = 'open'
              OR (a.status <> 'running' AND EXISTS (
-                  SELECT 1 FROM action_allocations al
+                  SELECT 1 FROM minerval_whole.allocation_money al
                    WHERE al.exclusion_group = a.exclusion_group
                      AND al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd)))`
   );
@@ -876,7 +876,7 @@ async function reconcileConsistencySweeps(): Promise<void> {
     `UPDATE actions a SET status = 'cancelled', updated_at = now()
       WHERE a.kind = 'consistency_sweep' AND a.status = 'open'
         AND NOT (a.exclusion_group = ANY($1::text[]))
-        AND NOT EXISTS (SELECT 1 FROM action_allocations al
+        AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL)
         AND NOT EXISTS (
@@ -2478,7 +2478,7 @@ export async function completeAction(
       `SELECT id, grant_id, user_id, claim_id, action_id,
               amount_micro_usd::bigint AS amount,
               (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM action_allocations
+         FROM minerval_whole.allocation_money
         WHERE exclusion_group = $1 AND released_at IS NULL
           AND spent_micro_usd < amount_micro_usd
         ORDER BY created_at ASC
@@ -2511,7 +2511,7 @@ export async function completeAction(
     );
     for (const r of losers) {
       await tx.query(
-        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
         [r.id]
       );
       await refundUser({ ...r, key: `release:${r.id}` });
@@ -2534,7 +2534,7 @@ export async function completeAction(
         const take = Math.min(Number(row.unspent), Math.max(0, share));
         if (take <= 0) continue;
         await tx.query(
-          `UPDATE action_allocations
+          `UPDATE minerval_whole.allocation_money
               SET spent_micro_usd = spent_micro_usd + $2
             WHERE id = $1`,
           [row.id, take]
@@ -2593,11 +2593,12 @@ export async function completeAction(
           const claimId =
             covering.find((r) => r.grant_id === grantId)?.claim_id ?? null;
           await tx.query(
+            // The record of a shortfall met, at the label of the row that ran.
             `INSERT INTO action_allocations
                (exclusion_group, action_id, claim_id, grant_id,
-                amount_micro_usd, spent_micro_usd, released_at)
-             VALUES ($1, $2, $3, $4, $5, $5, now())`,
-            [action.exclusion_group, actionId, claimId, grantId, share]
+                amount_micro_usd, spent_micro_usd, released_at, sensitivity_label)
+             VALUES ($1, $2, $3, $4, $5, $5, now(), COALESCE($6, (SELECT sensitivity_label FROM actions WHERE id = $2)))`,
+            [action.exclusion_group, actionId, claimId, grantId, share, labelInContext()]
           );
           assigned += share;
           consumed += share;
@@ -2612,7 +2613,7 @@ export async function completeAction(
     for (const r of covering) {
       if (Number(r.unspent) <= 0) continue;
       await tx.query(
-        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
         [r.id]
       );
       await refundUser({ ...r, key: `settle:${r.id}` });
@@ -2630,7 +2631,7 @@ export async function completeAction(
 export async function actionFunderGrants(actionId: string): Promise<string[]> {
   const rows = await rawQuery<{ grant_id: string }>(
     `SELECT DISTINCT al.grant_id
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = $1
       WHERE al.exclusion_group = a.exclusion_group
         AND al.released_at IS NULL
@@ -2674,7 +2675,7 @@ async function attributeIngestedSource(grantId: string, url: string, focus: stri
   // funder, when it submits (engine-executor.ts runIngestAction).
   const [have] = await rawQuery(
     `SELECT 1 WHERE EXISTS (SELECT 1 FROM grant_sources WHERE grant_id = $1 AND url = $2)
-                 OR EXISTS (SELECT 1 FROM action_allocations WHERE grant_id = $1 AND exclusion_group = $3)`,
+                 OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money WHERE grant_id = $1 AND exclusion_group = $3)`,
     [grantId, url, INGEST_GROUP(url, focus)]
   );
   if (have) return;
@@ -2706,7 +2707,7 @@ export async function largestActionFunder(
     budget_job_id: string | null;
   }>(
     `SELECT al.grant_id, al.user_id, g.budget_job_id
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = $1
        LEFT JOIN grants g ON g.id = al.grant_id
       WHERE al.exclusion_group = a.exclusion_group

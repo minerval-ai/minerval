@@ -61,14 +61,20 @@
  * client and the run context can both depend on it.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { PUBLIC_LABEL } from "../labels.js";
 
 /** The role every connection that is held to a clearance logs in as. */
 export const CLEARED_ROLE = "minerval_cleared";
 
-/** What a label's name may be (the CHECK on labels.name says the same). */
+/**
+ * What a label's name may be (the CHECK on labels.name says the same). The
+ * word null fits the pattern and is refused all the same: a clearance is
+ * written into a connection's settings as an array literal, and there the
+ * bare word is no label at all.
+ */
 const LABEL_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
+const NOT_A_NAME = "null";
 
 /**
  * A session could not be worked out, or a write was refused by the policy.
@@ -97,16 +103,17 @@ export function isUnseenCollision(err: unknown): boolean {
 /**
  * What a caller is told when the wall refused its write, or null when the
  * error is anything else: the policy refused a row (ClearanceError), a
- * judgment at another label stood in the way (MVL02), or a row with the
- * same identity exists at a label the work does not read (MVL03). These
- * are refusals of what was asked, with a reason the caller can act on, and
- * not faults: the routes answer them as a conflict, with this text.
+ * judgment at another label stood in the way (MVL02), a row with the same
+ * identity exists at a label the work does not read (MVL03), or the write
+ * would have changed a row's label (MVL04). These are refusals of what was
+ * asked, with a reason the caller can act on, and not faults: the routes
+ * answer them as a conflict, with this text.
  */
 export function refusalForCaller(err: unknown): string | null {
   const e = err as { code?: string; message?: string; hint?: string } | null;
   if (!e || typeof e.message !== "string") return null;
   if (err instanceof ClearanceError) return e.message;
-  if (e.code !== "MVL02" && e.code !== "MVL03") return null;
+  if (e.code !== "MVL02" && e.code !== "MVL03" && e.code !== "MVL04") return null;
   const sentence = `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}.`;
   return e.hint ? `${sentence} ${e.hint}` : sentence;
 }
@@ -196,7 +203,7 @@ const OWNER: Session = Object.freeze({ role: "owner" });
 const PUBLIC_ONLY: Session = Object.freeze({ role: "cleared", clearance: Object.freeze([PUBLIC_LABEL]) });
 
 function plainName(label: string): string {
-  if (!LABEL_NAME_RE.test(label)) {
+  if (!LABEL_NAME_RE.test(label) || label === NOT_A_NAME) {
     throw new ClearanceError(
       `"${label}" is not a label's name, so no connection was opened for it: a name is a short ` +
         `lower-case word (letters, digits, hyphens and underscores, starting with a letter)`
@@ -234,17 +241,32 @@ export function sessionOptions(session: Session): string {
 }
 
 /**
- * The cleared role's password, derived from the owner's credentials in
- * DATABASE_URL. Every process of a deployment shares those and so derives
- * the same one, with no second secret to configure or rotate. It gives
+ * The cleared role's password. By default it is derived from the owner's
+ * credentials in DATABASE_URL: every process of a deployment shares those
+ * and so derives the same one, with no second secret to configure. It gives
  * nothing to anyone who does not already hold the owner's credentials.
  *
  * Only the credentials go in, not the host or the database's name: a role
  * belongs to the whole database server, so every database on it that the
  * same owner uses must agree on the password. Two deployments with
- * different owners on one server would not, and should not share one.
+ * different owners on one server would not, and cannot share one.
+ *
+ * A derived password changes when the owner's does. Where that happens
+ * while tasks run (managed rotation), or all the time (a short-lived token
+ * for a password), the deployment sets a secret of its own instead
+ * (CLEARED_ROLE_PASSWORD), and `configured` is that secret.
  */
-export function clearedRolePassword(databaseUrl: string): string {
+export function clearedRolePassword(databaseUrl: string, configured?: string | null): string {
+  if (configured) {
+    // It is sent as typed and the server prepares what it receives, so it
+    // is held to characters that are the same before and after.
+    if (!/^[\x21-\x7e]{24,}$/.test(configured)) {
+      throw new ClearanceError(
+        "CLEARED_ROLE_PASSWORD must be at least 24 printable ASCII characters with no spaces, so no connection held to a clearance was opened"
+      );
+    }
+    return configured;
+  }
   let credentials = databaseUrl;
   try {
     const url = new URL(databaseUrl);
@@ -253,6 +275,24 @@ export function clearedRolePassword(databaseUrl: string): string {
     // Not a URL: the whole string is the secret.
   }
   return createHmac("sha256", credentials).update(`${CLEARED_ROLE} login`).digest("hex");
+}
+
+/**
+ * What Postgres stores for a password under SCRAM-SHA-256, worked out here.
+ *
+ * The cleared role's password is set with ALTER ROLE, which takes no bind
+ * parameters, and a statement that fails is written whole to the server's
+ * log. So the password itself is never sent: this is sent in its place, and
+ * Postgres stores a string of this form as it is given. It is what the
+ * server would have computed from the password, and the password cannot be
+ * read back out of it.
+ */
+export function scramVerifier(password: string, salt: Buffer = randomBytes(16), iterations = 4096): string {
+  const salted = pbkdf2Sync(password.normalize("NFKC"), salt, iterations, 32, "sha256");
+  const clientKey = createHmac("sha256", salted).update("Client Key").digest();
+  const storedKey = createHash("sha256").update(clientKey).digest();
+  const serverKey = createHmac("sha256", salted).update("Server Key").digest();
+  return `SCRAM-SHA-256$${iterations}:${salt.toString("base64")}$${storedKey.toString("base64")}:${serverKey.toString("base64")}`;
 }
 
 // ---- whether enforcement is on ----------------------------------------------
@@ -329,6 +369,31 @@ export function enforcementKnownOff(): boolean {
   if (!enforcement || enforcement.on) return false;
   const now = Date.now();
   return now >= unsettledUntil && now - enforcement.at < ENFORCEMENT_OFF_RECHECK_MS;
+}
+
+/**
+ * What an in-memory cache adds to its key, so that an answer worked out for
+ * one reader is never handed to another.
+ *
+ * The database shows each connection the rows its clearance reads, so what
+ * a function returns depends on who asked. A cache in front of it that is
+ * keyed by the question alone hands the first asker's answer to everyone
+ * who asks within its lifetime, past the wall. Every module-level cache of
+ * something read from a labelled table puts this in its key
+ * (tests/unit/db/memory-caches.test.ts lists them all).
+ *
+ * It is the context's own account of the reader: the label of the run and
+ * the clearance of the request, as they stand, and one key for system work.
+ * Two readers with the same label and clearance share an entry. It asks the
+ * database nothing. Where this process knows enforcement is off there is
+ * one reader, and the key is empty: a cache on the public graph is the
+ * cache it always was.
+ */
+export function readerKey(): string {
+  if (enforcement && !enforcement.on) return "";
+  if (systemStore.getStore()) return "system";
+  const { label, clearance } = contextReader();
+  return `${label ?? ""}|${clearance === undefined ? "" : normalizeClearance(clearance).join(",")}`;
 }
 
 /** What this process last learned, without asking: null before the first check. */

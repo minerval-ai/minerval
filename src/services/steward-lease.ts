@@ -141,7 +141,7 @@ export async function reportStewardPark(
               c.steward_attempts, c.text,
               COALESCE((
                 SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                  FROM action_allocations al
+                  FROM minerval_whole.allocation_money al
                   JOIN actions a ON a.exclusion_group = al.exclusion_group
                  WHERE a.claim_id = c.id
                    AND a.kind IN ('assess', 'reassess')

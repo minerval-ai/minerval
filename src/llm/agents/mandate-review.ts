@@ -261,7 +261,7 @@ async function runMandateReviewImpl(input: {
   const [todayRow] = await rawQuery<{ allocated: string | number; passes: number }>(
     `SELECT COALESCE(SUM(${allocationDayUseSql("al")}), 0)::bigint AS allocated,
             COUNT(*) FILTER (WHERE a.kind = 'mandate_review')::int AS passes
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        LEFT JOIN actions a ON a.id = al.action_id
       WHERE al.grant_id = $1
         AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
@@ -706,7 +706,7 @@ async function runMandateReviewImpl(input: {
     }
     const [today] = await rawQuery<{ moved: number }>(
       `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS moved
-         FROM regrants
+         FROM minerval_whole.regrant_money
         WHERE from_grant_id = $1
           AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
       [grant.id]

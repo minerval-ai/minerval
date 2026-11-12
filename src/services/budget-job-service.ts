@@ -326,7 +326,7 @@ export async function refundUnspentBudget(job: {
     // nor be refunded twice. (Only unspent remainders release; consumed
     // shares stay counted as spend.)
     await rawQuery(
-      `UPDATE action_allocations SET released_at = now()
+      `UPDATE minerval_whole.allocation_money SET released_at = now()
         WHERE grant_id = $1 AND released_at IS NULL
           AND spent_micro_usd < amount_micro_usd`,
       [grant.id]
@@ -338,7 +338,7 @@ export async function refundUnspentBudget(job: {
       prizes: number;
     }>(
       `SELECT
-         COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+         COALESCE((SELECT SUM(spent_micro_usd) FROM minerval_whole.allocation_money
                     WHERE grant_id = $1), 0)::bigint AS shares,
          GREATEST(0,
            COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
@@ -346,7 +346,7 @@ export async function refundUnspentBudget(job: {
            - COALESCE((SELECT SUM(metered_cost_micro_usd) FROM actions
                         WHERE metered_job_id = $2), 0))::bigint AS nonledger,
          COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
-                     FROM regrants WHERE from_grant_id = $1), 0)::bigint
+                     FROM minerval_whole.regrant_money WHERE from_grant_id = $1), 0)::bigint
            AS regrants,
          ${prizeCommitmentSql("$1")} AS prizes`,
       [grant.id, job.id]
@@ -377,7 +377,7 @@ export async function refundUnspentBudget(job: {
     amount: number;
   }>(
     `SELECT r.id, r.from_grant_id, r.amount_micro_usd::bigint AS amount
-       FROM regrants r
+       FROM minerval_whole.regrant_money r
        JOIN grants g ON g.id = r.to_grant_id
       WHERE g.budget_job_id = $1`,
     [job.id]
@@ -437,9 +437,9 @@ export async function refundUnspentBudget(job: {
     // and the `prior < target` guard makes it a no-op. What actually
     // moved this call is the delta over the prior stamp.
     const stamped = await rawQuery<{ prior: number }>(
-      `UPDATE regrants r
+      `UPDATE minerval_whole.regrant_money r
           SET refunded_micro_usd = $2
-         FROM (SELECT refunded_micro_usd AS prior FROM regrants
+         FROM (SELECT refunded_micro_usd AS prior FROM minerval_whole.regrant_money
                 WHERE id = $1 FOR UPDATE) p
         WHERE r.id = $1 AND p.prior < $2 AND $2 <= r.amount_micro_usd
         RETURNING p.prior::bigint AS prior`,

@@ -38,15 +38,39 @@
  * kind/… and severity/…, and origin/external where that applies. Missing
  * labels are created once per process before the first filing, so a fresh
  * repository needs no setup.
+ *
+ * Only public work leaves the deployment. A tracker is outside it, so a
+ * report filed at any label but `public` is never sent, and neither is a
+ * sighting, a note or a triage note written by work at another label, even
+ * on a report that is itself public and already has an issue: what a
+ * private run says stays inside (staysInside). The row is kept and counted
+ * as always; only the tracker is not told.
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   getGithubBearer,
   githubAuthConfigured,
   resetGithubAppTokenCache,
 } from "./github-app-auth.js";
 import type { AgentReportRow } from "./report-service.js";
+
+/**
+ * Whether what is about to be sent must stay inside the deployment: the
+ * work in progress is at a label other than `public`, or the report is, or
+ * the report is not there for this work to read. The report's label is read
+ * from its row, since the row the callers hold does not carry it.
+ */
+async function staysInside(reportId: string): Promise<boolean> {
+  if (currentLabel() !== PUBLIC_LABEL) return true;
+  const [row] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM agent_reports WHERE id = $1`,
+    [reportId]
+  );
+  return row?.sensitivity_label !== PUBLIC_LABEL;
+}
 
 const GITHUB_API_VERSION = "2022-11-28";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -259,6 +283,7 @@ export async function fileIssueForReport(
 ): Promise<GithubIssueRef | null> {
   try {
     if (!githubIssuesConfigured()) return null;
+    if (await staysInside(row.id)) return null;
     const config = loadConfig();
     if (row.origin === "external" && !config.githubIssuesIncludeExternal) {
       return null;
@@ -318,6 +343,7 @@ export async function fileIssueForReport(
 export async function syncTriageToIssue(row: AgentReportRow): Promise<void> {
   try {
     if (!githubIssuesConfigured() || row.github_issue_number == null) return;
+    if (await staysInside(row.id)) return;
     const repo = loadConfig().githubIssuesRepo;
     const issuePath = `/repos/${repo}/issues/${row.github_issue_number}`;
     let reason = CLOSING_REASONS[row.status];
@@ -409,6 +435,7 @@ export async function syncSightingToIssue(
     const worthAComment =
       sync.reopened || sync.explicit || (!sync.note && isSightingMilestone(count));
     if (!worthAComment && !sync.severityChanged) return;
+    if (await staysInside(row.id)) return;
 
     const repo = loadConfig().githubIssuesRepo;
     const issuePath = `/repos/${repo}/issues/${row.github_issue_number}`;

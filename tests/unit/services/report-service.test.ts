@@ -839,7 +839,9 @@ describe("listReportsAwaitingIssue", () => {
     const [sql, params] = mocks.rawQuery.mock.calls[0]!;
     expect(String(sql)).toContain("github_issue_number IS NULL");
     expect(String(sql)).toContain("status <> 'withdrawn'");
-    expect(params).toEqual([20, false]);
+    // Only public reports are ever selected: a tracker is outside the deployment.
+    expect(String(sql)).toContain("sensitivity_label = $3");
+    expect(params).toEqual([20, false, "public"]);
   });
 });
 

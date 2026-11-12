@@ -7,6 +7,7 @@
  * graph the tables are empty and nothing calls this.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import {
@@ -129,16 +130,24 @@ export function cleanGroupNames(groups: readonly unknown[]): string[] {
  */
 export async function recordSignInGroups(accountId: string, groups: readonly unknown[]): Promise<string[]> {
   const names = cleanGroupNames(groups);
-  await withTransaction(async (tx) => {
-    await tx.query(`DELETE FROM account_groups WHERE account_id = $1`, [accountId]);
-    if (names.length > 0) {
-      await tx.query(
-        `INSERT INTO account_groups (account_id, group_name)
-         SELECT $1, unnest($2::text[])`,
-        [accountId, names]
-      );
-    }
-  });
+  // The tables that say what a clearance is (the grants, these groups, the
+  // labels) can be read on a connection held to a clearance and written
+  // only on the owner's (db/clearance.ts): a connection that reads `public`
+  // alone must not be able to widen what anyone reads.
+  await withSystemClearance(
+    "The groups a verified sign-in carried decide what the account may read, so they are written on the owner's connection.",
+    () =>
+      withTransaction(async (tx) => {
+        await tx.query(`DELETE FROM account_groups WHERE account_id = $1`, [accountId]);
+        if (names.length > 0) {
+          await tx.query(
+            `INSERT INTO account_groups (account_id, group_name)
+             SELECT $1, unnest($2::text[])`,
+            [accountId, names]
+          );
+        }
+      })
+  );
   return names;
 }
 
@@ -169,6 +178,13 @@ export async function establishFirstAdministrator(account: {
   const named = config.firstAdministrator ?? "";
   if (!named || !account.externalId || named !== account.externalId) return false;
 
+  return withSystemClearance(
+    "The first administrator's grants say what that account may read, so they are written on the owner's connection.",
+    () => establish(account)
+  );
+}
+
+function establish(account: { id: string; externalId: string | null }): Promise<boolean> {
   return withTransaction(async (tx) => {
     await tx.query(ADMINISTRATOR_LOCK);
     const ever = await tx.query(
@@ -293,12 +309,16 @@ export async function grantPermission(input: GrantInput): Promise<Result<GrantRo
   }
 
   try {
-    const [row] = await rawQuery<GrantRow>(
-      `INSERT INTO permission_grants
-         (permission, account_id, group_name, label, party_id, granted_by, granted_via)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [permission, accountId, groupName, label, partyId, input.grantedBy, input.via]
+    const [row] = await withSystemClearance(
+      "A grant says who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
+      () =>
+        rawQuery<GrantRow>(
+          `INSERT INTO permission_grants
+             (permission, account_id, group_name, label, party_id, granted_by, granted_via)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [permission, accountId, groupName, label, partyId, input.grantedBy, input.via]
+        )
     );
     return { ok: true, value: row! };
   } catch (err) {
@@ -321,6 +341,13 @@ export async function removeGrant(input: {
   removedBy: string;
 }): Promise<Result<GrantRow, RemoveFailure>> {
   if (!UUID_RE.test(input.grantId)) return fail("NOT_FOUND", "No grant has that id.");
+  return withSystemClearance(
+    "Removing a grant changes who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
+    () => remove(input)
+  );
+}
+
+function remove(input: { grantId: string; removedBy: string }): Promise<Result<GrantRow, RemoveFailure>> {
   return withTransaction(async (tx): Promise<Result<GrantRow, RemoveFailure>> => {
     await tx.query(ADMINISTRATOR_LOCK);
     const [grant] = await tx.query<GrantRow>(

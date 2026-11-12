@@ -813,22 +813,41 @@ describe("work that starts from a claim", () => {
   });
 
   it("is asked of the Steward at the claim's label when a notice is found against a source it rests on, whoever found it", async () => {
-    const restricted = await settledClaim("graph notice restricted");
-    const open = await settledClaim("graph notice public");
-    await setLabel(restricted, INTERNAL);
-    const letters = (doi: string) =>
+    // A public document with a passage on each node, each passage at its
+    // node's label. A letter says how the notice reaches the node as the
+    // node's own label reads it (source-notice-service.ts), so the document
+    // and the passages are real rows.
+    const noticed = async (claimsOnIt: Array<[claim: string, label: string]>) => {
+      const doi = `10.5555/${randomUUID()}`;
+      const [source] = await rawQuery<{ id: string }>(
+        `INSERT INTO sources (url, title, doi, sensitivity_label) VALUES ($1, 'A paper', $2, $3) RETURNING id`,
+        [`https://doi.org/${doi}`, doi, PUBLIC_LABEL]
+      );
+      for (const [claim, label] of claimsOnIt) {
+        await rawQuery(
+          `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, sensitivity_label) VALUES ($1, $2, 'It found the effect.', $3)`,
+          [claim, source!.id, label]
+        );
+      }
+      return { doi, sourceId: source!.id, claimIds: claimsOnIt.map(([claim]) => claim) };
+    };
+    const tell = (n: Awaited<ReturnType<typeof noticed>>, type: string) =>
       tellStewardsOfSourceEvents(
         [
           {
-            source: { source_id: randomUUID(), url: `https://doi.org/${doi}`, title: "A paper", claim_ids: [restricted, open] },
-            notice: { type: "retraction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
+            source: { source_id: n.sourceId, url: `https://doi.org/${n.doi}`, title: "A paper", claim_ids: n.claimIds },
+            notice: { type, title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${n.doi}.n1` },
           },
         ],
         []
       );
+
+    const restricted = await settledClaim("graph notice restricted");
+    const open = await settledClaim("graph notice public");
+    await setLabel(restricted, INTERNAL);
     // The Crossref poll finds the notice outside any run.
     expect(currentLabel()).toBe(PUBLIC_LABEL);
-    expect(await letters(`10.5555/${randomUUID()}`)).toBe(2);
+    expect(await tell(await noticed([[restricted, INTERNAL], [open, PUBLIC_LABEL]]), "retraction")).toBe(2);
     expect(await assessLabels(restricted)).toEqual([INTERNAL]);
     expect(await assessLabels(open)).toEqual([PUBLIC_LABEL]);
     // The letter itself, waiting in each node's inbox, is at the node's label too.
@@ -840,25 +859,49 @@ describe("work that starts from a claim", () => {
     const restrictedAgain = await settledClaim("graph notice restricted, found in a run");
     const openAgain = await settledClaim("graph notice public, found in a run");
     await setLabel(restrictedAgain, INTERNAL);
-    for (const finder of [INTERNAL, PUBLIC_LABEL]) {
-      const doi = `10.5555/${randomUUID()}`;
-      const told = await inRunAt(finder, () =>
-        tellStewardsOfSourceEvents(
-          [
-            {
-              source: { source_id: randomUUID(), url: `https://doi.org/${doi}`, title: "A paper", claim_ids: [restrictedAgain, openAgain] },
-              notice: { type: "correction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
-            },
-          ],
-          []
-        )
-      );
-      expect(told).toBe(2);
-      expect(await assessLabels(restrictedAgain)).toEqual([INTERNAL]);
-      expect(await assessLabels(openAgain)).toEqual([PUBLIC_LABEL]);
-      expect(await labelsWhere("node_messages", "node_id = $1", [restrictedAgain])).toEqual([INTERNAL]);
-      expect(await labelsWhere("node_messages", "node_id = $1", [openAgain])).toEqual([PUBLIC_LABEL]);
-    }
+    const again = await noticed([[restrictedAgain, INTERNAL], [openAgain, PUBLIC_LABEL]]);
+    expect(await inRunAt(INTERNAL, () => tell(again, "correction"))).toBe(2);
+    expect(await assessLabels(restrictedAgain)).toEqual([INTERNAL]);
+    expect(await assessLabels(openAgain)).toEqual([PUBLIC_LABEL]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [restrictedAgain])).toEqual([INTERNAL]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [openAgain])).toEqual([PUBLIC_LABEL]);
+
+    // A run at public cannot read the restricted node, so it tells the
+    // public one alone, and writes nothing about the other: not at public,
+    // where a letter would say that the node exists and what it rests on.
+    const unreadable = await settledClaim("graph notice restricted, found by a public run");
+    const readable = await settledClaim("graph notice public, found by a public run");
+    await setLabel(unreadable, INTERNAL);
+    const byPublic = await noticed([[unreadable, INTERNAL], [readable, PUBLIC_LABEL]]);
+    expect(await inRunAt(PUBLIC_LABEL, () => tell(byPublic, "correction"))).toBe(1);
+    expect(await labelsWhere("node_messages", "node_id = $1", [unreadable])).toEqual([]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [readable])).toEqual([PUBLIC_LABEL]);
+  });
+
+  // The other way round: a node whose only tie to a document is a passage
+  // its own label does not read is not told about the document.
+  it("is not told of a notice against a document it is tied to only by rows its label does not read", async () => {
+    const open = await settledClaim("graph notice, tied by a restricted passage");
+    const doi = `10.5555/${randomUUID()}`;
+    const [source] = await rawQuery<{ id: string }>(
+      `INSERT INTO sources (url, title, doi, sensitivity_label) VALUES ($1, 'A restricted paper', $2, $3) RETURNING id`,
+      [`https://doi.org/${doi}`, doi, INTERNAL]
+    );
+    await rawQuery(
+      `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, sensitivity_label) VALUES ($1, $2, 'A restricted passage.', $3)`,
+      [open, source!.id, INTERNAL]
+    );
+    const told = await tellStewardsOfSourceEvents(
+      [
+        {
+          source: { source_id: source!.id, url: `https://doi.org/${doi}`, title: "A restricted paper", claim_ids: [open] },
+          notice: { type: "retraction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
+        },
+      ],
+      []
+    );
+    expect(told).toBe(0);
+    expect(await labelsWhere("node_messages", "node_id = $1", [open])).toEqual([]);
   });
 
   it("takes the claim's label over the one in the air", async () => {

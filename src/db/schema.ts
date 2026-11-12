@@ -107,7 +107,9 @@ export const labels = pgTable(
     // the plain word the administrator's route already requires
     // (services/label-admin-service.ts): nothing in a name can end the
     // setting it is written in.
-    check("labels_name_plain", sql`${table.name} ~ '^[a-z][a-z0-9_-]{0,62}$'`),
+    // And not the word null, which in the array a connection's clearance
+    // is written as is no label at all.
+    check("labels_name_plain", sql`${table.name} ~ '^[a-z][a-z0-9_-]{0,62}$' AND ${table.name} <> 'null'`),
   ]
 );
 
@@ -121,7 +123,11 @@ export const labelReads = pgTable(
       .notNull()
       .references(() => labels.name),
   },
-  (table) => [primaryKey({ columns: [table.label, table.reads] })]
+  (table) => [
+    primaryKey({ columns: [table.label, table.reads] }),
+    // 'public' reads no other label: what it read, everyone would read.
+    check("ck_label_reads_public_reads_nothing", sql`${table.label} <> 'public'`),
+  ]
 );
 
 // The label column of a row that carries one. It is sensitivity_label, not
@@ -2639,6 +2645,9 @@ export const mandateValuations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the work that wrote the valuation and its rationale
+    // (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     primaryKey({ columns: [table.grantId, table.actionId] }),
@@ -2702,6 +2711,12 @@ export const actionAllocations = pgTable(
     parentActionId: uuid("parent_action_id").references((): AnyPgColumn => actions.id, {
       onDelete: "set null",
     }),
+    // The label of the work that placed the money, which is the label its
+    // brief and reason are read at (src/labels.ts). The money itself is
+    // read and settled whole, whatever the label, through
+    // minerval_whole.allocation_money (db/money.ts): what a run costs is
+    // split across every allocation that covers it.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_action_allocations_group").on(table.exclusionGroup),
@@ -2945,6 +2960,10 @@ export const regrants = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the work that moved the money, which is the label its
+    // note is read at. The amounts are read whole through
+    // minerval_whole.regrant_money (db/money.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_regrants_from").on(table.fromGrantId),
@@ -6263,18 +6282,24 @@ export const judgmentInputs = pgTable(
 // out, so adding a column to one of the tables regenerates its view: run
 // `npm run db:generate` as for any schema change.
 // ---------------------------------------------------------------------------
-export const assessmentsInForce = pgView("assessments_in_force").as((qb) =>
+// Each reads its table with its caller's rights (security_invoker): a view
+// otherwise reads as its owner, whom the label policies do not bind
+// (db/clearance.ts), and would show a cleared connection every label. It is
+// said here so that a regenerated view is created with it.
+const callersRights = { securityInvoker: true };
+
+export const assessmentsInForce = pgView("assessments_in_force").with(callersRights).as((qb) =>
   qb.select().from(assessments).where(eq(assessments.isCurrent, true))
 );
 
-export const argumentEvaluationsInForce = pgView("argument_evaluations_in_force").as((qb) =>
+export const argumentEvaluationsInForce = pgView("argument_evaluations_in_force").with(callersRights).as((qb) =>
   qb.select().from(argumentEvaluations).where(eq(argumentEvaluations.isCurrent, true))
 );
 
-export const quantityEstimatesInForce = pgView("quantity_estimates_in_force").as((qb) =>
+export const quantityEstimatesInForce = pgView("quantity_estimates_in_force").with(callersRights).as((qb) =>
   qb.select().from(quantityEstimates).where(eq(quantityEstimates.isCurrent, true))
 );
 
-export const questionAssessmentsInForce = pgView("question_assessments_in_force").as((qb) =>
+export const questionAssessmentsInForce = pgView("question_assessments_in_force").with(callersRights).as((qb) =>
   qb.select().from(questionAssessments).where(eq(questionAssessments.isCurrent, true))
 );

@@ -25,7 +25,7 @@ export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(
     `SELECT COALESCE(SUM(amount_micro_usd - refunded_micro_usd), 0)::bigint
        AS total
-       FROM regrants WHERE from_grant_id = $1`,
+       FROM minerval_whole.regrant_money WHERE from_grant_id = $1`,
     [grantId]
   );
   return Number(row?.total ?? 0);
@@ -99,10 +99,10 @@ export async function grantEscrowBreakdown(
     prizes: number;
   }>(
     `SELECT
-       COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+       COALESCE((SELECT SUM(spent_micro_usd) FROM minerval_whole.allocation_money
                   WHERE grant_id = $1), 0)::bigint AS shares,
        COALESCE((SELECT SUM(amount_micro_usd - spent_micro_usd)
-                   FROM action_allocations
+                   FROM minerval_whole.allocation_money
                   WHERE grant_id = $1 AND released_at IS NULL), 0)::bigint
          AS outstanding,
        -- Metered spend on this job that NO allocation share accounts for.
@@ -117,10 +117,10 @@ export async function grantEscrowBreakdown(
        GREATEST(0,
          COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
                     WHERE job_id = $2), 0)
-         - COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+         - COALESCE((SELECT SUM(spent_micro_usd) FROM minerval_whole.allocation_money
                       WHERE grant_id = $1), 0))::bigint AS nonledger,
        COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
-                   FROM regrants WHERE from_grant_id = $1), 0)::bigint
+                   FROM minerval_whole.regrant_money WHERE from_grant_id = $1), 0)::bigint
          AS regrants,
        -- Bounties held against this escrow, prizes paid from it, and the
        -- prize-review reserve: one fragment, shared with the settlement
@@ -158,14 +158,16 @@ export async function regrantEdges(grantId: string): Promise<{
     `SELECT 'in' AS direction, g.id AS grant_id,
             COALESCE(g.mandate->>'title', g.name) AS title,
             SUM(r.amount_micro_usd)::bigint AS amount,
-            MIN(r.note) AS note
-       FROM regrants r JOIN grants g ON g.id = r.from_grant_id
+            -- The note is read from the table, at the labels this reader holds.
+            (SELECT MIN(n.note) FROM regrants n WHERE n.from_grant_id = g.id AND n.to_grant_id = $1) AS note
+       FROM minerval_whole.regrant_money r JOIN grants g ON g.id = r.from_grant_id
       WHERE r.to_grant_id = $1
       GROUP BY g.id, g.mandate->>'title', g.name
      UNION ALL
      SELECT 'out', g.id, COALESCE(g.mandate->>'title', g.name),
-            SUM(r.amount_micro_usd)::bigint, MIN(r.note)
-       FROM regrants r JOIN grants g ON g.id = r.to_grant_id
+            SUM(r.amount_micro_usd)::bigint,
+            (SELECT MIN(n.note) FROM regrants n WHERE n.from_grant_id = $1 AND n.to_grant_id = g.id)
+       FROM minerval_whole.regrant_money r JOIN grants g ON g.id = r.to_grant_id
       WHERE r.from_grant_id = $1
       GROUP BY g.id, g.mandate->>'title', g.name`,
     [grantId]
@@ -295,10 +297,10 @@ export async function createRegrant(input: {
       };
     }
     const [row] = await tx.query<{ id: string }>(
-      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [source.id, input.toGrantId, amountMicro, input.note ?? null]
+      [source.id, input.toGrantId, amountMicro, input.note ?? null, currentLabel()]
     );
     return {
       ok: true as const,

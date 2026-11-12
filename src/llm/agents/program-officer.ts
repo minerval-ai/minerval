@@ -27,7 +27,7 @@ import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
-import { claimAction, completeAction, releaseAction } from "../../services/action-service.js";
+import { LABEL_ON_REOPEN_SQL, claimAction, completeAction, releaseAction } from "../../services/action-service.js";
 import { commissionAction, commissionNodePass, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import {
@@ -390,7 +390,7 @@ async function buildBrief(
   const [deciding] = await rawQuery<{ deciding: number; spent: number }>(
     `SELECT COALESCE(SUM(al.spent_micro_usd) FILTER (WHERE al.exclusion_group LIKE 'officer:%' OR al.exclusion_group LIKE 'escalation:%'), 0)::bigint AS deciding,
             COALESCE(SUM(al.spent_micro_usd), 0)::bigint AS spent
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
       WHERE al.grant_id = $1 AND al.created_at > now() - interval '7 days'`,
     [grant.id]
   );
@@ -472,8 +472,11 @@ async function buildBrief(
  *
  * The sitting runs here, as soon as the row is claimed: no executor picks
  * this row up later. So the row records the label the sitting runs at
- * (src/labels.ts), which is the mandate's (workMandateInbox), and a row left
- * open by a sitting that could not be funded takes this one's.
+ * (src/labels.ts), which is the mandate's (workMandateInbox). A row left
+ * open by a sitting that could not be funded already has it: every sitting
+ * of a mandate is at the mandate's label, so the common rule for a reused
+ * row (an open one keeps its label, a finished one takes the reopener's)
+ * says the same here.
  */
 async function commissionSitting(grant: GrantRow, role: Role): Promise<string | null> {
   const config = loadConfig();
@@ -485,8 +488,7 @@ async function commissionSitting(grant: GrantRow, role: Role): Promise<string | 
      VALUES ($1, $2, 'standard', $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET status = CASE WHEN actions.status = 'running' THEN actions.status ELSE 'open' END,
-           sensitivity_label = CASE WHEN actions.status = 'running'
-                                    THEN actions.sensitivity_label ELSE EXCLUDED.sensitivity_label END,
+           ${LABEL_ON_REOPEN_SQL},
            updated_at = now()
      RETURNING id, status`,
     [kind, group, grant.id, role === "officer" ? "Program officer sitting" : "Grantmaker deciding escalations", budget, currentLabel()]

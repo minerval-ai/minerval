@@ -171,6 +171,17 @@ export function currentLabel(): string {
   return getUsageContext().label ?? PUBLIC_LABEL;
 }
 
+/**
+ * The label of the enclosing run or request, or null where nothing has set
+ * one. For the few writes that a sweep makes for a row it found: where no
+ * run is in progress such a row takes the label of the row it is written
+ * for, in the statement itself (COALESCE of this and that row's label),
+ * and not `public` by default.
+ */
+export function labelInContext(): string | null {
+  return getUsageContext().label ?? null;
+}
+
 const PUBLIC_CLEARANCE: readonly string[] = Object.freeze([PUBLIC_LABEL]);
 
 /**

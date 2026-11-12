@@ -198,7 +198,7 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
  */
 export async function releaseStandingOrder(grantId: string, claimId: string): Promise<number> {
   const rows = await rawQuery<{ amount: string }>(
-    `UPDATE action_allocations al SET released_at = now()
+    `UPDATE minerval_whole.allocation_money al SET released_at = now()
       WHERE al.grant_id = $1 AND al.exclusion_group = $2
         AND al.commissioned_by = $3
         AND al.released_at IS NULL AND al.spent_micro_usd = 0

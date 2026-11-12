@@ -6,15 +6,19 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * node asserting or resting on it the first time a notice is recorded, and
  * wakes lookouts only when one watches for retractions; honours its cadence through a
  * persisted high-water mark; joins Crossref notices to the graph's sources
- * and queues one event per matched source on every subscribed lookout;
- * never re-queues a notice a lookout already holds; advances the mark to
- * now only when the whole window was read, and otherwise only as far as it
- * read (#686).
+ * and queues one event per matched source on every subscribed lookout, each
+ * at that lookout's label and from what is read at that label; never
+ * re-queues a notice a lookout already holds; advances the mark to now only
+ * when the whole window was read, and otherwise only as far as it read
+ * (#686). What a label reads is the database's to hold
+ * (tests/db/system-fan-out.test.ts); here the reads are stand-ins.
  */
 
 const { state, queries } = vi.hoisted(() => ({
   state: {
     subscribed: 1,
+    // The label of each subscribed lookout, in order; the rest are public.
+    lookoutLabels: [] as string[],
     mark: null as null | { since: string; polled_at: string },
     notices: [] as Array<Record<string, unknown>>,
     complete: true,
@@ -40,9 +44,14 @@ const { state, queries } = vi.hoisted(() => ({
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     queries.push({ q, params });
-    if (q.includes("l.triggers ? 'retraction'")) return [{ n: state.subscribed }];
+    if (q.includes("l.triggers ? 'retraction'")) {
+      return Array.from({ length: state.subscribed }, (_, i) => ({
+        id: `l-${i}`,
+        sensitivity_label: state.lookoutLabels[i] ?? "public",
+      }));
+    }
     if (q.includes("FROM platform_flags")) return state.mark ? [{ value: state.mark }] : [];
-    if (q.includes("payload->>'notice_doi' = $1")) return [{ n: state.dupPending }];
+    if (q.includes("FROM lookout_events")) return [{ dup: state.dupPending, pending: state.dupPending }];
     if (q.includes("SELECT sensitivity_label FROM claims")) {
       const label = state.claimLabels[params[0] as string];
       return label ? [{ sensitivity_label: label }] : [];
@@ -63,6 +72,10 @@ vi.mock("../../../src/services/source-watch-service.js", () => ({
     return state.doiBatches.length === 1 ? state.matches : [];
   }),
   claimsRestingOnSources: vi.fn(async () => state.resting),
+  // The matched sources, read again by id where each recipient's input is put together.
+  sourcesWithClaims: vi.fn(async (ids: string[]) =>
+    state.matches.filter((m) => ids.includes(m.source_id as string))
+  ),
 }));
 vi.mock("../../../src/services/source-facts-service.js", () => ({
   eventKindForCrossref: (t: string) => (t === "expression_of_concern" ? "expression_of_concern" : t),
@@ -72,9 +85,10 @@ vi.mock("../../../src/services/source-facts-service.js", () => ({
   }),
 }));
 vi.mock("../../../src/services/lookout-service.js", () => ({
-  queueLookoutEventsByTrigger: vi.fn(async (input: Record<string, unknown>) => {
-    state.fanout.push(input);
-    return { queued: 2 };
+  queueLookoutEvent: vi.fn(async (input: Record<string, unknown>) => {
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.fanout.push({ ...input, at: currentLabel() });
+    return { queued: true };
   }),
 }));
 
@@ -94,6 +108,7 @@ const NOW = Date.parse("2026-09-11T12:00:00Z");
 beforeEach(() => {
   queries.length = 0;
   state.subscribed = 1;
+  state.lookoutLabels = [];
   state.mark = null;
   state.notices = [];
   state.complete = true;
@@ -164,7 +179,7 @@ describe("retractionPollTick", () => {
       { doi: "10.1/paper", source_id: "s-2", url: "https://x.org/10.1/paper", title: "Mirror", claim_ids: [] },
     ];
     const r = await retractionPollTick({ now: NOW });
-    expect(r).toEqual({ skipped: false, notices: 2, complete: true, matchedSources: 2, sourceEvents: 2, stewardsTold: 2, eventsQueued: 2 });
+    expect(r).toEqual({ skipped: false, notices: 2, complete: true, matchedSources: 2, sourceEvents: 2, stewardsTold: 2, eventsQueued: 1 });
     // The orphan mirror (no claims resting on it) wakes nobody.
     expect(state.fanout).toHaveLength(1);
     expect(state.fanout[0]).toMatchObject({
@@ -228,7 +243,7 @@ describe("retractionPollTick", () => {
     const r = await retractionPollTick({ now: NOW });
     // s-1 has resting claims and wakes its lookouts; s-2 has none and wakes nobody.
     expect(state.fanout).toHaveLength(1);
-    expect(r.eventsQueued).toBe(2);
+    expect(r.eventsQueued).toBe(1);
     expect(state.fanout[0]).toMatchObject({
       kind: "retraction",
       payload: {
@@ -241,6 +256,19 @@ describe("retractionPollTick", () => {
         ],
       },
     });
+  });
+
+  it("queues each subscribed lookout its own event, at that lookout's label", async () => {
+    state.subscribed = 2;
+    state.lookoutLabels = ["internal", "public"];
+    state.notices = [{ notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "retraction", title: null, updated: null, source: null }];
+    state.matches = [{ doi: "10.1/paper", source_id: "s-1", url: "u", title: "t", claim_ids: ["c-1"] }];
+    const r = await retractionPollTick({ now: NOW });
+    expect(r.eventsQueued).toBe(2);
+    expect(state.fanout.map((f) => ({ lookoutId: f.lookoutId, at: f.at }))).toEqual([
+      { lookoutId: "l-0", at: "internal" },
+      { lookoutId: "l-1", at: "public" },
+    ]);
   });
 
   it("does not hand a lookout a notice it already holds", async () => {

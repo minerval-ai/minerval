@@ -23,7 +23,11 @@
  *     opened for this query and closed after it, so nothing a query sets
  *     outlives it.
  *  4. The planner's estimate is checked first: a query estimated above the
- *     limit is refused before it runs, with the estimate.
+ *     limit is refused before it runs, with the estimate. The estimate is
+ *     taken from statistics over every row of a table, whatever its label,
+ *     so where the deployment has more than one label it is not given: a
+ *     reader could size what they may not read from it. The refusal still
+ *     happens, and says only that the limit was passed.
  *  5. Callers: one query at a time per account and a daily allowance of
  *     database time, both held in the database so they hold across API
  *     tasks; past the allowance, a query is priced in owls by the second.
@@ -256,7 +260,11 @@ export interface SqlResult {
   row_count: number;
   truncated: boolean;
   elapsed_ms: number;
-  plan_cost: number;
+  /**
+   * The planner's estimate for the query. Left out where the deployment
+   * has more than one label: it is computed over rows at every label.
+   */
+  plan_cost?: number;
   /**
    * Present only where the deployment has more than one label: which rows
    * the views showed this asker, and why (sqlClearanceNote).
@@ -442,7 +450,9 @@ export async function runReadOnlyQuery(
     if (planCost > config.sqlMaxPlanCost) {
       throw new SqlRefusal(
         "TOO_EXPENSIVE",
-        `The planner estimates this query at ${Math.round(planCost)}, above the limit of ${config.sqlMaxPlanCost}. ` +
+        (clearance
+          ? `The planner estimates this query above the limit for one query. `
+          : `The planner estimates this query at ${Math.round(planCost)}, above the limit of ${config.sqlMaxPlanCost}. `) +
           `Nothing was run. Narrow it: filter on an indexed column (ids, node_id, tags, importance, ` +
           `assessed_at, created_at), join on ids, or aggregate instead of returning rows.`
       );
@@ -467,8 +477,7 @@ export async function runReadOnlyQuery(
       row_count: kept.length,
       truncated,
       elapsed_ms: Date.now() - started,
-      plan_cost: Math.round(planCost),
-      ...(clearance ? { note: sqlClearanceNote(clearance) } : {}),
+      ...(clearance ? { note: sqlClearanceNote(clearance) } : { plan_cost: Math.round(planCost) }),
     };
   } catch (err) {
     if (err instanceof SqlRefusal) throw err;

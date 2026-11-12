@@ -84,11 +84,11 @@ export async function runChain(actionId: string): Promise<ChainLink[]> {
         `SELECT a.id, a.kind, a.claim_id,
                 -- A row is reused pass after pass: its live allocations are
                 -- the current pass's money.
-                COALESCE((SELECT SUM(al.amount_micro_usd) FROM action_allocations al
+                COALESCE((SELECT SUM(al.amount_micro_usd) FROM minerval_whole.allocation_money al
                            WHERE al.exclusion_group = a.exclusion_group
                              AND (al.action_id IS NULL OR al.action_id = a.id)
                              AND al.released_at IS NULL), 0)::bigint AS budget,
-                (SELECT al.parent_action_id FROM action_allocations al
+                (SELECT al.parent_action_id FROM minerval_whole.allocation_money al
                   WHERE al.exclusion_group = a.exclusion_group
                     AND (al.action_id IS NULL OR al.action_id = a.id)
                     AND al.released_at IS NULL
@@ -110,7 +110,7 @@ export async function routePetition(funding: RunFunding | undefined | null): Pro
   if (funding.actionId) {
     const [row] = await rawQuery<{ grant_id: string | null; user_id: string | null }>(
       `SELECT al.grant_id, al.user_id
-         FROM action_allocations al
+         FROM minerval_whole.allocation_money al
          JOIN actions a ON a.id = $1
         WHERE al.exclusion_group = a.exclusion_group
           AND (al.action_id IS NULL OR al.action_id = a.id)

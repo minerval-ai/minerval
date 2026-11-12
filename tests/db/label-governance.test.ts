@@ -564,9 +564,6 @@ describe("the columns", () => {
     expect(rows.map((r) => r.table_name)).toEqual([
       // What a sign-in asserted about an account: the groups it carried.
       "account_groups",
-      // Money placed on the ledger. It also carries a commission's brief
-      // and reason, so it is not settled that it should stay without one.
-      "action_allocations",
       // The administrators' own log: who granted what, and which labels were defined.
       "administrative_events",
       // Accounts and their keys.
@@ -579,8 +576,6 @@ describe("the columns", () => {
       // The labels themselves.
       "label_reads",
       "labels",
-      // Nothing writes or reads it any more.
-      "mandate_valuations",
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
@@ -594,8 +589,6 @@ describe("the columns", () => {
       "prize_payouts",
       // Counts of what waits, with no content.
       "queue_depth_snapshots",
-      // Money moved between two mandates, with a note: as action_allocations.
-      "regrants",
       // Database time used by query_sql, per account and day.
       "sql_usage",
     ]);

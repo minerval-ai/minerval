@@ -172,11 +172,13 @@ describe("the catalog, with a second label defined", () => {
     const facts = await enforcementFacts();
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
-    // The schema's ninety-five (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(95);
+    // The schema's ninety-eight (tests/db/label-columns.test.ts lists them).
+    expect(facts.labelledTables.length).toBe(98);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
+    expect(facts.outsideTheStep).toEqual([]);
+    expect(facts.temporaryTablesOpen).toBe(false);
     expect(facts.cleared).toEqual({
       exists: true,
       canLogIn: true,
@@ -197,6 +199,8 @@ describe("the catalog, with a second label defined", () => {
       uncoveredTables: [],
       viewsReadingAsOwner: [],
       sqlViewsUnheld: [],
+      outsideTheStep: [],
+      temporaryTablesOpen: false,
       owner: { role: "owner", superuser: false, bypassesRowSecurity: false },
       cleared: { exists: true, canLogIn: true, superuser: false, bypassesRowSecurity: false, ownsTables: [], memberOf: [] },
       liveConnection: { role: CLEARED_ROLE, seesBeyondPublic: false },
@@ -212,6 +216,34 @@ describe("the catalog, with a second label defined", () => {
     expect(enforcementProblems({ ...sound, cleared: { ...sound.cleared, memberOf: ["owner"] } })).toHaveLength(1);
     expect(enforcementProblems({ ...sound, liveConnection: { role: "owner", seesBeyondPublic: true } })).toHaveLength(2);
     expect(enforcementProblems({ ...sound, liveConnection: { error: "no login" } })).toHaveLength(1);
+    expect(enforcementProblems({ ...sound, outsideTheStep: ["materialized view public.digest"] })[0]).toContain("public.digest");
+    expect(enforcementProblems({ ...sound, temporaryTablesOpen: true })[0]).toContain("REVOKE TEMPORARY");
+  });
+
+  it("reports a materialized view, and a labelled table outside public, which the step does not cover", async () => {
+    // A materialized view is a copy of rows taken as its owner: no policy
+    // applies to it, and a grant on it would show every label. A labelled
+    // table in another schema is not one the step looks at.
+    await system(async () => {
+      await rawQuery(`CREATE MATERIALIZED VIEW public.enf_claim_digest AS SELECT id, text, sensitivity_label FROM claims`);
+      await rawQuery(`CREATE SCHEMA enf_other`);
+      await rawQuery(
+        `CREATE TABLE enf_other.notes (id int, body text,
+           sensitivity_label text NOT NULL DEFAULT minerval_default_label() REFERENCES labels(name))`
+      );
+    });
+    try {
+      const facts = await enforcementFacts();
+      expect(facts.outsideTheStep).toEqual(["materialized view public.enf_claim_digest", "table enf_other.notes"]);
+      expect(enforcementProblems(facts)).toHaveLength(1);
+      expect(enforcementProblems(facts)[0]).toMatch(/no policy reaches them/);
+    } finally {
+      await system(async () => {
+        await rawQuery(`DROP MATERIALIZED VIEW public.enf_claim_digest`);
+        await rawQuery(`DROP SCHEMA enf_other CASCADE`);
+      });
+    }
+    expect((await enforcementFacts()).outsideTheStep).toEqual([]);
   });
 });
 
@@ -222,10 +254,13 @@ describe("the catalog, with a second label defined", () => {
  * that a table added later is covered without a test of its own.
  *
  * The rows are not meaningful: each required column gets a value of its
- * type, and foreign keys are not checked while they are written
- * (session_replication_role, which is why the suite's database role must be
- * a superuser, as it is locally and in CI). What is under test is the one
- * thing every such row has: a label.
+ * type, and their foreign keys are not checked while they are there. A
+ * superuser (the suite's role locally and in CI) turns the checks off while
+ * it writes (session_replication_role). A plain owner cannot, so it takes
+ * the labelled tables' keys away for the length of this block and puts
+ * them back when the rows are gone: `npm run test:db:owner` runs this file
+ * that way, as a deployment's owner is on a managed Postgres. What is under
+ * test is the one thing every such row has: a label.
  */
 describe("every labelled table", () => {
   interface Column {
@@ -237,6 +272,34 @@ describe("every labelled table", () => {
   const written = new Map<string, string[]>();
   const unwritable: string[] = [];
   let owner: pg.Client;
+  let superuser = true;
+  /** The keys a plain owner took away, to put back. */
+  let setAside: Array<{ on_table: string; conname: string; def: string }> = [];
+
+  /** Stop checking the labelled tables' foreign keys (all but the one to labels), or start again. */
+  async function foreignKeys(checked: boolean): Promise<void> {
+    if (superuser) {
+      await owner.query(`SET session_replication_role = ${checked ? "origin" : "replica"}`);
+      return;
+    }
+    if (checked) {
+      for (const k of setAside) await owner.query(`ALTER TABLE ${k.on_table} ADD CONSTRAINT "${k.conname}" ${k.def}`);
+      setAside = [];
+      return;
+    }
+    const keys = await owner.query<{ on_table: string; conname: string; def: string }>(
+      `SELECT k.conrelid::regclass::text AS on_table, k.conname::text AS conname, pg_get_constraintdef(k.oid) AS def
+         FROM pg_constraint k
+         JOIN pg_class c ON c.oid = k.conrelid
+        WHERE k.contype = 'f' AND c.relnamespace = 'public'::regnamespace
+          AND k.confrelid <> 'public.labels'::regclass
+          AND EXISTS (SELECT 1 FROM pg_attribute l
+                       WHERE l.attrelid = c.oid AND l.attname = 'sensitivity_label' AND NOT l.attisdropped)
+        ORDER BY 1, 2`
+    );
+    for (const k of keys.rows) await owner.query(`ALTER TABLE ${k.on_table} DROP CONSTRAINT "${k.conname}"`);
+    setAside = keys.rows;
+  }
 
   /**
    * What a CHECK across several columns needs, for the tables that have
@@ -246,6 +309,8 @@ describe("every labelled table", () => {
   const ALSO: Record<string, Record<string, string>> = {
     // The body is in the row or in storage.
     attachments: { storage: "'db'", body: "'enf'" },
+    // Money placed by a mandate or by a person, one of the two.
+    action_allocations: { grant_id: "gen_random_uuid()" },
     // About a node or about a source, one of the two.
     request_targets: { claim_id: "gen_random_uuid()" },
     argument_instances: { argument_id: "gen_random_uuid()" },
@@ -282,7 +347,7 @@ describe("every labelled table", () => {
     owner = new pg.Client({ connectionString: TEST_DATABASE_URL });
     await owner.connect();
     const [role] = (await owner.query<{ is_superuser: string }>(`SHOW is_superuser`)).rows;
-    expect(role!.is_superuser, "the suite's database role must be a superuser to write rows without their foreign keys").toBe("on");
+    superuser = role!.is_superuser === "on";
 
     const columns = await owner.query<{ table_name: string; name: string; type: string; required: boolean; literals: string[] | null }>(
       `SELECT c.relname::text AS table_name, a.attname::text AS name,
@@ -308,7 +373,7 @@ describe("every labelled table", () => {
       byTable.set(row.table_name, list);
     }
 
-    await owner.query(`SET session_replication_role = replica`);
+    await foreignKeys(false);
     for (const [table, cols] of byTable) {
       const also = ALSO[table] ?? {};
       const required = cols.filter((c) => c.required && c.name !== "sensitivity_label" && !(c.name in also));
@@ -330,21 +395,24 @@ describe("every labelled table", () => {
         if (ctids.length > 0) await owner.query(`DELETE FROM "${table}" WHERE ctid = ANY($1::tid[])`, [ctids]);
       }
     }
-    await owner.query(`SET session_replication_role = origin`);
-  }, 120_000);
+    // A superuser checks them again now; the rows are its to leave. A plain
+    // owner's keys stay away until the rows are gone.
+    if (superuser) await foreignKeys(true);
+  }, 240_000);
 
   afterAll(async () => {
-    await owner.query(`SET session_replication_role = replica`);
+    if (superuser) await foreignKeys(false);
     for (const [table, ctids] of written) {
       await owner.query(`DELETE FROM "${table}" WHERE ctid = ANY($1::tid[])`, [ctids]);
     }
+    await foreignKeys(true);
     await owner.end();
-  });
+  }, 240_000);
 
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(95);
+    expect(written.size).toBe(98);
   });
 
   for (const reader of READERS) {
@@ -547,12 +615,129 @@ describe("a write", () => {
     await refused(() => at(A, () => insertAt(C)));
     await refused(() => insertAt(A));
     await refused(() => at(PUBLIC_LABEL, () => insertAt(A)));
-    // A row cannot be moved out of the clearance either.
-    const [own] = await at(A, () => insertAt(A));
-    cleanup.push(own!.id);
-    await refused(() => at(A, () => rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [own!.id, B])));
-    // And nothing was written.
-    expect(await system(() => rawQuery(`SELECT 1 FROM claims WHERE id = $1 AND sensitivity_label <> $2`, [own!.id, A]))).toEqual([]);
+  });
+
+  /** The write was refused because it would have changed a row's label (MVL04). */
+  const labelStays = async (write: () => Promise<unknown>) => {
+    const err = await write().then(
+      () => null,
+      (e: unknown) => e
+    );
+    // The query builder wraps the database's error; the code is on its cause.
+    const refusal = (sqlState(err) ? err : (err as { cause?: unknown } | null)?.cause) as Error | undefined;
+    expect(sqlState(refusal)).toBe("MVL04");
+    expect(refusal!.message).toMatch(/a row's label does not change/);
+  };
+  const labelOfClaim = async (id: string) =>
+    (await system(() => rawQuery<{ l: string }>(`SELECT sensitivity_label AS l FROM claims WHERE id = $1`, [id])))[0]!.l;
+
+  // A reviewer moved rows with a plain UPDATE: down to public from a run
+  // that read them, across from a person cleared for both labels, and up,
+  // which took a public row out of everyone else's sight. The policy allows
+  // all three (the new label is one the connection reads); the trigger on
+  // the column refuses them.
+  it("never changes a row's label: not down to public, not across, not up, and not through an upsert", async () => {
+    const [atC] = await at(C, () => insertAt(C));
+    const [atA] = await at(A, () => insertAt(A));
+    const [open] = await insertAt(PUBLIC_LABEL);
+    cleanup.push(atC!.id, atA!.id, open!.id);
+
+    // Down: a run at c reads c, a and public.
+    await labelStays(() =>
+      at(C, () => rawQuery(`UPDATE claims SET sensitivity_label = 'public' WHERE id = ANY($1::uuid[])`, [[atC!.id, atA!.id]]))
+    );
+    // Across: a person cleared for a and b, whose request writes at public.
+    await labelStays(() =>
+      runWithUsageContext({ clearance: [PUBLIC_LABEL, A, B] }, () =>
+        rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [atA!.id, B])
+      )
+    );
+    // Up: a run at a would hide a public row from everyone who does not read a.
+    await labelStays(() => at(A, () => rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [open!.id, A])));
+    // Out of the clearance altogether: the trigger answers before the policy does.
+    await labelStays(() => at(A, () => rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [atA!.id, B])));
+    // Through an upsert that takes the label from the incoming row.
+    await labelStays(() =>
+      at(A, () =>
+        rawQuery(
+          `INSERT INTO claims (id, text, sensitivity_label) VALUES ($1, 'Enforcement upsert', $2)
+           ON CONFLICT (id) DO UPDATE SET sensitivity_label = EXCLUDED.sensitivity_label`,
+          [open!.id, A]
+        )
+      )
+    );
+    // Through the query builder.
+    await labelStays(() =>
+      at(C, () => getDb().update(claims).set({ sensitivityLabel: PUBLIC_LABEL }).where(sql`${claims.id} = ${atA!.id}`))
+    );
+
+    expect(await labelOfClaim(atC!.id)).toBe(C);
+    expect(await labelOfClaim(atA!.id)).toBe(A);
+    expect(await labelOfClaim(open!.id)).toBe(PUBLIC_LABEL);
+    // Nothing came into sight, and nothing went out of it.
+    expect(await rawQuery(`SELECT 1 FROM claims WHERE id = ANY($1::uuid[])`, [[atC!.id, atA!.id]])).toEqual([]);
+    expect(await rawQuery(`SELECT 1 FROM claims WHERE id = $1`, [open!.id])).toHaveLength(1);
+
+    // A statement that names the column and leaves it as it is goes through,
+    // as does every update that does not name it.
+    await at(A, () => rawQuery(`UPDATE claims SET sensitivity_label = sensitivity_label, importance = 0.4 WHERE id = $1`, [atA!.id]));
+    await at(A, () => rawQuery(`UPDATE claims SET importance = 0.5 WHERE id = $1`, [atA!.id]));
+    // The owner is not held: moving a row to a label more people read (a
+    // release) will be its to do.
+    await system(() => rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [atA!.id, B]));
+    expect(await labelOfClaim(atA!.id)).toBe(B);
+    await system(() => rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [atA!.id, A]));
+  });
+
+  // The one change of label there is: a ledger row stands for its group's
+  // next piece of work, so a finished row that is opened again takes the
+  // label of the work that reopens it (LABEL_ON_REOPEN_SQL in
+  // services/action-service.ts). The trigger lets exactly that through.
+  it("lets a finished ledger row take the label of the work that reopens it, and nothing else", async () => {
+    const group = `enf-reopen:${randomUUID()}`;
+    const [row] = await system(() =>
+      rawQuery<{ id: string }>(
+        `INSERT INTO actions (kind, exclusion_group, variant, label, cost_est_micro_usd, status, sensitivity_label)
+         VALUES ('assess', $1, 'standard', 'Enforcement reopen', 1, 'done', 'public') RETURNING id`,
+        [group]
+      )
+    );
+    const state = async () =>
+      (await system(() =>
+        rawQuery<{ status: string; l: string }>(`SELECT status, sensitivity_label AS l FROM actions WHERE id = $1`, [row!.id])
+      ))[0]!;
+    const reopenAt = (label: string, stamp: string) =>
+      at(label, () =>
+        rawQuery(
+          `INSERT INTO actions (kind, exclusion_group, variant, label, cost_est_micro_usd, sensitivity_label)
+           VALUES ('assess', $1, 'standard', 'Enforcement reopen', 1, $2)
+           ON CONFLICT (exclusion_group, variant) DO UPDATE
+             SET status = 'open',
+                 sensitivity_label = CASE WHEN actions.status IN ('open', 'running')
+                                          THEN actions.sensitivity_label ELSE EXCLUDED.sensitivity_label END`,
+          [group, stamp]
+        )
+      );
+    try {
+      // Finished at public; work at a reopens it, and it is that work's row now.
+      await reopenAt(A, A);
+      expect(await state()).toEqual({ status: "open", l: A });
+      // Open: work at c, which reads a, joins it and the row keeps its label.
+      await reopenAt(C, C);
+      expect(await state()).toEqual({ status: "open", l: A });
+      // An open row is not handed over by a plain update either.
+      await labelStays(() => at(C, () => rawQuery(`UPDATE actions SET sensitivity_label = $2 WHERE id = $1`, [row!.id, C])));
+      // A finished row takes the reopener's own label and no other: not one it merely reads.
+      await system(() => rawQuery(`UPDATE actions SET status = 'done' WHERE id = $1`, [row!.id]));
+      await labelStays(() =>
+        at(C, () => rawQuery(`UPDATE actions SET status = 'open', sensitivity_label = 'public' WHERE id = $1`, [row!.id]))
+      );
+      expect(await state()).toEqual({ status: "done", l: A });
+      await reopenAt(C, C);
+      expect(await state()).toEqual({ status: "open", l: C });
+    } finally {
+      await system(() => rawQuery(`DELETE FROM actions WHERE id = $1`, [row!.id]));
+    }
   });
 
   it("that is refused is answered by a route as a conflict, with the reason, and not as a fault", async () => {

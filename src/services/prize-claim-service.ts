@@ -838,9 +838,9 @@ export async function fundPrizeReviewAction(
   const allocated = Math.min(room, Math.max(0, Math.round(estimateMicroUsd)));
   if (job && allocated > 0) {
     await r.query(
-      `INSERT INTO action_allocations (exclusion_group, action_id, claim_id, user_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [`prize_review:${claim.id}`, action!.id, claim.claim_id, job.user_id, allocated]
+      `INSERT INTO action_allocations (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [`prize_review:${claim.id}`, action!.id, claim.claim_id, job.user_id, allocated, currentLabel()]
     );
   }
   return { actionId: action!.id, allocated };

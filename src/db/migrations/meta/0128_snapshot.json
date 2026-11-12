@@ -1,5 +1,5 @@
 {
-  "id": "d6b80d40-a550-4908-a8b0-c33d85b7dba3",
+  "id": "763ad489-b020-4566-895e-4c03c819bd08",
   "prevId": "57e691c1-e4a8-48f1-88fe-4cc69368562e",
   "version": "7",
   "dialect": "postgresql",
@@ -164,6 +164,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -335,6 +342,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "action_allocations_sensitivity_label_labels_name_fk": {
+          "name": "action_allocations_sensitivity_label_labels_name_fk",
+          "tableFrom": "action_allocations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11286,7 +11306,12 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_label_reads_public_reads_nothing": {
+          "name": "ck_label_reads_public_reads_nothing",
+          "value": "\"label_reads\".\"label\" <> 'public'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.labels": {
@@ -11321,7 +11346,7 @@
       "checkConstraints": {
         "labels_name_plain": {
           "name": "labels_name_plain",
-          "value": "\"labels\".\"name\" ~ '^[a-z][a-z0-9_-]{0,62}$'"
+          "value": "\"labels\".\"name\" ~ '^[a-z][a-z0-9_-]{0,62}$' AND \"labels\".\"name\" <> 'null'"
         }
       },
       "isRLSEnabled": false
@@ -13489,6 +13514,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13533,6 +13565,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mandate_valuations_sensitivity_label_labels_name_fk": {
+          "name": "mandate_valuations_sensitivity_label_labels_name_fk",
+          "tableFrom": "mandate_valuations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -16811,6 +16856,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -16870,6 +16922,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "regrants_sensitivity_label_labels_name_fk": {
+          "name": "regrants_sensitivity_label_labels_name_fk",
+          "tableFrom": "regrants",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -19612,6 +19677,9 @@
       "name": "argument_evaluations_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     },
     "public.assessments_in_force": {
@@ -19747,6 +19815,9 @@
       "name": "assessments_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     },
     "public.quantity_estimates_in_force": {
@@ -19845,6 +19916,9 @@
       "name": "quantity_estimates_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     },
     "public.question_assessments_in_force": {
@@ -19968,6 +20042,9 @@
       "name": "question_assessments_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     }
   },

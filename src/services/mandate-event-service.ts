@@ -48,7 +48,7 @@ export function resetMandateEventTick(): void {
 /** The nodes a mandate's work touches: what it paid for, planned, or is scoped to. */
 const INTEREST_SQL = (node: string) => `(
      ${node}.funded_by_job_id = g.budget_job_id
-  OR EXISTS (SELECT 1 FROM action_allocations al
+  OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
               WHERE al.grant_id = g.id AND al.exclusion_group = 'assess:' || ${node}.claim_id::text)
   OR ${node}.claim_id = g.scope_claim_id
   OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it

@@ -75,7 +75,7 @@ async function hasLiveLedgerWork(grantId: string, ownRows: boolean): Promise<boo
     `SELECT COUNT(*)::int AS n FROM actions a
       WHERE a.status IN ('open', 'running')
         AND (($2::boolean AND a.target_ref = $1::text)
-             OR EXISTS (SELECT 1 FROM action_allocations al
+             OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.grant_id = $1::uuid AND al.released_at IS NULL
                            AND al.spent_micro_usd < al.amount_micro_usd))`,
@@ -91,7 +91,7 @@ async function hasLiveLedgerWork(grantId: string, ownRows: boolean): Promise<boo
  */
 async function releaseOrdersOnParkedNodes(grantId: string): Promise<void> {
   await rawQuery(
-    `UPDATE action_allocations al SET released_at = now()
+    `UPDATE minerval_whole.allocation_money al SET released_at = now()
       WHERE al.grant_id = $1 AND al.commissioned_by = $2
         AND al.released_at IS NULL AND al.spent_micro_usd = 0
         AND EXISTS (SELECT 1 FROM claims c

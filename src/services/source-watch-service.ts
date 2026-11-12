@@ -402,6 +402,31 @@ export async function sourcesForDois(dois: string[]): Promise<
   );
 }
 
+/**
+ * The sources with these ids as the work in progress reads them, each with
+ * the active nodes that have a live passage from it: the rows sourcesForDois
+ * returns, for sources already matched. A fan-out that found its sources
+ * with every label in sight reads them again through this at each
+ * recipient's label, so that what it writes for a recipient holds only what
+ * that recipient reads (db/clearance.ts).
+ */
+export async function sourcesWithClaims(
+  sourceIds: string[]
+): Promise<Array<{ source_id: string; url: string; title: string; claim_ids: string[] }>> {
+  const ids = [...new Set(sourceIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  if (ids.length === 0) return [];
+  return rawQuery(
+    `SELECT s.id AS source_id, s.url, s.title,
+            COALESCE(array_agg(DISTINCT ci.claim_id) FILTER (WHERE c.id IS NOT NULL), '{}') AS claim_ids
+       FROM sources s
+       LEFT JOIN claim_instances ci ON ci.source_id = s.id AND ci.detached_at IS NULL
+       LEFT JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
+      WHERE s.id = ANY($1::uuid[])
+      GROUP BY s.id`,
+    [ids]
+  );
+}
+
 /** How a claim comes to rest on a watched source (#507). */
 export type RestingVia =
   /** The claim asserts a republished copy or another version of the source's work. */

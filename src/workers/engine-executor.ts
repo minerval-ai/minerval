@@ -244,7 +244,7 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
             0::bigint AS coverage_micro_usd
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
-        AND NOT EXISTS (SELECT 1 FROM action_allocations al
+        AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL)
         -- A prize audit is the bounty reserve's to fund, never the lane's.
