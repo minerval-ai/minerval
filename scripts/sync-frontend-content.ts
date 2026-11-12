@@ -191,7 +191,7 @@ const AGENTS: AgentMeta[] = [
   { key: "redactor", name: "Redactor", stage: 10, group: "governance",
     tagline: "Prepares a page written at one label to be shown to readers who may not read that label, under the policy for that boundary. It removes the passages a category of the policy covers and marks each removal in place. Its tools change no word of the page, and it does not decide what is then released.",
     invokedWhen: "In a deployment that holds material at more than one label: a person who directs the graph asks for a node's page to be shown to readers who do not read its label, and again for each later version while a standing showing stands. Each run is a ledger action that runs when it is paid for. The public graph has one label and no Redactor runs there.",
-    model: modelLabel(MODELS.sonnet), fn: getRedactorSystemPrompt },
+    model: `${modelLabel(MODELS.strong)} (the Steward's model, unless REDACTOR_MODEL names another)`, fn: getRedactorSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no
   // constitution, and writes nothing to the graph; its prompt is the

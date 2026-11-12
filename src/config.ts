@@ -1082,6 +1082,20 @@ const configSchema = z.object({
   // (auditModel) so it can run on Opus without also upgrading the reviewer.
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
+  // The Redactor's model (services/showing-service.ts), where a deployment
+  // shows pages to readers who do not read their label. Unset, it is the
+  // Steward's (stewardModel): the Redactor reads a page a Steward wrote and
+  // the sources behind it, and has to see what a passage gives away as well
+  // as its writer could have. It has a setting of its own so that the
+  // redaction and Audit's check of it need not run on one model.
+  redactorModel: z
+    .string()
+    .default("")
+    .superRefine((id, ctx) => {
+      if (id && !isSupportedModelId(id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: unresolvableModelIdMessage(id) });
+      }
+    }),
   // Arbitration is the highest-stakes governance call; production sets
   // ARBITRATION_MODEL=claude-fable-5-2 (the frontier tier: few runs, each one
   // final).
@@ -1487,6 +1501,7 @@ export function loadConfig(): Config {
     extractorFallbackModel: process.env.EXTRACTOR_FALLBACK_MODEL,
     governanceModel: process.env.GOVERNANCE_MODEL,
     auditModel: process.env.AUDIT_MODEL,
+    redactorModel: process.env.REDACTOR_MODEL,
     arbitrationModel: process.env.ARBITRATION_MODEL,
     extensionModel: process.env.EXTENSION_MODEL,
     grantmakerModel: process.env.GRANTMAKER_MODEL,

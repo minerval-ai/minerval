@@ -360,3 +360,24 @@ describe("loadConfig API key contributor bindings (issue #10)", () => {
     expect(config.apiKeyContributors).toEqual({});
   });
 });
+
+describe("the Redactor's model", () => {
+  it("is a setting of its own, unset unless REDACTOR_MODEL names one, and refused when it names a model that cannot be reached", async () => {
+    const load = async (value?: string) => {
+      vi.resetModules();
+      if (value === undefined) delete process.env.REDACTOR_MODEL;
+      else process.env.REDACTOR_MODEL = value;
+      const { loadConfig } = await import("../../src/config.js");
+      return loadConfig();
+    };
+    try {
+      // Unset, the Redactor runs on the Steward's model (src/llm/agents/redactor.ts).
+      expect((await load()).redactorModel).toBe("");
+      expect((await load("claude-opus-5-5")).redactorModel).toBe("claude-opus-5-5");
+      await expect(load("us.anthropic.not-a-model")).rejects.toThrow();
+    } finally {
+      delete process.env.REDACTOR_MODEL;
+      vi.resetModules();
+    }
+  });
+});

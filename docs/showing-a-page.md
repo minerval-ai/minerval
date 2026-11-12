@@ -190,6 +190,14 @@ No tool writes a word onto the page. The Redactor's notes, its account of
 what it was least sure of, and its reason for `cannot_cross` stay at the
 page's label.
 
+The Redactor runs on the model `REDACTOR_MODEL` names, and on the Steward's
+model (`STEWARD_MODEL`) where that is unset: it reads a page a Steward wrote
+and has to see what a passage gives away as well as the writer could have.
+Audit has its own setting (`AUDIT_MODEL`), so the check and the work need
+not share a model. Like every model setting, it is checked when the
+configuration loads (an endpoint it names must be declared), and a run is
+served only by a provider cleared for the label it works at.
+
 The Redactor is told its budget and a turn guard, as every agent is. It
 works under no other limit: how many passages it removes, and how many
 times a page comes back from Audit, are bounded by what the work is paid.
@@ -360,8 +368,6 @@ was written at.
 - **Whose release a part takes is worked out from what is recorded.** A run
   that read a document without recording it as a source of the node leaves
   no trace for this to find.
-- **Audit and the Redactor run on the same configured model** until the
-  Redactor has a setting of its own.
 
 ## Routes and tools
 

@@ -35,10 +35,11 @@ export function redactorTaskMessage(input: { round: number }): string {
 export function runRedactor(input: { pageId: string; model?: string }): Promise<void> {
   return withAgent("redactor", async () => {
     const config = loadConfig();
-    // The Redactor reads closely against a written standard, as Audit does,
-    // and runs on the model configured for that work until it has a setting
-    // of its own.
-    const model = input.model ?? config.auditModel;
+    // Its own setting (REDACTOR_MODEL), and the Steward's model where that
+    // is unset: it reads a Steward's page and has to see what a passage
+    // gives away as well as the writer could have. Audit, which checks its
+    // work, has a setting of its own, so the two need not share a model.
+    const model = input.model ?? (config.redactorModel || config.stewardModel);
     const { showingPage } = await import("../../services/showing-service.js");
     const page = await showingPage(input.pageId);
     if (!page) throw new Error(`No page ${input.pageId} is read at this run's label.`);
