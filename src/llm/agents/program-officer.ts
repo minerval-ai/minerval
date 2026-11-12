@@ -28,7 +28,7 @@ import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import { claimAction, completeAction, releaseAction } from "../../services/action-service.js";
-import { commissionAction, commissionNodePass, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
+import { commissionAction, commissionNodePass, commissionNoteText, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import { refreshCurationInboxItems } from "../../services/maintenance-funding.js";
 import {
@@ -678,7 +678,7 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
             ok: true,
             message:
               r.status === "commissioned"
-                ? `Commissioned the ${r.kind} at ${owls(budget)} owls.` + (r.quote ? ` ${r.quote.note}` : "")
+                ? `Commissioned the ${r.kind} at ${owls(budget)} owls.` + (r.quote ? ` ${r.quote.note}` : "") + (r.waiting ? ` ${r.waiting.note}` : "")
                 : "That work already has a run paid for or underway; nothing more was spent.",
           });
         } else {
@@ -714,7 +714,7 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
             (res.status === "commissioned"
               ? `Commissioned a ${res.tier} pass at ${owls(budget)} owls.`
               : "That node already had a pass paid for; your brief joined its inbox, at no cost.") +
-            (res.parked ? ` ${res.parked.note}` : ""),
+            commissionNoteText(res),
         });
       } else {
         results.push({ target, ok: false, message: res.message });

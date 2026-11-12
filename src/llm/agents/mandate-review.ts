@@ -78,6 +78,7 @@ import {
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
 import { reflectionSections } from "../../services/mandate-reflection-service.js";
 import { allocationDayUseSql } from "../../services/day-use.js";
+import { platformFaultBriefing } from "../../services/deployment-fault-service.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
@@ -626,6 +627,10 @@ async function runMandateReviewImpl(input: {
         (inbox.total > inbox.events.length
           ? `\n- ...and ${inbox.total - inbox.events.length} more, shown on your next pass.`
           : ``);
+  // Platform faults (#971): open ones, ones that came and went since the
+  // last pass, and this mandate's rows waiting on one. A fault wakes no
+  // review; this is where the mandate reads of it.
+  const faultText = await platformFaultBriefing(grant.id, lastReviewAt ?? null).catch(() => "");
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -659,6 +664,7 @@ async function runMandateReviewImpl(input: {
     `this, ${WAKE_AFTER_MINUTES} minutes or more after your last pass ended so that ` +
     `a burst is judged together, and otherwise once a day. Each pass is ` +
     `paid from your escrow within your daily rate.\n\n` +
+    (faultText ? `${faultText}\n\n` : ``) +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your correspondents (readers you fund for an audience; correspondent_report for detail):\n\n${correspondentText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +

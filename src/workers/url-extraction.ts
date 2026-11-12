@@ -37,6 +37,7 @@ import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
 import { recordArgumentPassages } from "../services/argument-passage-service.js";
+import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
 
 /**
  * Handle a URL extraction message:
@@ -73,11 +74,50 @@ export async function handleUrlExtraction(
       )
     ));
   } catch (err) {
+    const group = message.ingestGroup ?? `ingest:${message.url}`;
+    // A deployment fault (a model provider out of credits, or its key
+    // rejected) says nothing about the source: the ledger row is not
+    // cancelled. Other failures still are, a page that cannot be fetched
+    // among them, since retrying those forever buys nothing. It goes back to open and
+    // waits (action-service.ts, releaseAction), and the engine executor
+    // submits the source again when the wait ends, for as long as the fault
+    // lasts. The mandate that planned the ingest places nothing new, and
+    // its review is not woken for it (mandate-event-service.ts). On
+    // 2026-11-12 a planned ingest was cancelled for a provider's 402, and
+    // again when its mandate re-added it by hand (#971).
+    const fault = deploymentFaultOf(err);
+    if (fault) {
+      const held = await holdIngestAction(group, err);
+      // The job is recorded by the fault's public class, in one write with
+      // whether the platform retries it: the job's error is read by whoever
+      // submitted the source and in a mandate's briefing, and a provider's
+      // own text names accounts and request ids.
+      await updateJob(message.jobId, {
+        status: "failed",
+        error:
+          `The extraction did not finish because of ${PLATFORM_FAULT_LABELS[fault]}. Nothing about the ` +
+          `source failed` +
+          (held ? `, and the platform submits it again on its own.` : `.`),
+        result: { platform_fault: fault, ...(held ? { retried_by_platform: true } : {}) },
+      }).catch(() => null);
+      if (held) {
+        // The ledger owns the retry, so the message is done: thrown, the
+        // queue would redeliver it and run a second extraction beside the
+        // ledger's.
+        console.warn(
+          `[url-extraction] ${message.url}: stopped by a platform fault (${fault}); its ledger row waits and is retried`
+        );
+        return;
+      }
+      // No ledger row behind it (a source submitted directly): the queue's
+      // own redelivery is the retry.
+      throw err;
+    }
     // A failed extraction must still terminate the ledger ingest action —
     // left 'running' it would strand its funders' allocations, and a
     // reconcile reopen would re-submit (and re-charge) the same URL.
     // Cancelling retires the group; the plan cursor skips cancelled items.
-    await cancelIngestAction(message.ingestGroup ?? `ingest:${message.url}`);
+    await cancelIngestAction(group);
     throw err;
   }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
@@ -122,6 +162,38 @@ async function completeIngestAction(
       "[url-extraction] ingest action completion failed:",
       err instanceof Error ? err.message : err
     );
+  }
+}
+
+/**
+ * Put the group's live ingest row into its wait on the platform fault that
+ * stopped this extraction. False when no ledger row is behind the
+ * extraction (a source someone submitted directly), so nothing here would
+ * retry it.
+ */
+async function holdIngestAction(group: string, err: unknown): Promise<boolean> {
+  try {
+    const [live] = await rawQuery<{ id: string; status: string }>(
+      `SELECT id, status FROM actions
+        WHERE exclusion_group = $1 AND status IN ('running', 'open')
+        ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END
+        LIMIT 1`,
+      [group]
+    );
+    if (!live) return false;
+    // An 'open' row was reopened by a sweep while this ran: it is already
+    // back in the queue.
+    if (live.status === "running") {
+      const { releaseAction } = await import("../services/action-service.js");
+      await releaseAction(live.id, err);
+    }
+    return true;
+  } catch (e) {
+    console.error(
+      "[url-extraction] holding the ingest action failed:",
+      e instanceof Error ? e.message : e
+    );
+    return false;
   }
 }
 
@@ -541,10 +613,14 @@ async function processUrlExtraction(
       },
     });
   } catch (err) {
-    await updateJob(message.jobId, {
-      status: "failed",
-      error: err instanceof Error ? err.message : String(err),
-    });
+    // A platform fault is recorded by handleUrlExtraction, by its public
+    // class and with whether the platform retries the ingest.
+    if (!deploymentFaultOf(err)) {
+      await updateJob(message.jobId, {
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     throw err;
   }
 }
