@@ -20,14 +20,15 @@ describe("the guard on mirrored rows and the manifest", () => {
   it("guards exactly the replicated tables", async () => {
     const guarded = await rawQuery<{ table_name: string }>(
       `SELECT DISTINCT t.tgrelid::regclass::text AS table_name
-         FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname LIKE 'mirror_row_guard_%' ORDER BY 1`
+         FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname LIKE 'mirror_row_guard_%'`
     );
-    expect(guarded.map((g) => g.table_name)).toEqual(replicatedTables().map((t) => t.name).sort());
+    // Sorted here, not by the database: how it orders text depends on its collation.
+    expect(guarded.map((g) => g.table_name).sort()).toEqual(replicatedTables().map((t) => t.name).sort());
     const withOrigin = await rawQuery<{ table_name: string }>(
       `SELECT table_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND column_name = 'origin' AND column_default = '''local''::text' ORDER BY 1`
+        WHERE table_schema = 'public' AND column_name = 'origin' AND column_default = '''local''::text'`
     );
-    expect(withOrigin.map((w) => w.table_name)).toEqual(replicatedTables().map((t) => t.name).sort());
+    expect(withOrigin.map((w) => w.table_name).sort()).toEqual(replicatedTables().map((t) => t.name).sort());
   });
 
   it("leaves unguarded, on an update, exactly the columns the manifest says are local or generated", async () => {
