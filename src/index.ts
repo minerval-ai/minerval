@@ -9,7 +9,7 @@ import { assertSkillToolsRegistered } from "./llm/tools/skill-tools.js";
 import { getDb, closeDb, rawQuery } from "./db/client.js";
 import { ensureSqlRoles, hasSqlRoleCredentials } from "./db/sql-roles.js";
 import { withSystemClearance } from "./db/clearance.js";
-import { ensureEnforcement } from "./db/enforcement.js";
+import { enforcementFacts, enforcementProblems, ensureEnforcement } from "./db/enforcement.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
@@ -95,7 +95,19 @@ async function main() {
   try {
     const { on, changes } = await ensureEnforcement();
     for (const line of changes) console.log(`[labels] ${line}`);
-    if (on) console.log("[labels] reads and writes are held to a clearance in the database");
+    if (on) {
+      // The step has run; now look at what is really there, a live cleared
+      // connection included. Anything wrong (a table without its policy, a
+      // view that reads as the owner, a materialized view, a cleared role
+      // nothing binds) stops the start: the catch below lets a failure pass
+      // only where `public` is the only label, and here it is not.
+      const problems = enforcementProblems(await enforcementFacts());
+      for (const problem of problems) console.error(`[labels] ${problem}`);
+      if (problems.length > 0) {
+        throw new Error(`The database is not holding reads to a clearance as it should: ${problems.length} problem(s), listed above.`);
+      }
+      console.log("[labels] reads and writes are held to a clearance in the database");
+    }
   } catch (err) {
     const others = await withSystemClearance(
       "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",

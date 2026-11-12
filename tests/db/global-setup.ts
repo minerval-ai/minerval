@@ -6,7 +6,8 @@
  *     DROP + CREATE the scratch database (TEST_DATABASE_URL's db name).
  *     Where TEST_DATABASE_URL names another role than the maintenance
  *     connection's, that role is made if it is not there (a login that may
- *     create roles and is not a superuser) and owns the database: the
+ *     create roles and databases and is not a superuser, which is what a
+ *     managed Postgres gives a deployment) and owns the database: the
  *     suite then runs as a deployment's owner does on a managed Postgres,
  *     where no application role is a superuser (`npm run test:db:owner`).
  *  2. CREATE EXTENSION vector (migration 0000 needs it), as the
@@ -129,7 +130,7 @@ export default async function globalSetup(project: {
       const password = decodeURIComponent(owner.password);
       const [statement] = (
         await admin.query<{ sql: string }>(
-          `SELECT format('%s ROLE %I LOGIN CREATEROLE NOSUPERUSER PASSWORD %L', $1::text, $2::text, $3::text) AS sql`,
+          `SELECT format('%s ROLE %I LOGIN CREATEROLE CREATEDB NOSUPERUSER PASSWORD %L', $1::text, $2::text, $3::text) AS sql`,
           [existing.rows.length > 0 ? "ALTER" : "CREATE", ownerRole, password]
         )
       ).rows;
