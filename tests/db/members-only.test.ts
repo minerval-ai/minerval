@@ -425,6 +425,16 @@ describe("what a permission guards", () => {
       "POST /grants/:id/approve": ["direct"],
       "POST /correspondents/:id/poke": ["direct"],
       "POST /sources": ["direct"],
+      "POST /showings": ["direct"],
+      "POST /showings/:showing_id/end": ["direct"],
+      "POST /showings/:showing_id/pages/:page_id/hold": ["direct"],
+      "POST /showings/:showing_id/pages/:page_id/commission": ["fund"],
+      "GET /release/queue": ["release"],
+      "POST /release/decisions": ["release"],
+      "GET /release/rules": ["release"],
+      "POST /release/rules": ["release"],
+      "DELETE /release/rules/:rule_id": ["release"],
+      "PUT /redaction-policies": ["administer"],
       "POST /grant-conversations/:id/fund": ["fund"],
       "POST /grants/:id/topup": ["fund"],
       "POST /mandates/:id/contribute": ["fund"],
@@ -639,19 +649,26 @@ describe("an MCP caller and the Assistant", () => {
     expect(note).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(note).toMatch(/Without the permission to fund work: .*fund_mandate/);
     expect(note).toMatch(/Without the permission to administer the deployment: .*list_permission_grants/);
-    expect(note).not.toMatch(/read at a label|release/);
+    expect(note).toMatch(/Without the permission to release one party's material: get_release_queue, list_release_rules/);
+    expect(note).not.toMatch(/read at a label/);
     await limited.close();
 
     await grant(admin, { permission: "fund", account_id: reader.id });
     await grant(admin, { permission: "direct", account_id: reader.id });
     const wider = await openAccountTools(app, assistantAuth({ id: reader.id, externalId: reader.externalId }), "t2");
     expect(wider.definitions.map((d) => d.name)).toEqual(expect.arrayContaining(["fund_mandate", "start_grant_conversation", "submit_source"]));
-    expect(wider.withheld!.every((w) => w.permission === "administer")).toBe(true);
+    // Releasing is granted for one party, and this person holds it for none.
+    expect(wider.withheld!.every((w) => w.permission === "administer" || w.permission === "release")).toBe(true);
     await wider.close();
 
     const everything = await openAccountTools(app, assistantAuth({ id: admin.id, externalId: admin.externalId }), "t3");
-    expect(everything.withheld).toEqual([]);
-    expect(permissionsNote(everything.withheld!)).toBe("");
+    // The first administrator holds every permission that is held with no scope. Releasing is
+    // granted for one party, so its two tools wait for that grant.
+    expect(everything.withheld).toEqual([
+      { permission: "release", tool: "get_release_queue" },
+      { permission: "release", tool: "list_release_rules" },
+    ]);
+    expect(permissionsNote(everything.withheld!)).toMatch(/Without the permission to release one party's material: get_release_queue, list_release_rules/);
     // No one is offered a tool that changes who may do what: those take a session.
     const all = everything.definitions.map((d) => d.name);
     expect(all.filter((n) => /grant_permission|remove_permission|add_party|define_label|set_source_party/.test(n))).toEqual([]);
@@ -668,6 +685,140 @@ describe("an MCP caller and the Assistant", () => {
       const isRead = key.startsWith("GET ");
       expect(key in ROUTE_TOOLS, key).toBe(isRead);
       expect(key in MCP_EXCLUDED_ROUTES, key).toBe(!isRead);
+    }
+  });
+});
+
+describe("showing a page to readers who do not read its label, over HTTP", () => {
+  it("is asked for by a person who directs, read on the other side in fixed words, and released only by a holder of release", async () => {
+    const { withSystemClearance } = await import("../../src/db/clearance.js");
+    const { runAtLabel, withAgent } = await import("../../src/llm/usage-context.js");
+    const { executeRedactorTool } = await import("../../src/llm/tools/redactor-tools.js");
+    const { executeAuditTool } = await import("../../src/llm/tools/audit-tools.js");
+    const { ensureEnforcement } = await import("../../src/db/enforcement.js");
+    await ensureEnforcement();
+    const system = <T>(fn: () => Promise<T>) => withSystemClearance("A test seeds and removes rows at every label.", fn);
+    const SECRET = "the vault code 9931";
+
+    const director = await signIn("shows-a-page");
+    await grant(admin, { permission: "read", account_id: director.id, label: "restricted" });
+    await grant(admin, { permission: "direct", account_id: director.id });
+    const reader = await signIn("reads-internal-only");
+    await grant(admin, { permission: "read", account_id: reader.id, label: "internal" });
+    const releaser = await signIn("releases-for-the-organization");
+    await grant(admin, { permission: "read", account_id: releaser.id, label: "internal" });
+
+    const made = await as(admin, { method: "POST", url: "/parties", payload: { name: "The Showing Organization", is_own_organization: true } });
+    const [org] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    expect([201, 409]).toContain(made.statusCode);
+    await grant(admin, { permission: "release", account_id: releaser.id, party_id: org!.id });
+
+    const node = await system(async () => {
+      const [claim] = await rawQuery<{ id: string }>(
+        `INSERT INTO claims (text, steward_state, tagged_at, sensitivity_label) VALUES ($1, 'done', now(), 'restricted') RETURNING id`,
+        [`The vault was resealed (${randomUUID()})`]
+      );
+      await rawQuery(
+        `INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label)
+         VALUES ($1, 'verified', 0.9, 'The seal log shows it.', $2, true, 'restricted')`,
+        [claim!.id, `The seal log records the reseal.\n\nThe log also gives ${SECRET}.`]
+      );
+      return claim!.id;
+    });
+    try {
+      // Asking takes the permission to direct and a page the person reads.
+      const body = { node_id: node, page_label: "restricted", to_label: "internal", form: "standing", scope: "node" };
+      const byReader = await as(reader, { method: "POST", url: "/showings", payload: body });
+      expect(byReader.statusCode).toBe(403);
+      expect(byReader.json().permission).toBe("direct");
+      const noDestination = await as(director, { method: "POST", url: "/showings", payload: { ...body, to_label: undefined } });
+      expect(noDestination.json()).toEqual({ error: "Say where the page is to be shown: to_label, or outside.", code: "NO_DESTINATION" });
+      const asked = await as(director, { method: "POST", url: "/showings", payload: body });
+      expect(asked.statusCode, asked.body).toBe(201);
+      const showingId = asked.json().showing_id as string;
+
+      // The other side reads the showing at once, with the page held and none of its words.
+      const listed = (await as(reader, { url: "/showings" })).json();
+      expect(listed.shown.map((s: { showing_id: string }) => s.showing_id)).toContain(showingId);
+      expect(listed.asked).toEqual([]);
+      const record = (await as(reader, { url: `/showings/${showingId}` })).json();
+      expect(record.asked_by).toBe("shows-a-page");
+      expect(record.asked_holding).toEqual(["direct"]);
+      expect(record.nodes[0]).toMatchObject({ state: "held", text: null });
+      const pageId = record.nodes[0].versions[0].page_id as string;
+      expect((await as(reader, { url: `/showings/${showingId}/pages/${pageId}` })).json()).toMatchObject({ state: "held", verification: null });
+      expect((await as(reader, { url: "/redaction-policies" })).json().policies).toHaveLength(1);
+
+      // The Redactor and Audit, at the page's label.
+      const at = <T>(agent: string, fn: () => Promise<T>) => runAtLabel("restricted", "a test's run", () => withAgent(agent, fn));
+      const redacted = JSON.parse(await at("redactor", () => executeRedactorTool("redact", { part: 4, passage: SECRET, category: "security detail", note: "A code." }, { pageId })));
+      expect(redacted.success, JSON.stringify(redacted)).toBe(true);
+      expect(JSON.parse(await at("redactor", () => executeRedactorTool("finish_redaction", { least_sure: [] }, { pageId }))).success).toBe(true);
+      expect(JSON.parse(await at("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: pageId, outcome: "pass", answer: "supports", reasons: "One code removed." }, {}))).success).toBe(true);
+
+      // The gate: a person who directs does not release, and a holder of release who does not read the label decides without the text.
+      expect((await as(director, { url: "/release/queue" })).statusCode).toBe(403);
+      const queue = (await as(releaser, { url: "/release/queue" })).json();
+      expect(queue.items.map((i: { part: number | null }) => i.part)).toEqual([null, 1, 2, 3, 4]);
+      expect(JSON.stringify(queue)).not.toContain("vault");
+      expect(queue.items[4].removals_by_category).toEqual({ "security detail": 1 });
+      const refusedForDirector = await as(director, { method: "POST", url: "/release/decisions", payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }] } });
+      expect(refusedForDirector.statusCode).toBe(403);
+      const decided = await as(releaser, {
+        method: "POST",
+        url: "/release/decisions",
+        payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }, ...[1, 2, 3, 4].map((part) => ({ page_id: pageId, part }))] },
+      });
+      expect(decided.statusCode, decided.body).toBe(200);
+      expect(decided.json()).toMatchObject({ decided: 5, refused: [], shown: [pageId] });
+
+      const shown = (await as(reader, { url: `/showings/${showingId}/pages/${pageId}` })).json();
+      expect(shown.state).toBe("released_unaltered");
+      expect(shown.verification).toEqual({ ok: true, problems: [], checked: 5, held: 0 });
+      expect(shown.parts[0]).toMatchObject({ kind: "wording" });
+      expect(shown.parts[3].text).toBe("The log also gives [redacted: security detail].");
+      expect(JSON.stringify(shown)).not.toContain("9931");
+      const after = (await as(reader, { url: `/showings/${showingId}` })).json();
+      expect(after.acts.filter((a: { what: string }) => a.what === "released").every((a: { by: string; holding: string[] }) => a.by === "releases-for-the-organization" && a.holding.length === 1)).toBe(true);
+
+      // A hold after the release is refused, and so is a hold of the page by the person who directs.
+      const hold = await as(director, { method: "POST", url: `/showings/${showingId}/pages/${pageId}/hold`, payload: { reason: "timing" } });
+      expect(hold.statusCode).toBe(409);
+      expect(hold.json().code).toBe("ALREADY_SHOWN");
+
+      // The policy: an administrator saves a version, and one worded by favor is refused with the reason.
+      const policyBody = { from_label: "restricted", to_label: "internal" };
+      const byDirector = await as(director, { method: "PUT", url: "/redaction-policies", payload: { ...policyBody, categories: [] } });
+      expect(byDirector.statusCode).toBe(403);
+      const byFavor = await as(admin, { method: "PUT", url: "/redaction-policies", payload: { ...policyBody, categories: [{ name: "awkward findings", covers: "Whatever is embarrassing to us." }] } });
+      expect(byFavor.statusCode).toBe(400);
+      expect(byFavor.json().code).toBe("POLICY_REFUSED");
+      const saved = await as(admin, { method: "PUT", url: "/redaction-policies", payload: { ...policyBody, categories: [{ name: "security detail", covers: "Codes and keys.", examples: "A door code." }] } });
+      expect(saved.statusCode, saved.body).toBe(201);
+      expect(saved.json().version).toBe(2);
+
+      // Ending it is the director's, with a reason from the list.
+      const ended = await as(director, { method: "POST", url: `/showings/${showingId}/end`, payload: { reason: "no_longer_needed" } });
+      expect(ended.statusCode, ended.body).toBe(200);
+      expect(ended.json().ended_because).toBe("it is no longer needed");
+    } finally {
+      await system(async () => {
+        const tables = (
+          await rawQuery<{ t: string }>(
+            `SELECT c.relname::text AS t FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public' AND c.relkind = 'r'
+                AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'sensitivity_label' AND NOT a.attisdropped)`
+          )
+        ).map((r) => r.t);
+        for (let pass = 0; pass < 5; pass++) {
+          for (const table of tables) await rawQuery(`DELETE FROM "${table}" WHERE sensitivity_label = 'restricted'`).catch(() => undefined);
+        }
+        for (const table of ["showing_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_showings", "release_rules", "redaction_policies"]) {
+          await rawQuery(`DELETE FROM ${table} WHERE sensitivity_label = 'internal'`).catch(() => undefined);
+        }
+        await rawQuery(`DELETE FROM sources WHERE source_type = 'shown_page'`).catch(() => undefined);
+        await rawQuery(`DELETE FROM claims WHERE id = $1`, [node]).catch(() => undefined);
+      });
     }
   });
 });

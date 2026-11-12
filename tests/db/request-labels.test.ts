@@ -100,6 +100,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import crypto from "node:crypto";
 import { creditOwls, OWL, readViewsAs } from "./helpers.js";
 
+/** The party this file adds as the organization itself, where the database has none, and removes at the end. */
+const OWN_ORGANIZATION = "The organization (request-labels test)";
 const A = "rl-a";
 const B = "rl-b";
 const TOP = "rl-top";
@@ -233,6 +235,7 @@ afterAll(async () => {
   await rawQuery(`DELETE FROM permission_grants`);
   await rawQuery(`DELETE FROM account_groups`);
   await rawQuery(`DELETE FROM label_reads WHERE label = ANY($1::text[])`, [MINE]);
+  await rawQuery(`DELETE FROM parties WHERE name = $1`, [OWN_ORGANIZATION]).catch(() => undefined);
 });
 
 beforeEach(() => {
@@ -1297,6 +1300,23 @@ describe("every route that writes, driven against a private target", () => {
       );
       return () => post(both, `/requests/${request.id}/contribute`, { owls: 2 });
     },
+    "POST /showings/:showing_id/pages/:page_id/commission": async () => {
+      // A page at rl-a, asked to be shown at rl-b: its redaction waits on the ledger at rl-a.
+      const id = await seedClaimAt(A);
+      await rawQuery(
+        `INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label)
+         VALUES ($1, 'supported', 0.7, 'A summary at a.', 'The reasoning at a.', true, $2)`,
+        [id, A]
+      );
+      await rawQuery(
+        `INSERT INTO parties (name, is_own_organization) SELECT $1, true WHERE NOT EXISTS (SELECT 1 FROM parties WHERE is_own_organization)`,
+        [OWN_ORGANIZATION]
+      );
+      const { askShowing } = await import("../../src/services/showing-service.js");
+      const asked = await askShowing({ nodeId: id, pageLabel: A, toLabel: B, form: "once", scope: "node", actor: { id: both.id, holding: ["direct"] } });
+      const [page] = await rawQuery<{ id: string }>(`SELECT id FROM showing_pages WHERE showing_id = $1`, [asked.showing_id]);
+      return () => post(both, `/showings/${asked.showing_id}/pages/${page!.id}/commission`, { owls: 2 });
+    },
     "POST /grants/:id/approve": async () => {
       const { grantId } = await mandateAt(A, both);
       return () => post(both, `/grants/${grantId}/approve`);
@@ -1456,6 +1476,7 @@ describe("every route that writes, driven against a private target", () => {
     "POST /contributions",
     "POST /appeals",
     "POST /requests/:request_id/contribute",
+    "POST /showings/:showing_id/pages/:page_id/commission",
     "POST /grant-conversations/:id/fund",
     "POST /correspondents/:id/poke",
     "DELETE /assistant/conversations/:id",

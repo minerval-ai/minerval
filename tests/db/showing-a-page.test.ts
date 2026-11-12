@@ -67,6 +67,7 @@ beforeAll(async () => {
       (await rawQuery<{ id: string }>(`INSERT INTO parties (name, is_own_organization) VALUES ($1, $2) RETURNING id`, [`${name} ${Date.now()}`, own]))[0]!.id;
     const [existing] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
     id.org = existing?.id ?? (await party("The organization", true));
+    if (!existing) id.orgMadeHere = "yes";
     id.acme = await party("Acme");
     id.borealis = await party("Borealis");
   });
@@ -118,15 +119,20 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
+  // A showing outside keeps its destination side at `public`, which the review labels' cleanup leaves.
   await system(async () => {
-    for (const table of ["showing_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_showings", "release_rules", "redaction_policies"]) {
-      await rawQuery(`DELETE FROM ${table}`).catch(() => undefined);
-    }
-    await rawQuery(`DELETE FROM sources WHERE source_type = 'shown_page'`).catch(() => undefined);
-    await rawQuery(`DELETE FROM permission_grants WHERE party_id = ANY($1::uuid[])`, [[id.acme, id.borealis]]).catch(() => undefined);
-  });
+    if (!id.outside) return;
+    const [showing] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_showings WHERE id = $1`, [id.outside]);
+    await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [id.outside]);
+    for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [id.outside]);
+    await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [id.outside]);
+    await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [showing?.boundary_id ?? null]);
+  }).catch((err: unknown) => console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err));
+  // Everything else this file wrote is at one of the review labels, on either side of a boundary, and goes with them.
   await unwall();
-  await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.acme, id.borealis]])).catch(() => undefined);
+  await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.acme, id.borealis, ...(id.orgMadeHere ? [id.org] : [])]])).catch((err: unknown) =>
+    console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err)
+  );
 }, 180_000);
 
 describe("asking", () => {
@@ -651,5 +657,35 @@ describe("two labels that do not read each other", () => {
     expect((await atB(() => readablePolicies())).map((p) => p.side)).toEqual(["destination"]);
     // The first boundary's readers do not see this one's record, since they do not read b.
     expect(await atA(() => shownShowing(asked.showing_id))).toBeNull();
+  });
+});
+
+describe("a page shown outside the deployment", () => {
+  it("goes through the same steps, rests on the parties a shown page it drew on rested on, and waits inside for the next piece", async () => {
+    // The page at a, whose version took in the page shown from c.
+    const asked = await askShowing({ nodeId: id.node!, pageLabel: A, toLabel: null, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
+    id.outside = asked.showing_id;
+    // Its record is kept where every member reads it, and names no label.
+    const record = (await atB(() => shownShowing(asked.showing_id)))!;
+    expect(record.shown_to).toBe("outside this deployment");
+    const pageId = (record.nodes as any[])[0].versions[0].page_id as string;
+    const atPage = async (agent: string, run: () => Promise<string>) => JSON.parse(await runAtLabel(A, "a run at a", () => withAgent(agent, run)));
+    expect((await atPage("redactor", () => executeRedactorTool("finish_redaction", { least_sure: [] }, { pageId }))).success).toBe(true);
+    expect((await atPage("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: pageId, outcome: "pass", answer: "supports", reasons: "Nothing was removed." }, {}))).success).toBe(true);
+
+    // The version at a rested on the page shown from c, so it takes the releases that page took, and the organization's for its own memos.
+    const [needs] = await system(() => rawQuery<{ rests_on: string[] }>(`SELECT rests_on FROM showing_pages WHERE id = $1`, [pageId]));
+    expect([...needs!.rests_on].sort()).toEqual([id.org, id.acme, id.borealis].sort());
+    for (const [who, party] of [[actor.org!, id.org!], [actor.acme!, id.acme!], [actor.borealis!, id.borealis!]] as const) {
+      const queue = (await releaseQueue(who)) as { items: any[] };
+      const mine = queue.items.filter((i) => i.page_id === pageId);
+      await decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
+    }
+    const page = (await atB(() => shownPage(pageId)))!;
+    expect(page.state).toBe("released_unaltered");
+    expect(page.verification!.ok).toBe(true);
+    // Nothing has left the deployment and nothing arrived anywhere inside it: carrying it out is not built here.
+    expect(page.source_id).toBeNull();
+    expect(await system(() => rawQuery(`SELECT 1 FROM sources WHERE url LIKE $1`, [`minerval:shown-page/${pageId}/%`]))).toEqual([]);
   });
 });

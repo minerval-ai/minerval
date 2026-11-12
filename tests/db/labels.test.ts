@@ -196,8 +196,8 @@ describe("the labels table", () => {
         "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events", "mandate_inbox",
         "mandate_policy_versions", "mandate_valuations", "mirror_node_changes", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
-        "reading_citations", "reconciliation_events", "regrants", "reputation_events", "request_targets", "request_work",
-        "requests", "research_runs", "setup_parts", "shared_page_analyses", "source_events", "source_extractions",
+        "reading_citations", "reconciliation_events", "redaction_policies", "regrants", "release_rules", "reputation_events", "request_targets", "request_work",
+        "requests", "research_runs", "setup_parts", "shared_page_analyses", "showing_acts", "showing_pages", "showing_parts", "showing_removals", "showings", "shown_nodes", "shown_pages", "shown_parts", "shown_showings", "source_events", "source_extractions",
         "source_interests", "source_relationships", "source_segments", "sources", "stated_views", "steward_slots", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );

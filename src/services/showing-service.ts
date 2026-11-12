@@ -674,8 +674,8 @@ async function readPage(node: NodeRow, judgmentKind: string, judgmentId: string)
  */
 async function partiesFor(sourceIds: readonly string[], showing: ShowingRow, ownOrganization: string): Promise<string[]> {
   if (sourceIds.length === 0) return [ownOrganization];
-  const rows = await rawQuery<{ id: string; party_id: string | null; origin: string; source_type: string; already_read: boolean }>(
-    `SELECT s.id, s.party_id, s.origin, s.source_type,
+  const rows = await rawQuery<{ id: string; url: string | null; party_id: string | null; origin: string; source_type: string; already_read: boolean }>(
+    `SELECT s.id, s.url, s.party_id, s.origin, s.source_type,
             CASE WHEN $3::boolean THEN s.origin = 'mirror'
                  ELSE s.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text])) END AS already_read
        FROM sources s WHERE s.id = ANY($1::uuid[])`,
@@ -685,12 +685,13 @@ async function partiesFor(sourceIds: readonly string[], showing: ShowingRow, own
   for (const s of rows) {
     if (s.already_read) continue;
     if (s.source_type === "shown_page") {
+      // A shown page's source is addressed by its page (release-gate-service.ts, arrive), whichever arrival it was.
+      const shownPageId = /^minerval:shown-page\/([0-9a-f-]{36})\//.exec(s.url ?? "")?.[1] ?? null;
       const needed = await rawQuery<{ party: string }>(
-        `SELECT DISTINCT unnest(needs) AS party FROM shown_pages WHERE source_id = $1
+        `SELECT DISTINCT unnest(needs) AS party FROM shown_pages WHERE id = $1
          UNION
-         SELECT DISTINCT unnest(sp.needs) FROM shown_parts sp JOIN shown_pages p ON p.id = sp.page_id
-          WHERE p.source_id = $1 AND sp.released_at IS NOT NULL`,
-        [s.id]
+         SELECT DISTINCT unnest(sp.needs) FROM shown_parts sp WHERE sp.page_id = $1 AND sp.released_at IS NOT NULL`,
+        [shownPageId]
       );
       for (const n of needed) parties.add(n.party);
       if (needed.length === 0) parties.add(ownOrganization);

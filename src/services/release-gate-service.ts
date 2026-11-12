@@ -354,8 +354,9 @@ export function pageShownMessage(input: { heldParts: number; parts: number; remo
     `made on material this label cannot read: ${input.removals} passage${input.removals === 1 ? " was" : "s were"} removed under the boundary's ` +
     `policy and marked in place, and ${input.heldParts} of its ${input.parts} part${input.parts === 1 ? "" : "s"} ${input.heldParts === 1 ? "is" : "are"} held. ` +
     `It is evidence at this label, to weigh as you weigh any source: the source's text states the verdict, the policy version, ` +
-    `what was removed and held and by whom, and Audit's check. It does not replace this label's judgment, and this label's ` +
-    `judgment is yours to reach.`
+    `what was removed and held and by whom, and Audit's check. What was removed and what is held are part of what it tells ` +
+    `you, as any omission is: what kind of thing is missing, under what rule, and by whose decision. It does not replace ` +
+    `this label's judgment, which is yours to reach.`
   );
 }
 

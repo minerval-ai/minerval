@@ -295,3 +295,24 @@ AS $$
            WHERE sp.source_id = d.source_id
              AND pp.sensitivity_label = ANY (public.minerval_labels_readable_from(ARRAY[reader_label]))))
 $$;
+--> statement-breakpoint
+-- The refusal of a change to a row's label said that moving a row to a
+-- label more people read "is a release, which is not built yet". It is
+-- built now, and it does not move a row: a page is shown to readers who do
+-- not read its label by rows added on their side. The guard is as it was;
+-- its hint says what is true.
+CREATE OR REPLACE FUNCTION minerval_label_fixed_guard() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF session_user <> 'minerval_cleared' THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'a row''s label does not change: this row is at "%" and the update would have made it "%"',
+      OLD.sensitivity_label, NEW.sensitivity_label
+    USING ERRCODE = 'MVL04',
+          TABLE = TG_TABLE_NAME,
+          HINT = 'A row stays at the label it was written at. What is written at one label reaches readers who do not read it only when a person who directs the graph asks for its page to be shown to them, which adds rows on their side and changes none. Nothing was changed.';
+END
+$$;

@@ -2460,6 +2460,17 @@ own row stays the slot for work at the node's own label
 (`src/services/steward-lease.ts`). An order is one for each person, node and
 label. A message waits for a pass at the label it was sent at.
 
+**Showing a page to readers who do not read its label.** What a run at
+one label concluded reaches readers who do not read that label in one way:
+a person who directs the graph asks for the node's page to be shown to them,
+a Redactor removes what the boundary's policy names and marks it, Audit
+checks the redaction, the page is fingerprinted part by part, and the people
+who hold the permission to release decide what is released. The released
+page arrives at the destination label as a source, and a reassessment of the
+node is opened there. No other path moves text to a label that does not
+read the label it was written at. [showing-a-page.md](showing-a-page.md)
+describes it.
+
 **A merge under more than one label.** A merge made here moves what was
 recorded on the merged node onto the node it ends in. The run that makes it
 moves the rows it reads; the rows at a label it does not read move the same

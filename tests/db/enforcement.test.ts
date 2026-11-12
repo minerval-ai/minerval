@@ -175,7 +175,7 @@ describe("the catalog, with a second label defined", () => {
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
     // The schema's ninety-nine (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(101);
+    expect(facts.labelledTables.length).toBe(112);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
@@ -320,6 +320,12 @@ describe("every labelled table", () => {
     requests: { keeper_kind: "'steward'", keeper_claim_id: "gen_random_uuid()" },
     // A source is an input by its id alone.
     judgment_inputs: { input_kind: "'source'", source_id: "gen_random_uuid()" },
+    // Shown to a label or outside, one of the two.
+    showings: { to_outside: "true" },
+    // A removal is a span with an end after its start.
+    showing_removals: { end_offset: "2" },
+    // The page's side of a policy names the label pages are written at.
+    redaction_policies: { from_label: "'public'" },
   };
 
   /** The value for one required column. `row` and `position` make a row's ids ascend by column. */
@@ -414,7 +420,7 @@ describe("every labelled table", () => {
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(101);
+    expect(written.size).toBe(112);
   });
 
   for (const reader of READERS) {
