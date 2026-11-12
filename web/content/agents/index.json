@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 8146,
-    "fullChars": 106470,
+    "roleChars": 8249,
+    "fullChars": 106573,
     "skills": [
       {
         "name": "mathematics",
@@ -164,8 +164,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12122,
-    "fullChars": 110446,
+    "roleChars": 12704,
+    "fullChars": 111028,
     "skills": [
       {
         "name": "costing",
@@ -316,8 +316,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.2",
     "hasConstitution": true,
-    "roleChars": 20860,
-    "fullChars": 119184,
+    "roleChars": 20947,
+    "fullChars": 119271,
     "skills": [
       {
         "name": "costing",
@@ -406,8 +406,8 @@
     "invokedWhen": "A run the mandate pays for petitions it (inline, while the run waits), or the mandate's inbox has work in it: something a lookout raised, the outcome of funded work, a note from the funder.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 4267,
-    "fullChars": 102591,
+    "roleChars": 4861,
+    "fullChars": 103185,
     "skills": [
       {
         "name": "costing",

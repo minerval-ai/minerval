@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "4aa616c4880f2e82269a87bb547a9c5551050eacffb5a0345fa6bdc11c5a3870",
+  "hash": "41673f36273fcfa0a10ef6a29d55fac6518a42c0f090ff6033c9739819706c34",
   "constitution": {
     "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
@@ -52,7 +52,7 @@
       "name": "curator",
       "source_path": "src/llm/prompts/curator.ts",
       "blocks": [
-        "3c2dc3456465ac7dc2c39c708f801cebbc66c7e318a7b61711d02ba5c7f3e796"
+        "9ce1aac0c44a13d416d4b6bf188454fbc245c27b8e455485ee97667984e4ebb4"
       ]
     },
     {
@@ -73,7 +73,7 @@
       "name": "grantmaker",
       "source_path": "src/llm/prompts/grantmaker.ts",
       "blocks": [
-        "938c4d62baf45c51fcea4ae56890afffed534f75a37e20c1c33bf1872d81923c"
+        "50a03875318d24a618bb504901a6b209758172e16bb8caa71ca50e897633ff31"
       ]
     },
     {
@@ -87,7 +87,7 @@
       "name": "matcher",
       "source_path": "src/llm/prompts/matcher.ts",
       "blocks": [
-        "aa056c05094416015fb18c83482228d9bea6f1f373cdb611b5aa21ccce4ca63e"
+        "a3b19289e9616f469630232cc4b33883593b59ece7f4aee06a8c280ee6889cf1"
       ]
     },
     {

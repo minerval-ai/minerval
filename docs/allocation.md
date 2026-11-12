@@ -778,20 +778,46 @@ metered to the funding mandate.
 concern about an anchor claim, optionally naming the other claim, and
 opens or reopens the anchor's row; one funded run reads every live
 request on its anchor, as a lookout run reads its queued events, and
-consumes them when it ends. Three producers, each bounded:
+consumes them when it ends.
 
-- a Steward's `escalate_to_curator`, one live request per concern (a
-  repeat is a repeat), with no count per claim: a request only waits on
-  the ledger until someone commissions the curation that reads it;
-- the **reconcile-candidate scan**, a scan and not a judgment: SQL over
-  embeddings pairs recently created active claims with their nearest
-  unlinked neighbour above `reconcile_candidate_min_similarity`, at most
+**Every request says what opened it** (#955), in fields, not only prose:
+the **defect** suspected (`curation_requests.defect`: `duplicate`, the same
+node in other words or as its negation; `conflation`; `wrong_kind`;
+`mislabeled_edge`; `missing_link`; `bad_merge`; or `other`, which its
+concern must name), the **other node** when there is one
+(`other_claim_id`, whose text is read with the request), who **raised** it
+(`source`, and `requested_by_claim_id` for a Steward escalating from
+another node), the scan's **score** (`signal`), and the **concern** in the
+requester's words. `requestCuration` refuses a request that names no
+defect, and `ensureCurateAction` opens a row only on an anchor with a live
+request, so no path opens a curate row with nothing to name. A node that is
+only unassessed is not a curation: its assess row is already on the ledger
+from the moment it is minted (the Steward pipeline opens it), and that is
+where a mandate that wants it assessed buys it.
+
+The producers, each bounded:
+
+- a Steward's `escalate_to_curator` (defect required), one live request
+  per concern (a repeat is a repeat), with no count per claim: a request
+  only waits on the ledger until someone commissions the curation that
+  reads it;
+- a consistency sweep's `escalate_to_curator` (#742), the same;
+- the Audit Agent's `recommend_recuration` (#784), carrying its finding;
+- the **Matcher** at ingestion (#738): a node it minted on balance with a
+  `curator_review`, a suspected `duplicate` of each near-miss the review
+  names by id (every near-miss when it names none);
+- the **reconcile-candidate scan**, a scan and not a judgment, a suspected
+  `duplicate` with its similarity: SQL over embeddings pairs recently
+  created active claims with their nearest unlinked neighbour above
+  `reconcile_candidate_min_similarity`, at most
   `reconcile_candidates_max_per_sweep` a sweep (0, the default, is off),
   and never raises a pair that has ever been asked about;
-- an operator (scripts/sweep-fallback-matches.ts).
+- an operator (scripts/sweep-fallback-matches.ts, `duplicate`).
 
 A repeat of a live request (same anchor, other claim and source) is a
-repeat.
+repeat. Requests recorded before #955 have no defect except the Matcher's,
+the scan's and the operator sweep's, which migration 0130 classified as
+`duplicate`; the rest read as "not classified" beside their concern.
 
 One more row runs the Curator: a request it keeps (constitution Part
 VIII: one that bears on several nodes, on a source, or on nothing the
@@ -816,6 +842,22 @@ curation in its territory; one that commissions none contributes nothing.
 The first live epoch's lesson stands as guidance for those policies: 122
 unconditional sweeps of claims the Matcher had just declared novel cost
 about 13 owls and wrote nothing.
+
+**What the officers read.** The inbox item for a curation lists each live
+request on its row: the defect, who raised it, the other node with its
+text, and the concern (cut at 800 characters; the Curator's run reads it
+whole). Until #926 the item carried only the anchor's text, so on
+2026-11-11 the officers declined Matcher near-miss requests as naming "no
+concrete defect" and bought first assessments of the anchors instead. An
+item is a snapshot taken when its row is raised, so each sitting
+(`refreshCurationInboxItems`, at its start) and each reconcile sweep keep
+the waiting ones true to the ledger: an item whose row has closed, or whose
+row has no live request, is retired (handled by `ledger`, with the reason
+in its `detail.retired`); every other is rewritten from its row's live
+requests. Nothing is deleted. Curations the officers already declined on
+the bare rendering are raised again only by an operator running
+`scripts/reraise-curations.ts` (a dry run unless `--confirm`), which adds
+one inbox item per such open row and changes nothing else.
 
 **Who funds audits.** The platform's **Governance** mandate (policy
 `governance`, seeded beside General) pays for audits. A fresh audit row is

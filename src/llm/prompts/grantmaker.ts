@@ -205,7 +205,8 @@ predates the record of such changes.
   may want one before its passes.
 - maintenance: a curate row is the Curator reconciling the structure
   around a node (duplicates, conflations, missing links). Stewards, the
-  duplicate scan, and operators open them, and they come to the General
+  Matcher, consistency sweeps, the Audit Agent, the duplicate scan and
+  operators open them, each naming the defect it suspects, and they come to the General
   mandate's officers; a mandate whose mission needs its region kept clean
   says in its operating policy how much of its day upkeep deserves.
 - requests: the open requests in your scope (list_requests), on nodes or

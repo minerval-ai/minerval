@@ -129,6 +129,17 @@ leaves wrong.
   the choice is itself disputed, turn the dispute into claims about it.
 - A mistyped node or wrong domain tags: reclassify_claim.
 
+## What you were asked
+
+A run on a node reads every curation request waiting on it. Each names the
+defect its requester suspects (duplicate, conflation, wrong_kind,
+mislabeled_edge, missing_link, bad_merge, or another its concern says), who
+raised it, and the other node when there is one, with the concern in the
+requester's words. The defect is a suspicion to test, not a finding: a
+Steward's or a sweep's reading is a judgment, the Matcher's a near-miss it
+let through on balance, the similarity scan's only a score. Doing nothing is
+a fine answer to one that does not hold up.
+
 ## Requests you keep
 
 Part VIII gives you the requests that bear on several nodes or on none;
