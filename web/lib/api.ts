@@ -439,6 +439,34 @@ export async function fetchClaimCard(id: string): Promise<ClaimCard | null> {
   }
 }
 
+// The wording of several claims at once (GET /claims/cards), for pages that
+// hold claim ids and want to name them: the account page's history, orders
+// and contributions. An id the graph no longer holds, or a failed read, is
+// simply absent from the map; the caller falls back to a plain link.
+const CLAIM_CARDS_PER_REQUEST = 100;
+
+export async function fetchClaimTexts(ids: string[]): Promise<Map<string, string>> {
+  const texts = new Map<string, string>();
+  const unique = [...new Set(ids)];
+  const batches: string[][] = [];
+  for (let i = 0; i < unique.length; i += CLAIM_CARDS_PER_REQUEST) {
+    batches.push(unique.slice(i, i + CLAIM_CARDS_PER_REQUEST));
+  }
+  await Promise.all(
+    batches.map(async (batch) => {
+      try {
+        const r = await apiGet<{ cards: ClaimCard[] }>(
+          `/claims/cards?ids=${batch.map(encodeURIComponent).join(",")}`
+        );
+        for (const card of r.cards) texts.set(card.id, card.text);
+      } catch {
+        // Names are a courtesy; the page reads without them.
+      }
+    })
+  );
+  return texts;
+}
+
 export async function fetchContribution(
   id: string,
 ): Promise<ContributionDetail | null> {

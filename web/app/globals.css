@@ -1266,6 +1266,211 @@ html { scroll-behavior: smooth; }
 .account-table code { font-size: 0.8rem; }
 .usage-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.6rem 0 1rem; }
 
+/* ---- the account page (app/account/page.tsx) -------------------------------
+   Four figures across the top answer what a visit is usually for; under them
+   each section is a main column and a narrower one beside it, which stack on
+   a phone. Hairlines and small caps as everywhere else; the one filled
+   control is the way to buy owls. */
+.account-home .page-meta { margin-bottom: 0.9rem; }
+.acct-figures {
+  display: flex; flex-wrap: wrap; margin-top: 0.3rem;
+  border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule);
+}
+.acct-figure {
+  flex: 1 1 11rem; min-width: 0; padding: 1rem 1.25rem 1.1rem;
+  border-left: 1px solid var(--rule);
+}
+.acct-figure:first-child { flex: 1.5 1 16rem; padding-left: 0; border-left: 0; }
+.acct-figure:last-child { padding-right: 0; }
+.acct-figure p { margin: 0; }
+.acct-balance {
+  display: flex; align-items: center; gap: 0.55rem; margin-top: 0.3rem;
+  font-size: 2.3rem; line-height: 1; letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-balance strong { font-weight: 600; }
+.acct-figure .acct-figure-value {
+  margin-top: 0.5rem; font-size: 1.5rem; font-weight: 600; line-height: 1.1;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* the part of an owl after the point: smaller and quieter, so "1,717.114"
+   reads as seventeen hundred owls and not as a number in the millions */
+.acct-fraction { font-size: 0.5em; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.acct-figure-value .acct-fraction { font-size: 0.6em; }
+.acct-unit { font-size: 1rem; font-weight: 400; letter-spacing: 0; color: var(--ink-soft); }
+.acct-balance .acct-unit { align-self: flex-end; padding-bottom: 0.15rem; }
+.acct-figure .acct-figure-note {
+  margin-top: 0.45rem; font-family: var(--sans); font-size: 0.7rem; line-height: 1.45;
+  color: var(--muted);
+}
+.acct-balance + .acct-figure-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; margin-top: 0.85rem;
+}
+a.acct-buy, a.acct-buy:visited {
+  display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0 1.05rem;
+  border-radius: 4px; background: var(--ink); color: var(--paper);
+  font-size: 0.74rem; font-weight: 600;
+}
+a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
+
+.acct-nav, .acct-links {
+  display: flex; flex-wrap: wrap; gap: 0.2rem 1.4rem;
+  font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
+.acct-nav { padding: 0.65rem 0; border-bottom: 1px solid var(--rule); }
+
+/* a section's anchor clears the sticky masthead */
+.acct-section { margin-top: 3.2rem; scroll-margin-top: 4rem; }
+#buy-owls { scroll-margin-top: 4rem; }
+.acct-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 0.4rem 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule);
+}
+.acct-head h2 { margin: 0; padding: 0; border: 0; }
+.acct-cols { display: flex; flex-wrap: wrap; gap: 2.2rem 3.2rem; margin-top: 1.15rem; }
+.acct-cols-flush { margin-top: 0; }
+.acct-cols-end { align-items: flex-end; gap: 0.6rem 3.2rem; }
+.acct-cols-end .key-create { margin: 0 0 0.3rem; max-width: none; }
+.acct-main { flex: 999 1 26rem; min-width: 0; }
+.acct-side { flex: 1 1 16.5rem; min-width: 0; }
+.acct-side-wide { flex-basis: 20rem; }
+.acct-sub { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.account-home h3 { margin: 0; }
+.account-home h3.acct-gap { margin-top: 1.8rem; }
+.acct-note {
+  font-family: var(--sans); font-size: 0.68rem; line-height: 1.5; color: var(--muted);
+}
+p.acct-note { margin: 0.55rem 0 0; }
+.acct-lede { max-width: 32rem; }
+.acct-prose { font-size: 0.84rem; color: var(--ink-soft); margin: 0.5rem 0 0; }
+p.acct-main.acct-prose { margin: 0; }
+.acct-measure { max-width: 34rem; }
+.acct-job + .acct-prose, .account-empty + .acct-prose { margin-top: 0.9rem; }
+.acct-quiet { color: var(--muted); }
+
+/* a list of lines: what, small print beside it, an amount at the right */
+.acct-day { padding: 1rem 0 0.3rem; border-bottom: 1px solid var(--rule); }
+.acct-line {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.05rem 1rem;
+  align-items: baseline; padding: 0.42rem 0; border-bottom: 1px solid var(--rule-soft);
+  font-size: 0.86rem;
+}
+.acct-line-3 { grid-template-columns: minmax(0, 1fr) auto auto; }
+.acct-line-under { grid-column: 1 / -1; }
+.acct-detail {
+  margin-left: 0.4rem; font-family: var(--sans); font-size: 0.68rem; color: var(--muted);
+}
+.acct-amount, .acct-num {
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-num-left { white-space: nowrap; font-variant-numeric: tabular-nums lining-nums; }
+.acct-status, .acct-record { font-family: var(--sans); font-size: 0.7rem; white-space: nowrap; }
+.acct-status { font-weight: 600; color: var(--muted); }
+.acct-status-accepted { color: var(--st-verified); }
+.acct-status-rejected { color: var(--st-contradicted); }
+
+/* several like lines of one day, folded under their sum */
+.acct-fold > summary { cursor: pointer; list-style: none; }
+.acct-fold > summary::-webkit-details-marker { display: none; }
+.acct-fold > summary > div:first-child::before {
+  content: "\25B8"; display: inline-block; width: 0.9rem; color: var(--muted);
+  font-variant-emoji: text;
+}
+.acct-fold[open] > summary > div:first-child::before { content: "\25BE"; }
+.acct-fold > .acct-line { padding-left: 0.9rem; }
+.acct-asTable { margin-top: 0.7rem; }
+.acct-asTable > summary {
+  cursor: pointer; font-family: var(--sans); font-size: 0.72rem; color: var(--link);
+}
+
+/* the two readings of the history: a pair of links, the current one filled */
+.acct-switch {
+  display: flex; border: 1px solid var(--rule-strong); border-radius: 4px; overflow: hidden;
+  font-family: var(--sans); font-size: 0.68rem; font-weight: 600;
+}
+.acct-switch a, .acct-switch a:visited {
+  padding: 0.4rem 0.75rem; color: var(--ink-soft); background: var(--paper-card);
+}
+.acct-switch a + a { border-left: 1px solid var(--rule-strong); }
+.acct-switch a:hover { text-decoration: none; background: var(--paper-sunk); }
+.acct-switch a[aria-current], .acct-switch a[aria-current]:hover {
+  background: var(--ink); color: var(--paper);
+}
+
+.acct-table { max-width: none; margin: 0.5rem 0 0; }
+.acct-table th.acct-num, .acct-table td.acct-num { text-align: right; padding-right: 0; padding-left: 0.9rem; }
+.acct-scroll { overflow-x: auto; }
+.acct-keys { min-width: 38rem; margin-top: 1rem; }
+
+/* packs, in the narrow column: two to a row, left-aligned */
+.acct-side .owl-packs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.acct-side .owl-pack { align-items: flex-start; min-width: 0; padding: 0.6rem 0.75rem; border-radius: 4px; text-align: left; }
+.acct-side .owl-pack-count { font-family: var(--serif); font-size: 1rem; }
+.acct-side .owl-pack-price { font-size: 0.74rem; }
+.owl-pack-each { color: var(--muted); white-space: nowrap; }
+
+/* a funded job: its name and spend, a meter, what is left */
+.acct-job { padding: 0.7rem 0; border-bottom: 1px solid var(--rule-soft); font-size: 0.86rem; }
+.acct-job-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0.1rem 1rem;
+}
+.acct-job-head > div:first-child { min-width: 0; }
+.acct-job .meter { max-width: none; margin: 0.45rem 0 0.3rem; }
+
+/* cost by day: one bar a day on a calendar axis, three hairline gridlines */
+.acct-chart {
+  position: relative; height: 9rem; margin-top: 1.4rem; margin-left: 2.3rem;
+  border-bottom: 1px solid var(--rule-heavy);
+}
+.acct-grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--rule-soft); }
+.acct-grid span {
+  position: absolute; right: 100%; top: 0; margin-right: 0.4rem; transform: translateY(-50%);
+  font-family: var(--sans); font-size: 0.6rem; color: var(--muted);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-bars { position: absolute; inset: 0; display: flex; align-items: stretch; }
+.acct-barcol {
+  position: relative; flex: 1 1 0; min-width: 0; padding: 0 1px;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+}
+.acct-barcol:hover { background: var(--paper-sunk); }
+.acct-bar {
+  width: 100%; max-width: 1.05rem; min-height: 2px;
+  background: var(--ink-soft); border-radius: 3px 3px 0 0;
+}
+.acct-barcol:hover .acct-bar { background: var(--ink); }
+.acct-barlabel {
+  position: absolute; white-space: nowrap; font-family: var(--sans); font-size: 0.62rem;
+  font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-ticks {
+  display: flex; margin: 0.3rem 0 0 2.3rem;
+  font-family: var(--sans); font-size: 0.6rem; color: var(--muted);
+}
+.acct-ticks > div { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+
+/* cost by agent: name, bar, cost, calls */
+.acct-agents { margin-top: 0.45rem; }
+.acct-agent {
+  display: grid; grid-template-columns: 7.6rem minmax(0, 1fr) 3.7rem 2.6rem; gap: 0.5rem;
+  align-items: center; padding: 0.24rem 0; font-size: 0.78rem;
+}
+.acct-agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-agent-bar { height: 0.5rem; min-width: 2px; background: var(--ink-soft); border-radius: 0 3px 3px 0; }
+.acct-agent .acct-quiet { font-family: var(--sans); font-size: 0.68rem; }
+
+@media (max-width: 640px) {
+  .acct-figure, .acct-figure:first-child {
+    flex-basis: 100%; padding: 0.9rem 0; border-left: 0; border-top: 1px solid var(--rule);
+  }
+  .acct-figure:first-child { border-top: 0; }
+  .acct-balance { font-size: 2rem; }
+  .acct-line-3 { grid-template-columns: minmax(0, 1fr) auto; }
+  .acct-line-3 > div:first-child { grid-column: 1 / -1; }
+  .acct-agent { grid-template-columns: 6rem minmax(0, 1fr) 3.7rem 2.4rem; }
+}
+
 /* ---- contribution entry points (#174) ------------------------------------- */
 /* Visible to every reader, quiet on the page: the prompt advertises that the
    page is challengeable; the action itself is gated behind sign-in. */
