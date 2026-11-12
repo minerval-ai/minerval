@@ -153,8 +153,6 @@ export const ATTEMPT_GROUP = (formalizationId: string, n: number) =>
 /** The two solver variants every attempt group carries as siblings (§7.2). */
 export const ATTEMPT_VARIANTS = ["standard", "max"] as const;
 
-/** How often a mandate's Grantmaker takes a review pass. */
-const REVIEW_CADENCE_HOURS = 24;
 
 /**
  * A formalize item whose claim still has no published statement is wanted
@@ -535,8 +533,8 @@ export async function reconcileActions(): Promise<{
       );
     }
 
-    // The mandate's periodic review pass — its Grantmaker stewarding the
-    // mandate with discretion. Every active mandate gets one, the General
+    // The mandate's review pass: its Grantmaker's session, opened fresh when
+    // none is live — its Grantmaker stewarding the mandate with discretion. Every active mandate gets one, the General
     // mandate included: its valuations come from a formula rather than from
     // per-action judgment, but the formula's knobs are exactly the kind of
     // thing a steward should revise as evidence about allocation itself
@@ -559,7 +557,15 @@ export async function reconcileActions(): Promise<{
                sensitivity_label = EXCLUDED.sensitivity_label,
                updated_at = now()
            WHERE actions.status IN ('done', 'superseded', 'cancelled')
-             AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
+             -- A mandate's Grantmaker works in one long session that wakes
+             -- on what it subscribed to and on the check-ins it set
+             -- (mandate-review.ts). A fresh pass opens only when it has
+             -- none live: the first, after fresh_start, or after a session
+             -- expired or closed.
+             AND NOT EXISTS (
+               SELECT 1 FROM grants gg JOIN agent_sessions sx ON sx.id = gg.grantmaker_session_id
+                WHERE gg.id::text = EXCLUDED.target_ref
+                  AND sx.status IN ('running', 'waiting', 'ready'))`,
         [
           REVIEW_GROUP(g.id),
           g.id,
@@ -2295,9 +2301,9 @@ export function actionBudgetMicroUsd(action: {
 
 /**
  * The next action the mechanism says to run, for the given kinds: among
- * covered open actions, resolve each exclusion group to its winner (most
- * backing, tie → cheapest), then take the winner with the most backing
- * overall. Pure function of allocations; no valuations involved.
+ * open actions someone has commissioned, resolve each exclusion group to its
+ * winner (most backing, tie → cheapest), then take the winner with the most
+ * backing overall. Pure function of commissions; no valuations involved.
  */
 export async function nextRunnableAction(
   kinds: ActionKind[]
@@ -2310,7 +2316,9 @@ export async function nextRunnableAction(
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
         AND ${COVERAGE_SQL} > 0
-        AND (${COVERAGE_SQL} >= a.cost_est_micro_usd OR ${COMMISSIONED_SQL})
+        -- Every run is commissioned: whole, from one payer, at a budget
+        -- someone set. Money placed without a commission funds nothing.
+        AND ${COMMISSIONED_SQL}
       ORDER BY coverage_micro_usd DESC, a.updated_at ASC
       LIMIT 20`,
     [kinds]

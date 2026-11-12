@@ -183,7 +183,7 @@ describe("the labels table", () => {
         "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships",
         "claim_source_maps", "claims", "consistency_flags", "consistency_sweeps", "contribution_reviews",
         "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
-        "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
+        "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage",
         "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants",
         "ingest_focuses", "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events",
         "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
@@ -192,7 +192,7 @@ describe("the labels table", () => {
         "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events",
         "reputation_events", "request_targets", "request_work", "requests", "research_runs",
         "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
-        "source_relationships", "source_segments", "sources", "stated_views", "taggings", "tags",
+        "source_relationships", "source_segments", "sources", "stated_views", "subscriptions", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });

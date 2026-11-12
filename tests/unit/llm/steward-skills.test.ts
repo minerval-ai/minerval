@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
     researcherEnabled: true,
-    researcherMaxWallMinutes: 20,
+    researcherRequestMaxWallMinutes: 240,
   },
 }));
 

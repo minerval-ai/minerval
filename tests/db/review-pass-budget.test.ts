@@ -43,7 +43,7 @@ import {
 } from "../../src/services/action-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { committedWithinMicroUsd } from "../../src/services/pace-service.js";
-import { wakeDueMandateReviews } from "../../src/services/mandate-event-service.js";
+import { openReviewsForEscalations } from "../../src/services/mandate-event-service.js";
 import {
   getOperatingPolicy,
   reviewPassBudget,
@@ -148,14 +148,19 @@ describe("the review row's estimate", () => {
     await reconcileActions();
     expect(await reviewRow(grantId)).toMatchObject({ status: "open", est: 8 * OWL });
 
-    // The wake on new events.
+    // A pass opened for an escalation no live session can receive.
     await rawQuery(
       `UPDATE actions SET status = 'done', cost_est_micro_usd = 123, updated_at = now() - interval '2 hours' WHERE id = $1`,
       [opened.id]
     );
-    await rawQuery(`INSERT INTO mandate_events (grant_id, kind, ref_id) VALUES ($1, 'lookout_flag', $2)`, [grantId, randomUUID()]);
-    expect(await wakeDueMandateReviews()).toBeGreaterThanOrEqual(1);
+    await rawQuery(
+      `INSERT INTO petitions (grant_id, kind, asked_micro_usd, plan, status, waiting) VALUES ($1, 'more_budget', 1000000, 'p', 'escalated', true)`,
+      [grantId]
+    );
+    expect(await openReviewsForEscalations()).toBeGreaterThanOrEqual(1);
     expect(await reviewRow(grantId)).toMatchObject({ status: "open", est: 8 * OWL });
+    await rawQuery(`UPDATE petitions SET status = 'refused' WHERE grant_id = $1`, [grantId]);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE exclusion_group = $1`, [REVIEW_GROUP(grantId)]);
   });
 });
 

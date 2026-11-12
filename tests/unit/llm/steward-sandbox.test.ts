@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
     researcherEnabled: true,
-    researcherMaxWallMinutes: 20,
+    researcherRequestMaxWallMinutes: 240,
     researcherStrongModel: "claude-opus-5-5",
     researcherStandardModel: "claude-sonnet-5-5",
     researcherCheapModel: "z-ai/glm-5.3",

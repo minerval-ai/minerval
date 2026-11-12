@@ -19,7 +19,7 @@ vi.mock("../../../src/config.js", async (importOriginal) => {
       ...original.loadConfig(),
       curatorModel: "curator-model",
       researcherEnabled: mocks.researcherEnabled,
-      researcherMaxWallMinutes: 20,
+      researcherRequestMaxWallMinutes: 240,
     }),
   };
 });

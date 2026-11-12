@@ -9,7 +9,6 @@ import { rawQuery } from "../../src/db/client.js";
 import { ASSESS_GROUP, completeAction } from "../../src/services/action-service.js";
 import { commissionNodePass } from "../../src/services/commission-service.js";
 import {
-  awaitDecision,
   commissionFollowUps,
   decidePetition,
   filePetition,
@@ -55,7 +54,7 @@ describe("petitions", () => {
     expect(await routePetition(null)).toBeNull();
   });
 
-  it("decides while the run waits, and puts a grant on the running row, settled with it", async () => {
+  it("puts a grant on the running row, settled with it", async () => {
     const funder = await seedUser("petition grant");
     const { grantId, jobId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
     const { claim, actionId } = await runningPass(grantId, "petitioner");
@@ -73,18 +72,9 @@ describe("petitions", () => {
     const p0 = await getPetition(id);
     expect(p0!.chain.at(-1)).toMatchObject({ action_id: actionId, spent_micro_usd: 2.6 * OWL });
 
-    let worked = 0;
-    const decided = await awaitDecision(
-      id,
-      async () => {
-        worked++;
-        const r = await decidePetition({ petitionId: id, decision: "grant", owlsMicroUsd: 2 * OWL, reason: "The replications decide it.", decidedBy: "officer" });
-        expect(r.ok).toBe(true);
-      },
-      { deadlineMs: 5000, pollMs: 50 }
-    );
-    expect(worked).toBe(1);
-    expect(decided).toMatchObject({ status: "granted", granted_micro_usd: String(2 * OWL), decided_by: "officer" });
+    const r = await decidePetition({ petitionId: id, decision: "grant", owlsMicroUsd: 2 * OWL, reason: "The replications decide it.", decidedBy: "officer" });
+    expect(r.ok).toBe(true);
+    expect(await getPetition(id)).toMatchObject({ status: "granted", granted_micro_usd: String(2 * OWL), decided_by: "officer" });
     expect(await liveMoney(actionId)).toBe(5 * OWL);
 
     const [d] = await rawQuery<{ item_kind: string; decision: string; reason: string }>(

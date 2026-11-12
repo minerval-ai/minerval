@@ -6,12 +6,15 @@
  * matches. Holding one costs nothing; a delivery that wakes a paused session
  * costs that session's resumption, paid like any other.
  *
- * A filter matches an event when every part it names matches (kinds, and at
- * least one of the refs it names): the event's run, its node, a node it sits
- * under, a node resting on it, its node's tags, its source, its mandate, or
- * another ref it carries (a petition, a research run, a request).
+ * A filter matches an event when every part it names matches, and within a
+ * part one of the ids it lists is enough: the event's kind, its run, its
+ * node, a node it sits under, a node resting on it, its node's tags, its
+ * source, its mandate, another ref it carries (a petition, a research run,
+ * an item's kind). To be told of either of two things, hold two
+ * subscriptions.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { EVENT_KINDS, type EventKind, type EventRow } from "./event-service.js";
 
 export type SubscriberKind = "session" | "mandate_inbox" | "node_inbox" | "lookout" | "correspondent";
@@ -115,8 +118,8 @@ export async function createSubscription(input: {
   createdBy: string;
 }): Promise<SubscriptionRow> {
   const [row] = await rawQuery<SubscriptionRow>(
-    `INSERT INTO subscriptions (subscriber_kind, subscriber_ref, filter, condition, due_at, delivery, once, reason, created_by)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9)
+    `INSERT INTO subscriptions (subscriber_kind, subscriber_ref, filter, condition, due_at, delivery, once, reason, created_by, sensitivity_label)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10)
      RETURNING ${COLUMNS}`,
     [
       input.subscriberKind,
@@ -128,6 +131,7 @@ export async function createSubscription(input: {
       input.once ?? false,
       input.reason.trim().slice(0, 500),
       input.createdBy,
+      currentLabel(),
     ]
   );
   return row!;
@@ -207,30 +211,45 @@ export async function matches(
   graph: { ancestors(nodeId: string): Promise<Set<string>>; descendants(nodeId: string): Promise<Set<string>>; tags(nodeId: string): Promise<Set<string>> }
 ): Promise<boolean> {
   if (f.kinds?.length && !f.kinds.includes(e.kind)) return false;
-  if (!hasRefs(f)) return true;
-  if (e.action_id && f.action_ids?.includes(e.action_id)) return true;
-  if (e.node_id && f.node_ids?.includes(e.node_id)) return true;
-  if (e.source_id && f.source_ids?.includes(e.source_id)) return true;
-  if (e.grant_id && f.grant_ids?.includes(e.grant_id)) return true;
+  // Every key the filter names must match (one of its ids is enough within
+  // a key): {grant_ids: [g], refs: {item_kind: ["funder_note"]}} is the
+  // funder's notes to that mandate, not everything about it.
+  const checks: Array<() => Promise<boolean> | boolean> = [];
+  if (f.action_ids?.length) checks.push(() => Boolean(e.action_id && f.action_ids!.includes(e.action_id)));
+  if (f.node_ids?.length) checks.push(() => Boolean(e.node_id && f.node_ids!.includes(e.node_id)));
+  if (f.source_ids?.length) checks.push(() => Boolean(e.source_id && f.source_ids!.includes(e.source_id)));
+  if (f.grant_ids?.length) checks.push(() => Boolean(e.grant_id && f.grant_ids!.includes(e.grant_id)));
   for (const [k, ids] of Object.entries(f.refs ?? {})) {
-    const v = e.refs?.[k];
-    const vals = Array.isArray(v) ? v.map(String) : v != null ? [String(v)] : [];
-    if (vals.some((x) => ids.includes(x))) return true;
+    checks.push(() => {
+      const v = e.refs?.[k];
+      const vals = Array.isArray(v) ? v.map(String) : v != null ? [String(v)] : [];
+      return vals.some((x) => ids.includes(x));
+    });
   }
-  if (e.node_id && f.under?.length) {
+  if (f.under?.length) {
     // Beneath a root: the root is the node itself or one of its ancestors.
-    if (f.under.includes(e.node_id)) return true;
-    const up = await graph.ancestors(e.node_id);
-    if (f.under.some((r) => up.has(r))) return true;
+    checks.push(async () => {
+      if (!e.node_id) return false;
+      if (f.under!.includes(e.node_id)) return true;
+      const up = await graph.ancestors(e.node_id);
+      return f.under!.some((r) => up.has(r));
+    });
   }
-  if (e.node_id && f.over?.length) {
+  if (f.over?.length) {
     // Resting on a node: that node sits beneath the event's node.
-    const down = await graph.descendants(e.node_id);
-    if (f.over.some((r) => down.has(r))) return true;
+    checks.push(async () => {
+      if (!e.node_id) return false;
+      const down = await graph.descendants(e.node_id);
+      return f.over!.some((r) => down.has(r));
+    });
   }
-  if (e.node_id && f.tags?.length) {
-    const t = await graph.tags(e.node_id);
-    if (f.tags.some((x) => t.has(x))) return true;
+  if (f.tags?.length) {
+    checks.push(async () => {
+      if (!e.node_id) return false;
+      const t = await graph.tags(e.node_id);
+      return f.tags!.some((x) => t.has(x));
+    });
   }
-  return false;
+  for (const c of checks) if (!(await c())) return false;
+  return true;
 }

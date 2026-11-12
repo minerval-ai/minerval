@@ -114,13 +114,18 @@ export async function seedAllocation(input: {
   amountMicroUsd: number;
   spentMicroUsd?: number;
   released?: boolean;
+  /**
+   * Who commissioned it. Every run is commissioned, so a seeded placement is
+   * a commission unless a test passes null for loose money that funds nothing.
+   */
+  commissionedBy?: string | null;
 }): Promise<string> {
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO action_allocations
        (exclusion_group, action_id, claim_id, grant_id, user_id,
-        amount_micro_usd, spent_micro_usd, released_at)
+        amount_micro_usd, spent_micro_usd, released_at, commissioned_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7,
-             CASE WHEN $8 THEN now() ELSE NULL END)
+             CASE WHEN $8 THEN now() ELSE NULL END, $9)
      RETURNING id`,
     [
       input.group,
@@ -131,6 +136,7 @@ export async function seedAllocation(input: {
       input.amountMicroUsd,
       input.spentMicroUsd ?? 0,
       input.released ?? false,
+      input.commissionedBy === undefined ? "test" : input.commissionedBy,
     ]
   );
   return rows[0]!.id;

@@ -94,7 +94,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-six tables, public by default, each with a key to labels", async () => {
+  it("is on ninety-eight tables, public by default, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -102,7 +102,7 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(96);
+    expect(columns).toHaveLength(98);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ column_default: "'public'::text", is_nullable: "NO", data_type: "text" });
     }
@@ -186,6 +186,8 @@ describe("the label column, in the catalog", () => {
       "contributors",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
+      // Where the subscription router has read the event log to: a number.
+      "event_router_state",
       // The labels themselves.
       "label_reads",
       "labels",

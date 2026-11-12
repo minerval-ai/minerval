@@ -21,7 +21,6 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { currentLabel, runWithUsageContext, withAgent, withPassBudget, withSkills } from "../usage-context.js";
 import { getProgramOfficerSystemPromptBlocks } from "../prompts/program-officer.js";
-import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { getGraphReadToolDefinitions, executeGraphReadTool } from "../tools/graph-read-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { listSkills } from "../prompts/skills.js";
@@ -52,7 +51,6 @@ type Tool = Anthropic.Tool;
 type Role = "officer" | "grantmaker";
 
 const OFFICER_GROUP = (grantId: string) => `officer:${grantId}`;
-const ESCALATION_GROUP = (grantId: string) => `escalation:${grantId}`;
 
 // ---------------------------------------------------------------------------
 // Tools (fixed per role)
@@ -75,7 +73,7 @@ const DECIDE_PETITIONS: Tool = {
         items: {
           type: "object",
           properties: {
-            petition: { type: "string", description: "Its label from your brief: p1, p2, and so on." },
+            petition: { type: "string", description: "Its label from your brief (p1, p2, …), or the petition's id." },
             decision: { type: "string", enum: ["grant", "refuse", "follow_up"] },
             owls: {
               type: "number",
@@ -95,7 +93,11 @@ export const COMMISSION_FOR_MANDATE: Tool = {
   name: "commission",
   description:
     "Pay for runs from your mandate's money: one entry or many. Each entry is " +
-    "a Steward pass on a node (target), or any open row on the ledger by its " +
+    "a Steward pass on a node (target); research (kind research, Grantmaker " +
+    "only: a Researcher run on a question the mission needs answered, its " +
+    "brief the whole task, its report returned into your session, optionally " +
+    "with contribution_budget_owls so it submits what the graph should hold " +
+    "as contributions, reviewed like anyone's); or any open row on the ledger by its " +
     "action_id (an ingest, a curation, an audit, work on a request; an inbox " +
     "item names its row), with a budget from the operating policy and the " +
     "costing skill (the high end, unless the operating policy says otherwise), " +
@@ -118,7 +120,13 @@ export const COMMISSION_FOR_MANDATE: Tool = {
         items: {
           type: "object",
           properties: {
-            item: { type: "string", description: "Optional: the inbox item this answers (i1, i2, …); it is marked handled." },
+            item: { type: "string", description: "Optional: the inbox item this answers (i1, i2, …, or its id); it is marked handled." },
+            kind: { type: "string", enum: ["pass", "research"], description: "pass (the default, with target or action_id) or research." },
+            research_tier: { type: "string", enum: ["cheap", "standard", "strong"], description: "For research: the Researcher's tier." },
+            contribution_budget_owls: {
+              type: "number",
+              description: "For research: owls of the mandate's money for reviewing the contributions it submits (default 0: it only reports).",
+            },
             target: { type: "string", description: "For a Steward pass: the node's id." },
             action_id: { type: "string", description: "For any other work: the ledger row's id." },
             budget_owls: { type: "number" },
@@ -143,7 +151,7 @@ const DECLINE: Tool = {
   input_schema: {
     type: "object" as const,
     properties: {
-      item: { type: "string", description: "Its label from your brief: i1, i2, and so on." },
+      item: { type: "string", description: "Its label from your brief (i1, i2, …), or the item's id." },
       reason: { type: "string" },
     },
     required: ["item", "reason"],
@@ -408,17 +416,10 @@ async function buildBrief(
   const waiting = petitions.filter((p) => p.waiting).length;
 
   const head =
-    role === "officer"
-      ? `## Inbox for ${grant.title ?? "this mandate"}\n\n` +
-        `${petitions.length + items.length} item(s)` +
-        (waiting > 0 ? `; ${waiting} have a run waiting on your answer: decide those first` : "") +
-        `. ${describeLimit(limit)}`
-      : `## Escalated to you\n\n` +
-        `Your program officers sent you ${petitions.length + items.length} item(s)` +
-        (waiting > 0
-          ? `; ${waiting} have a run waiting. Decide the waiting ones first: agents are paused on your answer, and you have ${loadConfig().petitionWaitSeconds / 60} minutes for them`
-          : "") +
-        `.`;
+    `## Inbox for ${grant.title ?? "this mandate"}\n\n` +
+    `${petitions.length + items.length} item(s)` +
+    (waiting > 0 ? `; ${waiting} have a run waiting on your answer: decide those first` : "") +
+    `. ${describeLimit(limit)}`;
 
   return [
     head,
@@ -465,9 +466,10 @@ async function buildBrief(
  */
 async function commissionSitting(grant: GrantRow, role: Role): Promise<string | null> {
   const config = loadConfig();
-  const group = role === "officer" ? OFFICER_GROUP(grant.id) : ESCALATION_GROUP(grant.id);
-  const kind = role === "officer" ? "officer_run" : "grantmaker_decision";
-  const budget = owlsToMicroUsd(role === "officer" ? config.officerRunBudgetOwls : config.grantmakerDecisionBudgetOwls);
+  void role;
+  const group = OFFICER_GROUP(grant.id);
+  const kind = "officer_run";
+  const budget = owlsToMicroUsd(config.officerRunBudgetOwls);
   const [row] = await rawQuery<{ id: string; status: string }>(
     `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
      VALUES ($1, $2, 'standard', $3, $4, $5, $6)
@@ -477,7 +479,7 @@ async function commissionSitting(grant: GrantRow, role: Role): Promise<string | 
                                     THEN actions.sensitivity_label ELSE EXCLUDED.sensitivity_label END,
            updated_at = now()
      RETURNING id, status`,
-    [kind, group, grant.id, role === "officer" ? "Program officer sitting" : "Grantmaker deciding escalations", budget, currentLabel()]
+    [kind, group, grant.id, "Program officer sitting", budget, currentLabel()]
   );
   if (!row || row.status === "running") return null;
   const placed = await placeCommission({
@@ -488,7 +490,7 @@ async function commissionSitting(grant: GrantRow, role: Role): Promise<string | 
     budget,
     commissionedBy: "system",
     brief: null,
-    reason: role === "officer" ? "Working the mandate's inbox" : "Deciding what the officers escalated",
+    reason: "Working the mandate's inbox",
   });
   if (!placed.ok) return null;
   if (!(await claimAction(row.id))) return null;
@@ -506,16 +508,16 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
   const policy = await getOperatingPolicy(grant.id);
   const limit = officerLimit(policy);
   const labels = new Map<string, { petition?: PetitionRow; item?: InboxItem }>();
-  const decidedBy = role === "officer" ? "officer" : "grantmaker";
-  const model = role === "officer" ? config.programOfficerModel : config.grantmakerModel;
-  const system = role === "officer" ? getProgramOfficerSystemPromptBlocks() : getGrantmakerSystemPromptBlocks();
-  const budget = owlsToMicroUsd(role === "officer" ? config.officerRunBudgetOwls : config.grantmakerDecisionBudgetOwls);
+  const decidedBy = "officer" as const;
+  const model = config.programOfficerModel;
+  const system = getProgramOfficerSystemPromptBlocks();
+  const budget = owlsToMicroUsd(config.officerRunBudgetOwls);
 
   let billed = 0;
   try {
     const metered = await runWithUsageContext({ userId: grant.funder_user_id, jobId: grant.budget_job_id, claimId: null }, () =>
       withPassBudget({ microUsd: budget, source: "your mandate's money", funding: { actionId, grantId: grant.id } }, () =>
-        withAgent(role === "officer" ? "program_officer" : "grantmaker", async () => {
+        withAgent("program_officer", async () => {
           const brief = await buildBrief(grant, role, petitions, items, labels);
           await withSkills([], () =>
             toolUseLoop({
@@ -539,19 +541,35 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
   await completeAction(actionId, billed, { meteredJobId: grant.budget_job_id });
 
   // A waiting run is owed an answer: what the officer left undecided goes to
-  // the Grantmaker now.
+  // the Grantmaker now, into its session (the officer's brief says so).
   if (role === "officer") {
-    await rawQuery(
+    const left = await rawQuery<{ id: string; kind: string; requester_node_id: string | null }>(
       `UPDATE petitions SET status = 'escalated',
               reason = COALESCE(reason, 'The officer did not decide it; a run is waiting.')
-        WHERE grant_id = $1 AND status = 'pending' AND waiting`,
+        WHERE grant_id = $1 AND status = 'pending' AND waiting
+        RETURNING id, kind, requester_node_id`,
       [grant.id]
     );
+    const { recordEvent } = await import("../../services/event-service.js");
+    for (const p of left) {
+      await recordEvent({
+        kind: "escalated",
+        grantId: grant.id,
+        nodeId: p.requester_node_id,
+        refs: { petition: p.id },
+        summary: `A ${p.kind} petition with a run waiting was left undecided by your officer, so it comes to you.`,
+        payload: { waiting: true },
+      });
+    }
   }
   return { ran: true };
 }
 
-/** One sitting on a mandate's inbox: the officer, then the Grantmaker on what was escalated. */
+/**
+ * One sitting on a mandate's inbox, by its program officer. What the officer
+ * escalates reaches the Grantmaker in its own session, as an event it is
+ * subscribed to (mandate-review.ts), not in a sitting of its own.
+ */
 export async function workMandateInbox(grantId: string): Promise<void> {
   const config = loadConfig();
   if (config.officerBatchMs > 0) await new Promise((r) => setTimeout(r, config.officerBatchMs));
@@ -559,8 +577,6 @@ export async function workMandateInbox(grantId: string): Promise<void> {
   if (!grant) return;
   const waiting = await inboxWaiting(grantId);
   if (waiting.officer > 0) await runRole(grant, "officer");
-  const after = await inboxWaiting(grantId);
-  if (after.grantmaker > 0) await runRole(grant, "grantmaker");
 }
 
 // ---------------------------------------------------------------------------
@@ -638,6 +654,45 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
       const budget = owlsToMicroUsd(Number(e.budget_owls ?? 0));
       if (ctx.role === "officer" && budget > ctx.limitMicroUsd) {
         results.push({ target, ok: false, message: `More than your limit of ${owls(ctx.limitMicroUsd)} owls in one decision. Escalate it.` });
+        continue;
+      }
+      if (e.kind === "research") {
+        // Research is the Grantmaker's: its report returns into its
+        // session, which an officer's sitting does not have.
+        if (ctx.role !== "grantmaker") {
+          results.push({ target: "research", ok: false, message: "Research is commissioned by the Grantmaker; escalate the item if it needs research." });
+          continue;
+        }
+        const brief = String(e.brief ?? "").trim();
+        if (brief.length < 80) {
+          results.push({ target: "research", ok: false, message: "A research brief is the Researcher's whole task: the question, the context, what a good answer looks like, where to start (at least 80 characters)." });
+          continue;
+        }
+        const { commissionResearch } = await import("../../services/research-commission-service.js");
+        const tierRaw = String(e.research_tier ?? "standard");
+        const r = await commissionResearch({
+          payer: { kind: "grant", grantId: ctx.grant.id },
+          nodeId: null,
+          task: brief,
+          budgetMicroUsd: budget,
+          tier: tierRaw === "strong" || tierRaw === "cheap" ? tierRaw : "standard",
+          requestedBy: "grantmaker",
+          wait: true,
+          grantId: ctx.grant.id,
+          contributionBudgetMicroUsd: owlsToMicroUsd(Number(e.contribution_budget_owls ?? 0)),
+        });
+        if (r.ok) {
+          await logDecision(ctx, { itemKind: "commission", decision: "commissioned research", target: r.runId, owls: budget, reason: String(e.reason ?? ""), actionId: r.actionId });
+          results.push({
+            target: `research ${r.runId}`,
+            ok: true,
+            message: r.waits
+              ? `Commissioned research run ${r.runId} at ${owls(budget)} owls. It runs on its own; its report arrives in your session (in a tool result, or waking you if you have paused).`
+              : `Commissioned research run ${r.runId} at ${owls(budget)} owls; this run has no session to receive the report, so read it later with get_research_run.`,
+          });
+        } else {
+          results.push({ target: "research", ok: false, message: r.message });
+        }
         continue;
       }
       const actionId = typeof e.action_id === "string" && e.action_id.trim() ? e.action_id.trim() : null;
@@ -924,11 +979,45 @@ export const AMEND_PACE: Tool = {
   },
 };
 
+/**
+ * What the officers have sent the Grantmaker and it has not decided:
+ * escalated petitions and inbox items, each described as the officers saw
+ * it, labelled by its id so the Grantmaker's decide_petitions, decline and
+ * commission name it that way.
+ */
+export async function escalationDigest(grantId: string): Promise<{ text: string | null; labels: Map<string, { petition?: PetitionRow; item?: InboxItem }>; waiting: number }> {
+  const petitions = await petitionsFor(grantId, "grantmaker");
+  const items = await itemsFor(grantId, "grantmaker");
+  const labels = new Map<string, { petition?: PetitionRow; item?: InboxItem }>();
+  const parts: string[] = [];
+  for (const p of petitions) {
+    labels.set(p.id, { petition: p });
+    parts.push(await describePetition(p, p.id));
+  }
+  for (const i of items) {
+    labels.set(i.id, { item: i });
+    parts.push(describeItem(i, i.id));
+  }
+  const waiting = petitions.filter((p) => p.waiting).length;
+  return {
+    text: parts.length
+      ? `## Escalated to you (${parts.length}${waiting ? `; ${waiting} with a run waiting on the answer, so decide those first` : ""})\n\n` +
+        `Your officers sent you these. Decide petitions with decide_petitions, and items with commission or ` +
+        `decline, naming each by its id. Where one shows the operating policy is silent or wrong, fix the policy ` +
+        `too, so the officers settle the next one themselves.\n\n${parts.join("\n\n")}`
+      : null,
+    labels,
+    waiting,
+  };
+}
+
 /** The Grantmaker's spending tools, in review passes and the management chat. */
 export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): Tool[] {
   return [
     WRITE_OPERATING_POLICY,
     COMMISSION_FOR_MANDATE,
+    DECIDE_PETITIONS,
+    DECLINE,
     SET_RESERVE,
     getSqlToolDefinition(),
     WITHDRAW_REGRANT,
@@ -1044,13 +1133,16 @@ export async function executeMandateOperationsTool(
     );
     return JSON.stringify({ success: true, message: `Withdrew ${r.withdrawnOwls} owls into your escrow.` });
   }
-  if (name !== "write_operating_policy" && name !== "commission") return null;
+  if (!["write_operating_policy", "commission", "decide_petitions", "decline"].includes(name)) return null;
   const grant = await loadGrant(grantId);
   if (!grant) return JSON.stringify({ success: false, message: "No such mandate." });
+  // What the officers escalated, by id, for decide_petitions, decline and a
+  // commission that answers an item.
+  const { labels } = await escalationDigest(grantId);
   return executeOfficerTool(name, input, {
     grant,
     role: "grantmaker",
-    labels: new Map(),
+    labels,
     limitMicroUsd: Number.MAX_SAFE_INTEGER,
     decidedBy: "grantmaker",
   });

@@ -279,11 +279,6 @@ const configSchema = z.object({
   // Grantmaker's run deciding what its officers escalated at the second.
   // Both are ceilings; a run returns what it does not spend.
   officerRunBudgetOwls: z.coerce.number().positive().default(1),
-  grantmakerDecisionBudgetOwls: z.coerce.number().positive().default(4),
-  // How long a run waiting on its petition waits. A run is paused on the
-  // answer, which is the reason the decision has a clock at all; past it
-  // the petition stays open and, if granted later, funds a follow-up pass.
-  petitionWaitSeconds: z.coerce.number().int().positive().default(180),
   // How long a paused agent session waits for what it asked for before its
   // answers go to its node's inbox instead (session-service.ts). Stated to
   // the agent in the tools that pause it.
@@ -851,14 +846,11 @@ const configSchema = z.object({
     .string()
     .transform((s) => s === "true")
     .prefault("false"),
-  // What a researcher run may spend is its ceiling, which the launcher sets
-  // out of its own budget (the run is billed to the launcher's), or out of
-  // the mandate's uncommitted budget when a Grantmaker funds it. Two bounds
-  // remain, neither of them a judgment: the durable daily cap on researcher
-  // spend no funder pays for (an operator's circuit breaker), and the
-  // wall-clock cap on one run, because the launching agent's run blocks on
-  // the report and holds its lease while it waits. The researcher is told
-  // the wall cap up front.
+  // What a researcher run may spend is its ceiling, the budget its
+  // commission placed (from the commissioning run's budget, or from a
+  // mandate's money when its Grantmaker commissions it). Beside it remain
+  // the durable daily cap on researcher spend no funder pays for (an
+  // operator's circuit breaker) and the wall-clock backstop below.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
   // The review cost each contribution from a mandate's research reserves
   // against the budget its Grantmaker delegated (Part VIII) until its review
@@ -874,12 +866,10 @@ const configSchema = z.object({
   // instance.
   contributionReviewBudgetUsd: z.coerce.number().min(0).default(1),
   arbitrationBudgetUsd: z.coerce.number().min(0).default(3),
-  researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
-  // A request run from the ledger (#734) has no launcher waiting on it, so
-  // the 20-minute cap above has no reason there: its budget, the quote its
-  // funders paid, bounds the work. This is only a backstop against a run
-  // that has stopped making progress without spending, and the run is told
-  // it with that reason.
+  // No research run has a launcher blocked on it (every one is commissioned
+  // on the ledger, #734): its budget bounds the work. This is only a
+  // backstop against a run that has stopped making progress without
+  // spending, and the run is told it with that reason.
   researcherRequestMaxWallMinutes: z.coerce.number().min(1).default(240),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
@@ -1409,7 +1399,6 @@ export function loadConfig(): Config {
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     contributionReviewBudgetUsd: process.env.CONTRIBUTION_REVIEW_BUDGET_USD,
     arbitrationBudgetUsd: process.env.ARBITRATION_BUDGET_USD,
-    researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
     researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
@@ -1460,8 +1449,6 @@ export function loadConfig(): Config {
     lookoutModel: process.env.LOOKOUT_MODEL,
     programOfficerModel: process.env.PROGRAM_OFFICER_MODEL,
     officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
-    grantmakerDecisionBudgetOwls: process.env.GRANTMAKER_DECISION_BUDGET_OWLS,
-    petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
     sessionWaitHours: process.env.SESSION_WAIT_HOURS,
     sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
     sessionWaitForAnswersSeconds: process.env.SESSION_WAIT_FOR_ANSWERS_SECONDS,

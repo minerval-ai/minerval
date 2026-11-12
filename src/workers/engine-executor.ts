@@ -58,7 +58,7 @@ import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { routeEvents } from "../services/subscription-router.js";
-import { runMandateReview } from "../llm/agents/mandate-review.js";
+import { runMandateReview, grantmakerWakeDigest } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
 import { runCorrespondent } from "../llm/agents/correspondent.js";
@@ -538,8 +538,38 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
  * returned.
  */
 /**
+ * A fresh review pass for a mandate whose Grantmaker asked for one
+ * (fresh_start), at the pass budget as it stands now, funded by the next
+ * drain iteration out of the mandate's pace (fundGrantSelfActions). A
+ * mandate whose passes have a share of their own reopens one only while the
+ * share holds something. The policy is read fresh: the last sitting may have
+ * changed its own figure. Failing here leaves the row for the reconcile
+ * sweep, which opens a pass for any mandate with no live session.
+ */
+async function reopenReview(grantId: string): Promise<void> {
+  try {
+    const [g] = await rawQuery<{ id: string; mandate: Record<string, unknown> | null }>(
+      `SELECT id, mandate FROM grants WHERE id = $1 AND status = 'active'`,
+      [grantId]
+    );
+    if (!g) return;
+    const share = await grantmakerShareLeftMicroUsd(g as never).catch(() => null);
+    if (share && share.leftMicroUsd <= 0) return;
+    const estimate = await reviewPassBudgetMicroUsd(g as never, "review", share);
+    await rawQuery(
+      `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
+        WHERE exclusion_group = $1 AND kind = 'mandate_review' AND status IN ('done', 'superseded', 'cancelled')`,
+      [`review:${grantId}`, estimate]
+    );
+  } catch (err) {
+    console.error(`[engine] could not open a fresh review for ${grantId}: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/**
  * resume: a paused session of the Curator, the Consistency Checker, the Audit
- * Agent or a Correspondent got back what it waited for (session-service.ts).
+ * Agent, a Correspondent or a mandate's Grantmaker got back what it waited
+ * for, or something it subscribed to came (session-service.ts).
  * The agent is rebuilt from the input its run was called with, and continues
  * the conversation it left with the answers appended, under the budget this
  * row was commissioned with. It may pause again.
@@ -552,7 +582,13 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   }
   const { session, replies } = taken;
   const funder = await funderContext(action);
-  const messages = await resumeMessages(session, replies, {});
+  // A Grantmaker wakes to more than the answer: what its officers escalated,
+  // where its pace stands, and what re-reading this conversation costs.
+  const extra =
+    session.role === "grantmaker"
+      ? { newMessages: await grantmakerWakeDigest(session) }
+      : {};
+  const messages = await resumeMessages(session, replies, extra);
   const resume = { sessionId: session.id, messages, privateReasons: sessionPrivateReasons(session, replies) };
   const input = (session.context?.input ?? {}) as never;
   let billedMicroUsd = 0;
@@ -576,6 +612,13 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
             case "consistency_checker":
               await runConsistencyChecker(input, resume);
               return;
+            case "grantmaker": {
+              const grantId = (session.context?.input as { grantId?: string } | undefined)?.grantId;
+              if (!grantId) throw new Error("A Grantmaker session with no mandate.");
+              const review = await runMandateReview({ grantId }, resume);
+              if (review.freshStart) await reopenReview(grantId);
+              return;
+            }
             case "correspondent": {
               const run = await runCorrespondent(input, resume);
               const correspondentId = (session.context?.input as { correspondentId?: string } | undefined)?.correspondentId;
@@ -1507,7 +1550,7 @@ async function runGrantAgentAction(
   const funder: { jobId?: string; userId?: string; grantId?: string } =
     await largestActionFunder(action.id).catch(() => ({}));
   try {
-    let continueRequested = false;
+    let freshStart = false;
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? null },
       () =>
@@ -1534,7 +1577,7 @@ async function runGrantAgentAction(
               grantId: grant.id,
               model: opts.model,
             });
-            continueRequested = review.continueRequested;
+            freshStart = review.freshStart;
           }
         })
     );
@@ -1553,38 +1596,7 @@ async function runGrantAgentAction(
       const { materializeLivePlan } = await import("../services/action-service.js");
       await materializeLivePlan(grant.id);
     }
-    // A mandate whose passes have a share of their own reopens a review only
-    // while the share holds something.
-    const share = await grantmakerShareLeftMicroUsd(grant).catch(() => null);
-    if (continueRequested && (!share || share.leftMicroUsd > 0)) {
-      // The agent judged a fresh pass the better way on: reopen its review
-      // action at the pass budget as it stands now, so the next drain
-      // iteration funds and runs another out of the mandate's day
-      // (fundGrantSelfActions). The policy is read fresh: this pass may
-      // have changed its own figure.
-      // The pass itself is done and settled: a failure here leaves the row
-      // closed for the sweep to reopen on its cadence, and is not the run's.
-      try {
-        const [now] = await rawQuery<{ mandate: typeof grant.mandate }>(
-          `SELECT mandate FROM grants WHERE id = $1`,
-          [grant.id]
-        );
-        const estimate = await reviewPassBudgetMicroUsd(
-          { id: grant.id, mandate: now?.mandate ?? grant.mandate },
-          "review",
-          share
-        );
-        await rawQuery(
-          `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
-            WHERE id = $1 AND status = 'done'`,
-          [action.id, estimate]
-        );
-      } catch (err) {
-        console.error(
-          `[engine] continue_review could not reopen ${action.id}: ${err instanceof Error ? err.message : err}`
-        );
-      }
-    }
+    if (freshStart) await reopenReview(grant.id);
     return {
       status: "processed",
       actionId: action.id,

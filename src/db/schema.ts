@@ -2914,6 +2914,10 @@ export const grants = pgTable(
     // cannot draw on it.
     reserveMicroUsd: bigint("reserve_micro_usd", { mode: "number" }).notNull().default(0),
     reserveReason: text("reserve_reason"),
+    // The Grantmaker's long-lived session (session-service.ts): where
+    // escalations, funder notes and the check-ins it sets are delivered.
+    // A mandate whose session has ended opens a fresh review pass.
+    grantmakerSessionId: uuid("grantmaker_session_id"),
     // The mandate's own figures for pricing and pacing work: cost priors,
     // the re-check cadence, attempt bounds, sweep and scan settings
     // (services/allocation-policy-service.ts). Null = the shared defaults.
@@ -6387,6 +6391,9 @@ export const subscriptions = pgTable(
     lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    // The label of the run that made it (src/labels.ts): its reason is that
+    // run's words.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_subscriptions_subscriber").on(table.subscriberKind, table.subscriberRef, table.active),

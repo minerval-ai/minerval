@@ -155,11 +155,11 @@ describe("the operations view", () => {
     const m = await mandateWithTerms(await seedUser("ops-kinds"), 50 * OWL);
     // A review pass the mandate covered at its estimate, run and settled.
     const review = await seedAction({ group: `review:${m.grantId}`, kind: "mandate_review", targetRef: m.grantId, costMicroUsd: 2 * OWL });
-    const reviewAlloc = await seedAllocation({ group: `review:${m.grantId}`, actionId: review, grantId: m.grantId, amountMicroUsd: 2 * OWL });
+    const reviewAlloc = await seedAllocation({ group: `review:${m.grantId}`, actionId: review, grantId: m.grantId, amountMicroUsd: 2 * OWL, commissionedBy: "mandate" });
     await rawQuery(`UPDATE action_allocations SET spent_micro_usd = $2, released_at = now() + interval '1 second' WHERE id = $1`, [reviewAlloc, 1.5 * OWL]);
     // A lookout run under way.
     const lookout = await seedAction({ group: `lookout:${m.grantId}`, kind: "lookout_run", costMicroUsd: OWL, status: "running" });
-    await seedAllocation({ group: `lookout:${m.grantId}`, actionId: lookout, grantId: m.grantId, amountMicroUsd: OWL });
+    await seedAllocation({ group: `lookout:${m.grantId}`, actionId: lookout, grantId: m.grantId, amountMicroUsd: OWL, commissionedBy: "mandate" });
     // A commissioned pass that ran past its budget: its allocation is
     // spent whole (nothing stamps released_at on it), and the overage is a
     // second allocation, created already spent and released.

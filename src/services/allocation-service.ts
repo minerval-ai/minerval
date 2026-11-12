@@ -384,6 +384,16 @@ export function shortPassFunding(input: {
  * row the day or the escrow cannot cover waits, except the Grantmaker's
  * own passes, which start short and are told (shortPassFunding).
  */
+/** Why a mandate commissions its own upkeep, as its record reads. */
+const SELF_REASON: Record<string, string> = {
+  grant_planning: "The mandate's planning pass.",
+  mandate_review: "A sitting of the mandate's Grantmaker.",
+  lookout_run: "A run of one of the mandate's lookouts.",
+  correspondent_run: "A run of one of the mandate's Correspondents.",
+  ingest: "An ingest item of the mandate's plan.",
+  consistency_sweep: "A consistency sweep the mandate funds.",
+};
+
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
     exclusion_group: string;
@@ -584,13 +594,16 @@ export async function fundGrantSelfActions(): Promise<number> {
             })
           : null;
     if (amount === null) continue;
+    // A commission like any other: whole, from one payer, with the reason
+    // on the mandate's record. The mandate's own upkeep is commissioned by
+    // the mandate itself, at the row's estimate.
     const inserted = await rawQuery<{ id: string }>(
       `INSERT INTO action_allocations
-         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)
+         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by, reason)
+       VALUES ($1, $2, $3, $4, $5, 'mandate', $6)
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount]
+      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, SELF_REASON[row.kind] ?? "The mandate's own upkeep."]
     );
     if (inserted.length === 0) continue;
     if (amount < needed) {

@@ -399,8 +399,13 @@ async function commissionResumptionAtLabel(s: SessionRow): Promise<void> {
   // The pass is commissioned from whoever paid for the paused run, at what it
   // had left; with no such payer, from the first grant that came while it was
   // paused. Any grants are then placed on the same pass.
+  // A Grantmaker's session is its mandate's standing deliberation, not one
+  // run's leftover: each sitting it resumes for works to the review-pass
+  // figure its operating policy names, as a fresh pass would.
+  const sittingBudget =
+    s.role === "grantmaker" && payer?.kind === "grant" ? await grantmakerSittingMicroUsd(payer.grantId) : null;
   const first = payer
-    ? { payer, budget: Math.max(MIN_RESUME_MICRO_USD, Number(s.budget_left_micro_usd)), rest: extras }
+    ? { payer, budget: sittingBudget ?? Math.max(MIN_RESUME_MICRO_USD, Number(s.budget_left_micro_usd)), rest: extras }
     : extras.length > 0
       ? { payer: { kind: "grant", grantId: extras[0]!.grantId } as CommissionPayer, budget: Number(extras[0]!.microUsd), rest: extras.slice(1) }
       : null;
@@ -700,3 +705,15 @@ export function sessionLimitsSentence(): string {
 }
 
 export const owls = (micro: number) => microUsdToOwls(micro);
+
+/** The budget a Grantmaker's resumed sitting works to: its mandate's review-pass figure. */
+async function grantmakerSittingMicroUsd(grantId: string): Promise<number | null> {
+  const [g] = await rawQuery<{ id: string; mandate: Record<string, unknown> | null }>(
+    `SELECT id, mandate FROM grants WHERE id = $1`,
+    [grantId]
+  );
+  if (!g) return null;
+  const { reviewPassBudgetMicroUsd, grantmakerShareLeftMicroUsd } = await import("./action-service.js");
+  const share = await grantmakerShareLeftMicroUsd(g as never).catch(() => null);
+  return reviewPassBudgetMicroUsd(g as never, "review", share);
+}

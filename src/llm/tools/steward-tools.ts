@@ -1462,11 +1462,17 @@ export async function executeStewardTool(
         if (kindRefusal) return kindRefusal;
 
         const db = getDb();
-        // The verdict in force before this one, for the event a subscriber reads.
-        const [before] = await db
-          .select({ status: assessmentsInForce.status })
-          .from(assessmentsInForce)
-          .where(eq(assessmentsInForce.claimId, claimId));
+        // The verdict in force before this one, for the event a subscriber
+        // reads; never a reason to fail the verdict itself.
+        let before: { status: string | null } | undefined;
+        try {
+          [before] = await db
+            .select({ status: assessmentsInForce.status })
+            .from(assessmentsInForce)
+            .where(eq(assessmentsInForce.claimId, claimId));
+        } catch {
+          before = undefined;
+        }
 
         // Mark previous assessment as non-current
         await db

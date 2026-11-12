@@ -624,11 +624,12 @@ export async function getMandateAllocationView(
                  AND al.spent_micro_usd = al.amount_micro_usd) AS overage,
                 CASE WHEN al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
                           AND al.spent_micro_usd = al.amount_micro_usd
-                     THEN COALESCE((SELECT p.commissioned_by IS NOT NULL FROM action_allocations p
+                     THEN COALESCE((SELECT p.commissioned_by IS NOT NULL AND p.commissioned_by <> 'mandate' FROM action_allocations p
                                      WHERE p.grant_id = al.grant_id AND p.action_id = al.action_id
                                        AND p.created_at < al.created_at
                                      ORDER BY p.created_at DESC LIMIT 1), false)
-                     ELSE al.commissioned_by IS NOT NULL END AS commissioned
+                     -- The mandate's own upkeep (commissioned_by 'mandate') is self-funded.
+                     ELSE al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate' END AS commissioned
            FROM action_allocations al JOIN actions a ON a.id = al.action_id
           WHERE al.grant_id = $1 AND al.created_at >= ${window}
        ) x
@@ -660,7 +661,8 @@ export async function getMandateAllocationView(
             (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
             al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
        FROM action_allocations al JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.created_at >= ${window}
+      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate'
+        AND al.created_at >= ${window}
         ${opts.kind ? "AND a.kind = $4" : ""}
       ORDER BY al.created_at DESC
       LIMIT $2 OFFSET $3`,

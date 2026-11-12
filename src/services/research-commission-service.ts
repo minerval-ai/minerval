@@ -54,6 +54,13 @@ export async function commissionResearch(input: {
   followUpOf?: string | null;
   /** Run it as an examination of this document in the node's map, checking these facets. */
   examine?: { sourceId: string; facets: unknown } | null;
+  /** The mandate the research serves, when a Grantmaker commissions it. */
+  grantId?: string | null;
+  /**
+   * A Grantmaker's research may submit what it finds as contributions,
+   * reviewed like anyone's and paid from this budget (beside the run's own).
+   */
+  contributionBudgetMicroUsd?: number;
 }): Promise<ResearchCommissionResult> {
   const budget = Math.round(input.budgetMicroUsd);
   if (!(budget > 0)) return { ok: false, message: "A research commission needs a budget above zero." };
@@ -103,7 +110,8 @@ export async function commissionResearch(input: {
   const ctx = getUsageContext();
   const run = await openResearchRun({
     claimId: input.nodeId,
-    grantId: null,
+    grantId: input.grantId ?? null,
+    contributionBudgetMicroUsd: input.contributionBudgetMicroUsd ?? 0,
     requestedBy: input.requestedBy,
     requesterRunId: ctx.runId ?? null,
     jobId: ctx.jobId ?? null,

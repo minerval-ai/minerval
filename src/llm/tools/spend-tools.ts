@@ -10,9 +10,9 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { getUsageContext } from "../usage-context.js";
-import { creditRunBudget, debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
+import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
 import { commissionNodePass } from "../../services/commission-service.js";
-import { awaitDecision, filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
+import { filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { loadConfig } from "../../config.js";
 import { rawQuery } from "../../db/client.js";
@@ -117,12 +117,15 @@ export function getSpendToolDefinitions(): Tool[] {
         "with the money, why your budget can't cover it, and what you will " +
         "conclude if the answer is no. A program officer reads your petition " +
         "with the mandate's policy, its recent decisions and how this run came " +
-        "to be funded, and answers in seconds; what is beyond the officer goes " +
-        "to the mandate's Grantmaker, which takes a minute or two. Asking " +
+        "to be funded. A routine one is usually decided within a minute or two; " +
+        "the officer may hold one until related work reports, which can take " +
+        "hours, and what is beyond the officer goes to the mandate's Grantmaker, " +
+        "which decides when it next sits. Asking " +
         "doesn't stop you: carry on, and the decision appears in a later tool " +
         "result, a grant raising your budget then; with nothing else to do, " +
         "wait_for_answers waits for it briefly, and past that your session " +
-        "pauses and resumes with it. Asking costs " +
+        "pauses and resumes with it, a grant decided meanwhile funding the pass " +
+        "that resumes you. Asking costs " +
         "you nothing: the mandate pays for its own decision. Its answer is a " +
         "judgment about money, never about your conclusion, and no answer " +
         "obliges you to conclude anything.",
@@ -151,9 +154,9 @@ export function getSpendToolDefinitions(): Tool[] {
           wait: {
             type: "boolean",
             description:
-              "true (the default for more_budget) to have the decision come back to you: in a run that can " +
-              "pause, it arrives in a later tool result while you carry on; otherwise this call waits for it. " +
-              "false to send it and carry on without the answer.",
+              "true (the default for more_budget) to have the decision come back to you: it arrives in a later " +
+              "tool result while you carry on, or resumes your session if you have paused. false to send it and " +
+              "carry on without the answer (a granted follow-up starts its own pass).",
           },
         },
         required: ["kind", "owls", "plan"],
@@ -261,11 +264,12 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
           `to petition. Work with the budget you have and record what you could and couldn't establish.`,
       });
     }
-    const wait = input.wait === undefined ? kind === "more_budget" : input.wait === true;
-    // In a session (a Steward's run), a petition never blocks: the decision
-    // returns into the session, shown in the next tool result, or resuming it
-    // if it paused (session-service.ts). Without one, the run waits here.
-    const inSession = Boolean(ctx.session) && kind === "more_budget" && wait;
+    // A petition never blocks: the decision returns into the asking session,
+    // shown in its next tool result, or resuming it if it paused
+    // (session-service.ts). A run with no session cannot receive it, so it
+    // sends the petition without waiting.
+    const wait = Boolean(ctx.session) && (input.wait === undefined ? kind === "more_budget" : input.wait === true);
+    const inSession = wait && kind === "more_budget";
     const petitionId = await filePetition({
       grantId,
       kind,
@@ -295,49 +299,11 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
         });
       }
     }
-    if (!wait) {
-      workSoon(grantId);
-      return JSON.stringify({
-        success: true,
-        message: "Sent. The mandate will decide it; a granted follow-up starts its own pass with your plan as its brief.",
-      });
-    }
-    const p = await awaitDecision(petitionId, work);
-    const who = p?.decided_by === "grantmaker" ? "Grantmaker" : "program officer";
-    if (!p || p.status === "pending" || p.status === "escalated") {
-      return JSON.stringify({
-        success: false,
-        message:
-          "The mandate has not decided within its time. The petition stays open; if it is granted after this " +
-          "run ends, it funds a follow-up pass with your plan as its brief. Carry on with the budget you have.",
-      });
-    }
-    if (p.status === "refused") {
-      return JSON.stringify({
-        success: false,
-        message:
-          `Refused by the mandate's ${who}. Reason: ${p.reason}. Work with the budget you have and record what ` +
-          `you could and couldn't establish. The refusal is about money, not your conclusion.`,
-      });
-    }
-    const granted = Number(p.granted_micro_usd ?? 0);
-    if (p.status === "follow_up") {
-      return JSON.stringify({
-        success: true,
-        message:
-          `The mandate funded a follow-up pass of ${owls(granted)} owls with your plan as its brief. Record what ` +
-          `you have now; the follow-up starts from it.`,
-      });
-    }
-    creditRunBudget(granted);
-    const budget = ctx.passBudget;
+    workSoon(grantId);
     return JSON.stringify({
       success: true,
-      message:
-        `Granted by the mandate's ${who}: ${owls(granted)} of ${owls(asked)} owls. Reason: ${p.reason}.` +
-        (budget
-          ? ` Your budget is now ${owls(budget.microUsd)} owls, with ${owls(Math.max(0, budget.microUsd - budget.meter.billedMicroUsd))} left.`
-          : ""),
+      petition_id: petitionId,
+      message: "Sent. The mandate will decide it; a granted follow-up starts its own pass with your plan as its brief.",
     });
   }
   return null;

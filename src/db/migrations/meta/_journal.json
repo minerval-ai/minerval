@@ -932,6 +932,20 @@
       "when": 1794509649804,
       "tag": "0132_event_log_and_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1794510127045,
+      "tag": "0133_grantmaker_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1794511020179,
+      "tag": "0134_subscription_label",
+      "breakpoints": true
     }
   ]
 }

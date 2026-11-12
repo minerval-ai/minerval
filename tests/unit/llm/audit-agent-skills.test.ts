@@ -23,7 +23,7 @@ vi.mock("../../../src/config.js", () => ({
     traceLevel: "off",
     promptCacheTtl: "5m",
     researcherEnabled: mocks.researcherEnabled,
-    researcherMaxWallMinutes: 20,
+    researcherRequestMaxWallMinutes: 240,
   }),
 }));
 

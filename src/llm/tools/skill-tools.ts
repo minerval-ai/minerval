@@ -184,7 +184,7 @@ const AGENT_INLINE_TOOL_NAMES = [
   "extend_plan",
   "update_workspace",
   "add_to_pass_budget",
-  "continue_review",
+  "fresh_start",
   "complete_mandate",
   "note_to_funder",
   "confirm_bounty",
@@ -209,7 +209,7 @@ export function builtinToolNames(): Set<string> {
     getArbitratorToolDefinitions(),
     getAuditToolDefinitions(),
     getGraphReadToolDefinitions(),
-    getResearchToolDefinitions({ claimScoped: false }),
+    getResearchToolDefinitions(),
   ];
   const names = new Set<string>(AGENT_INLINE_TOOL_NAMES);
   for (const family of families) for (const tool of family) names.add(tool.name);

@@ -23,7 +23,6 @@
  * with its plan as the new pass's brief.
  */
 import { rawQuery } from "../db/client.js";
-import { loadConfig } from "../config.js";
 import { getGeneralMandate } from "./allocation-policy-service.js";
 import { commissionNodePass, placeCommission } from "./commission-service.js";
 import { microUsdToOwls } from "./owl.js";
@@ -410,30 +409,3 @@ export async function inboxWaiting(grantId: string): Promise<{ officer: number; 
   return { officer: Number(row?.officer ?? 0), grantmaker: Number(row?.grantmaker ?? 0) };
 }
 
-/**
- * Wait for a petition's answer, working the mandate's inbox if no one else
- * is. `work` runs one sitting (officer, then Grantmaker for escalations); it
- * is injected so the agents stay out of this service.
- */
-export async function awaitDecision(
-  petitionId: string,
-  work: (grantId: string) => Promise<void>,
-  opts: { deadlineMs?: number; pollMs?: number } = {}
-): Promise<PetitionRow | null> {
-  const deadline = Date.now() + (opts.deadlineMs ?? loadConfig().petitionWaitSeconds * 1000);
-  const poll = opts.pollMs ?? 1000;
-  let p = await getPetition(petitionId);
-  while (p && (p.status === "pending" || p.status === "escalated") && Date.now() < deadline) {
-    if (await takeInboxLease(p.grant_id)) {
-      try {
-        await work(p.grant_id);
-      } finally {
-        await releaseInboxLease(p.grant_id);
-      }
-    } else {
-      await new Promise((r) => setTimeout(r, poll));
-    }
-    p = await getPetition(petitionId);
-  }
-  return p;
-}
