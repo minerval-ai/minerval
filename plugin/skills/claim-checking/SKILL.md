@@ -26,7 +26,11 @@ skill bundles it in full, and the section numbers below point into it.
 
 - **One assertion in question**: `match_claim` with the assertion (and a
   little surrounding context). Returns the canonical claim it states or
-  denies, plus its current assessment. Metered.
+  denies, plus its current assessment. Metered. An error of
+  `PLATFORM_FAULT` means a fault on Minerval's side kept the check from
+  running: nothing was compared, nothing was charged, and it is not your
+  user's balance. Say the check could not be made, and try later; it is not
+  a finding that the graph lacks the claim.
 - **A passage or document**: `assess_text`. Extracts the checkable claims
   and judges each, in the background: it returns a `job_id` at once. Read the
   verdicts with `get_text_analysis` every 20 to 30 seconds until `status` is

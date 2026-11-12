@@ -982,7 +982,17 @@ kinds of payer:
   as it finishes. A commission past the day's room, or past the escrow's
   uncommitted money, is refused whole with the figures; it is never
   clipped. Commissions from one mandate serialize on a per-mandate lock,
-  so parallel commissions commit the rate once.
+  so parallel commissions commit the rate once. A commission the platform
+  cannot run yet, because a platform fault is stopping its kind of work
+  (docs/architecture.md, "A platform fault makes the ledger row wait"),
+  keeps its hold: it still counts toward the daily rate of the UTC day it
+  was placed on, as any work not yet run does, and not of later days.
+  Freeing it would let a mandate place a second day's worth of work behind
+  the same fault, all of which would run, past the rate its funder set, the
+  moment the fault cleared. The row says it is waiting and why
+  (`waiting_on` in the ledger view, the note on the commission's result,
+  the review briefing), which is the rule here: no limit is added and none
+  is lifted, and the payer sees the state and its reason.
 - **a person**: their owls, debited behind the balance guard
   (`POST /claims/:id/contribute`, `POST /requests/:id/contribute`, MCP
   `fund_claim_assessment` and `fund_request_work`). The reader chooses the

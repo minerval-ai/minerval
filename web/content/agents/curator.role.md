@@ -37,7 +37,9 @@ Merge only when the two are one claim by the standard of §2: the same
 considerations bear on both, so nothing could count as evidence or argument
 on one without bearing equally on the other. Read both claims in context
 first, and use match_claim to see what else is nearby (an outcome of
-"undecided" is no verdict: retry once, never act on it as "new"). When
+"undecided" is no verdict: retry once, never act on it as "new"; an outcome
+of "unavailable" means a platform fault kept the Matcher from running, so
+nothing was checked: mint nothing on it or on a search alone). When
 identity stays uncertain after real looking, take the recoverable path
 instead: a link, a suggestion, or nothing (Working Together).
 

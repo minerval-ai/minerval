@@ -1904,14 +1904,62 @@ money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
 
 Failures are classified before they are counted. Transient API errors (rate
-limits, server errors, network, exhausted budget, rejected credentials) requeue the claim untouched
-and do not count as attempts. The continuous runner answers them by slowing
+limits, server errors, network, exhausted budget, rejected credentials, a
+provider account out of credits) requeue the claim untouched
+and do not count as attempts. The continuous runner answers rate limits,
+overloads and network failures by slowing
 down, not stopping: a drain that ends on one halves the live concurrency
 (never below one) and pauses every slot for a backoff that doubles with each
 consecutive transient stop, from five seconds to five minutes, and each clean
 drain afterwards gives one slot back. The one-shot drain the harness uses keeps
 a circuit breaker that stops after a run of consecutive transient failures.
 Either way, healthy claims are never poisoned.
+
+A platform fault makes the ledger row wait, and the row says so (#971,
+`services/deployment-fault.ts`). The fault has one of three public classes:
+`credits_fault` (the provider refused the call because the deployment's
+account with it cannot pay: a 402, Anthropic's "credit balance is too low",
+OpenAI's `insufficient_quota`), `credentials_fault` (the provider rejected
+the deployment's key) and `provider_unavailable` (any other transient
+failure that outlasted the client's retries). The first two are deployment
+faults, the operator's to fix. A row whose run a platform fault stops goes
+back to open, uncounted and still funded, with the class, since when, and
+when it is tried next (`actions.fault_reason`, `fault_since`, `retry_after`;
+`waiting_on`, `waiting_since` and `next_attempt_at` in the public ledger
+view), and the funded rows of the same kind and tier wait with it, since the
+same model serves them. The wait is 30 seconds, doubling to 10 minutes; it
+ends when one of the rows runs. It is a wait and not a limit: the row is
+retried for as long as the fault lasts, and money cannot pace it, because a
+call refused for credits or credentials is answered before anything is
+billed. A deployment fault does not stop the drain or slow the runner: the
+lanes behind the failing row may run on a provider that is healthy. On
+2026-11-12 one provider's account ran out of credits, a 0.05-owl lookout run
+on it was the most-backed runnable engine row, and it was picked, refused
+and handed back every few minutes for thirteen hours; each refusal ended the
+drain and paused every slot, and the Steward lane, whose provider was
+healthy, ran nothing until deploys restarted the process.
+
+Work a deployment fault stops is never failed for good. An ingest is not
+cancelled: its row waits and the engine executor submits the source again
+(`url-extraction.ts`), and the failed job, recorded by the fault's class, is
+not an event that wakes its mandate's review. A mandate reads of a fault in
+its next review's briefing: the faults open now, those that came and went
+since its last pass, and its own rows waiting on one, with what is held.
+Held money stays held: a commission the platform cannot run yet keeps its
+budget, which counts toward the daily rate of the UTC day it was placed on,
+as any work not yet run does, and not of later days. A tool a fault stops
+tells its agent so by class and says what to do: `match_claim` returns
+`outcome: "unavailable"`, which is not a verdict, and the Steward's rule is
+to mint nothing on it or on an embedding search alone, and to keep the
+premise in prose.
+
+Maintainers are told once. Each deployment fault is one open row per class
+and provider (`deployment_faults`), opened with an error line in the log and
+one report on the agents' channel at severity blocking, and shown with the
+rows waiting on it in `GET /monitors` (queue health). It closes when the
+provider has served a call and refused none for ten minutes, and the rows
+that waited are tried at once. The provider's own text is kept for
+maintainers and is never on a public surface.
 Only genuine logic errors count toward the retry cap, after which the claim
 parks in an error state for inspection. The distinction exists because an
 earlier incident parked dozens of production claims over what turned out to be

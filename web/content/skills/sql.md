@@ -36,7 +36,16 @@ unknown.
   speaker, publication, source_date, verbatim_head, created_at, detached_at
 - `ledger`: every piece of graph work. action_id, kind, variant,
   target_node_id, target_ref, label, status (open, running, finished,
-  cancelled), spent_owls, opened_at, updated_at
+  cancelled), spent_owls, opened_at, updated_at, waiting_on (null unless
+  the row is open and a platform fault stopped its last attempt: one of
+  credits_fault, the platform's account with a model provider is out of
+  credits; credentials_fault, a provider rejected the platform's key;
+  provider_unavailable, a provider or network failure that outlasted its
+  retries), waiting_since, next_attempt_at. A row with waiting_on has not
+  failed and is not cancelled: it stays funded, no attempt is charged, and
+  the platform retries it on its own, so commissioning it again buys
+  nothing. Its budget stays held meanwhile and counts toward the daily
+  rate of the day it was placed on
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,
@@ -165,6 +174,18 @@ SELECT n.id, n.text, n.importance, a.status, a.relabeled_from, a.assessed_at,
        AND l.status IN ('open', 'running')) r ON true
  WHERE a.is_current AND a.relabeled_from IS NOT NULL AND n.state = 'active'
  ORDER BY n.importance DESC LIMIT 100;
+```
+
+Funded work that is waiting on a platform fault, with what is held on it:
+
+```sql
+SELECT l.kind, l.waiting_on, count(DISTINCT l.action_id) AS rows,
+       min(l.waiting_since) AS since, min(l.next_attempt_at) AS next_attempt,
+       coalesce(sum(c.budget_owls - c.spent_owls), 0) AS held_owls
+  FROM ledger l LEFT JOIN commissions c
+    ON c.action_id = l.action_id AND c.settled_at IS NULL
+ WHERE l.status = 'open' AND l.waiting_on IS NOT NULL
+ GROUP BY l.kind, l.waiting_on ORDER BY since;
 ```
 
 **What is not here.** Only public data: no emails, keys, balances or

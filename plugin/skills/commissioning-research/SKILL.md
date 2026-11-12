@@ -168,7 +168,11 @@ Steward's earlier passes failed; `get_decomposition` marks such a claim
 `steward_parked`, with the class of failure), the result carries a `note`
 saying since when, after how many failures and why, and that the money buys
 another attempt, not a guaranteed verdict: tell your user before they pay
-again. `fund_deep_decomposition` (5 owls or
+again. If the platform cannot run the work yet (a deployment fault, such as
+its account with a model provider being out of credits), the result's
+`note` says the work is placed but waiting and since when: nothing about
+the claim failed, no attempt is charged, the platform retries it on its
+own, and paying again buys nothing. The owls stay held for it meanwhile. `fund_deep_decomposition` (5 owls or
 more) funds a mandate on the claim: a fresh pass on it first, then the
 claims that bear on it, most consequential first, with a tenth of the
 budget for the Grantmaker that plans the work and the rest refunded when

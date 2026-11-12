@@ -410,6 +410,20 @@ claim files it on the agents' own channel as it happens
 (`reportStewardPark`, #834), blocking when it retired funded ledger rows
 unrun.
 
+It also carries `deploymentFaults`: the deployment faults open now (#971),
+each a provider refusing calls because the deployment's account with it is
+out of credits (`credits_fault`) or its key is rejected
+(`credentials_fault`), with the provider, since when, how many calls it has
+failed, and how many ledger rows wait on that class. An empty list is the
+healthy reading; anything in it is the operator's to fix, and paid work is
+waiting until they do. `waitingOnFault` counts the open ledger rows waiting
+on a platform fault of any class, by class and kind (`provider_unavailable`
+usually clears on its own). A fault is filed on the agents' channel once,
+at severity blocking, when it opens (`noteDeploymentFault`), and closes
+here when the provider has served a call and refused none for ten minutes.
+The provider's own text is in the log line and the service-scoped report
+only.
+
 **Is not:** about content. A deep queue under a corpus drain is expected;
 a growing one on an idle deployment is not. Read the slope with the
 snapshot cadence in mind.
