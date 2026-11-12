@@ -3,7 +3,7 @@
  * the scratch database BEFORE any service module loads config, and close
  * the pool when the file's tests finish so vitest can exit.
  */
-import { afterAll, beforeAll } from "vitest";
+import { afterAll, beforeAll, vi } from "vitest";
 import { TEST_DATABASE_URL } from "./urls.js";
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -27,13 +27,24 @@ process.env.ENVIRONMENT = "development";
 //                              is what a deployment's own would be. Tests
 //                              that seed rows at other labels from outside
 //                              any run, or change tables, are refused there.
+//   ENFORCEMENT_SUITE=public-app  the same, except that a statement a test
+//                              file sends itself, outside any run, is the
+//                              owner's (ownStatementsAsOwner below). So a
+//                              test's fixtures and its own look at the rows
+//                              work, and what is left failing is the
+//                              application, called from outside any run,
+//                              meeting the wall: either correctly, because
+//                              the test calls from nowhere what a worker
+//                              calls under system clearance, or as a bug.
+const suite = process.env.ENFORCEMENT_SUITE;
 const { setNoContextSessionForTests, withSystemClearance } = await import("../../src/db/clearance.js");
 const { ensureEnforcement, setEnforcementSettleMs } = await import("../../src/db/enforcement.js");
 setNoContextSessionForTests(
-  process.env.ENFORCEMENT_SUITE === "public"
+  suite === "public" || suite === "public-app"
     ? { role: "cleared", clearance: ["public"], label: "public" }
     : { role: "owner", label: "public" }
 );
+if (suite === "public-app") await ownStatementsAsOwner();
 if (process.env.ENFORCEMENT_SUITE) {
   beforeAll(async () => {
     const { rawQuery } = await import("../../src/db/client.js");
@@ -54,3 +65,67 @@ afterAll(async () => {
   const { closeDb } = await import("../../src/db/client.js");
   await closeDb();
 });
+
+/**
+ * For ENFORCEMENT_SUITE=public-app: put the database client behind a layer
+ * that sends a statement on the owner's connection when a file under tests/
+ * is what called the client and no run is in progress, and otherwise leaves
+ * the client exactly as it is. The caller is read from the stack at the
+ * moment of the call, which is exact: the layer is called synchronously.
+ *
+ * The owner's connection here is one of the suite's own, with `public` as
+ * its label, because a test's fixtures name no label and the application's
+ * system clearance has none to give them.
+ */
+async function ownStatementsAsOwner(): Promise<void> {
+  const pg = (await import("pg")).default;
+  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const schema = await import("../../src/db/schema.js");
+  const { noteStatement, systemClearanceReason } = await import("../../src/db/clearance.js");
+  const { getUsageContext } = await import("../../src/llm/usage-context.js");
+  const own = new pg.Pool({ connectionString: TEST_DATABASE_URL, max: 10, options: "-c minerval.label=public" });
+  afterAll(() => own.end());
+  const logger = { logQuery: (query: string) => noteStatement(query) };
+
+  const calledByATest = (): boolean => {
+    // [0] the error, [1] this function, [2] the layer, [3] who called it.
+    const caller = new Error().stack?.split("\n")[3] ?? "";
+    if (!/\/tests\//.test(caller)) return false;
+    const context = getUsageContext();
+    return context.label === undefined && context.clearance === undefined && systemClearanceReason() === null;
+  };
+
+  vi.doMock("../../src/db/client.js", async (importOriginal) => {
+    const client = await importOriginal<typeof import("../../src/db/client.js")>();
+    return {
+      ...client,
+      rawQuery: async (text: string, params: unknown[] = []) => {
+        if (!calledByATest()) return client.rawQuery(text, params);
+        noteStatement(text);
+        return (await own.query(text, params)).rows;
+      },
+      getDb: () => (calledByATest() ? drizzle(own, { schema, logger }) : client.getDb()),
+      withTransaction: async (fn: (tx: import("../../src/db/client.js").TxQuery) => Promise<unknown>) => {
+        if (!calledByATest()) return client.withTransaction(fn);
+        const connection = await own.connect();
+        try {
+          await connection.query("BEGIN");
+          const value = await fn({
+            query: async (text: string, params: unknown[] = []) => {
+              noteStatement(text);
+              return (await connection.query(text, params)).rows;
+            },
+            db: drizzle(connection, { schema, logger }),
+          } as import("../../src/db/client.js").TxQuery);
+          await connection.query("COMMIT");
+          return value;
+        } catch (err) {
+          await connection.query("ROLLBACK").catch(() => {});
+          throw err;
+        } finally {
+          connection.release();
+        }
+      },
+    };
+  });
+}
