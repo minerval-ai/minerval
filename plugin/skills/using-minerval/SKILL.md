@@ -56,7 +56,7 @@ description: >-
 | `/ask`, `/ask/c/:id` | The Assistant, laid out as a chat: a sidebar of the user's conversations, saved pages and mandates; the conversation with the composer, model choice, bill and stop button at the bottom; and a panel on the right that shows a cited node when its citation is pointed at, or a saved page opened from the conversation |
 | `/ask/pages/:id` | A page saved for the user with `save_page`: markdown with embedded nodes shown as the graph holds them now and marked where they have moved since. Edit, export as markdown, delete. Private to the user |
 | `/claims` | Search and browse nodes, with filters for kind, assessment, importance, prizes, type and topic |
-| `/claims/:id` | A node: status or estimate or standing, the assessment and its reasoning, findings, decomposition, provenance, citation, contributions, and the funding disclosure. Order an assessment, deepen the subtree, or contribute from here |
+| `/claims/:id` | A node: status or estimate or standing, the assessment and its reasoning, the views people and organizations have stated on it, findings, decomposition, provenance, citation, contributions, and the funding disclosure. Order an assessment, deepen the subtree, contribute, or state your own view from here |
 | `/claims/:id/map`, `/claims/:id/history` | The decomposition as a map; every past assessment |
 | `/claims/:id/prize/claim`, `/claims/:id/attempts/:attemptId` | Claim an open prize on a formal statement; one solver attempt |
 | `/arguments/:id`, `/sources/:id` | One argument with its evaluation and instances; one source with what was read from it |
@@ -68,6 +68,7 @@ description: >-
 | `/account` | Owl balance, packs and history; prizes; grants; ordered assessments and funded jobs; API keys; usage by agent and key; contributor standing |
 | `/account/grants`, `/account/grants/new`, `/account/grants/:id` | The user's mandates; a direct conversation with the Grantmaker; one grant |
 | `/account/jobs/:id` | One funded job, such as a deep decomposition |
+| `/stated-views` | Views stated to the graph directly, each beside the assessment of its node: where they differ and which way, where the node was never assessed, where the two cannot be compared, and where they agree. `?speaker=<contributor id>` shows one account's (`list_stated_views`; `state_view` states one) |
 | `/contributors`, `/contributors/:id`, `/contributions/:id` | Contributors; one contributor; one contribution with its review |
 | `/docs` and under it | The constitution, architecture, every agent's prompt, the skills, setup versions, evals |
 | `/about`, `/rewards`, `/contributor-terms`, `/terms`, `/privacy` | About the project; the rewards policy; terms |

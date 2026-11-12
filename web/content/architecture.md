@@ -725,6 +725,74 @@ There a claim's own record is preferred to the source-wide one. The source
 page shows it as a notice, and the claim page marks the instance. There is
 no REST route that writes one.
 
+**A view stated to the graph directly** (constitution §4). An organization
+or a person may say what it holds about a claim, a quantity or a question,
+and nobody edits an assessment to match. The statement is not a new kind of
+object: it is a source (the statement itself, attributed to the account
+that made it, dated and hashed) and an instance of the node, with the
+speaker's declared stake recorded as that source's interest.
+
+- **Stating one.** `POST /claims/:claim_id/stated-views` (`state_view` on
+  MCP) takes the view in the speaker's words, how it stands toward the node
+  in its own terms (on a claim: `affirms`, `denies`, `qualifies`,
+  `gives_probability` or `open`, with an optional probability; on a
+  quantity: `states` with a figure, or `open`; on a question: `answers` or
+  `open`), optional reasons, and its stake in the answer or a declaration
+  that it has none. The account is the speaker. On the public graph an
+  account speaks for itself and an organization speaks through an account
+  that is its own; nobody checks who is behind an account unless an operator
+  has set `contributors.is_verified`, and every read says which. In a
+  members-only deployment stating the organization's view belongs to the
+  permission to direct, and the route's `preHandler` is where that guard
+  goes.
+- **Review before it shows.** A statement is outside material, so it is
+  filed as a contribution (`contribution_type` `state_view`) through the
+  same gate as any contribution on an existing node
+  (`src/server/contributor-gate.ts`) and reviewed by the Contribution
+  Reviewer on form and good faith, never on whether the view is right. Until
+  then nothing reaches the node: the source row is inert, and what was
+  submitted waits in `stated_views`. On an accept
+  (`src/services/contribution-acceptance.ts`, the same for an Arbitrator's
+  overturn) the instance is created with `created_by` `speaker`, the stake
+  goes to `source_interests` scoped to the node, and `stated_views.instance_id`
+  is set. An accepted stated view earns no owls.
+- **Reasons are a challenge** (§14). Where the statement gives reasons,
+  admission puts them in the node's inbox (`node_messages`, trigger
+  `contribution_accepted`, the contribution as sender), as any admitted
+  contribution reaches its Steward. The pass that reads the message answers
+  it, and the answer (changed, no change, or disagree, with a note) is what
+  the contribution's record shows became of the challenge. The Steward is
+  told what the speaker said, its stake, and whether the account is
+  verified; it is not told to agree.
+- **Nothing is edited.** A later statement by the same account on the same
+  node is a new source and a new instance. Both stay, dated, and the newer
+  is the one shown as current.
+- **Beside the assessment.** The node's page shows stated views in a section
+  of their own after the assessment, each with who stated it, when, how it
+  stands, its words, its declared stake, and what became of its reasons. The
+  section says that its place gives a statement no weight. Stated views are
+  left out of the page's list of instances so that they are not shown twice;
+  for the Steward they are instances like any other.
+- **Where views and assessments differ.** `GET /stated-views`
+  (`list_stated_views`), for one speaker (`speaker_id`), one node
+  (`claim_id`) or everything, sets the current statement of each speaker on
+  each node beside the judgment in force and reports one of four relations:
+  `differs`, with a direction; `agrees`; `not_assessed`, which is never read
+  as agreement; and `not_comparable`. The comparison
+  (`src/services/stated-view-compare.ts`) is arithmetic on what each side
+  recorded: a stated probability against the credence where both exist
+  (differing at 0.2 or more apart), otherwise the stance against the status;
+  a stated figure against the range of the estimate; whether each gives an
+  answer to a question. A view that qualifies a claim, two answers to one
+  question, and a figure against an estimate with no range are reported as
+  not comparable, with the reason, and never placed on a scale. The page is
+  `/stated-views`, and `/stated-views?speaker=<contributor id>` for one
+  account.
+
+The node and the stance of an admitted view are read from its instance, so
+a view follows its instance through a merge, and a stance the merge flips is
+shown as it now stands with what was originally stated beside it.
+
 A claim is a canonical proposition with no home source, so `get_claim`
 returns the canonical record and an `instance_count`, and the instances only
 when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`

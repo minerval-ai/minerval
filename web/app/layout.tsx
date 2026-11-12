@@ -60,6 +60,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {/* the findings feed (#394): the record of what the
                   administrators found worth telling people */}
               <Link href="/findings">findings</Link>
+              {/* what people and organisations have told the graph they hold,
+                  beside what the graph assesses (constitution §4) */}
+              <Link href="/stated-views">stated views</Link>
               {/* /contributors stays reachable by URL but is not linked until
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>
