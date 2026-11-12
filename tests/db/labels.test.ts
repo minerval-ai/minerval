@@ -170,7 +170,9 @@ describe("the labels table", () => {
     // takes it up (label-carried.test.ts). The other eighty-one got the
     // column in the label_columns migration and hold its default until the
     // code that stamps them lands (label-columns.test.ts, which also lists
-    // the tables that carry no label, each with its reason).
+    // the tables that carry no label, each with its reason). One more,
+    // claim_state_changes, came with its own column and is stamped by
+    // claim-lifecycle-service.ts.
     expect(rows).toEqual(
       [
         "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
@@ -181,7 +183,7 @@ describe("the labels table", () => {
         "audit_notes", "audit_runs", "bounties", "budget_jobs", "claim_formalizations",
         "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
         "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships",
-        "claim_source_maps", "claims", "consistency_flags", "consistency_sweeps", "contribution_reviews",
+        "claim_source_maps", "claim_state_changes", "claims", "consistency_flags", "consistency_sweeps", "contribution_reviews",
         "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
         "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
         "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants",
