@@ -122,9 +122,12 @@ const DEVELOPERS: readonly DeveloperEntry[] = [
 /**
  * The developer of a recorded model id, or null when the id is unknown. An
  * OpenRouter "vendor/model" id resolves by its vendor; a bare id by its shape.
+ * A model served from an endpoint the deployment runs itself
+ * ("endpoint:<name>/<model>", providers/routing.ts) is read as the model the
+ * endpoint knows it by: who serves a model does not change who built it.
  */
 export function modelDeveloper(modelId: string | null | undefined): ModelDeveloper | null {
-  const id = modelId?.trim().toLowerCase();
+  const id = modelId?.trim().toLowerCase().replace(/^endpoint:[a-z0-9][a-z0-9_-]*\//, "");
   if (!id) return null;
   const slash = id.indexOf("/");
   const vendor = slash > 0 ? id.slice(0, slash).replace(/^~/, "") : null;

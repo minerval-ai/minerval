@@ -24,6 +24,7 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { bodyToText } from "./document-text.js";
+import { assertProviderCleared } from "../llm/provider-clearance.js";
 
 const MAX_REDIRECTS = 5;
 const FETCH_TIMEOUT_MS = 60_000;
@@ -150,11 +151,17 @@ export interface PublicBody {
  * ingestion and the agents' reading tools to touch the network. `maxBytes`
  * replaces the page-sized cap for a caller that knows it is fetching
  * something larger (a paper's source archive).
+ *
+ * Being the one way, it is where the `web_pages` service is held to the
+ * label of the run or request fetching (src/provider-labels.ts).
  */
 export async function fetchPublicBytes(
   rawUrl: string,
   init: { userAgent?: string; maxBytes?: number } = {}
 ): Promise<PublicBody> {
+  // An address is text too, and a run may have composed it: nothing is
+  // fetched for a run at a label the open web is not cleared for.
+  await assertProviderCleared("web_pages");
   const maxBytes = init.maxBytes ?? MAX_RESPONSE_BYTES;
   let current = rawUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {

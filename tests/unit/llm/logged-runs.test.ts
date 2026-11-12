@@ -45,6 +45,7 @@ const MAY_IMPORT_A_PROVIDER: Record<string, string> = {
 const MAY_CONSTRUCT_A_PROVIDER_CLIENT: Record<string, string> = {
   "src/llm/providers/anthropic.ts": "The Anthropic adapter, reached through getAdapter.",
   "src/llm/providers/openai.ts": "The OpenAI adapter, reached through getAdapter.",
+  "src/llm/providers/endpoint.ts": "The adapter for a deployment's own endpoint, reached through getAdapter.",
   "src/llm/providers/openrouter.ts":
     "The OpenRouter adapter, reached through getAdapter, and openrouterWebSearch, which makes the check itself.",
   "src/services/embedding-service.ts":

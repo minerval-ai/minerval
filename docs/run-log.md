@@ -41,8 +41,8 @@ loop or single call has one for each), and its content carries a `setup`
 object: the commit the code was built from, the hash of the prompt set
 (`promptSet`), the model and its settings, the parts the setup was made of
 (the constitution, the role prompt, each tool) by hash, the `label` the
-run wrote at, and the features that were switched off for it
-(`featuresOff`).
+run wrote at, the `provider` that served it, and the features that were
+switched off for it (`featuresOff`).
 
 A label says who may read a row (`src/labels.ts`). Every judgment and source
 a run writes is stamped with the run's label (the `sensitivity_label`
@@ -58,6 +58,15 @@ session) was stamped with the label of the run or request that created it,
 and the worker that picks the row up opens the run at that label. So the
 label in a run's setup is the label of whatever asked for the run, through
 however many hand-overs, and never something the agent chose.
+
+`provider` is what served the run's model: `anthropic`, `openai`,
+`openrouter`, or `endpoint:<name>` for an endpoint the deployment runs
+itself, as the model id resolved (docs/architecture.md, "Providers"). A run
+is served only by a provider cleared for the label it works at
+(docs/architecture.md, "Providers cleared by label"), and the label and the
+provider together are what a later reader needs to check that this held for
+a given run. The field is always recorded; a setup with no `provider` is
+from before the field existed.
 
 `featuresOff` names the features the deployment had switched off when the
 run was set up (docs/architecture.md, "Features"): `["mathematics",
