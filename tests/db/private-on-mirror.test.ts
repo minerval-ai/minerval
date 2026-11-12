@@ -38,6 +38,7 @@ import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
 import { ASSESS_GROUP, ensureAssessActions, reconcileActions } from "../../src/services/action-service.js";
 import { getClaimView } from "../../src/services/claim-view-service.js";
+import { createContribution } from "../../src/services/contribution-service.js";
 import { requestCuration } from "../../src/services/curation-service.js";
 import { nodeVersions } from "../../src/services/judgment-version-service.js";
 import {
@@ -55,6 +56,7 @@ import { afterMirrorApplied } from "../../src/services/mirror-upkeep.js";
 import {
   PublicGraphNodeError,
   mirroredRowMessage,
+  publicContributionRefusal,
   publicGraphAsOf,
   publicJudgmentMessage,
   publicWorkNotDoneHereMessage,
@@ -522,6 +524,34 @@ describe("work at public on a mirrored node", () => {
       await system(() => rawQuery<{ l: string }>(`SELECT sensitivity_label AS l FROM assessment_orders WHERE claim_id = $1`, [id.parent]))
     ).toEqual([{ l: A }]);
     await system(() => rawQuery(`DELETE FROM assessment_orders WHERE claim_id = $1`, [id.parent]));
+  });
+
+  it("is not started by a member's contribution, which is not taken and is told where to contribute (review 3)", async () => {
+    const [who] = await system(() =>
+      rawQuery<{ id: string }>(`INSERT INTO contributors (external_id, display_name) VALUES ($1, 'A contributing member') RETURNING id`, [`pm-c-${tag}`])
+    );
+    made.users.push(who!.id);
+    const contribution = { claimId: id.parent, contributorId: who!.id, contributionType: "challenge", content: "A member's challenge to a mirrored claim." };
+    // What POST /contributions and submit_contribution ask first, at the node's label with the member's clearance.
+    const asked = await runWithUsageContext({ clearance: [PUBLIC_LABEL], label: PUBLIC_LABEL }, () => publicContributionRefusal(id.parent));
+    expect(asked).toBe(
+      `This node belongs to the public graph and is read here through the mirror, so its assessment at "public" is ` +
+        `the public graph's own. A contribution to it at "public" would be reviewed and acted on by work at "public" ` +
+        `on the node, which is not done here, so it was not taken and nothing was recorded. Contribute on the public ` +
+        `graph (https://public.example/claims/${id.parent}), where the node's Steward weighs it; that shows the public ` +
+        `graph what you sent. What this deployment holds about the node is weighed here by an assessment at a label ` +
+        `that reads "public", which you can order or fund by naming that label.`
+    );
+    // The service refuses whatever calls it, and no row is written.
+    const err = await caught(() => runWithUsageContext({ clearance: [PUBLIC_LABEL], label: PUBLIC_LABEL }, () => createContribution(contribution)));
+    expect(err).toBeInstanceOf(PublicGraphNodeError);
+    expect((err as Error).message).toBe(asked);
+    expect(await system(() => rawQuery(`SELECT 1 FROM contributions WHERE claim_id = $1`, [id.parent]))).toEqual([]);
+    // A node of the deployment's own takes one as before.
+    const own = await seedOwnNode(A, "A node of the deployment's own that a member contributes to");
+    const taken = await runWithUsageContext({ clearance: [A, PUBLIC_LABEL], label: A }, () => createContribution({ ...contribution, claimId: own }));
+    expect(taken.sensitivityLabel).toBe(A);
+    await system(() => rawQuery(`DELETE FROM contributions WHERE id = $1`, [taken.id]));
   });
 
   it("is not run: a Steward's pass at the node's own label stops before anything is sent to a model", async () => {

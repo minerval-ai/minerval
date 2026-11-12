@@ -23,6 +23,7 @@
  *     so MCP keeps parity with the REST API.
  */
 import { z } from "zod";
+import { publicContributionRefusal } from "../services/mirrored-node-service.js";
 import { mergedAliasRefusal, resolveClaimId } from "../services/claim-alias-service.js";
 import type { FastifyInstance } from "fastify";
 import {
@@ -972,6 +973,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           return errorResult("CLAIM_MERGED", merged.message, { merged_into: merged.survivorId });
         }
       }
+      // A mirrored node at its own label takes no contribution here, as
+      // POST /contributions refuses it (services/mirrored-node-service.ts).
+      const notTaken = await publicContributionRefusal(input.claim_id);
+      if (notTaken) return errorResult("PUBLIC_GRAPH_NODE", notTaken);
 
       const answered = await withAnsweredRequest({
         contributionType: input.contribution_type,

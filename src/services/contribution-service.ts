@@ -1,6 +1,7 @@
 /**
  * Contribution service -- DB operations for contributions, reviews, appeals.
  */
+import { PublicGraphNodeError, publicContributionRefusal } from "./mirrored-node-service.js";
 import { eq, sql, desc, inArray } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -479,6 +480,11 @@ export async function createContribution(input: {
   grantId?: string | null;
   fundedByJobId?: string | null;
 }) {
+  // A mirrored node at its own label: the review and what follows it would
+  // be work there, which is not done here (mirrored-node-service.ts). The
+  // route and the MCP tool ask first; this holds whatever else calls.
+  const notTaken = await publicContributionRefusal(input.claimId);
+  if (notTaken) throw new PublicGraphNodeError(notTaken);
   const db = getDb();
   const values: NewContribution = {
     claimId: input.claimId,

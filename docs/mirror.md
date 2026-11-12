@@ -193,7 +193,7 @@ The Steward's tools against a mirrored node, for a run at a private label that r
 
 The tools are offered as on any node. A tool is refused when it is used on what the public graph holds, and the run's brief says so beforehand.
 
-A member who orders, funds or asks for a decomposition of a mirrored node without naming a label is refused (409, `PUBLIC_GRAPH_NODE`) and told why and what to do: fund the public assessment on the public graph, at the address the feed gives, or name a label that reads `public` to have the node assessed on the deployment's own material.
+A member who orders, funds or asks for a decomposition of a mirrored node without naming a label is refused (409, `PUBLIC_GRAPH_NODE`) and told why and what to do: fund the public assessment on the public graph, at the address the feed gives, or name a label that reads `public` to have the node assessed on the deployment's own material. A contribution to a mirrored node is filed at the node's own label, so it is refused the same way (`POST /contributions` and `submit_contribution`, before anything is counted against the contributor): its review, and what the node's Steward would do with it, are work at `public` on a node the public graph judges. The member is told to contribute on the public graph, and that the deployment's own material is weighed by an assessment at a label that reads `public`.
 
 ### Kept current
 

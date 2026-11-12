@@ -1,3 +1,4 @@
+import { publicContributionRefusal } from "../services/mirrored-node-service.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { mergedAliasRefusal } from "../services/claim-alias-service.js";
 import {
@@ -188,6 +189,13 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
             error: { code: "CLAIM_MERGED", message: merged.message, merged_into: merged.survivorId },
           });
         }
+      }
+
+      // A mirrored node at its own label takes no contribution here
+      // (mirrored-node-service.ts); said before anything is counted.
+      const notTaken = await publicContributionRefusal(body.claim_id);
+      if (notTaken) {
+        return reply.code(409).send({ error: { code: "PUBLIC_GRAPH_NODE", message: notTaken } });
       }
 
       const answered = await withAnsweredRequest({

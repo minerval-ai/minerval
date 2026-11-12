@@ -371,6 +371,33 @@ export function publicWorkNotDoneHereMessage(label: string, pageUrl: string | nu
 }
 
 /**
+ * What a person is told when they contribute to a mirrored node at the
+ * node's own label. A contribution is reviewed, and where it is accepted
+ * the node's Steward acts on it: both are work at that label on a node the
+ * public graph judges, which is not done here.
+ */
+export function publicContributionNotTakenMessage(label: string, pageUrl: string | null): string {
+  return (
+    `This node belongs to the public graph and is read here through the mirror, so its assessment at ` +
+    `"${label}" is the public graph's own. A contribution to it at "${label}" would be reviewed and acted on ` +
+    `by work at "${label}" on the node, which is not done here, so it was not taken and nothing was recorded. ` +
+    `Contribute on the public graph${pageUrl ? ` (${pageUrl})` : ""}, where the node's Steward weighs it; ` +
+    `that shows the public graph what you sent. What this deployment holds about the node is weighed here ` +
+    `by an assessment at a label that reads "${label}", which you can order or fund by naming that label.`
+  );
+}
+
+/**
+ * The refusal of a contribution to a mirrored node at the node's own label,
+ * or null where it is taken: the node is this deployment's own, or no
+ * mirror is held.
+ */
+export async function publicContributionRefusal(claimId: string | null | undefined): Promise<string | null> {
+  if (!claimId || !(await publicGraphJudges(claimId))) return null;
+  return publicContributionNotTakenMessage(currentLabel(), await publicGraphPageUrl(claimId));
+}
+
+/**
  * Refuse work on a mirrored node at the node's own label: throws
  * PublicGraphNodeError where the work in progress is that, and returns
  * otherwise. Called where a person starts work (an order, funding, a
