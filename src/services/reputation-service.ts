@@ -28,6 +28,7 @@ import {
   SURVIVED_APPEAL_BONUS_POINTS,
 } from "./contribution-award-service.js";
 import { refundChargeForContribution } from "./owl-ledger-service.js";
+import { STATED_VIEW_CONTRIBUTION_TYPE } from "../schemas/common.js";
 
 // ---------------------------------------------------------------------------
 // Rules (pure, exported for tests and prompts)
@@ -144,6 +145,17 @@ export interface ReviewOutcomeSummary {
 }
 
 /**
+ * Whether an accepted contribution of this type earns owls. A view stated
+ * to the graph (§4) does not: it is admitted on form and good faith, not
+ * because it improved the graph, and an award for stating a view would pay
+ * people to make statements. Reputation and standing follow the review as
+ * for any contribution.
+ */
+function earnsOwls(contributionType: string): boolean {
+  return contributionType !== STATED_VIEW_CONTRIBUTION_TYPE;
+}
+
+/**
  * Apply the full consequences of a review decision: contribution counters,
  * reputation events + score, bad-faith standing, auto-suspension, and owl
  * awards for acceptances. Called by the reviewer tool after the review row
@@ -161,8 +173,9 @@ export async function applyReviewOutcome(
     contributor_id: string;
     importance: number;
     grant_id: string | null;
+    contribution_type: string;
   }>(
-    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id
+    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id, c.contribution_type
      FROM contributions c
      LEFT JOIN claims cl ON cl.id = c.claim_id
      WHERE c.id = $1`,
@@ -270,7 +283,7 @@ export async function applyReviewOutcome(
     owlsAwarded = await awardContributionOwls({
       contributorId: contribution.contributor_id,
       contributionId: input.contributionId,
-      owls: owlsForImportance(contribution.importance),
+      owls: earnsOwls(contribution.contribution_type) ? owlsForImportance(contribution.importance) : 0,
       awardKey: `award:accept:${input.contributionId}`,
     });
   } else if (input.decision === "reject") {
@@ -333,8 +346,9 @@ export async function applyArbitrationOutcome(input: {
     contributor_id: string;
     importance: number;
     grant_id: string | null;
+    contribution_type: string;
   }>(
-    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id
+    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id, c.contribution_type
      FROM contributions c
      LEFT JOIN claims cl ON cl.id = c.claim_id
      WHERE c.id = $1`,
@@ -450,7 +464,7 @@ export async function applyArbitrationOutcome(input: {
     owlsAwarded = await awardContributionOwls({
       contributorId: contribution.contributor_id,
       contributionId: input.contributionId,
-      owls: owlsForImportance(contribution.importance),
+      owls: earnsOwls(contribution.contribution_type) ? owlsForImportance(contribution.importance) : 0,
       awardKey: `award:arbitration:${input.contributionId}`,
     });
   } else {
@@ -496,8 +510,9 @@ export async function reverseReviewOutcome(input: {
     contributor_id: string;
     importance: number;
     grant_id: string | null;
+    contribution_type: string;
   }>(
-    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id
+    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id, c.contribution_type
      FROM contributions c
      LEFT JOIN claims cl ON cl.id = c.claim_id
      WHERE c.id = $1`,
@@ -605,10 +620,10 @@ export async function reverseReviewOutcome(input: {
   const owlsAwarded = await awardContributionOwls({
     contributorId: contribution.contributor_id,
     contributionId: input.contributionId,
-    owls:
-      (awardPointsForImportance(contribution.importance) +
-        SURVIVED_APPEAL_BONUS_POINTS) *
-      config.contributionAwardOwlPerPoint,
+    owls: earnsOwls(contribution.contribution_type)
+      ? (awardPointsForImportance(contribution.importance) + SURVIVED_APPEAL_BONUS_POINTS) *
+        config.contributionAwardOwlPerPoint
+      : 0,
     awardKey: `award:overturned:${input.contributionId}`,
   });
 

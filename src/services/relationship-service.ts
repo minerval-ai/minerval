@@ -13,6 +13,7 @@
  * outage) propagates instead of being swallowed as success.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { RELATION_TYPES } from "../schemas/common.js";
 import { KIND_RELATION_TYPES } from "../schemas/kinds.js";
 import { asRunner, type Runner } from "./query-runner.js";
@@ -64,8 +65,8 @@ export async function insertRelationshipEdge(
   }
   const inserted = await run.query<{ id: string }>(
     `INSERT INTO claim_relationships
-       (parent_claim_id, child_claim_id, relation_type, reasoning, confidence, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (parent_claim_id, child_claim_id, relation_type, reasoning, confidence, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO NOTHING
      RETURNING id`,
     [
@@ -75,6 +76,9 @@ export async function insertRelationshipEdge(
       input.reasoning,
       input.confidence ?? 1.0,
       input.createdBy,
+      // The edge is the writing run's, whatever labels its two nodes carry
+      // (src/labels.ts). An edge already there keeps the label it has.
+      currentLabel(),
     ]
   );
   if (inserted[0]) return { id: inserted[0].id, created: true };
@@ -154,11 +158,11 @@ export async function attachEdgeToArgument(
     );
   }
   const rows = await run.query<{ argument_id: string }>(
-    `INSERT INTO argument_subclaims (argument_id, relationship_id)
-     VALUES ($1, $2)
+    `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
+     VALUES ($1, $2, $3)
      ON CONFLICT DO NOTHING
      RETURNING argument_id`,
-    [argumentId, relationshipId]
+    [argumentId, relationshipId, currentLabel()]
   );
   return { grouped: rows.length > 0 };
 }
@@ -300,10 +304,10 @@ export async function retypeEdge(
   }
   if (existing.id === edgeId) return { id: edgeId, merged: false };
   await run.query(
-    `INSERT INTO argument_subclaims (argument_id, relationship_id)
-     SELECT argument_id, $2 FROM argument_subclaims WHERE relationship_id = $1
+    `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
+     SELECT argument_id, $2, $3 FROM argument_subclaims WHERE relationship_id = $1
      ON CONFLICT DO NOTHING`,
-    [edgeId, existing.id]
+    [edgeId, existing.id, currentLabel()]
   );
   await run.query(`DELETE FROM claim_relationships WHERE id = $1`, [edgeId]);
   return { id: existing.id, merged: true };

@@ -29,6 +29,7 @@
 import { capMicroUsd } from "./owl.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.js";
 import { segmentText } from "./source-segment-service.js";
@@ -984,14 +985,19 @@ export async function pollFeed(
     const rows = await rawQuery<{ id: string }>(
       `INSERT INTO lookout_feed_items
          (feed_id, lookout_id, item_key, url, title, author, published_at,
-          summary, content, status, first_seen_at, expires_at)
+          summary, content, status, first_seen_at, expires_at, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-               CASE WHEN $10 = 'new' THEN $11::timestamptz + make_interval(days => $12) END)
+               CASE WHEN $10 = 'new' THEN $11::timestamptz + make_interval(days => $12) END, $13)
        ON CONFLICT (feed_id, item_key) DO NOTHING
        RETURNING id`,
       [
         feed.id, feed.lookout_id, it.key, it.url, it.title, it.author, it.published,
         it.summary, it.content, seeding ? "seen" : "new", now, feed.retain_days,
+        // The poll's label (src/labels.ts). The poll is keyed on a lookout,
+        // and a lookout carries no label yet, so outside any run this is
+        // public. Once lookouts carry one, the poll opens at it and this
+        // line needs no change.
+        currentLabel(),
       ]
     );
     if (rows.length > 0 && !seeding) result.newItems++;

@@ -21,7 +21,7 @@ import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { tagClaim, type TaggingDecision } from "../llm/agents/tagger.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { getUsageContext, runWithUsageContext } from "../llm/usage-context.js";
+import { getUsageContext, runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
 import {
   getTagsForSubject,
   MAX_TAGGING_ATTEMPTS,
@@ -42,6 +42,8 @@ export interface TaggingTaskRow {
   claim_type: string;
   domains: string[];
   tagging_attempts: number;
+  /** The claim's label: the tagger's run opens at it (src/labels.ts). */
+  sensitivity_label: string;
 }
 
 export type TaggingTaskResult =
@@ -74,7 +76,7 @@ async function leaseNextClaim(): Promise<TaggingTaskRow | null> {
          LIMIT 1
          FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, text, claim_type, domains, tagging_attempts`,
+      RETURNING id, text, claim_type, domains, tagging_attempts, sensitivity_label`,
     [MAX_TAGGING_ATTEMPTS]
   );
   return rows[0] ?? null;
@@ -119,10 +121,23 @@ export async function assignmentsFromDecision(
 /**
  * Run the tagger on one claim row and apply the result. Exported so a script
  * or a test can tag a specific claim outside the drain.
+ *
+ * The queue is the claim row, so the claim's label is the label of the work:
+ * the tagger's run, the tags it mints and the taggings it attaches are all
+ * written at it, and a restricted claim's topics are never written as
+ * public. A row handed in without its label is refused, not tagged as
+ * public (runAtLabel).
  */
 export async function tagOneClaim(
   task: TaggingTaskRow,
   opts: { model?: string } = {}
+): Promise<TaggingTaskResult> {
+  return runAtLabel(task.sensitivity_label, `claim ${task.id}`, () => tagAtLabel(task, opts));
+}
+
+async function tagAtLabel(
+  task: TaggingTaskRow,
+  opts: { model?: string }
 ): Promise<TaggingTaskResult> {
   try {
     const existing = (await getTagsForSubject("claim", task.id)).filter(

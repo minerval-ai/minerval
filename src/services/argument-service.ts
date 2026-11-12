@@ -66,6 +66,9 @@ export async function addArgument(input: {
       name: input.name ?? null,
       description: input.description ?? null,
       createdBy: input.createdBy ?? "user",
+      // The argument is the writing run's: one written at a restricted
+      // label on a public claim is restricted (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 

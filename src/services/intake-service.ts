@@ -327,6 +327,9 @@ async function materializeProposedClaim(contribution: {
       ...(typeof match.direction_note === "string" && match.direction_note.trim()
         ? { canonicalDirectionNote: match.direction_note.trim() }
         : {}),
+      // The review that approved the proposal runs at the contribution's
+      // label, so the node it mints carries it (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning();
 

@@ -7,8 +7,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // empty/budget transitions, and that a budget error returns the claim to the
 // queue — by mocking the DB layer and the Steward agent.
 
-const { runCalls, passBudgets, state } = vi.hoisted(() => ({
+const { runCalls, runLabels, passBudgets, state } = vi.hoisted(() => ({
   runCalls: [] as string[],
+  // The label each Steward run worked at (currentLabel inside the run).
+  runLabels: [] as string[],
   // The pass budget each Steward run saw on its usage context.
   passBudgets: [] as Array<{ microUsd: number; source: string } | null>,
   state: {
@@ -29,6 +31,9 @@ const { runCalls, passBudgets, state } = vi.hoisted(() => ({
     // The fallback lane's opt-in flag: on for these cases, which drain with
     // no General mandate seeded. One test turns it off deliberately.
     fallbackLaneEnabled: true,
+    // The label each claim row carries; public where a test names none. A
+    // null stands for a row read without its label.
+    labels: {} as Record<string, string | null>,
   },
 }));
 
@@ -42,6 +47,7 @@ const { handleQuery } = vi.hoisted(() => ({
               steward_trigger: "structure_and_assess",
               steward_context: "",
               steward_attempts: state.attempts[id] ?? 0,
+              sensitivity_label: id in state.labels ? state.labels[id] : "public",
             },
           ]
         : [];
@@ -127,7 +133,8 @@ vi.mock("../../../src/db/client.js", () => ({
 vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
   runClaimSteward: vi.fn(async (input: { claimId: string }) => {
     runCalls.push(input.claimId);
-    const { getUsageContext } = await import("../../../src/llm/usage-context.js");
+    const { getUsageContext, currentLabel } = await import("../../../src/llm/usage-context.js");
+    runLabels.push(currentLabel());
     const budget = getUsageContext().passBudget;
     passBudgets.push(budget ? { microUsd: budget.microUsd, source: budget.source } : null);
     if (state.budgetThrows) {
@@ -159,6 +166,8 @@ import {
 describe("Steward DB-backed drain", () => {
   beforeEach(() => {
     runCalls.length = 0;
+    runLabels.length = 0;
+    state.labels = {};
     passBudgets.length = 0;
     state.pending = [];
     state.fundedPending = [];
@@ -227,6 +236,25 @@ describe("Steward DB-backed drain", () => {
     expect(runCalls).toEqual(["a", "b"]);
     expect(res.processed).toBe(2);
     expect(state.pending).toEqual(["c", "d"]); // untouched
+  });
+
+  // The fallback lane picks a claim, not a piece of work, so the claim's
+  // own label is the label its pass runs at (src/labels.ts).
+  it("runs the fallback lane's pass at the label of the claim it picked", async () => {
+    state.pending = ["restricted", "open"];
+    state.labels = { restricted: "internal" };
+    const res = await drainStewardQueue();
+    expect(runCalls).toEqual(["restricted", "open"]);
+    expect(runLabels).toEqual(["internal", "public"]);
+    expect(res.processed).toBe(2);
+  });
+
+  it("refuses a picked claim that came back without its label, instead of stewarding it as public", async () => {
+    const { MissingLabelError } = await import("../../../src/labels.js");
+    state.pending = ["a"];
+    state.labels = { a: null };
+    await expect(processNextStewardTask()).rejects.toBeInstanceOf(MissingLabelError);
+    expect(runCalls).toEqual([]);
   });
 
   it("returns 'empty' when nothing is pending", async () => {

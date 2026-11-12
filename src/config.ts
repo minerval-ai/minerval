@@ -9,6 +9,7 @@ import {
   unknownFeatureNames,
   unknownFeaturesMessage,
 } from "./features.js";
+import { applyConfigFile } from "./config-file.js";
 import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
 import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
 
@@ -715,6 +716,18 @@ const configSchema = z.object({
   // without a blunt depth cap. 0.25 = the ontology's "peripheral" ceiling, so
   // only genuinely peripheral subclaims are gated; set 0 to disable.
   stewardEnqueueMinImportance: z.coerce.number().default(0.25),
+  // Whether this deployment uses each paid outside service at all, said in
+  // so many words (the config file's outside_services.*.use,
+  // docs/deployment.md). Each service's key is a secret and lives in the
+  // environment, so without these a config file could not say whether the
+  // service is used. Unset, the default, is today's rule: the service is on
+  // when its key is set. "false" switches it off whatever keys are present
+  // (loadConfig blanks them below). "true" changes nothing here; it is the
+  // deployment saying it means to use the service, which the preflight
+  // holds it to by failing when the key is missing (src/preflight.ts).
+  elicitEnabled: z.enum(["true", "false"]).optional(),
+  pangramEnabled: z.enum(["true", "false"]).optional(),
+  paymentsEnabled: z.enum(["true", "false"]).optional(),
   // Elicit domain connector for the Steward (#299): scholarly search over
   // Elicit's remote MCP server. Empty key (the default) disables the
   // connector entirely — the Steward's toolset simply omits the elicit_*
@@ -1237,8 +1250,34 @@ export type Config = z.infer<typeof configSchema>;
 
 let _config: Config | null = null;
 
+/**
+ * What is wrong with `value`, as the environment would hold it, for one
+ * field of the schema above; null when the field accepts it. The config
+ * file's reader asks this of each setting it holds (src/config-file.ts), so
+ * a bad value is reported against its name in the file and what a value may
+ * be is written only here.
+ */
+export function configFieldProblem(field: string, value: string): string | null {
+  const schema = (configSchema.shape as Record<string, z.ZodType | undefined>)[field];
+  if (!schema) return `the config schema has no field named ${field}.`;
+  const result = schema.safeParse(value);
+  if (result.success) return null;
+  // The schema library's own wording, less its preamble, with a choice of
+  // values read as a choice.
+  const said = result.error.issues
+    .map((issue) => issue.message.replace(/^Invalid (option|input): /, "").replace(/"\|"/g, '", "'))
+    .join("; ");
+  return /[.!?]$/.test(said) ? said : `${said}.`;
+}
+
 export function loadConfig(): Config {
   if (_config) return _config;
+
+  // The deployment's config file, when it names one, is a layer under the
+  // environment: each setting it holds becomes its environment variable
+  // unless the environment already has one (src/config-file.ts). With no
+  // file this does nothing, and everything below reads what it always read.
+  applyConfigFile(configFieldProblem);
 
   const rawDatabaseUrl = process.env.DATABASE_URL ?? DEFAULT_DB_URL;
 
@@ -1342,6 +1381,9 @@ export function loadConfig(): Config {
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
     stewardConcurrency: process.env.STEWARD_CONCURRENCY,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
+    elicitEnabled: process.env.ELICIT_ENABLED || undefined,
+    pangramEnabled: process.env.PANGRAM_ENABLED || undefined,
+    paymentsEnabled: process.env.PAYMENTS_ENABLED || undefined,
     elicitApiKey: process.env.ELICIT_API_KEY,
     elicitMcpUrl: process.env.ELICIT_MCP_URL,
     elicitUsdPerCall: process.env.ELICIT_USD_PER_CALL,
@@ -1525,6 +1567,15 @@ export function loadConfig(): Config {
       sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
       sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
     };
+  }
+
+  // An outside service the deployment has switched off is off whatever keys
+  // the environment holds: each of these services is "configured" when its
+  // key is set, so the switch is honored by not carrying the key.
+  if (_config.elicitEnabled === "false") _config = { ..._config, elicitApiKey: "" };
+  if (_config.pangramEnabled === "false") _config = { ..._config, pangramApiKey: "" };
+  if (_config.paymentsEnabled === "false") {
+    _config = { ..._config, stripeSecretKey: "", stripeWebhookSecret: "" };
   }
 
   // The constitution's "strongest model for non-saturating assessment" mandate
