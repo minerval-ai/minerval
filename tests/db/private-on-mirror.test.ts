@@ -844,6 +844,61 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
     expect(await mirroredRows()).toEqual(before);
   });
 
+  it("add a subclaim under a mirrored node, and a parent above one, as nodes and edges at a (review 3: add_decomposition_edge, add_parent_claim)", async () => {
+    const before = await mirroredRows();
+    const publicLedgerBefore = (await ledger(id.parent)).filter((r) => r.l === PUBLIC_LABEL);
+    const publicInboxBefore = (await inbox(id.parent)).filter((m) => m.l === PUBLIC_LABEL);
+    const under = await runAt(A, () =>
+      tool("add_decomposition_edge", {
+        parent_id: id.parent,
+        child_text: text("A-ONLY: the partner's cores show accumulation continuing"),
+        relation: "requires",
+        reasoning: "What a's cores add.",
+        importance: 0.6,
+      })
+    );
+    expect(under.success, under.message).toBe(true);
+    const above = await runAt(A, () =>
+      tool("add_parent_claim", {
+        claim_id: id.parent,
+        parent_text: text("A-ONLY: the partner's wetland program stores more carbon than its forestry program"),
+        relation: "requires",
+        reasoning: "What a's program rests on.",
+      })
+    );
+    expect(above.success, above.message).toBe(true);
+    const minted = await system(() =>
+      rawQuery<{ id: string; l: string; origin: string; role: string; edge_l: string; edge_origin: string }>(
+        `SELECT c.id, c.sensitivity_label AS l, c.origin,
+                CASE WHEN r.parent_claim_id = $1 THEN 'under' ELSE 'above' END AS role,
+                r.sensitivity_label AS edge_l, r.origin AS edge_origin
+           FROM claim_relationships r
+           JOIN claims c ON c.id = CASE WHEN r.parent_claim_id = $1 THEN r.child_claim_id ELSE r.parent_claim_id END
+          WHERE (r.parent_claim_id = $1 OR r.child_claim_id = $1) AND c.text LIKE 'A-ONLY: the partner''s%' ORDER BY role`,
+        [id.parent]
+      )
+    );
+    expect(minted.map(({ id: _id, ...rest }) => rest)).toEqual([
+      { l: A, origin: "local", role: "above", edge_l: A, edge_origin: "local" },
+      { l: A, origin: "local", role: "under", edge_l: A, edge_origin: "local" },
+    ]);
+    made.claims.push(...minted.map((m) => m.id));
+    // Nothing the public graph holds changed, and a reader of public alone is given neither node nor edge.
+    expect(await mirroredRows()).toEqual(before);
+    expect(
+      await person([PUBLIC_LABEL], () =>
+        rawQuery(
+          `SELECT 1 FROM claims WHERE id = ANY($1::uuid[]) UNION ALL
+           SELECT 1 FROM claim_relationships WHERE parent_claim_id = ANY($1::uuid[]) OR child_claim_id = ANY($1::uuid[])`,
+          [minted.map((m) => m.id)]
+        )
+      )
+    ).toEqual([]);
+    // No work at public was opened on the mirrored node by either.
+    expect((await ledger(id.parent)).filter((r) => r.l === PUBLIC_LABEL)).toEqual(publicLedgerBefore);
+    expect((await inbox(id.parent)).filter((m) => m.l === PUBLIC_LABEL)).toEqual(publicInboxBefore);
+  });
+
   it("record a's cut of a mirrored quantity, which stands beside the public graph's later cut for the claim and never stops the mirror (review 3, finding 2)", async () => {
     const kind = (name: string, input: Record<string, unknown>) =>
       runAt(A, async () => JSON.parse((await executeKindTool(name, input, { role: "claim_steward", claimId: id.other }))!) as ToolAnswer);
