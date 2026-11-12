@@ -275,7 +275,12 @@ refresh. Every request made with one:
 So an agent holding a key cannot choose where something is filed, and
 cannot read at one label and write into a row at another, whatever text
 it has read. The Assistant in one conversation is held the same way, to the
-conversation's label. A key minted before the deployment had a second label
+conversation's label. Within a turn it reads with the clearance its user held
+when the turn began: the user's standing is resolved once for the turn
+(`openAccountTools` in `src/llm/tools/assistant-tools.ts`), so a grant
+removed while a turn is running takes effect from the user's next message
+and not inside the turn. A turn ends with its reply or when the user stops
+it (`POST /assistant/conversations/:id/stop`). A key minted before the deployment had a second label
 works at `public`: it reads and writes public material only, and its holder
 mints a new key to work at another label (`GET /api-keys` shows each key's
 label and says this). A key or a token whose label the person may no longer
