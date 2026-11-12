@@ -41,6 +41,7 @@ import { getClaimView } from "../../src/services/claim-view-service.js";
 import { requestCuration } from "../../src/services/curation-service.js";
 import { nodeVersions } from "../../src/services/judgment-version-service.js";
 import {
+  ROW_REFUSAL_FOR_MEMBERS,
   applyBatch,
   mirrorStatus,
   syncMirror,
@@ -48,6 +49,7 @@ import {
   type BatchSource,
 } from "../../src/services/mirror-apply-service.js";
 import { poolDb, type MirrorDb } from "../../src/services/mirror-db.js";
+import { replicatedTables } from "../../src/services/mirror-manifest.js";
 import { cutBatches, getBatchText, listBatches } from "../../src/services/mirror-feed-service.js";
 import { afterMirrorApplied } from "../../src/services/mirror-upkeep.js";
 import {
@@ -59,6 +61,7 @@ import {
   sourceMirrorFacts,
 } from "../../src/services/mirrored-node-service.js";
 import { createOrder } from "../../src/services/order-service.js";
+import { getQuantityDetail, getThresholdOf } from "../../src/services/quantity-service.js";
 import { enqueueSteward } from "../../src/services/queue-service.js";
 import { insertRelationshipEdge } from "../../src/services/relationship-service.js";
 import { findSimilarClaims } from "../../src/services/search-service.js";
@@ -809,6 +812,87 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       await system(() => rawQuery<{ l: string; origin: string }>(`SELECT sensitivity_label AS l, origin FROM quantity_estimates WHERE claim_id = $1 AND is_current`, [id.quantity]))
     ).toEqual([{ l: A, origin: "local" }]);
     expect(await mirroredRows()).toEqual(before);
+  });
+
+  it("record a's cut of a mirrored quantity, which stands beside the public graph's later cut for the claim and never stops the mirror (review 3, finding 2)", async () => {
+    const kind = (name: string, input: Record<string, unknown>) =>
+      runAt(A, async () => JSON.parse((await executeKindTool(name, input, { role: "claim_steward", claimId: id.other }))!) as ToolAnswer);
+    const cutInput = { claim_id: id.other, quantity_id: id.quantity, direction: "above", value: 2 };
+    const recorded = await kind("record_cut", cutInput);
+    expect(recorded.success, recorded.message).toBe(true);
+    const rows = () =>
+      system(() =>
+        rawQuery<{ origin: string; l: string; value: number }>(
+          `SELECT origin, sensitivity_label AS l, value::float8 AS value FROM quantity_cuts WHERE claim_id = $1 ORDER BY origin`,
+          [id.other]
+        )
+      );
+    expect(await rows()).toEqual([{ origin: "local", l: A, value: 2 }]);
+
+    // The public graph records its own cut for that claim, and then
+    // something else changes: both batches apply.
+    await ins(pub, "quantity_cuts", { claim_id: id.other, quantity_id: id.quantity, direction: "above", value: 0.25, created_by: "claim_steward" });
+    await publishAndApply();
+    expect(await rows()).toEqual([
+      { origin: "local", l: A, value: 2 },
+      { origin: "mirror", l: PUBLIC_LABEL, value: 0.25 },
+    ]);
+    const reworded = text("Carbon stored per hectare of coastal wetland soil");
+    await pub.query(`UPDATE claims SET text = $2, updated_at = now() WHERE id = $1`, [id.quantity, reworded]);
+    await publishAndApply();
+    expect((await system(() => rawQuery<{ text: string }>(`SELECT text FROM claims WHERE id = $1`, [id.quantity])))[0]!.text).toBe(reworded);
+    const status = await person([PUBLIC_LABEL], () => mirrorStatus());
+    expect(status.last_refusal).toBeNull();
+
+    // A read shows one cut for the claim: a's own to work at a, the public
+    // graph's to everyone else.
+    const cutsRead = async () => {
+      const detail = await getQuantityDetail(id.quantity);
+      return { listed: detail.cuts.filter((c) => c.id === id.other).map((c) => Number(c.value)), of: Number((await getThresholdOf(id.other))?.value) };
+    };
+    expect(await runAt(A, cutsRead)).toEqual({ listed: [2], of: 2 });
+    expect(await person([PUBLIC_LABEL], cutsRead)).toEqual({ listed: [0.25], of: 0.25 });
+    expect(await runAt(B, cutsRead)).toEqual({ listed: [0.25], of: 0.25 });
+
+    // Once the public graph holds the claim's cut, a second cut here is refused.
+    const again = await kind("record_cut", { ...cutInput, value: 3 });
+    expect(again.success).toBe(false);
+    expect(again.message).toContain("belongs to the public graph and is read here through the mirror");
+    expect(await rows()).toHaveLength(2);
+  });
+
+  it("leaves no key on a replicated table that a row at a private label could hold against a mirrored row", async () => {
+    // Every unique index on a replicated table either ends with origin, is
+    // the row's own id, or is the one current judgment at a label, where a
+    // mirrored row is at public and a private row never is.
+    const withoutOrigin = await system(() =>
+      rawQuery<{ tbl: string; def: string }>(
+        `SELECT t.relname AS tbl, pg_get_indexdef(x.indexrelid) AS def
+           FROM pg_index x JOIN pg_class t ON t.oid = x.indrelid
+           JOIN pg_namespace n ON n.oid = t.relnamespace AND n.nspname = current_schema()
+          WHERE x.indisunique AND t.relname = ANY($1) AND pg_get_indexdef(x.indexrelid) !~ 'origin'`,
+        [replicatedTables().map((t) => t.name)]
+      )
+    );
+    const other = withoutOrigin.filter((i) => !/\(id\)$/.test(i.def) && !/_current_at_label .*, sensitivity_label\) WHERE \(is_current = true\)$/.test(i.def));
+    expect(other).toEqual([]);
+  });
+
+  it("tells a member only that a row could not be written when the database refuses a batch, and the operator which", async () => {
+    await system(() =>
+      rawQuery(
+        `INSERT INTO mirror_refusals (sequence, code, message) VALUES (999999, 'row_refused', 'Batch 999999 was not applied: the database refused one of its rows (table quantity_cuts): Key (claim_id)=(${id.other}) already exists.')`
+      )
+    );
+    try {
+      const member = await person([PUBLIC_LABEL], () => mirrorStatus());
+      expect(member.last_refusal).toMatchObject({ code: "row_refused", message: ROW_REFUSAL_FOR_MEMBERS });
+      expect(JSON.stringify(member)).not.toContain(id.other);
+      const operator = await system(() => mirrorStatus(undefined, { detail: true }));
+      expect(operator.last_refusal!.message).toContain(id.other);
+    } finally {
+      await system(() => rawQuery(`DELETE FROM mirror_refusals WHERE sequence = 999999`));
+    }
   });
 
   it("are refused by the database with the same answer when a write reaches a mirrored row without asking first", async () => {

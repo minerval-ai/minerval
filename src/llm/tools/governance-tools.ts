@@ -4,6 +4,7 @@
  * These give agents the ability to gather context about claims, contributions,
  * and contributors before making decisions.
  */
+import { oneCutForClaimSql } from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, sql, desc } from "drizzle-orm";
@@ -650,7 +651,7 @@ async function getClaimDependents(claimId: string) {
        FROM quantity_cuts qc
        JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
        LEFT JOIN assessments_in_force a ON a.claim_id = c.id
-      WHERE qc.quantity_id = $1
+      WHERE qc.quantity_id = $1${oneCutForClaimSql("qc")}
       ORDER BY c.importance DESC, c.id`,
     [claimId]
   );

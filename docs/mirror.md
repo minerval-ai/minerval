@@ -142,7 +142,7 @@ The applier identifies itself with a setting that lasts for its transaction. Tha
 
 ### How current the mirror is
 
-`GET /mirror/status` (`get_mirror_status` on MCP), mounted only on a deployment that mirrors: `public_graph_as_of`, the sequence and hash of the newest batch, when it was applied, whether a snapshot is only partly applied, how many mirrored claims a search can find, and the last refusal since.
+`GET /mirror/status` (`get_mirror_status` on MCP), mounted only on a deployment that mirrors: `public_graph_as_of`, the sequence and hash of the newest batch, when it was applied, whether a snapshot is only partly applied, how many mirrored claims a search can find, and the last refusal since. A refusal that names a row this deployment holds (`id_collision`, `row_refused`) is served with a message that says only that a row could not be written, because the row may be at a label the reader does not hold; `npx tsx scripts/mirror.ts status` prints the full reason for the operator.
 
 ## Beside a deployment's own rows
 
@@ -165,6 +165,8 @@ A deployment's row and a mirrored row can say the same thing: a source at one ad
 | `claim_links` | the pair and the kind | Both rows are listed. |
 | `answer_relations` | question and the pair | Both rows are listed. |
 | `argument_subclaims` | argument and edge (the primary key, which now ends with `origin`) | One premise where an argument's premises are listed. |
+| `quantity_cuts` | the claim (the primary key, which now ends with `origin`) | A read takes one cut for a claim by the rule a source's address has (`oneCutForClaimSql`). `record_cut` is refused once the public graph holds a cut for the claim. |
+| `quantity_definitions` | the quantity (the primary key, which now ends with `origin`) | No pair arises: a mirrored node's kind and definition are the public graph's, and defining it here is refused. |
 | `source_segments` | document and position | No pair arises: a mirrored document is not segmented here, and work at a label anchors its instances to the segments that came with the mirror. |
 | the four judgment tables | node, and label where there is more than one | No pair: the judgment of a mirrored node at its own label is the mirrored row. |
 
@@ -186,6 +188,7 @@ The Steward's tools against a mirrored node, for a run at a private label that r
 | `record_claim_instance`, `record_argument_instance`, `add_argument`, `add_relationship_edge`, `add_related_claim`, `add_decomposition_edge`, `add_parent_claim` | Adds a row at the run's label. An edge or a link the public graph already holds is not recorded again. |
 | `log_stewardship_decision`, `escalate_to_curator`, `notify_steward`, `file_request` | Works at the run's label. A note to a mirrored node's Steward at the node's own label is refused: nobody here runs that pass. |
 | `update_canonical_form`, `set_claim_importance`, `set_claim_domains`, `set_quantity_definition` | Refused with the one message. |
+| `record_cut` | Records the run's cut at its label, beside any the public graph later records for the claim. Refused with the one message once the public graph holds the claim's cut. |
 | `write_argument`, `revise_argument`, `retire_argument`, `update_claim_instance`, `detach_claim_instance`, `set_instance_order`, `remove_subclaim_edge`, `set_edge_relation`, `ungroup_subclaim`, on a row the public graph recorded | Refused with the one message. On a row the run's own label recorded, they work as anywhere. |
 
 The tools are offered as on any node. A tool is refused when it is used on what the public graph holds, and the run's brief says so beforehand.

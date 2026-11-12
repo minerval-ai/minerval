@@ -9,7 +9,7 @@
  * the prior structure without erasing history). `reverseReconciliation`
  * undoes a logged event.
  */
-import { mirroredNode } from "./mirrored-node-service.js";
+import { mirroredNode, mirroredRowMessage } from "./mirrored-node-service.js";
 import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { claims } from "../db/schema.js";
@@ -562,6 +562,9 @@ export async function changeNodeKind(input: {
   );
   if (!row) throw new Error(`Node ${claimId} not found`);
   if (row.state !== "active") throw new Error(`Node ${claimId} is ${row.state}, not active`);
+  // A mirrored node's kind is the public graph's (mirrored-node-service.ts):
+  // refused before anything is retired or written.
+  if (await mirroredNode(claimId)) throw new Error(mirroredRowMessage("the node's kind"));
   const from = row.kind;
   if (from === to) return { changed: false, from };
   const definition = to === "quantity" ? quantityDefinitionSchema.parse(input.definition ?? undefined) : null;
@@ -608,7 +611,7 @@ export async function changeNodeKind(input: {
       await rawQuery(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, 'curator', $6)
-       ON CONFLICT (claim_id) DO UPDATE
+       ON CONFLICT (claim_id, origin) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
              conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
        ${sameLabelOnly("quantity_definitions")}
@@ -717,6 +720,8 @@ export async function setQuantityDefinition(input: {
     [input.claimId]
   );
   if (!row) throw new Error(`Node ${input.claimId} not found`);
+  // A mirrored quantity's definition is the public graph's (mirrored-node-service.ts).
+  if (await mirroredNode(input.claimId)) throw new Error(mirroredRowMessage("the quantity's definition"));
   if (row.state !== "active") throw new Error(`Node ${input.claimId} is ${row.state}, not active`);
   if (row.kind !== "quantity") {
     throw new Error(
@@ -732,7 +737,7 @@ export async function setQuantityDefinition(input: {
       await rawQuery(
     `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, 'curator', $6)
-     ON CONFLICT (claim_id) DO UPDATE
+     ON CONFLICT (claim_id, origin) DO UPDATE
        SET measures = EXCLUDED.measures, population = EXCLUDED.population,
            conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
        ${sameLabelOnly("quantity_definitions")}

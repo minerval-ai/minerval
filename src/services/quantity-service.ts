@@ -23,7 +23,14 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
-import { publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
+import {
+  holdsMirror,
+  mirroredNode,
+  mirroredRowMessage,
+  oneCutForClaimSql,
+  publicGraphJudges,
+  publicJudgmentMessage,
+} from "./mirrored-node-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
 /** Set a quantity's definition, making a fresh claim a quantity if it is not one yet. */
@@ -33,6 +40,10 @@ export async function defineQuantity(input: {
   createdBy: string;
 }): Promise<void> {
   const def = quantityDefinitionSchema.parse(input.definition);
+  // A mirrored node's kind and definition are the public graph's, and a
+  // definition of this deployment's own beside it would be a second
+  // definition of one quantity (mirrored-node-service.ts).
+  if (await mirroredNode(input.claimId)) throw new KindError(mirroredRowMessage("the quantity's definition"));
   await withTransaction(async (tx) => {
     await convertKind(tx, input.claimId, "quantity");
     // A first definition takes this run's label; a revision of one keeps
@@ -41,7 +52,7 @@ export async function defineQuantity(input: {
       await tx.query(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (claim_id) DO UPDATE
+       ON CONFLICT (claim_id, origin) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
              conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
        ${sameLabelOnly("quantity_definitions")}
@@ -213,10 +224,18 @@ export async function recordCut(input: {
   await withTransaction(async (tx) => {
     await requireKind(tx, input.claimId, "claim");
     await requireKind(tx, input.quantityId, "quantity");
+    // A cut the public graph already holds for the claim is the claim's
+    // cut: it is not this deployment's to revise, and one of its own
+    // beside it would say twice where the claim cuts
+    // (mirrored-node-service.ts). Nothing is asked where no mirror is held.
+    if (holdsMirror()) {
+      const held = await tx.query(`SELECT 1 FROM quantity_cuts WHERE claim_id = $1 AND origin = 'mirror'`, [input.claimId]);
+      if (held.length > 0) throw new KindError(mirroredRowMessage("this claim's cut of the quantity"));
+    }
     const written = await tx.query<{ claim_id: string }>(
       `INSERT INTO quantity_cuts (claim_id, quantity_id, direction, value, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (claim_id) DO UPDATE
+       ON CONFLICT (claim_id, origin) DO UPDATE
          SET quantity_id = EXCLUDED.quantity_id, direction = EXCLUDED.direction, value = EXCLUDED.value
        ${sameLabelOnly("quantity_cuts")}
        RETURNING claim_id`,
@@ -346,7 +365,7 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
          FROM quantity_cuts qc
          JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
          LEFT JOIN assessments_in_force a ON a.claim_id = c.id
-        WHERE qc.quantity_id = $1
+        WHERE qc.quantity_id = $1${oneCutForClaimSql("qc")}
         ORDER BY qc.value, c.id`,
       [claimId]
     ),
@@ -384,7 +403,7 @@ export async function getThresholdOf(claimId: string): Promise<ThresholdOfView |
   const [row] = await rawQuery<{ quantity_id: string; quantity_text: string; direction: "above" | "below"; value: number }>(
     `SELECT qc.quantity_id, q.text AS quantity_text, qc.direction, qc.value
        FROM quantity_cuts qc JOIN claims q ON q.id = qc.quantity_id
-      WHERE qc.claim_id = $1`,
+      WHERE qc.claim_id = $1${oneCutForClaimSql("qc")}`,
     [claimId]
   );
   if (!row) return null;

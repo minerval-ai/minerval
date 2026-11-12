@@ -32,6 +32,7 @@
  * valuation, and it moves no money.
  */
 import { oneLabelOnly } from "./judgment-version-service.js";
+import { oneCutForClaimSql } from "./mirrored-node-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { slotColumnSql } from "./steward-lease.js";
@@ -1325,7 +1326,7 @@ export async function figureAndAnswerChecks(
        JOIN claims q ON q.id = qc.quantity_id AND q.state = 'active'
        JOIN assessments_in_force a ON a.claim_id = qc.claim_id AND a.claim_credence IS NOT NULL
        JOIN quantity_estimates_in_force qe ON qe.claim_id = qc.quantity_id
-      WHERE ${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")}`,
+      WHERE (${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")})${oneCutForClaimSql("qc")}`,
     params
   );
   const cuts: CutCheck[] = [];

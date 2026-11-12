@@ -186,6 +186,26 @@ export async function mirroredFacts(claimId: string): Promise<MirroredFacts | nu
 }
 
 /**
+ * SQL condition for a read of `quantity_cuts` aliased `alias`: one cut for
+ * a claim. A cut this deployment recorded and the public graph's own for
+ * the same claim are two rows (db/schema.ts, the origin column), and a read
+ * takes one by the rule a source's address has: the deployment's own where
+ * it is at the label of the work in progress, else the public graph's,
+ * else a row of the deployment's own at another label the work reads.
+ * Empty where no mirror is held, and the statement is what it was.
+ */
+export function oneCutForClaimSql(alias: string): string {
+  if (!holdsMirror()) return "";
+  const rank = (a: string) =>
+    `(CASE WHEN ${a}.origin = 'local' AND ${a}.sensitivity_label = minerval_write_label() THEN 0 ` +
+    `WHEN ${a}.origin = 'mirror' THEN 1 ELSE 2 END)`;
+  return (
+    ` AND NOT EXISTS (SELECT 1 FROM quantity_cuts other_cut WHERE other_cut.claim_id = ${alias}.claim_id ` +
+    `AND other_cut.origin <> ${alias}.origin AND ${rank("other_cut")} < ${rank(alias)})`
+  );
+}
+
+/**
  * What a read of a source adds on a deployment that mirrors: for a mirrored
  * source, that it is the public graph's and as of when; for a source of the
  * deployment's own whose address the public graph also holds, the public

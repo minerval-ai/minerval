@@ -149,7 +149,7 @@ async function main(): Promise<void> {
       return;
     }
     case "status": {
-      const status = await mirrorStatus();
+      const status = await mirrorStatus(undefined, { detail: true });
       if (!status.applied) {
         console.log("This mirror has applied no batch yet.");
       } else {

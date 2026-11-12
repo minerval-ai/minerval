@@ -1020,7 +1020,18 @@ export interface MirrorStatus {
   last_refusal: { sequence: number | null; code: string; message: string; refused_at: string } | null;
 }
 
-export async function mirrorStatus(db: MirrorDb = appDb): Promise<MirrorStatus> {
+/**
+ * What a member is told of a batch the database refused. The full message
+ * names a row this deployment holds, which may be one at a label the reader
+ * does not hold, so only the operator's script reads it (`detail`).
+ */
+export const ROW_REFUSAL_FOR_MEMBERS =
+  "A batch from the public graph was not applied because a row in it could not be written here. " +
+  "Nothing of it was written, and the mirror waits at the batch before it. " +
+  "The operator of this deployment can read the reason with `npx tsx scripts/mirror.ts status`.";
+const REFUSALS_NAMING_A_ROW = new Set<string>(["id_collision", "row_refused"]);
+
+export async function mirrorStatus(db: MirrorDb = appDb, options: { detail?: boolean } = {}): Promise<MirrorStatus> {
   const iso = (column: string) => `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
   const [head] = await db.query<{
     sequence: string;
@@ -1060,7 +1071,7 @@ export async function mirrorStatus(db: MirrorDb = appDb): Promise<MirrorStatus> 
       ? {
           sequence: refusal.sequence === null ? null : Number(refusal.sequence),
           code: refusal.code,
-          message: refusal.message,
+          message: REFUSALS_NAMING_A_ROW.has(refusal.code) && !options.detail ? ROW_REFUSAL_FOR_MEMBERS : refusal.message,
           refused_at: refusal.refused_at,
         }
       : null,

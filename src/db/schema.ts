@@ -368,7 +368,8 @@ export const administrativeEvents = pgTable(
 // Identity is per graph. Where a replicated table has a key besides its id
 // (a source's address, an edge's two nodes and relation, a link's pair, a
 // question's pair of answers, a document's segment order, an argument's
-// grouping of an edge), the unique index ends with `origin`. So a row this
+// grouping of an edge, a quantity's definition, a claim's cut of a
+// quantity), the unique index ends with `origin`. So a row this
 // deployment made and the public graph's row for the same thing are two
 // rows, the mirrored one always applies, and nothing this deployment holds
 // can stop its mirror. Among a deployment's own rows the key is what it
@@ -5776,7 +5777,7 @@ export type NewTagging = typeof taggings.$inferInsert;
 // ---------------------------------------------------------------------------
 export const quantityDefinitions = pgTable("quantity_definitions", {
   claimId: uuid("claim_id")
-    .primaryKey()
+    .notNull()
     .references(() => claims.id, { onDelete: "cascade" }),
   measures: text("measures").notNull(),
   population: text("population"),
@@ -5793,6 +5794,10 @@ export const quantityDefinitions = pgTable("quantity_definitions", {
   origin: originColumn(),
 }, (table) => [
   originCheck("ck_quantity_definitions_origin", table.origin),
+  // One definition for a quantity in each graph (the origin column, above),
+  // as every other key a replicated table has besides an id: the public
+  // graph's row always applies, whatever this deployment holds.
+  primaryKey({ columns: [table.claimId, table.origin] }),
 ]);
 
 export const quantityEstimates = pgTable(
@@ -5881,7 +5886,7 @@ export const quantityCuts = pgTable(
   "quantity_cuts",
   {
     claimId: uuid("claim_id")
-      .primaryKey()
+      .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     quantityId: uuid("quantity_id")
       .notNull()
@@ -5898,6 +5903,11 @@ export const quantityCuts = pgTable(
   },
   (table) => [
     originCheck("ck_quantity_cuts_origin", table.origin),
+    // One cut for a claim in each graph (the origin column, above): a cut
+    // this deployment recorded and the public graph's own for the same
+    // claim are two rows, and a read takes one (oneCutForClaimSql in
+    // services/mirrored-node-service.ts).
+    primaryKey({ columns: [table.claimId, table.origin] }),
     index("idx_quantity_cuts_quantity").on(table.quantityId),
     check("ck_quantity_cuts_direction", sql`${table.direction} IN ('above', 'below')`),
     check("ck_quantity_cuts_self", sql`${table.claimId} != ${table.quantityId}`),
