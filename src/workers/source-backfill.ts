@@ -77,6 +77,15 @@ const CITED = `(
   OR EXISTS (SELECT 1 FROM claim_provenance_edges e WHERE e.to_source_id = s.id)
 )`;
 
+/**
+ * Source `s` is this deployment's own. A mirrored source (docs/mirror.md)
+ * arrives with whatever facts, text and segments the public graph has for
+ * it and is the public graph's to fill: fetching its page here would redo
+ * that work, and the result could not be written to a mirrored row anyway.
+ * Every source is its own on a deployment that mirrors nothing.
+ */
+const OWN = `s.origin = 'local'`;
+
 /** Source `s` has a web address and no stored text. */
 const FETCHABLE = `((s.raw_content IS NULL OR s.raw_content = '') AND s.url ~* '^https?://')`;
 
@@ -121,6 +130,7 @@ export async function claimSourceBatch(limit: number): Promise<{ ids: string[]; 
     const rows = await tx.query<{ id: string }>(
       `SELECT s.id FROM sources s
         WHERE ($1::uuid IS NULL OR s.id > $1::uuid)
+          AND ${OWN}
           AND (s.facts_checked_at IS NULL
                OR (s.raw_content IS NOT NULL AND s.raw_content <> ''
                    AND NOT EXISTS (SELECT 1 FROM source_segments g WHERE g.source_id = s.id))
@@ -163,7 +173,7 @@ async function releaseSweepLease(): Promise<void> {
 async function uncheckedCitedSources(limit: number): Promise<string[]> {
   const rows = await rawQuery<{ id: string }>(
     `SELECT s.id FROM sources s
-      WHERE s.facts_checked_at IS NULL AND ${CITED}
+      WHERE s.facts_checked_at IS NULL AND ${OWN} AND ${CITED}
       ORDER BY s.id
       LIMIT $1`,
     [limit]

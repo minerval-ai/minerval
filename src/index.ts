@@ -23,6 +23,9 @@ import { startGithubIssueSync } from "./workers/github-issue-sync.js";
 import { fillSourcePageHashes } from "./services/source-service.js";
 import { startReportEmbeddingBackfill } from "./workers/report-embedding-backfill.js";
 import { startSourceBackfill } from "./workers/source-backfill.js";
+import { startMirrorPublisher } from "./workers/mirror-publisher.js";
+import { startMirrorApplier } from "./workers/mirror-applier.js";
+import { mirrorConfigProblems, mirrorRoles } from "./services/mirror-roles.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -41,6 +44,13 @@ async function main() {
   // that collides with nothing; a defective skill fails the process here,
   // not mid-run inside a Steward's toolset.
   assertSkillToolsRegistered();
+  // A deployment set to publish the mirror feed without a signing key, or
+  // to apply one without the key to check it against, stops here with the
+  // reason, not later with a feed nobody can use.
+  const mirrorProblems = mirrorConfigProblems(config);
+  if (mirrorProblems.length > 0) {
+    throw new Error(`The mirror is misconfigured:\n- ${mirrorProblems.join("\n- ")}`);
+  }
 
   if (config.env === "production") {
     console.log("Running database migrations...");
@@ -197,6 +207,15 @@ async function main() {
   // High-water-marked in platform_flags, so every task may run it.
   pollers.push(startLookoutTriggers({ logger }));
   pollers.push(startCorrespondentTriggers({ logger }));
+
+  // The mirror feed (docs/mirror.md). Neither worker starts unless this
+  // deployment is configured for that side: a publisher cuts signed batches
+  // of its public rows on a cadence, an applier brings its mirror of the
+  // public graph up to its feed. Each takes a lock for its work, so every
+  // task may run it.
+  const mirror = mirrorRoles(config);
+  if (mirror.publisher) pollers.push(startMirrorPublisher({ logger }));
+  if (mirror.applier) pollers.push(startMirrorApplier({ logger }));
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands

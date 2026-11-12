@@ -126,8 +126,9 @@ export async function fillSourcePageHashes(batch = 500): Promise<number> {
   let filled = 0;
   for (;;) {
     const rows = await rawQuery<{ id: string; url: string }>(
+      // A mirrored source's hash comes with its row from the public graph.
       `SELECT id, url FROM sources
-        WHERE url IS NOT NULL AND page_url_hash IS NULL
+        WHERE url IS NOT NULL AND page_url_hash IS NULL AND origin = 'local'
         ORDER BY id LIMIT $1`,
       [batch]
     );

@@ -1220,6 +1220,43 @@ const configSchema = z.object({
   sqsContributionQueue: z.string().default(""),
   sqsArbitrationQueue: z.string().default(""),
   sqsStewardQueue: z.string().default(""),
+
+  // The mirror feed (docs/mirror.md). A deployment is a publisher, an
+  // applier, both or neither, and it is neither unless these say so: with
+  // none of them set no route is mounted, no worker starts and nothing is
+  // read or written.
+  //
+  // Publishing. "true" makes this deployment cut signed batches of its
+  // public rows on the cadence below and serve them at /mirror/feed. The
+  // signing key is an Ed25519 private key in PEM form, held as a secret;
+  // its public half is served at /mirror/feed/key and stated in every batch.
+  mirrorPublish: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
+  mirrorSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // How often a cut is made. Each cut reads and hashes the replicated
+  // tables, so this is also what the feed costs the database.
+  mirrorPublishIntervalSeconds: z.coerce.number().default(900),
+  // The most bytes of rows one batch holds. A cut larger than this (a
+  // snapshot, mostly) is split into consecutive batches, so that no batch
+  // outgrows what one process can hold and one request can carry.
+  mirrorBatchMaxBytes: z.coerce.number().default(24_000_000),
+  // Applying. Where this deployment's mirror of the public graph is fed
+  // from: the publisher's API address, or a directory of batch files where
+  // the network does not reach it. Either makes this deployment an applier.
+  mirrorFeedUrl: z.string().default(""),
+  mirrorFeedDir: z.string().default(""),
+  // The key the applier presents when it fetches a batch (x-api-key).
+  mirrorFeedApiKey: z.string().default(""),
+  // The feed's public key or keys, comma-separated, each as GET
+  // /mirror/feed/key gives it. A batch is applied only if one of these
+  // verifies its signature; the key a batch carries is never trusted.
+  mirrorFeedPublicKeys: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").map((k) => k.trim()).filter((k) => k.length > 0)),
+  mirrorApplyIntervalSeconds: z.coerce.number().default(300),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -1476,6 +1513,15 @@ export function loadConfig(): Config {
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
+    mirrorPublish: process.env.MIRROR_PUBLISH,
+    mirrorSigningKey: process.env.MIRROR_SIGNING_KEY,
+    mirrorPublishIntervalSeconds: process.env.MIRROR_PUBLISH_INTERVAL_SECONDS,
+    mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,
+    mirrorFeedUrl: process.env.MIRROR_FEED_URL,
+    mirrorFeedDir: process.env.MIRROR_FEED_DIR,
+    mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
+    mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
+    mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
   });
 
   // If DATABASE_URL is the default and individual DB fields are set, construct URL
