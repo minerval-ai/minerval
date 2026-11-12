@@ -133,7 +133,8 @@ which of its tools the graph's agents are offered take a session. So are
 the routes for file sets (docs/file-sets.md): `list_file_sets`,
 `get_file_set`, `list_file_set_files` and `list_file_set_commands` are
 tools for a caller who holds `direct`, and adding a set, uploading into
-one, closing one and switching one off take a session.
+one, closing one and switching one off take a session. Registering a
+directory as a set takes a session and `administer`.
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's

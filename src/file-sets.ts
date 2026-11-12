@@ -10,16 +10,21 @@
  * The rules, each with where it is kept:
  *
  *  - A set has a name, the party whose material it is with that party's
- *    stake, and one label. A holder of the permission to direct adds one,
- *    from a signed-in session, at a label that person may read, and each
- *    such act is logged (services/file-set-service.ts, routes/file-sets.ts).
- *    Sets exist only in a members-only deployment; the public graph has
- *    none and runs none of this.
- *  - A set is filled one of two ways: files uploaded through a route and
- *    kept in the deployment's own store, or a directory already under a
- *    root the operator configured, read where it lies. Every file is hashed
- *    as it is added, and the set gets one hash over all of them
- *    (manifestHash below).
+ *    stake, and one label. It is added from a signed-in session, at a label
+ *    the person adding it may read, and each such act is logged
+ *    (services/file-set-service.ts, routes/file-sets.ts). Sets exist only
+ *    in a members-only deployment; the public graph has none and runs none
+ *    of this.
+ *  - A set is filled one of two ways, and who may do it differs. A holder
+ *    of the permission to direct uploads files through a route, which are
+ *    kept in the deployment's own store: that person brings the material
+ *    and says what label it has. An administrator registers a directory
+ *    already under a root the operator configured, read where it lies: the
+ *    root has no label, so whoever registers a directory decides what label
+ *    material already on the deployment's disk gets, which is the kind of
+ *    act adding a connection is (REGISTERING_TAKES_ADMINISTER below). Every
+ *    file is hashed as it is added, and the set gets one hash over all of
+ *    them (manifestHash below).
  *  - A set is closed once filled. No file is added, changed or removed
  *    afterwards. New files are a new set: there are no versions, so a hash
  *    names one set of bytes for good.
@@ -148,6 +153,15 @@ export const FILE_SET_NOTICE =
   "recorded on every source an agent keeps from it, as a fact about the source. A directory " +
   "registered where it lies is not copied: keep it as it is, because a file that no longer matches " +
   "its hash cannot be kept as a source.";
+
+/**
+ * Why registering a directory asks for the permission to administer where
+ * uploading asks for the permission to direct. Said in the refusal a person
+ * without it gets, and where the two ways in are described.
+ */
+export const REGISTERING_TAKES_ADMINISTER =
+  "Registering a directory decides what label files already on the deployment's disk get, so it " +
+  "takes the permission to administer; uploading a set takes the permission to direct.";
 
 /**
  * The address of a file kept from a set, or of a passage of one: what

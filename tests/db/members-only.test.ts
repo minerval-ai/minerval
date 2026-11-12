@@ -461,6 +461,10 @@ describe("what a permission guards", () => {
       "PUT /file-sets/:file_set_id/files/*": ["direct"],
       "POST /file-sets/:file_set_id/close": ["direct"],
       "PATCH /file-sets/:file_set_id": ["direct"],
+      // Registering a directory decides what label files already on the
+      // deployment's disk get, which is an administrator's to decide.
+      "POST /file-sets/register": ["administer"],
+      "POST /file-sets/:file_set_id/rehash": ["administer"],
     });
   });
 

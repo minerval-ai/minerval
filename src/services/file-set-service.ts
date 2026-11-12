@@ -2,10 +2,12 @@
  * File sets as the people who direct a deployment keep them, and as a run
  * is offered them (src/file-sets.ts; the tables are in db/schema.ts).
  *
- * The person's side: add a set, fill it (upload files into it, or register
- * a directory that already lies under the operator's root), close it, and
+ * The person's side: add a set and upload files into it, or register a
+ * directory that already lies under the operator's root; close it; and
  * switch it off. Each of those acts writes a row to administrative_events
  * in the same transaction, as a connection's do (permission-service.ts).
+ * Which permission each act takes is the routes' to hold (routes/file-sets.ts):
+ * uploading is a director's, registering a directory an administrator's.
  *
  * The run's side: fileSetsOfferedAt answers which sets a run at a label
  * has. Only a closed set that is on is ever offered.
@@ -301,6 +303,7 @@ export type FileSetFailureCode =
   | "NOT_FOUND"
   | "CLOSED"
   | "NOT_AN_UPLOAD"
+  | "NOT_A_DIRECTORY"
   | "PATH_TAKEN"
   | "TOO_LARGE"
   | "EMPTY"
@@ -332,24 +335,46 @@ export interface NewFileSet {
   partyId: string;
   stake: string;
   label: string;
-  /** A directory under the operator's root, to register where it lies. Absent for a set filled by upload. */
-  directory?: string;
 }
 
 /**
- * Add a set. With `directory` it is a registered directory, added in the
- * state 'hashing': the caller then starts fillFromDirectory, which walks
- * it, hashes each file and closes the set. Without, it is an empty set in
- * the store, open for uploadFile until closeFileSet.
- *
+ * Add an empty set in the store, open for uploadFile until closeFileSet.
  * The label must be one the person adding the set may read: nobody places
  * material at a label they could not themselves open.
  */
-export async function addFileSet(
+export function addFileSet(
   input: NewFileSet,
   actorId: string,
   clearance: readonly string[],
   config: FileSetStoreConfig = loadConfig()
+): Promise<{ ok: true; id: string; origin: FileSetOrigin } | Refusal> {
+  return add({ ...input, directory: undefined }, actorId, clearance, config);
+}
+
+/**
+ * Register a directory under the operator's root as a set, read where it
+ * lies. It is added in the state 'hashing': the caller then starts
+ * fillFromDirectory, which walks it, hashes each file and closes the set.
+ * The label must be one the person registering it may read.
+ *
+ * This is an administrator's act and the route holds it to one: the root
+ * is not labelled, so registering a directory decides who may read
+ * material that was already on the deployment's disk.
+ */
+export function registerDirectory(
+  input: NewFileSet & { directory: string },
+  actorId: string,
+  clearance: readonly string[],
+  config: FileSetStoreConfig = loadConfig()
+): Promise<{ ok: true; id: string; origin: FileSetOrigin } | Refusal> {
+  return add(input, actorId, clearance, config);
+}
+
+async function add(
+  input: NewFileSet & { directory: string | undefined },
+  actorId: string,
+  clearance: readonly string[],
+  config: FileSetStoreConfig
 ): Promise<{ ok: true; id: string; origin: FileSetOrigin } | Refusal> {
   const name = input.name.trim().replace(/\s+/g, " ");
   if (!name || name.length > FILE_SET_NAME_MAX_CHARS) {
@@ -597,30 +622,24 @@ async function closeLocked(tx: TxQuery, id: string, actorId: string | null): Pro
 
 /**
  * Close an uploaded set: fix its manifest hash and offer it to runs. After
- * this nothing is added to it. For a registered directory whose walk failed
- * or was cut short, the caller starts the walk again instead
- * (fillFromDirectory); `restart` says so.
+ * this nothing is added to it. A registered directory is not closed by
+ * anyone: it closes itself when its walk is done.
  */
 export async function closeFileSet(
   id: string,
   actorId: string,
   clearance: readonly string[],
   config: FileSetStoreConfig = loadConfig()
-): Promise<{ ok: true; restart: boolean } | Refusal> {
+): Promise<{ ok: true } | Refusal> {
   const row = await findRow(id, clearance);
   if (!row) return refuse("NOT_FOUND", "File set not found");
   if (row.state === "closed") return refuse("CLOSED", CLOSED_MESSAGE);
   if (row.origin === "directory") {
-    if (walking.has(id)) {
-      return refuse("STILL_HASHING", "This directory is still being walked and hashed. The set closes by itself when that is done.");
-    }
-    // Said before the walk starts, so that whoever reads the set next sees
-    // it being hashed and not the failure it is recovering from.
-    await rawQuery(
-      `UPDATE file_sets SET state = 'hashing', problem = NULL, updated_at = now() WHERE id = $1 AND state <> 'closed'`,
-      [id]
+    return refuse(
+      "NOT_AN_UPLOAD",
+      "This set is a registered directory: it closes by itself once the directory has been walked and hashed. " +
+        "Where that failed, an administrator starts it again."
     );
-    return { ok: true, restart: true };
   }
   const closed = await withTransaction(async (tx) => {
     const [now] = await tx.query<{ state: string }>(`SELECT state FROM file_sets WHERE id = $1 FOR UPDATE`, [id]);
@@ -628,7 +647,7 @@ export async function closeFileSet(
     const [count] = await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM file_set_files WHERE file_set_id = $1`, [id]);
     if ((count?.n ?? 0) === 0) return refuse("EMPTY", "This set has no files yet. A set is closed once its files are in.");
     await closeLocked(tx, id, actorId);
-    return { ok: true as const, restart: false };
+    return { ok: true as const };
   });
   if (closed.ok) {
     const directory = fileSetDirectory({ origin: row.origin, storageKey: row.storage_key }, config);
@@ -641,6 +660,31 @@ export async function closeFileSet(
 
 /** The sets whose directories this process is walking now. */
 const walking = new Set<string>();
+
+/**
+ * Mark a registered directory whose walk failed, or was cut short, as being
+ * hashed again; the caller then starts fillFromDirectory. Like registering,
+ * this is an administrator's act and the route holds it to one: the walk
+ * takes in whatever the directory holds now.
+ */
+export async function restartDirectoryWalk(id: string, clearance: readonly string[]): Promise<{ ok: true } | Refusal> {
+  const row = await findRow(id, clearance);
+  if (!row) return refuse("NOT_FOUND", "File set not found");
+  if (row.origin !== "directory") {
+    return refuse("NOT_A_DIRECTORY", "This set was uploaded: there is no directory to walk and hash again.");
+  }
+  if (row.state === "closed") return refuse("CLOSED", CLOSED_MESSAGE);
+  if (walking.has(id)) {
+    return refuse("STILL_HASHING", "This directory is still being walked and hashed. The set closes by itself when that is done.");
+  }
+  // Said before the walk starts, so that whoever reads the set next sees
+  // it being hashed and not the failure it is recovering from.
+  await rawQuery(
+    `UPDATE file_sets SET state = 'hashing', problem = NULL, updated_at = now() WHERE id = $1 AND state <> 'closed'`,
+    [id]
+  );
+  return { ok: true };
+}
 
 /**
  * Walk a registered directory, hash every file where it lies, and close

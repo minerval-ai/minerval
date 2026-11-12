@@ -50,6 +50,7 @@ import { createApiKey } from "../../src/services/api-key-service.js";
 import { checkFileSets, fileSetsOfferedAt, verifyFileSet } from "../../src/services/file-set-service.js";
 import { checkSandbox, sandboxHealth, type SandboxHealth } from "../../src/services/sandbox-client.js";
 import { readSourceContent } from "../../src/services/source-map-service.js";
+import { needsLandlock } from "../sandbox-process.js";
 import { seedClaim } from "./helpers.js";
 
 const INTERNAL = "fs-internal";
@@ -190,6 +191,7 @@ async function run(
   input: Record<string, unknown>,
   context: Context = {}
 ): Promise<Record<string, unknown>> {
+  if (name === "run_command") needsLandlock(sandbox);
   const out = await runAtLabel(label, "the file sets test", () =>
     runWithUsageContext(context, () => bundle.execute(name, input))
   );
@@ -240,7 +242,10 @@ beforeAll(async () => {
   outsideParty = outside.json().party.id;
 
   const answered = await sandboxHealth();
-  expect(answered.ok, `${JSON.stringify(answered)}\n${sandbox.log()}`).toBe(true);
+  // On a kernel with no Landlock the service answers that it runs no
+  // command. The tests that add and close sets still run; each test that
+  // needs a command says so and fails (needsLandlock), and none is skipped.
+  if (sandbox.landlockAbi >= 1) expect(answered.ok, `${JSON.stringify(answered)}\n${sandbox.log()}`).toBe(true);
   if (answered.ok) health = answered.value;
 });
 
@@ -360,7 +365,7 @@ describe("adding a set", () => {
 
     const created = await as(admin, {
       method: "POST",
-      url: "/file-sets",
+      url: "/file-sets/register",
       payload: { name: "Refund ledger export", slug: "ledger", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "finance/2026-q3/" },
     });
     expect(created.statusCode, created.body).toBe(201);
@@ -397,7 +402,7 @@ describe("adding a set", () => {
     ] as const) {
       const res = await as(admin, {
         method: "POST",
-        url: "/file-sets",
+        url: "/file-sets/register",
         payload: { name: `Refused ${directory}`, party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory },
       });
       expect(res.statusCode, `${directory}: ${res.body}`).toBe(status);
@@ -410,19 +415,37 @@ describe("adding a set", () => {
     await mkdir(join(sandbox.directoryRoot, "empty"));
     const empty = await as(admin, {
       method: "POST",
-      url: "/file-sets",
+      url: "/file-sets/register",
       payload: { name: "Empty export", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "empty" },
     });
     const failed = await settled(empty.json().file_set.id);
     expect(failed).toMatchObject({ state: "failed", problem: "The directory could not be hashed: the directory holds no files." });
     expect((await fileSetsOfferedAt(INTERNAL)).map((s) => s.id)).not.toContain(failed.id);
     await writeFile(join(sandbox.directoryRoot, "empty", "late.txt"), "now there is one\n");
-    const again = await as(admin, { method: "POST", url: `/file-sets/${failed.id}/close` });
+    // Nobody closes a registered directory, and walking one again is an administrator's act.
+    const byClosing = await as(admin, { method: "POST", url: `/file-sets/${failed.id}/close` });
+    expect(byClosing.statusCode).toBe(409);
+    expect(byClosing.json()).toEqual({
+      error:
+        "This set is a registered directory: it closes by itself once the directory has been walked and hashed. " +
+        "Where that failed, an administrator starts it again.",
+      code: "NOT_AN_UPLOAD",
+    });
+    const again = await as(admin, { method: "POST", url: `/file-sets/${failed.id}/rehash` });
     expect(again.statusCode, again.body).toBe(200);
     // The answer already shows it being hashed again, not the old failure.
     expect(["hashing", "closed"]).toContain(again.json().file_set.state);
     expect(again.json().file_set.problem).toBeNull();
     expect(await settled(failed.id)).toMatchObject({ state: "closed", file_count: 1, problem: null });
+    // Once closed it is not walked again, and an uploaded set has no directory to walk.
+    expect((await as(admin, { method: "POST", url: `/file-sets/${failed.id}/rehash` })).json().code).toBe("CLOSED");
+    const uploaded = await addSet({ "a.txt": "a\n" });
+    const noDirectory = await as(admin, { method: "POST", url: `/file-sets/${uploaded.id}/rehash` });
+    expect(noDirectory.statusCode).toBe(409);
+    expect(noDirectory.json()).toEqual({
+      error: "This set was uploaded: there is no directory to walk and hash again.",
+      code: "NOT_A_DIRECTORY",
+    });
   });
 
   it("is refused once closed: no file added, none replaced, and the files themselves are read-only", async () => {
@@ -479,7 +502,7 @@ describe("adding a set", () => {
     // A registered directory takes no upload: its files are the directory's.
     await mkdir(join(sandbox.directoryRoot, "fixed"));
     await writeFile(join(sandbox.directoryRoot, "fixed", "x.txt"), "x\n");
-    const registered = await as(admin, { method: "POST", url: "/file-sets", payload: { name: "Fixed", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "fixed" } });
+    const registered = await as(admin, { method: "POST", url: "/file-sets/register", payload: { name: "Fixed", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "fixed" } });
     const fixed = await settled(registered.json().file_set.id);
     expect((await upload(admin, fixed.id, "y.txt", "y\n")).json().code).toBe("NOT_AN_UPLOAD");
   });
@@ -538,6 +561,68 @@ describe("adding a set", () => {
     }
     expect((await read(secret.id)).enabled).toBe(true);
 
+    // Registering a directory is not a director's: the root is not labelled,
+    // so whoever registers one decides what label files already on the
+    // deployment's disk get. The refusal names the permission and says why.
+    const WHY =
+      "Registering a directory decides what label files already on the deployment's disk get, so it takes the " +
+      "permission to administer; uploading a set takes the permission to direct.";
+    await mkdir(join(sandbox.directoryRoot, "operators-own"), { recursive: true });
+    await writeFile(join(sandbox.directoryRoot, "operators-own", "payroll.csv"), "name,pay\n");
+    const registration = { ...payload, name: "Operator's own", directory: "operators-own" };
+    const refused = await as(director, { method: "POST", url: "/file-sets/register", payload: registration });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({
+      error:
+        "This needs the permission to administer the deployment, which this account does not hold. An " +
+        `administrator of this deployment grants it. ${WHY}`,
+      code: "PERMISSION_REQUIRED",
+      permission: "administer",
+    });
+    // Nor by naming a directory where a set is added for upload: it is said, not dropped.
+    const sideways = await as(director, { method: "POST", url: "/file-sets", payload: registration });
+    expect(sideways.statusCode).toBe(400);
+    expect(sideways.json()).toEqual({
+      error: `A directory is registered with POST /file-sets/register. ${WHY}`,
+      code: "REGISTER_ELSEWHERE",
+    });
+    expect(await rawQuery(`SELECT 1 FROM file_sets WHERE name = $1`, ["Operator's own"])).toEqual([]);
+    expect((await as(director, { method: "POST", url: `/file-sets/${mine.id}/rehash` })).json()).toMatchObject({
+      code: "PERMISSION_REQUIRED",
+      permission: "administer",
+    });
+    // A page is told which ways in work for the person looking at it.
+    expect((await as(director, { url: "/file-sets" })).json().ways_in).toEqual({ upload: true, register_directory: false, sandbox_configured: true });
+    expect((await as(admin, { url: "/file-sets" })).json().ways_in).toEqual({ upload: true, register_directory: true, sandbox_configured: true });
+
+    // An administrator registers one, at a label that administrator may
+    // read and no other, without holding the permission to direct. Reading
+    // a set is a director's, like every read of one; the log says when the
+    // directory was hashed and the set closed.
+    const registrar = await signIn("fs-registrar");
+    await grant({ permission: "administer", account_id: registrar.id });
+    await grant({ permission: "read", account_id: registrar.id, label: INTERNAL });
+    const above = await as(registrar, { method: "POST", url: "/file-sets/register", payload: { ...registration, label: RESTRICTED } });
+    expect(above.statusCode).toBe(403);
+    expect(above.json().code).toBe("LABEL_NOT_YOURS");
+    const registered = await as(registrar, { method: "POST", url: "/file-sets/register", payload: registration });
+    expect(registered.statusCode, registered.body).toBe(201);
+    expect(registered.json().file_set).toMatchObject({ name: "Operator's own", origin: "directory", directory: "operators-own", label: INTERNAL });
+    expect((await settled(registered.json().file_set.id)).state).toBe("closed");
+    expect((await as(registrar, { url: `/file-sets/${registered.json().file_set.id}` })).json()).toMatchObject({
+      code: "PERMISSION_REQUIRED",
+      permission: "direct",
+    });
+    expect((await log(registrar)).filter((e) => e.file_set === "Operator's own").map((e) => e.event).sort()).toEqual([
+      "file_set_added",
+      "file_set_closed",
+    ]);
+    // An administrator who does not direct does not upload.
+    expect((await as(registrar, { method: "POST", url: "/file-sets", payload: { ...payload, name: "Uploaded by an administrator" } })).json()).toMatchObject({
+      code: "PERMISSION_REQUIRED",
+      permission: "direct",
+    });
+
     // The director's own API key reads, and cannot write.
     const key = await createApiKey({ userId: director.id, name: "dbtest file sets key" });
     const headers = { "x-api-key": key.plaintext };
@@ -550,6 +635,16 @@ describe("adding a set", () => {
       const res = await app.inject({ method: request.method as "POST", url: request.url, headers, ...(request.payload ? { payload: request.payload } : {}) });
       expect(res.statusCode, `${request.method} ${request.url}`).toBe(403);
       expect(res.json().code).toBe("SESSION_REQUIRED");
+    }
+    // Nor does an administrator's key register a directory.
+    const adminKey = await createApiKey({ userId: admin.id, name: "dbtest file sets administrator key" });
+    for (const request of [
+      { url: "/file-sets/register", payload: { ...registration, name: "by key" } },
+      { url: `/file-sets/${registered.json().file_set.id}/rehash` },
+    ]) {
+      const res = await app.inject({ method: "POST", url: request.url, headers: { "x-api-key": adminKey.plaintext }, ...(request.payload ? { payload: request.payload } : {}) });
+      expect(res.statusCode, request.url).toBe(403);
+      expect(res.json().code, request.url).toBe("SESSION_REQUIRED");
     }
     const byKey = await app.inject({ method: "PUT", url: `/file-sets/${mine.id}/files/k.txt`, headers: { ...headers, "content-type": "text/plain" }, payload: "k" });
     expect(byKey.json().code).toBe("SESSION_REQUIRED");
@@ -577,6 +672,8 @@ describe("adding a set", () => {
       "PATCH /file-sets/:file_set_id",
       "POST /file-sets",
       "POST /file-sets/:file_set_id/close",
+      "POST /file-sets/:file_set_id/rehash",
+      "POST /file-sets/register",
       "PUT /file-sets/:file_set_id/files/*",
     ]);
     for (const key of mine) {
@@ -585,6 +682,10 @@ describe("adding a set", () => {
       expect(key in MCP_EXCLUDED_ROUTES, key).toBe(!isRead);
       if (!isRead) expect(MCP_EXCLUDED_ROUTES[key]).toContain("signed-in dashboard session");
     }
+    // The reason names the permission each write takes.
+    expect(MCP_EXCLUDED_ROUTES["POST /file-sets"]).toContain("the permission to direct");
+    expect(MCP_EXCLUDED_ROUTES["POST /file-sets/register"]).toContain("the permission to administer");
+    expect(MCP_EXCLUDED_ROUTES["POST /file-sets/:file_set_id/rehash"]).toContain("the permission to administer");
   });
 
   it("is switched off and on, logged, and named in the log only to a reader cleared for its label", async () => {
@@ -613,6 +714,7 @@ describe("adding a set", () => {
 
 describe("what a run is offered", () => {
   it("is nothing where it has no set", async () => {
+    needsLandlock(sandbox);
     await switchAllOff();
     expect(await bundleAt(INTERNAL)).toBe(NO_FILE_SET_TOOLS);
     // A set that exists but is still open, or failed, is not offered either.
@@ -680,6 +782,7 @@ describe("what a run is offered", () => {
 
 describe("what a run is told", () => {
   it("is which sets it has, whose files each is, what the sandbox is, and every limit with its reason", async () => {
+    needsLandlock(sandbox);
     await switchAllOff();
     const transcripts = await addSet(
       { "run-1.jsonl": "{}\n", "run-2.jsonl": "{}\n{}\n" },
@@ -692,7 +795,7 @@ describe("what a run is told", () => {
     );
     await mkdir(join(sandbox.directoryRoot, "told"));
     await writeFile(join(sandbox.directoryRoot, "told", "rows.csv"), "x".repeat(4096));
-    const registered = await as(admin, { method: "POST", url: "/file-sets", payload: { name: "Told export", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "told" } });
+    const registered = await as(admin, { method: "POST", url: "/file-sets/register", payload: { name: "Told export", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "told" } });
     await settled(registered.json().file_set.id);
 
     const libraries = Object.keys(health.libraries).map((n) => ({ sklearn: "scikit-learn", bs4: "beautifulsoup4", yaml: "PyYAML" })[n] ?? n);
@@ -1241,7 +1344,7 @@ describe("a file", () => {
     await writeFile(join(sandbox.directoryRoot, "drifting", "figures.csv"), "q,revenue\n3,100\n");
     // More than one source may hold: a passage of it can be kept, the whole cannot.
     await writeFile(join(sandbox.directoryRoot, "drifting", "large.log"), "0123456789abcdef0123456789abcdef0123456789abcdef0\n".repeat(42_000));
-    const registered = await as(admin, { method: "POST", url: "/file-sets", payload: { name: "Drifting export", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "drifting" } });
+    const registered = await as(admin, { method: "POST", url: "/file-sets/register", payload: { name: "Drifting export", party_id: ownParty, label: INTERNAL, stake: HALDEN_STAKE, directory: "drifting" } });
     const set = await settled(registered.json().file_set.id);
     const bundle = await bundleAt(INTERNAL);
     const before = sha256("q,revenue\n3,100\n");
@@ -1426,6 +1529,7 @@ describe("the sandbox absent", () => {
 
 describe("what the preflight is given", () => {
   it("is whether the sandbox answers and what its own probe found, and whether each set is where its manifest says", async () => {
+    needsLandlock(sandbox);
     await switchAllOff();
     const set = await addSet({ "a.txt": "a\n", "b.txt": "b\n" }, { name: "Checked" });
     const check = await checkSandbox();

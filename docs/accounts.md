@@ -155,12 +155,12 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, sets of files among them | edit an assessment or a run's log |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload | edit an assessment or a run's log |
 | `release` | for one party | release or hold what would leave the deployment of that party's material (publishing outward is not built; the grant records who holds the gate) | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, connect the deployment to an organization's systems and pick which of their tools agents are offered | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files (which decides what label those files get) | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
@@ -184,7 +184,7 @@ The routes a permission guards, in each mode (`requirePermission` in
 | `POST /grants` | a direct service caller | `direct` and `fund` |
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
 | the routes for connections ([connections.md](connections.md)) | not mounted | `administer`, and a signed-in session for every write |
-| the routes for file sets ([file-sets.md](file-sets.md)) | not mounted | `direct`, a set's label within the caller's clearance, and a signed-in session for every write |
+| the routes for file sets ([file-sets.md](file-sets.md)) | not mounted | `direct` for the reads and for uploading a set; `administer` for registering a directory, which decides what label files already on the deployment's disk get; a set's label within the caller's clearance, and a signed-in session for every write |
 
 Taking money back asks for no permission in either mode: withdrawing from a
 mandate, cancelling a grant, a job or an order. A funder may take back
@@ -222,7 +222,7 @@ marks the same row with who removed it and when; no row is deleted. The
 other administrative acts (a label defined, a pair of labels added or
 removed, a party added, a source's party set, every change to a
 connection or to the tools it offers, and a file set added, closed or
-switched off) each write a row to
+switched off, whoever's act it was) each write a row to
 `administrative_events` in the same transaction as the change. The last
 live grant of `administer` cannot be removed.
 

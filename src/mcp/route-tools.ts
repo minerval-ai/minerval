@@ -324,8 +324,17 @@ const FILE_SET_SESSION =
   "read can then never place files in front of agents or move them to another label. The matching " +
   "reads (list_file_sets, get_file_set, list_file_set_files, list_file_set_commands) are tools.";
 
+const FILE_SET_REGISTER_SESSION =
+  "Decides what label files already on the deployment's disk get, and so which agents may read " +
+  "them, so it takes a signed-in dashboard session as well as the permission to administer: a " +
+  "leaked key, an access token, or an agent following text it read can then never put a directory " +
+  "in front of agents. The matching reads (list_file_sets, get_file_set, list_file_set_files, " +
+  "list_file_set_commands) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /file-sets/register": FILE_SET_REGISTER_SESSION,
+  "POST /file-sets/:file_set_id/rehash": FILE_SET_REGISTER_SESSION,
   "POST /file-sets": FILE_SET_SESSION,
   "PUT /file-sets/:file_set_id/files/*": FILE_SET_SESSION,
   "POST /file-sets/:file_set_id/close": FILE_SET_SESSION,

@@ -75,7 +75,7 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "direct the graph",
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
-      "Correspondent for an update, and add sources, sets of files among them.",
+      "Correspondent for an update, and add sources, among them sets of files they upload.",
     never: "Edit an assessment or a run's log.",
   },
   release: {
@@ -113,8 +113,9 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "administer the deployment",
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
-      "say whose material a source is, and connect the deployment to an organization's systems " +
-      "and pick which of their tools agents are offered.",
+      "say whose material a source is, connect the deployment to an organization's systems and " +
+      "pick which of their tools agents are offered, and register a directory on the deployment's " +
+      "disk as a set of files, which decides what label those files get.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",

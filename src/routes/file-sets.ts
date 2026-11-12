@@ -8,17 +8,32 @@
  *   GET   /file-sets/:file_set_id/files: its manifest, a page at a time.
  *   GET   /file-sets/:file_set_id/commands: the commands agents ran with
  *     it mounted, newest first, with which were kept as sources.
- *   POST  /file-sets: add one, empty and open for upload, or as a
- *     directory registered where it lies.
+ *   POST  /file-sets: add one, empty and open for upload.
  *   PUT   /file-sets/:file_set_id/files/*: upload one file into an open
  *     set. The body is the file's bytes, streamed to the store.
  *   POST  /file-sets/:file_set_id/close: close an uploaded set.
  *   PATCH /file-sets/:file_set_id: switch a set off or on.
+ *   POST  /file-sets/register: register a directory where it lies.
+ *   POST  /file-sets/:file_set_id/rehash: walk a registered directory
+ *     again, where hashing it failed.
  *
- * Who may call what. All of them need the permission to direct, which
- * covers adding sources, and every one is held to the caller's clearance:
- * a set at a label the caller may not read is not listed and is not found.
- * The four that change anything also need a signed-in session, as a
+ * Who may call what. Every route is held to the caller's clearance: a set
+ * at a label the caller may not read is not listed and is not found, and a
+ * set is added only at a label the caller may read.
+ *
+ * The reads, and uploading a set (adding one, uploading into it, closing
+ * it, switching it off), need the permission to direct, which covers adding
+ * sources: the person brings the material and says what label it has.
+ *
+ * Registering a directory, and walking one again, need the permission to
+ * administer instead. The root directories are registered from is not
+ * labelled, so whoever registers one decides what label material already
+ * on the deployment's disk gets. A holder of direct cleared for one label
+ * could otherwise register, at that label, a directory an operator put
+ * there for a more restricted one. Deciding that is an administrator's, as
+ * defining a label or adding a connection is.
+ *
+ * The six that change anything also need a signed-in session, as a
  * connection's do (routes/connections.ts): what agents may read is widened
  * by a person at a screen, never by a bare key or by an agent following
  * text it read. So they are not MCP tools; the four reads are
@@ -32,8 +47,9 @@ import {
   FILE_SET_NOTICE,
   FILE_SET_SLUG_PATTERN,
   FILE_SET_STAKE_MAX_CHARS,
+  REGISTERING_TAKES_ADMINISTER,
 } from "../file-sets.js";
-import { standingOf } from "../permissions.js";
+import { holdsPermission, standingOf, type Standing } from "../permissions.js";
 import { requirePermission } from "../server/require-permission.js";
 import {
   addFileSet,
@@ -45,6 +61,8 @@ import {
   listFileSetFiles,
   listFileSets,
   listSandboxCalls,
+  registerDirectory,
+  restartDirectoryWalk,
   storeDir,
   uploadFile,
   type FileSetFailureCode,
@@ -71,6 +89,7 @@ function statusOf(code: FileSetFailureCode): number {
     case "PATH_TAKEN":
     case "CLOSED":
     case "NOT_AN_UPLOAD":
+    case "NOT_A_DIRECTORY":
     case "EMPTY":
     case "STILL_HASHING":
     case "NO_STORE":
@@ -83,20 +102,88 @@ function statusOf(code: FileSetFailureCode): number {
   }
 }
 
-/** What this deployment can take, so a page offers only the ways in that work here. */
-function waysIn() {
+/**
+ * The ways in that work here for this caller, so a page offers only those:
+ * whether the deployment takes uploads; whether it registers directories
+ * and the caller is an administrator, who alone may register one; and
+ * whether a sandbox is configured.
+ */
+function waysIn(standing: Standing) {
   return {
     upload: storeDir() !== null,
-    register_directory: directoryRoot() !== null,
+    register_directory: directoryRoot() !== null && holdsPermission(standing, "administer"),
     sandbox_configured: sandboxConfigured(),
   };
 }
+
+/** What a set has whichever way it is filled, as a request names it. */
+const SET_PROPERTIES = {
+  name: {
+    type: "string",
+    minLength: 1,
+    maxLength: FILE_SET_NAME_MAX_CHARS,
+    description: "What people and agents know the set by.",
+  },
+  slug: {
+    type: "string",
+    pattern: FILE_SET_SLUG_PATTERN,
+    description:
+      "A short lower-case word that names the set's directory in the sandbox and starts the " +
+      "address of every file kept from it. Made from the name when left out.",
+  },
+  description: {
+    type: "string",
+    maxLength: FILE_SET_DESCRIPTION_MAX_CHARS,
+    description:
+      "What the set holds, in a sentence or two. Agents are shown it as the words of whoever added the set.",
+  },
+  party_id: { ...UUID, description: "The party whose files these are (GET /parties)." },
+  stake: {
+    type: "string",
+    minLength: 1,
+    maxLength: FILE_SET_STAKE_MAX_CHARS,
+    description:
+      "What the party stands to gain or lose from what the files show, in a sentence or two. It is " +
+      "recorded on every source kept from the set, as a fact about the source and never a finding against it.",
+  },
+  label: {
+    type: "string",
+    minLength: 1,
+    description:
+      "The set's one label, which must be one you may read. A run is offered the set when the label it works at reads this one.",
+  },
+} as const;
+
+interface SetBody {
+  name: string;
+  slug?: string;
+  description?: string;
+  party_id: string;
+  stake: string;
+  label: string;
+}
+
+const setOf = (body: SetBody) => ({
+  name: body.name,
+  slug: body.slug,
+  description: body.description,
+  partyId: body.party_id,
+  stake: body.stake,
+  label: body.label,
+});
 
 export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
   const director = [app.authenticate, app.requireUser, requirePermission("direct")];
   // A change to what agents may read is made from a signed-in session,
   // never by a bare key (routes/permissions.ts).
   const directorSession = [app.authenticate, app.requireSession, app.requireUser, requirePermission("direct")];
+  // Registering a directory is an administrator's, and the refusal says why.
+  const administratorSession = [
+    app.authenticate,
+    app.requireSession,
+    app.requireUser,
+    requirePermission("administer", REGISTERING_TAKES_ADMINISTER),
+  ];
 
   app.get("/file-sets", {
     schema: {
@@ -108,15 +195,17 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
         "set is returned with whose files they are, its label, how it was filled, whether it is " +
         "closed, its file count, size and manifest hash, and how many commands were run against it " +
         "and how many sources kept from it. Only sets at a label the caller may read are listed. " +
-        "`ways_in` says whether this deployment takes uploads, registers directories, and has a " +
-        "sandbox configured. `notice` is what to tell whoever adds one. " +
+        "`ways_in` says which ways in work here for the caller: whether this deployment takes " +
+        "uploads, whether it registers directories and the caller is an administrator (who alone " +
+        "may register one), and whether it has a sandbox configured. `notice` is what to tell " +
+        "whoever adds one. " +
         FILE_SET_NOTICE,
     },
     preHandler: director,
     handler: async (request, reply) =>
       reply.send({
         notice: FILE_SET_NOTICE,
-        ways_in: waysIn(),
+        ways_in: waysIn(standingOf(request.auth)),
         file_sets: await listFileSets(standingOf(request.auth).clearance),
       }),
   });
@@ -131,7 +220,7 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const fileSet = await getFileSet(request.params.file_set_id, standingOf(request.auth).clearance);
       if (!fileSet) return reply.code(404).send({ error: "File set not found", code: "NOT_FOUND" });
-      return reply.send({ notice: FILE_SET_NOTICE, ways_in: waysIn(), file_set: fileSet });
+      return reply.send({ notice: FILE_SET_NOTICE, ways_in: waysIn(standingOf(request.auth)), file_set: fileSet });
     },
   });
 
@@ -208,105 +297,116 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post<{
-    Body: {
-      name: string;
-      slug?: string;
-      description?: string;
-      party_id: string;
-      stake: string;
-      label: string;
-      directory?: string;
-    };
-  }>("/file-sets", {
+  app.post<{ Body: SetBody & { directory?: string } }>("/file-sets", {
     schema: {
       tags: ["file-sets"],
-      summary: "Add a set of files for the agents to read (holders of direct, from a signed-in session)",
+      summary: "Add a set of files to upload, for the agents to read (holders of direct, from a signed-in session)",
       description:
-        `${FILE_SET_NOTICE} Without \`directory\`, the set is added empty and open: upload its files ` +
+        `${FILE_SET_NOTICE} The set is added empty and open: upload its files ` +
         "(PUT /file-sets/:file_set_id/files/<path>) and then close it (POST /file-sets/:file_set_id/close). " +
-        "With `directory`, a directory under the root this deployment registers directories from is " +
-        "walked and each file hashed where it lies; that can take as long as the data is large, so " +
-        "the answer does not wait for it. The set is returned in the state `hashing` and closes by " +
-        "itself; read it again to see. No run is offered a set until it is closed. The act is logged.",
+        "No run is offered a set until it is closed. The act is logged. A directory already on the " +
+        "deployment's disk is registered by an administrator instead (POST /file-sets/register).",
       body: {
         type: "object",
         required: ["name", "party_id", "stake", "label"],
         additionalProperties: false,
         properties: {
-          name: {
-            type: "string",
-            minLength: 1,
-            maxLength: FILE_SET_NAME_MAX_CHARS,
-            description: "What people and agents know the set by.",
-          },
-          slug: {
-            type: "string",
-            pattern: FILE_SET_SLUG_PATTERN,
-            description:
-              "A short lower-case word that names the set's directory in the sandbox and starts the " +
-              "address of every file kept from it. Made from the name when left out.",
-          },
-          description: {
-            type: "string",
-            maxLength: FILE_SET_DESCRIPTION_MAX_CHARS,
-            description:
-              "What the set holds, in a sentence or two. Agents are shown it as the words of whoever added the set.",
-          },
-          party_id: { ...UUID, description: "The party whose files these are (GET /parties)." },
-          stake: {
-            type: "string",
-            minLength: 1,
-            maxLength: FILE_SET_STAKE_MAX_CHARS,
-            description:
-              "What the party stands to gain or lose from what the files show, in a sentence or two. It is " +
-              "recorded on every source kept from the set, as a fact about the source and never a finding against it.",
-          },
-          label: {
-            type: "string",
-            minLength: 1,
-            description:
-              "The set's one label, which must be one you may read. A run is offered the set when the label it works at reads this one.",
-          },
+          ...SET_PROPERTIES,
           directory: {
             type: "string",
-            minLength: 1,
-            maxLength: 1000,
-            description:
-              "A directory to register where it lies, as a path relative to the root this deployment " +
-              "registers directories from. Leave out to upload the files instead.",
+            description: "Not taken here: a directory is registered with POST /file-sets/register, by an administrator.",
           },
         },
       },
     },
     preHandler: directorSession,
     handler: async (request, reply) => {
-      const clearance = standingOf(request.auth).clearance;
-      const body = request.body;
-      const added = await addFileSet(
-        {
-          name: body.name,
-          slug: body.slug,
-          description: body.description,
-          partyId: body.party_id,
-          stake: body.stake,
-          label: body.label,
-          directory: body.directory,
-        },
-        request.auth!.userId!,
-        clearance
-      );
-      if (!added.ok) return reply.code(statusOf(added.code)).send({ error: added.message, code: added.code });
-      if (added.origin === "directory") {
-        // Not awaited: hashing takes as long as the data is large. The
-        // set's state says where the walk is, and a failure is written to it.
-        void fillFromDirectory(added.id).catch((err) => request.log.error({ err }, "file set walk failed"));
+      const standing = standingOf(request.auth);
+      if (request.body.directory !== undefined) {
+        // Said, and not dropped: a request that names a directory is asking
+        // for a different act, which this route's permission does not cover.
+        return reply.code(400).send({
+          error: `A directory is registered with POST /file-sets/register. ${REGISTERING_TAKES_ADMINISTER}`,
+          code: "REGISTER_ELSEWHERE",
+        });
       }
+      const added = await addFileSet(setOf(request.body), request.auth!.userId!, standing.clearance);
+      if (!added.ok) return reply.code(statusOf(added.code)).send({ error: added.message, code: added.code });
       return reply.code(201).send({
         notice: FILE_SET_NOTICE,
-        ways_in: waysIn(),
-        file_set: await getFileSet(added.id, clearance),
+        ways_in: waysIn(standing),
+        file_set: await getFileSet(added.id, standing.clearance),
       });
+    },
+  });
+
+  app.post<{ Body: SetBody & { directory: string } }>("/file-sets/register", {
+    schema: {
+      tags: ["file-sets"],
+      summary:
+        "Register a directory on the deployment's disk as a set of files, where it lies (administrators, from a signed-in session)",
+      description:
+        `${FILE_SET_NOTICE} ${REGISTERING_TAKES_ADMINISTER} \`directory\` names a directory under the ` +
+        "root this deployment registers directories from. It is walked and each file hashed where it " +
+        "lies; nothing is copied. That can take as long as the data is large, so the answer does not " +
+        "wait for it: the set is returned in the state `hashing` and closes by itself, and reading it " +
+        "again (GET /file-sets/:file_set_id, which like every read of a set needs the permission to " +
+        "direct) shows where it is. No run is offered a set until it is closed. The act is logged, and " +
+        "so is the closing, with the file count and the manifest hash.",
+      body: {
+        type: "object",
+        required: ["name", "party_id", "stake", "label", "directory"],
+        additionalProperties: false,
+        properties: {
+          ...SET_PROPERTIES,
+          directory: {
+            type: "string",
+            minLength: 1,
+            maxLength: 1000,
+            description:
+              "The directory to register, as a path relative to the root this deployment registers directories from.",
+          },
+        },
+      },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const standing = standingOf(request.auth);
+      const added = await registerDirectory(
+        { ...setOf(request.body), directory: request.body.directory },
+        request.auth!.userId!,
+        standing.clearance
+      );
+      if (!added.ok) return reply.code(statusOf(added.code)).send({ error: added.message, code: added.code });
+      // Not awaited: hashing takes as long as the data is large. The set's
+      // state says where the walk is, and a failure is written to it.
+      void fillFromDirectory(added.id).catch((err) => request.log.error({ err }, "file set walk failed"));
+      return reply.code(201).send({
+        notice: FILE_SET_NOTICE,
+        ways_in: waysIn(standing),
+        file_set: await getFileSet(added.id, standing.clearance),
+      });
+    },
+  });
+
+  app.post<{ Params: { file_set_id: string } }>("/file-sets/:file_set_id/rehash", {
+    schema: {
+      tags: ["file-sets"],
+      summary:
+        "Walk and hash a registered directory again, where that failed or was cut short (administrators, from a signed-in session)",
+      description:
+        "Starts the walk again from nothing: the set takes in whatever the directory holds now, and " +
+        `closes by itself when the walk is done. A closed set is not walked again. ${REGISTERING_TAKES_ADMINISTER}`,
+      params: FILE_SET_PARAMS,
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const clearance = standingOf(request.auth).clearance;
+      const id = request.params.file_set_id;
+      const restarted = await restartDirectoryWalk(id, clearance);
+      if (!restarted.ok) return reply.code(statusOf(restarted.code)).send({ error: restarted.message, code: restarted.code });
+      void fillFromDirectory(id).catch((err) => request.log.error({ err }, "file set walk failed"));
+      return reply.send({ notice: FILE_SET_NOTICE, file_set: await getFileSet(id, clearance) });
     },
   });
 
@@ -351,12 +451,12 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { file_set_id: string } }>("/file-sets/:file_set_id/close", {
     schema: {
       tags: ["file-sets"],
-      summary: "Close a file set once its files are in (holders of direct, from a signed-in session)",
+      summary: "Close an uploaded file set once its files are in (holders of direct, from a signed-in session)",
       description:
         "Fixes the set: its manifest hash is taken over every file, nothing is added to it afterwards, " +
-        "and runs whose label reads its label are offered it from now on. For a registered directory " +
-        "whose hashing failed or was cut short, this starts the walk again. The act is logged with the " +
-        "file count and the manifest hash.",
+        "and runs whose label reads its label are offered it from now on. The act is logged with the " +
+        "file count and the manifest hash. A registered directory is not closed by anyone: it closes " +
+        "by itself when it has been hashed.",
       params: FILE_SET_PARAMS,
     },
     preHandler: directorSession,
@@ -365,9 +465,6 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
       const id = request.params.file_set_id;
       const closed = await closeFileSet(id, request.auth!.userId!, clearance);
       if (!closed.ok) return reply.code(statusOf(closed.code)).send({ error: closed.message, code: closed.code });
-      if (closed.restart) {
-        void fillFromDirectory(id).catch((err) => request.log.error({ err }, "file set walk failed"));
-      }
       return reply.send({ notice: FILE_SET_NOTICE, file_set: await getFileSet(id, clearance) });
     },
   });

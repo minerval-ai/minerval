@@ -12,17 +12,47 @@
  * the deployment's to provide, and the service's own probe is what checks
  * them (docs/file-sets.md).
  *
- * Needs python3 and a kernel with Landlock (Linux 5.13 or later), which
- * the test machines have. Without Landlock the service starts and refuses
- * every command, and a test that runs one says so.
+ * Needs python3 and a kernel with Landlock (Linux 5.13 or later). Without
+ * Landlock the service starts and refuses every command. A test that needs
+ * a command calls needsLandlock first, which fails it with that reason; no
+ * such test is skipped, on any kernel.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), "..", "sandbox", "server.py");
+const CONFINE = join(dirname(fileURLToPath(import.meta.url)), "..", "sandbox", "confine.py");
+
+/** The Landlock ABI this machine's kernel offers, as the service itself asks: 0 when it has none. */
+function kernelLandlockAbi(): number {
+  try {
+    return Number(execFileSync("python3", [CONFINE, "--check"], { encoding: "utf8" }).trim()) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Called first by every test that runs a command in the sandbox, or that
+ * expects the sandbox to say it can. On a kernel with no Landlock the
+ * service runs no command, because it could not hold one to its own run's
+ * file sets, so such a test cannot pass there. It is failed with this
+ * reason, and never skipped: isolation that was not exercised has not
+ * passed, and a skipped test reads as a passed one.
+ */
+export function needsLandlock(sandbox: Pick<SandboxProcess, "landlockAbi">): void {
+  if (sandbox.landlockAbi >= 1) return;
+  throw new Error(
+    "This test needs a kernel with Landlock, and this machine's kernel has none " +
+      "(`python3 sandbox/confine.py --check` printed 0). The sandbox holds each command to its own run's file " +
+      "sets with Landlock (Linux 5.13 or later, with landlock among the active security modules) and runs no " +
+      "command without it, so what a command may read and write was not exercised here. The test is failed, " +
+      "not skipped: run it on a kernel that has Landlock."
+  );
+}
 
 export interface SandboxProcess {
   url: string;
@@ -32,6 +62,8 @@ export interface SandboxProcess {
   /** The root directories are registered from, for both. */
   directoryRoot: string;
   scratchDir: string;
+  /** The Landlock ABI of this machine's kernel; 0 when it has none (see needsLandlock). */
+  landlockAbi: number;
   /** What the service has printed, for a test that fails. */
   log: () => string;
   close: () => Promise<void>;
@@ -102,6 +134,7 @@ export async function startSandbox(env: Record<string, string> = {}): Promise<Sa
     storeDir,
     directoryRoot,
     scratchDir,
+    landlockAbi: kernelLandlockAbi(),
     log: () => output,
     close: async () => {
       if (child.exitCode === null) {

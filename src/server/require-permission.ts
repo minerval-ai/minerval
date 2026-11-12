@@ -47,12 +47,17 @@ export function refuse(
 
 const permissionOfGuard = new WeakMap<object, PermissionName>();
 
-export function requirePermission(permission: PermissionName): Guard {
+/**
+ * `because` is one sentence added to the refusal, for a route where which
+ * permission it asks for needs saying why (registering a directory as a
+ * file set, routes/file-sets.ts).
+ */
+export function requirePermission(permission: PermissionName, because?: string): Guard {
   const guard: Guard = async (request, reply) => {
     if (!membersOnly()) return;
     if (holdsPermission(standingOf(request.auth), permission)) return;
     return refuse(reply, 403, {
-      error: permissionRefusal(permission),
+      error: because ? `${permissionRefusal(permission)} ${because}` : permissionRefusal(permission),
       code: "PERMISSION_REQUIRED",
       permission,
     });

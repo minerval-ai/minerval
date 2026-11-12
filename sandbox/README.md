@@ -135,6 +135,26 @@ process, as the tests run it, the service passes the checks that are its
 own doing and fails the ones that are the container's, since a developer's
 machine has a network and a writable disk. That is the probe working.
 
+## Not yet verified
+
+- **The image has not been built.** The Dockerfile was written and read,
+  not run: the base image, the package names and the pinned library
+  versions have not been through a build.
+- **The probe's passing path has not been seen in a container.** Run as a
+  local process, the probe passes the checks that are the service's own
+  doing and fails the ones that are the container's, which the tests
+  assert. That every check passes in a container set up as this page says,
+  and that Docker's default seccomp profile lets the three Landlock system
+  calls through, are still to be seen.
+- **Older kernels give a command less.** Landlock refuses TCP to a command
+  only from Linux 6.7, and holds a command's signals to its own processes
+  only from 6.12. Before 6.7, that a command has no network rests on the
+  container's network alone, which is the property the probe checks.
+  Before 6.12, a command can signal the processes of another run's
+  command, and the service itself, since all run as one user: it could end
+  them, and could not read anything of theirs. The tests ran on a kernel
+  that has both.
+
 ## What a command can and cannot do
 
 It runs as `bash -c` in its run's scratch directory, with `HOME` and

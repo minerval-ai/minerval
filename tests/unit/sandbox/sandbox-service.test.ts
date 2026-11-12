@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import {
@@ -12,7 +13,7 @@ import {
   type SandboxConfig,
   type SandboxSetRef,
 } from "../../../src/services/sandbox-client.js";
-import { startSandbox, type SandboxProcess } from "../../sandbox-process.js";
+import { needsLandlock, startSandbox, type SandboxProcess } from "../../sandbox-process.js";
 
 /**
  * The sandbox service (sandbox/server.py), run as a local process and
@@ -24,6 +25,11 @@ import { startSandbox, type SandboxProcess } from "../../sandbox-process.js";
  * container's mounts or network, so the tests of what a command may read
  * and write are of the real mechanism, and the probe is expected to say
  * that this machine has a route out and a writable store.
+ *
+ * That mechanism is Landlock. On a kernel without it the service runs no
+ * command, so every test here that runs one fails, with that reason
+ * (needsLandlock); none is skipped. The last block shows what the API is
+ * told by a sandbox on such a kernel, whatever kernel the tests run on.
  */
 
 let sandbox: SandboxProcess;
@@ -38,6 +44,7 @@ const SECRET: SandboxSetRef = { name: "secret", origin: "upload", key: "secret" 
 const EXPORT: SandboxSetRef = { name: "export", origin: "directory", key: "finance/export" };
 
 async function run(runId: string, command: string, sets: SandboxSetRef[] = [], files: Array<{ path: string; content: string }> = []) {
+  needsLandlock(sandbox);
   const answered = await runInSandbox({ run: runId, command, files, sets, commandSeconds: 30 }, config);
   expect(answered.ok, JSON.stringify(answered)).toBe(true);
   if (!answered.ok) throw new Error("unreachable");
@@ -76,6 +83,7 @@ afterAll(async () => {
 
 describe("what the service says of itself", () => {
   it("reports its version, what it has, where the sets are and its four limits", async () => {
+    needsLandlock(sandbox);
     const health = await sandboxHealth(config);
     expect(health.ok, JSON.stringify(health)).toBe(true);
     if (!health.ok) return;
@@ -214,6 +222,7 @@ describe("a command", () => {
   });
 
   it("is refused when a set it names is not mounted in the sandbox, or its path leaves the store", async () => {
+    needsLandlock(sandbox);
     for (const set of [
       { name: "gone", origin: "upload" as const, key: "no-such-set" },
       { name: "escape", origin: "upload" as const, key: "../registered" },
@@ -278,6 +287,7 @@ describe("the limits", () => {
 
 describe("the probe", () => {
   it("checks confinement and what a command can do, and says of this machine what is true of it", async () => {
+    needsLandlock(sandbox);
     const probed = await probeSandboxService(config);
     expect(probed.ok, JSON.stringify(probed)).toBe(true);
     if (!probed.ok) return;
@@ -306,5 +316,50 @@ describe("the probe", () => {
     // The probe leaves nothing behind in the store or the scratch directory.
     expect((await readdir(sandbox.storeDir)).sort()).toEqual(["logs", "secret"]);
     expect((await readdir(sandbox.scratchDir)).filter((name) => name.startsWith("probe-") || name.startsWith(".probe"))).toEqual([]);
+  });
+});
+
+describe("a sandbox on a kernel with no Landlock", () => {
+  // What the service answers there (sandbox/server.py, health and run),
+  // served by a stand-in so that this is checked on every kernel.
+  const PROBLEM =
+    "this kernel has no Landlock, so a command cannot be held to its own file sets and none will be run. " +
+    "The sandbox needs Linux 5.13 or later with Landlock enabled.";
+
+  it("is told to the API as a sandbox that runs no command, with why, and never as one that works", async () => {
+    const standIn = createHttpServer((request, response) => {
+      const send = (status: number, body: unknown) => {
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify(body));
+      };
+      if (request.url === "/health") {
+        return send(200, {
+          ok: false,
+          problem: PROBLEM,
+          version: "1",
+          image: "minerval-sandbox:test",
+          python: "3.13.1",
+          libraries: {},
+          tools: [],
+          landlock_abi: 0,
+          paths: { store: "/sets", directory_root: null },
+          limits: { command_seconds: 300, output_bytes: 2000000, memory_mb: 2048, scratch_mb: 1024 },
+        });
+      }
+      request.resume();
+      return send(503, { error: "not_confined", message: PROBLEM });
+    });
+    await new Promise<void>((resolve) => standIn.listen(0, "127.0.0.1", resolve));
+    const there = { sandboxUrl: `http://127.0.0.1:${(standIn.address() as { port: number }).port}`, sandboxToken: "t" };
+    try {
+      const why = PROBLEM.replace(/\.$/, "");
+      expect(await sandboxHealth(there)).toEqual({ ok: false, failure: { kind: "not_confined", message: why } });
+      expect(await runInSandbox({ run: "r", command: "true", files: [], sets: [], commandSeconds: 5 }, there)).toEqual({
+        ok: false,
+        failure: { kind: "not_confined", message: why },
+      });
+    } finally {
+      await new Promise<void>((resolve) => standIn.close(() => resolve()));
+    }
   });
 });

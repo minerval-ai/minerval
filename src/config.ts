@@ -751,7 +751,9 @@ const configSchema = z.object({
   fileSetStoreDir: z.string().default(""),
   // The root a directory must be under to be registered as a set, for data
   // too large to upload. Read where it lies; the sandbox mounts the same
-  // root read-only. Empty = no directory can be registered.
+  // root read-only. The root has no label: an administrator registers a
+  // directory under it and says then what label its files get. Empty = no
+  // directory can be registered.
   fileSetDirectoryRoot: z.string().default(""),
   // The most bytes one uploaded set may hold. Upload is for sets of modest
   // size, since every byte passes through this process; larger data is

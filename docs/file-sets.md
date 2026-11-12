@@ -44,20 +44,22 @@ become), `src/llm/tools/file-set-tools.ts` (what an agent sees),
 
 **Two ways to fill one.**
 
-- **Upload**, for sets of modest size. `POST /file-sets` adds an empty, open
-  set; `PUT /file-sets/:file_set_id/files/<path>` takes one file, whose
-  bytes are streamed to the deployment's store and hashed as they arrive,
-  never held in memory; `POST /file-sets/:file_set_id/close` closes it. An
-  uploaded set may hold at most `FILE_SET_UPLOAD_MAX_BYTES` (10 GiB unless
-  set), because every byte passes through the API.
-- **A registered directory**, for data too large to upload. `POST
-  /file-sets` with `directory` names a directory, relative to the root the
-  operator configured (`FILE_SET_DIRECTORY_ROOT`). The API walks it and
-  hashes each file where it lies. Nothing is copied. That takes as long as
-  the data is large, so the request does not wait: the set is returned as
-  `hashing` and closes by itself. A symbolic link is not followed and not
-  listed, and the directory as it really is must be under the root as it
-  really is.
+- **Upload**, for sets of modest size, by a holder of the permission to
+  direct. `POST /file-sets` adds an empty, open set; `PUT
+  /file-sets/:file_set_id/files/<path>` takes one file, whose bytes are
+  streamed to the deployment's store and hashed as they arrive, never held
+  in memory; `POST /file-sets/:file_set_id/close` closes it. An uploaded
+  set may hold at most `FILE_SET_UPLOAD_MAX_BYTES` (10 GiB unless set),
+  because every byte passes through the API.
+- **A registered directory**, for data too large to upload, by an
+  administrator. `POST /file-sets/register` names a directory, relative to
+  the root the operator configured (`FILE_SET_DIRECTORY_ROOT`). The API
+  walks it and hashes each file where it lies. Nothing is copied. That
+  takes as long as the data is large, so the request does not wait: the
+  set is returned as `hashing` and closes by itself. A symbolic link is
+  not followed and not listed, and the directory as it really is must be
+  under the root as it really is. Where the walk failed or was cut short,
+  `POST /file-sets/:file_set_id/rehash` starts it again from nothing.
 
 **Where the bytes are.** Source documents are text in the database
 (`sources.raw_content`). Files of any kind and size are not put there: an
@@ -89,12 +91,39 @@ Only a closed set that is on is offered to a run.
 
 ## Who may add one
 
-A holder of the permission to **direct**, which covers adding sources, at a
-label that person may read: nobody places material at a label they could
-not themselves open. Every route is held to the caller's clearance, so a
-set at a label the caller may not read is not listed and is not found.
+It depends on which way the set is filled, and either way it is added at a
+label the person adding it may read: nobody places material at a label
+they could not themselves open. Every route is held to the caller's
+clearance, so a set at a label the caller may not read is not listed and is
+not found.
 
-The four routes that change anything also need a signed-in session, like a
+- **Uploading a set** takes the permission to **direct**, which covers
+  adding sources. The person brings the material and says what label it
+  has.
+- **Registering a directory** takes the permission to **administer**, and
+  not the permission to direct. The root directories are registered from
+  is not labelled, so whoever registers one decides what label material
+  already on the deployment's disk gets. A holder of direct cleared for
+  one label could otherwise register, at that label, a directory an
+  operator placed there for a more restricted one. An administrator is who
+  defines labels and connects systems, and this is the same kind of act as
+  adding a connection. Walking a registered directory again is held the
+  same way, since the walk takes in whatever the directory holds now.
+
+A person without it who tries to register a directory is told which
+permission it takes and why: *This needs the permission to administer the
+deployment, which this account does not hold. An administrator of this
+deployment grants it. Registering a directory decides what label files
+already on the deployment's disk get, so it takes the permission to
+administer; uploading a set takes the permission to direct.*
+
+Reading a set (the four reads below) takes the permission to direct,
+whichever way it was filled. An administrator who registers a directory
+and does not also direct is answered with the set as it was added, and
+finds its closing, with the file count and the manifest hash, in the
+permissions log.
+
+The six routes that change anything also need a signed-in session, like a
 connection's, so that a leaked key, an access token, or an agent following
 text it read can never place files in front of agents or put them at
 another label. The reads are MCP tools (`list_file_sets`, `get_file_set`,
@@ -102,13 +131,15 @@ another label. The reads are MCP tools (`list_file_sets`, `get_file_set`,
 
 | route | |
 |---|---|
-| `GET /file-sets`, `GET /file-sets/:file_set_id` | Each set with whose files they are, its label, how it was filled, its state, its file count, size and manifest hash, and how many commands were run against it and how many sources kept from it. `ways_in` says whether this deployment takes uploads, registers directories, and has a sandbox configured. |
+| `GET /file-sets`, `GET /file-sets/:file_set_id` | Each set with whose files they are, its label, how it was filled, its state, its file count, size and manifest hash, and how many commands were run against it and how many sources kept from it. `ways_in` says which ways in work here for the caller: `upload` (the deployment has a store), `register_directory` (it has a root to register from and the caller is an administrator), and `sandbox_configured`. |
 | `GET /file-sets/:file_set_id/files` | The manifest, a page at a time: each file's path, size and SHA-256. |
 | `GET /file-sets/:file_set_id/commands` | The commands agents ran with the set mounted, newest first: when, how each ended, the size and SHA-256 of what it printed, and the source it became if kept (`kept=true` for only those). Never what it printed. A command and the files given with it are an agent's words, so they are returned, with the run and node the command was run for, only to a caller cleared for the call's label. |
-| `POST /file-sets` | Add one, empty and open, or as a registered directory. |
-| `PUT /file-sets/:file_set_id/files/*` | Upload one file into an open set. A path the set already has is refused. |
-| `POST /file-sets/:file_set_id/close` | Close an uploaded set. For a registered directory whose hashing failed or was cut short, start the walk again. |
-| `PATCH /file-sets/:file_set_id` | Switch a set off or on. Nothing else about a set changes. |
+| `POST /file-sets` | Add one, empty and open for upload. (`direct`) |
+| `PUT /file-sets/:file_set_id/files/*` | Upload one file into an open set. A path the set already has is refused. (`direct`) |
+| `POST /file-sets/:file_set_id/close` | Close an uploaded set. (`direct`) |
+| `PATCH /file-sets/:file_set_id` | Switch a set off or on. Nothing else about a set changes. (`direct`) |
+| `POST /file-sets/register` | Register a directory where it lies. (`administer`) |
+| `POST /file-sets/:file_set_id/rehash` | Walk and hash a registered directory again, where that failed or was cut short. (`administer`) |
 
 Every response from these routes carries what a person adding a set should
 be told, as `notice`:
@@ -432,14 +463,39 @@ The preflight is a separate change. Two functions return what it needs:
   at; with `rehash`, whether each file still has the bytes it was hashed
   at.
 
+## Not yet verified
+
+For whoever packages the sandbox. The same list is in `sandbox/README.md`.
+
+- **The image has not been built.** `sandbox/Dockerfile` was written and
+  read, not run: the base image, the package names and the pinned library
+  versions have not been through a build.
+- **The probe's passing path has not been seen in a container.** Run as a
+  local process, the probe passes the checks that are the service's own
+  doing and fails the ones that are the container's (a writable store, a
+  route out), which the tests assert. That every check passes in a
+  container set up as `sandbox/README.md` says, and that Docker's default
+  seccomp profile lets the Landlock system calls through, are still to be
+  seen.
+- **Older kernels give a command less.** Landlock refuses TCP to a command
+  only from Linux 6.7, and holds a command's signals to its own processes
+  only from 6.12. Before 6.7, that a command has no network rests on the
+  container's network alone, which is the property the probe checks.
+  Before 6.12, a command can signal the processes of another run's
+  command, and the service itself, since all run as one user: it could
+  end them, and could not read anything of theirs. The tests ran on a
+  kernel that has both.
+
 ## Open points, and what is not built here
 
 - **Commands nobody kept are not expired.** Every command's output stays in
   `sandbox_calls`. Whether those should expire, and when, is not decided,
   as for a connection's calls.
 - **A source has one party.** An analysis over two parties' sets belongs
-  to neither alone, and each party's stake is on it. Releasing such a
-  source outward will need it to carry more than one party.
+  to neither alone (its party is empty), and one interest row names both
+  with each one's stake. The outbound gate, where each party whose
+  material a part rests on releases it, will need a source to carry more
+  than one party.
 - **Which files a command opened is not recorded,** only which sets it
   could read. Recording opens would take tracing each command, which the
   sandbox's container is not given the privilege to do. The manifest hash
