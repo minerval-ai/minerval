@@ -28,11 +28,20 @@
  * the conversation started (RequestAuth.fixedLabel). Every request made
  * with it reads what that label reads, within what the person may read, and
  * writes at that label: what it starts new is at that label with no
- * parameter, and it acts on an existing row only where the row carries that
+ * parameter, and it changes an existing row only where the row carries that
  * same label. The reason is the one the Assistant's cards have: an agent
  * reads other people's text while it works, and text it read must not be
  * able to file private material where more people can read it, by choosing
- * a label or by picking a row at another one to write beside.
+ * a label or by picking a row at another one to write into.
+ *
+ * Starting work on a node is not a change to the node. A node may carry a
+ * judgment at each label, and work on it at one label has its own order,
+ * its own ledger row and its own slot (src/labels.ts, "A judgment at each
+ * label"), so the three routes that start work on an existing node (order,
+ * fund, decompose) let the work be at the node's own label or at one that
+ * reads it ("orReader"). A signed-in person may name such a label. A
+ * credential names nothing: its work is at its own label, on any node that
+ * label reads, and everything it writes is still at its own label alone.
  *
  * "none" is for a route that adds no row that carries a label: accounts,
  * keys, owls, the tables that say what a clearance is (written as the
@@ -81,6 +90,14 @@ export type RequestLabelRule =
       in: "params" | "body";
       field: string;
       otherwise?: "chosen";
+      /**
+       * The request starts work on the row, and the work may be at the
+       * row's own label or at one that reads it: an internal assessment of
+       * a public claim. A signed-in person may name such a label among
+       * those they may read; left out, the work is at the row's own. A
+       * credential works at its own label, which reads every row it sees.
+       */
+      orReader?: true;
       why: string;
     }
   /**
@@ -97,7 +114,7 @@ const from = (
   field: string,
   why: string,
   where: "params" | "body" = "params"
-): RequestLabelRule => ({ rule: "from", carrier, in: where, field, why });
+): Extract<RequestLabelRule, { rule: "from" }> => ({ rule: "from", carrier, in: where, field, why });
 
 const OPERATOR =
   "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
@@ -110,13 +127,26 @@ const OAUTH = "The OAuth server's own tables, which carry no label.";
 export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   // ---- nodes ----
   "POST /claims/propose": { rule: "chosen", why: "A proposed node is new." },
-  "POST /claims/:claim_id/order": from("claim", "claim_id", "An order is for an assessment of this node."),
-  "POST /claims/:claim_id/contribute": from("claim", "claim_id", "The money is for this node's next assessment."),
-  "POST /claims/:claim_id/decompose": from(
-    "claim",
-    "claim_id",
-    "The mandate this opens is scoped to this node and funds work on it."
-  ),
+  "POST /claims/:claim_id/order": {
+    ...from("claim", "claim_id", "An order is for an assessment of this node, at the node's label or at one that reads it."),
+    orReader: true,
+  },
+  "POST /claims/:claim_id/contribute": {
+    ...from(
+      "claim",
+      "claim_id",
+      "The money is for this node's next assessment, at the node's label or at one that reads it."
+    ),
+    orReader: true,
+  },
+  "POST /claims/:claim_id/decompose": {
+    ...from(
+      "claim",
+      "claim_id",
+      "The mandate this opens is scoped to this node and funds work on it, at the node's label or at one that reads it."
+    ),
+    orReader: true,
+  },
   "PATCH /claims/:claim_id": from("claim", "claim_id", "An argument written onto this node."),
   "POST /claims/:claim_id/prize-claims": from("claim", "claim_id", "A prize claim is made on this node."),
 

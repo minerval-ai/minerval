@@ -22,7 +22,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";
-import { pendingPassLabel, runAtMandateLabelOutsideAnyRun } from "./label-service.js";
+import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
@@ -33,7 +33,9 @@ import {
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
 import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
-import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
+import { groupAtLabel, ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import {
   duePartitions,
   listPartitions,
@@ -132,21 +134,36 @@ export type ActionKind =
   // mandates like any action, and fundable by anyone.
   | "request";
 
-export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
+/**
+ * A node's assess group, at a label: the label of the work in progress
+ * unless one is named. Work at each label on a node has its own group
+ * (groupAtLabel in ingest-focus-service.ts), so an internal assessment of a
+ * public claim neither waits on public work nor is visible on its row. The
+ * same holds for the other groups keyed by something several labels can
+ * work on: curate, formalize, ingest and a consistency partition.
+ */
+export const ASSESS_GROUP = (claimId: string, label?: string) => groupAtLabel(`assess:${claimId}`, label);
+/**
+ * SQL expression for the same key: the assess group of the node whose id is
+ * `idSql`, at the label `labelSql`. The plain key where `public` is the
+ * only label.
+ */
+export const ASSESS_GROUP_SQL = (idSql: string, labelSql: string) =>
+  oneLabelOnly() ? `'assess:' || ${idSql}::text` : `minerval_group_at('assess:' || ${idSql}::text, ${labelSql})`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
 /** An ingest's group: per URL, and per focus for a scoped ingest (ingest-focus-service.ts). */
-export const INGEST_GROUP = (url: string, focus?: string | null) => ingestGroup(url, focus);
+export const INGEST_GROUP = (url: string, focus?: string | null, label?: string) => ingestGroup(url, focus, label);
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 export const CORRESPONDENT_GROUP = (correspondentId: string) => `correspondent:${correspondentId}`;
-export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
-export const CURATE_GROUP = (claimId: string) => `curate:${claimId}`;
+export const CONSISTENCY_GROUP = (ref: string, label?: string) => groupAtLabel(`consistency:${ref}`, label);
+export const CURATE_GROUP = (claimId: string, label?: string) => groupAtLabel(`curate:${claimId}`, label);
 /** The Curator's row for one request it keeps (#722). */
 export const CURATE_REQUEST_GROUP = (requestId: string) => `curate:request:${requestId}`;
 export const AUDIT_GROUP = (auditRunId: string) => `audit:${auditRunId}`;
 export const REQUEST_GROUP = (requestId: string) => `request:${requestId}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
-export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
+export const FORMALIZE_GROUP = (claimId: string, label?: string) => groupAtLabel(`formalize:${claimId}`, label);
 /** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
 export const ATTEMPT_GROUP = (formalizationId: string, n: number) =>
   `attempt:${formalizationId}:${n}`;
@@ -192,35 +209,20 @@ export const COVERAGE_SQL = `
 export const FINISHED_STATUSES_SQL = `('done', 'superseded', 'cancelled')`;
 
 /**
- * What an upsert that can reopen a finished row does with the row's label,
- * its display text and its target (SQL fragment for its SET list;
- * src/labels.ts). Every producer below stamps a new row with the label of
- * the work that opens it (currentLabel), and the executors run a row at its
- * label. But a group's row is reused for the group's next piece of work, so
- * the label has to follow the work: a row that is open or running keeps the
- * label of the work already waiting on it, and a finished row opened again
- * takes the label of the work that reopens it. Without this a claim first
- * assessed at one label would have every later pass run at that label,
- * whatever asked for it.
+ * What an upsert that can reopen a finished row does with the row's display
+ * text and its target (SQL fragment for its SET list). Every producer below
+ * stamps a new row with the label of the work that opens it (currentLabel),
+ * and the executors run a row at its label. A row's label never changes
+ * (the database's label_fixed_guard). A group whose subject several labels
+ * can work on (a node, a document, a partition) has a key for each label
+ * (groupAtLabel), and every other group belongs to a row that carries one
+ * label of its own (a mandate, a request, a lookout), so a row is only ever
+ * reopened by work at its own label.
  *
- * The display text and the target go with the label, in the same statement:
- * a reopened row is the new work's row, and nothing the old label's work
- * wrote in it is carried under the new label. A row that keeps its label
- * keeps its text too, so work that joins an open row at another label
- * writes none of its own words into it.
- *
- * The database holds a cleared connection to this (the label_fixed_guard
- * trigger): it lets a row's label change only where the row was finished,
- * the statement opens it, the new label is the connection's own, and the
- * new label reads the old one. So every upsert that uses this fragment also
- * sets status to open for a finished row. A reopening by work whose label
- * does not read the row's (a request, at `public`, on a row finished at a
- * private label) is refused there.
+ * A reopened row is the new work's row: its display text and its target
+ * are replaced. A row that is open or running keeps both.
  */
-export const LABEL_ON_REOPEN_SQL = `sensitivity_label = CASE
-             WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.sensitivity_label
-             ELSE actions.sensitivity_label END,
-           label = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.label ELSE actions.label END,
+export const LABEL_ON_REOPEN_SQL = `label = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.label ELSE actions.label END,
            target_ref = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.target_ref
                              ELSE actions.target_ref END`;
 
@@ -238,14 +240,21 @@ export const LABEL_ON_REOPEN_SQL = `sensitivity_label = CASE
 export async function ensureAssessActions(claimId: string): Promise<void> {
   const config = loadConfig();
   const tiers = await stewardTierCostEstimates();
+  // A first pass or a fresh one, at the label of the work that asks: a
+  // label with no version of its own on the node has not assessed it yet,
+  // whatever another label holds.
+  const assessedHere = oneLabelOnly()
+    ? `EXISTS (SELECT 1 FROM assessments_in_force x
+                     WHERE x.claim_id = c.id)`
+    : `EXISTS (SELECT 1 FROM assessments_versions x
+                     WHERE x.claim_id = c.id AND x.sensitivity_label = $2)`;
   const [claim] = await rawQuery<{ text: string; assessed: boolean }>(
     `SELECT c.text,
-            EXISTS (SELECT 1 FROM assessments_in_force x
-                     WHERE x.claim_id = c.id)
+            ${assessedHere}
               AS assessed
        FROM claims c
       WHERE c.id = $1 AND c.state = 'active'`,
-    [claimId]
+    oneLabelOnly() ? [claimId] : [claimId, currentLabel()]
   );
   if (!claim) return;
   const kind = claim.assessed ? "reassess" : "assess";
@@ -507,28 +516,38 @@ export async function reconcileActions(): Promise<{
   /** Mandates whose plan could not be materialized this sweep (logged). */
   plansFailed: number;
 }> {
+  // A pending slot with no open row. A node's own row is its slot for work
+  // at its own label; work asked for at another label waits in
+  // steward_slots, one row per node and label (steward-lease.ts), which
+  // only a deployment with more than one label has.
   const pending = await rawQuery<{ id: string; sensitivity_label: string }>(
     `SELECT c.id, c.sensitivity_label FROM claims c
       WHERE c.state = 'active' AND c.steward_state = 'pending'
         AND NOT EXISTS (SELECT 1 FROM actions a
-                         WHERE a.exclusion_group = 'assess:' || c.id::text
+                         WHERE a.exclusion_group = ${ASSESS_GROUP_SQL("c.id", "c.sensitivity_label")}
                            AND a.status IN ('open', 'running'))
       LIMIT 500`
   );
+  if (!oneLabelOnly()) {
+    pending.push(
+      ...(await rawQuery<{ id: string; sensitivity_label: string }>(
+        `SELECT s.claim_id AS id, s.sensitivity_label FROM steward_slots s
+           JOIN claims c ON c.id = s.claim_id AND c.state = 'active'
+          WHERE s.steward_state = 'pending'
+            AND NOT EXISTS (SELECT 1 FROM actions a
+                             WHERE a.exclusion_group = minerval_group_at('assess:' || s.claim_id::text, s.sensitivity_label)
+                               AND a.status IN ('open', 'running'))
+          LIMIT 500`
+      ))
+    );
+  }
   for (const row of pending) {
     // One claim's failure (a bad row, a transient DB error) must not take
     // the rest of the sweep with it: log and move on (#416).
     try {
-      // The sweep starts from the claim, not from a piece of work. A claim
-      // is pending because of the messages waiting on it, so the rows are
-      // opened at the label those messages carry when they agree on one,
-      // and the pass they pay for runs at it (pendingPassLabel in
-      // label-service.ts). With no message waiting, or with messages of
-      // more than one label, the rows take the claim's own label: a floor,
-      // under which work on a restricted claim is never opened as public.
-      // The pending slot is one per claim and does not say which label a
-      // pass was asked for at; one slot per label is later work.
-      const label = await pendingPassLabel(row.id, row.sensitivity_label);
+      // The rows are opened at the label of the slot that is pending, and
+      // the pass they pay for runs at it.
+      const label = row.sensitivity_label;
       await runAtLabel(label, `claim ${row.id}`, () => ensureAssessActions(row.id));
     } catch (err) {
       console.error(
@@ -686,7 +705,7 @@ export async function reconcileActions(): Promise<{
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
         AND NOT EXISTS (SELECT 1 FROM claims c
                          WHERE c.id = a.claim_id AND c.state = 'active'
-                           AND c.steward_state IN ('pending', 'running'))
+                           AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} IN ('pending', 'running'))
       RETURNING a.id`
   );
 
@@ -1335,8 +1354,9 @@ interface ClaimStanding {
 
 async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
   const [row] = await rawQuery<ClaimStanding>(
-    `SELECT c.id, c.state, c.steward_state, c.steward_error_reason,
-            COALESCE(c.steward_attempts, 0) AS steward_attempts,
+    `SELECT c.id, c.state, ${slotColumnSql("steward_state")} AS steward_state,
+            ${slotColumnSql("steward_error_reason")} AS steward_error_reason,
+            COALESCE(${slotColumnSql("steward_attempts")}, 0) AS steward_attempts,
             EXISTS (SELECT 1 FROM claim_formalizations f
                      WHERE f.claim_id = c.id AND f.status = 'published') AS published,
             -- Each kind keeps its current assessment in its own table: a
@@ -1781,11 +1801,15 @@ async function materializePlanItem(
     // waiting for a pass gets one from the mandate, like the node's own.
     // One level; idempotent, so it runs on every sweep until every child
     // is dealt with, which catches the children the node's pass mints.
+    // A deferred stub is released by work at the stub's own label: a
+    // node's row is its own label's to change (the database refuses
+    // another's), so a mandate at one label leaves another label's stubs
+    // as that label's own economics left them.
     await rawQuery(
       `UPDATE claims SET steward_state = 'pending', updated_at = now()
         WHERE state = 'active' AND steward_state = 'deferred'
           AND id IN (SELECT child_claim_id FROM claim_relationships
-                      WHERE parent_claim_id = $1)`,
+                      WHERE parent_claim_id = $1)${oneLabelOnly() ? "" : ` AND sensitivity_label = '${currentLabel()}'`}`,
       [claim.id]
     );
     const kids = await orders.orderChildPasses({

@@ -30,6 +30,7 @@
  * (allocation-scheduler.ts). Every step is idempotent.
  */
 import { rawQuery } from "../db/client.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { grantmakerShareLeftMicroUsd } from "./action-service.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { mandateClosureBlockers } from "./bounty-service.js";
@@ -95,7 +96,7 @@ async function releaseOrdersOnParkedNodes(grantId: string): Promise<void> {
       WHERE al.grant_id = $1 AND al.commissioned_by = $2
         AND al.released_at IS NULL AND al.spent_micro_usd = 0
         AND EXISTS (SELECT 1 FROM claims c
-                     WHERE c.id = al.claim_id AND c.steward_state = 'error')
+                     WHERE c.id = al.claim_id AND ${slotColumnSql("steward_state", "c")} = 'error')
         AND NOT EXISTS (SELECT 1 FROM actions a
                          WHERE a.exclusion_group = al.exclusion_group AND a.status = 'running')`,
     [grantId, PLAN_ORDER_COMMISSIONER]
@@ -111,8 +112,8 @@ async function orderDeepenScope(g: LifecycleGrant): Promise<boolean> {
   const waiting = await rawQuery<{ id: string }>(
     `${SCOPE_SQL}
      SELECT c.id FROM claims c JOIN scope ON scope.id = c.id
-      WHERE c.steward_state IN ('pending', 'deferred')
-      ORDER BY (c.steward_state = 'pending') DESC, c.importance DESC NULLS LAST
+      WHERE ${slotColumnSql("steward_state", "c")} IN ('pending', 'deferred')
+      ORDER BY (${slotColumnSql("steward_state", "c")} = 'pending') DESC, c.importance DESC NULLS LAST
       LIMIT 100`,
     [g.scope_claim_id, g.scope_query]
   );

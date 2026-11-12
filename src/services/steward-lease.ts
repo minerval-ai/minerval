@@ -14,8 +14,142 @@
  *    (lease backdated past the stale window, action row reopened) rather than
  *    leaving them locked until the lease runs out.
  */
+import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { LlmRefusalError } from "../llm/errors.js";
+import { currentLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
+
+/**
+ * Where the Steward's slot for the work in progress on a node is kept.
+ *
+ * The node's own row is its slot for work at the node's own label, which
+ * on the public graph is all the work there is. Work at another label that
+ * reads the node (an internal pass on a public claim) has a slot of its own
+ * in steward_slots, one row per node and label with the same columns, so
+ * that it neither waits on the other label's pass nor writes its
+ * bookkeeping into a row its label does not own (db/schema.ts,
+ * steward_slots). Every lane writes its slot statements against these
+ * fragments, so one statement serves both, and where the slot is the node's
+ * own row the statement is word for word what it always was.
+ */
+export interface StewardSlot {
+  /** True where the slot is the node's own row. */
+  own: boolean;
+  /** The table that holds it. */
+  rel: "claims" | "steward_slots";
+  /** The column that names the node. */
+  key: "id" | "claim_id";
+  /** The label the slot is for. */
+  label: string;
+  /** SQL: this slot's row, with the node's id as `param` (and the row's alias, where the statement uses one). */
+  is(param: string, alias?: string): string;
+  /** SQL: the node is active (the row's alias, where the statement uses one). */
+  active(alias?: string): string;
+}
+
+const col = (alias: string | undefined, name: string) => (alias ? `${alias}.${name}` : name);
+
+const OWN_SLOT = (label: string): StewardSlot => ({
+  own: true,
+  rel: "claims",
+  key: "id",
+  label,
+  is: (param, alias) => `${col(alias, "id")} = ${param}`,
+  active: (alias) => `${col(alias, "state")} = 'active'`,
+});
+
+const PLAIN_LABEL_RE = /^[a-z][a-z0-9_-]{0,62}$/;
+
+const LABEL_SLOT = (label: string): StewardSlot => {
+  // The label is written into the statement as a literal. It comes from the
+  // run's context and is a row in `labels`, whose names are plain words.
+  if (!PLAIN_LABEL_RE.test(label)) throw new Error(`"${label}" is not a label's name`);
+  return {
+    own: false,
+    rel: "steward_slots",
+    key: "claim_id",
+    label,
+    is: (param, alias) => `${col(alias, "claim_id")} = ${param} AND ${col(alias, "sensitivity_label")} = '${label}'`,
+    active: (alias) =>
+      `EXISTS (SELECT 1 FROM claims node WHERE node.id = ${col(alias ?? "steward_slots", "claim_id")} AND node.state = 'active')`,
+  };
+};
+
+/**
+ * The slot of the work in progress on `claimId`: the node's own row where
+ * the work is at the node's label, else the row for the work's label in
+ * steward_slots. With `ensure`, that row is made if it is not there yet (as
+ * 'done': nothing waiting), which every statement that moves a slot needs;
+ * a read leaves it out. Where `public` is the only label nothing is asked.
+ */
+export async function stewardSlot(claimId: string, opts: { ensure?: boolean } = {}): Promise<StewardSlot> {
+  const label = currentLabel();
+  if (oneLabelOnly()) return OWN_SLOT(label);
+  const [node] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM claims WHERE id = $1`,
+    [claimId]
+  );
+  if (!node || node.sensitivity_label === label) return OWN_SLOT(label);
+  if (opts.ensure) {
+    await rawQuery(
+      `INSERT INTO steward_slots (claim_id, sensitivity_label) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [claimId, label]
+    );
+  }
+  return LABEL_SLOT(label);
+}
+
+/**
+ * SQL expression: a column of the Steward slot of the node aliased `c`, for
+ * work at one label. The label is the work in progress's unless `labelSql`
+ * names another (a ledger row's, in a sweep over rows at every label).
+ * Where the node carries that label it is the node's own column, and where
+ * `public` is the only label it is nothing else, word for word. A node
+ * with no row for the label has nothing waiting at it.
+ */
+export function slotColumnSql(
+  column: "steward_state" | "steward_error_reason" | "stewarded_at" | "steward_attempts",
+  c = "c",
+  labelSql?: string
+): string {
+  if (oneLabelOnly()) return `${c}.${column}`;
+  const label = labelSql ?? `'${LABEL_SLOT(currentLabel()).label}'`;
+  const none = column === "steward_state" ? "'done'" : column === "steward_attempts" ? "0" : "NULL";
+  return `(CASE WHEN ${c}.sensitivity_label = ${label} THEN ${c}.${column}
+                ELSE COALESCE((SELECT sl.${column} FROM steward_slots sl
+                                WHERE sl.claim_id = ${c}.id AND sl.sensitivity_label = ${label}), ${none}) END)`;
+}
+
+/** The state of a slot as a lane reads it, or null where there is no such row. */
+export async function readStewardSlot(
+  claimId: string,
+  slot?: StewardSlot
+): Promise<{
+  steward_state: string;
+  steward_error: string | null;
+  steward_error_reason: string | null;
+  stewarded_at: Date | null;
+  steward_attempts: number;
+} | null> {
+  const s = slot ?? (await stewardSlot(claimId));
+  const [row] = await rawQuery<{
+    steward_state: string;
+    steward_error: string | null;
+    steward_error_reason: string | null;
+    stewarded_at: Date | null;
+    steward_attempts: number;
+  }>(
+    `SELECT steward_state, steward_error, steward_error_reason, stewarded_at, steward_attempts
+       FROM ${s.rel} WHERE ${s.is("$1")}`,
+    [claimId]
+  );
+  if (row) return row;
+  // No row in steward_slots yet: nothing at this label has been asked for.
+  return s.own
+    ? null
+    : { steward_state: "done", steward_error: null, steward_error_reason: null, stewarded_at: null, steward_attempts: 0 };
+}
 
 /** A 'running' claim whose lease is older than this is a dead run's. */
 export const STEWARD_LEASE_STALE_MINUTES = 15;
@@ -129,6 +263,7 @@ export async function reportStewardPark(
   lane: string
 ): Promise<boolean> {
   try {
+    const slot = await stewardSlot(claimId);
     const [row] = await rawQuery<{
       steward_state: string;
       steward_error: string | null;
@@ -137,8 +272,8 @@ export async function reportStewardPark(
       text: string;
       retired_backing_micro_usd: string | number;
     }>(
-      `SELECT c.steward_state, c.steward_error, c.steward_error_reason,
-              c.steward_attempts, c.text,
+      `SELECT s.steward_state, s.steward_error, s.steward_error_reason,
+              s.steward_attempts, c.text,
               COALESCE((
                 SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
                   FROM minerval_whole.allocation_money al
@@ -147,7 +282,8 @@ export async function reportStewardPark(
                    AND a.kind IN ('assess', 'reassess')
                    AND al.released_at IS NULL
               ), 0)::bigint AS retired_backing_micro_usd
-         FROM claims c WHERE c.id = $1`,
+         FROM claims c JOIN ${slot.rel} s ON s.${slot.key} = c.id
+        WHERE c.id = $1 AND ${slot.is("$1", "s")}`,
       [claimId]
     );
     if (!row || row.steward_state !== "error") return false;
@@ -197,6 +333,8 @@ export async function reportStewardPark(
 interface HeldLease {
   claimId: string;
   actionId?: string;
+  /** The slot the run claimed; the node's own row where it is left out and the run is at the node's label. */
+  slot?: StewardSlot;
 }
 
 const held = new Set<HeldLease>();
@@ -211,12 +349,13 @@ export async function withStewardLease<T>(
   lease: HeldLease,
   fn: () => Promise<T>
 ): Promise<T> {
-  const entry = { ...lease };
+  const slot = lease.slot ?? (await stewardSlot(lease.claimId));
+  const entry = { ...lease, slot };
   held.add(entry);
   const timer = setInterval(() => {
     rawQuery(
-      `UPDATE claims SET stewarded_at = now()
-        WHERE id = $1 AND steward_state = 'running'`,
+      `UPDATE ${slot.rel} SET stewarded_at = now()
+        WHERE ${slot.is("$1")} AND steward_state = 'running'`,
       [entry.claimId]
     ).catch((err) =>
       console.warn(
@@ -246,20 +385,38 @@ export async function abandonStewardLeases(): Promise<number> {
   const leases = [...held];
   held.clear();
   if (leases.length === 0) return 0;
-  await rawQuery(
-    `UPDATE claims
-        SET stewarded_at = now() - make_interval(mins => $2 + 1)
-      WHERE id = ANY($1::uuid[]) AND steward_state = 'running'`,
-    [leases.map((l) => l.claimId), STEWARD_LEASE_STALE_MINUTES]
-  );
-  const actionIds = leases.flatMap((l) => (l.actionId ? [l.actionId] : []));
-  if (actionIds.length > 0) {
-    await rawQuery(
-      `UPDATE actions SET status = 'open', updated_at = now()
-        WHERE id = ANY($1::uuid[]) AND status = 'running'`,
-      [actionIds]
-    );
-  }
+  const release = async () => {
+    const own = leases.filter((l) => l.slot?.own !== false);
+    if (own.length > 0) {
+      await rawQuery(
+        `UPDATE claims
+            SET stewarded_at = now() - make_interval(mins => $2 + 1)
+          WHERE id = ANY($1::uuid[]) AND steward_state = 'running'`,
+        [own.map((l) => l.claimId), STEWARD_LEASE_STALE_MINUTES]
+      );
+    }
+    for (const l of leases.filter((x) => x.slot?.own === false)) {
+      await rawQuery(
+        `UPDATE steward_slots
+            SET stewarded_at = now() - make_interval(mins => $2 + 1)
+          WHERE ${l.slot!.is("$1")} AND steward_state = 'running'`,
+        [l.claimId, STEWARD_LEASE_STALE_MINUTES]
+      );
+    }
+    const actionIds = leases.flatMap((l) => (l.actionId ? [l.actionId] : []));
+    if (actionIds.length > 0) {
+      await rawQuery(
+        `UPDATE actions SET status = 'open', updated_at = now()
+          WHERE id = ANY($1::uuid[]) AND status = 'running'`,
+        [actionIds]
+      );
+    }
+  };
+  // The process is exiting, outside every run, and the leases it holds may
+  // be at any label. Where there is one label this is the statement it
+  // always was, on the same connection.
+  if (oneLabelOnly()) await release();
+  else await withSystemClearance(ABANDON_REASON, release);
   return leases.length;
 }
 
@@ -293,14 +450,15 @@ export async function acquireStewardLock(
   const waitMs = opts.waitMs ?? 5 * 60_000;
   const pollMs = opts.pollMs ?? 10_000;
   const deadline = Date.now() + waitMs;
+  const slot = await stewardSlot(claimId, { ensure: true });
   for (;;) {
     const [row] = await rawQuery<{ prior_state: string }>(
-      `UPDATE claims c
+      `UPDATE ${slot.rel} c
           SET steward_state = 'running', stewarded_at = now(),
               steward_requeued = false
-         FROM (SELECT id, steward_state AS prior_state FROM claims
-                WHERE id = $1 FOR UPDATE) prior
-        WHERE c.id = prior.id
+         FROM (SELECT ${slot.key} AS id, steward_state AS prior_state FROM ${slot.rel}
+                WHERE ${slot.is("$1")} FOR UPDATE) prior
+        WHERE ${slot.is("prior.id", "c")}
           AND (c.steward_state <> 'running'
                OR c.stewarded_at IS NULL
                OR c.stewarded_at < now() - make_interval(mins => $2))
@@ -323,12 +481,16 @@ export async function releaseStewardLock(
   claimId: string,
   restore: string
 ): Promise<void> {
+  const slot = await stewardSlot(claimId);
   await rawQuery(
-    `UPDATE claims SET ${stewardReleaseSet("$2")}, updated_at = now()
-      WHERE id = $1`,
+    `UPDATE ${slot.rel} SET ${stewardReleaseSet("$2")}, updated_at = now()
+      WHERE ${slot.is("$1")}`,
     [claimId, restore]
   );
 }
+
+const ABANDON_REASON =
+  "A process that exits mid-run hands back the leases it holds, which were taken by runs at any label.";
 
 /** Test hook: how many leases this process holds. */
 export function heldStewardLeaseCount(): number {

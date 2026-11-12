@@ -6,7 +6,9 @@
  * route catalog. As each route registers, onRoute looks its rule up and
  *
  *  - adds a `label` field to the body schema of a route where the person
- *    names one, so the OpenAPI document shows it. The catalog recorded the
+ *    names one (for something new), or may name one (for work on a node
+ *    that is already there, at a label that reads the node's), so the
+ *    OpenAPI document shows it. The catalog recorded the
  *    route before this hook ran, so the MCP tool built from the route has
  *    no such parameter: a key or a token works at its own label and an
  *    agent holding one is not offered a choice;
@@ -46,6 +48,18 @@ export const LABEL_FIELD = {
     "work at one label, fixed when they were made.",
 } as const;
 
+/** The `label` field on a route that starts work on a node that is already there. */
+export const WORK_LABEL_FIELD = {
+  type: "string",
+  description:
+    "Optional. The label the work is done at. Left out, it is the node's own label. A node can " +
+    "carry a judgment at each label, so a signed-in person may instead name a label they may read " +
+    "that reads the node's label, to have the node worked on at that label: an internal " +
+    "assessment of a public claim, say. What that work writes is read only at the label named, and " +
+    "the node's own judgment stays as it is. A request made with an API key or an access token " +
+    "leaves it out: its work is at the one label the key or token was made for.",
+} as const;
+
 const quoted = (labels: readonly string[]) => labels.map((l) => `"${l}"`).join(", ");
 
 /** The credential as the sentence names it: the Assistant is told of "this conversation". */
@@ -72,6 +86,14 @@ export const LABEL_MESSAGES = {
     (fixed.of === "Assistant conversation"
       ? `Your user can do this themselves from the ${noun}'s page, or in a conversation started at "${rowLabel}".`
       : `Use a credential made for "${rowLabel}".`),
+  doesNotRead: (named: string, noun: string, rowLabel: string, choices: readonly string[]) =>
+    `The request named the label "${named}", and the ${noun} is labeled "${rowLabel}", which "${named}" ` +
+    `does not read. Work on a ${noun} is done at the ${noun}'s own label or at a label that reads it, ` +
+    `because the work has to read what it is about. ` +
+    (choices.length > 0
+      ? `For this ${noun} this account may name: ${quoted(choices)}. `
+      : "") +
+    `Leave "label" out for the ${noun}'s own label.`,
   notFound: (noun: string) => `${noun.charAt(0).toUpperCase()}${noun.slice(1)} not found`,
   credentialRequired:
     `This endpoint works at the label of the API key or access token that calls it, and this ` +
@@ -188,6 +210,46 @@ export async function decideRequestLabel(
   if (rowLabel === undefined) {
     return { refusal: { status: 404, code: "NOT_FOUND", error: LABEL_MESSAGES.notFound(carrier.noun) } };
   }
+  if (rule.orReader) {
+    // Work on the row, at the row's own label or at one that reads it. The
+    // row was read on the request's own connection, so a credential's label
+    // reads it, and the credential's work is at its own label.
+    if (fixed) {
+      if (body.label !== undefined && body.label !== null && body.label !== fixed.label) {
+        return {
+          refusal: { status: 400, code: "LABEL_FIXED", error: LABEL_MESSAGES.fixed(fixed, String(body.label)), label: fixed.label },
+        };
+      }
+      return { label: fixed.label };
+    }
+    if (body.label === undefined || body.label === null || body.label === "" || body.label === rowLabel) {
+      return { label: rowLabel };
+    }
+    const held = standingOf(request.auth).clearance;
+    const named = String(body.label);
+    const readers = await rawQuery<{ name: string }>(
+      `SELECT l.name FROM labels l
+        WHERE l.name = ANY($1::text[]) AND $2 = ANY (minerval_labels_readable_from(ARRAY[l.name]))`,
+      [[...held], rowLabel]
+    );
+    const choices = readers.map((r) => r.name).sort();
+    if (!held.includes(named)) {
+      return {
+        refusal: { status: 403, code: "LABEL_NOT_READABLE", error: LABEL_MESSAGES.notReadable(named, held), labels: [...held] },
+      };
+    }
+    if (!choices.includes(named)) {
+      return {
+        refusal: {
+          status: 400,
+          code: "LABEL_DOES_NOT_READ",
+          error: LABEL_MESSAGES.doesNotRead(named, carrier.noun, rowLabel, choices),
+          labels: choices,
+        },
+      };
+    }
+    return { label: named };
+  }
   if (fixed && rowLabel !== fixed.label) {
     return {
       refusal: {
@@ -233,13 +295,17 @@ export async function registerRequestLabel(app: FastifyInstance): Promise<void> 
     const rule = rules[0];
     if (!rule) return;
 
-    if (takesChosenLabel(rule)) {
+    const worksAtAReader = rule.rule === "from" && rule.orReader === true;
+    if (takesChosenLabel(rule) || worksAtAReader) {
       const body = (route.schema?.body ?? { type: "object" }) as { properties?: Record<string, unknown> };
       // A new schema object: route schemas are often shared constants, and
       // the catalog keeps the one without the field for the MCP tool.
       route.schema = {
         ...route.schema,
-        body: { ...body, properties: { ...(body.properties ?? {}), label: LABEL_FIELD } },
+        body: {
+          ...body,
+          properties: { ...(body.properties ?? {}), label: worksAtAReader ? WORK_LABEL_FIELD : LABEL_FIELD },
+        },
       };
     }
 

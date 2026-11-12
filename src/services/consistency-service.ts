@@ -33,6 +33,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { enqueueSteward } from "./queue-service.js";
 import { refreshQueuePriority } from "./priority-service.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
@@ -510,7 +511,7 @@ export async function partitionClaims(
             EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
                      WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')
                        AND f.assessment_id_at_flag = ${RECORD_ID}) AS flag_open,
-            (c.steward_state IN ('pending', 'running')) AS steward_pending,
+            (${slotColumnSql("steward_state", "c")} IN ('pending', 'running')) AS steward_pending,
             COUNT(*) OVER ()::int AS total
        FROM claims c ${CURRENT_RECORD_JOINS}
       WHERE c.state = 'active' AND c.merged_into IS NULL
@@ -802,7 +803,7 @@ async function revalue(claimId: string, input?: { rationale?: string; expectedGa
   const general = await getGeneralMandate();
   const [row] = await rawQuery<{ id: string }>(
     `SELECT id FROM actions WHERE exclusion_group = $1 AND variant = 'standard' AND status = 'open' LIMIT 1`,
-    [`assess:${claimId}`]
+    [ASSESS_GROUP(claimId)]
   );
   if (general && row) {
     await raiseToMandate({

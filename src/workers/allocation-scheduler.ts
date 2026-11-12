@@ -46,6 +46,9 @@ import { scanReconcileCandidates } from "../services/curation-service.js";
 import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "../services/judgment-version-service.js";
+import { slotColumnSql } from "../services/steward-lease.js";
+import { openReassessmentsForVersionsMadeBesideEarlier } from "../services/version-upkeep.js";
 import { withSystemClearance } from "../db/clearance.js";
 
 export interface AllocationTickResult {
@@ -143,6 +146,15 @@ export async function allocationSchedulerTick(
       )
   );
 
+  // 1c. Versions of a judgment made beside one that has since been replaced
+  // (version-upkeep.ts): the reassessment is opened on the ledger at the
+  // version's own label. Opening it runs nothing; a mandate funds it or not.
+  await openReassessmentsForVersionsMadeBesideEarlier().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] version upkeep failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+
   // 2. The pending list's order, for display and the fallback lane. It
   // decides no funding: mandates fund work through their agents and their
   // written operating policies.
@@ -173,8 +185,14 @@ export async function allocationSchedulerTick(
   const policy = await getEffectiveAllocationPolicy();
   if (policy.staleness_base_days > 0) {
     // Most-overdue first, judged against each claim's own cadence.
+    // Where a node carries a version at more than one label, each is
+    // checked against its own age and its pass is asked for at its own
+    // label, with that label's slot: a version is kept current on its own
+    // inputs, whatever another label's has done since. With one label it is
+    // the one statement it always was.
     const due = await rawQuery<{ id: string; sensitivity_label: string; days_old: number }>(
-      `SELECT c.id, c.sensitivity_label,
+      oneLabelOnly()
+        ? `SELECT c.id, c.sensitivity_label,
               FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at)) / 86400)::int
                 AS days_old
          FROM claims c
@@ -183,13 +201,23 @@ export async function allocationSchedulerTick(
           AND c.steward_state = 'done'
           AND a.assessed_at < now() - make_interval(days =>
                 ($1::real / GREATEST(0.25, LEAST(2.0, c.queue_priority)))::int)
+        ORDER BY a.assessed_at ASC`
+        : `SELECT c.id, a.sensitivity_label,
+              FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at)) / 86400)::int
+                AS days_old
+         FROM claims c
+         JOIN assessments_versions a ON a.claim_id = c.id
+        WHERE c.state = 'active'
+          AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} = 'done'
+          AND a.assessed_at < now() - make_interval(days =>
+                ($1::real / GREATEST(0.25, LEAST(2.0, c.queue_priority)))::int)
         ORDER BY a.assessed_at ASC`,
       [policy.staleness_base_days]
     );
     for (const claim of due) {
-      // The check starts from the claim, outside any run, so the pass it
-      // asks for is opened at the claim's label (runAtClaimLabel in
-      // label-service.ts says what that does and does not cover).
+      // The check starts from the version, outside any run, so the pass it
+      // asks for is opened at the version's label, which for a node with
+      // one version is the node's own.
       await runAtLabel(claim.sensitivity_label, `claim ${claim.id}`, () =>
         enqueueSteward({
           claimId: claim.id,

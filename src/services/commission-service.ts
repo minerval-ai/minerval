@@ -26,6 +26,7 @@
 import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { allocationDayUseSql } from "./day-use.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
@@ -194,8 +195,11 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     stewarded_at: Date | null;
     steward_attempts: number;
   }>(
-    `SELECT id, steward_state, steward_error_reason, stewarded_at, steward_attempts
-       FROM claims WHERE id = $1 AND state = 'active'`,
+    `SELECT c.id, ${slotColumnSql("steward_state", "c")} AS steward_state,
+            ${slotColumnSql("steward_error_reason", "c")} AS steward_error_reason,
+            ${slotColumnSql("stewarded_at", "c")} AS stewarded_at,
+            ${slotColumnSql("steward_attempts", "c")} AS steward_attempts
+       FROM claims c WHERE c.id = $1 AND c.state = 'active'`,
     [input.claimId]
   );
   if (!claim) {

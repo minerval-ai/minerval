@@ -20,6 +20,7 @@ import { capMicroUsd, microUsdToOwls } from "./owl.js";
 import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
 
 export type OrderCreateResult =
   | { ok: true; order: AssessmentOrder }
@@ -61,6 +62,10 @@ export async function createOrder(input: {
     };
   }
 
+  // One open order per person, node and label: an order is for a pass at
+  // its label, so an order at one label does not stand in for one at
+  // another. Where `public` is the only label this is the check it was.
+  const atThisLabel = oneLabelOnly() ? [] : [eq(assessmentOrders.sensitivityLabel, currentLabel())];
   const [open] = await db
     .select({ id: assessmentOrders.id })
     .from(assessmentOrders)
@@ -68,7 +73,8 @@ export async function createOrder(input: {
       and(
         eq(assessmentOrders.userId, input.userId),
         eq(assessmentOrders.claimId, input.claimId),
-        inArray(assessmentOrders.status, ["pending", "running"])
+        inArray(assessmentOrders.status, ["pending", "running"]),
+        ...atThisLabel
       )
     )
     .limit(1);
@@ -116,7 +122,7 @@ export async function createOrder(input: {
     .onConflictDoNothing()
     .returning();
   if (!order) {
-    const existing = await getOpenOrderForClaim(input.userId, input.claimId);
+    const existing = await getOpenOrderForClaim(input.userId, input.claimId, oneLabelOnly() ? undefined : currentLabel());
     return {
       ok: false,
       code: "ORDER_ALREADY_OPEN",
@@ -197,7 +203,9 @@ export async function listOrders(
 /** The user's open (pending/running) order for one claim, if any. */
 export async function getOpenOrderForClaim(
   userId: string,
-  claimId: string
+  claimId: string,
+  /** Only an order at this label; left out, any the reader may read. */
+  label?: string
 ): Promise<AssessmentOrder | null> {
   const db = getDb();
   const [order] = await db
@@ -207,7 +215,8 @@ export async function getOpenOrderForClaim(
       and(
         eq(assessmentOrders.userId, userId),
         eq(assessmentOrders.claimId, claimId),
-        inArray(assessmentOrders.status, ["pending", "running"])
+        inArray(assessmentOrders.status, ["pending", "running"]),
+        ...(label === undefined ? [] : [eq(assessmentOrders.sensitivityLabel, label)])
       )
     )
     .limit(1);

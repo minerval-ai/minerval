@@ -25,6 +25,7 @@ import type { MessageSender } from "../../services/inbox-service.js";
 import { commissionNodePass } from "../../services/commission-service.js";
 import { registerAwait } from "../../services/session-service.js";
 import { loadConfig } from "../../config.js";
+import { slotColumnSql } from "../../services/steward-lease.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
 
@@ -200,7 +201,7 @@ export async function executeNotifySteward(
     wellFormed.length === 0
       ? []
       : await rawQuery<{ id: string; kind: string; steward_state: string }>(
-          `SELECT id, kind, steward_state FROM claims WHERE id = ANY($1::uuid[])`,
+          `SELECT c.id, c.kind, ${slotColumnSql("steward_state", "c")} AS steward_state FROM claims c WHERE c.id = ANY($1::uuid[])`,
           [wellFormed]
         );
   const kindOf = new Map(found.map((r) => [r.id, r.kind]));

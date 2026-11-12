@@ -22,7 +22,7 @@
 import { rawQuery } from "../db/client.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import type { OperatingPolicy } from "./operating-policy-service.js";
-import { REVIEW_GROUP, grantmakerShareLeftMicroUsd, reviewPassBudgetMicroUsd } from "./action-service.js";
+import { ASSESS_GROUP_SQL, REVIEW_GROUP, grantmakerShareLeftMicroUsd, reviewPassBudgetMicroUsd } from "./action-service.js";
 
 /**
  * How long after a review pass ends before events can wake the next one. A
@@ -49,7 +49,7 @@ export function resetMandateEventTick(): void {
 const INTEREST_SQL = (node: string) => `(
      ${node}.funded_by_job_id = g.budget_job_id
   OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
-              WHERE al.grant_id = g.id AND al.exclusion_group = 'assess:' || ${node}.claim_id::text)
+              WHERE al.grant_id = g.id AND al.exclusion_group = ${ASSESS_GROUP_SQL(`${node}.claim_id`, "g.sensitivity_label")})
   OR ${node}.claim_id = g.scope_claim_id
   OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it
               WHERE it->>'claim_id' = ${node}.claim_id::text))`;

@@ -18,6 +18,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
 
 export type MessageSenderKind =
   | "steward"
@@ -120,7 +121,15 @@ interface MessageRow {
   joined: "above" | "beneath" | null;
 }
 
-async function unreadMessages(nodeId: string): Promise<MessageRow[]> {
+/**
+ * A node's unread messages. A pass reads the ones at its own label
+ * (`forPass`): a message waits for a pass at the label it was sent at, so a
+ * pass at one label neither reads nor marks read what was sent at another.
+ * A page lists every one its reader may read. Where `public` is the only
+ * label the two are the same statement.
+ */
+async function unreadMessages(nodeId: string, forPass = false): Promise<MessageRow[]> {
+  const own = forPass && !oneLabelOnly();
   return rawQuery<MessageRow>(
     `SELECT m.id, m.trigger, m.sender_kind, m.sender_node_id, m.sender_ref,
             s.text AS sender_text, m.body, m.paid, m.created_at,
@@ -135,9 +144,9 @@ async function unreadMessages(nodeId: string): Promise<MessageRow[]> {
             END AS joined
        FROM node_messages m
        LEFT JOIN claims s ON s.id = m.sender_node_id
-      WHERE m.node_id = $1 AND m.read_at IS NULL
+      WHERE m.node_id = $1 AND m.read_at IS NULL${own ? " AND m.sensitivity_label = $2" : ""}
       ORDER BY m.created_at, m.id`,
-    [nodeId]
+    own ? [nodeId, currentLabel()] : [nodeId]
   );
 }
 
@@ -208,7 +217,7 @@ export interface OpenedInbox {
  * the newest are given in full and the oldest listed without text.
  */
 export async function openInbox(nodeId: string, now: number = Date.now()): Promise<OpenedInbox> {
-  const rows = await unreadMessages(nodeId);
+  const rows = await unreadMessages(nodeId, true);
   const labels = new Map<string, string>();
   if (rows.length === 0) return { brief: "", labels, ids: [] };
 

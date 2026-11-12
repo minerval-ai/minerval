@@ -21,6 +21,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { commissionNodePass, liveNodeCommission, type CommissionTier } from "./commission-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { enqueueSteward } from "./queue-service.js";
@@ -103,7 +104,7 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
     // executor retires a group whose node is not queued and leaves the money
     // on it). Queue the node, once, so the money that is there runs.
     const [claim] = await rawQuery<{ steward_state: string }>(
-      `SELECT steward_state FROM claims WHERE id = $1 AND state = 'active'`,
+      `SELECT ${slotColumnSql("steward_state", "c")} AS steward_state FROM claims c WHERE c.id = $1 AND c.state = 'active'`,
       [input.claimId]
     );
     if (claim && claim.steward_state !== "pending" && claim.steward_state !== "running") {
@@ -238,7 +239,7 @@ export async function orderChildPasses(input: {
   const children = [...input.already];
   const candidates = await rawQuery<{ id: string }>(
     `SELECT c.id FROM claims c
-      WHERE c.state = 'active' AND c.steward_state = 'pending'
+      WHERE c.state = 'active' AND ${slotColumnSql("steward_state", "c")} = 'pending'
         AND c.id IN (SELECT child_claim_id FROM claim_relationships WHERE parent_claim_id = $1)
         AND NOT (c.id = ANY($2::uuid[]))
       ORDER BY c.importance DESC NULLS LAST, c.created_at ASC`,

@@ -9,6 +9,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { ASSESS_GROUP_SQL } from "./action-service.js";
 
 /** The ordering for one claims row `c` (SQL fragment). */
 const ORDER_SQL = `COALESCE(c.importance, 0)`;
@@ -68,7 +69,7 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
               ORDER BY a.assessed_at DESC LIMIT 1) AS assessed_at,
             COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
                         FROM minerval_whole.allocation_money a
-                       WHERE a.exclusion_group = 'assess:' || c.id::text
+                       WHERE a.exclusion_group = ${ASSESS_GROUP_SQL("c.id", "c.sensitivity_label")}
                          AND a.released_at IS NULL), 0)
               AS backing_micro
        FROM claims c WHERE c.id = $1`,

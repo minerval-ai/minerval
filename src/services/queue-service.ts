@@ -6,6 +6,7 @@ import { ensureAssessActions, ensureAuditAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 import { postMessage, type MessageSender } from "./inbox-service.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { stewardSlot } from "./steward-lease.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -96,6 +97,11 @@ export interface StewardMessage {
     // Steward may need to unwind a change, not integrate one.
     | "arbitration_outcome"
     | "staleness_check"
+    // A node carries a version of its judgment at more than one label, and a
+    // version this label's was made beside has been replaced, retired or
+    // first recorded (version-upkeep.ts). The context names the labels and
+    // nothing else; whether it matters is the Steward's judgment.
+    | "version_beside_changed"
     // A mandate's plan asked for a pass on this claim (an assess, reassess
     // or deepen item, materialized by the reconcile sweep or by the
     // Grantmaker's extend_plan in the same turn, #416). The context names
@@ -334,8 +340,13 @@ export async function enqueueSteward(
   // are one open slot that new messages coalesce into.
   const queued = `(steward_state = 'pending'
                    OR (steward_state = 'running' AND steward_requeued))`;
+  // The slot is the node's own row for a message at the node's label, and
+  // this label's row in steward_slots for a message at another label that
+  // reads the node (steward-lease.ts): the message waits for a pass at its
+  // own label, and work at one label does not mark another's as pending.
+  const slot = await stewardSlot(message.claimId, { ensure: true });
   const rows = await rawQuery<{ prev_state: string; prev_requeued: boolean; new_state: string }>(
-    `UPDATE claims
+    `UPDATE ${slot.rel}
         SET steward_state = CASE
               WHEN steward_state = 'running' THEN 'running'
               WHEN steward_state = 'error' AND NOT $3::boolean THEN 'error'
@@ -350,14 +361,14 @@ export async function enqueueSteward(
               ELSE $2
             END,
             updated_at = now()
-       FROM (SELECT id, steward_state AS prev_state,
+       FROM (SELECT ${slot.key} AS id, steward_state AS prev_state,
                     steward_requeued AS prev_requeued
-               FROM claims WHERE id = $1 FOR UPDATE) prev
-      WHERE claims.id = prev.id
-        AND state = 'active'
+               FROM ${slot.rel} WHERE ${slot.is("$1")} FOR UPDATE) prev
+      WHERE ${slot.is("prev.id", slot.rel)}
+        AND ${slot.active(slot.own ? undefined : slot.rel)}
       RETURNING prev.prev_state AS prev_state,
                 prev.prev_requeued AS prev_requeued,
-                claims.steward_state AS new_state`,
+                ${slot.rel}.steward_state AS new_state`,
     [message.claimId, message.trigger, message.paid === true || message.unpark === true]
   );
   // Still parked: the message is kept below, but the node is not a candidate,
@@ -396,7 +407,10 @@ export async function enqueueSteward(
   // by the allocation scheduler's sweep while it waits.) Best-effort: a
   // priority hiccup must not lose the enqueue itself.
   try {
-    await refreshQueuePriority(message.claimId);
+    // The priority is a column of the node's own row and orders the drain
+    // of its own slot. A pass at another label runs when its ledger row is
+    // funded, and writes nothing to a row its label does not own.
+    if (slot.own) await refreshQueuePriority(message.claimId);
   } catch (err) {
     console.warn(
       `[queue] priority refresh failed for ${message.claimId}:`,
