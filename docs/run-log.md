@@ -124,9 +124,18 @@ run is unsealed as unfinished is later work.
 
 Two things record mode does not change yet: the paths that are untraced on
 purpose because they handle a reader's own page or conversation (the
-browser extension, the MCP's on-demand analysis, #356), and work that
-returns without a promise, which has nothing to hold its result behind. A
-private graph switches the first off instead of exempting it.
+browser extension, the MCP's on-demand analysis, the naming of an Assistant
+conversation, #356), and work that returns without a promise, which has
+nothing to hold its result behind. A private graph switches the first off
+instead of exempting it, where there is a switch: the browser extension is
+a feature and can be switched off, and the other two have no switch yet.
+
+A deployment's preflight (docs/deployment.md) holds it to this. It tests the
+log by writing a run, sealing it, checking its chain and removing it. Where
+the deployment holds private material, agent work does not start unless
+that test passes and the log is in record mode, and the preflight fails,
+without stopping work, while the extension is on and for the two paths that
+have no switch.
 
 The public graph runs best-effort until record mode has run somewhere in
 earnest.

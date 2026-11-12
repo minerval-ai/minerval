@@ -28,6 +28,8 @@ import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
 import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
 import { abandonStewardLeases } from "./services/steward-lease.js";
+import { startGatedWork } from "./workers/agent-work-gate.js";
+import { ConfigFileError } from "./config-file.js";
 import type {
   QueuedClaimPipelineMessage,
   UrlExtractionMessage,
@@ -35,54 +37,25 @@ import type {
   ArbitrationMessage,
 } from "./services/queue-service.js";
 
-async function main() {
-  const config = loadConfig();
-  // Every tool a domain skill declares must have an executor and a name
-  // that collides with nothing; a defective skill fails the process here,
-  // not mid-run inside a Steward's toolset.
-  assertSkillToolsRegistered();
+type WorkLogger = {
+  info: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+};
 
-  if (config.env === "production") {
-    console.log("Running database migrations...");
-    const db = getDb();
-    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
-    await migrate(db, {
-      migrationsFolder: join(process.cwd(), "drizzle-migrations"),
-    });
-    console.log("Migrations complete.");
-
-    // Read-only SQL's login roles live in the database, not in the stack, so
-    // a deployment that never made them answers every query UNAVAILABLE.
-    // Made here, after migrations (which create the group role they join),
-    // and set again on every start, which also applies a rotated secret.
-    // A failure is logged, not fatal: SQL is one feature, and the rest of
-    // the API should still serve.
-    const roles = {
-      agentUser: config.sqlAgentDbUser,
-      agentPassword: config.sqlAgentDbPassword,
-      callerUser: config.sqlCallerDbUser,
-      callerPassword: config.sqlCallerDbPassword,
-    };
-    if (hasSqlRoleCredentials(roles)) {
-      try {
-        for (const line of await ensureSqlRoles((text, params) => rawQuery(text, params), roles)) {
-          console.log(`[sql] ${line}`);
-        }
-      } catch (err) {
-        console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
-      }
-    }
-  }
-
-  const app = await buildApp();
+/**
+ * Start everything that takes work: the queue pollers, the in-process
+ * runner, and the schedulers and sweeps around them. Called by the gate
+ * (workers/agent-work-gate.ts) and by nothing else, so that there is one
+ * place agent work begins.
+ */
+function startWork(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  config: ReturnType<typeof loadConfig>,
+  logger: WorkLogger
+): Array<{ stop: () => void }> {
   const pollers: Array<{ stop: () => void }> = [];
 
   // Start queue pollers for configured queues
-  const logger = {
-    info: (...args: unknown[]) => app.log.info(args),
-    error: (...args: unknown[]) => app.log.error(args),
-  };
-
   if (config.sqsClaimPipelineQueue) {
     // The queue may still hold messages from before the label field
     // (workers/claim-pipeline.ts), so the poller hands over either shape.
@@ -198,6 +171,64 @@ async function main() {
   pollers.push(startLookoutTriggers({ logger }));
   pollers.push(startCorrespondentTriggers({ logger }));
 
+  return pollers;
+}
+
+async function main() {
+  const config = loadConfig();
+  // Every tool a domain skill declares must have an executor and a name
+  // that collides with nothing; a defective skill fails the process here,
+  // not mid-run inside a Steward's toolset.
+  assertSkillToolsRegistered();
+
+  if (config.env === "production") {
+    console.log("Running database migrations...");
+    const db = getDb();
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
+    await migrate(db, {
+      migrationsFolder: join(process.cwd(), "drizzle-migrations"),
+    });
+    console.log("Migrations complete.");
+
+    // Read-only SQL's login roles live in the database, not in the stack, so
+    // a deployment that never made them answers every query UNAVAILABLE.
+    // Made here, after migrations (which create the group role they join),
+    // and set again on every start, which also applies a rotated secret.
+    // A failure is logged, not fatal: SQL is one feature, and the rest of
+    // the API should still serve.
+    const roles = {
+      agentUser: config.sqlAgentDbUser,
+      agentPassword: config.sqlAgentDbPassword,
+      callerUser: config.sqlCallerDbUser,
+      callerPassword: config.sqlCallerDbPassword,
+    };
+    if (hasSqlRoleCredentials(roles)) {
+      try {
+        for (const line of await ensureSqlRoles((text, params) => rawQuery(text, params), roles)) {
+          console.log(`[sql] ${line}`);
+        }
+      } catch (err) {
+        console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
+      }
+    }
+  }
+
+  const app = await buildApp();
+
+  const logger = {
+    info: (...args: unknown[]) => app.log.info(args),
+    error: (...args: unknown[]) => app.log.error(args),
+  };
+
+  // Agent work starts behind the preflight's gate and nowhere else
+  // (workers/agent-work-gate.ts): a deployment that holds private material
+  // starts none until its blocking checks pass, and says which failed. A
+  // deployment that holds only public material is asked nothing further and
+  // starts as it always has. The API listens either way, so the checks can
+  // be read at GET /setup/preflight while work is held.
+  const work = startGatedWork({ start: () => startWork(app, config, logger), logger });
+  const pollers: Array<{ stop: () => void }> = [work];
+
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands
   // its claim back (#482) as the last DB write before exit, so the next
@@ -227,6 +258,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  // A config file that cannot be used is the installer's to fix, and its
+  // message says how; a stack trace under it would bury that.
+  if (err instanceof ConfigFileError) console.error(err.message);
+  else console.error("Fatal error:", err);
   process.exit(1);
 });
