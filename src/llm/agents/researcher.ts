@@ -71,6 +71,7 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { executeReadPage, getReadPageToolDefinition, READ_PAGE_TOOL_NAME } from "../tools/read-page-tool.js";
 import { createFigureTools } from "../tools/figure-tools.js";
 import type { ToolExecution } from "../tool-output.js";
+import { NO_CONNECTION_TOOLS, createConnectionTools } from "../tools/connection-tools.js";
 import {
   elicitConfigured,
   executeElicitTool,
@@ -588,6 +589,11 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
   const pangramTools = createPangramTools({ config });
+  // The reading tools of the systems this deployment is connected to, on a
+  // run that may record on the graph: one a Steward launched, or one taking
+  // up a request. A reading is for a source, and research for a mandate, the
+  // Curator or the Audit Agent records none (tools/connection-tools.ts).
+  const connectionTools = graphWrites ? await createConnectionTools({ config }) : NO_CONNECTION_TOOLS;
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
   // What the graph holds about documents, on every run, and about requests,
@@ -633,6 +639,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...figureTools.definitions,
     ...elicitTools,
     ...pangramTools.definitions,
+    ...connectionTools.definitions,
     ...skillLoader.definitions,
     ...skillTools,
     ...(recordsInstances ? [RECORD_INSTANCE_TOOL] : []),
@@ -705,7 +712,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const taskMessage = buildResearcherTaskMessage({
     ...taskInput,
     estimate: estimateBudget({ model, ceilingMicroUsd: ceiling, promptChars, longRun }),
-  }) + skillLoader.pointerNote;
+  }) + skillLoader.pointerNote + (connectionTools.note ? `\n\n${connectionTools.note}` : "");
 
   let reportInput: Record<string, unknown> | null = null;
   let reminded = false;
@@ -826,6 +833,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
     const pangram = await pangramTools.execute(name, toolInput);
     if (pangram !== null) return pangram;
+    const connection = await connectionTools.execute(name, toolInput);
+    if (connection !== null) return connection;
     if (isSkillTool(name)) {
       // Provenance records land on the run's claim and no other: a claim_id
       // in the input that names a different one is refused, not honoured.

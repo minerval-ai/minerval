@@ -1762,6 +1762,189 @@ export const sourceInterests = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// connections: an organization's data, read where it lives
+// (src/connections.ts)
+//
+// A connection points the deployment at one MCP server over a system the
+// organization or one of its parties runs: a warehouse, a wiki, a ticket or
+// log store. Administrators add and change them, and each change is a row in
+// administrative_events. The public graph has none.
+//
+// What a connection holds:
+//   - where the server is and how to speak to it (url, transport). The
+//     transport is a name the code knows ('streamable_http', 'sse') and is
+//     not held to a list here, so that a later one is not a migration.
+//   - how to authenticate: credential_env is the NAME of the environment
+//     variable that holds the credential, never the credential, and
+//     credential_header the header it is sent in. NULL credential_env means
+//     the server asks for none.
+//   - whose system it is (party_id) and what that party stands to gain or
+//     lose from what the system shows (stake). Both are carried by every
+//     reading kept from it: the source belongs to the party, and the stake
+//     is recorded on it in source_interests.
+//   - its one label (sensitivity_label): who may read what comes through it.
+//     A run is offered the connection only when its label reads this one,
+//     and every call and every reading kept carries it. The column has the
+//     shared default like every labelled table; the service that adds a
+//     connection always states the label.
+//   - calls_per_minute: a rate its administrator may set, across all runs,
+//     because calls cost the organization's system and no owls, so a run's
+//     budget does not bound them. NULL sets none.
+//   - timeout_seconds: how long a call may go unanswered before it is given
+//     up, since the run that made it waits.
+//   - the state an administrator sees: when the server last answered, and
+//     the last failure to reach it.
+//
+// tool_prefix names the connection in tool names: an agent is offered the
+// server's tool `run_query` as `<tool_prefix>__run_query`, so two
+// connections' tools cannot collide with each other or with a built-in tool.
+// ---------------------------------------------------------------------------
+export const connections = pgTable(
+  "connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    toolPrefix: text("tool_prefix").notNull(),
+    transport: text("transport").notNull().default("streamable_http"),
+    url: text("url").notNull(),
+    credentialEnv: text("credential_env"),
+    credentialHeader: text("credential_header").notNull().default("Authorization"),
+    partyId: uuid("party_id")
+      .notNull()
+      .references(() => parties.id),
+    stake: text("stake").notNull(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    callsPerMinute: integer("calls_per_minute"),
+    timeoutSeconds: integer("timeout_seconds").notNull().default(120),
+    // Off: no run is offered its tools. A connection is never deleted, since
+    // calls and kept readings refer to it.
+    enabled: boolean("enabled").notNull().default(true),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastAnsweredAt: timestamp("last_answered_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references((): AnyPgColumn => contributors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_connections_name").on(sql`lower(${table.name})`),
+    uniqueIndex("uq_connections_tool_prefix").on(table.toolPrefix),
+    check("ck_connections_rate", sql`${table.callsPerMinute} IS NULL OR ${table.callsPerMinute} > 0`),
+    check("ck_connections_timeout", sql`${table.timeoutSeconds} > 0`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// connection_tools: a connection's tools as an administrator last saw them,
+// and which of them are offered to agents
+//
+// One row per tool the server listed when an administrator last looked:
+// its name, description, input schema and the server's own markings
+// (annotations, where `readOnlyHint` is the server's word that the tool
+// only reads: a hint, shown beside the tool, never proof). definition_hash
+// is taken over those four, so a later change to any of them shows.
+//
+// `offered` is the administrator's choice, tool by tool, and nothing is
+// offered that was not picked. A pick holds for the definition it was made
+// on: when the server's tool no longer matches definition_hash, or is no
+// longer listed, or the connection's address changes, the tool stops being
+// offered (offered false, withdrawn_at and withdrawn_reason set) until an
+// administrator looks again and picks it again. `listed` says whether the
+// server still listed the tool at the last look.
+// ---------------------------------------------------------------------------
+export const connectionTools = pgTable(
+  "connection_tools",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    inputSchema: jsonb("input_schema").notNull(),
+    annotations: jsonb("annotations"),
+    definitionHash: text("definition_hash").notNull(),
+    listed: boolean("listed").notNull().default(true),
+    seenAt: timestamp("seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    offered: boolean("offered").notNull().default(false),
+    offeredBy: uuid("offered_by").references((): AnyPgColumn => contributors.id),
+    offeredAt: timestamp("offered_at", { withTimezone: true }),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    // 'changed' | 'missing' | 'address_changed': a name the code gives.
+    withdrawnReason: text("withdrawn_reason"),
+  },
+  (table) => [uniqueIndex("uq_connection_tools_name").on(table.connectionId, table.name)]
+);
+
+// ---------------------------------------------------------------------------
+// connection_calls: every call an agent made through a connection
+//
+// One row per call: which tool, with what arguments, when, and what came
+// back. The result is stored whole as text with its SHA-256, whatever part
+// of it the agent was shown, so that a reading kept later is the reading as
+// it was made. outcome is NULL while the call is in flight, then
+// 'answered', 'tool_error' (the system answered with an error) or 'failed'
+// (no answer: unreachable, credential refused, timed out), with `error`
+// saying which.
+//
+// A call is not a source. When an agent's work rests on one it keeps it
+// (keep_reading): source_id then names the source row made from the call,
+// and kept_at when. Calls nobody kept stay here as the record of what was
+// asked of the organization's system, and are what calls_per_minute counts.
+//
+// sensitivity_label and party_id are the connection's when the call was
+// made, not the run's: what comes back is the connection's material whoever
+// asked, and the arguments were handed to that system when the call was
+// sent. A source kept from the call takes both from here, so a later change
+// to the connection does not relabel what was already read.
+//
+// run_id, agent and claim_id are the calling run's, from the usage context,
+// with no foreign keys, like llm_usage.
+// ---------------------------------------------------------------------------
+export const connectionCalls = pgTable(
+  "connection_calls",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    tool: text("tool").notNull(),
+    arguments: jsonb("arguments").notNull(),
+    calledAt: timestamp("called_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    durationMs: integer("duration_ms"),
+    outcome: text("outcome"),
+    error: text("error"),
+    result: text("result"),
+    resultHash: text("result_hash"),
+    resultChars: integer("result_chars"),
+    runId: uuid("run_id"),
+    agent: text("agent"),
+    claimId: uuid("claim_id"),
+    partyId: uuid("party_id").references(() => parties.id),
+    sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    // The rate check counts a connection's calls in the last minute, and an
+    // administrator's list reads them newest first.
+    index("idx_connection_calls_connection_time").on(table.connectionId, table.calledAt),
+    index("idx_connection_calls_source")
+      .on(table.sourceId)
+      .where(sql`source_id IS NOT NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // jobs
 // ---------------------------------------------------------------------------
 export const jobs = pgTable(

@@ -160,7 +160,7 @@ code decides who should hold which.
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, connect the deployment to an organization's systems and pick which of their tools agents are offered | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
@@ -183,6 +183,7 @@ The routes a permission guards, in each mode (`requirePermission` in
 | `POST /grant-conversations/:id/fund`, `POST /grants/:id/topup`, `POST /mandates/:id/contribute`, `POST /claims/:claim_id/order`, `POST /claims/:claim_id/contribute`, `POST /claims/:claim_id/decompose`, `POST /requests/:request_id/contribute`, `POST /budget-jobs/:id/topup` | an account, and the owls | `fund` |
 | `POST /grants` | a direct service caller | `direct` and `fund` |
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
+| the routes for connections ([connections.md](connections.md)) | not mounted | `administer`, and a signed-in session for every write |
 
 Taking money back asks for no permission in either mode: withdrawing from a
 mandate, cancelling a grant, a job or an order. A funder may take back
@@ -218,7 +219,8 @@ not MCP tools; the reads are.
 `permission_grants` is state and log in one. A row is a grant; removing it
 marks the same row with who removed it and when; no row is deleted. The
 other administrative acts (a label defined, a pair of labels added or
-removed, a party added, a source's party set) each write a row to
+removed, a party added, a source's party set, and every change to a
+connection or to the tools it offers) each write a row to
 `administrative_events` in the same transaction as the change. The last
 live grant of `administer` cannot be removed.
 
@@ -227,7 +229,8 @@ part of what its readers weigh. People appear by display name. The name of
 a label the reader is not cleared for, or of a party that is neither the
 organization itself nor one the reader holds `release` for, is replaced by
 `{"withheld": true}`: a deployment may hold material from parties who are
-not to learn of each other. That an act happened, who did it, to whom and
+not to learn of each other. A connection's name and its tools' names are
+withheld the same way from a reader not cleared for the connection's label. That an act happened, who did it, to whom and
 when is always shown.
 
 ### The first administrator

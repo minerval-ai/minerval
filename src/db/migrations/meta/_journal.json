@@ -890,6 +890,13 @@
       "when": 1794445312262,
       "tag": "0126_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1794447084918,
+      "tag": "0127_connections",
+      "breakpoints": true
     }
   ]
 }

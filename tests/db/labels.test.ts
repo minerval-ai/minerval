@@ -163,14 +163,16 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // The first six are what a run writes. The rest stand for work waiting
-    // to be done, and hand their label to the run that takes it up
-    // (label-carried.test.ts).
+    // Six are what a run writes (the judgments, sources, the run itself).
+    // connections and connection_calls carry the label of an organization's
+    // system and of what was read through it (src/connections.ts). The rest
+    // stand for work waiting to be done, and hand their label to the run
+    // that takes it up (label-carried.test.ts).
     expect(rows).toEqual(
       [
         "actions", "agent_runs", "agent_sessions", "appeals", "argument_evaluations", "assessment_orders",
-        "assessments", "assistant_held_actions", "budget_jobs", "contributions", "jobs", "quantity_estimates",
-        "question_assessments", "sources",
+        "assessments", "assistant_held_actions", "budget_jobs", "connection_calls", "connections",
+        "contributions", "jobs", "quantity_estimates", "question_assessments", "sources",
       ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
     );
   });

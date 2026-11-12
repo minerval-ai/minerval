@@ -524,8 +524,10 @@ export async function listAccounts(input: { q?: string; limit?: number } = {}): 
  * the entry says so: a label the reader is not cleared for, and a party
  * that is neither the organization itself nor one the reader holds release
  * for. A deployment may hold material from parties who are not to learn of
- * each other, and label and party names can say who they are. That an act
- * happened, who did it, to whom, and when, is never withheld.
+ * each other, and label and party names can say who they are. A connection
+ * is named, with its tools, only to a reader cleared for its label, for the
+ * same reason. That an act happened, who did it, to whom, and when, is never
+ * withheld.
  */
 /** The administrative acts logged besides grants (administrative_events.action). */
 export type AdministrativeAction =
@@ -533,7 +535,12 @@ export type AdministrativeAction =
   | "label_read_added"
   | "label_read_removed"
   | "party_added"
-  | "source_party_set";
+  | "source_party_set"
+  // Connections (src/connections.ts, services/connection-service.ts).
+  | "connection_added"
+  | "connection_changed"
+  | "connection_tools_offered"
+  | "connection_tool_withdrawn";
 
 export interface LogEntry {
   event: "granted" | "removed" | AdministrativeAction;
@@ -551,6 +558,17 @@ export interface LogEntry {
   party?: string | { withheld: true };
   previous_party?: string | { withheld: true } | null;
   source_id?: string;
+  /** The connection an act was about, by name. */
+  connection?: string | { withheld: true };
+  previous_label?: string | { withheld: true };
+  /** Which of a connection's settings a change touched, as the route names them. */
+  changed?: string[];
+  /** The tools an administrator picked for agents, and those no longer picked. */
+  offered?: string[];
+  no_longer_offered?: string[];
+  /** A tool withdrawn from agents, and why: changed, missing or address_changed. */
+  tool?: string;
+  reason?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -574,6 +592,20 @@ export async function permissionLog(
       )
     ).map((p) => [p.id, p])
   );
+  // A connection's name can say whose system it is, so it is shown to a
+  // reader cleared for the connection's label and withheld from the rest.
+  const connections = new Map(
+    (
+      await rawQuery<{ id: string; name: string; sensitivity_label: string }>(
+        `SELECT id, name, sensitivity_label FROM connections`
+      )
+    ).map((c) => [c.id, c])
+  );
+  const connectionName = (id: string) => {
+    const connection = connections.get(id);
+    if (!connection) return WITHHELD;
+    return administers || cleared.has(connection.sensitivity_label) ? connection.name : WITHHELD;
+  };
   const labelName = (name: string) => (administers || cleared.has(name) ? name : WITHHELD);
   const partyName = (id: string) => {
     const party = parties.get(id);
@@ -641,6 +673,27 @@ export async function permissionLog(
       entry.previous_party =
         typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
     }
+    if (typeof d.connection_id === "string") {
+      entry.connection = connectionName(d.connection_id);
+      if (typeof d.previous_label === "string") entry.previous_label = labelName(d.previous_label);
+      if (typeof d.previous_party_id === "string") entry.previous_party = partyName(d.previous_party_id);
+      // Lists are stored as one string, a name to a line: a tool's name may
+      // hold a comma.
+      const list = (value: string | null | undefined) =>
+        typeof value === "string" && value.length > 0 ? value.split("\n") : undefined;
+      const changed = list(d.changed);
+      if (changed) entry.changed = changed;
+      if (typeof d.reason === "string") entry.reason = d.reason;
+      // A tool's name can say as much about the system as the connection's
+      // own, so the two are shown or withheld together.
+      if (typeof entry.connection === "string") {
+        const offered = list(d.offered);
+        if (offered) entry.offered = offered;
+        const dropped = list(d.no_longer_offered);
+        if (dropped) entry.no_longer_offered = dropped;
+        if (typeof d.tool === "string") entry.tool = d.tool;
+      }
+    }
     return entry;
   });
 }
@@ -649,7 +702,9 @@ export async function permissionLog(
 export async function logAdministrativeEvent(
   tx: TxQuery,
   action: AdministrativeAction,
-  actorId: string,
+  // Null for a change no person made: a connection's tool withdrawn because
+  // it changed at its server.
+  actorId: string | null,
   detail: Record<string, string | null>
 ): Promise<void> {
   await tx.query(

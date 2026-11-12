@@ -54,6 +54,7 @@ import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
+import { connectionRoutes } from "../routes/connections.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -150,6 +151,9 @@ export async function buildApp() {
   // these routes, so it has none of their tools either.
   if (membersOnly(config)) {
     await app.register(permissionRoutes);
+    // Connections to an organization's own systems are an administrator's
+    // to add (src/connections.ts), so they exist where administrators do.
+    await app.register(connectionRoutes);
   }
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool

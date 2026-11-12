@@ -444,6 +444,14 @@ describe("what a permission guards", () => {
       "POST /labels": ["administer"],
       "POST /labels/:label/reads": ["administer"],
       "DELETE /labels/:label/reads/:reads": ["administer"],
+      // Connections to an organization's systems (tests/db/connections.test.ts).
+      "GET /connections": ["administer"],
+      "GET /connections/:connection_id": ["administer"],
+      "GET /connections/:connection_id/calls": ["administer"],
+      "POST /connections": ["administer"],
+      "PATCH /connections/:connection_id": ["administer"],
+      "POST /connections/:connection_id/look": ["administer"],
+      "PUT /connections/:connection_id/tools": ["administer"],
     });
   });
 

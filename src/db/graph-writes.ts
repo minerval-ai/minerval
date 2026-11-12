@@ -48,6 +48,13 @@ export const BOOKKEEPING_TABLES: ReadonlySet<string> = new Set([
   "oauth_authorization_requests",
   // A reader's own page analyses (#356): never traced, never graph state.
   "shared_page_analyses",
+  // A deployment's connections and the record of calls through them
+  // (src/connections.ts): settings and a run's own telemetry. A run that
+  // only looked marks nothing; one that keeps a reading writes `sources`,
+  // which is graph state.
+  "connections",
+  "connection_tools",
+  "connection_calls",
 ]);
 
 const SCHEMA_TABLES: ReadonlySet<string> = new Set(
