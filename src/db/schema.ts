@@ -130,6 +130,32 @@ const sensitivityLabelColumn = () =>
     .references(() => labels.name);
 
 // ---------------------------------------------------------------------------
+// origin: which graph a row belongs to
+//
+// A private deployment holds a mirror of the public graph in the same tables
+// as its own rows, because edges and judgments reference claims.id. A row
+// that the mirror's applier wrote from the public graph's signed feed is
+// 'mirror'; every other row is 'local', which is every row on the public
+// graph. The tables that carry the column are the replicated ones
+// (services/mirror-manifest.ts).
+//
+// A mirrored row is the public graph's, so nothing local may change what was
+// replicated: the mirror_row_guard triggers (the migration that added the
+// column) refuse an insert, update or delete of a 'mirror' row from any
+// session but the applier's, apart from the columns that are this
+// deployment's own working state on a claim (its queue state and the like).
+// The triggers fire only for rows whose origin is 'mirror', so they do
+// nothing where there are none.
+// ---------------------------------------------------------------------------
+export const ROW_ORIGINS = ["local", "mirror"] as const;
+export type RowOrigin = (typeof ROW_ORIGINS)[number];
+
+const originColumn = () => text("origin").notNull().default("local");
+
+const originCheck = (name: string, column: AnyPgColumn) =>
+  check(name, sql`${column} IN ('local', 'mirror')`);
+
+// ---------------------------------------------------------------------------
 // parties: whose material a source is (src/permissions.ts)
 //
 // Every private source belongs to a party: the organization that runs the
@@ -475,8 +501,11 @@ export const claims = pgTable(
     // when it is minted. Work that starts from the claim itself, outside any
     // run, runs at this label.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claims_origin", table.origin),
     index("idx_claims_state").on(table.state),
     check("ck_claims_kind", sql`${table.kind} IN ('claim', 'quantity', 'question')`),
     index("idx_claims_updated").on(table.updatedAt),
@@ -635,8 +664,11 @@ export const claimRelationships = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claim_relationships_origin", table.origin),
     uniqueIndex("idx_cr_unique").on(
       table.parentClaimId,
       table.childClaimId,
@@ -684,8 +716,11 @@ export const claimLinks = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claim_links_origin", table.origin),
     uniqueIndex("idx_claim_links_unique").on(
       table.claimAId,
       table.claimBId,
@@ -783,8 +818,11 @@ export const assessments = pgTable(
     // Who may read this verdict (src/labels.ts), stamped from the usage
     // context by update_claim_assessment, never by the agent.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_assessments_origin", table.origin),
     // One current verdict per claim, whatever its label. It becomes one per
     // claim and label only when the reads can choose a judgment by the
     // reader's clearance: until then two current rows for one claim is a
@@ -848,8 +886,11 @@ export const arguments_ = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
-  (table) => [index("idx_arguments_claim").on(table.claimId)]
+  (table) => [
+    originCheck("ck_arguments_origin", table.origin),index("idx_arguments_claim").on(table.claimId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -950,8 +991,11 @@ export const argumentInstances = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_argument_instances_origin", table.origin),
     index("idx_argument_instances_argument").on(table.argumentId),
     index("idx_argument_instances_claim").on(table.claimId),
     index("idx_argument_instances_source").on(table.sourceId),
@@ -989,8 +1033,11 @@ export const argumentSubclaims = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_argument_subclaims_origin", table.origin),
     primaryKey({ columns: [table.argumentId, table.relationshipId] }),
     index("idx_argument_subclaims_relationship").on(table.relationshipId),
   ]
@@ -1049,8 +1096,11 @@ export const argumentEvaluations = pgTable(
     // Who may read this evaluation (src/labels.ts), stamped from the usage
     // context when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_argument_evaluations_origin", table.origin),
     index("idx_argument_evaluations_argument").on(table.argumentId),
     uniqueIndex("idx_argument_evaluations_current")
       .on(table.argumentId)
@@ -1102,12 +1152,15 @@ export const sources = pgTable("sources", {
   // Who may read this document (src/labels.ts): the label of the run or
   // request that first recorded it.
   sensitivityLabel: sensitivityLabelColumn(),
+  // Which graph the row belongs to (the origin column, above).
+  origin: originColumn(),
   // Whose material this is (parties above): the organization itself or an
   // outside party that supplied it. Null on the public graph, where no
   // source belongs to a party, and until an administrator says. Each change
   // is logged in administrative_events.
   partyId: uuid("party_id").references(() => parties.id),
 }, (table) => [
+  originCheck("ck_sources_origin", table.origin),
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
@@ -1206,8 +1259,11 @@ export const sourceSegments = pgTable(
     // segmented it, because the segments are computed from the document's
     // text. Not `label` above, which is the heading a reader sees.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_source_segments_origin", table.origin),
     uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal),
     index("idx_source_segments_parent").on(table.parentId),
     check(
@@ -1474,8 +1530,11 @@ export const claimInstances = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claim_instances_origin", table.origin),
     check(
       "ck_instances_stated_probability",
       sql`${table.statedProbability} IS NULL OR (${table.statedProbability} >= 0 AND ${table.statedProbability} <= 1)`
@@ -1850,8 +1909,11 @@ export const sourceInterests = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_source_interests_origin", table.origin),
     index("idx_source_interests_source").on(table.sourceId, table.claimId, table.createdAt),
     index("idx_source_interests_claim")
       .on(table.claimId)
@@ -5559,7 +5621,11 @@ export const quantityDefinitions = pgTable("quantity_definitions", {
   // Who may read this row (src/labels.ts), stamped from the usage context
   // when it is written.
   sensitivityLabel: sensitivityLabelColumn(),
-});
+  // Which graph the row belongs to (the origin column, above).
+  origin: originColumn(),
+}, (table) => [
+  originCheck("ck_quantity_definitions_origin", table.origin),
+]);
 
 export const quantityEstimates = pgTable(
   "quantity_estimates",
@@ -5591,8 +5657,11 @@ export const quantityEstimates = pgTable(
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
     // Who may read this estimate (src/labels.ts), as on assessments.sensitivity_label.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_quantity_estimates_origin", table.origin),
     uniqueIndex("idx_quantity_estimates_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -5626,8 +5695,11 @@ export const quantityReadings = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
-  (table) => [index("idx_quantity_readings_claim").on(table.claimId)]
+  (table) => [
+    originCheck("ck_quantity_readings_origin", table.origin),index("idx_quantity_readings_claim").on(table.claimId)]
 );
 
 // A claim about which side of a figure a quantity lies, where one has a node
@@ -5650,8 +5722,11 @@ export const quantityCuts = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_quantity_cuts_origin", table.origin),
     index("idx_quantity_cuts_quantity").on(table.quantityId),
     check("ck_quantity_cuts_direction", sql`${table.direction} IN ('above', 'below')`),
     check("ck_quantity_cuts_self", sql`${table.claimId} != ${table.quantityId}`),
@@ -5703,8 +5778,11 @@ export const questionAssessments = pgTable(
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
     // Who may read this assessment (src/labels.ts), as on assessments.sensitivity_label.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_question_assessments_origin", table.origin),
     uniqueIndex("idx_question_assessments_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -5739,8 +5817,11 @@ export const answerRelations = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_answer_relations_origin", table.origin),
     uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId),
     check("ck_answer_relations_ordered", sql`${table.claimAId} < ${table.claimBId}`),
     check("ck_answer_relations_relation", sql`${table.relation} IN ('excludes', 'compatible')`),
@@ -6211,8 +6292,11 @@ export const judgmentInputs = pgTable(
     // Who may read this row (src/labels.ts), stamped from the usage context
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_judgment_inputs_origin", table.origin),
     index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
     check(
       "ck_judgment_inputs_judgment_kind",
@@ -6225,6 +6309,135 @@ export const judgmentInputs = pgTable(
         OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)`
     ),
   ]
+);
+
+// ---------------------------------------------------------------------------
+// The mirror feed (services/mirror-feed-service.ts, docs/mirror.md)
+//
+// A deployment that publishes keeps the batches it has cut and, for every
+// row it has published, the hash of the replicated columns as last
+// published. The next cut compares the tables with those hashes: a row whose
+// hash is new or different is sent again whole, and a row that is gone or no
+// longer public is sent as a deletion or a retraction. Both tables are empty
+// on a deployment that does not publish.
+// ---------------------------------------------------------------------------
+export const mirrorFeedBatches = pgTable(
+  "mirror_feed_batches",
+  {
+    // Starts at 1 and never repeats or skips: the primary key refuses a
+    // repeat, and a batch is written only by a cut that holds the feed's lock
+    // and numbers it one past the last.
+    sequence: bigint("sequence", { mode: "number" }).primaryKey(),
+    // The feed this deployment publishes, minted with its first batch.
+    feedId: uuid("feed_id").notNull(),
+    // 'snapshot' (every published row) or 'changes'.
+    kind: text("kind").notNull(),
+    // A cut too large for one batch is split; these name the first batch of
+    // the cut and say whether this is its last.
+    partFirst: bigint("part_first", { mode: "number" }).notNull(),
+    partLast: boolean("part_last").notNull(),
+    // The schema the batch was cut from: the number and tag of the newest
+    // migration the publisher's code carried.
+    migrationNumber: integer("migration_number").notNull(),
+    migrationTag: text("migration_tag").notNull(),
+    // The hash of the mirrored tables' shape the rows were cut in
+    // (replicatedShape in services/mirror-manifest.ts). When it differs from
+    // the last batch's, the next cut is a snapshot.
+    shape: text("shape").notNull(),
+    cutAt: timestamp("cut_at", { withTimezone: true }).notNull(),
+    previousHash: text("previous_hash").notNull(),
+    batchHash: text("batch_hash").notNull(),
+    keyId: text("key_id").notNull(),
+    rowCount: integer("row_count").notNull(),
+    removalCount: integer("removal_count").notNull(),
+    // The batch as signed and served, byte for byte.
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_mirror_feed_batches_hash").on(table.batchHash),
+    check("ck_mirror_feed_batches_kind", sql`${table.kind} IN ('snapshot', 'changes')`),
+  ]
+);
+
+export const mirrorFeedRows = pgTable(
+  "mirror_feed_rows",
+  {
+    tableName: text("table_name").notNull(),
+    // The row's key as text; a composite key is joined with '/'.
+    rowKey: text("row_key").notNull(),
+    // sha256 of the replicated columns as last published.
+    rowHash: text("row_hash").notNull(),
+    // The batch that last carried the row.
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tableName, table.rowKey] })]
+);
+
+// ---------------------------------------------------------------------------
+// The mirror, applied (services/mirror-apply-service.ts)
+//
+// A deployment that mirrors keeps one row per batch it has applied: the
+// newest is where its mirror stands ("the public graph as of ..."), and the
+// chain of hashes is what the next batch must follow. A batch it refused is
+// recorded with the reason, and nothing of a refused batch is applied.
+// ---------------------------------------------------------------------------
+export const mirrorAppliedBatches = pgTable("mirror_applied_batches", {
+  sequence: bigint("sequence", { mode: "number" }).primaryKey(),
+  feedId: uuid("feed_id").notNull(),
+  kind: text("kind").notNull(),
+  partFirst: bigint("part_first", { mode: "number" }).notNull(),
+  partLast: boolean("part_last").notNull(),
+  migrationNumber: integer("migration_number").notNull(),
+  // When the publisher cut the batch: the mirror shows the public graph as
+  // of the newest of these.
+  cutAt: timestamp("cut_at", { withTimezone: true }).notNull(),
+  previousHash: text("previous_hash").notNull(),
+  batchHash: text("batch_hash").notNull(),
+  keyId: text("key_id").notNull(),
+  // Where the public graph's pages are, as the batch stated it, so that a
+  // mirrored judgment's run can be linked to where its transcript is.
+  publisherWebBaseUrl: text("publisher_web_base_url"),
+  // Rows written and removed, by table.
+  counts: jsonb("counts").notNull().default({}),
+  // What the batch left for someone to look at: local rows that hang off a
+  // claim the public graph merged away, mirrored claims kept as deprecated
+  // because local rows reference them, local rows a deletion took with it.
+  notes: jsonb("notes").notNull().default({}),
+  // Where the batch came from: the feed's address or a file's name.
+  receivedFrom: text("received_from"),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// The rows a snapshot has written so far, kept only while the snapshot is
+// being applied. A snapshot holds every public row, so when its last batch
+// is in, a mirrored row that is not listed here is one the public graph no
+// longer has, and it is removed; then the table is emptied. This is what
+// lets a mirror start again from a later snapshot when it cannot apply the
+// batches in between.
+export const mirrorSnapshotRows = pgTable(
+  "mirror_snapshot_rows",
+  {
+    tableName: text("table_name").notNull(),
+    rowKey: text("row_key").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tableName, table.rowKey] })]
+);
+
+export const mirrorRefusals = pgTable(
+  "mirror_refusals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // What the batch said of itself; null where it could not be read.
+    sequence: bigint("sequence", { mode: "number" }),
+    batchHash: text("batch_hash"),
+    // One of MIRROR_REFUSAL_CODES (services/mirror-batch.ts).
+    code: text("code").notNull(),
+    message: text("message").notNull(),
+    receivedFrom: text("received_from"),
+    refusedAt: timestamp("refused_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_mirror_refusals_at").on(table.refusedAt)]
 );
 
 // ---------------------------------------------------------------------------

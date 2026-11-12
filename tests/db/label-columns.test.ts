@@ -172,9 +172,13 @@ describe("the label column, in the catalog", () => {
         ORDER BY t.table_name`
     );
     expect(rows.map((r) => r.table_name)).toEqual([
+      // The groups a person's latest sign-in carried, which decide what they may read. Not itself read at a label.
+      "account_groups",
       // Money placed on the ledger. It also carries a commission's brief
       // and reason, so it is not settled that it should stay without one.
       "action_allocations",
+      // The log of what administrators changed about who may read what. Not itself read at a label.
+      "administrative_events",
       // Accounts and their keys.
       "api_keys",
       // A per-account allowance: a number.
@@ -187,11 +191,22 @@ describe("the label column, in the catalog", () => {
       "labels",
       // Nothing writes or reads it any more. Not settled, as action_allocations.
       "mandate_valuations",
+      // A deployment's bookkeeping about its feed of public rows, with no text of their own.
+      "mirror_applied_batches",
+      "mirror_feed_batches",
+      "mirror_feed_rows",
+      "mirror_refusals",
+      "mirror_snapshot_rows",
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
       // The owl ledger and what is paid out of it.
       "owl_ledger",
+      // Whose material a source is: a name an administrator typed, as a label's name is. An outside
+      // party's name can itself be private, so it is not settled that it should stay without one.
+      "parties",
+      // Who may do what, and at which label. Not itself read at a label.
+      "permission_grants",
       // Switches and marks the platform keeps for itself.
       "platform_flags",
       "prize_payouts",
