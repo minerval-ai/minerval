@@ -25,6 +25,7 @@ import {
 } from "../../schemas/common.js";
 import { valueShownSchema, type ValueShown } from "../../schemas/kinds.js";
 import { getArgument } from "../../services/argument-service.js";
+import { writeIdCandidates } from "./id-repair.js";
 import {
   dismissPassage,
   findArgumentInstance,
@@ -203,6 +204,15 @@ function refuse(message: string): string {
   return JSON.stringify({ success: false, message });
 }
 
+/** A write given an argument id that names nothing: refused, with the nearest argument ids the run has seen. */
+async function refuseMissingArgument(argumentId: string): Promise<string> {
+  return JSON.stringify({
+    success: false,
+    message: `Argument not found: ${argumentId}`,
+    ...(await writeIdCandidates(argumentId, "argument")),
+  });
+}
+
 function optText(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
@@ -230,7 +240,7 @@ export async function executeArgumentInstanceTool(
   const argumentId = String(input.argument_id ?? "").trim();
   if (!argumentId) return refuse("argument_id is required.");
   const argument = await getArgument(argumentId);
-  if (!argument) return refuse(`Argument not found: ${argumentId}`);
+  if (!argument) return refuseMissingArgument(argumentId);
   // A researcher records on the run's node alone, as for claim instances;
   // the Steward on the node it stewards.
   if (opts.nodeId && argument.claimId !== opts.nodeId) {
@@ -372,7 +382,7 @@ async function placeArgumentPassage(input: Record<string, unknown>): Promise<str
   if (!argumentId) return refuse("Pass argument_id to place the passage, or dismiss_reason to dismiss it.");
 
   const argument = await getArgument(argumentId);
-  if (!argument) return refuse(`Argument not found: ${argumentId}`);
+  if (!argument) return refuseMissingArgument(argumentId);
   if (argument.mergedInto) {
     return refuse(`Argument ${argumentId} was merged into ${argument.mergedInto}; place the passage on that argument.`);
   }

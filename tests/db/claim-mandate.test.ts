@@ -128,7 +128,8 @@ describe("the Grantmaker's tenth", () => {
     // A tenth of 10 owls is 1 owl; planning takes half.
     expect(Number(planning!.cost_est_micro_usd)).toBe(0.5 * OWL);
 
-    planner.items = [{ action: "assess", claim_id: sub, rationale: "the crux" }];
+    // As submit_plan stores it: a stewarding item with its tier.
+    planner.items = [{ action: "assess", claim_id: sub, rationale: "the crux", variant: "standard" }];
     const ran = await processNextEngineAction();
     expect(ran).toMatchObject({ status: "processed", kind: "grant_planning", ok: true });
     const g = await grant(funded.grantId);

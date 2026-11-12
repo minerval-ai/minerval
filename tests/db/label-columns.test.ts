@@ -97,7 +97,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on one hundred and six tables, defaulting to the connection's label, each with a key to labels", async () => {
+  it("is on one hundred and seven tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -105,7 +105,7 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(106);
+    expect(columns).toHaveLength(107);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
@@ -184,6 +184,8 @@ describe("the label column, in the catalog", () => {
       // A per-account allowance: a number.
       "assistant_allowances",
       "contributors",
+      // The operator's record of a provider fault: a class, a provider and counts.
+      "deployment_faults",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
       // The labels themselves.

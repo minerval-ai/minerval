@@ -11,7 +11,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { getUsageContext } from "../usage-context.js";
 import { creditRunBudget, debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
-import { commissionNodePass } from "../../services/commission-service.js";
+import { commissionNodePass, commissionNoteText } from "../../services/commission-service.js";
 import { awaitDecision, filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { loadConfig } from "../../config.js";
@@ -230,7 +230,7 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
         message:
           `That node already has a pass commissioned or underway (${res.ageMinutes} minutes ago). Your brief ` +
           `went to its inbox instead, at no cost. Commission again after it finishes if it doesn't cover what you need.` +
-          (res.parked ? ` ${res.parked.note}` : ""),
+          commissionNoteText(res),
       });
     }
     debitRunBudget(budget);
@@ -241,7 +241,7 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
         `Commissioned a ${res.tier} pass on ${String(input.target)} with a budget of ${owls(budget)} owls from your budget` +
         (after !== null ? `; you have ${owls(after)} left` : "") +
         `. It runs on its own; its outcome is recorded on the node.` +
-        (res.parked ? ` ${res.parked.note}` : ""),
+        commissionNoteText(res),
     });
   }
 

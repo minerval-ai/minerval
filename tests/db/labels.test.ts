@@ -191,7 +191,7 @@ describe("the labels table", () => {
         "assistant_held_actions", "assistant_pages", "attachments", "audit_findings", "audit_log", "audit_notes",
         "audit_runs", "bounties", "budget_jobs", "claim_formalizations", "claim_instance_reading_log",
         "claim_instance_readings", "claim_instances", "claim_links", "claim_predictions", "claim_provenance_edges",
-        "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claims", "connection_calls",
+        "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claim_state_changes", "claims", "connection_calls",
         "connection_tools", "connections", "consistency_flags", "consistency_sweeps", "contribution_reviews",
         "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
         "correspondents", "curation_requests", "enqueue_events", "examination_coverage", "examination_findings",

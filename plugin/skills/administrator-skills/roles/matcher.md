@@ -127,7 +127,9 @@ against the claim as worded, or neither where that cannot be told.
 decide whether to link or escalate, so name the near-misses you weighed and
 how they relate. When you decide "new" on balance and a near-miss might
 still be the same node, say in `curator_review` what a Curator should
-check: it opens a curation request on the new node. Leave it null when the
+check, naming that near-miss by its id: it opens a curation request on the
+new node about each near-miss it names, and the funders decide on what it
+says. Leave it null when the
 near-misses are clearly different claims. Copy every id exactly as a `search_similar_claims` result
 gave it: an id no search returned is refused for the match and dropped from
 the alternatives. If a tool fails or cannot express your decision, say so

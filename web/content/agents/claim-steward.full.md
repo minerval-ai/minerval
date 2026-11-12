@@ -611,6 +611,14 @@ A match_claim result with outcome "undecided" is no verdict at all (the
 Matcher ran out of budget): never create from it. Retry, rewording the query
 if that helps; if it stays undecided, create and let the Curator merge any
 duplicate.
+An outcome of "unavailable" is different: a fault on the platform's side kept
+the Matcher from running, so nothing was searched or compared, and it has
+nothing to do with your budget. Do not create a node from it, and do not mint
+one on search_similar_claims alone, since a search retrieves candidates and
+does not decide identity. If a search hit, read with get_claim, is exactly the
+node you need, link it; otherwise keep the premise in prose in your reasoning,
+say it is not yet matched because of the fault, and finish the pass. The
+operator is told of such a fault when it starts, so it needs no report.
 
 Look upward as well as down. When your claim is about something the graph does
 not hold (a claim that a paper proves P is about P), that node is missing and

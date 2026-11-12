@@ -94,9 +94,9 @@ describe("plan-to-ledger materialization (#416)", () => {
 
     const url = `https://example.org/${randomUUID()}`;
     const items = [
-      { action: "assess", claim_id: plain, rationale: "first pass" }, // 0
-      { action: "reassess", claim_id: assessed, rationale: "fresh look" }, // 1
-      { action: "deepen", claim_id: assessed, rationale: "and its subtree" }, // 2
+      { action: "assess", claim_id: plain, rationale: "first pass", variant: "standard" }, // 0
+      { action: "reassess", claim_id: assessed, rationale: "fresh look", variant: "standard" }, // 1
+      { action: "deepen", claim_id: assessed, rationale: "and its subtree", variant: "standard" }, // 2
       { action: "ingest", url, rationale: "a source" }, // 3
       { action: "formalize", claim_id: plain, rationale: "no domain" }, // 4
       { action: "formalize", claim_id: math, rationale: "math domain" }, // 5
@@ -104,7 +104,7 @@ describe("plan-to-ledger materialization (#416)", () => {
       { action: "attempt_proof", claim_id: math, rationale: "no statement yet" }, // 7
       { action: "attempt_proof", claim_id: published, variant: "standard", rationale: "first" }, // 8
       { action: "attempt_proof", claim_id: published, variant: "max", rationale: "second" }, // 9
-      { action: "assess", claim_id: archived, rationale: "not active" }, // 10
+      { action: "assess", claim_id: archived, rationale: "not active", variant: "standard" }, // 10
     ];
     await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
       grantId,
@@ -186,7 +186,7 @@ describe("plan-to-ledger materialization (#416)", () => {
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
     await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
       grantId,
-      JSON.stringify({ strategy: "s", items: [{ action: "reassess", claim_id: claim, rationale: "r" }] }),
+      JSON.stringify({ strategy: "s", items: [{ action: "reassess", claim_id: claim, rationale: "r", variant: "standard" }] }),
     ]);
     const [first] = await materializePlanItems(grantId);
     expect(first!.ledger.status).toBe("open");
@@ -213,7 +213,7 @@ describe("plan-to-ledger materialization (#416)", () => {
       JSON.stringify({
         strategy: "s",
         items: [
-          { action: "assess", claim_id: a, rationale: "r" },
+          { action: "assess", claim_id: a, rationale: "r", variant: "standard" },
           { action: "formalize", claim_id: b, rationale: "r" },
           { action: "attempt_proof", claim_id: b, rationale: "r" },
         ],
@@ -268,7 +268,7 @@ describe("plan-to-ledger materialization (#416)", () => {
     await rawQuery(`UPDATE claims SET domains = ARRAY['mathematics'] WHERE id = $1`, [published]);
     const formalizationId = await seedPublishedFormalization(published);
     const items = [
-      { action: "assess", claim_id: plain, rationale: "first pass" }, // 0
+      { action: "assess", claim_id: plain, rationale: "first pass", variant: "standard" }, // 0
       { action: "formalize", claim_id: math, rationale: "math domain" }, // 1
       { action: "formalize", claim_id: published, rationale: "already published" }, // 2
       { action: "attempt_proof", claim_id: published, variant: "standard", rationale: "first" }, // 3
@@ -331,8 +331,8 @@ describe("plan-to-ledger materialization (#416)", () => {
       JSON.stringify({
         strategy: "s",
         items: [
-          { action: "assess", claim_id: claim, rationale: "first pass" },
-          { action: "reassess", claim_id: claim, rationale: "a fresh look" },
+          { action: "assess", claim_id: claim, rationale: "first pass", variant: "standard" },
+          { action: "reassess", claim_id: claim, rationale: "a fresh look", variant: "standard" },
         ],
       }),
     ]);
@@ -371,8 +371,8 @@ describe("plan-to-ledger materialization (#416)", () => {
       JSON.stringify({
         strategy: "s",
         items: [
-          { action: "assess", claim_id: quantity, rationale: "first estimate" },
-          { action: "assess", claim_id: question, rationale: "first standing" },
+          { action: "assess", claim_id: quantity, rationale: "first estimate", variant: "standard" },
+          { action: "assess", claim_id: question, rationale: "first standing", variant: "standard" },
         ],
       }),
     ]);
@@ -388,7 +388,7 @@ describe("plan-to-ledger materialization (#416)", () => {
     const claim = await seedClaim("run on the direct lane");
     await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
       grantId,
-      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: claim, rationale: "r" }] }),
+      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: claim, rationale: "r", variant: "standard" }] }),
     ]);
     const [opened] = await materializePlanItems(grantId);
     expect(opened!.ledger.status).toBe("open");
@@ -434,7 +434,7 @@ describe("plan-to-ledger materialization (#416)", () => {
         strategy: "s",
         items: [
           { action: "ingest", url, rationale: "a source" },
-          { action: "assess", claim_id: claim, rationale: "r" },
+          { action: "assess", claim_id: claim, rationale: "r", variant: "standard" },
         ],
       }),
     ]);

@@ -31,6 +31,9 @@ export const BOOKKEEPING_TABLES: ReadonlySet<string> = new Set([
   "llm_usage",
   "enqueue_events",
   "queue_depth_snapshots",
+  // An operator's record of a provider fault (#971), written from inside
+  // whichever run met it.
+  "deployment_faults",
   "eval_runs",
   // The setups runs ran under: recorded by every run, not graph state.
   "setup_parts",

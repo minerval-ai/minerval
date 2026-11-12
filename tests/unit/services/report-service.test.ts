@@ -39,6 +39,7 @@ import {
   AmbiguousReportIdError,
   computeDedupeKey,
   formatAgentReport,
+  ISSUE_FILING_GRACE_SECONDS,
   listReportsAwaitingIssue,
   parseIssueNumbers,
   raiseIssue,
@@ -839,7 +840,14 @@ describe("listReportsAwaitingIssue", () => {
     const [sql, params] = mocks.rawQuery.mock.calls[0]!;
     expect(String(sql)).toContain("github_issue_number IS NULL");
     expect(String(sql)).toContain("status <> 'withdrawn'");
-    expect(params).toEqual([20, false]);
+    expect(params).toEqual([20, false, ISSUE_FILING_GRACE_SECONDS]);
+  });
+
+  it("leaves a fresh report to its raise-time filing (#952, #953)", async () => {
+    await listReportsAwaitingIssue(20, { includeExternal: false });
+    const [sql] = mocks.rawQuery.mock.calls[0]!;
+    expect(String(sql)).toContain("first_seen_at < now() - make_interval(secs => $3)");
+    expect(ISSUE_FILING_GRACE_SECONDS).toBeGreaterThanOrEqual(60);
   });
 });
 

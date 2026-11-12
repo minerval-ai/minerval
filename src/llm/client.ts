@@ -48,8 +48,12 @@ import { withRunDate } from "./run-date.js";
 import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
 import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
 import { assertProviderCleared } from "./provider-clearance.js";
+import { stampErrorProvider } from "./errors.js";
+import { deploymentFaultOf } from "../services/deployment-fault.js";
+import { noteDeploymentFault } from "../services/deployment-fault-service.js";
 import { offFeatures } from "../features.js";
 import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
+import { observeRun, type SeenIds } from "./seen-ids.js";
 import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
 import { loadConfig } from "../config.js";
 import { CODE_EXECUTION_TOOL, meterCodeExecution, turnUsedCodeExecution } from "./instrument-harness.js";
@@ -113,8 +117,43 @@ function withRunBrief(messages: MessageParam[], model: string): MessageParam[] {
  */
 async function clearedAdapter(model: string): Promise<ProviderAdapter> {
   const adapter = getAdapter(model);
-  await assertProviderCleared(resolveProvider(model) ?? adapter.name);
-  return adapter;
+  const provider = resolveProvider(model) ?? adapter.name;
+  await assertProviderCleared(provider);
+  return namingProvider(adapter, provider);
+}
+
+/**
+ * The adapter, with every failure of a call stamped with the provider that
+ * answered it and, when it is a deployment fault (the account out of
+ * credits, the key rejected), put on record for the operator
+ * (deployment-fault-service.ts). The error is rethrown unchanged: what a
+ * lane does with it is the lane's business. Every call takes its adapter
+ * from clearedAdapter, so a fault is recorded whichever agent met it,
+ * including one whose failure a tool turns into a result (match_claim).
+ */
+function namingProvider(adapter: ProviderAdapter, provider: string): ProviderAdapter {
+  const watch = <A extends unknown[], R>(call: ((...args: A) => Promise<R>) | undefined) =>
+    call &&
+    (async (...args: A): Promise<R> => {
+      try {
+        return await call.apply(adapter, args);
+      } catch (err) {
+        stampErrorProvider(err, provider);
+        if (deploymentFaultOf(err)) {
+          void noteDeploymentFault(err, { surface: `the ${getUsageContext().agent ?? "unattributed"} agent` });
+        }
+        throw err;
+      }
+    });
+  return {
+    name: adapter.name,
+    complete: watch(adapter.complete),
+    completeWithTools: watch(adapter.completeWithTools),
+    completeStructured: watch(adapter.completeStructured),
+    ...(adapter.completeWithToolsStreaming
+      ? { completeWithToolsStreaming: watch(adapter.completeWithToolsStreaming) }
+      : {}),
+  } as ProviderAdapter;
 }
 
 export async function complete(options: {
@@ -508,6 +547,15 @@ export async function toolUseLoop(options: {
   maxIterations?: number;
   /** The result as a string, or a ToolOutput when the tool shows the model an image or a document (tool-output.ts). */
   executeTool: (name: string, input: Record<string, unknown>) => Promise<ToolExecution>;
+  /**
+   * The run's record of the ids it has been shown (seen-ids.ts), when the
+   * caller keeps one across loops (the Matcher's retry is a fresh
+   * transcript of the same decision). Absent, the loop keeps its own.
+   * Either way the loop fills it from the opening messages and every tool
+   * result, and runs each tool in its scope, which is how a graph read
+   * repairs a mistyped id (#934).
+   */
+  seenIds?: SeenIds;
   /** Called when the model calls a "final" tool (e.g. submit_decomposition). Return result to stop loop. */
   onFinalTool?: (name: string, input: Record<string, unknown>) => unknown | null;
   /**
@@ -600,6 +648,7 @@ export async function toolUseLoop(options: {
     tools: withoutUnclearedTools(options.tools),
   };
   const messages = [...options.initialMessages];
+  const observed = observeRun(options.initialMessages, options.seenIds);
   const finish = (r: ToolCompletionResult): ToolCompletionResult => {
     options.onEnd?.([...messages, { role: "assistant", content: r.rawContent } as MessageParam]);
     return r;
@@ -800,7 +849,7 @@ export async function toolUseLoop(options: {
     for (const tu of result.toolUses) {
       const output =
         malformedToolArguments(tu.input) ??
-        (await options.executeTool(tu.name, tu.input));
+        (await observed.call(() => options.executeTool(tu.name, tu.input)));
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,
@@ -962,6 +1011,8 @@ export async function longRunToolLoop(options: {
   /** Wall-clock cap for the whole loop; checked before each turn. */
   maxWallMs?: number;
   executeTool: (name: string, input: Record<string, unknown>) => Promise<ToolExecution>;
+  /** As toolUseLoop's: the run's record of the ids it has been shown. */
+  seenIds?: SeenIds;
   /** Called when the model calls a "final" tool. Return non-null to stop the loop. */
   onFinalTool?: (name: string, input: Record<string, unknown>) => unknown | null;
   beforeTurn?: (state: LongRunLoopState) => Promise<{ stop?: string } | void>;
@@ -990,6 +1041,7 @@ export async function longRunToolLoop(options: {
   const completeStreaming = streaming.bind(adapter);
 
   const messages = [...options.initialMessages];
+  const observed = observeRun(options.initialMessages, options.seenIds);
   const maxIter = options.maxIterations ?? DEFAULT_LONG_RUN_ITERATIONS;
   const maxWallMs = options.maxWallMs ?? Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
@@ -1107,7 +1159,7 @@ export async function longRunToolLoop(options: {
     for (const tu of result.toolUses) {
       const output =
         malformedToolArguments(tu.input) ??
-        (await options.executeTool(tu.name, tu.input));
+        (await observed.call(() => options.executeTool(tu.name, tu.input)));
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: toolResultContent(output) });
       executedTools.push({ name: tu.name, input: tu.input, output: toolOutputForTrace(output) });
     }

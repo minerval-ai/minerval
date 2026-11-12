@@ -477,11 +477,14 @@ async function runGrantmakerTurnImpl(input: {
     name: "adjust_plan",
     description:
       "Replace the not-yet-started remainder of the grant's plan with new " +
-      "items. Items are kept up to the last one whose work has started (it " +
-      "ran, is running, or has this mandate's commission on it): those are " +
-      "history, and a pass already commissioned runs. What follows, " +
-      "including an order still waiting for room in the daily rate, is " +
-      "replaced. Use this when " +
+      "items. An item's work has started once it is running or has run. " +
+      "Items are kept up to the last one whose work has started: those are " +
+      "history. What follows is replaced, whether it was waiting for room, " +
+      "blocked, or commissioned and still waiting its turn: an order a " +
+      "replaced item had placed is withdrawn and its budget comes back to " +
+      "the escrow and the day's room (a pass that began running in the " +
+      "meantime finishes). To change or withdraw single standing orders " +
+      "anywhere in the plan, kept ones included, use amend_plan_items. Use this when " +
       "the funder and you agree the mandate's remaining budget should be " +
       "spent differently. Same item rules as propose_mandate; the same " +
       "refusal duties apply. Does not change the budget.",
@@ -496,6 +499,14 @@ async function runGrantmakerTurnImpl(input: {
         note: {
           type: "string",
           description: "One sentence recorded with the amendment: why.",
+        },
+        preview: {
+          type: "boolean",
+          description:
+            "true to see what these items would commission without writing anything: each " +
+            "stewarding item's tier and budget per pass, whether its node's pass would be bought " +
+            "or is already met, the children a deepen item would order by id, and the total " +
+            "against today's room and the escrow.",
         },
       },
       required: ["items", "note"],
@@ -597,7 +608,10 @@ async function runGrantmakerTurnImpl(input: {
       `\n\n## Management mode\n\n` +
       `This conversation's mandate is funded and live. You have full ` +
       `visibility into its execution through your grant tools and ` +
-      `near-total control of the remaining plan through adjust_plan, ` +
+      `near-total control of the remaining plan through adjust_plan ` +
+      `(replace what has not started) and amend_plan_items (change the tier ` +
+      `or budget of single standing orders, or withdraw them, until their ` +
+      `pass is running), ` +
       `and of its spending: the operating policy its program officers carry ` +
       `out (write_operating_policy), direct commissions (commission), and, ` +
       `when the funder asks for it or agrees, its terms (amend_objective), ` +
@@ -1325,17 +1339,23 @@ export async function executeManagementTool(
     if (problem) return JSON.stringify({ success: false, problem });
     // Stored in the one plan-item form every path writes (#684).
     const stored = normalizePlanItems(items);
-    const rows = await rawQuery<{ plan_cursor: number }>(
-      `UPDATE grants g
+    if (toolInput.preview === true) {
+      const { previewPlanOrders } = await import("../../services/standing-order-service.js");
+      return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grantId, stored)) });
+    }
+    const rows = await rawQuery<{ plan_cursor: number; old_plan: { items?: PlanItem[] } | null }>(
+      `WITH old AS (SELECT plan FROM grants WHERE id = $1 AND status = 'active' FOR UPDATE)
+       UPDATE grants g
           SET plan = jsonb_set(
                 COALESCE(g.plan, '{}'::jsonb), '{items}',
-                (SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+                (SELECT COALESCE(jsonb_agg(e ORDER BY i), '[]'::jsonb)
                    FROM jsonb_array_elements(
                      COALESCE(g.plan->'items', '[]'::jsonb)) WITH ORDINALITY t(e, i)
                   WHERE t.i <= g.plan_cursor) || $2::jsonb),
               updated_at = now()
+         FROM old
         WHERE g.id = $1 AND g.status = 'active'
-        RETURNING g.plan_cursor`,
+        RETURNING g.plan_cursor, old.plan AS old_plan`,
       [grantId, JSON.stringify(stored)]
     );
     if (rows.length === 0) {
@@ -1343,6 +1363,18 @@ export async function executeManagementTool(
         success: false,
         problem: "grant is not active; the plan can no longer be amended",
       });
+    }
+    // An order a replaced item had placed and not started is withdrawn with
+    // the item: its budget would otherwise stay held with nothing in the
+    // plan to answer for it (#956).
+    let withdrawnMicroUsd = 0;
+    {
+      const { releaseUnstartedOrders } = await import("../../services/plan-amend-service.js");
+      const old = (rows[0]!.old_plan?.items ?? []) as never[];
+      for (let i = Number(rows[0]!.plan_cursor); i < old.length; i++) {
+        const res = await releaseUnstartedOrders(grantId, i, old).catch(() => ({ releasedMicroUsd: 0 }));
+        withdrawnMicroUsd += res.releasedMicroUsd;
+      }
     }
     // The new items materialize now, so the owner's chat sees each one's
     // standing in the same turn (#416); a failure here never loses the
@@ -1362,6 +1394,9 @@ export async function executeManagementTool(
       success: true,
       executed_items_kept: kept,
       new_remaining_items: items.length,
+      ...(withdrawnMicroUsd > 0
+        ? { orders_withdrawn_owls: microUsdToOwls(withdrawnMicroUsd), orders_withdrawn_note: "Budgets the replaced items' orders held, back in the escrow and the day's room." }
+        : {}),
       items: materialized,
       ...(materializeProblem
         ? { note: `amended, but not yet materialized onto the ledger: ${materializeProblem}` }

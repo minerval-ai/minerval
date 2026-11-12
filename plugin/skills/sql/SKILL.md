@@ -44,7 +44,16 @@ unknown.
   speaker, publication, source_date, verbatim_head, created_at, detached_at
 - `ledger`: every piece of graph work. action_id, kind, variant,
   target_node_id, target_ref, label, status (open, running, finished,
-  cancelled), spent_owls, opened_at, updated_at
+  cancelled), spent_owls, opened_at, updated_at, waiting_on (null unless
+  the row is open and a platform fault stopped its last attempt: one of
+  credits_fault, the platform's account with a model provider is out of
+  credits; credentials_fault, a provider rejected the platform's key;
+  provider_unavailable, a provider or network failure that outlasted its
+  retries), waiting_since, next_attempt_at. A row with waiting_on has not
+  failed and is not cancelled: it stays funded, no attempt is charged, and
+  the platform retries it on its own, so commissioning it again buys
+  nothing. Its budget stays held meanwhile and counts toward the daily
+  rate of the day it was placed on
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,
@@ -60,7 +69,8 @@ unknown.
   decision, target, owls, reason, petition_id, action_id, created_at
 - `plan_items`: each item of a mandate's plan, as its page shows it, with
   the standing the plan materializer last wrote on it. mandate_id,
-  item_index, plan_cursor (items before it have been taken up), action,
+  item_index, plan_cursor (it stands past the last item whose work has
+  run or is running; an item before it can still be waiting), action,
   node_id, url, partition, variant, focus, rationale, ledger_status,
   ledger_reason, action_id (the ledger row it names), exclusion_group,
   ledger_checked_at, proposed_kind, proposed_text, proposal_ref, node_ref,
@@ -76,8 +86,12 @@ unknown.
   standing order its mandate commissions: once placed, its money is the
   row in `commissions` on that action_id with commissioned_by `plan`. A
   ledger_status of `waiting` on one is an order the mandate's daily rate
-  or escrow has no room for yet, and `blocked` one that could never fit;
-  ledger_reason gives the figures.
+  or escrow has no room for yet, and `blocked` one that could never fit,
+  or one stored with no variant, which commissions nothing until its
+  Grantmaker names a tier; ledger_reason gives the tier and the figures.
+  `cancelled` with a ledger_reason beginning "withdrawn" is an item its
+  Grantmaker withdrew before its pass began. A deepen item orders passes
+  only on the node's children that carry no assessment.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at
@@ -85,7 +99,10 @@ unknown.
   submitted_at
 - `requests`: request_id, ask, why, state, keeper_kind, keeper_node_id,
   budget_owls, created_at, closed_at
-- `changes`: the change stream as one table. kind, node_id, at, summary
+- `changes`: the change stream as one table. kind, node_id, at, summary.
+  kind `state_changed` is a node archived, restored, merged or deprecated;
+  its summary reads `<from> -> <to> by <who>: <reason>`, with the
+  successors that carry on what the node stated, if any
 
 **What is fast.** Ids, node_id and target_node_id on every view, tags (use
 `= ANY` or `&&`), importance, assessed_at and created_at. Filter on these
@@ -155,6 +172,18 @@ SELECT n.id, n.text, n.importance, a.status, a.relabeled_from, a.assessed_at,
        AND l.status IN ('open', 'running')) r ON true
  WHERE a.is_current AND a.relabeled_from IS NOT NULL AND n.state = 'active'
  ORDER BY n.importance DESC LIMIT 100;
+```
+
+Funded work that is waiting on a platform fault, with what is held on it:
+
+```sql
+SELECT l.kind, l.waiting_on, count(DISTINCT l.action_id) AS rows,
+       min(l.waiting_since) AS since, min(l.next_attempt_at) AS next_attempt,
+       coalesce(sum(c.budget_owls - c.spent_owls), 0) AS held_owls
+  FROM ledger l LEFT JOIN commissions c
+    ON c.action_id = l.action_id AND c.settled_at IS NULL
+ WHERE l.status = 'open' AND l.waiting_on IS NOT NULL
+ GROUP BY l.kind, l.waiting_on ORDER BY since;
 ```
 
 **What is not here.** Only public data: no emails, keys, balances or
