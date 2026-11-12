@@ -74,15 +74,24 @@ beforeAll(async () => {
 });
 
 describe("the label column, in the catalog", () => {
-  /** Every key from a table's sensitivity_label to labels, with whether Postgres has validated it. */
+  /**
+   * Every key from a table's sensitivity_label to labels, with whether
+   * Postgres has validated it. Ordered by the catalog's own name column,
+   * which sorts byte by byte in every database, as information_schema's
+   * table_name does. Cast to text first it would sort by the database's
+   * locale, and under en_US "agent_findings" comes before
+   * "agent_finding_sightings", where byte order has them the other way.
+   */
   const keys = () =>
     rawQuery<{ table_name: string; validated: boolean }>(
-      `SELECT k.conrelid::regclass::text AS table_name, k.convalidated AS validated
+      `SELECT r.relname::text AS table_name, k.convalidated AS validated
          FROM pg_constraint k
+         JOIN pg_class r ON r.oid = k.conrelid
          JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
         WHERE k.contype = 'f' AND k.confrelid = 'public.labels'::regclass
+          AND r.relnamespace = 'public'::regnamespace
           AND array_length(k.conkey, 1) = 1 AND a.attname = 'sensitivity_label'
-        ORDER BY 1`
+        ORDER BY r.relname`
     );
 
   it("is on ninety-five tables, public by default, each with a key to labels", async () => {
@@ -145,7 +154,7 @@ describe("the label column, in the catalog", () => {
     // The four views of the judgment in force carry it with the rest of
     // their table, as they have since the judgments got the column. They
     // are the app's own and not among the views query_sql reads.
-    expect(views.map((v) => v.view)).toEqual([
+    expect(views.map((v) => v.view).sort()).toEqual([
       "public.argument_evaluations_in_force",
       "public.assessments_in_force",
       "public.quantity_estimates_in_force",
