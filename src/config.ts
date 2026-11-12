@@ -461,12 +461,15 @@ const configSchema = z.object({
   traceLevel: z.enum(["off", "full"]).optional(),
   // How much a run depends on its log (#552). "best_effort", the default:
   // a step that cannot be written is logged and the run carries on, closing
-  // unsealed. "record": every traceable run is traced whatever TRACE_LEVEL
-  // says, nothing in a step is cut to a size cap, the run does not return
-  // until its log is sealed, a run whose log could not be written whole
-  // fails, and the retention sweep deletes nothing. A private graph runs in
-  // record mode, since a page it publishes names its log; the public graph
-  // stays best-effort until record mode has run somewhere in earnest.
+  // unsealed. "record": every run is traced whatever TRACE_LEVEL says, the
+  // ones over a reader's own content included (untraced in
+  // llm/usage-context.ts), a model call with no run to log it in is refused
+  // (llm/logged-run.ts), nothing in a step is cut to a size cap, the run
+  // does not return until its log is sealed, a run whose log could not be
+  // written whole fails, and the retention sweep deletes nothing. A private
+  // graph runs in record mode, since a page it publishes names its log; the
+  // public graph stays best-effort until record mode has run somewhere in
+  // earnest.
   runLogMode: z.enum(["best_effort", "record"]).default("best_effort"),
   // How long agent_runs (and, by cascade, agent_steps) are kept before the
   // retention sweep (workers/trace-retention.ts) deletes them. Runs that

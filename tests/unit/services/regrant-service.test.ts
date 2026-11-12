@@ -107,7 +107,8 @@ describe("createRegrant", () => {
     });
     expect(r).toMatchObject({ ok: true, toGrantId: "g-dst", amountOwls: 3 });
     const row = state.inserted.find((i) => i.table === "regrants");
-    expect(row!.params).toEqual(["g-src", "g-dst", 3_000_000, "the ingestion slice"]);
+    // The last is the label of the work that moved the money: public outside any run.
+    expect(row!.params).toEqual(["g-src", "g-dst", 3_000_000, "the ingestion slice", "public"]);
     // Target job credited (and would resume from paused_budget). The
     // guarded credit addresses the target GRANT; the join finds its job.
     expect(state.jobUpdates[0]).toEqual(["g-dst", 3_000_000]);

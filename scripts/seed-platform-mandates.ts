@@ -13,8 +13,12 @@
  * mandate does: its program officers commission work under an OPERATING
  * POLICY written in prose, which its Grantmaker revises as the record of
  * what its money did accumulates, and its lookouts watch the graph for
- * what needs doing. GOVERNANCE is its counterpart for audit (#363): it pays
- * for the Audit Agent's runs, never an audit of itself.
+ * what needs doing. Audits are part of that upkeep (#363): General pays for
+ * the Audit Agent's runs, and never for an audit whose subject is itself.
+ * (A separate Governance mandate once paid for audits. Nothing audits
+ * General's own decisions, so the separation guarded against nothing and
+ * cost a second mandate's overhead; it was folded in. A row seeded with
+ * policy 'governance' is left alone, and nothing is routed to it.)
  * Beside them: Mathematics and Mathematics prizes (docs/mathematics.md §10
  * and Appendix B: one mandate funds formalizations, attempts, and
  * stewardship; the other offers prizes from its own escrow and funds
@@ -83,7 +87,7 @@ interface PlatformMandate {
   scopeQuery: string | null;
   strategy: string;
   budgetOwls: number;
-  policy: "general" | "governance" | "cover";
+  policy: "general" | "cover";
   dailyBudgetOwls: number;
   /** The mandate's domain skills (grants.skills); none for the General mandate. */
   skills: string[];
@@ -384,10 +388,14 @@ function mandates(): PlatformMandate[] {
           "by default. A reconcile candidate is worth it at similarity 0.95 " +
           "or more, or where either claim has dependents. Decline only a " +
           "curation whose concern names nothing, and say so in the reason.\n" +
-          "2. Audits put before this mandate. They come here when the " +
-          "Governance mandate is the audit's subject, or when no Governance " +
-          "mandate is active. Fund them all; decline only one that duplicates " +
-          "an audit open or finished in the last week, and name it.\n" +
+          "2. Audits. Every audit the system raises comes here. Fund them " +
+          "all; decline only one that duplicates an audit open or finished in " +
+          "the last week, and name it. If the day cannot cover them all, take " +
+          "prize acceptances and bad-faith flags first (real money or a " +
+          "contributor's standing turns on them), then arbitration overturns " +
+          "and suspensions, then anomalies the monitors raised, then periodic " +
+          "sweeps; an audit that has waited more than a week moves up a rank. " +
+          "Audit buys scrutiny, never a conclusion.\n" +
           "3. Consistency flags. The pass a flag asks for, when its expected " +
           "gain is 0.3 or more, or the primary has dependents or importance " +
           "0.5 or more.\n" +
@@ -482,60 +490,6 @@ function mandates(): PlatformMandate[] {
       budgetOwls: 200,
       policy: "general",
       dailyBudgetOwls: 30,
-      skills: [],
-      allocationPolicy: null,
-    },
-    {
-      key: "governance",
-      title: "Governance",
-      objective:
-        "Pay for the audits that keep Minerval's governance honest: the " +
-        "Audit Agent's reviews of contribution decisions, arbitration " +
-        "overturns, bad-faith flags, suspensions, anomalies the monitors " +
-        "raise, and the periodic sweeps over recent decisions. This is " +
-        "Minerval's own standing mandate for audit, kept apart from the " +
-        "General mandate so that audits never compete with other upkeep " +
-        "for the same day's budget, and so that the platform " +
-        "lane, whose allocation judgments are themselves audited, is never " +
-        "the party deciding whether an audit of it runs.",
-      scopeQuery: null,
-      strategy:
-        "Fund the audits the system raises, in order of what prompted them " +
-        "(prize and bad-faith audits first, periodic sweeps last), and let " +
-        "an audit that has waited rise. Never fund an audit of this mandate " +
-        "itself: those are the General mandate's. An audit this mandate " +
-        "declines stays open on the ledger, with its age, for anyone to see.",
-      operatingPolicy: {
-        mission:
-          "Keep the graph's governance honest by paying for the audits of its " +
-          "decisions. Audit buys scrutiny, never a conclusion.",
-        priorities:
-          "Prize acceptances and bad-faith flags first: real money or a " +
-          "contributor's standing turns on them. Then arbitration overturns " +
-          "and suspensions, then anomalies the monitors raised, then periodic " +
-          "sweeps. An audit that has waited more than a week moves up a rank. " +
-          "Decline an audit only when an equivalent one is open or recently " +
-          "finished, and say which.",
-        budgets:
-          "Set each audit's budget at the high end of what the costing skill " +
-          "says such an audit costs; a prize audit the bounty's reserve only " +
-          "partly covers needs the rest.",
-        petitions:
-          "Grant the Audit Agent more when its plan names the decisions it " +
-          "still has to read and why they bear on the finding.",
-        delegation:
-          "Officers decide up to their limit; send the Grantmaker anything " +
-          "touching this mandate's own conduct, and anything larger.",
-        officer_limit_owls: 3,
-        officer_limit_reason: "Three owls covers an ordinary audit; larger ones are rare.",
-      },
-      // A first-run number, like General's: audits have never been metered
-      // (they ran unattributed before #363), so the first week of ledger
-      // runs is what sizes this. Five owls a day covers several times the
-      // audit volume the dedupe keys allow on an ordinary day.
-      budgetOwls: 50,
-      policy: "governance",
-      dailyBudgetOwls: 5,
       skills: [],
       allocationPolicy: null,
     },
@@ -734,9 +688,9 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
       [platformId, -budgetMicro, job!.id, `platform_mandate_hold:${m.key}`]
     );
 
-    // 'general' = the allocation engine's platform lane; 'governance' = the
-    // formula mandate that funds audits (#363); 'cover' = the coverage
-    // selector over a topical scope. All standing mandates.
+    // 'general' = the platform's upkeep mandate (curation, audits, sweeps,
+    // waiting work); 'cover' = the coverage selector over a topical scope.
+    // All standing mandates.
     const [grant] = await tx.query<{ id: string }>(
       `INSERT INTO grants
          (funder_user_id, budget_job_id, name, scope_query, policy, status,

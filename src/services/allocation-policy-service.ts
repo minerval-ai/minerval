@@ -194,24 +194,6 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
   return value;
 }
 
-/**
- * The platform's Governance mandates (#363, policy 'governance'): the ones
- * a fresh audit is raised to (maintenance-funding.ts), never one whose
- * subject is itself. Uncached: read per audit, never per row.
- */
-export async function getGovernanceMandateIds(): Promise<string[]> {
-  try {
-    const rows = await rawQuery<{ id: string }>(
-      `SELECT id FROM grants
-        WHERE policy = 'governance' AND status = 'active'
-        ORDER BY created_at ASC`
-    );
-    return rows.map((r) => r.id);
-  } catch {
-    return [];
-  }
-}
-
 function defaultsFromConfig(): AllocationPolicy {
   const c = loadConfig();
   return {

@@ -14,7 +14,9 @@
  * Reasons are recorded on the run (agent_runs.private_reasons) as it goes,
  * mechanically: trace-service.ts at the start, the LLM client after each
  * tool turn. Agent code adds a reason when it hands a run private input that
- * the agent's default does not cover (markCurrentRunPrivate). The rule only
+ * the agent's default does not cover (markCurrentRunPrivate). A run over a
+ * reader's own content (untraced() in usage-context.ts), which exists only
+ * in record mode, starts private whatever its agent's default. The rule only
  * ever narrows: nothing here makes a run public.
  *
  * Private means: anything about an account that is not public (contact
@@ -45,12 +47,13 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   correspondent: { reads: "private", why: "the manager's poke notes and the private workspace" },
   curator: { reads: "public", why: "curation requests over public claims" },
   dispute_arbitrator: { reads: "public", why: "a contribution, its appeal and the trigger; all public" },
-  extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced" },
+  extension: { reads: "private", why: "the page a reader has open and their questions about it; logged only in record mode" },
+  extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced, or private in record mode" },
   grantmaker: { reads: "private", why: "the funder's conversation and notes" },
   grantor: { reads: "private", why: "a mandate before approval, and its workspace" },
   lookout: { reads: "public", why: "a public brief and workspace; runs handed a poke note are marked private" },
   mandate_review: { reads: "private", why: "funder notes, bounty requests and the workspace" },
-  matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced" },
+  matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced, or private in record mode" },
   math_solver: { reads: "private", why: "an attempt and earlier attempts, unpublished until the platform publishes them" },
   program_officer: { reads: "private", why: "petitions and inbox items with fields the public views leave out" },
   researcher: { reads: "public", why: "a research task; runs a Grantmaker launched from a funder's brief are marked private" },

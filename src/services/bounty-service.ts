@@ -269,9 +269,9 @@ export async function logBountyEvent(
   createdBy = "prize_service"
 ): Promise<void> {
   await r.query(
-    `INSERT INTO audit_log (claim_id, action, reasoning, created_by)
-     VALUES ($1, $2, $3, $4)`,
-    [bounty.claim_id, `bounty:${action}`, `bounty ${bounty.id}: ${reasoning}`, createdBy]
+    `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [bounty.claim_id, `bounty:${action}`, `bounty ${bounty.id}: ${reasoning}`, createdBy, currentLabel()]
   );
   const status = bountyStatusAfter(action, bounty.status);
   const subtype = bountyEventSubtype(status);
@@ -611,8 +611,8 @@ export async function requestBounty(input: RequestBountyInput): Promise<RequestB
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO bounties
          (claim_id, formalization_id, amount_micro_usd, status,
-          rules_version, posted_by_grant_id, rationale, resolution_note)
-       VALUES ($1, $2, $3, 'requested', $4, $5, $6, $7)
+          rules_version, posted_by_grant_id, rationale, resolution_note, sensitivity_label)
+       VALUES ($1, $2, $3, 'requested', $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         input.claimId,
@@ -622,6 +622,7 @@ export async function requestBounty(input: RequestBountyInput): Promise<RequestB
         mandate.id,
         rationale,
         `expires_in_days:${expiresIn}`,
+        currentLabel(),
       ]
     );
     await logBountyEvent(
@@ -1162,16 +1163,18 @@ export async function fundPrizeAuditFromReserve(
   if (amount <= 0) return 0;
   // A reserve that holds the audit's whole budget commissions it; a short
   // one puts what it holds on the row, and the rest is asked of the
-  // Governance mandates' officers, whose commission then runs it.
+  // General mandate's officers, whose commission then runs it.
   const whole = amount >= cost;
   await r.query(
     `INSERT INTO action_allocations
-       (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       action.exclusion_group, actionId, action.claim_id, job.user_id, amount,
       whole ? "prize_reserve" : null,
       whole ? "The prize's review reserve pays for its audits." : null,
+      // The label of the work that placed the money (src/labels.ts).
+      currentLabel(),
     ]
   );
   if (!whole) {
