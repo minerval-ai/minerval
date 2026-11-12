@@ -982,6 +982,25 @@ export interface Finding {
   first_noted_at: string;
   last_noted_at: string;
   stale: boolean;
+  /** The topics of the claim the finding is about; absent from an older API. */
+  tags?: Array<{ slug: string; name: string }>;
+}
+// What each value of a filter would leave under the other filters in force
+// (GET /findings?facets=true): the counts beside the choices on the page.
+export interface FindingFacets {
+  agents: Array<{ agent: string; count: number }>;
+  claim_statuses: Array<{ status: string; count: number }>;
+  tags: Array<{ slug: string; name: string; count: number }>;
+  importance: Array<{ importance: number; count: number }>;
+}
+// An assessment a finding cites, as the finding's page names it.
+export interface CitedAssessment {
+  id: string;
+  claim_id: string;
+  claim_text: string;
+  status: string;
+  confidence: number | null;
+  current: boolean;
 }
 export interface FindingSighting {
   id: string;

@@ -121,3 +121,17 @@ export async function runAtSourceLabelOutsideAnyRun<T>(sourceId: string, fn: () 
   if (getUsageContext().label !== undefined) return fn();
   return runAtSourceLabel(sourceId, fn);
 }
+
+/**
+ * The names among `names` that are not defined: no row in `labels` has
+ * them. For a setting that names labels (PROVIDER_LABELS,
+ * src/provider-labels.ts), which has no foreign key either.
+ */
+export async function undefinedLabels(names: readonly string[]): Promise<string[]> {
+  if (names.length === 0) return [];
+  const rows = await rawQuery<{ name: string }>(`SELECT name FROM labels WHERE name = ANY($1::text[])`, [
+    [...names],
+  ]);
+  const defined = new Set(rows.map((r) => r.name));
+  return names.filter((name) => !defined.has(name));
+}
