@@ -1518,11 +1518,20 @@ a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
   display: flex; flex-wrap: wrap; gap: 0.2rem 1.4rem;
   font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
 }
-.acct-nav { padding: 0.65rem 0; border-bottom: 1px solid var(--rule); }
+/* The section links stay with the reader down a long page, under the
+   masthead, which is itself stuck to the top. */
+.acct-nav {
+  position: sticky; top: var(--masthead-height, 3.22rem); z-index: 10;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--rule); background: var(--paper);
+}
+.acct-pager {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  padding-top: 0.8rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
 
 /* a section's anchor clears the sticky masthead */
-.acct-section { margin-top: 3.2rem; scroll-margin-top: 4rem; }
-#buy-owls { scroll-margin-top: 4rem; }
+.acct-section { margin-top: 3.2rem; scroll-margin-top: 6.2rem; }
+#buy-owls { scroll-margin-top: 6.2rem; }
 .acct-head {
   display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
   gap: 0.4rem 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule);
@@ -1667,6 +1676,12 @@ p.acct-main.acct-prose { margin: 0; }
   }
   .acct-figure:first-child { border-top: 0; }
   .acct-balance { font-size: 2rem; }
+  /* the masthead's links wrap to a second line at this width */
+  .acct-nav {
+    top: var(--masthead-height, 4.7rem);
+    /* one line that scrolls sideways, so the bar stays a single row */
+    flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: 0 1.2rem;
+  }
   .acct-line-3 { grid-template-columns: minmax(0, 1fr) auto; }
   .acct-line-3 > div:first-child { grid-column: 1 / -1; }
   .acct-agent { grid-template-columns: 6rem minmax(0, 1fr) 3.7rem 2.4rem; }
