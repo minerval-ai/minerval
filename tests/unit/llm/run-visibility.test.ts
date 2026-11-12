@@ -80,7 +80,7 @@ describe("run visibility", () => {
   });
 
   it("classifies every agent that opens a run", () => {
-    const missing = [...definedAgents()].filter((a) => !(a in AGENT_INPUTS) && a !== "extension");
+    const missing = [...definedAgents()].filter((a) => !(a in AGENT_INPUTS));
     expect(missing, "add each to AGENT_INPUTS in src/llm/run-visibility.ts").toEqual([]);
   });
 

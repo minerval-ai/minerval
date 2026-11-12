@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "hash": "8c0dbe32e35fdec51e68ea1cee6ff9fc87cde56aa54fd92e3a6c9a00885584e9",
+  "hash": "5b579f2ae730dcf3a16c866f45476f32285f231bed74b72e76f7fc0cf8a32c3b",
   "constitution": {
-    "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
+    "hash": "2cc5f0e4a13b1b0c71a8dca9723c1800441d646ca0b46a0d1876f3570db06a55",
     "source_path": "admin_constitution.md"
   },
   "roles": [
@@ -11,6 +11,13 @@
       "source_path": "src/llm/prompts/assistant.ts",
       "blocks": [
         "c303c39375c37ccc915fa9b6d1ce04de1d5092ee1507957398bb2d5388189ddb"
+      ]
+    },
+    {
+      "name": "assistant-title",
+      "source_path": "src/llm/prompts/assistant.ts",
+      "blocks": [
+        "06f69f583265b1a063ad8c4ddc2369f85683c04ff66296c78888e4f4ae57a550"
       ]
     },
     {

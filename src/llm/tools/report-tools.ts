@@ -33,7 +33,10 @@
  * page analysis and chat, the MCP's on-demand analysis — nothing derived
  * from the reader's content may be persisted, so a report or a note keeps
  * its kind, severity, title, surface, and id refs but the free-text body is
- * withheld. The title is the report there; the prompts say so.
+ * withheld. The title is the report there; the prompts say so. In record
+ * mode that work is logged (usage-context.ts, untraced) and the body is
+ * still withheld: a report travels further than the log does, to whoever
+ * triages reports and, where a repository is configured, into an issue.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -87,10 +90,14 @@ export const UPDATE_ISSUE_TOOL_NAME = "update_issue";
 export const SEARCH_ISSUES_TOOL_NAME = "search_issues";
 export const GET_ISSUE_TOOL_NAME = "get_issue";
 
-/** What an untraced context's report carries in place of its body (#356). */
+/**
+ * What a report raised from work over a reader's own content carries in
+ * place of its body (#356). It says only what holds wherever the work ran:
+ * the report leaves the body out, whether or not the run itself was logged.
+ */
 export const UNTRACED_BODY_NOTE =
-  "(body withheld: raised from an untraced context, where nothing derived " +
-  "from the reader's content is persisted — see the title and context_refs)";
+  "(body withheld: raised from work over a reader's own content, which a " +
+  "report does not carry; see the title and context_refs)";
 
 export interface ReportTools {
   definitions: Tool[];

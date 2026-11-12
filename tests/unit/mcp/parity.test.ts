@@ -6,12 +6,18 @@
  * ROUTE_TOOLS in src/mcp/route-tools.ts, or, if MCP genuinely should not
  * have it, to MCP_EXCLUDED_ROUTES with the reason.
  *
- * The app is built three times: with every feature on, which is what the
- * tables decide for the public graph; with every feature off
- * (src/features.ts), to check that a feature's routes and tools go together
- * and nothing else goes with them; and members-only (src/permissions.ts),
- * which mounts the routes for permissions, parties and labels that the
- * public graph does not have.
+ * The app is built with every feature on, which is what the tables
+ * decide for the public graph, and with every feature off
+ * (src/features.ts), to check that a feature's routes and tools go
+ * together and nothing else goes with them.
+ *
+ * Both of those are built as a deployment that publishes the mirror feed
+ * and applies one (src/services/mirror-roles.ts), because the mirror's
+ * routes are mounted only where it is configured and the tables decide them
+ * too. A third build, with the mirror not configured, checks that nothing
+ * of it is there by default. A fourth, members-only (src/permissions.ts),
+ * mounts the routes for permissions, parties and labels that the public
+ * graph does not have.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -33,9 +39,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 let app: FastifyInstance;
 let keys: string[];
 
+/** Both sides of the mirror, so that every mirror route is mounted. */
+const MIRROR_ENV = { MIRROR_PUBLISH: "true", MIRROR_FEED_DIR: "/var/empty/mirror-batches" };
+
 beforeAll(async () => {
   process.env.ENVIRONMENT = "staging";
   process.env.LOG_LEVEL = "fatal";
+  Object.assign(process.env, MIRROR_ENV);
   const { buildApp } = await import("../../../src/server/app.js");
   app = await buildApp();
   await app.ready();
@@ -44,6 +54,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  for (const name of Object.keys(MIRROR_ENV)) delete process.env[name];
 });
 
 /**
@@ -396,6 +407,75 @@ describe("with every feature switched off", () => {
       { name: "mathematics", on: true },
       { name: "prizes", on: true },
     ]);
+  });
+});
+
+/**
+ * The same app on a deployment that has set nothing for the mirror
+ * (src/services/mirror-roles.ts), which is every deployment until someone
+ * configures a side. None of the mirror's routes is mounted and none of its
+ * tools is offered; every other route and tool is exactly as it was.
+ */
+describe("with the mirror not configured", () => {
+  const isMirror = (key: string) => key.slice(key.indexOf(" ") + 1).startsWith("/mirror");
+  const AUTH = {
+    method: "api_key" as const,
+    userId: "u",
+    apiKeyId: "k",
+    contributorExternalId: "x:u",
+    isService: false,
+    isSession: false,
+  };
+  const MIRROR_TOOLS = ["get_mirror_feed_key", "list_mirror_batches", "get_mirror_status"];
+
+  let plainApp: FastifyInstance;
+  let plainKeys: string[];
+  let plainTools: string[];
+  let allTools: string[];
+  let saved: Record<string, string | undefined>;
+
+  beforeAll(async () => {
+    const full = buildMcpServer({ auth: AUTH, requestId: "r", app });
+    allTools = Object.keys((full as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
+
+    saved = Object.fromEntries(Object.keys(MIRROR_ENV).map((name) => [name, process.env[name]]));
+    for (const name of Object.keys(MIRROR_ENV)) delete process.env[name];
+    vi.resetModules();
+    const { buildApp } = await import("../../../src/server/app.js");
+    const mcp = await import("../../../src/mcp/server.js");
+    plainApp = await buildApp();
+    await plainApp.ready();
+    plainKeys = plainApp.routeCatalog.map((r) => routeKey(r.method, r.url));
+    const server = mcp.buildMcpServer({ auth: AUTH, requestId: "r", app: plainApp });
+    plainTools = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
+  });
+
+  afterAll(async () => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await plainApp?.close();
+  });
+
+  it("finds the mirror's routes and tools in the app that has it configured", () => {
+    expect(keys.filter(isMirror).sort()).toEqual([
+      "GET /mirror/feed",
+      "GET /mirror/feed/:sequence",
+      "GET /mirror/feed/key",
+      "GET /mirror/status",
+    ]);
+    for (const name of MIRROR_TOOLS) expect(allTools, name).toContain(name);
+  });
+
+  it("mounts none of them, and every other route", () => {
+    expect(plainKeys.filter(isMirror)).toEqual([]);
+    expect([...plainKeys].sort()).toEqual(keys.filter((key) => !isMirror(key)).sort());
+  });
+
+  it("offers none of the mirror's tools, and every other tool", () => {
+    for (const name of MIRROR_TOOLS) expect(plainTools, name).not.toContain(name);
+    expect([...plainTools].sort()).toEqual(allTools.filter((name) => !MIRROR_TOOLS.includes(name)).sort());
   });
 });
 

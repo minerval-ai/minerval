@@ -35,6 +35,7 @@ import {
   sealAgentRun,
   traceLevel,
   traceable,
+  READERS_OWN_REASON,
 } from "../../../src/services/trace-service.js";
 import { checkChain, genesisHash, type ChainedStep } from "../../../src/services/run-log.js";
 
@@ -78,7 +79,8 @@ describe("traceLevel resolution", () => {
 });
 
 // Per-agent policy (#356): the extension agent only ever sees a reader's own
-// page and conversation, so it is never traced, whoever calls it.
+// page and conversation, so while the log is best-effort it is never traced,
+// whoever calls it.
 describe("per-agent trace policy", () => {
   it("never records the extension agent, even at TRACE_LEVEL=full", () => {
     expect(traceable("extension")).toBe(false);
@@ -167,6 +169,18 @@ describe("recordAgentStep", () => {
     expect(prompt.seq).toBe(0);
     expect(prompt.content).toEqual({ setup: { promptSet: "abc" } });
     expect(rows.find((r) => r.kind === "assistant")!.seq).toBe(1);
+  });
+
+  it("stamps each step with its run's label, and public for a run opened with none", async () => {
+    const trace = startAgentRun("steward", { label: "internal" })!;
+    const open = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    recordAgentStep(trace, "assistant", { stopReason: "end_turn" });
+    recordAgentStep(open, "assistant", { stopReason: "end_turn" });
+    await flush();
+    const rows = mocks.insertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    expect(rows.find((r) => r.runId === trace.runId)!.sensitivityLabel).toBe("internal");
+    expect(rows.find((r) => r.runId === open.runId)!.sensitivityLabel).toBe("public");
   });
 
   it("caps oversized content instead of writing it whole", async () => {
@@ -309,9 +323,23 @@ describe("record mode", () => {
     mocks.config.traceLevel = "off";
     expect(traceLevel()).toBe("full");
     expect(traceable("steward")).toBe(true);
-    // The never-traced agents handle a reader's own page (#356); a private
-    // graph switches those paths off rather than logging them.
-    expect(traceable("extension")).toBe(false);
+    // The never-traced agents handle a reader's own page (#356). That
+    // exemption belongs to the best-effort log; a record has none.
+    expect(traceable("extension")).toBe(true);
+  });
+
+  it("starts a run over a reader's own content private, whatever its agent's default", async () => {
+    mocks.config.runLogMode = "record";
+    startAgentRun("matcher", { userId: "33333333-3333-3333-3333-333333333333", untraced: true });
+    startAgentRun("extension", { untraced: true });
+    startAgentRun("matcher", {});
+    const rows = mocks.insertValues.mock.calls.map((c) => c[0] as { agent: string; privateReasons: string[] });
+    expect(rows.map((r) => [r.agent, r.privateReasons])).toEqual([
+      ["matcher", [READERS_OWN_REASON]],
+      ["extension", ["agent:extension", READERS_OWN_REASON]],
+      ["matcher", []],
+    ]);
+    expect(READERS_OWN_REASON).toBe("input:readers-own-content");
   });
 
   it("cuts nothing to a size cap", async () => {

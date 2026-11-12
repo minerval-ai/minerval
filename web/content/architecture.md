@@ -1066,7 +1066,7 @@ These act through tools over the life of a claim and the graph:
   any suspension that has stood unexamined too long — both idempotent through
   a DB dedupe key, so concurrent processes never double-run an audit. Each
   request opens an `audit` ledger action, funded by the platform's
-  Governance mandate (or, for a prize audit, the bounty's review reserve)
+  General mandate (or, for a prize audit, the bounty's review reserve)
   and never by the mandate the audit examines (docs/allocation.md,
   "Maintenance and audit").
   Findings are persisted rows (`audit_findings`, attached to their
@@ -1184,7 +1184,8 @@ backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick) embeds
 such reports afterwards.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
-rule holds for this channel too. External agents on the MCP surface get
+rule holds for this channel too, including where the work itself is logged
+because the run log is kept as a record. External agents on the MCP surface get
 `raise_issue` only, attributed and rate-limited, matched against
 external-origin reports only, and their reports triage as testimony rather
 than findings.
@@ -2230,14 +2231,23 @@ the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
-Page text the extension sends is not persisted (#356). The page is whatever
+While the run log is best-effort, which is how the public graph runs, page
+text the extension sends is not persisted (#356). The page is whatever
 the reader has open, so the analysis pipeline runs untraced (no `agent_runs`
 or `agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or
 instances, and keeps its result only in an in-memory cache. Chat is the
 exception since it became the Assistant: a conversation is kept in the
 user's account, with the page's address, title and marked passages (never
 its text), and its runs are logged privately like any Assistant run. The MCP's
-on-demand analysis tools follow the same rule. Only source submission, where
+on-demand analysis tools follow the same rule as the pipeline. A deployment that
+keeps its log as a record (`RUN_LOG_MODE=record`) logs the analysis
+pipeline's runs and the on-demand tools' like any others, private to the
+reader (docs/run-log.md, "Work the best-effort log leaves out, and record
+mode does not"); it still writes no sources and no instances from them.
+The older page chat, which installed versions of the extension may still
+call, is told at the head of each conversation which of the two holds, so
+that what it tells a reader about what is kept is true where it runs.
+Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)
 holds that a claim is about the world, not a private person, and the

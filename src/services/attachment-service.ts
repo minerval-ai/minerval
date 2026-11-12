@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { rawQuery } from "../db/client.js";
 import { asRunner, type Runner } from "./query-runner.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export type AttachmentKind = "lean_source" | "document" | "dataset" | "code" | "tax_form";
 export type AttachmentVisibility = "restricted" | "public";
@@ -301,8 +302,8 @@ export async function insertAttachment(
   const [row] = await asRunner(tx).query<{ id: string }>(
     `INSERT INTO attachments
        (contribution_id, owner_id, kind, filename, content_type, size_bytes,
-        sha256, storage, body, visibility, scan_status, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'db', $8, $9, 'skipped', $10::jsonb)
+        sha256, storage, body, visibility, scan_status, metadata, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'db', $8, $9, 'skipped', $10::jsonb, $11)
      RETURNING id`,
     [
       input.contributionId,
@@ -315,6 +316,7 @@ export async function insertAttachment(
       input.body,
       input.visibility ?? "restricted",
       JSON.stringify(input.metadata ?? {}),
+      currentLabel(),
     ]
   );
   return row!.id;

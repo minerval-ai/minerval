@@ -191,6 +191,13 @@ function formatAssessment(
  * transcript of the text is kept. Text meant to become provenance goes
  * through source submission, where the fetched document is public by
  * construction and its transcript is part of the record.
+ *
+ * That holds while the run log is best-effort, as on the public graph. In
+ * record mode untraced() suppresses nothing (llm/usage-context.ts): each
+ * Extractor, Matcher and domain-prior run the tool makes is logged and
+ * sealed like any run, private to its caller, and the tool fails if a log
+ * could not be written. The runs of one call share its request id. The
+ * charge is the metered cost either way.
  */
 async function agentic<T>(
   ctx: McpRequestContext,
