@@ -7,12 +7,14 @@ import {
   getAssessmentPrompt,
   getChatSystemPrompt,
   getChatContextPrompt,
+  getChatKeptNote,
 } from "../prompts/extension-agent.js";
 import {
   getGraphReadToolDefinitions,
   executeGraphReadTool,
 } from "../tools/graph-read-tools.js";
 import { withAgent } from "../usage-context.js";
+import { recordMode } from "../../services/trace-service.js";
 import { createReportTools } from "../tools/report-tools.js";
 import type { MatchedInstanceStance } from "../../schemas/common.js";
 import type { NodeKind, QuantityEstimate, QuantityUnit, QuestionStanding } from "../../schemas/kinds.js";
@@ -192,14 +194,18 @@ async function extensionChatImpl(input: {
     pageClaims: input.pageClaims,
   });
 
-  // Prepend the page context to the first user turn so the conversation
-  // history stays a clean alternation of roles.
+  // What is kept of the conversation differs by deployment, and a reader
+  // may ask: the agent is told which holds here (prompts/extension-agent.ts).
+  const keptNote = getChatKeptNote(recordMode());
+
+  // Prepend the note and the page context to the first user turn so the
+  // conversation history stays a clean alternation of roles.
   const history = input.messages.slice();
   const first = history.findIndex((m) => m.role === "user");
   const initialMessages: MessageParam[] = history.map((m, i) => ({
     role: m.role,
     content:
-      i === first ? `${contextBlock}\n\n---\n\n${m.content}` : m.content,
+      i === first ? `${keptNote}\n\n${contextBlock}\n\n---\n\n${m.content}` : m.content,
   }));
 
   // Every agent carries the report channel (#366).

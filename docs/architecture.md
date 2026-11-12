@@ -2036,19 +2036,22 @@ the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
-Page text the extension sends is not persisted (#356). The page is whatever
+While the run log is best-effort, which is how the public graph runs, page
+text the extension sends is not persisted (#356). The page is whatever
 the reader has open, so the analysis pipeline runs untraced (no `agent_runs`
 or `agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or
 instances, and keeps its result only in an in-memory cache. Chat is the
 exception since it became the Assistant: a conversation is kept in the
 user's account, with the page's address, title and marked passages (never
 its text), and its runs are logged privately like any Assistant run. The MCP's
-on-demand analysis tools follow the same rule. That rule belongs to the
-best-effort run log, which is how the public graph runs. A deployment that
+on-demand analysis tools follow the same rule as the pipeline. A deployment that
 keeps its log as a record (`RUN_LOG_MODE=record`) logs the analysis
 pipeline's runs and the on-demand tools' like any others, private to the
 reader (docs/run-log.md, "Work the best-effort log leaves out, and record
 mode does not"); it still writes no sources and no instances from them.
+The older page chat, which installed versions of the extension may still
+call, is told at the head of each conversation which of the two holds, so
+that what it tells a reader about what is kept is true where it runs.
 Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)

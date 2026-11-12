@@ -165,6 +165,14 @@ the `assistant` agent is private, the others with the reason
 from such work still leaves its body out, in either mode: a report travels
 further than the log does.
 
+Of these, only the page chat's agent speaks to the reader, who may ask it
+what is kept. Its role prompt is the same text in every deployment and
+says only what holds in all of them (nothing from the page or the
+questions is added to the graph). Which of the two holds where it runs is
+said at the head of each conversation's first message
+(`getChatKeptNote` in `src/llm/prompts/extension-agent.ts`): that nothing
+is stored, or that the run is on the deployment's log.
+
 What a caller gets back and what they are charged are the same in both
 modes. The charge is the metered cost of the model calls, which logging
 does not change. What record mode adds is the log's own writes: for each

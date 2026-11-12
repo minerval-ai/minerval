@@ -101,8 +101,8 @@ export const RUNS_WITHOUT_ASKING: Readonly<Record<string, string>> = {
     "Private to the user and free; it publishes nothing, and replacing a page keeps the earlier text.",
   raise_issue: "A report to Minerval's maintainers about the tools; free, and it touches no claim.",
   query_sql: "A read; priced by database time past a free daily allowance, which its description states.",
-  match_claim: "A private analysis, metered and charged as its description states; it writes nothing.",
-  extract_claims: "As match_claim: private, metered, and it writes nothing.",
+  match_claim: "A private analysis, metered and charged as its description states; it writes nothing to the graph.",
+  extract_claims: "As match_claim: private, metered, and it writes nothing to the graph.",
   assess_text: "As match_claim: private, metered, and it writes nothing to the graph.",
 };
 
