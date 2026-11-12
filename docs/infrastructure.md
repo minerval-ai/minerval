@@ -523,6 +523,14 @@ site's copy of text, not code anything runs, and CI's drift test checks it
 as it would on any push. Anything else is refused and named in the run's
 summary.
 
+A PR that still conflicts after that gets one comment from the workflow's
+`notify` job, naming the files, and the `merge-conflict` label, which is
+removed once it merges cleanly. GitHub sends no event when a PR starts to
+conflict, so without the comment nobody watching the PR (its author, or the
+Claude session that opened it and is subscribed to its activity) would hear
+of it. A PR is told once per head commit, so it is not told again on every
+push to main, only when it conflicts again after someone has pushed to it.
+
 **The weekly maintenance pass** takes what the workflow leaves: major
 bumps, maintainer changes (check the release's npm provenance:
 `npm view <pkg>@<version> _npmUser dist.attestations`, then the attestation's

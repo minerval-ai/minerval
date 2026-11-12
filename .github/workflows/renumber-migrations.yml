@@ -335,3 +335,75 @@ jobs:
             echo
             echo "**Not pushed:**${left:- none}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify:
+    # GitHub sends no event when a PR starts to conflict with main, so whoever
+    # watches the PR (its author, or the Claude session that opened it and is
+    # subscribed to its activity) does not hear of it. A comment is an event.
+    # So after the fixes above are pushed, each PR that still conflicts gets
+    # one comment naming the files, and the merge-conflict label, which also
+    # shows the conflict in the PR list. A PR is told once per head commit: it
+    # is told again only if it conflicts again after someone pushed to it.
+    # Runs no branch code: only git and gh.
+    needs: [prepare, push]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Comment on each PR that conflicts with main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # git merge-tree exits 1 on a conflict, which is the case this handles.
+          set +e -uo pipefail
+          gh label create merge-conflict --repo "$REPO" --color B60205 \
+            --description "Conflicts with main in a way the renumber workflow cannot fix" >/dev/null 2>&1
+
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          told=""
+          prs=$(gh pr list --repo "$REPO" --base main --state open --limit 200 \
+            --json number,headRefName,isCrossRepository,author,labels \
+            --jq '.[] | select(.isCrossRepository | not) | select(.author.login != "dependabot[bot]" and .author.login != "app/dependabot") | "\(.number) \(.headRefName) \([.labels[].name] | index("merge-conflict") != null)"')
+
+          while read -r number branch labelled; do
+            [ -z "$number" ] && continue
+            # Fetched afresh, so a branch the push job just fixed reads as fixed.
+            git -c "http.https://github.com/.extraheader=$auth" fetch --quiet origin \
+              "+refs/heads/$branch:refs/remotes/origin/$branch" || continue
+            tip=$(git rev-parse "origin/$branch")
+            out=$(git merge-tree --write-tree --name-only "$MAIN" "$tip")
+            status=$?
+            if [ $status -eq 0 ]; then
+              [ "$labelled" = true ] && gh pr edit "$number" --repo "$REPO" --remove-label merge-conflict >/dev/null
+              continue
+            fi
+            [ $status -ne 1 ] && continue
+            [ "$labelled" = true ] || gh pr edit "$number" --repo "$REPO" --add-label merge-conflict >/dev/null
+
+            marker="<!-- merge-conflict-notice head=$tip -->"
+            if gh pr view "$number" --repo "$REPO" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+              continue
+            fi
+            files=$(printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d' | sed 's/^/- `/; s/$/`/')
+            {
+              echo "$marker"
+              echo "This PR now conflicts with main (at ${MAIN:0:8}) in:"
+              echo
+              echo "$files"
+              echo
+              echo "Merge main into this branch and resolve them; do not rebase or force-push. Conflicts that are only in \`src/db/migrations\` or \`web/content\` are fixed by .github/workflows/renumber-migrations.yml, so whatever is listed here needs a person or an agent."
+            } | gh pr comment "$number" --repo "$REPO" --body-file - >/dev/null && told="$told #$number"
+          done <<< "$prs"
+
+          echo "Told of a conflict:${told:- none}"
+          echo "**Told of a conflict:**${told:- none}" >> "$GITHUB_STEP_SUMMARY"
