@@ -19,8 +19,16 @@ export type LlmTool = Anthropic.Messages.ToolUnion;
 /** An assistant-turn content block, in the seam's Anthropic dialect. */
 export type LlmContentBlock = Anthropic.ContentBlock;
 
-/** The three backends behind the seam. */
-export type ProviderName = "anthropic" | "openai" | "openrouter";
+/** The three hosted APIs behind the seam. */
+export type HostedProviderName = "anthropic" | "openai" | "openrouter";
+/**
+ * An endpoint a deployment declares in MODEL_ENDPOINTS, by its name
+ * (providers/endpoint-config.ts): the prefix of the model ids it serves, up
+ * to the first slash.
+ */
+export type EndpointProviderName = `endpoint:${string}`;
+/** What serves a call: one of the hosted APIs, or a declared endpoint. */
+export type ProviderName = HostedProviderName | EndpointProviderName;
 
 export interface TokenUsage {
   /** Uncached input tokens (cache reads and writes are reported separately). */
