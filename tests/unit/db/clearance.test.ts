@@ -8,8 +8,10 @@
 import { describe, it, expect } from "vitest";
 import {
   ClearanceError,
+  isUnseenCollision,
   leaveSystemClearance,
   normalizeClearance,
+  refusalForCaller,
   sessionKey,
   sessionOptions,
   startedHere,
@@ -79,6 +81,30 @@ describe("system clearance", () => {
     expect(startedHere(null)).toBeNull();
     const promise = Promise.resolve(1);
     expect(startedHere(promise)).toBe(promise);
+  });
+});
+
+describe("a refusal by the wall", () => {
+  it("is told to the caller with its reason, and nothing else is", () => {
+    expect(refusalForCaller(new ClearanceError("The write was refused: reasons."))).toBe("The write was refused: reasons.");
+    const collision = Object.assign(new Error("this was not written: a row with the same identity already exists at a label this work does not read"), {
+      code: "MVL03",
+      hint: "A table holds one row for each identity whatever the labels, and each label keeping its own is not built yet. Nothing was changed.",
+    });
+    expect(refusalForCaller(collision)).toBe(
+      "This was not written: a row with the same identity already exists at a label this work does not read. " +
+        "A table holds one row for each identity whatever the labels, and each label keeping its own is not built yet. Nothing was changed."
+    );
+    expect(isUnseenCollision(collision)).toBe(true);
+    expect(refusalForCaller(Object.assign(new Error("the judgment in force on this node was recorded at another label, and this work may not retire it"), { code: "MVL02" }))).toBe(
+      "The judgment in force on this node was recorded at another label, and this work may not retire it."
+    );
+    // A forgotten stamp with no label to give is a fault of the code, not an answer to a caller.
+    expect(refusalForCaller(Object.assign(new Error("a row was written without a label"), { code: "MVL01" }))).toBeNull();
+    expect(refusalForCaller(Object.assign(new Error("duplicate key"), { code: "23505" }))).toBeNull();
+    expect(refusalForCaller(new Error("anything"))).toBeNull();
+    expect(refusalForCaller(null)).toBeNull();
+    expect(isUnseenCollision(new Error("anything"))).toBe(false);
   });
 });
 

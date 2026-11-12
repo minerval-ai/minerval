@@ -4,10 +4,13 @@
  * A row carries a label (src/labels.ts), and a clearance is a set of labels.
  * Where a deployment has more than one label, the database holds every
  * connection to a clearance with row-level security: a row is returned only
- * to a connection whose clearance includes its label, and can be written
- * only at such a label. The filter is not in any query. A query that forgets
- * it is filtered all the same, and a query made with nothing in context
- * reads `public` alone, so a call site nobody thought about fails closed.
+ * to a connection whose clearance includes its label, a row can be changed
+ * only at such a label, and a new row can be added only at the connection's
+ * own label. The filter is not in any query. A query that forgets it is
+ * filtered all the same, and a query made with nothing in context reads
+ * `public` alone, so a call site nobody thought about fails closed. Code
+ * that writes a row belonging to another label (a document's segments, at
+ * the document's) does it by running that write at that label.
  *
  * How a connection gets its clearance
  *
@@ -89,6 +92,23 @@ export class ClearanceError extends Error {
  */
 export function isUnseenCollision(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === "MVL03";
+}
+
+/**
+ * What a caller is told when the wall refused its write, or null when the
+ * error is anything else: the policy refused a row (ClearanceError), a
+ * judgment at another label stood in the way (MVL02), or a row with the
+ * same identity exists at a label the work does not read (MVL03). These
+ * are refusals of what was asked, with a reason the caller can act on, and
+ * not faults: the routes answer them as a conflict, with this text.
+ */
+export function refusalForCaller(err: unknown): string | null {
+  const e = err as { code?: string; message?: string; hint?: string } | null;
+  if (!e || typeof e.message !== "string") return null;
+  if (err instanceof ClearanceError) return e.message;
+  if (e.code !== "MVL02" && e.code !== "MVL03") return null;
+  const sentence = `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}.`;
+  return e.hint ? `${sentence} ${e.hint}` : sentence;
 }
 
 // ---- system work ------------------------------------------------------------
@@ -407,9 +427,11 @@ export function describeRefusal(session: Session, table: string | undefined): st
   const reads = normalizeClearance(session.clearance)
     .map((l) => `"${l}"`)
     .join(", ");
+  const own = session.label ?? PUBLIC_LABEL;
   return (
-    `The write${where} was refused: this work reads the labels ${reads} and may write only at ` +
-    `one of them. Either the row it tried to write carries another label, or a row that is ` +
-    `already there carries one, and this work may neither read nor replace it.`
+    `The write${where} was refused. This work is at the label "${own}" and reads ${reads}: it may ` +
+    `add a row only at its own label, and change one only at a label it reads. Either the row it ` +
+    `tried to write carries another label, or a row that is already there carries one this work ` +
+    `does not read.`
   );
 }

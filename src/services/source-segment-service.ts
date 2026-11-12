@@ -18,6 +18,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
+import { runAtLabel } from "../llm/usage-context.js";
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
@@ -190,7 +191,6 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
   const drafts = segmentText(text);
 
   await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1`, [sourceId]);
-  await rawQuery(`DELETE FROM source_segments WHERE source_id = $1`, [sourceId]);
   // The source's label, not the label of whatever is segmenting. The
   // column is not `label`, which is a segment's heading.
   const sensitivityLabel = row.sensitivity_label;
@@ -199,31 +199,37 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
   // keys point at rows already inserted or inserted in the same statement.
   const ids = drafts.map(() => randomUUID());
   const BATCH = 500;
-  for (let i = 0; i < drafts.length; i += BATCH) {
-    const values: unknown[] = [];
-    const rows = drafts.slice(i, i + BATCH).map((d, j) => {
-      const base = j * 10;
-      values.push(
-        ids[i + j],
-        sourceId,
-        d.parent === null ? null : ids[d.parent],
-        i + j,
-        d.label,
-        d.kind,
-        d.start,
-        d.end,
-        sha256(text.slice(d.start, d.end)),
-        sensitivityLabel
+  // The segments are replaced at the source's label, and so on a connection
+  // at that label: the database lets a connection add a row only at its own
+  // (db/clearance.ts), and these rows are the document's, not the reader's.
+  await runAtLabel(sensitivityLabel, `the segments of source ${sourceId}`, async () => {
+    await rawQuery(`DELETE FROM source_segments WHERE source_id = $1`, [sourceId]);
+    for (let i = 0; i < drafts.length; i += BATCH) {
+      const values: unknown[] = [];
+      const rows = drafts.slice(i, i + BATCH).map((d, j) => {
+        const base = j * 10;
+        values.push(
+          ids[i + j],
+          sourceId,
+          d.parent === null ? null : ids[d.parent],
+          i + j,
+          d.label,
+          d.kind,
+          d.start,
+          d.end,
+          sha256(text.slice(d.start, d.end)),
+          sensitivityLabel
+        );
+        return `($${base + 1}::uuid, $${base + 2}::uuid, $${base + 3}::uuid, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+      });
+      await rawQuery(
+        `INSERT INTO source_segments
+           (id, source_id, parent_id, ordinal, label, kind, char_start, char_end, text_hash, sensitivity_label)
+         VALUES ${rows.join(", ")}`,
+        values
       );
-      return `($${base + 1}::uuid, $${base + 2}::uuid, $${base + 3}::uuid, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
-    });
-    await rawQuery(
-      `INSERT INTO source_segments
-         (id, source_id, parent_id, ordinal, label, kind, char_start, char_end, text_hash, sensitivity_label)
-       VALUES ${rows.join(", ")}`,
-      values
-    );
-  }
+    }
+  });
   const anchored = await anchorInstances(sourceId, text);
   return { segments: drafts.length, anchored };
 }

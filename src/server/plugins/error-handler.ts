@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { loadConfig } from "../../config.js";
 import { LlmBudgetExceededError } from "../../llm/errors.js";
+import { refusalForCaller } from "../../db/clearance.js";
 
 export async function registerErrorHandler(
   app: FastifyInstance
@@ -33,6 +34,19 @@ export async function registerErrorHandler(
           message: "LLM processing temporarily unavailable due to usage limits",
           request_id: requestId,
         },
+      });
+    }
+
+    // A write the database refused because of labels (db/clearance.ts): the
+    // request asked for something its clearance does not allow, or that
+    // collides with a row at another label. That is an answer, with its
+    // reason, and not a fault of the server. It cannot happen where
+    // `public` is the only label.
+    const refusal = refusalForCaller(error);
+    if (refusal) {
+      app.log.warn({ err: error, requestId }, "Refused by label");
+      return reply.code(409).send({
+        error: { code: "REFUSED_BY_LABEL", message: refusal, request_id: requestId },
       });
     }
 

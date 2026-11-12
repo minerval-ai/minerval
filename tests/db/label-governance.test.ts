@@ -726,7 +726,12 @@ describe("a mandate's work", () => {
     await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'Defined for one test.') ON CONFLICT (name) DO NOTHING`, [reader]);
     await rawQuery(`INSERT INTO label_reads (label, reads) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [reader, SECOND]);
     const inRun = await seedClaim("governance order, in a run");
-    await inRunAt(reader, () => placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." }));
+    try {
+      await inRunAt(reader, () => placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." }));
+    } finally {
+      // Other files expect the pairs they did not make to be absent.
+      await rawQuery(`DELETE FROM label_reads WHERE label = $1`, [reader]);
+    }
     expect(new Set(await assessLabels(inRun))).toEqual(new Set([reader]));
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = ANY($1::uuid[])`, [[swept, inRun]]);
 

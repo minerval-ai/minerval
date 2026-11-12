@@ -113,7 +113,7 @@ export interface EnforcementFacts {
   labels: string[];
   /** Tables in `public` with a sensitivity_label column. */
   labelledTables: string[];
-  /** Labelled tables without row-level security or without both policies. Empty when enforcement holds. */
+  /** Labelled tables without row-level security or without all three policies. Empty when enforcement holds. */
   uncoveredTables: string[];
   /** Views in `public` that would read their tables as the owner, past the policies. */
   viewsReadingAsOwner: string[];
@@ -156,6 +156,7 @@ export async function enforcementFacts(): Promise<EnforcementFacts> {
       `SELECT c.relname::text AS name,
               c.relrowsecurity
                 AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance')
+                AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert')
                 AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read')
                 AS covered
          FROM pg_class c

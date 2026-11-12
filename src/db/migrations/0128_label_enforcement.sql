@@ -56,6 +56,16 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
+-- The label a connection's new rows carry: its own, and 'public' where it
+-- has none (a request outside any run, whose stamps have always said
+-- 'public'). The policy below holds every insert on a cleared connection
+-- to it.
+CREATE OR REPLACE FUNCTION minerval_write_label() RETURNS text
+LANGUAGE sql STABLE PARALLEL SAFE
+AS $$
+  SELECT COALESCE(NULLIF(current_setting('minerval.label', true), ''), 'public')
+$$;
+--> statement-breakpoint
 -- Every label readable from the ones given: the labels themselves, each
 -- label one of them reads, and so on to the end of label_reads. 'public' is
 -- always in the answer. The one definition of what a clearance is, for a
@@ -407,10 +417,12 @@ $$;
 --
 -- On, for every table in public:
 --   - a table with a sensitivity_label column gets row-level security and
---     two policies: label_clearance, which lets minerval_cleared read and
---     write a row only at a label in the connection's clearance, and
---     label_sql_read, which lets the public_read views show a row only at
---     a label in the session's signed clearance;
+--     three policies: label_clearance, which lets minerval_cleared read and
+--     change a row only at a label in the connection's clearance;
+--     label_own_insert, which lets it add a row only at the connection's
+--     own label, so a wrong stamp is refused as a missing one is filled;
+--     and label_sql_read, which lets the public_read views show a row only
+--     at a label in the session's signed clearance;
 --   - a labelled table that holds judgments in force gets the trigger
 --     above, and one with a unique index gets the trigger that refuses a
 --     collision with a row the writer cannot read;
@@ -450,6 +462,7 @@ BEGIN
       SELECT c.relname, c.relrowsecurity,
              EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
              EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
+             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert') AS has_own,
              EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
              EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS has_collision_guard
         FROM pg_class c
@@ -464,6 +477,9 @@ BEGIN
       END IF;
       IF t.has_sql THEN
         EXECUTE format('DROP POLICY label_sql_read ON public.%I', t.relname);
+      END IF;
+      IF t.has_own THEN
+        EXECUTE format('DROP POLICY label_own_insert ON public.%I', t.relname);
       END IF;
       IF t.has_guard THEN
         EXECUTE format('DROP TRIGGER judgment_label_guard ON public.%I', t.relname);
@@ -496,6 +512,7 @@ BEGIN
                     WHERE a.attrelid = c.oid AND a.attname = 'sensitivity_label' AND NOT a.attisdropped) AS labelled,
            EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
            EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
+           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_own_insert') AS has_own,
            EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
            -- The node a judgment is of: the column of the unique index over
            -- the rows in force. Null on a table that holds no judgments.
@@ -546,6 +563,12 @@ BEGIN
         EXECUTE format(
           'CREATE POLICY label_sql_read ON public.%I AS PERMISSIVE FOR SELECT TO minerval_sql_views USING (%s)',
           t.relname, sql_test);
+      END IF;
+      IF NOT t.has_own THEN
+        EXECUTE format(
+          'CREATE POLICY label_own_insert ON public.%I AS RESTRICTIVE FOR INSERT TO minerval_cleared '
+          'WITH CHECK (sensitivity_label = public.minerval_write_label())',
+          t.relname);
       END IF;
       IF t.judged_node IS NOT NULL AND NOT t.has_guard THEN
         EXECUTE format(

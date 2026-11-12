@@ -2236,6 +2236,97 @@ its starting value none of that code runs.
 
 ---
 
+## Labels and clearance
+
+Every row that holds content carries a label in `sensitivity_label`
+(`src/labels.ts`): who may read it. The public graph has one label,
+`public`, and there nothing below applies: no table has row-level security,
+every query runs on the one pool it always had, and no query pays for any of
+it.
+
+A deployment that defines a second label is held to it by the database, not
+by the queries (`src/db/clearance.ts`). A clearance is a set of labels. A run
+reads its own label and the labels that label reads (`label_reads`, followed
+to the end, with `public` always included). A request reads what its account
+was granted. Work with nothing in context reads `public` alone. Row-level
+security on every labelled table returns a row only to a connection whose
+clearance includes its label, lets a row be changed only at such a label,
+and lets a new row be added only at the connection's own label, so a query
+that forgets to filter is filtered all the same and a wrong stamp is
+refused. Code that writes a row belonging to another label (a document's
+segments, at the document's) runs that write at that label.
+
+**How a connection gets its clearance.** Connections held to a clearance log
+in as the role `minerval_cleared`, which owns no table and so is bound by the
+policies. Its clearance and its label are settings fixed when the connection
+is made, and the client keeps one pool for each distinct pair, so a
+connection is never handed to work at another label. An insert that names
+no label gets the connection's (the column default is
+`minerval_default_label()`): a forgotten stamp inside a run lands at the
+run's label, and where nothing says which label a row is for, the insert is
+refused.
+
+**System work.** Migrations, the workers that find work at any label before
+running each piece at its own, retention and the step below must see every
+row. They say so with `withSystemClearance(reason, fn)`, which puts them on
+the tables' owner's connection (the role in `DATABASE_URL`), past the
+policies. `tests/unit/db/system-clearance.test.ts` lists every caller with
+its reason. No agent's run ever has it.
+
+**The switch.** `minerval_enforcement_sync()` enables row-level security and
+creates the policies on every table with a `sensitivity_label` column, read
+from the catalog. A trigger on `labels` runs it in the transaction that
+defines a second label, and removes everything when the last one goes. The
+API runs it at every start, after migrations, so a table a migration added
+is covered before anything is served. Defining the first private label
+through the API turns enforcement on first and waits about ten seconds, so
+that every process has noticed before any row can carry the label.
+
+**Read-only SQL.** The `public_read` views are owned by a role the policies
+bind, and show a row only at a label in a clearance the service signs for
+the one connection the query runs on. A session with no token, or one it
+made up, reads `public` alone, whatever settings it sets. Each result says
+which labels it was computed over.
+
+**Search.** A row-level security policy is tested before any condition
+Postgres cannot prove harmless on rows the reader may not see, and a
+full-text match is one, so keyword search on the table would lose its
+index. Search reads claims through `minerval_readable.claims_search`, a view
+that applies the same clearance as an ordinary condition. Measure with
+`scripts/enforcement-plans.ts`. The same holds for any indexed condition
+that is not provably harmless (pattern matches, array and JSON containment,
+comparisons of `numeric`): such a query on a labelled table reads it whole
+where reads are held.
+
+**What it does not protect against.**
+
+- The clearance is a setting, and the cleared role's password is derived
+  from the owner's. Whoever holds `DATABASE_URL`, or can run SQL on one of
+  the application's own connections, reads everything. That is the
+  application and its operator.
+- Row-level security binds rows, not columns. A source's stored text is a
+  column of the source's own row, so the database cannot hold "may read what
+  was written from a source, but not open the source" apart from reading
+  the row.
+- A run may change or delete a row at any label it reads. An internal run
+  that rewords a public node has written into a public row.
+- A table holds one row for each identity whatever the labels. An insert
+  that collides with a row the writer cannot read is refused and says so,
+  which tells the writer the row exists. A node holds one judgment in force,
+  and work at another label may not retire it. Each label keeping its own is
+  later work.
+- Tables with no label (accounts and keys, the owl ledger, permission
+  grants, the labels themselves) are not held.
+
+**Running one.** The role in `DATABASE_URL` must own the tables and be able
+to create roles, as the migrations already require. A backup taken with
+`pg_dump` as that role reads everything. The client holds at most twenty
+connections across the cleared pools besides the owner pool's twenty, and
+closes one that has been idle for ten seconds. A script that writes
+labelled rows says its label: `--label <name>` (`src/script-label.ts`).
+
+---
+
 ## Deployment
 
 The API runs as a container on ECS Fargate behind an application load balancer

@@ -20,6 +20,7 @@
  * fails leaves the fact null, and the page says it was not found.
  */
 import { rawQuery } from "../db/client.js";
+import { runAtSourceLabel } from "./label-service.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
@@ -226,19 +227,24 @@ export async function recordSourceEvent(input: RecordSourceEventInput): Promise<
     throw new Error(`Unknown source event kind "${input.kind}"`);
   }
   const occurred = input.occurredAt ? new Date(input.occurredAt) : null;
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO source_events (source_id, kind, occurred_at, notice_url, note, detected_by, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, (SELECT sensitivity_label FROM sources WHERE id = $1))
-     ON CONFLICT (source_id, kind, notice_url) DO NOTHING
-     RETURNING id`,
-    [
-      input.sourceId,
-      input.kind,
-      occurred && !Number.isNaN(occurred.getTime()) ? occurred : null,
-      (input.noticeUrl ?? "").trim(),
-      input.note ?? null,
-      input.detectedBy,
-    ]
+  // Written at the source's label, and so on a connection at that label:
+  // the database lets a connection add a row only at its own
+  // (db/clearance.ts), and the notice is the document's, not the finder's.
+  const rows = await runAtSourceLabel(input.sourceId, () =>
+    rawQuery<{ id: string }>(
+      `INSERT INTO source_events (source_id, kind, occurred_at, notice_url, note, detected_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT sensitivity_label FROM sources WHERE id = $1))
+       ON CONFLICT (source_id, kind, notice_url) DO NOTHING
+       RETURNING id`,
+      [
+        input.sourceId,
+        input.kind,
+        occurred && !Number.isNaN(occurred.getTime()) ? occurred : null,
+        (input.noticeUrl ?? "").trim(),
+        input.note ?? null,
+        input.detectedBy,
+      ]
+    )
   );
   return { recorded: rows.length > 0 };
 }

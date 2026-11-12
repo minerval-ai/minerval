@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeAll, afterAll, inject } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import Fastify from "fastify";
 import { sql } from "drizzle-orm";
 import { getDb, rawQuery, readsAreHeld, searchableClaims, withTransaction } from "../../src/db/client.js";
 import {
@@ -28,6 +29,7 @@ import {
 } from "../../src/db/clearance.js";
 import { armEnforcement, enforcementFacts, enforcementProblems, ensureEnforcement } from "../../src/db/enforcement.js";
 import { claims } from "../../src/db/schema.js";
+import { registerErrorHandler } from "../../src/server/plugins/error-handler.js";
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { currentLabel, runAtLabel, runWithUsageContext, untraced, withAgent } from "../../src/llm/usage-context.js";
@@ -119,8 +121,9 @@ describe("the switch", () => {
 
   it("turns on when a second label is defined, in the same transaction, on every labelled table", () => {
     expect(recorded.during.secured).toEqual(recorded.during.labelled);
-    // Two policies a table: one for the application's cleared connections, one for read-only SQL.
-    expect(recorded.during.policies).toBe(recorded.during.labelled.length * 2);
+    // Three policies a table: what a cleared connection reads and changes,
+    // what it may add, and what read-only SQL is shown.
+    expect(recorded.during.policies).toBe(recorded.during.labelled.length * 3);
     // The four tables that hold judgments in force.
     expect(recorded.during.guards).toBe(4);
   });
@@ -520,6 +523,16 @@ describe("a write", () => {
     }
   });
 
+  /** The policy refused the write, and the refusal says what the work may write. */
+  const refusedAsOutside = async (write: () => Promise<unknown>) => {
+    const err = await write().then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect(err).toBeInstanceOf(ClearanceError);
+    expect(sqlState(err)).toBe("42501");
+  };
+
   it("at a label outside the clearance is refused, and says why", async () => {
     const refused = async (write: () => Promise<unknown>) => {
       const err = await write().then(
@@ -527,7 +540,7 @@ describe("a write", () => {
         (e: unknown) => e
       );
       expect(err).toBeInstanceOf(ClearanceError);
-      expect((err as Error).message).toMatch(/may write only at one of them/);
+      expect((err as Error).message).toMatch(/may add a row only at its own label, and change one only at a label it reads/);
       expect(sqlState(err)).toBe("42501");
     };
     await refused(() => at(A, () => insertAt(B)));
@@ -542,13 +555,41 @@ describe("a write", () => {
     expect(await system(() => rawQuery(`SELECT 1 FROM claims WHERE id = $1 AND sensitivity_label <> $2`, [own!.id, A]))).toEqual([]);
   });
 
-  it("at a label the run reads is allowed, which is how a row derived from another keeps that row's label", async () => {
-    const [derived] = await at(C, () => insertAt(A));
-    cleanup.push(derived!.id);
-    expect(derived!.sensitivity_label).toBe(A);
-    const [open] = await at(A, () => insertAt(PUBLIC_LABEL));
+  it("that is refused is answered by a route as a conflict, with the reason, and not as a fault", async () => {
+    const app = Fastify();
+    await registerErrorHandler(app);
+    app.post("/outside", () => at(A, () => insertAt(B)));
+    app.post("/forgot", () => insertAt(null));
+    const outside = await app.inject({ method: "POST", url: "/outside" });
+    expect(outside.statusCode).toBe(409);
+    expect(outside.json().error).toMatchObject({ code: "REFUSED_BY_LABEL" });
+    expect(outside.json().error.message).toMatch(/may add a row only at its own label/);
+    // A stamp forgotten where nothing gives a label is a fault of the code, and is answered as one.
+    const forgot = await app.inject({ method: "POST", url: "/forgot" });
+    expect(forgot.statusCode).toBe(500);
+    expect(forgot.json().error.message).toBe("Internal server error");
+    await app.close();
+  });
+
+  it("adds a row only at the run's own label: not at one it reads, so a wrong stamp is refused as a missing one is filled", async () => {
+    await refusedAsOutside(() => at(C, () => insertAt(A)));
+    await refusedAsOutside(() => at(A, () => insertAt(PUBLIC_LABEL)));
+    // A request has no label of its own: what it adds is public, whatever it reads.
+    await refusedAsOutside(() => runWithUsageContext({ clearance: [PUBLIC_LABEL, A] }, () => insertAt(A)));
+    const [open] = await runWithUsageContext({ clearance: [PUBLIC_LABEL, A] }, () => insertAt(PUBLIC_LABEL));
     cleanup.push(open!.id);
     expect(open!.sensitivity_label).toBe(PUBLIC_LABEL);
+  });
+
+  it("writes a row that belongs to another label by running the write at that label, as a document's segments are", async () => {
+    // A run at C reads A. What is derived from a row at A is written at A
+    // by work that says so (runAtLabel), which is how segmentSource and
+    // recordSourceEvent keep a document's rows at the document's label.
+    const [derived] = await at(C, () => at(A, () => insertAt(A)));
+    cleanup.push(derived!.id);
+    expect(derived!.sensitivity_label).toBe(A);
+    // A change to a row it reads needs no such step.
+    expect(await at(C, () => rawQuery(`UPDATE claims SET importance = importance WHERE id = $1 RETURNING id`, [derived!.id]))).toHaveLength(1);
   });
 
   it("cannot reach a row the run does not read: an update or a delete finds nothing", async () => {
