@@ -22,6 +22,7 @@ import { recordJudgmentInputs } from "../../services/judgment-inputs-service.js"
 import {
   anotherLabelsNode,
   anotherLabelsNodeMessage,
+  oneLabelOnly,
   recordMadeBeside,
   versionWithoutMaterial,
   versionWithoutMaterialMessage,
@@ -2825,6 +2826,21 @@ export async function executeStewardTool(
         }
 
         const db = getDb();
+
+        // Where there is more than one label, a parent this run does not
+        // read is not found, as add_parent_claim does not find its node:
+        // the edge would otherwise be written under a node the run was
+        // never shown. A Steward's run names its own node here, so this is
+        // a backstop for a caller that is not one.
+        if (!oneLabelOnly()) {
+          const visible = await rawQuery(`SELECT 1 FROM claims WHERE id = $1`, [parentId]);
+          if (visible.length === 0) {
+            return JSON.stringify({
+              success: false,
+              message: `Claim not found: ${parentId}. Pass the id of the node you steward.`,
+            });
+          }
+        }
 
         if (domainsSource === null || claimType === undefined) {
           const [parent] = await db
