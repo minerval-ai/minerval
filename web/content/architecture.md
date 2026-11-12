@@ -2408,7 +2408,16 @@ label is stored only where material at the version's own label bears on the
 node (`minerval_material_at`: a source at that label attached to it, a node
 at that label under it, or a node under it with a version at that label);
 otherwise the tool refuses, says what would satisfy it, and the version that
-label reads stands for its readers. A node's own label needs none.
+label reads stands for its readers. A node's own label needs none. The
+database tests it whenever a version becomes current, by an insert or by an
+update, and its refusal (`MVL07`) names the writer's own label and no
+other, in the same words for a node the writer does not read or that does
+not exist. Material removed after a version was recorded is not a write of
+the version and is not refused: the scheduler finds a version left with
+none and opens its reassessment at the version's own label, once, with a
+message that says the material it rested on is gone
+(`openReassessmentsForVersionsWithoutMaterial` in
+`src/services/version-upkeep.ts`).
 
 On a deployment that mirrors the public graph, the `public` version of a
 mirrored node is the mirrored row. Nothing local records one or opens work
@@ -2450,6 +2459,24 @@ slot is a row in `steward_slots`, one for each node and label; the node's
 own row stays the slot for work at the node's own label
 (`src/services/steward-lease.ts`). An order is one for each person, node and
 label. A message waits for a pass at the label it was sent at.
+
+**A merge under more than one label.** A merge made here moves what was
+recorded on the merged node onto the node it ends in. The run that makes it
+moves the rows it reads; the rows at a label it does not read move the same
+way, each at its own label, with the same reversal of stances where the two
+nodes are a claim and its denial (`carryMergeToOtherLabels` in
+`src/services/reconciliation-service.ts`). A row left on a merged node would
+be read by nobody, so this is a consequence of the merge and not a judgment.
+Which labels have such rows is found seeing every label; each label's rows
+are then moved by work at that label, which records its own
+`merge_carried` event and sends the surviving node's Steward at that label a
+message composed there: what moved, that the stances were reversed, and
+that label's own version, which stays with the merged node. Undoing the
+merge puts each label's rows back and tells its Steward on the restored
+node. A merge the mirror brings is different, because a batch does not say
+whether the public graph merged a claim with its denial: nothing is moved,
+and each label's Steward is told where its rows are
+([mirror.md](mirror.md), "Beside a deployment's own rows").
 
 **A request's label.** A person's request has a clearance and, until it is
 given one, no label to write at. Each request that writes is given one
@@ -2528,7 +2555,10 @@ label's rows would spend the same money twice. The views are not read-only:
 settling money changes rows at every label, so a cleared connection may
 update through them exactly the columns settlement writes (an allocation's
 amount, what of it is spent and when it was released; a regrant's amount and
-what came back) and may delete a regrant that is returned in full. It may
+what came back) and may delete a regrant in one case: the mandate that made
+it takes it back whole, by work at that mandate's label, while nothing has
+been returned from it (`minerval_own_label_guard`; any other delete of a
+regrant at another label is refused). It may
 change no other column through them, add no row, and delete no allocation.
 A listing or a feed of commissions is read from the table, under the
 policies: the change feed shows a commission to the readers of the label it
@@ -2625,7 +2655,8 @@ where reads are held.
   key, or delete it. These are the only columns a connection may change on
   a row at another label: an allocation's `amount_micro_usd`,
   `spent_micro_usd` and `released_at`, a regrant's `amount_micro_usd` and
-  `refunded_micro_usd`, and the delete of a regrant returned in full.
+  `refunded_micro_usd`, and the delete of a regrant its own maker takes back
+  whole.
 - A report or a finding met again by work at another label keeps its own
   count: the sighting is a row at that work's label, and the report's row
   does not move. A reader of both labels counts the sightings.
