@@ -50,6 +50,7 @@ import {
   validateUpdateItems,
   CORRESPONDENT_BOUNDS,
   type CorrespondentEventRow,
+  CORRESPONDENT_COLUMNS,
   type CorrespondentRow,
 } from "../../services/correspondent-service.js";
 
@@ -128,7 +129,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       scope_tag_slugs: string[] | null;
     }
   >(
-    `SELECT c.*, g.skills AS grant_skills, g.status AS grant_status,
+    `SELECT ${CORRESPONDENT_COLUMNS.map((col) => `c.${col}`).join(", ")},
+            g.skills AS grant_skills, g.status AS grant_status,
             COALESCE(g.mandate->>'title', g.name) AS mandate_title,
             ARRAY(SELECT t.slug FROM tags t WHERE t.id = ANY(c.scope_tag_ids)) AS scope_tag_slugs
        FROM correspondents c JOIN grants g ON g.id = c.grant_id

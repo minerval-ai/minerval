@@ -1,7 +1,8 @@
 /**
  * The stated_views table (constitution §4) against real SQL: one row per
- * contribution, a probability held to 0..1, gone with its contribution, and
- * left standing with no instance when its instance is deleted.
+ * contribution, a probability held to 0..1, public unless the write names a
+ * defined label, gone with its contribution, and left standing with no
+ * instance when its instance is deleted.
  */
 import { describe, it, expect } from "vitest";
 import { rawQuery } from "../../src/db/client.js";
@@ -33,11 +34,22 @@ describe("stated_views", () => {
     await expect(insert(c)).rejects.toThrow(/idx_stated_views_contribution/);
     const other = await contribution(claim, user);
     await expect(insert(other, 1.2)).rejects.toThrow(/ck_stated_views_probability/);
-    const [stored] = await rawQuery<{ instance_id: string | null; reasons: string | null; stake: string | null }>(
-      `SELECT instance_id, reasons, stake FROM stated_views WHERE id = $1`,
-      [row!.id]
-    );
-    expect(stored).toEqual({ instance_id: null, reasons: null, stake: null });
+    const [stored] = await rawQuery<{
+      instance_id: string | null;
+      reasons: string | null;
+      stake: string | null;
+      sensitivity_label: string;
+    }>(`SELECT instance_id, reasons, stake, sensitivity_label FROM stated_views WHERE id = $1`, [row!.id]);
+    // A row written without naming a label is public (src/labels.ts).
+    expect(stored).toEqual({ instance_id: null, reasons: null, stake: null, sensitivity_label: "public" });
+    // And a label that is not a row in `labels` is refused.
+    await expect(
+      rawQuery(
+        `INSERT INTO stated_views (contribution_id, stance, statement, sensitivity_label)
+         VALUES ($1, 'affirms', 'This is so.', 'stated-views-undefined-label')`,
+        [other]
+      )
+    ).rejects.toThrow(/stated_views_sensitivity_label_labels_name_fk/);
   });
 
   it("goes with its contribution, and outlives its instance", async () => {

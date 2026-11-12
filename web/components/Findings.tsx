@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Finding, FindingRef, FindingSighting } from "@/lib/types";
 import { AssessmentText } from "./AssessmentText";
+import { agentLabel } from "@/lib/findings";
 
 /**
  * A notable finding (#394), rendered as it was written: the headline as a
@@ -12,25 +13,10 @@ import { AssessmentText } from "./AssessmentText";
  * standing or quantity estimate has been superseded, and the withdrawal note when an operator has taken it down.
  */
 
-const AGENT_LABELS: Record<string, string> = {
-  steward: "Claim Steward",
-  claim_steward: "Claim Steward",
-  curator: "Curator",
-  grantmaker: "Grantmaker",
-  mandate_review: "Grantmaker",
-  contribution_reviewer: "Contribution Reviewer",
-  reviewer: "Contribution Reviewer",
-  dispute_arbitrator: "Dispute Arbitrator",
-  arbitrator: "Dispute Arbitrator",
-  audit_agent: "Audit Agent",
-  audit: "Audit Agent",
-};
+// Which agents are one role lives with the rest of the findings pages' logic.
+export { agentLabel };
 
-export function agentLabel(agent: string): string {
-  return AGENT_LABELS[agent] ?? agent.replace(/_/g, " ");
-}
-
-function fmtDate(iso: string): string {
+export function fmtDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? iso
