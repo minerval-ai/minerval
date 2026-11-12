@@ -26,7 +26,14 @@ import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { CLAIM_VIEW_INCLUDES, getClaimView } from "../../src/services/claim-view-service.js";
 import { seedClaim } from "./helpers.js";
 
-/** The replicated tables: the ones the migration gave an origin. */
+/**
+ * The replicated tables: the ones the migration gave an origin. In the order
+ * JavaScript sorts strings, which every list below is put in before it is
+ * compared: how Postgres orders a text expression depends on the database's
+ * collation (under en_US an underscore is ignored at first, so `sources`
+ * comes before `source_segments`; under C it comes after), so no comparison
+ * here leans on the database's ordering.
+ */
 const TABLES = [
   "answer_relations",
   "argument_evaluations",
@@ -116,18 +123,17 @@ describe("the origin column, in the catalog", () => {
          FROM information_schema.columns c
          JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
         WHERE c.table_schema = 'public' AND c.column_name = 'origin' AND t.table_type = 'BASE TABLE'
-          AND c.column_default = '''local''::text'
-        ORDER BY c.table_name`
+          AND c.column_default = '''local''::text'`
     );
-    expect(columns.map((c) => c.table_name)).toEqual(TABLES);
+    expect(columns.map((c) => c.table_name).sort()).toEqual(TABLES);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ is_nullable: "NO", data_type: "text" });
     }
     const checks = await rawQuery<{ table_name: string }>(
       `SELECT conrelid::regclass::text AS table_name FROM pg_constraint
-        WHERE contype = 'c' AND conname = 'ck_' || conrelid::regclass::text || '_origin' ORDER BY 1`
+        WHERE contype = 'c' AND conname = 'ck_' || conrelid::regclass::text || '_origin'`
     );
-    expect(checks.map((c) => c.table_name)).toEqual(TABLES);
+    expect(checks.map((c) => c.table_name).sort()).toEqual(TABLES);
     await expect(rawQuery(`INSERT INTO claims (text, origin) VALUES ('x', 'elsewhere')`)).rejects.toSatisfy(
       (err) => sqlState(err) === "23514"
     );
@@ -136,10 +142,10 @@ describe("the origin column, in the catalog", () => {
   it("has three guard triggers on each of those tables, each limited to mirrored rows", async () => {
     const triggers = await rawQuery<{ table_name: string; name: string; when_clause: string }>(
       `SELECT t.tgrelid::regclass::text AS table_name, t.tgname AS name, pg_get_triggerdef(t.oid) AS when_clause
-         FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname LIKE 'mirror_row_guard_%' ORDER BY 1, 2`
+         FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname LIKE 'mirror_row_guard_%'`
     );
-    expect(triggers.map((t) => `${t.table_name}.${t.name}`)).toEqual(
-      TABLES.flatMap((table) => ["delete", "insert", "update"].map((op) => `${table}.mirror_row_guard_${op}`))
+    expect(triggers.map((t) => `${t.table_name}.${t.name}`).sort()).toEqual(
+      TABLES.flatMap((table) => ["delete", "insert", "update"].map((op) => `${table}.mirror_row_guard_${op}`)).sort()
     );
     for (const trigger of triggers) {
       // Never called for a local row: the condition is on the row's origin.
@@ -157,13 +163,13 @@ describe("the origin column, in the catalog", () => {
            ON u.view_schema = c.table_schema AND u.view_name = c.table_name AND u.column_name = 'origin'
           AND u.table_name = ANY($1::text[])
         WHERE c.column_name = 'origin' AND t.table_type = 'VIEW'
-        GROUP BY 1 ORDER BY 1`,
+        GROUP BY 1`,
       [TABLES]
     );
     // The four views of the judgment in force carry every column of their
     // table and are the app's own; query_sql reads the public_read views,
     // which name their columns.
-    expect(views.map((v) => v.view)).toEqual([
+    expect(views.map((v) => v.view).sort()).toEqual([
       "public.argument_evaluations_in_force",
       "public.assessments_in_force",
       "public.quantity_estimates_in_force",
