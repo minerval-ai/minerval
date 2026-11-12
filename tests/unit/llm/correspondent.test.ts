@@ -167,6 +167,16 @@ describe("runCorrespondent", () => {
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
   });
 
+  it("reads its correspondent by named columns, so a column the table gains (its label) is not handed to the run", async () => {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    vi.mocked(rawQuery).mockClear();
+    await runCorrespondent({ correspondentId: CORR });
+    const read = vi.mocked(rawQuery).mock.calls.map((c) => String(c[0])).find((q) => q.includes("FROM correspondents c JOIN grants g"))!;
+    expect(read).toContain("SELECT c.id, c.grant_id, c.title, c.brief, c.audience,");
+    expect(read).not.toMatch(/\bc\.\*/);
+    expect(read).not.toContain("sensitivity_label");
+  });
+
   it("reads with the graph reads, the change stream and SQL outside clients have, plus publishing and the spend tools", async () => {
     await runCorrespondent({ correspondentId: CORR });
     expect(state.loop!.tools.map((t) => t.name).sort()).toEqual(

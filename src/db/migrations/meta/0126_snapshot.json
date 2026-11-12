@@ -1,79 +1,9 @@
 {
-  "id": "68b94f7e-1410-4cb5-8b65-6f8e30978efe",
+  "id": "cb019482-145d-4e82-ab0c-6d87b6ca1618",
   "prevId": "65106fbf-023c-452b-a217-bf39ae0521f0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account_groups": {
-      "name": "account_groups",
-      "schema": "",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "group_name": {
-          "name": "group_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "asserted_at": {
-          "name": "asserted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_account_groups_group": {
-          "name": "idx_account_groups_group",
-          "columns": [
-            {
-              "expression": "group_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "account_groups_account_id_contributors_id_fk": {
-          "name": "account_groups_account_id_contributors_id_fk",
-          "tableFrom": "account_groups",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "account_groups_account_id_group_name_pk": {
-          "name": "account_groups_account_id_group_name_pk",
-          "columns": [
-            "account_id",
-            "group_name"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.action_allocations": {
       "name": "action_allocations",
       "schema": "",
@@ -560,81 +490,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.administrative_events": {
-      "name": "administrative_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "detail": {
-          "name": "detail",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_administrative_events_time": {
-          "name": "idx_administrative_events_time",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "administrative_events_actor_id_contributors_id_fk": {
-          "name": "administrative_events_actor_id_contributors_id_fk",
-          "tableFrom": "administrative_events",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.agent_finding_sightings": {
       "name": "agent_finding_sightings",
       "schema": "",
@@ -702,6 +557,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -739,6 +601,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_finding_sightings_sensitivity_label_labels_name_fk": {
+          "name": "agent_finding_sightings_sensitivity_label_labels_name_fk",
+          "tableFrom": "agent_finding_sightings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -859,6 +734,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -938,6 +820,19 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "agent_findings_sensitivity_label_labels_name_fk": {
+          "name": "agent_findings_sensitivity_label_labels_name_fk",
+          "tableFrom": "agent_findings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1030,6 +925,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1067,6 +969,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_report_sightings_sensitivity_label_labels_name_fk": {
+          "name": "agent_report_sightings_sensitivity_label_labels_name_fk",
+          "tableFrom": "agent_report_sightings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1249,6 +1164,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1370,6 +1292,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_reports_sensitivity_label_labels_name_fk": {
+          "name": "agent_reports_sensitivity_label_labels_name_fk",
+          "tableFrom": "agent_reports",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1838,6 +1773,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1897,6 +1839,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_steps_sensitivity_label_labels_name_fk": {
+          "name": "agent_steps_sensitivity_label_labels_name_fk",
+          "tableFrom": "agent_steps",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1959,6 +1914,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2028,6 +1990,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "answer_relations_sensitivity_label_labels_name_fk": {
+          "name": "answer_relations_sensitivity_label_labels_name_fk",
+          "tableFrom": "answer_relations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -2402,6 +2377,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'dispute_arbitrator'"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -2428,6 +2410,19 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "arbitration_results_sensitivity_label_labels_name_fk": {
+          "name": "arbitration_results_sensitivity_label_labels_name_fk",
+          "tableFrom": "arbitration_results",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -2644,6 +2639,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2681,6 +2683,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "argument_evidence_backlog_sensitivity_label_labels_name_fk": {
+          "name": "argument_evidence_backlog_sensitivity_label_labels_name_fk",
+          "tableFrom": "argument_evidence_backlog",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -2809,6 +2824,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2910,6 +2932,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "argument_instances_sensitivity_label_labels_name_fk": {
+          "name": "argument_instances_sensitivity_label_labels_name_fk",
+          "tableFrom": "argument_instances",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2945,6 +2980,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2989,6 +3031,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "argument_subclaims_sensitivity_label_labels_name_fk": {
+          "name": "argument_subclaims_sensitivity_label_labels_name_fk",
+          "tableFrom": "argument_subclaims",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -3089,6 +3144,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -3146,6 +3208,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "arguments_sensitivity_label_labels_name_fk": {
+          "name": "arguments_sensitivity_label_labels_name_fk",
+          "tableFrom": "arguments",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -3763,6 +3838,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -3800,6 +3882,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assistant_conversations_sensitivity_label_labels_name_fk": {
+          "name": "assistant_conversations_sensitivity_label_labels_name_fk",
+          "tableFrom": "assistant_conversations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4017,6 +4112,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4054,6 +4156,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assistant_pages_sensitivity_label_labels_name_fk": {
+          "name": "assistant_pages_sensitivity_label_labels_name_fk",
+          "tableFrom": "assistant_pages",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4162,6 +4277,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4219,6 +4341,19 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attachments_sensitivity_label_labels_name_fk": {
+          "name": "attachments_sensitivity_label_labels_name_fk",
+          "tableFrom": "attachments",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -4341,6 +4476,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4461,6 +4603,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "audit_findings_sensitivity_label_labels_name_fk": {
+          "name": "audit_findings_sensitivity_label_labels_name_fk",
+          "tableFrom": "audit_findings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4512,6 +4667,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4549,6 +4711,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "audit_log_sensitivity_label_labels_name_fk": {
+          "name": "audit_log_sensitivity_label_labels_name_fk",
+          "tableFrom": "audit_log",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4594,6 +4769,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4625,6 +4807,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "audit_notes_sensitivity_label_labels_name_fk": {
+          "name": "audit_notes_sensitivity_label_labels_name_fk",
+          "tableFrom": "audit_notes",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4708,6 +4903,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4796,6 +4998,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "audit_runs_sensitivity_label_labels_name_fk": {
+          "name": "audit_runs_sensitivity_label_labels_name_fk",
+          "tableFrom": "audit_runs",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4935,6 +5150,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5036,6 +5258,19 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bounties_sensitivity_label_labels_name_fk": {
+          "name": "bounties_sensitivity_label_labels_name_fk",
+          "tableFrom": "bounties",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -5421,6 +5656,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5479,6 +5721,19 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "claim_formalizations_sensitivity_label_labels_name_fk": {
+          "name": "claim_formalizations_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_formalizations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -5554,6 +5809,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5585,6 +5847,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_instance_reading_log_sensitivity_label_labels_name_fk": {
+          "name": "claim_instance_reading_log_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_instance_reading_log",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -5683,6 +5958,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5714,6 +5996,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_instance_readings_sensitivity_label_labels_name_fk": {
+          "name": "claim_instance_readings_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_instance_readings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -5875,6 +6170,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5989,6 +6291,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "claim_instances_sensitivity_label_labels_name_fk": {
+          "name": "claim_instances_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_instances",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6050,6 +6365,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6121,6 +6443,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_links_sensitivity_label_labels_name_fk": {
+          "name": "claim_links_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_links",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -6227,6 +6562,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6273,6 +6615,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_predictions_sensitivity_label_labels_name_fk": {
+          "name": "claim_predictions_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_predictions",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -6363,6 +6718,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6448,6 +6810,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "claim_provenance_edges_sensitivity_label_labels_name_fk": {
+          "name": "claim_provenance_edges_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_provenance_edges",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6511,6 +6886,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6561,6 +6943,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_provenance_roots_sensitivity_label_labels_name_fk": {
+          "name": "claim_provenance_roots_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_provenance_roots",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -6637,6 +7032,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6723,6 +7125,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_relationships_sensitivity_label_labels_name_fk": {
+          "name": "claim_relationships_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_relationships",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -6811,6 +7226,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6842,6 +7264,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_source_maps_sensitivity_label_labels_name_fk": {
+          "name": "claim_source_maps_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_source_maps",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -7071,6 +7506,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -7205,6 +7647,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "claims_sensitivity_label_labels_name_fk": {
+          "name": "claims_sensitivity_label_labels_name_fk",
+          "tableFrom": "claims",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7309,6 +7764,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -7402,6 +7864,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "consistency_flags_sensitivity_label_labels_name_fk": {
+          "name": "consistency_flags_sensitivity_label_labels_name_fk",
+          "tableFrom": "consistency_flags",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -7497,6 +7972,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -7549,6 +8031,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "consistency_sweeps_sensitivity_label_labels_name_fk": {
+          "name": "consistency_sweeps_sensitivity_label_labels_name_fk",
+          "tableFrom": "consistency_sweeps",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -7642,6 +8137,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -7657,6 +8159,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "contribution_reviews_sensitivity_label_labels_name_fk": {
+          "name": "contribution_reviews_sensitivity_label_labels_name_fk",
+          "tableFrom": "contribution_reviews",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8239,6 +8754,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8277,6 +8799,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "correspondent_events_sensitivity_label_labels_name_fk": {
+          "name": "correspondent_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "correspondent_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8335,6 +8870,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8378,6 +8920,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "correspondent_plan_items_sensitivity_label_labels_name_fk": {
+          "name": "correspondent_plan_items_sensitivity_label_labels_name_fk",
+          "tableFrom": "correspondent_plan_items",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8459,6 +9014,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8509,6 +9071,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "correspondent_updates_sensitivity_label_labels_name_fk": {
+          "name": "correspondent_updates_sensitivity_label_labels_name_fk",
+          "tableFrom": "correspondent_updates",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8665,6 +9240,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8718,6 +9300,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "correspondents_sensitivity_label_labels_name_fk": {
+          "name": "correspondents_sensitivity_label_labels_name_fk",
+          "tableFrom": "correspondents",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8811,6 +9406,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8927,6 +9529,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "curation_requests_sensitivity_label_labels_name_fk": {
+          "name": "curation_requests_sensitivity_label_labels_name_fk",
+          "tableFrom": "curation_requests",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9011,6 +9626,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9066,7 +9688,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "enqueue_events_sensitivity_label_labels_name_fk": {
+          "name": "enqueue_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "enqueue_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -9188,6 +9824,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9244,6 +9887,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "examination_coverage_sensitivity_label_labels_name_fk": {
+          "name": "examination_coverage_sensitivity_label_labels_name_fk",
+          "tableFrom": "examination_coverage",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9307,6 +9963,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9351,6 +10014,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "examination_findings_sensitivity_label_labels_name_fk": {
+          "name": "examination_findings_sensitivity_label_labels_name_fk",
+          "tableFrom": "examination_findings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9431,6 +10107,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9518,6 +10201,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "examinations_sensitivity_label_labels_name_fk": {
+          "name": "examinations_sensitivity_label_labels_name_fk",
+          "tableFrom": "examinations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9616,6 +10312,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9667,6 +10370,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "grant_conversations_sensitivity_label_labels_name_fk": {
+          "name": "grant_conversations_sensitivity_label_labels_name_fk",
+          "tableFrom": "grant_conversations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9716,6 +10432,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9766,6 +10489,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "grant_sources_sensitivity_label_labels_name_fk": {
+          "name": "grant_sources_sensitivity_label_labels_name_fk",
+          "tableFrom": "grant_sources",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9912,6 +10648,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9991,6 +10734,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "grants_sensitivity_label_labels_name_fk": {
+          "name": "grants_sensitivity_label_labels_name_fk",
+          "tableFrom": "grants",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10027,10 +10783,31 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "ingest_focuses_sensitivity_label_labels_name_fk": {
+          "name": "ingest_focuses_sensitivity_label_labels_name_fk",
+          "tableFrom": "ingest_focuses",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -10241,6 +11018,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10266,7 +11050,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "judgment_inputs_sensitivity_label_labels_name_fk": {
+          "name": "judgment_inputs_sensitivity_label_labels_name_fk",
+          "tableFrom": "judgment_inputs",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -10517,6 +11315,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10561,6 +11366,19 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lean_checks_sensitivity_label_labels_name_fk": {
+          "name": "lean_checks_sensitivity_label_labels_name_fk",
+          "tableFrom": "lean_checks",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -10703,6 +11521,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10835,6 +11660,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "llm_usage_sensitivity_label_labels_name_fk": {
+          "name": "llm_usage_sensitivity_label_labels_name_fk",
+          "tableFrom": "llm_usage",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10885,6 +11723,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10923,6 +11768,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lookout_events_sensitivity_label_labels_name_fk": {
+          "name": "lookout_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "lookout_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11046,6 +11904,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11133,6 +11998,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lookout_feed_items_sensitivity_label_labels_name_fk": {
+          "name": "lookout_feed_items_sensitivity_label_labels_name_fk",
+          "tableFrom": "lookout_feed_items",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11294,6 +12172,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11347,6 +12232,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lookout_feeds_sensitivity_label_labels_name_fk": {
+          "name": "lookout_feeds_sensitivity_label_labels_name_fk",
+          "tableFrom": "lookout_feeds",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11462,6 +12360,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11540,6 +12445,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "lookout_flags_sensitivity_label_labels_name_fk": {
+          "name": "lookout_flags_sensitivity_label_labels_name_fk",
+          "tableFrom": "lookout_flags",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11695,6 +12613,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11748,6 +12673,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lookouts_sensitivity_label_labels_name_fk": {
+          "name": "lookouts_sensitivity_label_labels_name_fk",
+          "tableFrom": "lookouts",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11837,6 +12775,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11901,6 +12846,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "mandate_decisions_sensitivity_label_labels_name_fk": {
+          "name": "mandate_decisions_sensitivity_label_labels_name_fk",
+          "tableFrom": "mandate_decisions",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -11963,6 +12921,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12028,6 +12993,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mandate_events_sensitivity_label_labels_name_fk": {
+          "name": "mandate_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "mandate_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -12121,6 +13099,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12172,6 +13157,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "mandate_inbox_sensitivity_label_labels_name_fk": {
+          "name": "mandate_inbox_sensitivity_label_labels_name_fk",
+          "tableFrom": "mandate_inbox",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -12241,6 +13239,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12278,6 +13283,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mandate_policy_versions_sensitivity_label_labels_name_fk": {
+          "name": "mandate_policy_versions_sensitivity_label_labels_name_fk",
+          "tableFrom": "mandate_policy_versions",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -12478,6 +13496,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12557,6 +13582,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "node_messages_sensitivity_label_labels_name_fk": {
+          "name": "node_messages_sensitivity_label_labels_name_fk",
+          "tableFrom": "node_messages",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -13105,359 +14143,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.parties": {
-      "name": "parties",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "is_own_organization": {
-          "name": "is_own_organization",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_parties_name": {
-          "name": "uq_parties_name",
-          "columns": [
-            {
-              "expression": "lower(\"name\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_parties_own_organization": {
-          "name": "uq_parties_own_organization",
-          "columns": [
-            {
-              "expression": "is_own_organization",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "is_own_organization",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "parties_created_by_contributors_id_fk": {
-          "name": "parties_created_by_contributors_id_fk",
-          "tableFrom": "parties",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.permission_grants": {
-      "name": "permission_grants",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "permission": {
-          "name": "permission",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "group_name": {
-          "name": "group_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "granted_via": {
-          "name": "granted_via",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'administrator'"
-        },
-        "granted_at": {
-          "name": "granted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "removed_by": {
-          "name": "removed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "removed_at": {
-          "name": "removed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "uq_permission_grants_live_account": {
-          "name": "uq_permission_grants_live_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "permission",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"label\", '')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"party_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "removed_at IS NULL AND account_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_permission_grants_live_group": {
-          "name": "uq_permission_grants_live_group",
-          "columns": [
-            {
-              "expression": "group_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "permission",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"label\", '')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"party_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "removed_at IS NULL AND group_name IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_permission_grants_log": {
-          "name": "idx_permission_grants_log",
-          "columns": [
-            {
-              "expression": "granted_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "permission_grants_account_id_contributors_id_fk": {
-          "name": "permission_grants_account_id_contributors_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_label_labels_name_fk": {
-          "name": "permission_grants_label_labels_name_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_party_id_parties_id_fk": {
-          "name": "permission_grants_party_id_parties_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "parties",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_granted_by_contributors_id_fk": {
-          "name": "permission_grants_granted_by_contributors_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "granted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_removed_by_contributors_id_fk": {
-          "name": "permission_grants_removed_by_contributors_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "removed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_permission_grants_permission": {
-          "name": "ck_permission_grants_permission",
-          "value": "\"permission_grants\".\"permission\" IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer')"
-        },
-        "ck_permission_grants_subject": {
-          "name": "ck_permission_grants_subject",
-          "value": "(\"permission_grants\".\"account_id\" IS NULL) <> (\"permission_grants\".\"group_name\" IS NULL)"
-        },
-        "ck_permission_grants_label_scope": {
-          "name": "ck_permission_grants_label_scope",
-          "value": "(\"permission_grants\".\"label\" IS NOT NULL) = (\"permission_grants\".\"permission\" IN ('read', 'read_sources'))"
-        },
-        "ck_permission_grants_party_scope": {
-          "name": "ck_permission_grants_party_scope",
-          "value": "(\"permission_grants\".\"party_id\" IS NOT NULL) = (\"permission_grants\".\"permission\" = 'release')"
-        },
-        "ck_permission_grants_granted_via": {
-          "name": "ck_permission_grants_granted_via",
-          "value": "\"permission_grants\".\"granted_via\" IN ('administrator', 'first_administrator', 'operator')"
-        },
-        "ck_permission_grants_granted_by": {
-          "name": "ck_permission_grants_granted_by",
-          "value": "(\"permission_grants\".\"granted_by\" IS NOT NULL) = (\"permission_grants\".\"granted_via\" = 'administrator')"
-        },
-        "ck_permission_grants_removal": {
-          "name": "ck_permission_grants_removal",
-          "value": "(\"permission_grants\".\"removed_by\" IS NULL) OR (\"permission_grants\".\"removed_at\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.petitions": {
       "name": "petitions",
       "schema": "",
@@ -13586,6 +14271,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -13650,6 +14342,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "petitions_sensitivity_label_labels_name_fk": {
+          "name": "petitions_sensitivity_label_labels_name_fk",
+          "tableFrom": "petitions",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -13878,6 +14583,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14036,6 +14748,19 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "prize_claims_sensitivity_label_labels_name_fk": {
+          "name": "prize_claims_sensitivity_label_labels_name_fk",
+          "tableFrom": "prize_claims",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -14412,6 +15137,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14500,6 +15232,19 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "proof_attempts_sensitivity_label_labels_name_fk": {
+          "name": "proof_attempts_sensitivity_label_labels_name_fk",
+          "tableFrom": "proof_attempts",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -14557,6 +15302,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14601,6 +15353,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "quantity_cuts_sensitivity_label_labels_name_fk": {
+          "name": "quantity_cuts_sensitivity_label_labels_name_fk",
+          "tableFrom": "quantity_cuts",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -14672,6 +15437,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -14687,6 +15459,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "quantity_definitions_sensitivity_label_labels_name_fk": {
+          "name": "quantity_definitions_sensitivity_label_labels_name_fk",
+          "tableFrom": "quantity_definitions",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -14916,6 +15701,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14973,6 +15765,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "quantity_readings_sensitivity_label_labels_name_fk": {
+          "name": "quantity_readings_sensitivity_label_labels_name_fk",
+          "tableFrom": "quantity_readings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -15279,6 +16084,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15345,6 +16157,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "reading_citations_sensitivity_label_labels_name_fk": {
+          "name": "reading_citations_sensitivity_label_labels_name_fk",
+          "tableFrom": "reading_citations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -15404,10 +16229,31 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "reconciliation_events_sensitivity_label_labels_name_fk": {
+          "name": "reconciliation_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "reconciliation_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -15592,6 +16438,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15671,6 +16524,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "reputation_events_sensitivity_label_labels_name_fk": {
+          "name": "reputation_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "reputation_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -15707,6 +16573,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15801,6 +16674,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "request_targets_sensitivity_label_labels_name_fk": {
+          "name": "request_targets_sensitivity_label_labels_name_fk",
+          "tableFrom": "request_targets",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -15885,6 +16771,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15942,6 +16835,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "request_work_sensitivity_label_labels_name_fk": {
+          "name": "request_work_sensitivity_label_labels_name_fk",
+          "tableFrom": "request_work",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -16099,6 +17005,13 @@
             "as": "setweight(to_tsvector('english', \"requests\".\"ask\"), 'A')\n        || setweight(to_tsvector('english', \"requests\".\"why\"), 'B')\n        || setweight(to_tsvector('english', \"requests\".\"satisfied_by\"), 'C')\n        || setweight(to_tsvector('english', coalesce(\"requests\".\"bears_on_text\", '')), 'C')",
             "type": "stored"
           }
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16192,6 +17105,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "requests_sensitivity_label_labels_name_fk": {
+          "name": "requests_sensitivity_label_labels_name_fk",
+          "tableFrom": "requests",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -16402,6 +17328,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16533,6 +17466,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "research_runs_sensitivity_label_labels_name_fk": {
+          "name": "research_runs_sensitivity_label_labels_name_fk",
+          "tableFrom": "research_runs",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -16613,6 +17559,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16644,7 +17597,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "setup_parts_sensitivity_label_labels_name_fk": {
+          "name": "setup_parts_sensitivity_label_labels_name_fk",
+          "tableFrom": "setup_parts",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {
         "setup_parts_kind_name_hash_pk": {
           "name": "setup_parts_kind_name_hash_pk",
@@ -16705,10 +17672,31 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "shared_page_analyses_sensitivity_label_labels_name_fk": {
+          "name": "shared_page_analyses_sensitivity_label_labels_name_fk",
+          "tableFrom": "shared_page_analyses",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -16769,6 +17757,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16812,6 +17807,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "source_events_sensitivity_label_labels_name_fk": {
+          "name": "source_events_sensitivity_label_labels_name_fk",
+          "tableFrom": "source_events",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -16913,6 +17921,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16963,6 +17978,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "source_extractions_sensitivity_label_labels_name_fk": {
+          "name": "source_extractions_sensitivity_label_labels_name_fk",
+          "tableFrom": "source_extractions",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -17025,6 +18053,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17098,6 +18133,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "source_interests_sensitivity_label_labels_name_fk": {
+          "name": "source_interests_sensitivity_label_labels_name_fk",
+          "tableFrom": "source_interests",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -17161,6 +18209,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17248,6 +18303,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "source_relationships_sensitivity_label_labels_name_fk": {
+          "name": "source_relationships_sensitivity_label_labels_name_fk",
+          "tableFrom": "source_relationships",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -17326,6 +18394,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17391,6 +18466,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "source_segments_sensitivity_label_labels_name_fk": {
+          "name": "source_segments_sensitivity_label_labels_name_fk",
+          "tableFrom": "source_segments",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -17506,12 +18594,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'public'"
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -17571,19 +18653,6 @@
           ],
           "columnsTo": [
             "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "sources_party_id_parties_id_fk": {
-          "name": "sources_party_id_parties_id_fk",
-          "tableFrom": "sources",
-          "tableTo": "parties",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -17667,6 +18736,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17753,6 +18829,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "taggings_sensitivity_label_labels_name_fk": {
+          "name": "taggings_sensitivity_label_labels_name_fk",
+          "tableFrom": "taggings",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -17835,6 +18924,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17881,6 +18977,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "tags_sensitivity_label_labels_name_fk": {
+          "name": "tags_sensitivity_label_labels_name_fk",
+          "tableFrom": "tags",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
