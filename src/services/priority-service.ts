@@ -10,15 +10,21 @@
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { ASSESS_GROUP_SQL } from "./action-service.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /** The ordering for one claims row `c` (SQL fragment). */
 const ORDER_SQL = `COALESCE(c.importance, 0)`;
 
 /** Restamp one claim's place in the list. Returns it. */
 export async function refreshQueuePriority(claimId: string): Promise<number> {
+  // The priority is a column of the node's own row, which is changed only
+  // by work at the node's own label (db/clearance.ts): work at another
+  // label that touches the node leaves its place in its own list alone.
+  const own = oneLabelOnly();
   const rows = await rawQuery<{ queue_priority: number }>(
-    `UPDATE claims c SET queue_priority = ${ORDER_SQL} WHERE c.id = $1 RETURNING c.queue_priority`,
-    [claimId]
+    `UPDATE claims c SET queue_priority = ${ORDER_SQL} WHERE c.id = $1${own ? "" : " AND c.sensitivity_label = $2"} RETURNING c.queue_priority`,
+    own ? [claimId] : [claimId, currentLabel()]
   );
   return rows[0]?.queue_priority ?? 0;
 }

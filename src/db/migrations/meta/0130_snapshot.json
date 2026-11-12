@@ -1,5 +1,5 @@
 {
-  "id": "94a5ca7b-1288-4b5f-8473-982dace4ae71",
+  "id": "c4ec3867-5c3b-4690-a3ed-d67287de3b9d",
   "prevId": "67900e7a-e51f-4814-8403-7e1ca3b1395f",
   "version": "7",
   "dialect": "postgresql",
@@ -2720,12 +2720,6 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "sensitivity_label",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -3794,12 +3788,6 @@
           "columns": [
             {
               "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -16244,12 +16232,6 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "sensitivity_label",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -16578,12 +16560,6 @@
           "columns": [
             {
               "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

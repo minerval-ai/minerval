@@ -818,15 +818,26 @@ export const assessments = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    // One current verdict per claim and label: a node may carry a version
-    // at each label, written by work at that label and replaced only by it
-    // (src/labels.ts, "A judgment at each label"). Which of them a reader
-    // goes by is the *_in_force views' to say, at the end of this file. The
-    // same holds for the current-row indexes on argument_evaluations,
-    // quantity_estimates and question_assessments. On the public graph,
-    // whose only label is `public`, it is one per claim as it always was.
+    // One current verdict per claim, where the deployment has one label,
+    // which is how the public graph runs: this is the index it has always
+    // had, and it is what tells the planner that a claim has at most one
+    // current row, which the plans of every read of the judgment in force
+    // rest on.
+    //
+    // Where a deployment has more than one label a node may carry a version
+    // at each, written by work at that label and replaced only by it
+    // (src/labels.ts, "A judgment at each label"), and this index cannot
+    // hold. The step that turns enforcement on (minerval_enforcement_sync)
+    // drops it there and creates idx_assessments_current_at_label in its
+    // place, unique on the claim and the label, and puts this one back when
+    // the last other label goes. So the database, not this file, says which
+    // of the two exists, and a later migration must not name either (a test
+    // holds that). The same holds for the current-row indexes on
+    // argument_evaluations, quantity_estimates and question_assessments.
+    // Which version a reader goes by is the *_in_force views' to say, at
+    // the end of this file.
     uniqueIndex("idx_assessments_current")
-      .on(table.claimId, table.sensitivityLabel)
+      .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
     // The change stream reads assessments in the order they were written
     // (services/graph-change-service.ts, #562 / #563).
@@ -1087,8 +1098,11 @@ export const argumentEvaluations = pgTable(
   },
   (table) => [
     index("idx_argument_evaluations_argument").on(table.argumentId),
+    // One for each node where the deployment has one label, and one for
+    // each node and label (idx_argument_evaluations_current_at_label) where it has more:
+    // see idx_assessments_current.
     uniqueIndex("idx_argument_evaluations_current")
-      .on(table.argumentId, table.sensitivityLabel)
+      .on(table.argumentId)
       .where(sql`${table.isCurrent} = true`),
   ]
 );
@@ -5655,8 +5669,11 @@ export const quantityEstimates = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
+    // One for each node where the deployment has one label, and one for
+    // each node and label (idx_quantity_estimates_current_at_label) where it has more:
+    // see idx_assessments_current.
     uniqueIndex("idx_quantity_estimates_current")
-      .on(table.claimId, table.sensitivityLabel)
+      .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
     index("idx_quantity_estimates_claim").on(table.claimId),
   ]
@@ -5767,8 +5784,11 @@ export const questionAssessments = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
+    // One for each node where the deployment has one label, and one for
+    // each node and label (idx_question_assessments_current_at_label) where it has more:
+    // see idx_assessments_current.
     uniqueIndex("idx_question_assessments_current")
-      .on(table.claimId, table.sensitivityLabel)
+      .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
     index("idx_question_assessments_claim").on(table.claimId),
     check(

@@ -50,13 +50,35 @@
  * restricted subclaim to a public parent. A reading of a source is the
  * reader's in the same way: a passage a restricted run records from a
  * public document is restricted, and so are its reading of it, the
- * examination it opens and the stake it records. A write that lands on a
- * row already there (an upsert) leaves that row's label as it was, and so
- * does the text or the facts a fetch writes into a source's own row. Where
- * the row already there is at another label than the writer's, an upsert
- * that carries the writer's words (a reasoning, a note, a summary) writes
- * nothing and says so: those words would be read by the row's readers
- * (sameLabelOnly in db/clearance.ts).
+ * examination it opens and the stake it records. A row's label never
+ * changes, and a row is changed or deleted only by work at its own label:
+ * a write that would land on a row at another label (an upsert, a plain
+ * update) writes nothing and says so, because what it wrote would be read
+ * by that row's readers as their own label's work (sameLabelOnly in
+ * db/clearance.ts, and the database's own_label_guard behind every write).
+ * What a label has to say about a row at another label is a row of its
+ * own. The text and the facts a fetch writes into a source's own row are
+ * the same whoever fetches, and are written at the source's label.
+ *
+ * A judgment at each label. A node may carry one current judgment at each
+ * label: a version, in the table its kind keeps, and so may an argument's
+ * evaluation. A run writes its own label's version and no other, made
+ * without sight of anything its label does not read, and a version is
+ * replaced only by work at its own label, so each stays current for the
+ * readers and runs that go by it. A version on a node that carries another
+ * label rests on material at the version's own label (a source at that
+ * label on the node, a node at that label under it, or a node under it
+ * with a version there) or is not stored: there is then nothing at that
+ * label to judge, and the version the label reads stands for its readers.
+ * A reader, like a run, goes by the versions in force for it: among the
+ * current versions it may read, every one that no other was made at a
+ * label reading its own. Two labels that do not read each other may each
+ * have one in force for a reader who holds both, and nothing is merged.
+ * Each version records the versions it was made beside, and when one of
+ * those is replaced it is shown as made against an earlier one and its
+ * reassessment is opened on the ledger at its own label. The rule is the
+ * database's (db/schema.ts, the *_in_force and *_versions views), and
+ * services/judgment-version-service.ts is the application's side of it.
  *
  * A step of a run's transcript is the run's in the strictest sense: it
  * carries the label the run was opened at, which the run's handle keeps
@@ -117,14 +139,16 @@
  * (services/source-notice-service.ts), whether the retraction poll found
  * the notice or a run's fetch of the document did: the letter is the same
  * whoever found it and is sent once, so it goes at the node's label and
- * not the finder's. All of this is a floor, not the whole rule: the
- * claim's pending slot is one per claim and does not say what label a pass
- * was asked for at. The messages waiting on the claim do, each carrying
- * the label of whoever sent it, so a pending claim whose unread messages
- * agree on a label is taken up at that label, whatever the claim's own is
- * (pendingPassLabel). When they carry more than one, the pass runs at the
- * claim's label and reads them all. Keeping those apart takes a slot, or a
- * judgment, per label, which is later work.
+ * not the finder's. That is the node's own work. Work on a node at another
+ * label that reads it (an internal assessment of a public claim) is keyed
+ * by that label throughout, so that it neither waits on the node's own
+ * work nor shows itself to readers of the node's label: its ledger rows
+ * have that label's own key (groupAtLabel in services/ingest-focus-service.ts,
+ * for a node's assess, curate and formalize groups, a document's ingest
+ * and a partition's sweep), its Steward's slot is a row of its own
+ * (steward_slots, services/steward-lease.ts), an order is one for each
+ * person, node and label, and a message waits for a pass at the label it
+ * was sent at and is read by no other.
  *
  * Other work belongs to a row that carries a label of its own, and runs at
  * that row's label whichever sweep, timer or run happens to start it. A
@@ -156,10 +180,12 @@
  * services/label-service.ts), and it is the same floor: what a worker
  * writes about a restricted source is never public. A restricted run that
  * reads a public source is not covered by it. Its judgments carry its
- * label and the document's segments and notices carry the document's, but
- * the text it fetches lands in the public row, an instance has one current
+ * label and the document's segments and notices carry the document's. The
+ * text it fetches is stored at the document's label, since it is the same
+ * whoever fetches it; text a caller hands over with a submission goes
+ * into a row only at the caller's own label. An instance has one current
  * reading whoever wrote it, and a source is still found by its URL
- * whatever its label. Telling those apart is later work too.
+ * whatever its label. Telling those apart is later work.
  *
  * A carrier whose label is missing is not treated as public: the run is
  * refused (MissingLabelError), because writing private work as public is
@@ -184,9 +210,12 @@
  * behind), or the label the person names when they start something new. A
  * request made with an API key or an access token, and each call the
  * Assistant makes for its user, works at the one label that credential was
- * made for, and acts only on rows that carry it. No agent chooses a label
- * here either, and a request that should have a label and has none is
- * refused.
+ * made for: it changes only rows that carry it, and may start work at its
+ * own label on a node that label reads. A signed-in person who starts work
+ * on a node that is already there (an order, funding, a decomposition) may
+ * name a label they hold that reads the node's, and the work is then at
+ * that label. No agent chooses a label here either, and a request that
+ * should have a label and has none is refused.
  *
  * The public graph has one label, the one named here, and no pairs, and
  * there nothing is held: every query runs as it always did. Where a
@@ -197,9 +226,8 @@
  * only what that label reads as well), and work with nothing in context
  * reads `public` alone. An insert that names no label is given
  * the label of the connection it arrives on, so a forgotten stamp inside
- * a run lands at the run's label. Each label keeping its own judgment of
- * a node, and its own copy of a source, is later work; until then a
- * judgment is replaced only by work at its own label.
+ * a run lands at the run's label. Each label keeping its own copy of a
+ * source, its own edges and its own tags is later work.
  */
 
 /** The label of everything on the public graph, and of any write made outside a run. */

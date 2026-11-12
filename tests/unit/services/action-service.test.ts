@@ -81,6 +81,8 @@ vi.mock("../../../src/config.js", () => ({
 }));
 
 import {
+  ASSESS_GROUP,
+  CURATE_GROUP,
   LABEL_ON_REOPEN_SQL,
   claimAction,
   ensureCurateAction,
@@ -182,20 +184,23 @@ describe("the label on a ledger row", () => {
     expect(calls()[1]![1]).toEqual(["a1"]);
   });
 
-  it("is the opening work's on a new row, and a reopened row's only once the row had finished", async () => {
+  it("is the opening work's on a new row, in that label's own group, and never changes after", async () => {
     vi.mocked(rawQuery).mockResolvedValueOnce([{ text: "A claim" }]);
     await runWithUsageContext({ label: "internal" }, () => ensureCurateAction("c1"));
     const insert = calls().find(([q]) => q.includes("INSERT INTO actions"))!;
     expect(insert[0]).toContain("sensitivity_label)");
     expect(insert[0]).toContain(LABEL_ON_REOPEN_SQL);
     expect(insert[1]!.at(-1)).toBe("internal");
-    // A finished row, by name, takes the reopener's label; any other keeps
-    // the label of the work already waiting on it. The display text and the
-    // target go the same way, in the same statement.
-    expect(LABEL_ON_REOPEN_SQL).toContain(
-      "WHEN actions.status IN ('done', 'superseded', 'cancelled') THEN EXCLUDED.sensitivity_label"
-    );
-    expect(LABEL_ON_REOPEN_SQL).toContain("ELSE actions.sensitivity_label END");
+    // Work at a label other than public on a node has that label's own key,
+    // so it never lands on another label's row; work at public keeps the key it had.
+    expect(insert[1]![0]).toBe("curate:c1 @internal");
+    expect(CURATE_GROUP("c1", "public")).toBe("curate:c1");
+    expect(ASSESS_GROUP("c1", "internal")).toBe("assess:c1 @internal");
+    expect(runWithUsageContext({ label: "internal" }, () => ASSESS_GROUP("c1"))).toBe("assess:c1 @internal");
+    expect(ASSESS_GROUP("c1")).toBe("assess:c1");
+    // A reopened row takes the new work's display text and target, and its
+    // label is not in the statement: a row's label never changes.
+    expect(LABEL_ON_REOPEN_SQL).not.toContain("sensitivity_label");
     expect(LABEL_ON_REOPEN_SQL).toContain("THEN EXCLUDED.label ELSE actions.label END");
     expect(LABEL_ON_REOPEN_SQL).toContain("THEN EXCLUDED.target_ref");
   });

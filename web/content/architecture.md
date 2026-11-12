@@ -2254,24 +2254,69 @@ reads its own label and the labels that label reads (`label_reads`, followed
 to the end, with `public` always included). A request reads what its account
 was granted. Work with nothing in context reads `public` alone. Row-level
 security on every labelled table returns a row only to a connection whose
-clearance includes its label, lets a row be changed only at such a label,
-and lets a new row be added only at the connection's own label, so a query
-that forgets to filter is filtered all the same and a wrong stamp is
-refused. Code that writes a row belonging to another label (a document's
-segments, at the document's) runs that write at that label. A row's label
-does not change on such a connection: an update that would change it is
-refused. The one exception is the ledger's own rule, and the database lets
-through exactly it: a ledger row that was finished (done, superseded or
-cancelled) and is opened by the same statement takes the label of the
-connection that reopens it, and only where that label reads the row's old
-one. So a row moves only to where fewer people read it, never down to
-`public` and never sideways, and the statement that reopens it replaces its
-display text and its target, so nothing written at the old label is carried
-under the new one. An upsert that carries its writer's words (a reasoning, a
-note, a summary) applies only to a row at the writer's own label; where the
-row is there at another label the writer is told that nothing was written
-(`sameLabelOnly` in `src/db/clearance.ts`,
-`tests/unit/db/upsert-labels.test.ts`).
+clearance includes its label and lets a new row be added only at the
+connection's own label, so a query that forgets to filter is filtered all
+the same and a wrong stamp is refused. A row is changed or deleted only at
+the connection's own label: a trigger on every labelled table refuses a
+change to a row the connection reads at another label, and says so
+(`minerval_own_label_guard`), so an internal run cannot reword a public
+node and no write lands silently on nothing. Code that writes a row
+belonging to another label because the row is the same whoever asks (a
+document's segments, its fetched text and its facts, at the document's)
+runs that write at that label. A row's label does not change on such a
+connection, with no exception. An upsert that would land on a row at
+another label applies only where the row is at the writer's own; the writer
+is told that nothing was written (`sameLabelOnly` in `src/db/clearance.ts`,
+`tests/unit/db/upsert-labels.test.ts`). Two things are let through the
+trigger, each for its reason: settling money changes the money columns of
+allocations and regrants at any label (below), and a row deleted or emptied
+because the row it hangs from was deleted follows its foreign key.
+
+**A judgment at each label.** A node may carry one current judgment at each
+label, a version: the unique index on each of the four judgment tables is
+on the node and the label. A run writes its own label's version and no
+other, and a version is retired only by work at its own label
+(`minerval_judgment_label_guard`). A version on a node that carries another
+label is stored only where material at the version's own label bears on the
+node (`minerval_material_at`: a source at that label attached to it, a node
+at that label under it, or a node under it with a version at that label);
+otherwise the tool refuses, says what would satisfy it, and the version that
+label reads stands for its readers. A node's own label needs none.
+
+Which versions are in force depends on who reads, and the rule is written
+once, in the database (`minerval_version_standing`): among the current
+versions a connection's clearance reads, a version is in force unless
+another was made at a label that reads its label. Two labels that do not
+read each other can each have a version in force for a reader who holds
+both. Each table has two views over that rule. `<table>_in_force` gives one
+row for a node at most, the version a reader goes by: the one in force, and
+the most recently made where several are. `<table>_versions` gives every
+current version the reader may read with its label and whether it is in
+force. A read of a node serves the list (`versions`, each with its `label`,
+and the node's own `label`), and every read that wants one judgment for a
+node takes the first view. On the public graph the two functions the views
+call are the constant true, which the planner folds away, so each view
+plans as the plain `is_current` filter it was
+(`scripts/judgment-plans.ts` prints the plans); the step that turns
+enforcement on points them at the rule.
+
+Each version records the versions it was made beside (`judgment_inputs`,
+`beside`). When one of those is replaced a read shows the version as made
+against an earlier one, from the record, and the scheduler opens a
+reassessment for it on the ledger at the version's own label
+(`src/services/version-upkeep.ts`), which runs when a mandate funds it.
+
+**Work at each label.** Work on a node at a label other than the node's own
+(an internal assessment of a public claim) is keyed by that label
+throughout, so that it neither waits on the node's own work nor shows
+itself to the node's readers. Its ledger rows have that label's own key
+(`groupAtLabel`: `assess:<node> @<label>`, and the same for a node's curate
+and formalize groups, a document's ingest and a partition's sweep), so a
+ledger row is only ever reopened by work at its own label. Its Steward's
+slot is a row in `steward_slots`, one for each node and label; the node's
+own row stays the slot for work at the node's own label
+(`src/services/steward-lease.ts`). An order is one for each person, node and
+label. A message waits for a pass at the label it was sent at.
 
 **A request's label.** A person's request has a clearance and, until it is
 given one, no label to write at. Each request that writes is given one
@@ -2284,8 +2329,13 @@ no default. It is entered on the request's context beside the clearance
 in whichever service, is stamped with it, and the request reads what the
 label and the clearance both read. An API key, an access token and the
 Assistant in one conversation work at one label fixed when they were made:
-the whole request is held to it, reads included, and it acts only on rows
-that carry it. [accounts.md](accounts.md), "The label a request works at",
+the whole request is held to it, reads included, and it changes only rows
+that carry it. Starting work on a node is not a change to the node: the
+routes that order, fund or decompose a node that is already there let the
+work be at the node's own label or at one that reads it. A signed-in person
+may name such a label among those they hold, and a key, a token or an
+Assistant conversation starts the work at its own label on any node that
+label reads. [accounts.md](accounts.md), "The label a request works at",
 has the rules as a caller meets them. A request the table gives no label
 (a read, or a route that adds no labelled row) still stamps `public` on a
 labelled row if it writes one: the usage row of an embedding call made for
@@ -2410,10 +2460,6 @@ where reads are held.
   at each place the text is returned to a person (`src/raw-sources.ts`;
   [accounts.md](accounts.md), "Opening raw sources"). A passage an agent
   quoted from a source is shown to everyone who reads at the label.
-- A run may change or delete a row at any label it reads. An internal run
-  that rewords a public node has written into a public row. Upserts that
-  carry text are held to the writer's own label, as above; a plain update
-  of a row's text is not.
 - A request is given a label only by the rule of a route that writes
   (`src/server/request-labels.ts`). A read has none, and neither has a
   route the table says adds no labelled row, and a labelled row such a
@@ -2425,18 +2471,31 @@ where reads are held.
   and read and write `public` alone.
 - A table holds one row for each identity whatever the labels. An insert
   that collides with a row the writer cannot read is refused and says so,
-  which tells the writer the row exists. A node holds one judgment in force,
-  and work at another label may not retire it. The ledger holds one row for
-  each group: once work at a private label has opened or reopened the row
-  for a public claim, public work on that claim is refused until the row is
-  the public's again, so private work can hold up public work on a claim
-  and show that it exists. Each label keeping its own is later work.
+  which tells the writer the row exists. That holds for sources (found by
+  their address), edges, tags, formal statements, curation requests and the
+  other keys the collision guard covers. Judgments and the work on a node
+  are no longer among them: each label keeps its own version, ledger row,
+  slot and order. A write that lands on such a row at a label the writer
+  reads is refused too, and says so.
 - The money views show every label's amounts, ledger keys, ids and who
   commissioned, without the text, and let any cleared connection change the
   money columns of any label's row, which is what settlement does. A ledger
-  key can hold an address (`ingest:<url>`). Work at one label can therefore
-  mark another label's money spent or released; it cannot rewrite its text
-  or its key, or delete it.
+  key can hold an address (`ingest:<url>`) and, for work at a label other
+  than `public`, that label's name. Work at one label can therefore mark
+  another label's money spent or released; it cannot rewrite its text or its
+  key, or delete it. These are the only columns a connection may change on
+  a row at another label: an allocation's `amount_micro_usd`,
+  `spent_micro_usd` and `released_at`, a regrant's `amount_micro_usd` and
+  `refunded_micro_usd`, and the delete of a regrant returned in full.
+- A report or a finding met again by work at another label keeps its own
+  count: the sighting is a row at that work's label, and the report's row
+  does not move. A reader of both labels counts the sightings.
+- An instance is anchored to its document's segments by work at the
+  instance's own label. One recorded at another label reads unanchored
+  until work at its label next records or segments.
+- Read-only SQL's `assessments` view marks as current the one version a
+  reader goes by. Another label's current version reads as not current
+  there, and the view has no label column.
 - Read-only SQL refuses a query whose estimate passes the limit, and that
   estimate counts rows at every label: the refusal is one bit about them.
   Counts of waiting work (`queue_depth_snapshots`) are over every label too.

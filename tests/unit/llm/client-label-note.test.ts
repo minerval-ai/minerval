@@ -114,7 +114,10 @@ describe("where a second label exists", () => {
 
   it("tells a run at a label what it reads and writes, once, at the head of its first message", async () => {
     mocks.reads.mockResolvedValue(["internal", "public"]);
-    const note = labelNote("internal", ["internal", "public"]);
+    // A Steward records judgments, so its note says how a judgment at each
+    // label works for the one it writes; any other role's says how to read one.
+    const note = labelNote("internal", ["internal", "public"], { writesJudgments: true });
+    expect(note).toContain("## A judgment at each label");
     const sent = capture(mocks.completeWithTools, toolTurn, finalTurn);
     let transcript: MessageParam[] = [];
     await runAtLabel("internal", "a test", () =>
@@ -143,6 +146,7 @@ describe("where a second label exists", () => {
     const sent = capture(mocks.complete, { content: "hello", model: "m", usage, stopReason: "end_turn" });
     await withAgent("matcher", () => complete({ messages: [{ role: "user", content: "go" }], model: "m" }));
     expect(sent[0]![0]!.content).toBe(`${labelNote("public", ["public"])}${FEATURES_OFF_NOTE_SEPARATOR}go`);
+    expect(String(sent[0]![0]!.content)).not.toContain("## A judgment at each label");
   });
 
   it("says nothing to a call outside any agent run", async () => {

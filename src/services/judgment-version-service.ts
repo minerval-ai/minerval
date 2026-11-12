@@ -24,9 +24,22 @@ import { currentLabel } from "../llm/usage-context.js";
 /** The four tables that hold judgments, by the name the database's rule knows them by. */
 export type JudgmentTable = "assessments" | "quantity_estimates" | "question_assessments" | "argument_evaluations";
 
-/** Whether this process knows `public` is the deployment's only label, without asking. */
+/**
+ * Whether this process has no reason to think the deployment has a second
+ * label: it has asked and the answer was no, or it has not yet run a query
+ * at all. Nothing is asked here, so that the public graph pays nothing for
+ * the question and its statements stay word for word what they were.
+ *
+ * A process learns the answer with its first query (db/client.ts asks
+ * before it runs one) and the API asks at start, so "not yet asked" is the
+ * moment before a process has touched the database. A caller that took the
+ * one-label path in that moment on a deployment with more labels has done
+ * nothing the database does not catch: a write to a row at another label
+ * is refused there, and so is a version with nothing at its label to rest
+ * on.
+ */
 export function oneLabelOnly(): boolean {
-  return enforcementLastKnown() === false;
+  return enforcementLastKnown() !== true;
 }
 
 /**

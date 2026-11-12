@@ -220,6 +220,18 @@ as `public`.
   the labels it may name; one that names a label the person may not read
   answers `403 LABEL_NOT_READABLE`, in the same words whether or not a
   label of that name exists.
+- **Work on a node, at a label that reads it.** A node can carry a judgment
+  at each label ([architecture.md](architecture.md), "A judgment at each
+  label"), so the three routes that start work on a node that is already
+  there (`POST /claims/:claim_id/order`, `/contribute` and `/decompose`)
+  take an optional `label`. Left out, the work is at the node's own label.
+  A signed-in person may instead name a label they hold that reads the
+  node's label, and the work is then at that label: an internal assessment
+  of a public claim. Its order, its ledger row, its messages and the
+  version it records are at the label named and are read only there; the
+  node's own judgment and the work at its own label are untouched and do
+  not wait on it. A label the person holds that does not read the node's
+  answers `400 LABEL_DOES_NOT_READ` with the ones that do.
 
 `GET /labels/mine` returns what a page needs to offer the choice: the
 labels the person may read, each with its description, what else its
@@ -251,12 +263,17 @@ refresh. Every request made with one:
 - files what it starts new at that label, with no parameter. The MCP tools
   have no `label` input, and a REST request that names another label is
   refused (`400 LABEL_FIXED`);
-- acts on an existing row only where the row carries that same label. A
+- changes an existing row only where the row carries that same label. A
   row it can read at another label is refused with `409 LABEL_MISMATCH`
-  and the reason.
+  and the reason;
+- may start work on a node its label reads, at its own label: an order,
+  funding or a decomposition made with a key at `internal` on a `public`
+  node is an internal assessment of that node, written at `internal` and
+  nowhere else. It names no label, and what it starts is never at the
+  node's label unless that is its own.
 
 So an agent holding a key cannot choose where something is filed, and
-cannot read at one label and write beside a row at another, whatever text
+cannot read at one label and write into a row at another, whatever text
 it has read. The Assistant in one conversation is held the same way, to the
 conversation's label. A key minted before the deployment had a second label
 works at `public`: it reads and writes public material only, and its holder

@@ -23,16 +23,15 @@ import { describe, expect, it } from "vitest";
  */
 const OTHERWISE: Record<string, string> = {
   "src/services/action-service.ts actions":
-    "The ledger's rows. A row that is open keeps its label and its text; a finished one that is reopened takes the reopener's label, text and target together (LABEL_ON_REOPEN_SQL), which the database checks.",
-  "src/llm/agents/program-officer.ts actions": "A sitting's ledger row, by the same rule (LABEL_ON_REOPEN_SQL).",
+    "The ledger's rows. A row's label never changes, and work at each label has its own key for a subject several labels can work on (groupAtLabel), so the row an upsert lands on is at the writer's own label; the database refuses any other. A finished row that is reopened takes the new work's text and target (LABEL_ON_REOPEN_SQL).",
+  "src/llm/agents/program-officer.ts actions": "A sitting's ledger row, for its mandate, at the mandate's label (LABEL_ON_REOPEN_SQL).",
   "src/services/prize-claim-service.ts actions": "A prize review's ledger row: the update sets a time and nothing else.",
   "src/services/commission-service.ts action_allocations": "Money added to a placement already there: an amount.",
   "src/services/report-service.ts agent_reports":
-    "A repeat of a report. Each column that holds the reporter's words is set only where the row is at the reporter's own label; otherwise the row gets the count and the time.",
+    "A repeat of a report. The update applies only where the row is at the reporter's own label (its own WHERE says so, with the incoming row's label); a repeat at another label changes nothing on the row and is recorded as a sighting at the reporter's label.",
   "src/services/attempt-service.ts lean_checks":
     "The checker's verdict on one submission, keyed by the submission's hash and the checker's version: the same output whoever asks.",
   "src/services/formalization-service.ts lean_checks": "The checker's verdict on one submission, as above.",
-  "src/services/quantity-service.ts quantity_cuts": "A direction and a number.",
   "src/services/feed-service.ts lookout_feeds":
     "A feed's settings and the title the feed itself gives, on the lookout's own row for that address.",
   "src/services/session-service.ts agent_sessions": "What a paused session is waiting for, added by that session's own run to its own row.",
@@ -85,7 +84,7 @@ describe("an upsert onto a labelled table", () => {
   const tables = labelledTables();
 
   it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
-    expect(tables.sql.size).toBe(98);
+    expect(tables.sql.size).toBe(99);
     const unheld = new Set<string>();
     let held = 0;
     for (const path of sourceFiles(join(repo, "src"))) {
@@ -95,20 +94,23 @@ describe("an upsert onto a labelled table", () => {
       }
     }
     expect([...unheld].sort()).toEqual(Object.keys(OTHERWISE).sort());
-    // The quantity's definition (three writers), the three question edges,
-    // the five rows of a node's source map, and a page's shared analysis.
-    expect(held).toBe(12);
+    // The quantity's definition (three writers), a claim's cut of a
+    // quantity, the three question edges, the five rows of a node's source
+    // map, and a page's shared analysis.
+    expect(held).toBe(13);
   });
 
-  it("never takes a ledger row's label from the incoming row except through the one fragment that takes its text too", () => {
+  it("never takes a row's label from the incoming row: a ledger row reopened takes the new work's text and target, and keeps its label", () => {
     for (const path of sourceFiles(join(repo, "src"))) {
       const text = readFileSync(path, "utf-8");
-      expect(text.includes("sensitivity_label = EXCLUDED.sensitivity_label,"), rel(path)).toBe(false);
+      // An assignment, not a comparison of the two rows' labels (which is how an upsert is held to its own label).
+      expect(/(?<![.\w])sensitivity_label = (?:CASE[^,]*)?EXCLUDED\.sensitivity_label/.test(text), rel(path)).toBe(false);
     }
     const fragment = /export const LABEL_ON_REOPEN_SQL = `([^`]*)`/.exec(
       readFileSync(join(repo, "src/services/action-service.ts"), "utf-8")
     )![1]!;
-    for (const column of ["sensitivity_label", "label", "target_ref"]) {
+    expect(fragment).not.toContain("sensitivity_label");
+    for (const column of ["label", "target_ref"]) {
       expect(fragment, column).toMatch(new RegExp(`\\b${column} = CASE\\s+WHEN actions\\.status IN \\$\\{FINISHED_STATUSES_SQL\\} THEN EXCLUDED\\.${column}`));
     }
   });

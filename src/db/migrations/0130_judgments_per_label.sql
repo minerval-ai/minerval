@@ -20,22 +20,14 @@ DROP VIEW "public"."question_assessments_in_force";--> statement-breakpoint
 ALTER TABLE "judgment_inputs" DROP CONSTRAINT "ck_judgment_inputs_judgment_kind";--> statement-breakpoint
 ALTER TABLE "judgment_inputs" DROP CONSTRAINT "ck_judgment_inputs_input_kind";--> statement-breakpoint
 ALTER TABLE "judgment_inputs" DROP CONSTRAINT "ck_judgment_inputs_shape";--> statement-breakpoint
-DROP INDEX "idx_argument_evaluations_current";--> statement-breakpoint
 DROP INDEX "uq_orders_open_per_claim";--> statement-breakpoint
-DROP INDEX "idx_assessments_current";--> statement-breakpoint
-DROP INDEX "idx_quantity_estimates_current";--> statement-breakpoint
-DROP INDEX "idx_question_assessments_current";--> statement-breakpoint
 ALTER TABLE "judgment_inputs" ADD COLUMN "input_label" text;--> statement-breakpoint
 ALTER TABLE "steward_slots" ADD CONSTRAINT "steward_slots_claim_id_claims_id_fk" FOREIGN KEY ("claim_id") REFERENCES "public"."claims"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "steward_slots" ADD CONSTRAINT "steward_slots_sensitivity_label_labels_name_fk" FOREIGN KEY ("sensitivity_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_steward_slots_pending" ON "steward_slots" USING btree ("sensitivity_label","updated_at") WHERE steward_state = 'pending';--> statement-breakpoint
 ALTER TABLE "judgment_inputs" ADD CONSTRAINT "judgment_inputs_input_label_labels_name_fk" FOREIGN KEY ("input_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_judgment_inputs_beside" ON "judgment_inputs" USING btree ("input_judgment_id") WHERE "judgment_inputs"."input_kind" = 'beside';--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_argument_evaluations_current" ON "argument_evaluations" USING btree ("argument_id","sensitivity_label") WHERE "argument_evaluations"."is_current" = true;--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_orders_open_per_claim" ON "assessment_orders" USING btree ("user_id","claim_id","sensitivity_label") WHERE status IN ('pending', 'running');--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_assessments_current" ON "assessments" USING btree ("claim_id","sensitivity_label") WHERE "assessments"."is_current" = true;--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_quantity_estimates_current" ON "quantity_estimates" USING btree ("claim_id","sensitivity_label") WHERE "quantity_estimates"."is_current" = true;--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_question_assessments_current" ON "question_assessments" USING btree ("claim_id","sensitivity_label") WHERE "question_assessments"."is_current" = true;--> statement-breakpoint
 ALTER TABLE "judgment_inputs" ADD CONSTRAINT "ck_judgment_inputs_judgment_kind" CHECK ("judgment_inputs"."judgment_kind" IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation'));--> statement-breakpoint
 ALTER TABLE "judgment_inputs" ADD CONSTRAINT "ck_judgment_inputs_input_kind" CHECK ("judgment_inputs"."input_kind" IN ('premise', 'source', 'beside'));--> statement-breakpoint
 ALTER TABLE "judgment_inputs" ADD CONSTRAINT "ck_judgment_inputs_shape" CHECK (("judgment_inputs"."input_kind" = 'premise' AND "judgment_inputs"."node_id" IS NOT NULL AND "judgment_inputs"."relation_type" IS NOT NULL AND "judgment_inputs"."source_id" IS NULL)
@@ -43,8 +35,15 @@ ALTER TABLE "judgment_inputs" ADD CONSTRAINT "ck_judgment_inputs_shape" CHECK ((
         OR ("judgment_inputs"."input_kind" = 'beside' AND "judgment_inputs"."input_judgment_id" IS NOT NULL AND "judgment_inputs"."input_label" IS NOT NULL AND "judgment_inputs"."node_id" IS NULL AND "judgment_inputs"."source_id" IS NULL));--> statement-breakpoint
 -- A judgment at each label.
 --
--- A node may carry one current judgment at each label (the unique indexes
--- above), written by work at that label and replaced only by it. This part
+-- A node may carry one current judgment at each label, written by work at
+-- that label and replaced only by it. The four judgment tables keep the
+-- index they have, one current row for each node: on a deployment with one
+-- label it still holds, and it is what tells the planner that a node has at
+-- most one current row. Where a deployment has a second label the step
+-- below drops it and creates the index that is one for each node and label
+-- (<index>_at_label), and swaps them back when the last other label goes.
+-- So this migration changes no index on a judgment table on the public
+-- graph. This part
 -- of the migration is written by hand: the one definition of which versions
 -- are in force for whoever is reading, the functions the *_in_force and
 -- *_versions views call, what the guards refuse now, and the step that turns
@@ -148,7 +147,7 @@ CREATE VIEW "public"."question_assessments_versions" WITH (security_invoker = tr
 CREATE VIEW "public"."argument_evaluations_in_force" WITH (security_invoker = true) AS (select "id", "argument_id", "verdict", "decisive", "content", "assessment_id", "estimate_id", "is_current", "created_by", "created_at", "sensitivity_label" from "argument_evaluations" where ("argument_evaluations"."is_current" = true and minerval_version_gone_by('argument_evaluations', "argument_evaluations"."argument_id", "argument_evaluations"."sensitivity_label")));--> statement-breakpoint
 CREATE VIEW "public"."assessments_in_force" WITH (security_invoker = true) AS (select "id", "claim_id", "status", "confidence", "claim_credence", "summary", "reasoning_trace", "marginal_yield", "model", "funded_by_job_id", "skills", "run_id", "inputs_recorded", "is_current", "subclaim_summary", "trigger", "trigger_context", "assessed_at", "relabeled_from", "sensitivity_label" from "assessments" where ("assessments"."is_current" = true and minerval_version_gone_by('assessments', "assessments"."claim_id", "assessments"."sensitivity_label")));--> statement-breakpoint
 CREATE VIEW "public"."quantity_estimates_in_force" WITH (security_invoker = true) AS (select "id", "claim_id", "estimate", "summary", "work", "marginal_yield", "model", "funded_by_job_id", "inputs_recorded", "is_current", "trigger", "trigger_context", "assessed_at", "sensitivity_label" from "quantity_estimates" where ("quantity_estimates"."is_current" = true and minerval_version_gone_by('quantity_estimates', "quantity_estimates"."claim_id", "quantity_estimates"."sensitivity_label")));--> statement-breakpoint
-CREATE VIEW "public"."question_assessments_in_force" WITH (security_invoker = true) AS (select "id", "claim_id", "standing", "favored_claim_ids", "summary", "reasoning_trace", "incomplete", "confidence", "marginal_yield", "model", "funded_by_job_id", "run_id", "inputs_recorded", "is_current", "trigger", "trigger_context", "assessed_at", "sensitivity_label" from "question_assessments" where ("question_assessments"."is_current" = true and minerval_version_gone_by('question_assessments', "question_assessments"."claim_id", "question_assessments"."sensitivity_label")));--> statement-breakpoint
+CREATE VIEW "public"."question_assessments_in_force" WITH (security_invoker = true) AS (select "id", "claim_id", "standing", "favored_claim_ids", "summary", "reasoning_trace", "incomplete", "confidence", "marginal_yield", "model", "funded_by_job_id", "run_id", "inputs_recorded", "is_current", "trigger", "trigger_context", "assessed_at", "sensitivity_label" from "question_assessments" where ("question_assessments"."is_current" = true and minerval_version_gone_by('question_assessments', "question_assessments"."claim_id", "question_assessments"."sensitivity_label")));
 -- Whether material at a label bears on a node: a source at that label
 -- attached to it (by a live instance, or by a reading of an instrument), a
 -- node at that label under it, or a node under it that carries a version at
@@ -326,10 +325,12 @@ $$;
 -- The one step that turns enforcement on and off, as the enforcement
 -- migration wrote it, with what a judgment at each label adds: the trigger
 -- that holds a cleared connection's updates and deletes to rows at its own
--- label (own_label_guard) on every labelled table, the node of a judgment
--- read from the index that is now one for each node and label, and the two
--- functions the *_in_force and *_versions views call, pointed at the rule
--- while a second label exists and back at the constant true when it goes.
+-- label (own_label_guard) on every labelled table; the index that says a
+-- node has one current judgment, which is one for each node and label
+-- while a second label exists and one for each node otherwise; the node of
+-- a judgment, read from that index; and the two functions the *_in_force
+-- and *_versions views call, pointed at the rule in the one case and at
+-- the constant true in the other.
 CREATE OR REPLACE FUNCTION minerval_enforcement_sync(want boolean DEFAULT NULL) RETURNS SETOF text
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
@@ -344,6 +345,16 @@ DECLARE
   -- What a clearance is made of, and what says who a request is (a key or
   -- a token is as good as the account it names): read by a cleared
   -- connection, written by the owner alone.
+  -- The indexes that say a node has one current judgment: table, index and
+  -- the node's column. One for each node holds where there is one label and
+  -- gives the planner what it has always had there. Where there are more,
+  -- it is one for each node and label, in an index of its own name.
+  one_per_node constant text[] := ARRAY[
+    'assessments', 'idx_assessments_current', 'claim_id',
+    'argument_evaluations', 'idx_argument_evaluations_current', 'argument_id',
+    'quantity_estimates', 'idx_quantity_estimates_current', 'claim_id',
+    'question_assessments', 'idx_question_assessments_current', 'claim_id'];
+  n int;
   wall constant text[] := ARRAY['labels', 'label_reads', 'permission_grants', 'account_groups',
                                 'api_keys', 'oauth_tokens', 'oauth_clients', 'oauth_authorization_requests'];
   -- The administrators' log: read and added to, never changed.
@@ -403,8 +414,21 @@ BEGIN
                 WHERE g.tgrelid = 'public.contributors'::pg_catalog.regclass AND g.tgname = 'identity_fixed_guard') THEN
       DROP TRIGGER identity_fixed_guard ON public.contributors;
     END IF;
-    -- One label, one version of each judgment: the views' test is the
-    -- constant true again, and is folded into every query that reads them.
+    -- One label, one version of each judgment: a node has one current row
+    -- again, and the index that says so is put back in place of the one
+    -- that allowed a row for each label.
+    FOR n IN 1..12 BY 3 LOOP
+      IF to_regclass(format('public.%I', one_per_node[n + 1])) IS NULL THEN
+        EXECUTE format('CREATE UNIQUE INDEX %I ON public.%I USING btree (%I) WHERE is_current = true',
+                       one_per_node[n + 1], one_per_node[n], one_per_node[n + 2]);
+        RETURN NEXT format('- %s: one current judgment for each node again', one_per_node[n]);
+      END IF;
+      IF to_regclass(format('public.%I', one_per_node[n + 1] || '_at_label')) IS NOT NULL THEN
+        EXECUTE format('DROP INDEX public.%I', one_per_node[n + 1] || '_at_label');
+      END IF;
+    END LOOP;
+    -- And the views' test is the constant true again, folded into every
+    -- query that reads them.
     IF (SELECT p.prosrc FROM pg_catalog.pg_proc p
          WHERE p.oid = 'public.minerval_version_gone_by(text, uuid, text)'::pg_catalog.regprocedure) !~ '^\s*SELECT true\s*$' THEN
       CREATE OR REPLACE FUNCTION public.minerval_version_gone_by(judgments text, node uuid, version_label text) RETURNS boolean
@@ -416,8 +440,24 @@ BEGIN
     RETURN;
   END IF;
 
-  -- More than one label: which current versions of a judgment are in force
-  -- depends on who is reading (minerval_version_standing).
+  -- More than one label: a node may carry a current judgment at each, so
+  -- the index is one for each node and label, and the one that allowed one
+  -- for each node goes. This is done before the tables are covered below,
+  -- so that the guard against unseen collisions is built on the index that
+  -- is there.
+  FOR n IN 1..12 BY 3 LOOP
+    IF to_regclass(format('public.%I', one_per_node[n + 1] || '_at_label')) IS NULL THEN
+      EXECUTE format('CREATE UNIQUE INDEX %I ON public.%I USING btree (%I, sensitivity_label) WHERE is_current = true',
+                     one_per_node[n + 1] || '_at_label', one_per_node[n], one_per_node[n + 2]);
+      RETURN NEXT format('+ %s: one current judgment for each node and label', one_per_node[n]);
+    END IF;
+    IF to_regclass(format('public.%I', one_per_node[n + 1])) IS NOT NULL THEN
+      EXECUTE format('DROP INDEX public.%I', one_per_node[n + 1]);
+    END IF;
+  END LOOP;
+
+  -- Which current versions of a judgment are in force depends on who is
+  -- reading (minerval_version_standing).
   IF (SELECT p.prosrc FROM pg_catalog.pg_proc p
        WHERE p.oid = 'public.minerval_version_gone_by(text, uuid, text)'::pg_catalog.regprocedure) !~ 'minerval_version_standing' THEN
     CREATE OR REPLACE FUNCTION public.minerval_version_gone_by(judgments text, node uuid, version_label text) RETURNS boolean

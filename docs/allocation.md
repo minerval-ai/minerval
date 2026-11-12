@@ -957,6 +957,10 @@ A commission on a node's standard pass is the node's commission, and a
 second payer asking for the strong one is told so and charged nothing; so
 with a sweep's two readers, and so for a mandate's self-funding, which
 does not cover a variant whose sibling is already paid for or running.
+Where a deployment has more than one label, a group is one label's: work
+on a node at each label has its own group, with that label in its key, so
+a commission at one label neither joins nor waits on another's
+([architecture.md](architecture.md), "Work at each label").
 The check is made again behind a lock on the group as the money is
 placed, so payers who look at the same moment do not both pay (#849: one
 node carried a mandate's budget on both its variants, which counted twice

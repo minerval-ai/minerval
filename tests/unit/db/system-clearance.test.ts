@@ -137,6 +137,18 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
         "which reads both claims there and raises nothing when it cannot read the other. Queue priorities are numbers.",
     ],
   ],
+  "src/services/steward-lease.ts": [
+    [
+      "A process that exits mid-run hands back the leases it holds, which were taken by runs at any label.",
+      "A time, moved back, on the slot each of this process's own runs was holding (a node's own row, or its label's row in steward_slots), and the status of that run's own ledger row. No text, and nothing for another recipient.",
+    ],
+  ],
+  "src/services/version-upkeep.ts": [
+    [
+      "The upkeep of versions finds, at every label, the versions made beside one that has since been replaced; each node's reassessment is then opened at its own version's label.",
+      "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the label of the version that is out of date, and the message names only labels that label reads (the versions it was made beside), in fixed words.",
+    ],
+  ],
   "src/workers/audit-scheduler.ts": [
     [
       "The audit scheduler asks for sweeps over decisions made at every label; each audit then runs at the label of its own row.",
@@ -226,6 +238,8 @@ const OWN_CONNECTIONS: Record<string, string> = {
     "Read-only SQL's own login roles, which hold nothing but the public_read views; their clearance is signed.",
   "scripts/enforcement-plans.ts":
     "Explains statements as the owner and as cleared connections, to compare their plans. Read-only.",
+  "scripts/judgment-plans.ts":
+    "Explains the hot reads of the judgment in force as the owner, to compare their plans before and after a change. Read-only.",
   "scripts/corpus/agreement.ts": "The corpus harness, on its own evaluation database (CORPUS_DATABASE_URL).",
   "scripts/corpus/cascade-load.ts": "The corpus harness, on its own evaluation database.",
   "scripts/corpus/graph-load.ts": "The corpus harness, on its own evaluation database.",

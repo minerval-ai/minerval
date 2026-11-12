@@ -388,6 +388,58 @@ describe("defining a second label", () => {
   });
 });
 
+describe("a judgment at each label, in the catalog", () => {
+  const judgmentIndexes = (tx: TxQuery) =>
+    tx
+      .query<{ name: string; columns: string }>(
+        `SELECT i.relname::text AS name,
+                (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord)
+                   FROM unnest(x.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                   JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum) AS columns
+           FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid
+          WHERE x.indisunique AND i.relname LIKE 'idx\_%\_current%' ORDER BY i.relname`
+      )
+      .then((rows) => rows.map((r) => `${r.name}(${r.columns})`));
+  const viewsTest = (tx: TxQuery) =>
+    tx
+      .query<{ name: string; body: string }>(
+        `SELECT proname::text AS name, btrim(prosrc) AS body FROM pg_proc
+          WHERE proname IN ('minerval_version_gone_by', 'minerval_version_in_force') ORDER BY proname`
+      )
+      .then((rows) => rows.map((r) => r.body));
+
+  it("is one current row for each node with one label, and one for each node and label with more: the step swaps the index and the views' test", async () => {
+    const { before, during, after } = await rolledBack(async (tx) => {
+      await publicOnly(tx);
+      const before = { indexes: await judgmentIndexes(tx), test: await viewsTest(tx) };
+      await defineSecondLabel(tx);
+      const during = { indexes: await judgmentIndexes(tx), test: await viewsTest(tx) };
+      await tx.query(`DELETE FROM labels WHERE name = 'schema-probe'`);
+      return { before, during, after: { indexes: await judgmentIndexes(tx), test: await viewsTest(tx) } };
+    });
+    // One label: the indexes the public graph has always had, and a test the planner folds away.
+    expect(before.indexes).toEqual([
+      "idx_argument_evaluations_current(argument_id)",
+      "idx_assessments_current(claim_id)",
+      "idx_quantity_estimates_current(claim_id)",
+      "idx_question_assessments_current(claim_id)",
+    ]);
+    expect(before.test).toEqual(["SELECT true", "SELECT true"]);
+    // A second label: a version for each node and label, and the rule for which is in force.
+    expect(during.indexes).toEqual([
+      "idx_argument_evaluations_current_at_label(argument_id,sensitivity_label)",
+      "idx_assessments_current_at_label(claim_id,sensitivity_label)",
+      "idx_quantity_estimates_current_at_label(claim_id,sensitivity_label)",
+      "idx_question_assessments_current_at_label(claim_id,sensitivity_label)",
+    ]);
+    expect(during.test).toEqual([
+      "SELECT public.minerval_version_standing($1, $2, $3) = 2",
+      "SELECT public.minerval_version_standing($1, $2, $3) >= 1",
+    ]);
+    expect(after).toEqual(before);
+  });
+});
+
 describe("the functions that run with their owner's rights", () => {
   it("search pg_catalog and then the session's temporary schema, so no temporary table can stand in for a relation they name", async () => {
     const client = new pg.Client({ connectionString: TEST_DATABASE_URL });

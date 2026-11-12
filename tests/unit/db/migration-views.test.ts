@@ -82,6 +82,10 @@ describe("a migration that makes a view", () => {
       "argument_evaluations_in_force",
       "quantity_estimates_in_force",
       "question_assessments_in_force",
+      "assessments_versions",
+      "argument_evaluations_versions",
+      "quantity_estimates_versions",
+      "question_assessments_versions",
     ]);
     for (const [, name, options] of views) expect(options, name).toContain(".with(callersRights)");
     expect(schema).toContain("const callersRights = { securityInvoker: true };");

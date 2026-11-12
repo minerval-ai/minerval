@@ -80,11 +80,12 @@ export function labelNote(label: string, reads: readonly string[], opts: { write
 function versionsForAReader(): string {
   return (
     `A node can carry a judgment at each label: a version, made by a run at that label from what that ` +
-    `label reads, and replaced only by a run at that label. Where you can read more than one, get_claim ` +
-    `lists them with their labels and says which are in force for this run. A version is in force ` +
-    `unless another one you can read was made at a label that reads its label, and so with sight of ` +
-    `everything it saw and more. Where a read gives a single judgment for a node, it is the one in ` +
-    `force, and the most recent of them if two labels that do not read each other each have one.`
+    `label reads, and replaced only by a run at that label. Where you can read more than one, the ` +
+    `node's full read lists them under \`versions\`, each with its label, and says which are in force ` +
+    `for this run. A version is in force unless another one you can read was made at a label that ` +
+    `reads its label, and so with sight of everything it saw and more. Where a read gives a single ` +
+    `judgment for a node, it is the one in force, and the most recent of them if two labels that do ` +
+    `not read each other each have one.`
   );
 }
 
@@ -96,23 +97,30 @@ function versionsForAReader(): string {
  */
 function versionsForAWriter(label: string, others: readonly string[]): string {
   const own = tick(label);
-  const onOtherLabels =
-    others.length === 0
-      ? `No other label is read by ${own}, so on the nodes this run reads the version at ${own} is the only one it sees.`
-      : `The versions you read at ${listed(others, "or")} are not yours to change, and nothing you record ` +
-        `replaces them. Each goes on standing for the readers and runs that work from it, and is reassessed ` +
-        `on its own inputs like any judgment. A node that carries another label is not yours to reword, ` +
-        `re-rank or restructure either: its wording, its importance and what is recorded at its label ` +
-        `belong to the Steward that works at that label. What you add to it (an argument, a subclaim, a ` +
-        `source) is recorded at ${own}, beside what is there.`;
-  return (
+  const opening =
     `## A judgment at each label\n\n` +
     `A node in this graph can carry more than one judgment at once, one for each label: a version. ` +
     `Each is made by a run at its label, which saw only what that label reads, and each is a full ` +
     `assessment held to every standard you work under. This run writes the version at ${own} and no ` +
     `other: the tools that record an assessment, an estimate, a question's assessment or an argument's ` +
-    `evaluation record it at ${own}.\n\n` +
-    `${onOtherLabels}\n\n` +
+    `evaluation record it at ${own}.`;
+  if (others.length === 0) {
+    // A label that reads no other sees one version on any node: its own.
+    return (
+      `${opening}\n\n` +
+      `${own} reads no other label, so on every node this run reads, the version at ${own} is the only ` +
+      `one it sees. A version made at another label does not replace it: yours goes on standing for ` +
+      `the readers and runs that work from it, and is reassessed on its own inputs.`
+    );
+  }
+  return (
+    `${opening}\n\n` +
+    `The versions you read at ${listed(others, "or")} are not yours to change, and nothing you record ` +
+    `replaces them. Each goes on standing for the readers and runs that work from it, and is reassessed ` +
+    `on its own inputs like any judgment. A node that carries another label is not yours to reword or ` +
+    `restructure either: its wording, its importance and the structure recorded at its label belong to ` +
+    `the Steward that works at that label. What you add to it (an argument, a subclaim, a source) is ` +
+    `recorded at ${own}, beside what is there.\n\n` +
     `On a node that carries another label, a version at ${own} is stored only when material at ${own} ` +
     `bears on the node: a source labeled ${own} attached to it, a node labeled ${own} under it, or a ` +
     `node under it that carries a version at ${own}. The tool that records the version refuses when ` +
@@ -134,9 +142,10 @@ function versionsForAWriter(label: string, others: readonly string[]): string {
     `${own} reads, as they stood. When one of them is replaced, readers at ${own} are shown that ` +
     `yours was made against an earlier version, and a reassessment is opened at ${own}, which runs ` +
     `when it is funded. Whether the change matters is your judgment when it does.\n\n` +
-    `get_claim lists a node's versions with their labels and says which are in force for this run: ` +
-    `a version is in force unless another one you can read was made at a label that reads its label. ` +
-    `Where a read gives a single judgment for a node, it is the one in force.`
+    `get_claim lists a node's versions under \`versions\`, each with its label, and says which are in ` +
+    `force for this run: a version is in force unless another one you can read was made at a label ` +
+    `that reads its label. Where a read gives a single judgment for a node, it is the one in force, ` +
+    `and the most recent of them if two labels that do not read each other each have one.`
   );
 }
 
