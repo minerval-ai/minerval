@@ -1114,6 +1114,18 @@ export type ClaimEvent =
       audit_id: string;
       action: string;
       reasoning: string;
+    }
+  | {
+      // The node archived, restored, merged or deprecated (#962).
+      kind: "state_change";
+      id: string;
+      at: string;
+      actor: string;
+      from_state: string;
+      to_state: string;
+      reason: string;
+      successor_ids: string[];
+      cohort: string | null;
     };
 
 export interface ClaimEventsPage {

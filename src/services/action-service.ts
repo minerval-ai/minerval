@@ -43,6 +43,7 @@ import {
 import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { retiredNodeRefusal } from "./claim-lifecycle-service.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
 export { allocationDayUseSql } from "./day-use.js";
 
@@ -1573,11 +1574,14 @@ async function materializePlanItem(
   const claim = await claimStanding(item.claim_id);
   if (!claim) return blocked(`claim ${item.claim_id} does not exist`);
   if (claim.state !== "active") {
-    // A merged node names its survivor (#884), so the plan can be rewritten for it.
+    // A merged node names its survivor (#884), and any other retired node
+    // its reason and successors (#962), so the plan can be rewritten for them.
     const merged = await mergedAliasRefusal(item.claim_id);
+    const retired = merged ? null : await retiredNodeRefusal(item.claim_id).catch(() => null);
+    const why = merged?.message ?? retired;
     return blocked(
       `claim ${item.claim_id} is ${claim.state}, not active; the ledger only carries work on active claims` +
-        (merged ? `. ${merged.message}` : "")
+        (why ? `. ${why}` : "")
     );
   }
 

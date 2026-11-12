@@ -73,6 +73,13 @@ export function defaultSenderFor(trigger: string): MessageSender {
  */
 export const INBOX_FULL_TEXT_CHARS = 40_000;
 
+/**
+ * Keep a message in a node's inbox. Only an active node has one: no Steward
+ * works a merged, deprecated or archived node, so a message there would sit
+ * unread for good and read, to anyone looking, as work waiting (#962). Null
+ * when nothing was kept. enqueueSteward forwards what it is handed for a
+ * retired node to its successor, if it has one.
+ */
 export async function postMessage(input: {
   nodeId: string;
   trigger: string;
@@ -88,7 +95,7 @@ export async function postMessage(input: {
     `INSERT INTO node_messages
        (node_id, trigger, sender_kind, sender_node_id, sender_ref, body, paid, reply_to)
      SELECT $1, $2, $3, $4, $5, $6, $7, $8
-      WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1)
+      WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1 AND state = 'active')
      RETURNING id`,
     [
       input.nodeId,

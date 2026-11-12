@@ -87,6 +87,8 @@ function triggerPhrase(t: string) {
 function Actor({ id }: { id: string }) {
   const label = ACTOR_LABELS[id];
   if (label) return <>{label}</>;
+  // An operator who ran a script (an archive, a restore) is named, not linked.
+  if (id.startsWith("operator:")) return <>{`operator ${id.slice("operator:".length)}`}</>;
   return <Link href={`/contributors/${id}`}>contributor</Link>;
 }
 
@@ -239,6 +241,40 @@ function StewardNoteEntry({ e }: { e: Extract<ClaimEvent, { kind: "steward_note"
   );
 }
 
+const STATE_HEADLINES: Record<string, string> = {
+  archived: "Archived",
+  merged: "Merged into another node",
+  deprecated: "Deprecated",
+  active: "Restored to the live graph",
+};
+
+function StateChangeEntry({ e }: { e: Extract<ClaimEvent, { kind: "state_change" }> }) {
+  return (
+    <>
+      <span className={styles.marker}><span className={styles.mNote} /></span>
+      <div className={styles.body}>
+        <Dateline event={e} />
+        <p className={styles.headline}>
+          {STATE_HEADLINES[e.to_state] ?? `Now ${e.to_state}`}
+          {e.cohort ? ` with the cohort ${e.cohort}` : ""}
+        </p>
+        {e.reason && <p className={styles.prose}>{e.reason}</p>}
+        {e.successor_ids.length > 0 && (
+          <p className={styles.prose}>
+            Carried on by{" "}
+            {e.successor_ids.map((id, i) => (
+              <span key={id}>
+                {i > 0 ? ", " : ""}
+                <Link href={`/claims/${id}`}>{id.slice(0, 8)}</Link>
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
 function CreatedEntry({ e }: { e: Extract<ClaimEvent, { kind: "created" }> }) {
   return (
     <>
@@ -259,6 +295,7 @@ function Entry({ event, texts }: { event: ClaimEvent; texts?: Map<string, string
     case "appeal": return <AppealEntry e={event} />;
     case "arbitration": return <ArbitrationEntry e={event} />;
     case "steward_note": return <StewardNoteEntry e={event} />;
+    case "state_change": return <StateChangeEntry e={event} />;
     case "created": return <CreatedEntry e={event} />;
     default:
       // A kind this build predates: show the record exists rather than hiding it.
