@@ -149,6 +149,12 @@ export function getSpendToolDefinitions(): Tool[] {
               "it is worth it: the searches, sources, analysis or commissions, and " +
               "the question it settles.",
           },
+          done_so_far: {
+            type: "string",
+            description:
+              "What you have established so far and what is still open: the officer weighs the ask against the " +
+              "work, and against other work on the same part of the graph.",
+          },
           why: { type: "string", description: "Why your current budget can't cover it, and why it matters for this work." },
           if_refused: { type: "string", description: "What you will conclude or record if the answer is no." },
           wait: {
@@ -159,7 +165,7 @@ export function getSpendToolDefinitions(): Tool[] {
               "carry on without the answer (a granted follow-up starts its own pass).",
           },
         },
-        required: ["kind", "owls", "plan"],
+        required: ["kind", "owls", "plan", "done_so_far"],
       },
     },
   ];
@@ -282,6 +288,7 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
       requesterNodeId: ctx.claimId ?? null,
       spentMicroUsd: ctx.passBudget?.meter.billedMicroUsd,
       waiting: wait,
+      doneSoFar: input.done_so_far ? String(input.done_so_far) : null,
     });
     if (inSession) {
       const sessionId = await registerAwait("petition", petitionId);

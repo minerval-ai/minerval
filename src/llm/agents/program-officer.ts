@@ -31,6 +31,8 @@ import { commissionAction, commissionNodePass, placeCommission } from "../../ser
 import { describePace, paceRoom, parsePace, validatePace } from "../../services/pace-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import {
+  holdPetition,
+  latestHold,
   decidePetition,
   inboxWaiting,
   type DecisionKind,
@@ -51,6 +53,14 @@ type Tool = Anthropic.Tool;
 type Role = "officer" | "grantmaker";
 
 const OFFICER_GROUP = (grantId: string) => `officer:${grantId}`;
+
+/**
+ * Inbox items one sitting reads, oldest first. A cap on what fits one brief,
+ * not on what is decided: the rest wait for the next sitting, which starts
+ * as soon as this one ends while anything is left, and the brief says how
+ * many wait.
+ */
+const ITEMS_PER_SITTING = 60;
 
 // ---------------------------------------------------------------------------
 // Tools (fixed per role)
@@ -142,6 +152,30 @@ export const COMMISSION_FOR_MANDATE: Tool = {
   },
 };
 
+const HOLD: Tool = {
+  name: "hold",
+  description:
+    "Hold a petition or an item for perspective rather than decide it now: until a time, or until named runs " +
+    "on the ledger settle (whichever comes first), saying what you are waiting to learn. Use it when related " +
+    "work is under way and its results would change the decision: deciding the third depth petition on a branch " +
+    "once the first two passes there report, say. It comes back to you then, with your criteria; it is never " +
+    "refused by the time passing. The asking run is told at once, without being woken, that its answer will come " +
+    "later and why. Where a run waits on the petition, the hold must end before that run's session gives up " +
+    "waiting; the brief states that latest time for each petition. Holding is a decision: it is recorded with " +
+    "your criteria.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      item: { type: "string", description: "The petition or item: its label from your brief (p1, i1, …) or its id." },
+      in_hours: { type: "number", description: "Hold at most this many hours." },
+      until: { type: "string", description: "Or: hold at most until this time (ISO 8601, UTC)." },
+      until_runs: { type: "array", items: { type: "string" }, description: "Optional: action ids of runs whose results you are waiting on." },
+      criteria: { type: "string", description: "What you are waiting to learn, and what would decide it." },
+    },
+    required: ["item", "criteria"],
+  },
+};
+
 const DECLINE: Tool = {
   name: "decline",
   description:
@@ -210,8 +244,12 @@ export const WRITE_OPERATING_POLICY: Tool = {
     properties: {
       section: {
         type: "string",
-        enum: ["mission", "priorities", "budgets", "petitions", "delegation"],
-        description: "mission (how you read the mandate's words), priorities, budgets, petitions, or delegation. Leave it out to replace the whole operating policy.",
+        enum: ["current", "mission", "priorities", "budgets", "petitions", "delegation"],
+        description:
+          "current (your direction for now, beside the standing policy: which branches look promising, what to " +
+          "grant and what to hold until which work reports; rewrite it as often as things change, and your officers " +
+          "read it first, dated), mission (how you read the mandate's words), priorities, budgets, petitions, or " +
+          "delegation. Leave it out to replace the whole operating policy.",
       },
       content: {
         type: "string",
@@ -241,7 +279,7 @@ export const WRITE_OPERATING_POLICY: Tool = {
 
 export function getOfficerToolDefinitions(role: Role): Tool[] {
   const costing = getActiveSkillToolDefinitions(listSkills(), "program-officer");
-  const base = [DECIDE_PETITIONS, COMMISSION_FOR_MANDATE, DECLINE, LOG_NOTE, ...getGraphReadToolDefinitions(), getSqlToolDefinition(), ...costing];
+  const base = [DECIDE_PETITIONS, COMMISSION_FOR_MANDATE, HOLD, DECLINE, LOG_NOTE, ...getGraphReadToolDefinitions(), getSqlToolDefinition(), ...costing];
   return role === "officer" ? [...base, ESCALATE] : [...base, WRITE_OPERATING_POLICY];
 }
 
@@ -306,10 +344,10 @@ async function itemsFor(grantId: string, role: Role): Promise<InboxItem[]> {
     `SELECT i.id, i.kind, i.target_node_id, i.target_ref, i.source, i.summary, i.detail,
             i.created_at, i.escalation_note, c.text AS node_text, c.importance, c.contestation
        FROM mandate_inbox i LEFT JOIN claims c ON c.id = i.target_node_id
-      WHERE i.grant_id = $1 AND i.handled_at IS NULL
+      WHERE i.grant_id = $1 AND i.handled_at IS NULL AND i.held_until IS NULL
         AND (i.escalated_at IS ${role === "officer" ? "NULL" : "NOT NULL"})
       ORDER BY i.created_at
-      LIMIT 60`,
+      LIMIT ${ITEMS_PER_SITTING}`,
     [grantId]
   );
 }
@@ -321,14 +359,58 @@ async function describePetition(p: PetitionRow, label: string): Promise<string> 
         [p.requester_node_id]
       )
     : [];
-  const [similar] = await rawQuery<{ n: number; granted: number }>(
-    `SELECT count(*)::int AS n,
-            count(*) FILTER (WHERE status IN ('granted', 'follow_up'))::int AS granted
-       FROM petitions
-      WHERE grant_id = $1 AND kind = $2 AND requester_agent IS NOT DISTINCT FROM $3
-        AND status IN ('granted', 'refused', 'follow_up') AND id <> $4`,
+  // What granting asks like this one bought (information gained, never a
+  // verdict): of the granted petitions of this kind from this agent to this
+  // mandate, how many were followed by an assessment of the node, and in how
+  // many that assessment moved the status or the confidence by a tenth or more.
+  const [returns] = await rawQuery<{ n: number; refused: number; granted: number; concluded: number; moved: number; granted_owls: number }>(
+    `WITH done AS (
+       SELECT p.id, p.status, p.requester_node_id AS node, p.created_at, p.decided_at, p.granted_micro_usd
+         FROM petitions p
+        WHERE p.grant_id = $1 AND p.kind = $2 AND p.requester_agent IS NOT DISTINCT FROM $3
+          AND p.status IN ('granted', 'refused', 'follow_up') AND p.id <> $4
+     ), granted AS (
+       SELECT d.*,
+              (SELECT a.status FROM assessments a WHERE a.claim_id = d.node AND a.assessed_at < d.created_at ORDER BY a.assessed_at DESC LIMIT 1) AS s0,
+              (SELECT a.confidence FROM assessments a WHERE a.claim_id = d.node AND a.assessed_at < d.created_at ORDER BY a.assessed_at DESC LIMIT 1) AS c0,
+              (SELECT a.status FROM assessments a WHERE a.claim_id = d.node AND a.assessed_at > d.decided_at ORDER BY a.assessed_at LIMIT 1) AS s1,
+              (SELECT a.confidence FROM assessments a WHERE a.claim_id = d.node AND a.assessed_at > d.decided_at ORDER BY a.assessed_at LIMIT 1) AS c1
+         FROM done d WHERE d.status IN ('granted', 'follow_up') AND d.node IS NOT NULL
+     )
+     SELECT (SELECT count(*) FROM done)::int AS n,
+            (SELECT count(*) FROM done WHERE status = 'refused')::int AS refused,
+            (SELECT count(*) FROM done WHERE status IN ('granted', 'follow_up'))::int AS granted,
+            (SELECT COALESCE(SUM(granted_micro_usd), 0) FROM done)::bigint AS granted_owls,
+            (SELECT count(*) FROM granted WHERE s1 IS NOT NULL)::int AS concluded,
+            (SELECT count(*) FROM granted WHERE s1 IS NOT NULL
+               AND (s1 IS DISTINCT FROM s0 OR abs(COALESCE(c1, 0) - COALESCE(c0, 0)) >= 0.1))::int AS moved`,
     [p.grant_id, p.kind, p.requester_agent, p.id]
   );
+  // What the run has already paid for from its own budget, and how that went.
+  const bought = p.requester_action_id
+    ? await rawQuery<{ kind: string; status: string; amount: number; spent: number }>(
+        `SELECT a.kind, a.status, al.amount_micro_usd AS amount, al.spent_micro_usd AS spent
+           FROM action_allocations al JOIN actions a ON a.id = al.action_id
+          WHERE al.parent_action_id = $1 ORDER BY al.created_at`,
+        [p.requester_action_id]
+      )
+    : [];
+  // The node's neighbourhood: its parents, and its siblings' standing, with
+  // what is asked or held on them, so asks on one branch are seen together.
+  const siblings = p.requester_node_id
+    ? await rawQuery<{ id: string; text: string; status: string | null; asks: number }>(
+        `SELECT DISTINCT c.id, left(c.text, 80) AS text, f.status,
+                (SELECT count(*) FROM petitions q WHERE q.requester_node_id = c.id AND q.grant_id = $2
+                   AND q.status IN ('pending', 'held', 'escalated'))::int AS asks
+           FROM claim_relationships up
+           JOIN claim_relationships sib ON sib.parent_claim_id = up.parent_claim_id AND sib.child_claim_id <> $1
+           JOIN claims c ON c.id = sib.child_claim_id AND c.state = 'active'
+           LEFT JOIN assessments_in_force f ON f.claim_id = c.id
+          WHERE up.child_claim_id = $1
+          LIMIT 8`,
+        [p.requester_node_id, p.grant_id]
+      )
+    : [];
   const chain = (p.chain ?? []) as Array<{ kind: string; node_id: string | null; budget_micro_usd: number; spent_micro_usd?: number }>;
   const self = chain.at(-1);
   const chainText =
@@ -339,6 +421,8 @@ async function describePetition(p: PetitionRow, label: string): Promise<string> 
       : self
         ? `commissioned directly at ${owls(self.budget_micro_usd)} owls`
         : "not a ledger run";
+  const latest = await latestHold(p);
+  const r = returns ?? { n: 0, refused: 0, granted: 0, concluded: 0, moved: 0, granted_owls: 0 };
   return [
     `[${label}] ${p.kind} · ${owls(p.asked_micro_usd)} owls${p.waiting ? " · run waiting" : ""} · from ` +
       `${p.requester_agent ?? "an agent"}` +
@@ -347,15 +431,37 @@ async function describePetition(p: PetitionRow, label: string): Promise<string> 
         : ""),
     `  How it was funded: ${chainText}.` +
       (self?.spent_micro_usd != null ? ` Spent so far: ${owls(self.spent_micro_usd)} owls.` : ""),
+    ...(p.done_so_far ? [`  What it has established so far: ${p.done_so_far}`] : []),
+    ...(bought.length
+      ? [
+          `  What it has already commissioned: ` +
+            bought.map((b) => `${b.kind} (${owls(b.spent)} of ${owls(b.amount)} owls, ${b.status})`).join("; ") +
+            `.`,
+        ]
+      : []),
     `  Plan: ${p.plan}`,
     ...(p.why ? [`  Why: ${p.why}`] : []),
     ...(p.if_refused ? [`  If refused: ${p.if_refused}`] : []),
     ...(p.status === "escalated" && p.reason ? [`  The officer's note: ${p.reason}`] : []),
-    `  Similar petitions: ${
-      similar && similar.n > 0
-        ? `of ${similar.n} ${p.kind} petitions from ${p.requester_agent ?? "agents"} to this mandate, ${similar.granted} were granted.`
-        : "none decided yet."
-    }`,
+    ...(p.status === "pending" && p.reason?.startsWith("Held until") ? [`  ${p.reason}`] : []),
+    ...(siblings.length
+      ? [
+          `  Its neighbours (other premises of the same parent): ` +
+            siblings
+              .map((x) => `${x.id} ("${x.text}", ${x.status ?? "unassessed"}${x.asks ? `, ${x.asks} ask(s) open here` : ""})`)
+              .join("; ") +
+            `.`,
+        ]
+      : []),
+    `  Past asks like this (${p.kind} from ${p.requester_agent ?? "agents"} to this mandate): ` +
+      (r.n > 0
+        ? `${r.n} decided, ${r.granted} granted (${owls(r.granted_owls)} owls) and ${r.refused} refused. Of the granted, ` +
+          `${r.concluded} have been assessed since, and in ${r.moved} of those the status or the confidence moved; ` +
+          `a move is information gained, not a verdict the money bought.`
+        : "none decided yet."),
+    ...(latest
+      ? [`  A run waits on this: hold it, if at all, no later than ${latest.toISOString().slice(0, 16).replace("T", " ")} UTC.`]
+      : []),
   ].join("\n");
 }
 
@@ -396,11 +502,48 @@ async function buildBrief(
   );
   const decidingShare =
     Number(deciding?.spent ?? 0) > 0 ? Math.round((100 * Number(deciding!.deciding)) / Number(deciding!.spent)) : 0;
+  // The mandate's recent decisions, and every decision ever made on the
+  // nodes in front of the officer now, so a branch is judged as a branch.
+  const targets = [
+    ...petitions.map((p) => p.requester_node_id),
+    ...items.map((i) => i.target_node_id),
+  ].filter((x): x is string => Boolean(x));
   const decisions = await rawQuery<{ created_at: string; decided_by: string; item_kind: string; decision: string; target: string | null; owls_micro_usd: number | null; reason: string | null }>(
-    `SELECT created_at, decided_by, item_kind, decision, target, owls_micro_usd, reason
-       FROM mandate_decisions WHERE grant_id = $1 ORDER BY created_at DESC LIMIT 15`,
-    [grant.id]
+    `(SELECT created_at, decided_by, item_kind, decision, target, owls_micro_usd, reason
+        FROM mandate_decisions WHERE grant_id = $1 AND created_at > now() - interval '14 days'
+       ORDER BY created_at DESC LIMIT 40)
+     UNION
+     (SELECT created_at, decided_by, item_kind, decision, target, owls_micro_usd, reason
+        FROM mandate_decisions WHERE grant_id = $1 AND target = ANY($2::text[])
+       ORDER BY created_at DESC LIMIT 20)
+     ORDER BY created_at DESC`,
+    [grant.id, targets]
   );
+  // What else the money could buy now: work waiting in front of the mandate
+  // beyond this brief, and open work on the nodes it has paid for before.
+  const [elsewhere] = await rawQuery<{ held: number; more_items: number; orders: number }>(
+    `SELECT (SELECT count(*) FROM petitions WHERE grant_id = $1 AND status = 'held')::int AS held,
+            GREATEST(0, (SELECT count(*) FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL
+                          AND escalated_at IS NULL AND held_until IS NULL) - $2)::int AS more_items,
+            (SELECT count(*) FROM jsonb_array_elements(COALESCE((SELECT plan->'items' FROM grants WHERE id = $1), '[]'::jsonb)) it
+              WHERE it->'ledger'->>'status' = 'waiting')::int AS orders`,
+    [grant.id, items.length]
+  );
+  const openWork = await rawQuery<{ id: string; kind: string; claim_id: string; text: string; importance: number | null; est: number }>(
+    `SELECT DISTINCT ON (a.claim_id) a.id, a.kind, a.claim_id, left(c.text, 80) AS text, c.importance,
+            a.cost_est_micro_usd AS est
+       FROM actions a JOIN claims c ON c.id = a.claim_id
+      WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
+        AND c.id IN (SELECT al.claim_id FROM action_allocations al WHERE al.grant_id = $1 AND al.claim_id IS NOT NULL
+                     UNION SELECT cr.child_claim_id FROM claim_relationships cr
+                            WHERE cr.parent_claim_id IN (SELECT al.claim_id FROM action_allocations al
+                                                          WHERE al.grant_id = $1 AND al.claim_id IS NOT NULL))
+        AND NOT EXISTS (SELECT 1 FROM action_allocations x WHERE x.exclusion_group = a.exclusion_group
+                         AND x.released_at IS NULL AND x.commissioned_by IS NOT NULL)
+      ORDER BY a.claim_id, c.importance DESC NULLS LAST
+      LIMIT 30`,
+    [grant.id]
+  ).then((rows) => rows.sort((x, y) => Number(y.importance ?? 0) - Number(x.importance ?? 0)).slice(0, 8));
 
   const petitionText: string[] = [];
   for (const [i, p] of petitions.entries()) {
@@ -427,9 +570,18 @@ async function buildBrief(
       (pace ? `${pace.sentence} ` : "") +
       `Deciding has cost ${decidingShare}% of the mandate's spend over the last seven days. ` +
       (runBudgetSentence() || ""),
+    `## What else the money could buy\n\n` +
+      `Beyond this brief: ${elsewhere?.more_items ?? 0} more inbox item(s) waiting for the next sitting, ` +
+      `${elsewhere?.held ?? 0} petition(s) held, ${elsewhere?.orders ?? 0} plan order(s) waiting for room. ` +
+      (openWork.length
+        ? `Open, unpaid work on nodes this mandate has paid for before or their premises, most important first ` +
+          `(an estimate beside each): ` +
+          openWork.map((w) => `${w.kind} on ${w.claim_id} ("${w.text}", importance ${w.importance ?? "?"}, about ${owls(w.est)} owls)`).join("; ") +
+          `. Weigh each ask against these as well as on its own.`
+        : `No open, unpaid work on the nodes this mandate has paid for before.`),
     `## The mandate\n\nTerms, as its funder approved them: ${grant.title ?? "(untitled)"}. ${grant.objective ?? ""}\n\n` +
       `Operating policy:\n\n${renderOperatingPolicy(policy)}`,
-    `## Recent decisions (${decisions.length}, newest first)\n\n` +
+    `## Decisions (${decisions.length}: the last fourteen days', and every one on the nodes in front of you; newest first)\n\n` +
       (decisions.length
         ? decisions
             .map(
@@ -444,8 +596,11 @@ async function buildBrief(
     ...(petitionText.length ? [`## Petitions\n\n${petitionText.join("\n\n")}`] : []),
     ...(itemText.length ? [`## Items\n\n${itemText.join("\n\n")}`] : []),
     role === "officer"
-      ? "Act on every item: commission, decide, decline, escalate, or log why you are leaving it. " +
-        "Record petition decisions with decide_petitions first, because runs are waiting on them."
+      ? "Act on every item: commission, decide, hold, decline, escalate, or log why you are leaving it. " +
+        "Record petition decisions with decide_petitions first, because runs are waiting on them. A petition " +
+        "with a run waiting that you neither decide nor hold goes to the Grantmaker when this sitting ends, so " +
+        "the run is not left without an answer. " +
+        `A sitting reads at most ${ITEMS_PER_SITTING} items; more wait for the next sitting, which follows this one.`
       : "Decide each on its merits and against what else today's money could do. Where an escalation " +
         "shows the operating policy is silent or wrong, fix the operating policy now with " +
         "write_operating_policy, so the officers settle the next one themselves.",
@@ -776,6 +931,31 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
     return JSON.stringify({ success: true, message: "Declined and recorded." });
   }
 
+  if (name === "hold") {
+    const entry = ctx.labels.get(String(input.item ?? ""));
+    if (!entry) return JSON.stringify({ success: false, message: "Not a petition or item in your brief." });
+    const until =
+      input.until !== undefined
+        ? new Date(String(input.until))
+        : new Date(Date.now() + Number(input.in_hours ?? 0) * 3_600_000);
+    if (Number.isNaN(until.getTime()) || until.getTime() <= Date.now()) {
+      return JSON.stringify({ success: false, message: "Give a time in the future to hold it to: in_hours above zero, or until." });
+    }
+    const refs = Array.isArray(input.until_runs) ? (input.until_runs as unknown[]).map(String) : [];
+    const criteria = String(input.criteria ?? "");
+    if (entry.petition) {
+      const r = await holdPetition({ petitionId: entry.petition.id, until, refs, criteria, decidedBy: ctx.decidedBy });
+      return JSON.stringify({ success: r.ok, message: r.message });
+    }
+    if (!criteria.trim()) return JSON.stringify({ success: false, message: "criteria is required." });
+    await rawQuery(
+      `UPDATE mandate_inbox SET held_until = $2, hold_refs = $3::jsonb, hold_reason = $4 WHERE id = $1`,
+      [entry.item!.id, until.toISOString(), JSON.stringify(refs), criteria.trim()]
+    );
+    await logDecision(ctx, { itemKind: "hold", decision: "held", target: entry.item!.target_node_id ?? entry.item!.target_ref, reason: criteria });
+    return JSON.stringify({ success: true, message: `Held until ${until.toISOString().slice(0, 16).replace("T", " ")} UTC${refs.length ? " or until the named runs settle" : ""}.` });
+  }
+
   if (name === "escalate" && ctx.role === "officer") {
     const entry = ctx.labels.get(String(input.item ?? ""));
     const note = String(input.note ?? "").trim();
@@ -1017,6 +1197,7 @@ export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): To
     WRITE_OPERATING_POLICY,
     COMMISSION_FOR_MANDATE,
     DECIDE_PETITIONS,
+    HOLD,
     DECLINE,
     SET_RESERVE,
     getSqlToolDefinition(),
@@ -1133,7 +1314,7 @@ export async function executeMandateOperationsTool(
     );
     return JSON.stringify({ success: true, message: `Withdrew ${r.withdrawnOwls} owls into your escrow.` });
   }
-  if (!["write_operating_policy", "commission", "decide_petitions", "decline"].includes(name)) return null;
+  if (!["write_operating_policy", "commission", "decide_petitions", "decline", "hold"].includes(name)) return null;
   const grant = await loadGrant(grantId);
   if (!grant) return JSON.stringify({ success: false, message: "No such mandate." });
   // What the officers escalated, by id, for decide_petitions, decline and a

@@ -18,10 +18,17 @@ import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 
-export const POLICY_SECTIONS = ["mission", "priorities", "budgets", "petitions", "delegation"] as const;
+export const POLICY_SECTIONS = ["current", "mission", "priorities", "budgets", "petitions", "delegation"] as const;
 export type PolicySection = (typeof POLICY_SECTIONS)[number];
 
 export interface OperatingPolicy {
+  /**
+   * The Grantmaker's direction for now, beside the standing policy: which
+   * branches are promising, what to grant and what to hold until which work
+   * reports. Rewritten often; dated when written, and rendered first.
+   */
+  current?: string;
+  current_at?: string;
   mission?: string;
   priorities?: string;
   budgets?: string;
@@ -37,6 +44,7 @@ export interface OperatingPolicy {
 }
 
 const HEADINGS: Record<PolicySection, string> = {
+  current: "Current direction",
   mission: "Mission",
   priorities: "Priorities",
   budgets: "Budgets",
@@ -55,7 +63,9 @@ export async function getOperatingPolicy(grantId: string): Promise<OperatingPoli
 /** The policy as the officers and the public read it. */
 export function renderOperatingPolicy(policy: OperatingPolicy): string {
   const parts = POLICY_SECTIONS.filter((s) => policy[s]?.trim()).map(
-    (s) => `### ${HEADINGS[s]}\n${policy[s]!.trim()}`
+    (s) =>
+      `### ${HEADINGS[s]}${s === "current" && policy.current_at ? ` (written ${policy.current_at.slice(0, 16).replace("T", " ")} UTC)` : ""}\n` +
+      policy[s]!.trim()
   );
   return parts.length > 0
     ? parts.join("\n\n")
@@ -127,6 +137,7 @@ export async function writeOperatingPolicy(input: {
       return { ok: false, message: `section must be one of ${POLICY_SECTIONS.join(", ")}.` };
     }
     next[input.section] = content;
+    if (input.section === "current") next.current_at = new Date().toISOString();
   } else if (content) {
     // A whole policy: split on its own ### headings when it has them;
     // otherwise it is the mission section, read whole.

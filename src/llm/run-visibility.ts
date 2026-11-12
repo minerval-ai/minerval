@@ -91,6 +91,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   decide_petitions: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   decide_prize_claim: { reads: "public", why: "the run's own decision, which goes on the public prize record" },
   decline: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  hold: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   decline_mandate: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   delegate: { reads: "private", why: "a copy's report on a user's private task" },
   detach_claim_instance: { reads: "public", why: "confirms the run's own write to public graph records" },

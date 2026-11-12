@@ -58,6 +58,7 @@ import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { routeEvents } from "../services/subscription-router.js";
+import { releaseHolds } from "../services/petition-service.js";
 import { runMandateReview, grantmakerWakeDigest } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
@@ -175,6 +176,9 @@ export async function processNextEngineAction(
   // check-ins and thresholds that have come due. Deliveries are made as
   // events are recorded too; this catches what that missed.
   await routeEvents().catch(() => 0);
+  // Holds whose time has come, or whose runs have settled, go back to be
+  // decided; the officers' sittings and the Grantmaker's session take them.
+  await releaseHolds().catch(() => []);
   await fundGrantSelfActions().catch(() => 0);
 
   // Request rows wait, funded, while the operator has the researcher off

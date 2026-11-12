@@ -6154,6 +6154,16 @@ export const petitions = pgTable(
     // The session that asked (agent_sessions): the decision returns into it,
     // shown mid-run or resuming it if it paused (session-service.ts).
     replyToSession: uuid("reply_to_session"),
+    // What the asking run says it has established so far and what is still
+    // open, so the officer judges the ask against the work, not the money.
+    doneSoFar: text("done_so_far"),
+    // A petition an officer held for perspective (status 'held'): until a
+    // time, or until named runs settle, whichever comes first, with what it
+    // is waiting to learn. It comes back to the officers then, never refused
+    // by the passing of time.
+    heldUntil: timestamp("held_until", { withTimezone: true }),
+    holdRefs: jsonb("hold_refs").notNull().default([]),
+    holdReason: text("hold_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     // The label of the run that asked (src/labels.ts). A sitting works the
@@ -6165,7 +6175,7 @@ export const petitions = pgTable(
     check("petitions_kind_check", sql`${table.kind} IN ('more_budget', 'follow_up')`),
     check(
       "petitions_status_check",
-      sql`${table.status} IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')`
+      sql`${table.status} IN ('pending', 'held', 'escalated', 'granted', 'refused', 'follow_up')`
     ),
   ]
 );
@@ -6195,6 +6205,11 @@ export const mandateInbox = pgTable(
     handledBy: text("handled_by"),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),
     escalationNote: text("escalation_note"),
+    // Held by an officer until a time or until named runs settle, with what
+    // it waits to learn (as a petition is held).
+    heldUntil: timestamp("held_until", { withTimezone: true }),
+    holdRefs: jsonb("hold_refs").notNull().default([]),
+    holdReason: text("hold_reason"),
     // The label of the run that raised it (src/labels.ts). A sitting works
     // the items of its mandate's label.
     sensitivityLabel: sensitivityLabelColumn(),
