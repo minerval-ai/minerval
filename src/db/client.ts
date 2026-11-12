@@ -72,10 +72,11 @@ const ownerQuery: OwnerQuery = async <T>(text: string, params: unknown[] = []) =
 // past that waits, as it waited for the one pool), and a connection idle
 // for ten seconds is closed, so a label nothing is running at holds none.
 // When more than MAX_SESSION_POOLS sessions are open, the one unused
-// longest is closed. A process therefore uses at most 20 connections here
-// besides the owner pool's 20, plus what is idling out; a deployment has a
-// handful of labels, each one session for its runs, and as many again for
-// the distinct clearances of the people reading.
+// longest is closed, once it has been quiet for ten seconds. A process
+// therefore uses at most 20 connections here besides the owner pool's 20,
+// plus what is idling out; a deployment has a handful of labels, each one
+// session for its runs, and as many again for the distinct clearances of
+// the people reading.
 
 const SESSION_CONNECTIONS = 20;
 const SESSION_POOL_IDLE_MS = 10_000;
@@ -138,8 +139,15 @@ function sessionConnectionString(session: Session): string {
 
 function closeLeastRecentlyUsed(): void {
   if (sessionPools.size <= MAX_SESSION_POOLS) return;
+  // A pool is closed only when nothing holds a connection of it and nothing
+  // has asked for it lately: work that was just handed the pool may still
+  // be waiting its turn (SESSION_WAIT_MS at most) before it uses it.
+  const quietSince = Date.now() - 2 * SESSION_WAIT_MS;
   const idle = [...sessionPools.entries()]
-    .filter(([, kept]) => kept.pool.totalCount === kept.pool.idleCount && kept.pool.waitingCount === 0)
+    .filter(
+      ([, kept]) =>
+        kept.pool.totalCount === kept.pool.idleCount && kept.pool.waitingCount === 0 && kept.usedAt < quietSince
+    )
     .sort((a, b) => a[1].usedAt - b[1].usedAt);
   for (const [key, kept] of idle) {
     if (sessionPools.size <= MAX_SESSION_POOLS) break;
