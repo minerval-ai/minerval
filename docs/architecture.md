@@ -1648,11 +1648,47 @@ Which backend serves a call is decided by the **shape of the model id**
 |----------|----------|---------|
 | `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-opus-5-5` |
 | `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
+| `endpoint:<name>/…` | an endpoint the deployment runs itself (below) | `endpoint:local/meta-llama/Llama-3.3-70B-Instruct` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
 
 Bedrock/Vertex-prefixed ids resolve to nothing and are rejected with a specific
 message — they 404 against the Anthropic API (issue #11).
+
+**An endpoint of the deployment's own.** A deployment can serve open-weight
+models from a server it runs, beside or instead of the hosted APIs: anything
+that serves an OpenAI-compatible Chat Completions API, as vLLM, llama.cpp's
+server, TGI and Ollama do. Each endpoint is declared once in `MODEL_ENDPOINTS`,
+a JSON list (`src/llm/providers/endpoint-config.ts`):
+
+```
+MODEL_ENDPOINTS=[{"name":"local","baseUrl":"http://vllm.internal:8000/v1","keyEnv":"LOCAL_LLM_KEY","inputUsdPerMtok":0.5,"outputUsdPerMtok":1.5}]
+STEWARD_MODEL=endpoint:local/meta-llama/Llama-3.3-70B-Instruct
+```
+
+`name` is what follows `endpoint:` in a model id, and everything after the
+first slash is the model as the endpoint knows it. The prefix is literal
+because open-weight model names contain slashes themselves and would
+otherwise read as OpenRouter ids. `keyEnv` names the environment variable
+that holds the endpoint's key, and is left out for an endpoint that takes
+none. The two prices are required and have no default: a run's budget and
+the owls charged for it are counted in metered cost, and only the deployment
+knows what its own hardware costs. A model field that names an endpoint
+nobody declared stops the process at start.
+
+The endpoint adapter (`providers/endpoint.ts`) reuses the Chat Completions
+translation OpenRouter uses. A call is priced from the tokens the endpoint
+reports at its declared rates and metered like any other, and a reply that
+carries no token counts is refused rather than estimated, since an estimate
+would put a guess in the ledger. Structured output is a `json_schema`
+response format, checked against the schema when it comes back. What such
+an endpoint does not offer is what is Anthropic-only below: no server-side
+web search (the agent gets the client-side `web_search`), no code-execution
+sandbox, no prompt-cache breakpoints, no `effort`, no long-run loop, and no
+images or PDF pages shown to the model, since the list of models that take
+them (`modelSeesImages` in `src/llm/models.ts`) names hosted families only.
+The context a local model takes is the server's to enforce, and a request
+over it comes back as the server's own error, with the endpoint's name.
 
 Each adapter in `src/llm/providers/` speaks its own platform's native dialect
 rather than a lowest-common-denominator abstraction. Structured output, for
@@ -1712,12 +1748,93 @@ breakpoints.
 **Metering** stays at one chokepoint regardless of provider. Anthropic and
 OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
 reports its own computed cost per call, which overrides the table (no rate table
-can cover its zoo). Unknown model ids fall back to the top-tier rate so nothing
-ever meters as free. Every usage row records which provider served it.
+can cover its zoo), and a declared endpoint's calls are priced from its declared
+rates and take the same path. Unknown model ids fall back to the top-tier rate
+so nothing ever meters as free. Every usage row records which provider served
+it.
 
 Missing credentials fail as a clear configuration error at call time, not as an
-opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
-`OPENROUTER_API_KEY`.
+opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings),
+`OPENROUTER_API_KEY`, and the variable a declared endpoint's `keyEnv` names.
+
+### Providers cleared by label
+
+A row carries a label that says who may read it (`src/labels.ts`), and a run
+works at the label of the work that started it. Text at a label other than
+`public` reaches only the parties the deployment's owner chose: its members,
+and a model provider or an outside service by contract. So each provider is
+cleared for a set of labels, and a run is served only by one cleared for the
+label it works at (`src/provider-labels.ts`).
+
+A provider here is anything outside the deployment that is sent text a run
+composed or read:
+
+| Name | What it is | What it is sent |
+|------|------------|-----------------|
+| `anthropic`, `openai`, `openrouter` | the hosted model APIs | every prompt, and what Anthropic's server tools (web search, code execution) do inside a turn |
+| `endpoint:<name>` | an endpoint declared in `MODEL_ENDPOINTS` | every prompt of a model routed to it |
+| `embeddings` | OpenAI's embeddings API | the text of each claim, tag, finding, request and report, and each search query |
+| `web_search` | the `web_search` tool where the agent's own loop runs it: OpenRouter's web plugin, which searches through Exa | the query |
+| `web_pages` | fetching an address on the open web: `read_page` and the other reading tools, the reading of a submitted source, feeds, Crossref, arXiv, the Internet Archive | the address, which a run may have composed |
+| `elicit` | Elicit's search of papers and trials | the query |
+| `pangram` | Pangram's checks for AI-generated writing and matching text | the text checked |
+
+`PROVIDER_LABELS` is a JSON object from a provider's name to the labels it may
+receive text at:
+
+```
+PROVIDER_LABELS={"anthropic":["public","internal"],"endpoint:local":["public","internal","restricted"],"embeddings":["public","internal"]}
+```
+
+A provider the setting does not name is cleared for `public` and for nothing
+else. The public graph has only `public`, so it needs no setting and nothing
+about it changes. A deployment with another label serves nothing at that
+label until whoever runs it clears a provider for it: which outside party
+may read private text is a step of setting the deployment up, never a
+default. A provider the setting names is cleared for exactly the labels
+listed, so `[]` switches it off for every label.
+
+The test is one label, by name: the provider must be cleared for the label
+the run works at. A run at a label also sends what that label reads (the
+pairs in `label_reads`), and that needs no second check, because a run at a
+label is trusted with everything the label reads and so is whoever it may
+send its text to. Nothing follows in the other direction. A provider cleared
+for `restricted` is not thereby cleared for runs at `internal`, and labels
+have no order from which such a rule could be read.
+
+The check is made where the text leaves, before the request is built: in the
+LLM client for the model provider of every call (`src/llm/client.ts`), in the
+embedding service, in the one function that fetches a public address
+(`services/url-guard.ts`), in the loop-run web search, and in the Elicit and
+Pangram tools (`src/llm/provider-clearance.ts`). A call that is not cleared
+fails there with an error that names the label, the provider and the entry to
+write in `PROVIDER_LABELS`. Nothing is sent, nothing is retried on another
+provider, and the label is never read as `public`. A run whose model is not
+cleared fails on its first call, before it has spent anything.
+
+A name in `PROVIDER_LABELS` that is not a provider stops the process at
+start. Labels are named by name and are never created from the setting. A
+label it names that is not a row in `labels` can only be found by asking the
+database, so it is reported the first time the setting is used, and every
+call is refused until the label is defined or the name corrected.
+
+A run is not offered the tools of a service that is not cleared for its
+label, exactly as it is not offered the tools of a feature that is off, and
+it is told so in the same passage at the head of its first task message
+(`src/llm/uncleared-services-note.ts`): which services, and that this
+deployment has not cleared them to receive the material the run works with.
+Embeddings have no tool of their own. Where they are not cleared a row is
+written without a vector and a search falls back to keywords, as when the
+embeddings API is down, and the passage says that search by meaning is not
+available. The prompt step's setup records the provider that served the run
+beside its label (`setup.provider`, docs/run-log.md), so a later reader can
+check that the rule held.
+
+The Lean checker, the database and the queues are parts of the deployment,
+not outside parties, and are not on the list. Stripe is sent no text of a
+run. A problem report an agent files does leave the deployment where
+`GITHUB_ISSUES_REPO` is set, as a GitHub issue, and this check does not
+cover that path.
 ### The long-run loop
 
 The five functions above are the provider-neutral contract every agent
