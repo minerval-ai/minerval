@@ -81,8 +81,6 @@ export interface ReviewSheetInput {
 }
 
 export interface EvalsIndexInput {
-  syncedAt: string;
-  gitCommit: string | null;
   pins: PinInput[];
   judgeModel: string;
   /** Rates per model id; null for models the pricing table does not carry (provider-priced). */
@@ -103,8 +101,6 @@ export interface EvalsIndexInput {
 }
 
 export interface EvalsIndex {
-  syncedAt: string;
-  gitCommit: string | null;
   /** Production pins from the CDK task definition, one per agent that has one. */
   pins: Array<{ agent: string; envVar: string; model: string; label: string }>;
   judge: { model: string; label: string };
@@ -270,8 +266,6 @@ export function buildEvalsIndex(input: EvalsIndexInput): EvalsIndex {
   const dates = input.predictions.predictions.map((p) => p.resolutionDate).sort();
 
   return {
-    syncedAt: input.syncedAt,
-    gitCommit: input.gitCommit,
     pins,
     judge: { model: input.judgeModel, label: modelLabel(input.judgeModel) },
     rates,

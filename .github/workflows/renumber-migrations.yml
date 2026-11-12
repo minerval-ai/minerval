@@ -1,15 +1,24 @@
-name: Renumber migrations
+name: Renumber migrations and regenerate content
 
-# Two open PRs that each add a migration take the same number, so whichever
-# merges second conflicts in src/db/migrations (CLAUDE.md). The fix is always
-# the same: merge main, leave those conflicts, run `npm run db:renumber`. This
-# workflow does that for every open PR, each time main moves, so a PR doesn't
-# sit conflicted until someone notices.
+# Two kinds of conflict need no judgment, and between them they are most of
+# the conflicts open PRs have with main:
+#
+# - Two open PRs that each add a migration take the same number, so whichever
+#   merges second conflicts in src/db/migrations (CLAUDE.md). The fix is
+#   always the same: merge main, leave those conflicts, run
+#   `npm run db:renumber`.
+# - web/content/ is generated (scripts/sync-frontend-content.ts) from the
+#   constitution, the prompts, the skills and the docs. Two PRs that change
+#   the same one conflict there as well as in the source. Once the source
+#   merges, the fix is always the same: regenerate it.
+#
+# This workflow does that for every open PR, each time main moves, so a PR
+# doesn't sit conflicted until someone notices.
 #
 # It acts only on a PR whose conflicts with main are all inside
-# src/db/migrations. A PR that also conflicts anywhere else is left alone,
-# named in the run's summary: that needs a person (or an agent) to resolve
-# the code first. A PR that merges cleanly is not touched. It merges and
+# src/db/migrations or web/content. A PR that also conflicts anywhere else is
+# left alone, named in the run's summary: that needs a person (or an agent)
+# to resolve the code first. A PR that merges cleanly is not touched. It merges and
 # pushes; it never rebases or force-pushes, so a push that lost a race with
 # someone else's is rejected and the PR is left for the next run.
 #
@@ -20,8 +29,9 @@ name: Renumber migrations
 # write and nothing else. Setup is in docs/infrastructure.md, "Migration
 # renumbering".
 #
-# Renumbering runs each branch's own code: scripts/renumber-migrations.ts,
-# and src/db/schema.ts through drizzle-kit. That token can write to the
+# Both fixes run each branch's own code: scripts/renumber-migrations.ts,
+# src/db/schema.ts through drizzle-kit, and scripts/sync-frontend-content.ts
+# with everything it imports. That token can write to the
 # repository, and an admin's token can push to main past the ruleset, so the
 # two never share a runner. `prepare` runs the branch code holding no secret
 # (the built-in read token is used to list and fetch before any branch code
@@ -29,11 +39,14 @@ name: Renumber migrations
 # `push` as a git bundle. `push` runs no branch code: for each bundle it
 # checks, against its own fetch of the branch and main, that the commit is a
 # merge of main into the branch's current tip, that the PR's only conflicts
-# with main are in src/db/migrations, that it differs from git's own merge
-# only inside that folder, and that every .sql file in it is byte for byte
-# one that main or the branch already has. Only then does it push. So even a
-# branch whose code tampered with `prepare` can get nothing pushed but a
-# renumbering of SQL its authors already wrote.
+# with main are in src/db/migrations or web/content, that it differs from
+# git's own merge only inside those folders, and that every .sql file in the
+# migrations folder is byte for byte one that main or the branch already has.
+# Only then does it push. So even a branch whose code tampered with `prepare`
+# can get nothing pushed but a renumbering of SQL its authors already wrote
+# and a change to its own web/content, which is the site's copy of text, not
+# code anything runs. That copy is checked the way any push's is: CI's drift
+# test regenerates it and fails if it differs.
 on:
   push:
     branches: [main]
@@ -51,6 +64,9 @@ env:
   # The main both jobs merge and check against, fixed for the whole run.
   MAIN: ${{ github.sha }}
   LC_ALL: C
+  # The folders whose conflicts this workflow resolves, and the only ones a
+  # merge it pushes may differ from git's own merge in.
+  RESOLVABLE: '^(src/db/migrations|web/content)/'
 
 jobs:
   prepare:
@@ -104,10 +120,11 @@ jobs:
           cache: npm
 
       # Main's dependencies serve every branch: renumbering needs only tsx and
-      # drizzle-kit, which a branch does not change.
+      # drizzle-kit, which a branch does not change. A branch whose content
+      # sync needs a dependency main lacks fails to regenerate and is left alone.
       - run: npm ci --ignore-scripts
 
-      - name: Merge main into each PR whose only conflicts are migrations, and renumber
+      - name: Merge main into each PR whose only conflicts are migrations or generated content, and fix them
         id: renumber
         run: |
           # Actions runs bash with -e, but git merge-tree and git merge exit 1 on a
@@ -133,14 +150,16 @@ jobs:
             fi
             # Line 1 is the tree; the conflicted paths follow, up to a blank line.
             conflicted=$(printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d')
-            elsewhere=$(printf '%s\n' "$conflicted" | grep -v '^src/db/migrations/' || true)
+            elsewhere=$(printf '%s\n' "$conflicted" | grep -Ev "$RESOLVABLE" || true)
             if [ -n "$elsewhere" ]; then
-              echo "#$number ($branch) conflicts outside the migrations folder; left alone:"
+              echo "#$number ($branch) conflicts outside src/db/migrations and web/content; left alone:"
               printf '    %s\n' $elsewhere
               left="$left #$number"
               continue
             fi
-            if ! git cat-file -e "origin/$branch:scripts/renumber-migrations.ts" 2>/dev/null; then
+            migrations=$(printf '%s\n' "$conflicted" | grep -q '^src/db/migrations/' && echo yes)
+            content=$(printf '%s\n' "$conflicted" | grep -q '^web/content/' && echo yes)
+            if [ -n "$migrations" ] && ! git cat-file -e "origin/$branch:scripts/renumber-migrations.ts" 2>/dev/null; then
               echo "#$number ($branch) has no scripts/renumber-migrations.ts; left alone."
               left="$left #$number"
               continue
@@ -155,16 +174,48 @@ jobs:
               continue
             fi
             git merge --no-edit "$MAIN" >/dev/null 2>&1
-            if npx tsx scripts/renumber-migrations.ts --base "$MAIN" && [ -z "$(git diff --name-only --diff-filter=U)" ]; then
-              git commit --quiet --no-edit -m "Merge main; renumber this branch's migrations after main's (db:renumber)
+            fixed=true
+            done_what=""
+            if [ -n "$content" ]; then
+              # Take main's side of each conflicted generated file, then
+              # regenerate them all from the merged source.
+              for f in $(git diff --name-only --diff-filter=U -- web/content); do
+                if git cat-file -e "$MAIN:$f" 2>/dev/null; then
+                  git checkout --quiet "$MAIN" -- "$f"
+                else
+                  git rm --quiet -- "$f"
+                fi
+              done
+              if npx tsx scripts/sync-frontend-content.ts >/dev/null; then
+                # The sync also writes plugin/skills and web/public. Only
+                # web/content is this job's to change: put the rest back as
+                # git merged it, and CI's drift test says if it needs a sync.
+                git checkout --quiet -- . ':(exclude)web/content' ':(exclude)src/db/migrations'
+                git clean -fdq -- . ':(exclude)web/content' ':(exclude)src/db/migrations'
+                git add -A web/content
+                done_what="regenerate web/content"
+              else
+                echo "The content sync failed on the merge of #$number."
+                fixed=false
+              fi
+            fi
+            if $fixed && [ -n "$migrations" ]; then
+              if npx tsx scripts/renumber-migrations.ts --base "$MAIN"; then
+                done_what="${done_what:+$done_what; }renumber this branch's migrations after main's (db:renumber)"
+              else
+                fixed=false
+              fi
+            fi
+            if $fixed && [ -z "$(git diff --name-only --diff-filter=U)" ]; then
+              git commit --quiet --no-edit -m "Merge main; $done_what
 
-          Done by .github/workflows/renumber-migrations.yml: the only conflicts with main were in src/db/migrations."
+          Done by .github/workflows/renumber-migrations.yml: the only conflicts with main were in src/db/migrations or web/content."
               git update-ref "refs/renumbered/$number" HEAD
               git bundle create "$RUNNER_TEMP/renumbered/$number.bundle" \
                 "refs/renumbered/$number" "^$MAIN" "^origin/$branch" 2>/dev/null
               ready="$ready #$number"
             else
-              echo "db:renumber could not put #$number in order; left alone."
+              echo "Could not fix #$number's conflicts; left alone."
               git merge --abort 2>/dev/null || git reset --quiet --hard
               left="$left #$number"
             fi
@@ -172,10 +223,10 @@ jobs:
             echo "::endgroup::"
           done < "$RUNNER_TEMP/prs.txt"
 
-          echo "Merged and renumbered, to be checked and pushed:${ready:- none}"
+          echo "Merged and fixed, to be checked and pushed:${ready:- none}"
           echo "Left for a person:${left:- none}"
           {
-            echo "**Merged and renumbered, to be checked and pushed:**${ready:- none}"
+            echo "**Merged and fixed, to be checked and pushed:**${ready:- none}"
             echo
             echo "**Left for a person:**${left:- none}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -256,12 +307,12 @@ jobs:
               refuse "merges with main without a conflict, or git merge-tree failed"; continue
             fi
             merged=$(printf '%s\n' "$out" | head -n 1)
-            if printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d' | grep -qv '^src/db/migrations/'; then
-              refuse "conflicts with main outside src/db/migrations"; continue
+            if printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d' | grep -Evq "$RESOLVABLE"; then
+              refuse "conflicts with main outside src/db/migrations and web/content"; continue
             fi
-            outside=$(git diff --name-only "$merged" "$commit" -- . ':(exclude)src/db/migrations/')
+            outside=$(git diff --name-only "$merged" "$commit" -- . ':(exclude)src/db/migrations/' ':(exclude)web/content/')
             if [ -n "$outside" ]; then
-              refuse "differs from git's merge outside src/db/migrations ($(echo $outside))"; continue
+              refuse "differs from git's merge outside src/db/migrations and web/content ($(echo $outside))"; continue
             fi
             new_sql=$(comm -13 <({ sql_blobs "$MAIN"; sql_blobs "$tip"; } | sort -u) <(sql_blobs "$commit"))
             if [ -n "$new_sql" ]; then
@@ -270,17 +321,17 @@ jobs:
 
             # A plain push: if the branch moved since the fetch, it is rejected and the next run tries again.
             if git push --quiet origin "$commit:refs/heads/$branch"; then
-              echo "#$number ($branch): renumbered and pushed."
+              echo "#$number ($branch): fixed and pushed."
               renumbered="$renumbered #$number"
             else
               refuse "the push was rejected (the branch moved); the next run tries again"
             fi
           done <<< "$prs"
 
-          echo "Renumbered:${renumbered:- none}"
+          echo "Fixed:${renumbered:- none}"
           echo "Not pushed:${left:- none}"
           {
-            echo "**Renumbered:**${renumbered:- none}"
+            echo "**Fixed:**${renumbered:- none}"
             echo
             echo "**Not pushed:**${left:- none}"
           } >> "$GITHUB_STEP_SUMMARY"

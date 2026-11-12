@@ -20,8 +20,6 @@ export interface AgentMeta {
   invokedWhen: string;
   model: string;
   hasConstitution: boolean;
-  roleChars: number;
-  fullChars: number;
   /** The skills this agent can load (the Extractor's are spliced into its prompt). */
   skills: AgentSkillRef[];
 }
