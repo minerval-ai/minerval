@@ -31,7 +31,7 @@ import {
 } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
-import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
+import { capMicroUsd, microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import {
   duePartitions,
@@ -1093,6 +1093,11 @@ export interface PlanItemLedger {
    */
   children?: string[];
   /**
+   * deepen only: the node's unassessed children the item has not been able
+   * to commission yet, by id, so its standing names them (#961).
+   */
+  children_waiting?: string[];
+  /**
    * deepen only, while the item still waits on its children: when the
    * node's own pass was seen finished.
    */
@@ -1119,6 +1124,12 @@ export interface MaterializablePlanItem {
   kind?: string;
   text?: string;
   contribution_id?: string;
+  /**
+   * assess/reassess/deepen: set when the Grantmaker withdrew the item
+   * (amend_plan_items). It orders nothing more, and what it had placed and
+   * not yet started is released (plan-amend-service.ts).
+   */
+  withdrawn?: { at: string; note?: string; returned_owls?: number };
   ledger?: PlanItemLedger;
   [key: string]: unknown;
 }
@@ -1430,15 +1441,16 @@ export async function materializeGrantPlan(
   }
 
   const ensuredFormalize = new Set<string>();
-  // Standing orders are placed in plan order: once today's rate has turned
-  // one away, the later ones wait behind it (standing-order-service.ts).
-  const orderQueue = { rateHeld: false };
+  // Standing orders are asked for in plan order, and each is placed when
+  // the day's room covers it: one the rate turns away waits without holding
+  // the ones after it (#956). The queue carries the room across the look.
+  const orderQueue: { rateRoomMicroUsd: number | null } = { rateRoomMicroUsd: null };
   let started = -1;
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
     let ledger: PlanItemLedger;
     try {
-      ledger = early.get(i) ?? await materializePlanItem(item, i, {
+      ledger = (await materializeWithdrawn(item, i, items, g.id)) ?? early.get(i) ?? await materializePlanItem(item, i, {
         grantId: g.id,
         orderQueue,
         ctx,
@@ -1478,12 +1490,14 @@ export async function materializeGrantPlan(
         [g.id, ["items", String(i), "ledger"], JSON.stringify(ledger), i]
       );
     }
-    // Work that has started: it ran, is running, was retired, or has the
-    // mandate's commission on it.
+    // Work that has started: it ran, is running, or was retired on the
+    // ledger. One meaning everywhere an agent meets the word (adjust_plan,
+    // amend_plan_items): an order that is placed and still waiting its turn
+    // has not started, so its Grantmaker can still change or withdraw it.
     if (
       ledger.status === "running" || ledger.status === "done" ||
       (ledger.status === "cancelled" && ledger.action_id) ||
-      (ledger.status === "open" && ledger.order)
+      ledger.ran_at
     ) {
       started = i;
     }
@@ -1509,8 +1523,77 @@ function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
     (a.action_id ?? null) === (b.action_id ?? null) &&
     (a.exclusion_group ?? null) === (b.exclusion_group ?? null) &&
     JSON.stringify(a.order ?? null) === JSON.stringify(b.order ?? null) &&
-    JSON.stringify(a.children ?? null) === JSON.stringify(b.children ?? null)
+    JSON.stringify(a.children ?? null) === JSON.stringify(b.children ?? null) &&
+    JSON.stringify(a.children_waiting ?? null) === JSON.stringify(b.children_waiting ?? null)
   );
+}
+
+const STEWARDING_KINDS = new Set(["assess", "reassess", "deepen"]);
+
+/**
+ * The standing of a stewarding item its Grantmaker withdrew
+ * (amend_plan_items), or null for any other item. What the item had placed
+ * and not yet started is released, on every look until nothing is left, so
+ * a withdrawal that raced a placement still ends with the money back. A
+ * pass that was already running finishes: money that is being spent is not
+ * taken from under a run.
+ */
+async function materializeWithdrawn(
+  item: MaterializablePlanItem,
+  index: number,
+  items: readonly MaterializablePlanItem[],
+  grantId: string
+): Promise<PlanItemLedger | null> {
+  if (!item.withdrawn || !STEWARDING_KINDS.has(item.action)) return null;
+  const prior = item.ledger;
+  // Settled: the work ran before the withdrawal, or the withdrawal is recorded.
+  if (prior?.status === "done") return prior;
+  if (prior?.status === "cancelled" && !prior.action_id) return prior;
+  const orders = await import("./standing-order-service.js");
+  const said =
+    `withdrawn by the mandate's Grantmaker on ${String(item.withdrawn.at).slice(0, 10)}` +
+    (item.withdrawn.note ? ` (${item.withdrawn.note})` : "");
+  // What the withdrawal itself released (plan-amend-service.ts), plus
+  // anything placed since: a sweep can race the tool by one placement.
+  let back = Math.round(Number(item.withdrawn.returned_owls ?? 0) * loadConfig().owlCostMicroUsd);
+  if (item.claim_id) {
+    if (prior?.order) back += await orders.releaseStandingOrder(grantId, item.claim_id);
+    for (const child of prior?.children ?? []) {
+      // A child another item of this plan ordered in its own right keeps that order.
+      const theirs = items.some(
+        (other, j) => j !== index && other.claim_id === child && !other.withdrawn && other.ledger?.order
+      );
+      if (!theirs) back += await orders.releaseStandingOrder(grantId, child);
+    }
+  }
+  const row = prior?.action_id ? await groupLedger({ actionId: prior.action_id }) : null;
+  if (prior?.ran_at || (prior?.order && row?.status === "done")) {
+    return {
+      status: "done",
+      ...(prior.action_id ? { action_id: prior.action_id } : {}),
+      ...(prior.exclusion_group ? { exclusion_group: prior.exclusion_group } : {}),
+      ...(prior.order ? { order: prior.order } : {}),
+      ...(prior.children?.length ? { children: prior.children } : {}),
+      reason: `${said}, after its node's pass had run; nothing more is ordered for it`,
+      checked_at: nowIso(),
+    };
+  }
+  if (prior?.order && row?.status === "running") {
+    return {
+      ...fromRow(row, `${said}, after its pass had begun: that pass finishes and settles, and nothing more is ordered for it`),
+      order: prior.order,
+      ...(prior.children?.length ? { children: prior.children } : {}),
+    };
+  }
+  return {
+    status: "cancelled",
+    reason:
+      `${said} before its pass began. ` +
+      (back > 0
+        ? `The ${microUsdToOwls(back)} owls it held are back in the escrow and in the day's room.`
+        : "It held no money."),
+    checked_at: nowIso(),
+  };
 }
 
 async function materializePlanItem(
@@ -1518,7 +1601,7 @@ async function materializePlanItem(
   index: number,
   o: {
     grantId: string;
-    orderQueue: { rateHeld: boolean };
+    orderQueue: { rateRoomMicroUsd: number | null };
     ctx: MaterializeContext;
     cursor: number;
     active: boolean;
@@ -1676,14 +1759,15 @@ async function materializePlanItem(
     // whole, at the item's budget or the row's estimate, on the item's
     // tier. What the day's rate cannot cover yet waits and is asked for
     // again; what could never fit is blocked, with the figures either way.
+    // An item that names no tier (one stored before items had to, #956)
+    // places nothing new: what it already placed is found, the rest reads
+    // blocked until its Grantmaker names one.
     const tier = orders.orderTier(item.variant);
     const budgetMicroUsd =
       Number(item.budget_owls) > 0 ? Math.round(Number(item.budget_owls) * loadConfig().owlCostMicroUsd) : null;
     let own: PlanItemLedger;
     if (ran) {
       own = ran;
-    } else if (o.orderQueue.rateHeld) {
-      own = waiting(orders.HELD_BEHIND_EARLIER);
     } else {
       const res = await orders.placeStandingOrder({
         grantId: o.grantId,
@@ -1696,11 +1780,11 @@ async function materializePlanItem(
         brief:
           `A funded mandate scheduled a ${kind} pass on this claim.` +
           (kind === "deepen" ? " Its deferred subclaims were released into the queue." : ""),
+        queue: o.orderQueue,
       });
       if (res.state === "blocked") {
         own = blocked(res.reason);
       } else if (res.state === "waiting") {
-        if (res.rate) o.orderQueue.rateHeld = true;
         own = waiting(res.reason);
       } else {
         const row = await groupLedger({ actionId: res.actionId });
@@ -1734,16 +1818,21 @@ async function materializePlanItem(
 
     // deepen's second half: the node's deferred children are released
     // (#98's brake, lifted for them by a funder's say-so), and each child
-    // waiting for a pass gets one from the mandate, like the node's own.
-    // One level; idempotent, so it runs on every sweep until every child
-    // is dealt with, which catches the children the node's pass mints.
-    await rawQuery(
-      `UPDATE claims SET steward_state = 'pending', updated_at = now()
-        WHERE state = 'active' AND steward_state = 'deferred'
-          AND id IN (SELECT child_claim_id FROM claim_relationships
-                      WHERE parent_claim_id = $1)`,
-      [claim.id]
-    );
+    // that carries no assessment and is queued for a pass gets one from the
+    // mandate, like the node's own. A child that has an assessment is left
+    // alone, however it came to be queued (#961). One level; idempotent, so
+    // it runs on every sweep until every child is dealt with, which catches
+    // the children the node's pass mints. An item that names no tier
+    // releases and orders nothing.
+    if (tier) {
+      await rawQuery(
+        `UPDATE claims SET steward_state = 'pending', updated_at = now()
+          WHERE state = 'active' AND steward_state = 'deferred'
+            AND id IN (SELECT child_claim_id FROM claim_relationships
+                        WHERE parent_claim_id = $1)`,
+        [claim.id]
+      );
+    }
     const kids = await orders.orderChildPasses({
       grantId: o.grantId,
       parentId: claim.id,
@@ -1752,25 +1841,43 @@ async function materializePlanItem(
       already: item.ledger?.children ?? [],
       queue: o.orderQueue,
     });
-    const withChildren = (l: PlanItemLedger, reason?: string): PlanItemLedger => ({
-      ...l,
-      ...(reason ? { reason } : {}),
-      ...(kids.children.length > 0 ? { children: kids.children } : {}),
-    });
-    const pending = kids.blocked ?? kids.waiting;
+    const withChildren = (l: PlanItemLedger, reason?: string): PlanItemLedger => {
+      const { reason: _own, children_waiting: _was, ...rest } = l;
+      return {
+        ...rest,
+        ...(reason ? { reason } : {}),
+        ...(kids.children.length > 0 ? { children: kids.children } : {}),
+        ...(kids.notOrdered.length > 0 ? { children_waiting: kids.notOrdered } : {}),
+      };
+    };
+    const say = (...parts: Array<string | null | undefined>) =>
+      parts.filter(Boolean).join(" Also: ") || undefined;
     if (own.status === "done") {
       // The node's pass ran; the item is done once its children are ordered.
       const ranAt = own.ran_at ?? nowIso();
-      if (kids.blocked) {
-        return withChildren({ ...own, status: "blocked", ran_at: ranAt }, `the pass on the node ran; ${kids.blocked}`);
-      }
       if (kids.waiting) {
-        return withChildren({ ...own, status: "waiting", ran_at: ranAt }, `the pass on the node ran; ${kids.waiting}`);
+        return withChildren(
+          { ...own, status: "waiting", ran_at: ranAt },
+          say(`the pass on the node ran; ${kids.waiting}`, kids.blocked, kids.note)
+        );
+      }
+      if (kids.blocked) {
+        return withChildren(
+          { ...own, status: "blocked", ran_at: ranAt },
+          say(`the pass on the node ran; ${kids.blocked}`, kids.note)
+        );
       }
       const { ran_at: _seen, ...finished } = own;
-      return withChildren(finished);
+      return withChildren(finished, say(own.reason, kids.note));
     }
-    return withChildren(own, pending ? [own.reason, pending].filter(Boolean).join(" Also: ") : own.reason);
+    if (!tier && own.status === "blocked" && kids.notOrdered.length > 0) {
+      // One reason for the node and its children: nothing is ordered until a tier is named.
+      return withChildren(
+        own,
+        say(`${own.reason}. The same holds for its ${kids.notOrdered.length} unassessed children`, kids.note)
+      );
+    }
+    return withChildren(own, say(own.reason, kids.waiting, kids.blocked, kids.note));
   }
 
   // A kind whose feature this deployment has switched off opens no work

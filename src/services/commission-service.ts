@@ -103,6 +103,12 @@ export type CommissionResult =
         | "OVER_RUN_BUDGET"
         | "PAYER_INACTIVE";
       message: string;
+      /**
+       * OVER_DAILY_RATE from a mandate: what today's rate had left when the
+       * commission was refused, so a caller placing several (a plan's
+       * standing orders) can tell which of the rest would fit.
+       */
+      roomMicroUsd?: number;
     };
 
 /** A mandate's day so far: what is spent or held by running work today. */
@@ -452,6 +458,7 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
               `A budget of ${owls(budget)} owls is more than today's rate has left ` +
               `(${owls(Math.max(0, daily - used))} of ${owls(daily)} owls). Running work frees ` +
               `its unspent budget as it finishes.`,
+            roomMicroUsd: Math.max(0, daily - used),
           } as const;
         }
       }

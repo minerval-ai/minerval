@@ -332,7 +332,10 @@ async function runMandateReviewImpl(input: {
         "executes through the ledger like everything else: a pass you plan " +
         "is commissioned from this mandate, within its daily rate, as soon " +
         "as the rate and escrow have the room. Appends only; " +
-        "already-planned work stays. The items are materialized onto the " +
+        "already-planned work stays, and amend_plan_items is how you change " +
+        "the tier or budget of a standing order already in the plan, or " +
+        "withdraw it, until its pass is running. Pass preview: true to see " +
+        "what the items would commission before anything is written. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
         "standing (open, running, done, cancelled, waiting, blocked) with " +
         "the reason, so read it: a blocked item will not become work until " +
@@ -343,6 +346,14 @@ async function runMandateReviewImpl(input: {
         properties: {
           items: { type: "array", items: PLAN_ITEM_SCHEMA },
           note: { type: "string", description: "One sentence: why." },
+          preview: {
+            type: "boolean",
+            description:
+              "true to see what these items would commission without writing anything: each " +
+              "stewarding item's tier and budget per pass, whether its node's pass would be bought " +
+              "or is already met, the children a deepen item would order by id, and the total " +
+              "against today's room and the escrow.",
+          },
         },
         required: ["items", "note"],
       },
@@ -632,7 +643,8 @@ async function runMandateReviewImpl(input: {
         `and yours alike; running work frees what it leaves as it finishes`
       : ``) +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
-    `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
+    `(grant_overview itemises, with each item's index, tier, budget and reason; "done" counts the ` +
+    `items whose work ran; amend_plan_items changes or withdraws a standing order until its pass is running).\n\n` +
     (reflection ? `${reflection}\n\n` : ``) +
     `Start from what happened, not from scratch. The sections above are what your money did and ` +
     `where the agents doing the work told you it fell short. Where a shortfall recurs, fix its cause ` +
@@ -815,6 +827,10 @@ async function runMandateReviewImpl(input: {
         if (problem) return JSON.stringify({ success: false, problem });
         // Stored in the one plan-item form every path writes (#684).
         const stored = normalizePlanItems(newItems);
+        if (toolInput.preview === true) {
+          const { previewPlanOrders } = await import("../../services/standing-order-service.js");
+          return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grant.id, stored)) });
+        }
         const [appended] = await rawQuery<{ before: number }>(
           `UPDATE grants
               SET plan = jsonb_set(

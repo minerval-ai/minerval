@@ -882,11 +882,65 @@ export const WITHDRAW_REGRANT: Tool = {
   },
 };
 
+/**
+ * Changing a standing order after it is written (#956). The description is
+ * the contract: what "started" means, what can change before then, and
+ * where the money goes (plan-amend-service.ts).
+ */
+export const AMEND_PLAN_ITEMS: Tool = {
+  name: "amend_plan_items",
+  description:
+    "Change or withdraw standing orders of your plan (assess, reassess and deepen items) that have not " +
+    "started, wherever they sit in the plan. An item's work has started once its pass is running. Until " +
+    "then, whether its order is waiting for room, blocked, or already commissioned and waiting its turn " +
+    "in the queue, you can give it another variant (standard or strong), another budget_owls, or " +
+    "withdraw it. A budget the order already holds comes straight back to your escrow and the day's " +
+    "room. An amended order is asked for again on its new terms in this same call, under the same daily " +
+    "rate and escrow as any order; a withdrawn item reads cancelled with your note, stays in the plan " +
+    "as a record, and orders nothing more. A pass that is running or has run is left as it is: a done " +
+    "item is refused, and so is a running assess or reassess item. A deepen item is several passes, so " +
+    "the change reaches each pass of it that has not started: its node's pass if that has not begun, " +
+    "and the children it has not ordered or whose passes have not begun. Name each item by its index " +
+    "(extend_plan's result and grant_overview give it) and its claim_id, which is checked so a plan " +
+    "rewritten since you read it is not changed by position. All the changes are checked first and none " +
+    "is made if one is refused. The result gives each item's new standing and what came back. This is " +
+    "also how an item stored without a variant, which commissions nothing until it has one, is given " +
+    "its tier. Nothing bounds how many items you change; what the orders may hold is bounded by your " +
+    "daily rate and escrow.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      changes: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            index: { type: "number", description: "The item's position in the plan, from 0." },
+            claim_id: { type: "string", description: "The node the item is on, as its plan entry gives it." },
+            variant: { type: "string", enum: ["standard", "strong"], description: "The tier to commission its passes on." },
+            budget_owls: {
+              type: ["number", "null"],
+              description:
+                "The budget of each pass the item commissions, in owls; null for the pass's current " +
+                "estimate on the item's tier. Leave it out to keep what the item has.",
+            },
+            withdraw: { type: "boolean", description: "true to withdraw the item instead of changing it." },
+          },
+          required: ["index"],
+        },
+      },
+      note: { type: "string", description: "One sentence on why, kept with each item changed and shown with its standing." },
+    },
+    required: ["changes", "note"],
+  },
+};
+
 /** The Grantmaker's spending tools, in review passes and the management chat. */
 export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): Tool[] {
   return [
     WRITE_OPERATING_POLICY,
     COMMISSION_FOR_MANDATE,
+    AMEND_PLAN_ITEMS,
     getSqlToolDefinition(),
     WITHDRAW_REGRANT,
     ...(opts.chat ? [AMEND_OBJECTIVE] : []),
@@ -944,6 +998,15 @@ export async function executeMandateOperationsTool(
       [grantId, target, owlsToMicroUsd(r.withdrawnOwls), String(input.reason ?? "")]
     );
     return JSON.stringify({ success: true, message: `Withdrew ${r.withdrawnOwls} owls into your escrow.` });
+  }
+  if (name === "amend_plan_items") {
+    const { amendPlanItems } = await import("../../services/plan-amend-service.js");
+    const res = await amendPlanItems({
+      grantId,
+      changes: (Array.isArray(input.changes) ? input.changes : []) as never,
+      note: String(input.note ?? ""),
+    });
+    return JSON.stringify(res.ok ? { success: true, ...res, ok: undefined } : { success: false, problem: res.problem });
   }
   if (name !== "write_operating_policy" && name !== "commission") return null;
   const grant = await loadGrant(grantId);

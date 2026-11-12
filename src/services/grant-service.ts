@@ -53,13 +53,14 @@ export interface PlanItem {
    *                 question's standing. A standing order: the mandate
    *                 commissions the pass whole (standing-order-service.ts),
    *                 at `budget_owls` or the row's estimate, on `variant`
-   *                 (strong when it names none).
+   *                 (stored as standard when its author names none).
    * reassess      — a fresh pass on an already-assessed node; a standing
    *                 order like assess.
    * deepen        — a pass on the node, and its direct deferred children
    *                 released into the queue (a question's subquestions,
-   *                 answers, and presuppositions included) with a pass
-   *                 commissioned on each child waiting for one; one level.
+   *                 answers, and presuppositions included) with a first
+   *                 assessment commissioned on each direct child that has
+   *                 none and is queued; one level.
    * ingest        — extract + match one source URL into the graph, metered
    *                 to the grant's escrow (the ingestion-pipeline primitive).
    * formalize     — write and publish the claim's formal statement
@@ -124,8 +125,10 @@ export interface PlanItem {
   focus?: string;
   /**
    * attempt_proof: standard or max; sweep: standard or strong;
-   * assess/reassess/deepen: the Steward's tier, standard or strong (strong
-   * when absent).
+   * assess/reassess/deepen: the Steward's tier, standard or strong. Every
+   * such item is stored with one (normalizePlanItems; standard when its
+   * author names none). An item stored before that rule carries none and
+   * commissions nothing until its Grantmaker names one (#956).
    */
   variant?: "standard" | "max" | "strong";
   /**
@@ -135,6 +138,13 @@ export interface PlanItem {
   budget_owls?: number;
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
+  /**
+   * assess/reassess/deepen: set when the Grantmaker withdrew the item
+   * (amend_plan_items); it orders nothing more.
+   */
+  withdrawn?: { at: string; note?: string };
+  /** assess/reassess/deepen: the last change of tier or budget (amend_plan_items). */
+  amended?: { at: string; note?: string };
   /**
    * The item's standing on the ledger, written by the plan-to-ledger
    * materializer (action-service.ts) on every sweep and on extend_plan:
@@ -176,20 +186,32 @@ export const PLAN_KIND_RULES =
   "or question; claim_id is the node's id, or claim_ref a proposal's ref). The item is a standing " +
   "order for one Steward pass: your mandate commissions it whole, like a " +
   "commission you make yourself, at budget_owls or, naming none, the " +
-  "pass's current estimate (cost_sheet), on the variant you name, " +
-  "standard or strong (strong when you name none, as a paid order gets). " +
+  "pass's current estimate on its tier (cost_sheet), on the variant you " +
+  "name, standard or strong. Name it: an item that names none is stored " +
+  "and commissioned as standard, and strong, which costs several times as " +
+  "much, is bought only where you ask for it. " +
   "The budget is held against your daily rate and escrow while the pass " +
   "waits and runs, and what it does not spend comes back. Unlike " +
   "`commission`, which is placed now or refused, an order waits for " +
-  "room: one today's rate cannot cover reads waiting, with the figures, " +
-  "and is placed as soon as the rate has the room, earlier items of the " +
-  "plan first (so put first what matters most; a large budget early in " +
-  "the plan holds the smaller ones behind it until it fits). One the " +
+  "room: one today's rate cannot cover reads waiting, with its tier and " +
+  "the figures, and is placed by the first look that finds room for it " +
+  "whole. Each look goes through the plan in order and places every order " +
+  "the room covers: earlier items have first claim on the day's room, and " +
+  "an order that does not fit never holds the ones after it. So a large " +
+  "order can be passed over while smaller ones after it take the room, " +
+  "until you raise the rate, give it a smaller budget, or withdraw what is " +
+  "taking the room. One the " +
   "escrow cannot cover beside the budgets running work holds waits the " +
   "same way. One that could never fit, a budget above your whole daily " +
   "rate or above what the escrow could cover with every running budget " +
   "returned, reads blocked with the figures until you change the budget, " +
-  "the variant, the rate, or the escrow is topped up. A node that " +
+  "the variant, the rate, or the escrow is topped up. An item's work has " +
+  "started once its pass is running; until then, whether it is waiting, " +
+  "blocked, or commissioned and waiting its turn, and wherever it sits in " +
+  "the plan, you can change its variant or budget_owls or withdraw it " +
+  "(amend_plan_items, by the index the tool result and grant_overview " +
+  "give), and a budget it already holds comes straight back. A pass that " +
+  "is running or has run stays as it is. A node that " +
   "already has a pass paid for, by anyone, is not paid for twice: the " +
   "item is met when that pass finishes. Once per item: a finished pass " +
   "stays finished, whoever paid for it; add another item for another " +
@@ -198,10 +220,15 @@ export const PLAN_KIND_RULES =
   "answer. assess on a node that already carries one reads done: reassess " +
   "is the ask for a fresh pass. deepen also releases the node's deferred " +
   "children into the queue (a claim's subclaims, a question's " +
-  "subquestions, candidate answers and presuppositions) and orders a pass " +
-  "on each child that is waiting for one, at the same budget and variant, " +
-  "under the same rate and escrow, including the children the node's own " +
-  "pass mints; so price a deepen item as the node's pass plus one per " +
+  "subquestions, candidate answers and presuppositions) and orders a " +
+  "first assessment for each direct child that carries no assessment and " +
+  "is queued for a pass, at the same budget and variant, under the same " +
+  "rate and escrow, including such children the node's own pass mints. A " +
+  "child that already carries an assessment is never ordered a fresh pass " +
+  "by a deepen item, however it came to be queued: that is a reassess " +
+  "item on the child. The item's standing names the children it ordered " +
+  "(children) and those it could not commission yet (children_waiting). " +
+  "So price a deepen item as the node's pass plus one per unassessed " +
   "child. It goes one level. If the Steward parks a node after repeated " +
   "failures, the item reads cancelled and its budget is back in your escrow. " +
   "ingest: an http(s) url; executes in plan order from your escrow. An " +
@@ -298,8 +325,9 @@ export const PLAN_ITEM_SCHEMA = {
       description:
         "attempt_proof: the solver's effort variant, standard or max. " +
         "sweep, optional: the reader, standard or strong; omit for the " +
-        "marginal-return rule. assess, reassess, deepen, optional: the " +
-        "Steward's model, standard or strong; omit for strong.",
+        "marginal-return rule. assess, reassess, deepen: the Steward's " +
+        "model, standard or strong; an item that names none is stored and " +
+        "commissioned as standard.",
     },
     budget_owls: {
       type: "number",
@@ -307,7 +335,8 @@ export const PLAN_ITEM_SCHEMA = {
         "assess, reassess, deepen, optional: the budget of each pass the " +
         "item commissions, in owls, held against your daily rate and " +
         "escrow until the pass settles. Omit for the pass's current " +
-        "estimate on its variant (cost_sheet).",
+        "estimate on its variant (cost_sheet). A deepen item's budget is " +
+        "per pass: the node's, and each child's it orders.",
     },
     is_calibration: {
       type: "boolean",
@@ -470,7 +499,13 @@ export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
       ...(it.url ? { url: it.url } : {}),
       ...(focus ? { focus } : {}),
       ...(partition ? { partition } : {}),
-      ...(it.variant ? { variant: it.variant } : {}),
+      // A stewarding item always says its tier (#956): standard when its
+      // author names none, written here so nothing later has to guess.
+      ...(["assess", "reassess", "deepen"].includes(it.action)
+        ? { variant: it.variant === "strong" ? "strong" : "standard" }
+        : it.variant
+          ? { variant: it.variant }
+          : {}),
       ...(["assess", "reassess", "deepen"].includes(it.action) && Number(it.budget_owls) > 0
         ? { budget_owls: Number(it.budget_owls) }
         : {}),

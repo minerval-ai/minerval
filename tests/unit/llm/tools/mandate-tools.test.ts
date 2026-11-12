@@ -111,8 +111,12 @@ describe("createMandateTools", () => {
       { action: "ingest" },
       { action: "formalize" },
     ]);
-    // Two passes at 2 owls, one ingestion at 0.5; formalize is priced at run time.
-    expect(floor).toEqual({ floor_owls: 4.5, per_item_owls: { steward_pass: 2, ingest: 0.5 } });
+    // Two standard passes at 0.5 owls (no item names the strong tier), one
+    // ingestion at 0.5; formalize is priced at run time.
+    expect(floor).toEqual({
+      floor_owls: 1.5,
+      per_item_owls: { steward_pass: 0.5, steward_pass_strong: 2, ingest: 0.5 },
+    });
   });
 });
 

@@ -101,8 +101,7 @@ vi.mock("../../../src/services/queue-service.js", () => ({
 // A stewarding item's pass is a standing order the mandate commissions
 // (#849); the commission's own SQL runs in tests/db/standing-orders.test.ts.
 vi.mock("../../../src/services/standing-order-service.js", () => ({
-  HELD_BEHIND_EARLIER: "held behind an earlier item",
-  orderTier: (variant: unknown) => (variant === "standard" ? "standard" : "strong"),
+  orderTier: (variant: unknown) => (variant === "standard" || variant === "strong" ? variant : null),
   placeStandingOrder: vi.fn(async () => ({
     state: "placed",
     actionId: "act-1",
@@ -110,7 +109,7 @@ vi.mock("../../../src/services/standing-order-service.js", () => ({
     tier: "strong",
   })),
   releaseStandingOrder: vi.fn(async () => 0),
-  orderChildPasses: vi.fn(async () => ({ children: [], waiting: null, blocked: null })),
+  orderChildPasses: vi.fn(async () => ({ children: [], notOrdered: [], waiting: null, blocked: null, note: null })),
 }));
 vi.mock("../../../src/services/report-service.js", () => ({
   raiseIssue: vi.fn(async () => ({ acknowledged: true })),
@@ -461,7 +460,7 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     // The retired row, reopened by the commission the order places.
     state.rowById = { ...ROW, status: "open" };
     state.grant.plan.items = [
-      { ...parkedItem()[0]!, ledger: { ...parkedItem()[0]!.ledger, status: "cancelled" }, budget_owls: 2 },
+      { ...parkedItem()[0]!, ledger: { ...parkedItem()[0]!.ledger, status: "cancelled" }, budget_owls: 2, variant: "strong" },
     ];
     const orders = await import("../../../src/services/standing-order-service.js");
     (orders.placeStandingOrder as unknown as { mockClear: () => void }).mockClear();
@@ -473,9 +472,9 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
         return { state: "placed", actionId: ROW.id, budgetMicroUsd: 2_000_000, tier: "strong" };
       });
     await reconcileActions();
-    // The mandate commissions the pass, at the item's budget and the
-    // strong tier a plan item buys when it names none; the brief says the
-    // kind of pass and nothing about who paid.
+    // The mandate commissions the pass, at the item's budget and on the
+    // tier the item names; the brief says the kind of pass and nothing
+    // about who paid.
     expect(orders.placeStandingOrder).toHaveBeenCalledWith(
       expect.objectContaining({ grantId: "g-1", claimId: CLAIM_A, tier: "strong", budgetMicroUsd: 2_000_000 })
     );
@@ -485,5 +484,65 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     const ledger = ledgerOf(0) as { status: string; order?: { budget_owls: number; tier: string } };
     expect(ledger.status).toBe("open");
     expect(ledger.order).toMatchObject({ budget_owls: 2, tier: "strong" });
+  });
+
+  it("asks for an item that names no variant with no tier, so nothing is placed on one nobody chose (#956)", async () => {
+    state.stewardState = "done";
+    state.grant.plan.items = [{ action: "reassess", claim_id: CLAIM_A, rationale: "written before items named a tier" }];
+    const orders = await import("../../../src/services/standing-order-service.js");
+    const place = orders.placeStandingOrder as unknown as {
+      mockClear: () => void;
+      mockImplementationOnce: (f: () => Promise<unknown>) => void;
+    };
+    place.mockClear();
+    place.mockImplementationOnce(async () => ({ state: "blocked", reason: "this item names no variant" }));
+    await reconcileActions();
+    expect(orders.placeStandingOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: CLAIM_A, tier: null })
+    );
+    expect(ledgerOf(0)).toMatchObject({ status: "blocked", reason: "this item names no variant" });
+  });
+
+  it("reads a withdrawn item cancelled, releases what it placed, and never asks for its order again (#956)", async () => {
+    state.stewardState = "pending";
+    state.rowById = { ...ROW, status: "open" };
+    state.grant.plan.items = [
+      {
+        action: "reassess",
+        claim_id: CLAIM_A,
+        rationale: "r",
+        variant: "strong",
+        withdrawn: { at: "2026-11-12T10:00:00.000Z", note: "a standard pass is enough here" },
+        ledger: {
+          status: "open",
+          action_id: ROW.id,
+          exclusion_group: ROW.exclusion_group,
+          checked_at: "2026-11-12T00:00:00.000Z",
+          order: { budget_owls: 5.8, tier: "strong", placed_at: "2026-11-12T00:00:00.000Z" },
+        },
+      },
+    ];
+    const orders = await import("../../../src/services/standing-order-service.js");
+    (orders.placeStandingOrder as unknown as { mockClear: () => void }).mockClear();
+    const release = orders.releaseStandingOrder as unknown as {
+      mockClear: () => void;
+      mockImplementationOnce: (f: () => Promise<number>) => void;
+    };
+    release.mockClear();
+    release.mockImplementationOnce(async () => 5_800_000);
+    await reconcileActions();
+    expect(orders.releaseStandingOrder).toHaveBeenCalledWith("g-1", CLAIM_A);
+    expect(orders.placeStandingOrder).not.toHaveBeenCalled();
+    const ledger = ledgerOf(0)!;
+    expect(ledger.status).toBe("cancelled");
+    expect(ledger.reason).toContain("withdrawn by the mandate's Grantmaker on 2026-11-12");
+    expect(ledger.reason).toContain("a standard pass is enough here");
+    expect(ledger.reason).toContain("5.8 owls it held are back");
+    // Settled: the next look leaves it exactly as it is.
+    state.grant.plan.items[0]!.ledger = ledger as never;
+    release.mockClear();
+    await reconcileActions();
+    expect(orders.releaseStandingOrder).not.toHaveBeenCalled();
+    expect(orders.placeStandingOrder).not.toHaveBeenCalled();
   });
 });

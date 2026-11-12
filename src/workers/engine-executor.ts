@@ -496,7 +496,9 @@ export function requestKeeperBrief(request: RequestView): string {
  * A decomposition's plan opens with a pass on its claim: a reassessment
  * when the claim has been assessed, else its first (the item's kind is
  * resolved when it materializes). Prepended unless the Grantmaker already
- * put one first.
+ * put one first. On the standard tier, as any item that names none is
+ * stored (#956): a Grantmaker that wants the strong model on the claim puts
+ * its own first item there and says so, at a budget its escrow can hold.
  */
 function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: string }> }>(
   plan: P,
@@ -514,6 +516,7 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
       {
         action: "reassess",
         claim_id: claimId,
+        variant: "standard",
         rationale: "The claim this decomposition was funded for: a fresh pass on it comes first.",
       },
       ...items,
