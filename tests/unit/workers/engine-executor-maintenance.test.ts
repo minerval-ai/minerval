@@ -98,7 +98,8 @@ vi.mock("../../../src/services/action-service.js", () => ({
   }),
 }));
 
-vi.mock("../../../src/services/curation-service.js", () => ({
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   liveCurationRequests: vi.fn(async () => state.requests),
   consumeCurationRequests: vi.fn(async (ids: string[], actionId: string) => {
     state.consumed.push({ ids, actionId });

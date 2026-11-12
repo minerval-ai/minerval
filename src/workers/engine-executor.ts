@@ -360,7 +360,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
             context:
               `${requests.length} structural concern${requests.length === 1 ? "" : "s"} ` +
               `about this claim are waiting, and this run was funded to answer them:\n` +
-              describeCurationRequests(requests),
+              describeCurationRequests(requests, anchorClaimId),
           })
         )
     );

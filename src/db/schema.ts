@@ -4440,6 +4440,12 @@ export const curationRequests = pgTable(
     // steward_escalation | consistency_sweep | audit | matcher | reconcile_candidate | operator
     source: text("source").notNull(),
     concern: text("concern").notNull(),
+    // What the requester suspects is wrong (#955), from CURATION_DEFECTS in
+    // services/curation-service.ts: duplicate | conflation | wrong_kind |
+    // mislabeled_edge | missing_link | bad_merge | other. Every request
+    // records one; null only on requests recorded before it existed (the
+    // migration classified the Matcher's and the scan's as duplicate).
+    defect: text("defect"),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
     signal: real("signal"),
     // The claim whose Steward escalated (bounds live escalations per claim).
@@ -4477,6 +4483,10 @@ export const curationRequests = pgTable(
     check(
       "ck_curation_requests_source",
       sql`source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')`
+    ),
+    check(
+      "ck_curation_requests_defect",
+      sql`defect IS NULL OR defect IN ('duplicate', 'conflation', 'wrong_kind', 'mislabeled_edge', 'missing_link', 'bad_merge', 'other')`
     ),
   ]
 );

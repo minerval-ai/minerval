@@ -263,11 +263,15 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
  * mid-run). A done/superseded/cancelled row reopens: fresh concerns are
  * fresh work, and fresh work needs fresh funding. A running row is left
  * alone. Returns the row id, or null when the anchor is not an active
- * claim.
+ * claim or no live request on it says what is wrong (#955): a curate row is
+ * opened only for a defect someone named.
  */
 export async function ensureCurateAction(anchorClaimId: string): Promise<string | null> {
   const [claim] = await rawQuery<{ text: string }>(
-    `SELECT text FROM claims WHERE id = $1 AND state = 'active'`,
+    `SELECT text FROM claims c
+      WHERE c.id = $1 AND c.state = 'active'
+        AND EXISTS (SELECT 1 FROM curation_requests r
+                     WHERE r.anchor_claim_id = c.id AND r.consumed_at IS NULL)`,
     [anchorClaimId]
   );
   if (!claim) return null;

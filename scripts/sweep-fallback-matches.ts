@@ -145,6 +145,7 @@ async function main(): Promise<void> {
     const r = await requestCuration({
       anchorClaimId: h.claim_id,
       source: "operator",
+      defect: "duplicate",
       concern,
     });
     if (!r.ok) {

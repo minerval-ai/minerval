@@ -34,7 +34,12 @@ import {
   getAssessmentHistory,
 } from "../../services/assessment-service.js";
 import { getClaimEvents } from "../../services/claim-events-service.js";
-import { requestCuration } from "../../services/curation-service.js";
+import {
+  requestCuration,
+  CURATION_DEFECTS,
+  CURATION_DEFECT_DESCRIPTION,
+  type CurationDefect,
+} from "../../services/curation-service.js";
 import {
   getPrizeClaimForAgent,
   recordPrizeAuditOutcome,
@@ -543,8 +548,9 @@ export function getAuditToolDefinitions(): Tool[] {
       description:
         "Send a structural decision to the Curator: opens a curation " +
         "request on the claim (naming the other claim, for a suspected bad " +
-        "merge, missed duplicate or conflation) carrying the finding and " +
-        "your reason. The Curator runs when curation of the claim is " +
+        "merge, missed duplicate or conflation) carrying the defect you " +
+        "suspect, the finding and your reason, which is what the mandate's " +
+        "officers decide on. The Curator runs when curation of the claim is " +
         "funded, as for any request, and decides. Requires the finding_id " +
         "from flag_issue documenting why.",
       input_schema: {
@@ -552,10 +558,11 @@ export function getAuditToolDefinitions(): Tool[] {
         properties: {
           claim_id: { type: "string", description: "The UUID of the claim the concern is about" },
           other_claim_id: { type: "string", description: "The other claim involved, if any" },
+          defect: { type: "string", enum: [...CURATION_DEFECTS], description: CURATION_DEFECT_DESCRIPTION },
           finding_id: { type: "string", description: "The finding documenting why" },
           reason: { type: "string", description: "What the Curator should look at, and why" },
         },
-        required: ["claim_id", "finding_id", "reason"],
+        required: ["claim_id", "defect", "finding_id", "reason"],
       },
     },
   ];
@@ -1047,6 +1054,7 @@ export async function executeAuditTool(
           anchorClaimId: claimId,
           otherClaimId,
           source: "audit",
+          defect: input.defect as CurationDefect,
           concern:
             `Audit finding ${finding.id} (${finding.severity}, ${finding.category}): ` +
             `${reason}\nFinding: ${finding.description}\nEvidence: ${finding.evidence}`,

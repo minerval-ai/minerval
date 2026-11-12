@@ -76,7 +76,8 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
   })),
 }));
 
-vi.mock("../../../src/services/curation-service.js", () => ({
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   scanReconcileCandidates: vi.fn(async (policy: { reconcile_candidates_max_per_sweep: number }) => {
     state.scans.push(policy.reconcile_candidates_max_per_sweep);
     return 0;

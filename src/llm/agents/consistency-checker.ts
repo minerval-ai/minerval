@@ -44,7 +44,14 @@ import { getUsageContext, withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
-import { requestCuration, CURATION_CONCERN_MAX_CHARS } from "../../services/curation-service.js";
+import {
+  requestCuration,
+  isCurationDefect,
+  CURATION_CONCERN_MAX_CHARS,
+  CURATION_DEFECTS,
+  CURATION_DEFECT_DESCRIPTION,
+  type CurationDefect,
+} from "../../services/curation-service.js";
 import { getConsistencyCheckerSystemPromptBlocks } from "../prompts/consistency-checker.js";
 import {
   executeGraphReadTool,
@@ -275,6 +282,7 @@ async function runConsistencyCheckerImpl(input: {
             type: "string",
             description: "The suspected duplicate, counterpart, or other end of the edge, when there is one.",
           },
+          defect: { type: "string", enum: [...CURATION_DEFECTS], description: CURATION_DEFECT_DESCRIPTION },
           concern: {
             type: "string",
             description:
@@ -282,7 +290,7 @@ async function runConsistencyCheckerImpl(input: {
               `${CURATION_CONCERN_MAX_CHARS} characters; a longer one is refused.`,
           },
         },
-        required: ["claim_id", "concern"],
+        required: ["claim_id", "defect", "concern"],
       },
     },
     {
@@ -452,6 +460,9 @@ async function runConsistencyCheckerImpl(input: {
           if (!claimId || !concern.trim()) {
             return JSON.stringify({ ok: false, problem: "claim_id and concern are required." });
           }
+          if (!isCurationDefect(toolInput.defect)) {
+            return JSON.stringify({ ok: false, problem: `defect must be one of ${CURATION_DEFECTS.join(", ")}.` });
+          }
           escalations++;
           return JSON.stringify({ ok: true, note: "Recorded (dry run: nothing sent)." });
         }
@@ -459,6 +470,7 @@ async function runConsistencyCheckerImpl(input: {
           anchorClaimId: claimId,
           otherClaimId,
           source: "consistency_sweep",
+          defect: toolInput.defect as CurationDefect,
           concern,
           requestedByRunId: runId,
         });

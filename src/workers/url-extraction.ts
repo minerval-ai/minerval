@@ -550,10 +550,14 @@ async function processUrlExtraction(
 }
 
 /**
- * Curation requests for a node the Matcher minted on balance (#738): one per
- * near-miss it weighed, carrying its `curator_review` and relationship
- * notes, and only when it wrote a curator_review. Never fails the
- * extraction. Returns how many were recorded.
+ * Curation requests for a node the Matcher minted on balance (#738), only
+ * when it wrote a curator_review: a suspected duplicate (the same node, or
+ * its negation) of a near-miss, carrying the review and its relationship
+ * notes. One per near-miss the review names by id (#955); a review that
+ * names none of its alternatives is about all of them, as before. A near-miss
+ * the Matcher weighed but did not name is not raised, since the officers
+ * would read it as suspected when the Matcher said nothing about it. Never
+ * fails the extraction. Returns how many were recorded.
  */
 export async function requestNearMissCuration(
   newClaimId: string,
@@ -563,13 +567,16 @@ export async function requestNearMissCuration(
   if (!review || decision.alternative_matches.length === 0) return 0;
   const notes = cleanNote(decision.relationship_notes);
   const concern = notes ? `${review}\n\nThe Matcher's notes on the near-misses: ${notes}` : review;
+  const named = decision.alternative_matches.filter((id) => review.toLowerCase().includes(id.toLowerCase()));
+  const suspects = named.length > 0 ? named : decision.alternative_matches;
   let recorded = 0;
-  for (const other of decision.alternative_matches) {
+  for (const other of suspects) {
     try {
       const result = await requestCuration({
         anchorClaimId: newClaimId,
         otherClaimId: other,
         source: "matcher",
+        defect: "duplicate",
         concern,
       });
       if (result.ok && !result.repeat) recorded++;
