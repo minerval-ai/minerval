@@ -199,8 +199,20 @@ const gatePartsOf = (pageId: string) =>
  * once every party it rests on has released it, and as a held part until
  * then. Text is written to the destination side here and nowhere else.
  * Called inside bothSides.
+ *
+ * One settling of a page at a time. Two people deciding at once each record
+ * their act and then settle, and each could find the other's act already
+ * there: without the lock both would show the page and it would arrive
+ * twice. The second waits for the first, then finds nothing left to do.
  */
 async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
+  return withTransaction(async (lock) => {
+    await lock.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`settle-shown-page:${pageId}`]);
+    return settleLocked(pageId);
+  });
+}
+
+async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
   const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
   if (!page || page.stage !== "at_gate") return { shown: false, newlyReleased: 0 };
   const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
@@ -211,13 +223,12 @@ async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: 
   if (!isShown) {
     const verdictReleased = page.rests_on.every((party) => standingOf(acts, null, party) === "released");
     if (!verdictReleased || pageHeldByDirect(acts)) return { shown: false, newlyReleased: 0 };
-    await rawQuery(`UPDATE shown_pages SET header = $2, header_salt = $3, shown_at = now() WHERE id = $1 AND shown_at IS NULL`, [
-      pageId,
-      page.header,
-      page.header_salt,
-    ]);
+    const first = await rawQuery(
+      `UPDATE shown_pages SET header = $2, header_salt = $3, shown_at = now() WHERE id = $1 AND shown_at IS NULL RETURNING id`,
+      [pageId, page.header, page.header_salt]
+    );
     isShown = true;
-    changed++;
+    changed += first.length;
   }
   const released = new Set(
     (await rawQuery<{ id: string }>(`SELECT id FROM shown_parts WHERE page_id = $1 AND released_at IS NOT NULL`, [pageId])).map((r) => r.id)
@@ -225,11 +236,11 @@ async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: 
   for (const part of await gatePartsOf(pageId)) {
     if (released.has(part.id)) continue;
     if (!part.rests_on.every((party) => standingOf(acts, part.id, party) === "released")) continue;
-    await rawQuery(
-      `UPDATE shown_parts SET text = $2, marks = $3::jsonb, salt = $4, released_at = now() WHERE id = $1 AND released_at IS NULL`,
+    const now = await rawQuery(
+      `UPDATE shown_parts SET text = $2, marks = $3::jsonb, salt = $4, released_at = now() WHERE id = $1 AND released_at IS NULL RETURNING id`,
       [part.id, part.redacted ?? part.original, JSON.stringify(part.marks ?? []), part.salt]
     );
-    changed++;
+    changed += now.length;
   }
   if (changed > 0 && !showing!.to_outside) await arrive(pageId, showing!);
   return { shown: isShown, newlyReleased: changed };

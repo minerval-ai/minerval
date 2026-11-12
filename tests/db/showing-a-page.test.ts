@@ -520,6 +520,32 @@ describe("arrival at the destination label", () => {
   });
 });
 
+describe("two people deciding at once", () => {
+  it("settle the page one after the other, and it arrives once", async () => {
+    for (let round = 0; round < 3; round++) {
+      const asked = await askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+      const record = (await atA(() => shownShowing(asked.showing_id)))!;
+      const pageId = (record.nodes as any[])[0].versions[0].page_id as string;
+      await throughTheCheck(pageId);
+      const all = (parts: Array<number | null>) => parts.map((part) => ({ page_id: pageId, part }));
+      // Everything but the page itself, which rests on both outside parties.
+      await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([1, 2, 3, 4, 5, 8, 10]), decision: "release" });
+      await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([1, 2, 3, 4, 5, 9, 11]), decision: "release" });
+      await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 7, 12]), decision: "release" });
+      expect((await atA(() => shownPage(pageId)))!.state).toBe("held");
+      // Both release the page in the same instant, and each then settles it.
+      const both = await Promise.all([
+        decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null]), decision: "release" }),
+        decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null]), decision: "release" }),
+      ]);
+      expect(both.map((r) => r.decided)).toEqual([1, 1]);
+      expect((await atA(() => shownPage(pageId)))!.state).toBe("released_whole");
+      const arrivals = await system(() => rawQuery<{ url: string }>(`SELECT url FROM sources WHERE url LIKE $1`, [`minerval:shown-page/${pageId}/%`]));
+      expect(arrivals.map((a) => a.url)).toEqual([`minerval:shown-page/${pageId}/1`]);
+    }
+  });
+});
+
 describe("a standing showing of a node with what sits under it", () => {
   it("covers a node before it is assessed, and follows a first version, a new subclaim, a removed edge and a later version", async () => {
     // A node at c, which a reader at a cannot read at all.
