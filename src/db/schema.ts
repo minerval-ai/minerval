@@ -2542,12 +2542,13 @@ export const grants = pgTable(
     dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
       .notNull()
       .default(0),
-    // The mandate's own allocation rules, owned and amended by ITS
-    // Grantmaker (update_allocation_policy), never edited directly in
-    // code: value-formula knobs, cost priors, tier threshold, cadence.
-    // Null = inherit the shared defaults (config). The General mandate's
-    // policy governs the platform's own lane — when we learn something
-    // about allocation, we ask its Grantmaker to change the formula.
+    // The mandate's own figures for pricing and pacing work: cost priors,
+    // the re-check cadence, attempt bounds, sweep and scan settings
+    // (services/allocation-policy-service.ts). Null = the shared defaults.
+    // The General mandate's row governs the platform's own work. No agent
+    // writes this column; scripts/seed-platform-mandates.ts is the one
+    // writer. A row from before #855, when a Grantmaker tool set it, may
+    // hold keys since removed, which the loader ignores.
     allocationPolicy: jsonb("allocation_policy"),
     // The Grantmaker's own working memory: a document it reads in full at
     // the start of every review pass and rewrites as it works — its map

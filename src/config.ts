@@ -530,44 +530,20 @@ const configSchema = z.object({
   // judgment like any other prior.
   proposedClaimImportancePrior: z.coerce.number().default(0.3),
 
-  // --- Allocation core: expected value / expected cost (background lane) ---
-  // The background lane's standard is the ratio of expected marginal VALUE
-  // to expected marginal COST across the candidate actions, taken highest
-  // ratio first until the day's budget is spent. For assessing a claim the
-  // value heuristic (priority-service.ts) is the multiplicative core the
-  // essay argues for:
-  //   value = importance × contested-factor × expected-quality-gain
-  //         + stake boost + provenance boost
-  // where contested-factor = floor + (1−floor)×contestation and the gain
-  // term is the last pass's marginal_yield (1.0 when unassessed). All
-  // knobs are legible and printable — heuristics start as guesses and get
-  // revised as the eval engine grows.
-  // The contested-factor floor: how fundable an uncontested claim stays.
-  valueContestationFloor: z.coerce.number().default(0.25),
-  // Money never enters the VALUE estimate. Reader contributions toward a
-  // claim reduce its effective COST in the selection ratio, and once they
-  // cover the expected cost the pass simply runs, funded (steward-pipeline).
-  // User-proposed claims outrank equal-value corpus work (#284): a human
-  // cared enough to type it in.
-  priorityUserProvenanceBoost: z.coerce.number().default(0.15),
+  // --- Allocation: model tiers and cost priors ---
+  // No formula values work here: each payer commissions it by its own
+  // judgment (docs/allocation.md, "The standard"). What follows is what the
+  // machinery prices and paces with.
   // Model tiering (empty = tiering off, everything uses stewardModel).
   // When set, every assess/reassess exclusion group gets a 'strong' variant
-  // row beside the standard one, and each mandate's allocator decides by
-  // MARGINAL return whether the upgrade is worth funding: back the strong
-  // sibling only when Δvalue/Δcost clears the day's bar. Paid express
-  // orders always use the strong model — the buyer pays for the real thing.
+  // row beside the standard one, and a commission pins the variant its
+  // payer chose (docs/allocation.md, "Commissions and budgets"). Paid
+  // express orders always use the strong model — the buyer pays for the
+  // real thing.
   // Production sets it to the frontier tier (Fable 5.2), so the strong
   // variant is a different model from the standard pass (Opus 5.5) and the
   // upgrade the allocators price is a real one.
   stewardStrongModel: z.string().default(""),
-  // How much more a strong-model pass is expected to be worth than a
-  // standard pass of the same claim: value(strong) = value(standard) × this.
-  // A guess to be revised by the governing mandate's Grantmaker (it is a
-  // policy knob, strong_gain_multiplier); the marginal-return rule does the
-  // real work of deciding when the upgrade is bought. Bounded to the same
-  // range POLICY_BOUNDS enforces on the agent — env config doesn't get a
-  // wider lever than the mandate does.
-  strongGainMultiplier: z.coerce.number().min(1).max(5).default(1.3),
   // Expected-cost priors for one Steward pass, in owls, by tier — the EC
   // denominators of the allocators' value/cost ordering, used until enough
   // recent runs exist for the live figure (cost-estimate-service.ts).
@@ -1110,7 +1086,7 @@ const configSchema = z.object({
   // The strong variant's reader (#756): a sweep is an exclusive set of a
   // standard (consistencyModel) and a strong variant, and the funder buys
   // the strong one when its expected gain per owl beats the standard's
-  // (allocation policy consistency_strong_gain_multiplier). Pinned
+  // (allocation policy consistency_strong_expected_gain). Pinned
   // identically in infra/lib/api-stack.ts.
   consistencyStrongModel: modelId(MODELS.sonnet),
   // Whether the General mandate funds consistency sweeps at all (each a
@@ -1343,11 +1319,8 @@ export function loadConfig(): Config {
     extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
-    valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
     owlCostMicroUsd: process.env.OWL_COST_MICRO_USD,
-    priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,
     stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
-    strongGainMultiplier: process.env.STRONG_GAIN_MULTIPLIER,
     estStewardRunCostOwls: process.env.EST_STEWARD_RUN_COST_OWLS,
     estStewardRunCostStrongOwls: process.env.EST_STEWARD_RUN_COST_STRONG_OWLS,
     costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
