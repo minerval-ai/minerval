@@ -47,20 +47,20 @@ export function featuresOffNote(config?: FeaturesConfig): string {
 }
 
 /**
- * `messages` with the note at the head of the first user message, or
- * `messages` itself when nothing is off. Nothing else is touched: a string
- * message stays a string (the note, the rule, then the message as given),
- * and a message of content blocks gains one text block in front.
+ * `messages` with `note` at the head of the first user message, or
+ * `messages` itself when the note is empty. Nothing else is touched: a
+ * string message stays a string (the note, the rule, then the message as
+ * given), and a message of content blocks gains one text block in front.
  *
  * A first message that already opens with the note is left as it is, so a
  * conversation sent again (each turn of a tool loop, a paused session's
  * transcript on resume) carries it once.
+ *
+ * The client heads a run's first message with one passage made of this
+ * note and the one about outside services that are not cleared for the
+ * run's label (uncleared-services-note.ts), through this function.
  */
-export function withFeaturesOffNote(
-  messages: MessageParam[],
-  config?: FeaturesConfig
-): MessageParam[] {
-  const note = featuresOffNote(config);
+export function withLeadingNote(messages: MessageParam[], note: string): MessageParam[] {
   if (!note) return messages;
   const at = messages.findIndex((m) => m.role === "user");
   if (at === -1) return messages;
@@ -77,4 +77,12 @@ export function withFeaturesOffNote(
   const out = [...messages];
   out[at] = briefed;
   return out;
+}
+
+/** `messages` headed by this deployment's features-off note, when it has one. */
+export function withFeaturesOffNote(
+  messages: MessageParam[],
+  config?: FeaturesConfig
+): MessageParam[] {
+  return withLeadingNote(messages, featuresOffNote(config));
 }

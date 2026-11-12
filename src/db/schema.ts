@@ -4206,6 +4206,76 @@ export const contributions = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// stated_views (§4)
+//
+// A view an account states on a node to the graph directly: what the
+// speaker submitted, in its own terms. It is filed as a contribution
+// (contribution_type 'state_view') so that it passes the Contribution
+// Reviewer like any outside material, and its text is stored as a source
+// (contributions.source_id) when it is submitted. When the Reviewer admits
+// it, the statement becomes an instance of the node, `instance_id` is set,
+// and the speaker's declared stake is recorded in source_interests. From
+// then on the instance is the graph's record of the view: it follows the
+// node through merges and splits, and reads take the node and the stance
+// from it. This row keeps what was said as it was said, and what has to be
+// remembered between submission and admission.
+//
+// Nothing here is updated after admission, and a later statement by the
+// same account on the same node is a new row with a new source: both stay,
+// dated, and the newer is the one shown as current.
+//
+// The row holds the speaker's statement, reasons and stake as text, and the
+// stake is written nowhere else until admission, so it carries a label of
+// its own (src/labels.ts): the label of the request that filed it, the same
+// as the source and the contribution written beside it.
+// ---------------------------------------------------------------------------
+export const statedViews = pgTable(
+  "stated_views",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contributionId: uuid("contribution_id")
+      .notNull()
+      .references(() => contributions.id, { onDelete: "cascade" }),
+    // Null until the Reviewer admits the statement.
+    instanceId: uuid("instance_id").references(() => claimInstances.id, {
+      onDelete: "set null",
+    }),
+    // How the speaker stands toward the node, in its own terms:
+    // STATED_VIEW_STANCES in src/schemas/common.ts. Free text, like
+    // claim_instances.stance, so a new value needs no migration.
+    stance: text("stance").notNull(),
+    // A probability the speaker gives for a claim, against the claim as
+    // worded when it was stated.
+    statedProbability: real("stated_probability"),
+    // A figure the speaker gives for a quantity, in the estimate shape
+    // (quantityEstimateSchema in src/schemas/kinds.ts).
+    statedEstimate: jsonb("stated_estimate"),
+    // The view, in the speaker's words.
+    statement: text("statement").notNull(),
+    // The speaker's reasons, when it gave any. Admitted reasons go to the
+    // node's Steward and are heard as §14 requires.
+    reasons: text("reasons"),
+    // What the speaker says it stands to gain or lose by the answer. Null
+    // when it declared that it has no stake.
+    stake: text("stake"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("idx_stated_views_contribution").on(table.contributionId),
+    index("idx_stated_views_instance").on(table.instanceId),
+    check(
+      "ck_stated_views_probability",
+      sql`${table.statedProbability} IS NULL OR (${table.statedProbability} >= 0 AND ${table.statedProbability} <= 1)`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // contribution_reviews
 // ---------------------------------------------------------------------------
 export const contributionReviews = pgTable("contribution_reviews", {

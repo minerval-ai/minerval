@@ -79,4 +79,5 @@ has on (the browser extension, mathematics, prizes): a feature that is off
 has no tools here, and the agents it concerns are not given its tools,
 though their prompts and skills read the same. Where any feature is off,
 every agent run is told which at the head of its task message, and its
-setup records the list (`get_run`, `setup.featuresOff`).
+setup records the list (`get_run`, `setup.featuresOff`). The setup also
+names the provider that served the run's model (`setup.provider`).
