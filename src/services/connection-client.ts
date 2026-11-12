@@ -178,6 +178,11 @@ async function withClient<T>(
   } catch (err) {
     return { ok: false, failure: failureOf(err, target.timeoutSeconds) };
   } finally {
+    // A server that keeps sessions is told this one is over, so that a
+    // connection opened for each call does not leave one behind each time.
+    if (made.transport instanceof StreamableHTTPClientTransport) {
+      await made.transport.terminateSession().catch(() => undefined);
+    }
     await client.close().catch(() => undefined);
   }
 }

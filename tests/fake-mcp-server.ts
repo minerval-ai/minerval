@@ -15,13 +15,15 @@
  *   broken          answers with an error of its own.
  *
  * It speaks the same stateless streamable HTTP the deployment's own MCP
- * endpoint does (src/routes/mcp.ts): one server and transport per POST. The
+ * endpoint does (src/routes/mcp.ts): one server and transport per POST. At
+ * /sse it also speaks the older transport some servers still have. The
  * fields on the handle are the test's controls: require a bearer token,
  * answer every request with an HTTP status or a redirect, delay, or stop.
  */
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
@@ -36,6 +38,8 @@ export interface FakeTool {
 export interface FakeMcpServer {
   /** The address a connection is given. */
   url: string;
+  /** The same server's address for a connection whose transport is sse. */
+  sseUrl: string;
   /** The tools as the server lists them now. A test may change them in place. */
   tools: FakeTool[];
   /** Every tools/call received: the tool, its arguments, and the request's headers. */
@@ -129,6 +133,7 @@ export async function startFakeMcpServer(): Promise<FakeMcpServer & { deleted: n
   const state = { shiftingVersion: 1, deleted: 0 };
   const handle: FakeMcpServer & { deleted: number } = {
     url: "",
+    sseUrl: "",
     tools: [],
     calls: [],
     lists: 0,
@@ -157,6 +162,26 @@ export async function startFakeMcpServer(): Promise<FakeMcpServer & { deleted: n
       ...(t.annotations ? { annotations: t.annotations } : {}),
     }));
 
+  /** One MCP server answering for the tools as they are now, for the request that carried the call. */
+  const mcpServer = (req: IncomingMessage): Server => {
+    const server = new Server({ name: "fake-warehouse", version: "0.0.1" }, { capabilities: { tools: {} } });
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      handle.lists += 1;
+      return { tools: listed() };
+    });
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+      handle.calls.push({ tool: request.params.name, args, headers: { ...req.headers } });
+      if (handle.callDelayMs > 0) await new Promise((r) => setTimeout(r, handle.callDelayMs));
+      const tool = handle.tools.find((t) => t.name === request.params.name);
+      if (!tool) return { content: [{ type: "text", text: `no tool ${request.params.name}` }], isError: true };
+      const out = tool.run(args);
+      return { content: [{ type: "text", text: out.text }], ...(out.isError ? { isError: true } : {}) };
+    });
+    return server;
+  };
+  const streams = new Map<string, SSEServerTransport>();
+
   const http: HttpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       handle.requests += 1;
@@ -175,26 +200,38 @@ export async function startFakeMcpServer(): Promise<FakeMcpServer & { deleted: n
         res.end(JSON.stringify({ error: "unauthorized" }));
         return;
       }
+      const path = new URL(req.url ?? "/", "http://fake").pathname;
+      // The older transport: a GET opens the stream, and each message is
+      // POSTed to the address the stream names.
+      if (req.method === "GET" && path === "/sse") {
+        const transport = new SSEServerTransport("/messages", res);
+        const server = mcpServer(req);
+        streams.set(transport.sessionId, transport);
+        res.on("close", () => {
+          streams.delete(transport.sessionId);
+          void server.close();
+        });
+        await server.connect(transport);
+        return;
+      }
+      if (req.method === "POST" && path === "/messages") {
+        const id = new URL(req.url ?? "/", "http://fake").searchParams.get("sessionId") ?? "";
+        const transport = streams.get(id);
+        if (!transport) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        await transport.handlePostMessage(req, res);
+        return;
+      }
       if (req.method !== "POST") {
         res.writeHead(405, { allow: "POST", "content-type": "application/json" });
         res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null }));
         return;
       }
       const body = await readBody(req);
-      const server = new Server({ name: "fake-warehouse", version: "0.0.1" }, { capabilities: { tools: {} } });
-      server.setRequestHandler(ListToolsRequestSchema, async () => {
-        handle.lists += 1;
-        return { tools: listed() };
-      });
-      server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-        handle.calls.push({ tool: request.params.name, args, headers: { ...req.headers } });
-        if (handle.callDelayMs > 0) await new Promise((r) => setTimeout(r, handle.callDelayMs));
-        const tool = handle.tools.find((t) => t.name === request.params.name);
-        if (!tool) return { content: [{ type: "text", text: `no tool ${request.params.name}` }], isError: true };
-        const out = tool.run(args);
-        return { content: [{ type: "text", text: out.text }], ...(out.isError ? { isError: true } : {}) };
-      });
+      const server = mcpServer(req);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       res.on("close", () => {
         void transport.close();
@@ -211,6 +248,7 @@ export async function startFakeMcpServer(): Promise<FakeMcpServer & { deleted: n
   await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
   const { port } = http.address() as AddressInfo;
   handle.url = `http://127.0.0.1:${port}/mcp`;
+  handle.sseUrl = `http://127.0.0.1:${port}/sse`;
   handle.close = () =>
     new Promise<void>((resolve) => {
       http.closeAllConnections?.();

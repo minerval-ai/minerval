@@ -561,6 +561,8 @@ describe("the tools a run is offered", () => {
       expect(await bundle.execute(name, { table: "t" }), name).toBeNull();
     }
     expect(server.calls).toEqual([]);
+    // The tool the server marks as writing was never reached, here or in any test before.
+    expect(server.deleted).toBe(0);
   });
 
   it("go to a run whose label reads the connection's label, and to no other", async () => {

@@ -68,6 +68,22 @@ describe("a call", () => {
     expect(server.calls.map((c) => [c.tool, c.args])).toEqual([["read_rows", { table: "refunds" }]]);
   });
 
+  it("is made the same way over the older sse transport, credential included", async () => {
+    process.env[ENV] = "token-abc";
+    server.requireBearer = "token-abc";
+    const sse = target({ transport: "sse", url: server.sseUrl, credentialEnv: ENV });
+    const listed = await listServerTools(sse);
+    expect(listed.ok && listed.tools.map((t) => t.name)).toContain("read_rows");
+    const called = await callServerTool(sse, "read_rows", { table: "refunds" });
+    expect(called).toEqual({ ok: true, isError: false, text: "table=refunds\nmonth,refunds\n2026-09,412\n2026-10,388\n" });
+    // Without the credential the stream is refused before anything is asked.
+    process.env[ENV] = "wrong";
+    const refused = await callServerTool(sse, "read_rows", { table: "refunds" });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.failure.kind).toBe("credential_refused");
+    expect(server.calls).toHaveLength(1);
+  });
+
   it("returns the system's own error as an answer, not a failure", async () => {
     const called = await callServerTool(target(), "broken", {});
     expect(called).toEqual({ ok: true, isError: true, text: 'relation "refunds_2027" does not exist' });
