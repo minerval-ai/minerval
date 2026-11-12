@@ -39,6 +39,18 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
   checkBudget: vi.fn(),
 }));
 
+// Which providers and services are cleared for a label is its own subject
+// (client-provider-clearance.test.ts). Here every one is, so that what a
+// run is sent differs from what it was given by the label note alone.
+vi.mock("../../../src/llm/provider-clearance.js", () => ({
+  assertProviderCleared: vi.fn(),
+}));
+
+vi.mock("../../../src/llm/uncleared-services-note.js", () => ({
+  unclearedServicesNote: () => "",
+  withoutUnclearedTools: <T>(tools: T) => tools,
+}));
+
 vi.mock("../../../src/db/client.js", () => ({
   currentReadClearance: mocks.reads,
 }));

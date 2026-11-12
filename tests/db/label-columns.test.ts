@@ -97,7 +97,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-nine tables, defaulting to the connection's label, each with a key to labels", async () => {
+  it("is on one hundred tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -105,7 +105,7 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(99);
+    expect(columns).toHaveLength(100);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
@@ -193,6 +193,12 @@ describe("the label column, in the catalog", () => {
       // The labels themselves.
       "label_reads",
       "labels",
+      // A deployment's bookkeeping about its feed of public rows, with no text of their own.
+      "mirror_applied_batches",
+      "mirror_feed_batches",
+      "mirror_feed_rows",
+      "mirror_refusals",
+      "mirror_snapshot_rows",
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",

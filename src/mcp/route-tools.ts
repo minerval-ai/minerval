@@ -204,6 +204,18 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // What this deployment has switched on (src/features.ts): a route behind
   // a feature that is off is not mounted, so it is not a tool here either.
   "GET /setup/features": { name: "list_features" },
+
+  // ---- the mirror feed (docs/mirror.md) ----
+  // Mounted only on a deployment that publishes a feed or applies one
+  // (services/mirror-roles.ts), so these are tools only there.
+  "GET /mirror/feed/key": { name: "get_mirror_feed_key" },
+  "GET /mirror/feed": { name: "list_mirror_batches" },
+  "GET /mirror/status": {
+    name: "get_mirror_status",
+    note:
+      "Free. What you read of the public graph in this deployment is as of public_graph_as_of, " +
+      "not as of now.",
+  },
   "GET /runs/:run_id": {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",
@@ -321,6 +333,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",
 
   "GET /health": "A load-balancer liveness probe, not an affordance.",
+  "GET /mirror/feed/:sequence":
+    "A batch is megabytes of whole rows for a deployment's mirror to verify and apply, not " +
+    "something a model can read in a tool result. list_mirror_batches and get_mirror_feed_key " +
+    "are the MCP side of the feed; the rows themselves are read through the ordinary claim and " +
+    "source tools.",
   "PATCH /claims/:claim_id":
     "Direct service seeding only: writes an argument straight onto a " +
     "claim without review, and refuses every other caller. MCP's " +

@@ -1,79 +1,9 @@
 {
-  "id": "763ad489-b020-4566-895e-4c03c819bd08",
-  "prevId": "57e691c1-e4a8-48f1-88fe-4cc69368562e",
+  "id": "68b94f7e-1410-4cb5-8b65-6f8e30978efe",
+  "prevId": "b8572b2a-acac-44fa-804b-57d68d365989",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account_groups": {
-      "name": "account_groups",
-      "schema": "",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "group_name": {
-          "name": "group_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "asserted_at": {
-          "name": "asserted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_account_groups_group": {
-          "name": "idx_account_groups_group",
-          "columns": [
-            {
-              "expression": "group_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "account_groups_account_id_contributors_id_fk": {
-          "name": "account_groups_account_id_contributors_id_fk",
-          "tableFrom": "account_groups",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "account_groups_account_id_group_name_pk": {
-          "name": "account_groups_account_id_group_name_pk",
-          "columns": [
-            "account_id",
-            "group_name"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.action_allocations": {
       "name": "action_allocations",
       "schema": "",
@@ -164,13 +94,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -343,19 +266,6 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        },
-        "action_allocations_sensitivity_label_labels_name_fk": {
-          "name": "action_allocations_sensitivity_label_labels_name_fk",
-          "tableFrom": "action_allocations",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -455,7 +365,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         },
         "created_at": {
           "name": "created_at",
@@ -580,81 +490,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.administrative_events": {
-      "name": "administrative_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "detail": {
-          "name": "detail",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_administrative_events_time": {
-          "name": "idx_administrative_events_time",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "administrative_events_actor_id_contributors_id_fk": {
-          "name": "administrative_events_actor_id_contributors_id_fk",
-          "tableFrom": "administrative_events",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.agent_finding_sightings": {
       "name": "agent_finding_sightings",
       "schema": "",
@@ -728,7 +563,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -905,7 +740,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1096,7 +931,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1335,7 +1170,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1595,7 +1430,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -1806,7 +1641,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         },
         "created_at": {
           "name": "created_at",
@@ -1944,7 +1779,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2085,7 +1920,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -2175,6 +2017,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_answer_relations_origin": {
+          "name": "ck_answer_relations_origin",
+          "value": "\"answer_relations\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_answer_relations_ordered": {
           "name": "ck_answer_relations_ordered",
           "value": "\"answer_relations\".\"claim_a_id\" < \"answer_relations\".\"claim_b_id\""
@@ -2361,7 +2207,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2548,7 +2394,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -2673,7 +2519,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -2766,7 +2619,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_argument_evaluations_origin": {
+          "name": "ck_argument_evaluations_origin",
+          "value": "\"argument_evaluations\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.argument_evidence_backlog": {
@@ -2810,7 +2668,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -2995,7 +2853,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3116,6 +2981,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_argument_instances_origin": {
+          "name": "ck_argument_instances_origin",
+          "value": "\"argument_instances\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_argument_instances_placed": {
           "name": "ck_argument_instances_placed",
           "value": "(\"argument_instances\".\"argument_id\" IS NULL) <> (\"argument_instances\".\"claim_id\" IS NULL)"
@@ -3151,7 +3020,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3223,7 +3099,12 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_argument_subclaims_origin": {
+          "name": "ck_argument_subclaims_origin",
+          "value": "\"argument_subclaims\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.arguments": {
@@ -3315,7 +3196,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3392,7 +3280,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_arguments_origin": {
+          "name": "ck_arguments_origin",
+          "value": "\"arguments\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.assessment_orders": {
@@ -3454,7 +3347,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         },
         "created_at": {
           "name": "created_at",
@@ -3753,7 +3646,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3826,7 +3726,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_assessments_origin": {
+          "name": "ck_assessments_origin",
+          "value": "\"assessments\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.assistant_allowances": {
@@ -4009,7 +3914,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4135,7 +4040,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         },
         "created_at": {
           "name": "created_at",
@@ -4283,7 +4188,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4448,7 +4353,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4647,7 +4552,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4838,7 +4743,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -4940,7 +4845,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5074,7 +4979,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5321,7 +5226,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5512,7 +5417,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         },
         "created_at": {
           "name": "created_at",
@@ -5827,7 +5732,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -5980,7 +5885,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6129,7 +6034,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6341,7 +6246,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -6475,6 +6387,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claim_instances_origin": {
+          "name": "ck_claim_instances_origin",
+          "value": "\"claim_instances\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_instances_stated_probability": {
           "name": "ck_instances_stated_probability",
           "value": "\"claim_instances\".\"stated_probability\" IS NULL OR (\"claim_instances\".\"stated_probability\" >= 0 AND \"claim_instances\".\"stated_probability\" <= 1)"
@@ -6536,7 +6452,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -6628,6 +6551,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claim_links_origin": {
+          "name": "ck_claim_links_origin",
+          "value": "\"claim_links\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_claim_links_ordered": {
           "name": "ck_claim_links_ordered",
           "value": "\"claim_links\".\"claim_a_id\" < \"claim_links\".\"claim_b_id\""
@@ -6733,7 +6660,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -6889,7 +6816,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -7057,7 +6984,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -7203,7 +7130,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -7310,6 +7244,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claim_relationships_origin": {
+          "name": "ck_claim_relationships_origin",
+          "value": "\"claim_relationships\".\"origin\" IN ('local', 'mirror')"
+        },
         "no_self_reference": {
           "name": "no_self_reference",
           "value": "\"claim_relationships\".\"parent_claim_id\" != \"claim_relationships\".\"child_claim_id\""
@@ -7397,7 +7335,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -7677,7 +7615,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -7831,6 +7776,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claims_origin": {
+          "name": "ck_claims_origin",
+          "value": "\"claims\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_claims_kind": {
           "name": "ck_claims_kind",
           "value": "\"claims\".\"kind\" IN ('claim', 'quantity', 'question')"
@@ -7935,7 +7884,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8143,7 +8092,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8308,7 +8257,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -8498,7 +8447,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -8925,7 +8874,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9041,7 +8990,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9185,7 +9134,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9411,7 +9360,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9577,7 +9526,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9797,7 +9746,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -9995,7 +9944,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10134,7 +10083,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10278,7 +10227,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10483,7 +10432,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10603,7 +10552,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10819,7 +10768,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -10954,7 +10903,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -11038,7 +10987,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         },
         "created_at": {
           "name": "created_at",
@@ -11189,7 +11138,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -11234,6 +11190,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_judgment_inputs_origin": {
+          "name": "ck_judgment_inputs_origin",
+          "value": "\"judgment_inputs\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_judgment_inputs_judgment_kind": {
           "name": "ck_judgment_inputs_judgment_kind",
           "value": "\"judgment_inputs\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment')"
@@ -11306,12 +11266,7 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "ck_label_reads_public_reads_nothing": {
-          "name": "ck_label_reads_public_reads_nothing",
-          "value": "\"label_reads\".\"label\" <> 'public'"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.labels": {
@@ -11343,12 +11298,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "labels_name_plain": {
-          "name": "labels_name_plain",
-          "value": "\"labels\".\"name\" ~ '^[a-z][a-z0-9_-]{0,62}$' AND \"labels\".\"name\" <> 'null'"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.lean_checks": {
@@ -11496,7 +11446,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11702,7 +11652,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -11904,7 +11854,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12085,7 +12035,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12353,7 +12303,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12541,7 +12491,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12794,7 +12744,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -12956,7 +12906,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -13102,7 +13052,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -13280,7 +13230,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -13420,7 +13370,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -13514,13 +13464,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13565,19 +13508,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "mandate_valuations_sensitivity_label_labels_name_fk": {
-          "name": "mandate_valuations_sensitivity_label_labels_name_fk",
-          "tableFrom": "mandate_valuations",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -13697,7 +13627,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -14338,359 +14268,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.parties": {
-      "name": "parties",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "is_own_organization": {
-          "name": "is_own_organization",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_parties_name": {
-          "name": "uq_parties_name",
-          "columns": [
-            {
-              "expression": "lower(\"name\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_parties_own_organization": {
-          "name": "uq_parties_own_organization",
-          "columns": [
-            {
-              "expression": "is_own_organization",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "is_own_organization",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "parties_created_by_contributors_id_fk": {
-          "name": "parties_created_by_contributors_id_fk",
-          "tableFrom": "parties",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.permission_grants": {
-      "name": "permission_grants",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "permission": {
-          "name": "permission",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "group_name": {
-          "name": "group_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "granted_via": {
-          "name": "granted_via",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'administrator'"
-        },
-        "granted_at": {
-          "name": "granted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "removed_by": {
-          "name": "removed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "removed_at": {
-          "name": "removed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "uq_permission_grants_live_account": {
-          "name": "uq_permission_grants_live_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "permission",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"label\", '')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"party_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "removed_at IS NULL AND account_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_permission_grants_live_group": {
-          "name": "uq_permission_grants_live_group",
-          "columns": [
-            {
-              "expression": "group_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "permission",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"label\", '')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"party_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "removed_at IS NULL AND group_name IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_permission_grants_log": {
-          "name": "idx_permission_grants_log",
-          "columns": [
-            {
-              "expression": "granted_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "permission_grants_account_id_contributors_id_fk": {
-          "name": "permission_grants_account_id_contributors_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_label_labels_name_fk": {
-          "name": "permission_grants_label_labels_name_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_party_id_parties_id_fk": {
-          "name": "permission_grants_party_id_parties_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "parties",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_granted_by_contributors_id_fk": {
-          "name": "permission_grants_granted_by_contributors_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "granted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "permission_grants_removed_by_contributors_id_fk": {
-          "name": "permission_grants_removed_by_contributors_id_fk",
-          "tableFrom": "permission_grants",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "removed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_permission_grants_permission": {
-          "name": "ck_permission_grants_permission",
-          "value": "\"permission_grants\".\"permission\" IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer')"
-        },
-        "ck_permission_grants_subject": {
-          "name": "ck_permission_grants_subject",
-          "value": "(\"permission_grants\".\"account_id\" IS NULL) <> (\"permission_grants\".\"group_name\" IS NULL)"
-        },
-        "ck_permission_grants_label_scope": {
-          "name": "ck_permission_grants_label_scope",
-          "value": "(\"permission_grants\".\"label\" IS NOT NULL) = (\"permission_grants\".\"permission\" IN ('read', 'read_sources'))"
-        },
-        "ck_permission_grants_party_scope": {
-          "name": "ck_permission_grants_party_scope",
-          "value": "(\"permission_grants\".\"party_id\" IS NOT NULL) = (\"permission_grants\".\"permission\" = 'release')"
-        },
-        "ck_permission_grants_granted_via": {
-          "name": "ck_permission_grants_granted_via",
-          "value": "\"permission_grants\".\"granted_via\" IN ('administrator', 'first_administrator', 'operator')"
-        },
-        "ck_permission_grants_granted_by": {
-          "name": "ck_permission_grants_granted_by",
-          "value": "(\"permission_grants\".\"granted_by\" IS NOT NULL) = (\"permission_grants\".\"granted_via\" = 'administrator')"
-        },
-        "ck_permission_grants_removal": {
-          "name": "ck_permission_grants_removal",
-          "value": "(\"permission_grants\".\"removed_by\" IS NULL) OR (\"permission_grants\".\"removed_at\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.petitions": {
       "name": "petitions",
       "schema": "",
@@ -14825,7 +14402,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15137,7 +14714,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15691,7 +15268,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -15856,7 +15433,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -15921,6 +15505,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_quantity_cuts_origin": {
+          "name": "ck_quantity_cuts_origin",
+          "value": "\"quantity_cuts\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_quantity_cuts_direction": {
           "name": "ck_quantity_cuts_direction",
           "value": "\"quantity_cuts\".\"direction\" IN ('above', 'below')"
@@ -15991,7 +15579,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {},
@@ -16026,7 +15621,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quantity_definitions_origin": {
+          "name": "ck_quantity_definitions_origin",
+          "value": "\"quantity_definitions\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.quantity_estimates": {
@@ -16120,7 +15720,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16187,7 +15794,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quantity_estimates_origin": {
+          "name": "ck_quantity_estimates_origin",
+          "value": "\"quantity_estimates\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.quantity_readings": {
@@ -16255,7 +15867,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16332,7 +15951,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quantity_readings_origin": {
+          "name": "ck_quantity_readings_origin",
+          "value": "\"quantity_readings\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.question_assessments": {
@@ -16451,7 +16075,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16519,6 +16150,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_question_assessments_origin": {
+          "name": "ck_question_assessments_origin",
+          "value": "\"question_assessments\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_question_assessments_standing": {
           "name": "ck_question_assessments_standing",
           "value": "\"question_assessments\".\"standing\" IN ('answered', 'leaning', 'open', 'ill_posed', 'unknown')"
@@ -16638,7 +16273,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -16783,7 +16418,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -16856,13 +16491,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -16922,19 +16550,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "regrants_sensitivity_label_labels_name_fk": {
-          "name": "regrants_sensitivity_label_labels_name_fk",
-          "tableFrom": "regrants",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -17012,7 +16627,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17147,7 +16762,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17345,7 +16960,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17579,7 +17194,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -17902,7 +17517,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -18133,7 +17748,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -18246,7 +17861,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {},
@@ -18331,7 +17946,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -18495,7 +18110,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -18627,7 +18242,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -18719,7 +18341,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_source_interests_origin": {
+          "name": "ck_source_interests_origin",
+          "value": "\"source_interests\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.source_relationships": {
@@ -18783,7 +18410,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -18968,7 +18595,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -19054,6 +18688,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_source_segments_origin": {
+          "name": "ck_source_segments_origin",
+          "value": "\"source_segments\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_source_segments_kind": {
           "name": "ck_source_segments_kind",
           "value": "\"source_segments\".\"kind\" IN ('section', 'passage', 'table', 'note', 'reference')"
@@ -19161,7 +18799,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         },
         "party_id": {
           "name": "party_id",
@@ -19257,6 +18902,10 @@
       },
       "policies": {},
       "checkConstraints": {
+        "ck_sources_origin": {
+          "name": "ck_sources_origin",
+          "value": "\"sources\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_sources_source_type": {
           "name": "ck_sources_source_type",
           "value": "\"sources\".\"source_type\" IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')"
@@ -19329,7 +18978,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -19517,7 +19166,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -19587,6 +19236,892 @@
         "ck_tags_status": {
           "name": "ck_tags_status",
           "value": "\"tags\".\"status\" IN ('active', 'merged')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.mirror_applied_batches": {
+      "name": "mirror_applied_batches",
+      "schema": "",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feed_id": {
+          "name": "feed_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_first": {
+          "name": "part_first",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_last": {
+          "name": "part_last",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_number": {
+          "name": "migration_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cut_at": {
+          "name": "cut_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_hash": {
+          "name": "previous_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_hash": {
+          "name": "batch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "publisher_web_base_url": {
+          "name": "publisher_web_base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "counts": {
+          "name": "counts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "received_from": {
+          "name": "received_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_feed_batches": {
+      "name": "mirror_feed_batches",
+      "schema": "",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feed_id": {
+          "name": "feed_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_first": {
+          "name": "part_first",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_last": {
+          "name": "part_last",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_number": {
+          "name": "migration_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_tag": {
+          "name": "migration_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shape": {
+          "name": "shape",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cut_at": {
+          "name": "cut_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_hash": {
+          "name": "previous_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_hash": {
+          "name": "batch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_count": {
+          "name": "row_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "removal_count": {
+          "name": "removal_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_mirror_feed_batches_hash": {
+          "name": "uq_mirror_feed_batches_hash",
+          "columns": [
+            {
+              "expression": "batch_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_mirror_feed_batches_kind": {
+          "name": "ck_mirror_feed_batches_kind",
+          "value": "\"mirror_feed_batches\".\"kind\" IN ('snapshot', 'changes')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.mirror_feed_rows": {
+      "name": "mirror_feed_rows",
+      "schema": "",
+      "columns": {
+        "table_name": {
+          "name": "table_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_key": {
+          "name": "row_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_hash": {
+          "name": "row_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "mirror_feed_rows_table_name_row_key_pk": {
+          "name": "mirror_feed_rows_table_name_row_key_pk",
+          "columns": [
+            "table_name",
+            "row_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_refusals": {
+      "name": "mirror_refusals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "batch_hash": {
+          "name": "batch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_from": {
+          "name": "received_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refused_at": {
+          "name": "refused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_mirror_refusals_at": {
+          "name": "idx_mirror_refusals_at",
+          "columns": [
+            {
+              "expression": "refused_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_snapshot_rows": {
+      "name": "mirror_snapshot_rows",
+      "schema": "",
+      "columns": {
+        "table_name": {
+          "name": "table_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_key": {
+          "name": "row_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "mirror_snapshot_rows_table_name_row_key_pk": {
+          "name": "mirror_snapshot_rows_table_name_row_key_pk",
+          "columns": [
+            "table_name",
+            "row_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.account_groups": {
+      "name": "account_groups",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_name": {
+          "name": "group_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asserted_at": {
+          "name": "asserted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_account_groups_group": {
+          "name": "idx_account_groups_group",
+          "columns": [
+            {
+              "expression": "group_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "account_groups_account_id_contributors_id_fk": {
+          "name": "account_groups_account_id_contributors_id_fk",
+          "tableFrom": "account_groups",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "account_groups_account_id_group_name_pk": {
+          "name": "account_groups_account_id_group_name_pk",
+          "columns": [
+            "account_id",
+            "group_name"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.administrative_events": {
+      "name": "administrative_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "detail": {
+          "name": "detail",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_administrative_events_time": {
+          "name": "idx_administrative_events_time",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "administrative_events_actor_id_contributors_id_fk": {
+          "name": "administrative_events_actor_id_contributors_id_fk",
+          "tableFrom": "administrative_events",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.parties": {
+      "name": "parties",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_own_organization": {
+          "name": "is_own_organization",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_parties_name": {
+          "name": "uq_parties_name",
+          "columns": [
+            {
+              "expression": "lower(\"name\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_parties_own_organization": {
+          "name": "uq_parties_own_organization",
+          "columns": [
+            {
+              "expression": "is_own_organization",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "is_own_organization",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "parties_created_by_contributors_id_fk": {
+          "name": "parties_created_by_contributors_id_fk",
+          "tableFrom": "parties",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.permission_grants": {
+      "name": "permission_grants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "group_name": {
+          "name": "group_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "party_id": {
+          "name": "party_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_via": {
+          "name": "granted_via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'administrator'"
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "removed_by": {
+          "name": "removed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_permission_grants_live_account": {
+          "name": "uq_permission_grants_live_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"label\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"party_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "removed_at IS NULL AND account_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_permission_grants_live_group": {
+          "name": "uq_permission_grants_live_group",
+          "columns": [
+            {
+              "expression": "group_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"label\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"party_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "removed_at IS NULL AND group_name IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_permission_grants_log": {
+          "name": "idx_permission_grants_log",
+          "columns": [
+            {
+              "expression": "granted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "permission_grants_account_id_contributors_id_fk": {
+          "name": "permission_grants_account_id_contributors_id_fk",
+          "tableFrom": "permission_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "permission_grants_label_labels_name_fk": {
+          "name": "permission_grants_label_labels_name_fk",
+          "tableFrom": "permission_grants",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "permission_grants_party_id_parties_id_fk": {
+          "name": "permission_grants_party_id_parties_id_fk",
+          "tableFrom": "permission_grants",
+          "tableTo": "parties",
+          "columnsFrom": [
+            "party_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "permission_grants_granted_by_contributors_id_fk": {
+          "name": "permission_grants_granted_by_contributors_id_fk",
+          "tableFrom": "permission_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "permission_grants_removed_by_contributors_id_fk": {
+          "name": "permission_grants_removed_by_contributors_id_fk",
+          "tableFrom": "permission_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "removed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_permission_grants_permission": {
+          "name": "ck_permission_grants_permission",
+          "value": "\"permission_grants\".\"permission\" IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer')"
+        },
+        "ck_permission_grants_subject": {
+          "name": "ck_permission_grants_subject",
+          "value": "(\"permission_grants\".\"account_id\" IS NULL) <> (\"permission_grants\".\"group_name\" IS NULL)"
+        },
+        "ck_permission_grants_label_scope": {
+          "name": "ck_permission_grants_label_scope",
+          "value": "(\"permission_grants\".\"label\" IS NOT NULL) = (\"permission_grants\".\"permission\" IN ('read', 'read_sources'))"
+        },
+        "ck_permission_grants_party_scope": {
+          "name": "ck_permission_grants_party_scope",
+          "value": "(\"permission_grants\".\"party_id\" IS NOT NULL) = (\"permission_grants\".\"permission\" = 'release')"
+        },
+        "ck_permission_grants_granted_via": {
+          "name": "ck_permission_grants_granted_via",
+          "value": "\"permission_grants\".\"granted_via\" IN ('administrator', 'first_administrator', 'operator')"
+        },
+        "ck_permission_grants_granted_by": {
+          "name": "ck_permission_grants_granted_by",
+          "value": "(\"permission_grants\".\"granted_by\" IS NOT NULL) = (\"permission_grants\".\"granted_via\" = 'administrator')"
+        },
+        "ck_permission_grants_removal": {
+          "name": "ck_permission_grants_removal",
+          "value": "(\"permission_grants\".\"removed_by\" IS NULL) OR (\"permission_grants\".\"removed_at\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -19670,16 +20205,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\", \"sensitivity_label\" from \"argument_evaluations\" where \"argument_evaluations\".\"is_current\" = true",
+      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\", \"sensitivity_label\", \"origin\" from \"argument_evaluations\" where \"argument_evaluations\".\"is_current\" = true",
       "name": "argument_evaluations_in_force",
       "schema": "public",
       "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
       "materialized": false
     },
     "public.assessments_in_force": {
@@ -19808,16 +20347,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\", \"sensitivity_label\" from \"assessments\" where \"assessments\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\", \"sensitivity_label\", \"origin\" from \"assessments\" where \"assessments\".\"is_current\" = true",
       "name": "assessments_in_force",
       "schema": "public",
       "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
       "materialized": false
     },
     "public.quantity_estimates_in_force": {
@@ -19909,16 +20452,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\" from \"quantity_estimates\" where \"quantity_estimates\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\" from \"quantity_estimates\" where \"quantity_estimates\".\"is_current\" = true",
       "name": "quantity_estimates_in_force",
       "schema": "public",
       "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
       "materialized": false
     },
     "public.question_assessments_in_force": {
@@ -20035,16 +20582,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\" from \"question_assessments\" where \"question_assessments\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\" from \"question_assessments\" where \"question_assessments\".\"is_current\" = true",
       "name": "question_assessments_in_force",
       "schema": "public",
       "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
       "materialized": false
     }
   },

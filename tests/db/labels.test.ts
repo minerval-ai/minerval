@@ -4,7 +4,7 @@
  * carrying a label no one defined. Nothing reads a label yet, so this is
  * about what is written, through the same functions the agents write with.
  */
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, onTestFinished } from "vitest";
 import { randomUUID } from "node:crypto";
 
 // Tracing is off under vitest by default; the run row is part of what is checked.
@@ -27,6 +27,7 @@ vi.mock("../../src/llm/providers/index.js", async (orig) => ({
 }));
 
 import { rawQuery } from "../../src/db/client.js";
+import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { complete } from "../../src/llm/client.js";
 import { currentLabel, getUsageContext, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
@@ -194,7 +195,7 @@ describe("the labels table", () => {
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
         "reading_citations", "reconciliation_events", "regrants", "reputation_events", "request_targets", "request_work",
         "requests", "research_runs", "setup_parts", "shared_page_analyses", "source_events", "source_extractions",
-        "source_interests", "source_relationships", "source_segments", "sources", "steward_slots", "taggings", "tags",
+        "source_interests", "source_relationships", "source_segments", "sources", "stated_views", "steward_slots", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
@@ -332,6 +333,16 @@ describe("the label in a run's log", () => {
   }
 
   it("is on the prompt step's setup and under the run's seal", async () => {
+    // A run at a label other than public is served only once its model's
+    // provider is cleared for that label (src/provider-labels.ts;
+    // tests/db/provider-labels.test.ts), so this deployment clears it.
+    const deployment = loadConfig() as unknown as { providerLabels: Record<string, string[]> };
+    const loaded = deployment.providerLabels;
+    onTestFinished(() => {
+      deployment.providerLabels = loaded;
+    });
+    deployment.providerLabels = { anthropic: [PUBLIC_LABEL, INTERNAL] };
+
     const runId = await runWithUsageContext({ label: INTERNAL }, runWithOneCall);
     const run = await sealed(runId);
     expect(run.sensitivity_label).toBe(INTERNAL);

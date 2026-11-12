@@ -1,6 +1,6 @@
 {
-  "id": "c4ec3867-5c3b-4690-a3ed-d67287de3b9d",
-  "prevId": "67900e7a-e51f-4814-8403-7e1ca3b1395f",
+  "id": "763ad489-b020-4566-895e-4c03c819bd08",
+  "prevId": "547cb647-675a-49a5-a0c6-09e736e25a98",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2086,6 +2086,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -2175,6 +2182,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_answer_relations_origin": {
+          "name": "ck_answer_relations_origin",
+          "value": "\"answer_relations\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_answer_relations_ordered": {
           "name": "ck_answer_relations_ordered",
           "value": "\"answer_relations\".\"claim_a_id\" < \"answer_relations\".\"claim_b_id\""
@@ -2228,13 +2239,6 @@
           "notNull": true,
           "default": "'user'"
         },
-        "work_label": {
-          "name": "work_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2284,19 +2288,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "api_keys_work_label_labels_name_fk": {
-          "name": "api_keys_work_label_labels_name_fk",
-          "tableFrom": "api_keys",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "work_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -2694,6 +2685,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -2786,7 +2784,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_argument_evaluations_origin": {
+          "name": "ck_argument_evaluations_origin",
+          "value": "\"argument_evaluations\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.argument_evidence_backlog": {
@@ -3016,6 +3019,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3136,6 +3146,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_argument_instances_origin": {
+          "name": "ck_argument_instances_origin",
+          "value": "\"argument_instances\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_argument_instances_placed": {
           "name": "ck_argument_instances_placed",
           "value": "(\"argument_instances\".\"argument_id\" IS NULL) <> (\"argument_instances\".\"claim_id\" IS NULL)"
@@ -3172,6 +3186,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3243,7 +3264,12 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_argument_subclaims_origin": {
+          "name": "ck_argument_subclaims_origin",
+          "value": "\"argument_subclaims\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.arguments": {
@@ -3336,6 +3362,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3412,7 +3445,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_arguments_origin": {
+          "name": "ck_arguments_origin",
+          "value": "\"arguments\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.assessment_orders": {
@@ -3560,12 +3598,6 @@
             },
             {
               "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3780,6 +3812,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -3852,7 +3891,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_assessments_origin": {
+          "name": "ck_assessments_origin",
+          "value": "\"assessments\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.assistant_allowances": {
@@ -6368,6 +6412,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -6501,6 +6552,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claim_instances_origin": {
+          "name": "ck_claim_instances_origin",
+          "value": "\"claim_instances\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_instances_stated_probability": {
           "name": "ck_instances_stated_probability",
           "value": "\"claim_instances\".\"stated_probability\" IS NULL OR (\"claim_instances\".\"stated_probability\" >= 0 AND \"claim_instances\".\"stated_probability\" <= 1)"
@@ -6563,6 +6618,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -6654,6 +6716,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claim_links_origin": {
+          "name": "ck_claim_links_origin",
+          "value": "\"claim_links\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_claim_links_ordered": {
           "name": "ck_claim_links_ordered",
           "value": "\"claim_links\".\"claim_a_id\" < \"claim_links\".\"claim_b_id\""
@@ -7230,6 +7296,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -7336,6 +7409,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claim_relationships_origin": {
+          "name": "ck_claim_relationships_origin",
+          "value": "\"claim_relationships\".\"origin\" IN ('local', 'mirror')"
+        },
         "no_self_reference": {
           "name": "no_self_reference",
           "value": "\"claim_relationships\".\"parent_claim_id\" != \"claim_relationships\".\"child_claim_id\""
@@ -7704,6 +7781,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -7857,6 +7941,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_claims_origin": {
+          "name": "ck_claims_origin",
+          "value": "\"claims\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_claims_kind": {
           "name": "ck_claims_kind",
           "value": "\"claims\".\"kind\" IN ('claim', 'quantity', 'question')"
@@ -11191,12 +11279,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "input_label": {
-          "name": "input_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source_id": {
           "name": "source_id",
           "type": "uuid",
@@ -11222,6 +11304,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -11245,38 +11334,9 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_judgment_inputs_beside": {
-          "name": "idx_judgment_inputs_beside",
-          "columns": [
-            {
-              "expression": "input_judgment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"judgment_inputs\".\"input_kind\" = 'beside'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
-        "judgment_inputs_input_label_labels_name_fk": {
-          "name": "judgment_inputs_input_label_labels_name_fk",
-          "tableFrom": "judgment_inputs",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "input_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "judgment_inputs_sensitivity_label_labels_name_fk": {
           "name": "judgment_inputs_sensitivity_label_labels_name_fk",
           "tableFrom": "judgment_inputs",
@@ -11295,17 +11355,21 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_judgment_inputs_origin": {
+          "name": "ck_judgment_inputs_origin",
+          "value": "\"judgment_inputs\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_judgment_inputs_judgment_kind": {
           "name": "ck_judgment_inputs_judgment_kind",
-          "value": "\"judgment_inputs\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation')"
+          "value": "\"judgment_inputs\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment')"
         },
         "ck_judgment_inputs_input_kind": {
           "name": "ck_judgment_inputs_input_kind",
-          "value": "\"judgment_inputs\".\"input_kind\" IN ('premise', 'source', 'beside')"
+          "value": "\"judgment_inputs\".\"input_kind\" IN ('premise', 'source')"
         },
         "ck_judgment_inputs_shape": {
           "name": "ck_judgment_inputs_shape",
-          "value": "(\"judgment_inputs\".\"input_kind\" = 'premise' AND \"judgment_inputs\".\"node_id\" IS NOT NULL AND \"judgment_inputs\".\"relation_type\" IS NOT NULL AND \"judgment_inputs\".\"source_id\" IS NULL)\n        OR (\"judgment_inputs\".\"input_kind\" = 'source' AND \"judgment_inputs\".\"source_id\" IS NOT NULL AND \"judgment_inputs\".\"node_id\" IS NULL)\n        OR (\"judgment_inputs\".\"input_kind\" = 'beside' AND \"judgment_inputs\".\"input_judgment_id\" IS NOT NULL AND \"judgment_inputs\".\"input_label\" IS NOT NULL AND \"judgment_inputs\".\"node_id\" IS NULL AND \"judgment_inputs\".\"source_id\" IS NULL)"
+          "value": "(\"judgment_inputs\".\"input_kind\" = 'premise' AND \"judgment_inputs\".\"node_id\" IS NOT NULL AND \"judgment_inputs\".\"relation_type\" IS NOT NULL AND \"judgment_inputs\".\"source_id\" IS NULL)\n        OR (\"judgment_inputs\".\"input_kind\" = 'source' AND \"judgment_inputs\".\"source_id\" IS NOT NULL AND \"judgment_inputs\".\"node_id\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -13656,6 +13720,394 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.mirror_applied_batches": {
+      "name": "mirror_applied_batches",
+      "schema": "",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feed_id": {
+          "name": "feed_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_first": {
+          "name": "part_first",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_last": {
+          "name": "part_last",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_number": {
+          "name": "migration_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cut_at": {
+          "name": "cut_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_hash": {
+          "name": "previous_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_hash": {
+          "name": "batch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "publisher_web_base_url": {
+          "name": "publisher_web_base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "counts": {
+          "name": "counts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "received_from": {
+          "name": "received_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_feed_batches": {
+      "name": "mirror_feed_batches",
+      "schema": "",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feed_id": {
+          "name": "feed_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_first": {
+          "name": "part_first",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "part_last": {
+          "name": "part_last",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_number": {
+          "name": "migration_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_tag": {
+          "name": "migration_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shape": {
+          "name": "shape",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cut_at": {
+          "name": "cut_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_hash": {
+          "name": "previous_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_hash": {
+          "name": "batch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_count": {
+          "name": "row_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "removal_count": {
+          "name": "removal_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_mirror_feed_batches_hash": {
+          "name": "uq_mirror_feed_batches_hash",
+          "columns": [
+            {
+              "expression": "batch_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_mirror_feed_batches_kind": {
+          "name": "ck_mirror_feed_batches_kind",
+          "value": "\"mirror_feed_batches\".\"kind\" IN ('snapshot', 'changes')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.mirror_feed_rows": {
+      "name": "mirror_feed_rows",
+      "schema": "",
+      "columns": {
+        "table_name": {
+          "name": "table_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_key": {
+          "name": "row_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_hash": {
+          "name": "row_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "mirror_feed_rows_table_name_row_key_pk": {
+          "name": "mirror_feed_rows_table_name_row_key_pk",
+          "columns": [
+            "table_name",
+            "row_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_refusals": {
+      "name": "mirror_refusals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "batch_hash": {
+          "name": "batch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_from": {
+          "name": "received_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refused_at": {
+          "name": "refused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_mirror_refusals_at": {
+          "name": "idx_mirror_refusals_at",
+          "columns": [
+            {
+              "expression": "refused_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_snapshot_rows": {
+      "name": "mirror_snapshot_rows",
+      "schema": "",
+      "columns": {
+        "table_name": {
+          "name": "table_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_key": {
+          "name": "row_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "mirror_snapshot_rows_table_name_row_key_pk": {
+          "name": "mirror_snapshot_rows_table_name_row_key_pk",
+          "columns": [
+            "table_name",
+            "row_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.node_messages": {
       "name": "node_messages",
       "schema": "",
@@ -13938,12 +14390,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "work_label": {
-          "name": "work_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
@@ -13996,19 +14442,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "oauth_authorization_requests_work_label_labels_name_fk": {
-          "name": "oauth_authorization_requests_work_label_labels_name_fk",
-          "tableFrom": "oauth_authorization_requests",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "work_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -14151,13 +14584,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "work_label": {
-          "name": "work_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
@@ -14241,19 +14667,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "oauth_tokens_work_label_labels_name_fk": {
-          "name": "oauth_tokens_work_label_labels_name_fk",
-          "tableFrom": "oauth_tokens",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "work_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -15957,6 +16370,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16021,6 +16441,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_quantity_cuts_origin": {
+          "name": "ck_quantity_cuts_origin",
+          "value": "\"quantity_cuts\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_quantity_cuts_direction": {
           "name": "ck_quantity_cuts_direction",
           "value": "\"quantity_cuts\".\"direction\" IN ('above', 'below')"
@@ -16092,6 +16516,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {},
@@ -16126,7 +16557,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quantity_definitions_origin": {
+          "name": "ck_quantity_definitions_origin",
+          "value": "\"quantity_definitions\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.quantity_estimates": {
@@ -16221,6 +16657,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16287,7 +16730,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quantity_estimates_origin": {
+          "name": "ck_quantity_estimates_origin",
+          "value": "\"quantity_estimates\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.quantity_readings": {
@@ -16356,6 +16804,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16432,7 +16887,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_quantity_readings_origin": {
+          "name": "ck_quantity_readings_origin",
+          "value": "\"quantity_readings\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.question_assessments": {
@@ -16552,6 +17012,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -16619,6 +17086,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_question_assessments_origin": {
+          "name": "ck_question_assessments_origin",
+          "value": "\"question_assessments\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_question_assessments_standing": {
           "name": "ck_question_assessments_standing",
           "value": "\"question_assessments\".\"standing\" IN ('answered', 'leaning', 'open', 'ill_posed', 'unknown')"
@@ -18728,6 +19199,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -18819,7 +19297,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_source_interests_origin": {
+          "name": "ck_source_interests_origin",
+          "value": "\"source_interests\".\"origin\" IN ('local', 'mirror')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.source_relationships": {
@@ -19069,6 +19552,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
       "indexes": {
@@ -19154,6 +19644,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_source_segments_origin": {
+          "name": "ck_source_segments_origin",
+          "value": "\"source_segments\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_source_segments_kind": {
           "name": "ck_source_segments_kind",
           "value": "\"source_segments\".\"kind\" IN ('section', 'passage', 'table', 'note', 'reference')"
@@ -19263,6 +19757,13 @@
           "notNull": true,
           "default": "minerval_default_label()"
         },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
+        },
         "party_id": {
           "name": "party_id",
           "type": "uuid",
@@ -19357,6 +19858,10 @@
       },
       "policies": {},
       "checkConstraints": {
+        "ck_sources_origin": {
+          "name": "ck_sources_origin",
+          "value": "\"sources\".\"origin\" IN ('local', 'mirror')"
+        },
         "ck_sources_source_type": {
           "name": "ck_sources_source_type",
           "value": "\"sources\".\"source_type\" IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')"
@@ -19364,70 +19869,67 @@
       },
       "isRLSEnabled": false
     },
-    "public.steward_slots": {
-      "name": "steward_slots",
+    "public.stated_views": {
+      "name": "stated_views",
       "schema": "",
       "columns": {
-        "claim_id": {
-          "name": "claim_id",
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contribution_id": {
+          "name": "contribution_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "steward_state": {
-          "name": "steward_state",
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stance": {
+          "name": "stance",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'done'"
+          "notNull": true
         },
-        "steward_trigger": {
-          "name": "steward_trigger",
+        "stated_probability": {
+          "name": "stated_probability",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stated_estimate": {
+          "name": "stated_estimate",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statement": {
+          "name": "statement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reasons": {
+          "name": "reasons",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "steward_error": {
-          "name": "steward_error",
+        "stake": {
+          "name": "stake",
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "steward_error_reason": {
-          "name": "steward_error_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stewarded_at": {
-          "name": "stewarded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "steward_requeued": {
-          "name": "steward_requeued",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "steward_attempts": {
-          "name": "steward_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -19438,40 +19940,48 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
-        "idx_steward_slots_pending": {
-          "name": "idx_steward_slots_pending",
+        "idx_stated_views_contribution": {
+          "name": "idx_stated_views_contribution",
           "columns": [
             {
-              "expression": "sensitivity_label",
+              "expression": "contribution_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_stated_views_instance": {
+          "name": "idx_stated_views_instance",
+          "columns": [
             {
-              "expression": "updated_at",
+              "expression": "instance_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "where": "steward_state = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "steward_slots_claim_id_claims_id_fk": {
-          "name": "steward_slots_claim_id_claims_id_fk",
-          "tableFrom": "steward_slots",
-          "tableTo": "claims",
+        "stated_views_contribution_id_contributions_id_fk": {
+          "name": "stated_views_contribution_id_contributions_id_fk",
+          "tableFrom": "stated_views",
+          "tableTo": "contributions",
           "columnsFrom": [
-            "claim_id"
+            "contribution_id"
           ],
           "columnsTo": [
             "id"
@@ -19479,9 +19989,22 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "steward_slots_sensitivity_label_labels_name_fk": {
-          "name": "steward_slots_sensitivity_label_labels_name_fk",
-          "tableFrom": "steward_slots",
+        "stated_views_instance_id_claim_instances_id_fk": {
+          "name": "stated_views_instance_id_claim_instances_id_fk",
+          "tableFrom": "stated_views",
+          "tableTo": "claim_instances",
+          "columnsFrom": [
+            "instance_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "stated_views_sensitivity_label_labels_name_fk": {
+          "name": "stated_views_sensitivity_label_labels_name_fk",
+          "tableFrom": "stated_views",
           "tableTo": "labels",
           "columnsFrom": [
             "sensitivity_label"
@@ -19493,18 +20016,15 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "steward_slots_claim_id_sensitivity_label_pk": {
-          "name": "steward_slots_claim_id_sensitivity_label_pk",
-          "columns": [
-            "claim_id",
-            "sensitivity_label"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_stated_views_probability": {
+          "name": "ck_stated_views_probability",
+          "value": "\"stated_views\".\"stated_probability\" IS NULL OR (\"stated_views\".\"stated_probability\" >= 0 AND \"stated_views\".\"stated_probability\" <= 1)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.taggings": {
@@ -19841,90 +20361,6 @@
   "roles": {},
   "policies": {},
   "views": {
-    "public.argument_evaluations_versions": {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "argument_id": {
-          "name": "argument_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decisive": {
-          "name": "decisive",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "assessment_id": {
-          "name": "assessment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "estimate_id": {
-          "name": "estimate_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_current": {
-          "name": "is_current",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'claim_steward'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\", \"sensitivity_label\", minerval_version_in_force('argument_evaluations', \"argument_id\", \"sensitivity_label\") as \"in_force\" from \"argument_evaluations\" where \"argument_evaluations\".\"is_current\" = true",
-      "name": "argument_evaluations_versions",
-      "schema": "public",
-      "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
-      "materialized": false
-    },
     "public.argument_evaluations_in_force": {
       "columns": {
         "id": {
@@ -19998,154 +20434,23 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\", \"sensitivity_label\" from \"argument_evaluations\" where (\"argument_evaluations\".\"is_current\" = true and minerval_version_gone_by('argument_evaluations', \"argument_evaluations\".\"argument_id\", \"argument_evaluations\".\"sensitivity_label\"))",
+      "definition": "select \"id\", \"argument_id\", \"verdict\", \"decisive\", \"content\", \"assessment_id\", \"estimate_id\", \"is_current\", \"created_by\", \"created_at\", \"sensitivity_label\", \"origin\" from \"argument_evaluations\" where \"argument_evaluations\".\"is_current\" = true",
       "name": "argument_evaluations_in_force",
       "schema": "public",
       "isExisting": false,
+      "materialized": false,
       "with": {
         "securityInvoker": true
-      },
-      "materialized": false
-    },
-    "public.assessments_versions": {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claim_credence": {
-          "name": "claim_credence",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reasoning_trace": {
-          "name": "reasoning_trace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "marginal_yield": {
-          "name": "marginal_yield",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "funded_by_job_id": {
-          "name": "funded_by_job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inputs_recorded": {
-          "name": "inputs_recorded",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "is_current": {
-          "name": "is_current",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "subclaim_summary": {
-          "name": "subclaim_summary",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trigger_context": {
-          "name": "trigger_context",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "assessed_at": {
-          "name": "assessed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "relabeled_from": {
-          "name": "relabeled_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\", \"sensitivity_label\", minerval_version_in_force('assessments', \"claim_id\", \"sensitivity_label\") as \"in_force\" from \"assessments\" where \"assessments\".\"is_current\" = true",
-      "name": "assessments_versions",
-      "schema": "public",
-      "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
-      "materialized": false
+      }
     },
     "public.assessments_in_force": {
       "columns": {
@@ -20274,117 +20579,23 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\", \"sensitivity_label\" from \"assessments\" where (\"assessments\".\"is_current\" = true and minerval_version_gone_by('assessments', \"assessments\".\"claim_id\", \"assessments\".\"sensitivity_label\"))",
+      "definition": "select \"id\", \"claim_id\", \"status\", \"confidence\", \"claim_credence\", \"summary\", \"reasoning_trace\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"skills\", \"run_id\", \"inputs_recorded\", \"is_current\", \"subclaim_summary\", \"trigger\", \"trigger_context\", \"assessed_at\", \"relabeled_from\", \"sensitivity_label\", \"origin\" from \"assessments\" where \"assessments\".\"is_current\" = true",
       "name": "assessments_in_force",
       "schema": "public",
       "isExisting": false,
+      "materialized": false,
       "with": {
         "securityInvoker": true
-      },
-      "materialized": false
-    },
-    "public.quantity_estimates_versions": {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "estimate": {
-          "name": "estimate",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "work": {
-          "name": "work",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "marginal_yield": {
-          "name": "marginal_yield",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "funded_by_job_id": {
-          "name": "funded_by_job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inputs_recorded": {
-          "name": "inputs_recorded",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "is_current": {
-          "name": "is_current",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trigger_context": {
-          "name": "trigger_context",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "assessed_at": {
-          "name": "assessed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", minerval_version_in_force('quantity_estimates', \"claim_id\", \"sensitivity_label\") as \"in_force\" from \"quantity_estimates\" where \"quantity_estimates\".\"is_current\" = true",
-      "name": "quantity_estimates_versions",
-      "schema": "public",
-      "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
-      "materialized": false
+      }
     },
     "public.quantity_estimates_in_force": {
       "columns": {
@@ -20476,142 +20687,23 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\" from \"quantity_estimates\" where (\"quantity_estimates\".\"is_current\" = true and minerval_version_gone_by('quantity_estimates', \"quantity_estimates\".\"claim_id\", \"quantity_estimates\".\"sensitivity_label\"))",
+      "definition": "select \"id\", \"claim_id\", \"estimate\", \"summary\", \"work\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\" from \"quantity_estimates\" where \"quantity_estimates\".\"is_current\" = true",
       "name": "quantity_estimates_in_force",
       "schema": "public",
       "isExisting": false,
+      "materialized": false,
       "with": {
         "securityInvoker": true
-      },
-      "materialized": false
-    },
-    "public.question_assessments_versions": {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "standing": {
-          "name": "standing",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "favored_claim_ids": {
-          "name": "favored_claim_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reasoning_trace": {
-          "name": "reasoning_trace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "incomplete": {
-          "name": "incomplete",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "marginal_yield": {
-          "name": "marginal_yield",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "funded_by_job_id": {
-          "name": "funded_by_job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inputs_recorded": {
-          "name": "inputs_recorded",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "is_current": {
-          "name": "is_current",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trigger_context": {
-          "name": "trigger_context",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "assessed_at": {
-          "name": "assessed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", minerval_version_in_force('question_assessments', \"claim_id\", \"sensitivity_label\") as \"in_force\" from \"question_assessments\" where \"question_assessments\".\"is_current\" = true",
-      "name": "question_assessments_versions",
-      "schema": "public",
-      "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
-      "materialized": false
+      }
     },
     "public.question_assessments_in_force": {
       "columns": {
@@ -20728,16 +20820,23 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\" from \"question_assessments\" where (\"question_assessments\".\"is_current\" = true and minerval_version_gone_by('question_assessments', \"question_assessments\".\"claim_id\", \"question_assessments\".\"sensitivity_label\"))",
+      "definition": "select \"id\", \"claim_id\", \"standing\", \"favored_claim_ids\", \"summary\", \"reasoning_trace\", \"incomplete\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\" from \"question_assessments\" where \"question_assessments\".\"is_current\" = true",
       "name": "question_assessments_in_force",
       "schema": "public",
       "isExisting": false,
+      "materialized": false,
       "with": {
         "securityInvoker": true
-      },
-      "materialized": false
+      }
     }
   },
   "_meta": {

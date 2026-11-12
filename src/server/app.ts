@@ -55,6 +55,8 @@ import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
+import { mirrorRoutes } from "../routes/mirror.js";
+import { mirrorRoles } from "../services/mirror-roles.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -150,6 +152,13 @@ export async function buildApp() {
   // Agent runs (#553): public ones in full, the rest withheld with reasons.
   await app.register(runRoutes, { prefix: "/runs" });
   await app.register(requestRoutes, { prefix: "/requests" });
+  // The mirror feed (docs/mirror.md): mounted only on a deployment that is
+  // configured to publish one or to apply one, and then only that side.
+  // Registered before /mcp like every route that may be a tool.
+  const mirror = mirrorRoles(config);
+  if (mirror.publisher || mirror.applier) {
+    await app.register(mirrorRoutes, { prefix: "/mirror" });
+  }
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // Permissions, parties and labels exist only where a deployment is
   // members-only (src/permissions.ts). The public graph mounts none of

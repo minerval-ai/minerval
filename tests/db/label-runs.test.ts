@@ -56,6 +56,7 @@ vi.mock("../../src/services/github-issue-service.js", async (orig) => ({
   syncTriageToIssue: vi.fn(async () => undefined),
 }));
 
+import { loadConfig } from "../../src/config.js";
 import { rawQuery } from "../../src/db/client.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { complete } from "../../src/llm/client.js";
@@ -261,7 +262,17 @@ async function labelsOf(tables: Record<string, { where: string; params: unknown[
 }
 const everyTableAt = (label: string) => Object.fromEntries(RUN_TABLES.map((t) => [t, [label]]));
 
+// A run at a label other than public is served only once its model's
+// provider is cleared for that label (src/provider-labels.ts;
+// tests/db/provider-labels.test.ts), so this deployment clears it.
+const deployment = loadConfig() as unknown as { providerLabels: Record<string, string[]> };
+const loadedProviderLabels = deployment.providerLabels;
+afterAll(() => {
+  deployment.providerLabels = loadedProviderLabels;
+});
+
 beforeAll(async () => {
+  deployment.providerLabels = { anthropic: [PUBLIC_LABEL, SECOND] };
   // A second label, as a deployment would define one: a row, nothing else.
   await rawQuery(
     `INSERT INTO labels (name, description) VALUES ($1, 'Readable by the people it is about.')

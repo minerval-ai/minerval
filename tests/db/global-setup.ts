@@ -15,6 +15,9 @@
  *  3. Apply the full migration chain with drizzle-kit. Any migration
  *     failure fails the whole suite loudly, before a single test runs —
  *     migration-from-zero is itself under test.
+ *  4. Copy the migrated, still empty database twice, for the mirror's tests
+ *     (tests/db/urls.ts, mirrorDatabaseUrl): a publisher and a private
+ *     deployment are two databases.
  *
  * Runs in its own process; the per-worker DATABASE_URL is set in
  * tests/db/setup.ts.
@@ -23,7 +26,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
-import { TEST_DATABASE_URL, TEST_DATABASE_ADMIN_URL } from "./urls.js";
+import { TEST_DATABASE_URL, TEST_DATABASE_ADMIN_URL, mirrorDatabaseUrl } from "./urls.js";
 
 /**
  * What the catalog says about enforcement (src/db/clearance.ts): the
@@ -171,4 +174,17 @@ export default async function globalSetup(project: {
   });
 
   project.provide("enforcementSwitch", await recordEnforcementSwitch());
+  // The mirror's two databases: copies of the one just migrated, taken now,
+  // while nothing is connected to it and it holds no rows.
+  const copies = new pg.Client({ connectionString: TEST_DATABASE_ADMIN_URL });
+  await copies.connect();
+  try {
+    for (const side of ["a", "b"] as const) {
+      const copy = new URL(mirrorDatabaseUrl(side)).pathname.replace(/^\//, "");
+      await copies.query(`DROP DATABASE IF EXISTS ${copy} WITH (FORCE)`);
+      await copies.query(`CREATE DATABASE ${copy} TEMPLATE ${dbName}`);
+    }
+  } finally {
+    await copies.end();
+  }
 }

@@ -894,29 +894,50 @@
     {
       "idx": 127,
       "version": "7",
-      "when": 1794447271565,
-      "tag": "0127_permissions",
+      "when": 1794494323629,
+      "tag": "0127_mirror",
       "breakpoints": true
     },
     {
       "idx": 128,
       "version": "7",
-      "when": 1794460316797,
-      "tag": "0128_label_enforcement",
+      "when": 1794495765868,
+      "tag": "0128_permissions",
       "breakpoints": true
     },
     {
       "idx": 129,
       "version": "7",
-      "when": 1794492919404,
-      "tag": "0129_request_label",
+      "when": 1794497263933,
+      "tag": "0129_stated_views",
       "breakpoints": true
     },
     {
       "idx": 130,
       "version": "7",
-      "when": 1794501984535,
-      "tag": "0130_judgments_per_label",
+      "when": 1794505154313,
+      "tag": "0130_label_enforcement",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1794505154314,
+      "tag": "0131_request_label",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1794505154315,
+      "tag": "0132_judgments_per_label",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1794505201833,
+      "tag": "0133_mirror_meets_labels",
       "breakpoints": true
     }
   ]

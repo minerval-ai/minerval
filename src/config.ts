@@ -9,6 +9,8 @@ import {
   unknownFeatureNames,
   unknownFeaturesMessage,
 } from "./features.js";
+import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
+import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
 
 /**
  * Requests per minute one IP address may make without credentials. The one
@@ -192,6 +194,36 @@ const configSchema = z.object({
   // run on a cheap-tier model wants (a slow host there turns an hour into a
   // day). Any value still routes only to data_collection: deny hosts.
   openrouterProviderSort: z.enum(["price", "throughput", "latency"]).optional(),
+
+  // Endpoints this deployment serves models from itself (vLLM, llama.cpp's
+  // server, TGI, Ollama): a JSON list, one object per endpoint, with its
+  // name, its base URL, the name of the environment variable that holds its
+  // key if it takes one, and what a call costs
+  // (src/llm/providers/endpoint-config.ts). A model id of the shape
+  // "endpoint:<name>/<model>" routes to one. Empty by default: none.
+  modelEndpoints: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseModelEndpoints(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseModelEndpoints(raw).endpoints)
+    .prefault(""),
+  // The labels each model provider and outside service may receive text at
+  // (src/provider-labels.ts): a JSON object from a provider's name to a
+  // list of label names. Empty by default, and a provider it does not name
+  // is cleared for `public` alone, so a deployment with another label
+  // serves nothing at it until this says who may.
+  providerLabels: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseProviderLabels(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseProviderLabels(raw).labels)
+    .prefault(""),
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / owls (#70, owl economy)
@@ -1236,6 +1268,43 @@ const configSchema = z.object({
   sqsContributionQueue: z.string().default(""),
   sqsArbitrationQueue: z.string().default(""),
   sqsStewardQueue: z.string().default(""),
+
+  // The mirror feed (docs/mirror.md). A deployment is a publisher, an
+  // applier, both or neither, and it is neither unless these say so: with
+  // none of them set no route is mounted, no worker starts and nothing is
+  // read or written.
+  //
+  // Publishing. "true" makes this deployment cut signed batches of its
+  // public rows on the cadence below and serve them at /mirror/feed. The
+  // signing key is an Ed25519 private key in PEM form, held as a secret;
+  // its public half is served at /mirror/feed/key and stated in every batch.
+  mirrorPublish: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
+  mirrorSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // How often a cut is made. Each cut reads and hashes the replicated
+  // tables, so this is also what the feed costs the database.
+  mirrorPublishIntervalSeconds: z.coerce.number().default(900),
+  // The most bytes of rows one batch holds. A cut larger than this (a
+  // snapshot, mostly) is split into consecutive batches, so that no batch
+  // outgrows what one process can hold and one request can carry.
+  mirrorBatchMaxBytes: z.coerce.number().default(24_000_000),
+  // Applying. Where this deployment's mirror of the public graph is fed
+  // from: the publisher's API address, or a directory of batch files where
+  // the network does not reach it. Either makes this deployment an applier.
+  mirrorFeedUrl: z.string().default(""),
+  mirrorFeedDir: z.string().default(""),
+  // The key the applier presents when it fetches a batch (x-api-key).
+  mirrorFeedApiKey: z.string().default(""),
+  // The feed's public key or keys, comma-separated, each as GET
+  // /mirror/feed/key gives it. A batch is applied only if one of these
+  // verifies its signature; the key a batch carries is never trusted.
+  mirrorFeedPublicKeys: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").map((k) => k.trim()).filter((k) => k.length > 0)),
+  mirrorApplyIntervalSeconds: z.coerce.number().default(300),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -1253,6 +1322,8 @@ export function loadConfig(): Config {
     host: process.env.HOST,
     logLevel: process.env.LOG_LEVEL,
     featuresOff: process.env.FEATURES_OFF,
+    modelEndpoints: process.env.MODEL_ENDPOINTS,
+    providerLabels: process.env.PROVIDER_LABELS,
     databaseUrl: rawDatabaseUrl,
     dbHost: process.env.DB_HOST,
     dbPort: process.env.DB_PORT,
@@ -1493,7 +1564,25 @@ export function loadConfig(): Config {
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
+    mirrorPublish: process.env.MIRROR_PUBLISH,
+    mirrorSigningKey: process.env.MIRROR_SIGNING_KEY,
+    mirrorPublishIntervalSeconds: process.env.MIRROR_PUBLISH_INTERVAL_SECONDS,
+    mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,
+    mirrorFeedUrl: process.env.MIRROR_FEED_URL,
+    mirrorFeedDir: process.env.MIRROR_FEED_DIR,
+    mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
+    mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
+    mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
   });
+
+  // What the two provider settings can only be checked for together: a name
+  // in PROVIDER_LABELS that is no provider here, and a model field that
+  // routes to an endpoint MODEL_ENDPOINTS does not declare.
+  const providerProblems = providerSettingProblems(_config);
+  if (providerProblems.length > 0) {
+    _config = null;
+    throw new Error(providerProblems.join("\n"));
+  }
 
   // If DATABASE_URL is the default and individual DB fields are set, construct URL
   if (_config.databaseUrl === DEFAULT_DB_URL && _config.dbHost) {

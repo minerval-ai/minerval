@@ -48,6 +48,16 @@ export interface SetupRecord {
    * nothing either way about them.
    */
   featuresOff?: string[];
+  /**
+   * What served the run's model: `anthropic`, `openai`, `openrouter`, or
+   * `endpoint:<name>` for an endpoint the deployment runs itself, as
+   * routing resolved the model id (llm/providers/routing.ts). With `label`
+   * it is what a later reader needs to check that the run was served only
+   * by a provider cleared for its label (src/provider-labels.ts). Null
+   * when the id resolved to nothing, which the client refuses before a
+   * call is made. Absent on runs recorded before this was stamped.
+   */
+  provider?: string | null;
   model: string;
   effort: string | null;
   maxTokens: number | null;
@@ -108,12 +118,14 @@ export function setupRecord(
   settings: { model: string; effort?: string | null; maxTokens?: number | null; temperature?: number | null },
   commit: string | null,
   label: string,
-  featuresOff: readonly string[]
+  featuresOff: readonly string[],
+  provider: string | null
 ): SetupRecord {
   return {
     commit,
     label,
     featuresOff: [...featuresOff],
+    provider,
     model: settings.model,
     effort: settings.effort ?? null,
     maxTokens: settings.maxTokens ?? null,

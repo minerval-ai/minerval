@@ -228,6 +228,11 @@
  * the label of the connection it arrives on, so a forgotten stamp inside
  * a run lands at the run's label. Each label keeping its own copy of a
  * source, its own edges and its own tags is later work.
+ *
+ * One thing is held to a run's label already: where its text may be sent.
+ * A model provider or an outside service receives text only from runs at
+ * the labels it is cleared for (src/provider-labels.ts), and one that
+ * nobody has cleared for a label other than this one is sent none of it.
  */
 
 /** The label of everything on the public graph, and of any write made outside a run. */
