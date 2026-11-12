@@ -411,7 +411,9 @@ export async function fundGrantSelfActions(): Promise<number> {
     /** The Grantmaker's reserve, which only its own passes may draw on. */
     reserve: number;
   }>(
-    `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
+    `SELECT * FROM (
+     SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
+            a.created_at AS row_created_at,
             a.cost_est_micro_usd::bigint AS cost_est,
             -- What this row still needs: its cost less what already backs
             -- it (an allocation placed on its group as a whole, or on this
@@ -544,7 +546,16 @@ export async function fundGrantSelfActions(): Promise<number> {
                                             WHERE al.action_id = sib.id
                                               AND al.released_at IS NULL
                                               AND al.spent_micro_usd < al.amount_micro_usd)))
-      ORDER BY a.created_at ASC
+     ) r
+      -- Rows the money is there for now first, oldest first; then the rest.
+      -- A row waiting for room (its mandate's pace, reserve or escrow) is
+      -- asked again on every pass, and taking the oldest 100 regardless let
+      -- enough waiting rows keep a new one that would fit from ever being
+      -- looked at (#838 was the same starvation by covered rows).
+      ORDER BY (r.needed <= LEAST(
+                 r.headroom - CASE WHEN r.kind IN ('mandate_review', 'grant_planning') THEN 0 ELSE r.reserve END,
+                 COALESCE(r.day_room, r.headroom))) DESC,
+               r.row_created_at ASC
       LIMIT 100`,
     [
       loadConfig().consistencySweepsEnabled === true,

@@ -32,8 +32,8 @@ import {
   type EdgeRecord,
 } from "../../services/relationship-service.js";
 import { notYourNode } from "./steward-ownership.js";
-import { currentLabel } from "../usage-context.js";
 import { writeIdCandidates } from "./id-repair.js";
+import { currentLabel } from "../usage-context.js";
 
 export const STEWARD_STRUCTURE_TOOL_NAMES = [
   "remove_subclaim_edge",
