@@ -725,6 +725,74 @@ There a claim's own record is preferred to the source-wide one. The source
 page shows it as a notice, and the claim page marks the instance. There is
 no REST route that writes one.
 
+**A view stated to the graph directly** (constitution §4). An organization
+or a person may say what it holds about a claim, a quantity or a question,
+and nobody edits an assessment to match. The statement is not a new kind of
+object: it is a source (the statement itself, attributed to the account
+that made it, dated and hashed) and an instance of the node, with the
+speaker's declared stake recorded as that source's interest.
+
+- **Stating one.** `POST /claims/:claim_id/stated-views` (`state_view` on
+  MCP) takes the view in the speaker's words, how it stands toward the node
+  in its own terms (on a claim: `affirms`, `denies`, `qualifies`,
+  `gives_probability` or `open`, with an optional probability; on a
+  quantity: `states` with a figure, or `open`; on a question: `answers` or
+  `open`), optional reasons, and its stake in the answer or a declaration
+  that it has none. The account is the speaker. On the public graph an
+  account speaks for itself and an organization speaks through an account
+  that is its own; nobody checks who is behind an account unless an operator
+  has set `contributors.is_verified`, and every read says which. In a
+  members-only deployment stating the organization's view belongs to the
+  permission to direct, and the route's `preHandler` is where that guard
+  goes.
+- **Review before it shows.** A statement is outside material, so it is
+  filed as a contribution (`contribution_type` `state_view`) through the
+  same gate as any contribution on an existing node
+  (`src/server/contributor-gate.ts`) and reviewed by the Contribution
+  Reviewer on form and good faith, never on whether the view is right. Until
+  then nothing reaches the node: the source row is inert, and what was
+  submitted waits in `stated_views`. On an accept
+  (`src/services/contribution-acceptance.ts`, the same for an Arbitrator's
+  overturn) the instance is created with `created_by` `speaker`, the stake
+  goes to `source_interests` scoped to the node, and `stated_views.instance_id`
+  is set. An accepted stated view earns no owls.
+- **Reasons are a challenge** (§14). Where the statement gives reasons,
+  admission puts them in the node's inbox (`node_messages`, trigger
+  `contribution_accepted`, the contribution as sender), as any admitted
+  contribution reaches its Steward. The pass that reads the message answers
+  it, and the answer (changed, no change, or disagree, with a note) is what
+  the contribution's record shows became of the challenge. The Steward is
+  told what the speaker said, its stake, and whether the account is
+  verified; it is not told to agree.
+- **Nothing is edited.** A later statement by the same account on the same
+  node is a new source and a new instance. Both stay, dated, and the newer
+  is the one shown as current.
+- **Beside the assessment.** The node's page shows stated views in a section
+  of their own after the assessment, each with who stated it, when, how it
+  stands, its words, its declared stake, and what became of its reasons. The
+  section says that its place gives a statement no weight. Stated views are
+  left out of the page's list of instances so that they are not shown twice;
+  for the Steward they are instances like any other.
+- **Where views and assessments differ.** `GET /stated-views`
+  (`list_stated_views`), for one speaker (`speaker_id`), one node
+  (`claim_id`) or everything, sets the current statement of each speaker on
+  each node beside the judgment in force and reports one of four relations:
+  `differs`, with a direction; `agrees`; `not_assessed`, which is never read
+  as agreement; and `not_comparable`. The comparison
+  (`src/services/stated-view-compare.ts`) is arithmetic on what each side
+  recorded: a stated probability against the credence where both exist
+  (differing at 0.2 or more apart), otherwise the stance against the status;
+  a stated figure against the range of the estimate; whether each gives an
+  answer to a question. A view that qualifies a claim, two answers to one
+  question, and a figure against an estimate with no range are reported as
+  not comparable, with the reason, and never placed on a scale. The page is
+  `/stated-views`, and `/stated-views?speaker=<contributor id>` for one
+  account.
+
+The node and the stance of an admitted view are read from its instance, so
+a view follows its instance through a merge, and a stance the merge flips is
+shown as it now stands with what was originally stated beside it.
+
 A claim is a canonical proposition with no home source, so `get_claim`
 returns the canonical record and an `instance_count`, and the instances only
 when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
@@ -1648,11 +1716,47 @@ Which backend serves a call is decided by the **shape of the model id**
 |----------|----------|---------|
 | `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-opus-5-5` |
 | `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
+| `endpoint:<name>/…` | an endpoint the deployment runs itself (below) | `endpoint:local/meta-llama/Llama-3.3-70B-Instruct` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
 
 Bedrock/Vertex-prefixed ids resolve to nothing and are rejected with a specific
 message — they 404 against the Anthropic API (issue #11).
+
+**An endpoint of the deployment's own.** A deployment can serve open-weight
+models from a server it runs, beside or instead of the hosted APIs: anything
+that serves an OpenAI-compatible Chat Completions API, as vLLM, llama.cpp's
+server, TGI and Ollama do. Each endpoint is declared once in `MODEL_ENDPOINTS`,
+a JSON list (`src/llm/providers/endpoint-config.ts`):
+
+```
+MODEL_ENDPOINTS=[{"name":"local","baseUrl":"http://vllm.internal:8000/v1","keyEnv":"LOCAL_LLM_KEY","inputUsdPerMtok":0.5,"outputUsdPerMtok":1.5}]
+STEWARD_MODEL=endpoint:local/meta-llama/Llama-3.3-70B-Instruct
+```
+
+`name` is what follows `endpoint:` in a model id, and everything after the
+first slash is the model as the endpoint knows it. The prefix is literal
+because open-weight model names contain slashes themselves and would
+otherwise read as OpenRouter ids. `keyEnv` names the environment variable
+that holds the endpoint's key, and is left out for an endpoint that takes
+none. The two prices are required and have no default: a run's budget and
+the owls charged for it are counted in metered cost, and only the deployment
+knows what its own hardware costs. A model field that names an endpoint
+nobody declared stops the process at start.
+
+The endpoint adapter (`providers/endpoint.ts`) reuses the Chat Completions
+translation OpenRouter uses. A call is priced from the tokens the endpoint
+reports at its declared rates and metered like any other, and a reply that
+carries no token counts is refused rather than estimated, since an estimate
+would put a guess in the ledger. Structured output is a `json_schema`
+response format, checked against the schema when it comes back. What such
+an endpoint does not offer is what is Anthropic-only below: no server-side
+web search (the agent gets the client-side `web_search`), no code-execution
+sandbox, no prompt-cache breakpoints, no `effort`, no long-run loop, and no
+images or PDF pages shown to the model, since the list of models that take
+them (`modelSeesImages` in `src/llm/models.ts`) names hosted families only.
+The context a local model takes is the server's to enforce, and a request
+over it comes back as the server's own error, with the endpoint's name.
 
 Each adapter in `src/llm/providers/` speaks its own platform's native dialect
 rather than a lowest-common-denominator abstraction. Structured output, for
@@ -1712,12 +1816,93 @@ breakpoints.
 **Metering** stays at one chokepoint regardless of provider. Anthropic and
 OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
 reports its own computed cost per call, which overrides the table (no rate table
-can cover its zoo). Unknown model ids fall back to the top-tier rate so nothing
-ever meters as free. Every usage row records which provider served it.
+can cover its zoo), and a declared endpoint's calls are priced from its declared
+rates and take the same path. Unknown model ids fall back to the top-tier rate
+so nothing ever meters as free. Every usage row records which provider served
+it.
 
 Missing credentials fail as a clear configuration error at call time, not as an
-opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
-`OPENROUTER_API_KEY`.
+opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings),
+`OPENROUTER_API_KEY`, and the variable a declared endpoint's `keyEnv` names.
+
+### Providers cleared by label
+
+A row carries a label that says who may read it (`src/labels.ts`), and a run
+works at the label of the work that started it. Text at a label other than
+`public` reaches only the parties the deployment's owner chose: its members,
+and a model provider or an outside service by contract. So each provider is
+cleared for a set of labels, and a run is served only by one cleared for the
+label it works at (`src/provider-labels.ts`).
+
+A provider here is anything outside the deployment that is sent text a run
+composed or read:
+
+| Name | What it is | What it is sent |
+|------|------------|-----------------|
+| `anthropic`, `openai`, `openrouter` | the hosted model APIs | every prompt, and what Anthropic's server tools (web search, code execution) do inside a turn |
+| `endpoint:<name>` | an endpoint declared in `MODEL_ENDPOINTS` | every prompt of a model routed to it |
+| `embeddings` | OpenAI's embeddings API | the text of each claim, tag, finding, request and report, and each search query |
+| `web_search` | the `web_search` tool where the agent's own loop runs it: OpenRouter's web plugin, which searches through Exa | the query |
+| `web_pages` | fetching an address on the open web: `read_page` and the other reading tools, the reading of a submitted source, feeds, Crossref, arXiv, the Internet Archive | the address, which a run may have composed |
+| `elicit` | Elicit's search of papers and trials | the query |
+| `pangram` | Pangram's checks for AI-generated writing and matching text | the text checked |
+
+`PROVIDER_LABELS` is a JSON object from a provider's name to the labels it may
+receive text at:
+
+```
+PROVIDER_LABELS={"anthropic":["public","internal"],"endpoint:local":["public","internal","restricted"],"embeddings":["public","internal"]}
+```
+
+A provider the setting does not name is cleared for `public` and for nothing
+else. The public graph has only `public`, so it needs no setting and nothing
+about it changes. A deployment with another label serves nothing at that
+label until whoever runs it clears a provider for it: which outside party
+may read private text is a step of setting the deployment up, never a
+default. A provider the setting names is cleared for exactly the labels
+listed, so `[]` switches it off for every label.
+
+The test is one label, by name: the provider must be cleared for the label
+the run works at. A run at a label also sends what that label reads (the
+pairs in `label_reads`), and that needs no second check, because a run at a
+label is trusted with everything the label reads and so is whoever it may
+send its text to. Nothing follows in the other direction. A provider cleared
+for `restricted` is not thereby cleared for runs at `internal`, and labels
+have no order from which such a rule could be read.
+
+The check is made where the text leaves, before the request is built: in the
+LLM client for the model provider of every call (`src/llm/client.ts`), in the
+embedding service, in the one function that fetches a public address
+(`services/url-guard.ts`), in the loop-run web search, and in the Elicit and
+Pangram tools (`src/llm/provider-clearance.ts`). A call that is not cleared
+fails there with an error that names the label, the provider and the entry to
+write in `PROVIDER_LABELS`. Nothing is sent, nothing is retried on another
+provider, and the label is never read as `public`. A run whose model is not
+cleared fails on its first call, before it has spent anything.
+
+A name in `PROVIDER_LABELS` that is not a provider stops the process at
+start. Labels are named by name and are never created from the setting. A
+label it names that is not a row in `labels` can only be found by asking the
+database, so it is reported the first time the setting is used, and every
+call is refused until the label is defined or the name corrected.
+
+A run is not offered the tools of a service that is not cleared for its
+label, exactly as it is not offered the tools of a feature that is off, and
+it is told so in the same passage at the head of its first task message
+(`src/llm/uncleared-services-note.ts`): which services, and that this
+deployment has not cleared them to receive the material the run works with.
+Embeddings have no tool of their own. Where they are not cleared a row is
+written without a vector and a search falls back to keywords, as when the
+embeddings API is down, and the passage says that search by meaning is not
+available. The prompt step's setup records the provider that served the run
+beside its label (`setup.provider`, docs/run-log.md), so a later reader can
+check that the rule held.
+
+The Lean checker, the database and the queues are parts of the deployment,
+not outside parties, and are not on the list. Stripe is sent no text of a
+run. A problem report an agent files does leave the deployment where
+`GITHUB_ISSUES_REPO` is set, as a GitHub issue, and this check does not
+cover that path.
 ### The long-run loop
 
 The five functions above are the provider-neutral contract every agent
@@ -2145,7 +2330,8 @@ See docs/allocation.md, "Platform mandates".
 A feature is an optional part of the product that a deployment can switch
 off. Each feature is its own switch, every one is on by default, and a
 deployment switches off the ones it does not want by naming them in one
-environment variable, `FEATURES_OFF` (comma-separated). There are no named
+environment variable, `FEATURES_OFF` (comma-separated), or as `features.off`
+in its config file (docs/deployment.md). There are no named
 bundles: a deployment is described by the features it has off and by nothing
 else. A name in `FEATURES_OFF` that is not a feature stops the process at
 start with the list of names that are, so a typo cannot leave a feature on
@@ -2257,6 +2443,15 @@ so the whole pipeline runs on a laptop with no AWS dependencies. The Lean
 checker is a separate stack with a security group that reaches nothing, and
 the solver worker is a second ECS service; both are described in
 docs/infrastructure.md.
+
+A deployment on someone else's machines is the same code with its own
+settings. Those can be written in one config file, read as a layer under the
+environment, in which each setting is chosen for itself and there are no
+named profiles; secrets stay in the environment. A preflight (`npm run
+preflight`, and `GET /setup/preflight` for the operator) says whether the
+deployment is ready, and a deployment that holds private material starts no
+agent work until the checks that guard it pass. Both are described in
+docs/deployment.md.
 
 ---
 

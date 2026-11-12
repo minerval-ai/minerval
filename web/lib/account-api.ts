@@ -1473,3 +1473,43 @@ export function savePage(
 export function deletePage(externalId: string, id: string): Promise<{ deleted: boolean }> {
   return accountFetch(`/pages/${pathSegment(id)}`, { method: "DELETE", actingUser: externalId });
 }
+
+// --- a view stated to the graph directly (constitution §4) -------------------
+
+export interface SubmittedStatedView {
+  stated_view: { id: string };
+  contribution: { id: string; review_status: string; record_url?: string };
+  message?: string;
+}
+
+/** State the signed-in account's own view on a node; reviewed before it shows. */
+export async function submitStatedView(
+  externalId: string,
+  claimId: string,
+  input: {
+    statement: string;
+    stance: string;
+    probability?: number;
+    figure?: Record<string, unknown>;
+    reasons?: string;
+    evidenceUrls?: string[];
+    stake?: string;
+    noStake?: boolean;
+    displayName?: string;
+  }
+): Promise<SubmittedStatedView> {
+  return accountFetch<SubmittedStatedView>(`/claims/${pathSegment(claimId)}/stated-views`, {
+    method: "POST",
+    actingUser: externalId,
+    body: {
+      statement: input.statement,
+      stance: input.stance,
+      ...(input.probability !== undefined ? { probability: input.probability } : {}),
+      ...(input.figure ? { figure: input.figure } : {}),
+      ...(input.reasons ? { reasons: input.reasons } : {}),
+      ...(input.evidenceUrls?.length ? { evidence_urls: input.evidenceUrls } : {}),
+      ...(input.noStake ? { no_stake: true } : { stake: input.stake }),
+      ...(input.displayName ? { contributor_display_name: input.displayName } : {}),
+    },
+  });
+}

@@ -13,6 +13,7 @@ import { generateEmbedding } from "./embedding-service.js";
 import { createJob } from "./job-service.js";
 import { enqueueClaimPipeline } from "./queue-service.js";
 import { loadConfig } from "../config.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { LIVE_BOUNTY_STATUSES, checkedKindSql } from "./formalization-service.js";
 import { listOrderedClaimInstances } from "./claim-instance-service.js";
 import { kindFields } from "./search-service.js";
@@ -47,6 +48,9 @@ export async function proposeClaim(input: {
     createdBy,
     embedding,
     pipelineEpoch: loadConfig().pipelineEpoch,
+    // The node carries the label of the request or run that proposed it
+    // (src/labels.ts); its onboarding, enqueued below, carries the same.
+    sensitivityLabel: currentLabel(),
   };
 
   const [claim] = await db.insert(claims).values(newClaim).returning();

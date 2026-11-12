@@ -12,7 +12,13 @@ const TAG_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const { state } = vi.hoisted(() => ({
   state: {
-    queue: [] as Array<{ id: string; text: string; claim_type: string; domains: string[]; tagging_attempts: number }>,
+    queue: [] as Array<{
+      id: string; text: string; claim_type: string; domains: string[]; tagging_attempts: number;
+      sensitivity_label: string;
+    }>,
+    // The label the tagger's run and the write of its tags each worked at.
+    taggedAt: [] as string[],
+    appliedAt: [] as string[],
     queries: [] as Array<{ q: string; params: unknown[] }>,
     decision: null as null | Record<string, unknown>,
     throwWith: null as null | Error,
@@ -34,6 +40,8 @@ vi.mock("../../../src/db/client.js", () => ({
 
 vi.mock("../../../src/llm/agents/tagger.js", () => ({
   tagClaim: vi.fn(async () => {
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.taggedAt.push(currentLabel());
     if (state.throwWith) throw state.throwWith;
     return state.decision ?? { tags: [], reasoning: "", submitted: true };
   }),
@@ -46,6 +54,8 @@ vi.mock("../../../src/services/tag-service.js", () => ({
     slug === "vaccine-safety" ? { id: TAG_A, slug, name: "Vaccine safety" } : null
   ),
   setSubjectTags: vi.fn(async (input: Record<string, unknown>) => {
+    const { currentLabel } = await import("../../../src/llm/usage-context.js");
+    state.appliedAt.push(currentLabel());
     state.applied.push(input);
     return {
       attached: (input.assignments as Array<Record<string, unknown>>).map((a, i) => ({
@@ -66,8 +76,10 @@ vi.mock("../../../src/config.js", () => ({
 import {
   assignmentsFromDecision,
   processNextTaggingTask,
+  tagOneClaim,
   taggingTick,
 } from "../../../src/workers/tagging-pipeline.js";
+import { MissingLabelError } from "../../../src/labels.js";
 import { tagClaim } from "../../../src/llm/agents/tagger.js";
 import { LlmBudgetExceededError } from "../../../src/llm/errors.js";
 
@@ -77,6 +89,7 @@ const row = (over: Partial<(typeof state.queue)[number]> = {}) => ({
   claim_type: "causal",
   domains: [],
   tagging_attempts: 0,
+  sensitivity_label: "public",
   ...over,
 });
 
@@ -87,6 +100,8 @@ beforeEach(() => {
   state.throwWith = null;
   state.applied = [];
   state.existing = [];
+  state.taggedAt = [];
+  state.appliedAt = [];
   vi.clearAllMocks();
 });
 
@@ -102,6 +117,30 @@ describe("leasing", () => {
     expect(lease).toContain("FOR UPDATE SKIP LOCKED");
     expect(lease).toContain("tagging_leased_at < now() - interval");
     expect(state.queries[0]!.params).toEqual([3]);
+  });
+
+  it("reads the claim's label with the row it leases", async () => {
+    await processNextTaggingTask();
+    expect(state.queries[0]!.q).toMatch(/RETURNING [^`]*sensitivity_label/);
+  });
+});
+
+// The queue is the claim row, so the claim's label is the label of the work
+// (src/labels.ts): the tagger's run and the write of its tags are inside it.
+describe("the label a claim is tagged at", () => {
+  it("is the claim's own, for the tagger's run and for the tags it writes", async () => {
+    state.queue.push(row({ sensitivity_label: "internal" }), row({ id: "open" }));
+    state.decision = { submitted: true, reasoning: "", tags: [{ slug: "vaccine-safety", confidence: 0.8 }] };
+    await taggingTick({ batch: 2 });
+    expect(state.taggedAt).toEqual(["internal", "public"]);
+    expect(state.appliedAt).toEqual(["internal", "public"]);
+  });
+
+  it("is never public for a row handed in without its label: the row is refused", async () => {
+    const { sensitivity_label: _none, ...unlabeled } = row();
+    await expect(tagOneClaim(unlabeled as ReturnType<typeof row>)).rejects.toBeInstanceOf(MissingLabelError);
+    expect(state.taggedAt).toEqual([]);
+    expect(state.applied).toEqual([]);
   });
 });
 

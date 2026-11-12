@@ -36,6 +36,11 @@ const { state, queries } = vi.hoisted(() => ({
     // The action row `groupLedger` finds by id, for an item that already
     // carries an action_id.
     rowById: null as null | { id: string; status: string; exclusion_group: string },
+    // The pending claims the sweep finds without an open row, each with the
+    // label its row carries, and the label of any claim a test names (a
+    // claim with no entry reads as no row).
+    pending: [] as Array<{ id: string; sensitivity_label: string | null }>,
+    claimLabels: {} as Record<string, string>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -43,7 +48,12 @@ const { state, queries } = vi.hoisted(() => ({
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     queries.push({ q, params });
-    if (q.includes("FROM claims c") && q.includes("steward_state = 'pending'")) return [];
+    if (q.includes("FROM claims c") && q.includes("steward_state = 'pending'")) return state.pending;
+    // runAtClaimLabel's read of the claim's label (label-service.ts).
+    if (q.includes("SELECT sensitivity_label FROM claims WHERE id = $1")) {
+      const label = state.claimLabels[params[0] as string];
+      return label ? [{ sensitivity_label: label }] : [];
+    }
     // The materializer's per-item standing lookup: every claim the tests
     // name is active and assessed; published iff the test says so.
     if (q.includes("FROM claims c WHERE c.id = $1")) {
@@ -132,11 +142,13 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
 }));
 
 import {
+  ASSESS_GROUP,
   ATTEMPT_GROUP,
   FORMALIZE_GROUP,
   LOOKOUT_GROUP,
   reconcileActions,
 } from "../../../src/services/action-service.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 
 const inserts = (kind: string) =>
   queries.filter((x) => x.q.includes("INSERT INTO actions") && x.q.includes(`'${kind}'`));
@@ -153,6 +165,73 @@ beforeEach(() => {
   state.stewardErrorReason = null;
   state.stewardAttempts = 0;
   state.rowById = null;
+  state.pending = [];
+  state.claimLabels = {};
+});
+
+// The sweep starts from a claim, not from a piece of work, so the rows it
+// opens about one claim take that claim's label (src/labels.ts). A row that
+// is not about one claim (a lookout's, above) stays at the sweep's own.
+describe("rows about one claim, opened by the sweep", () => {
+  const assessRows = () =>
+    queries.filter((x) => x.q.includes("INSERT INTO actions") && ["assess", "reassess"].includes(x.params[0] as string));
+
+  it("opens a pending claim's assess rows at the claim's label", async () => {
+    state.pending = [
+      { id: CLAIM_A, sensitivity_label: "internal" },
+      { id: CLAIM_B, sensitivity_label: "public" },
+    ];
+    await reconcileActions();
+    const rows = assessRows();
+    // A standard and a strong row for each claim; the label is the last parameter.
+    expect(rows.map((r) => [r.params[1], r.params[2], r.params[6]])).toEqual([
+      [ASSESS_GROUP(CLAIM_A), "standard", "internal"],
+      [ASSESS_GROUP(CLAIM_A), "strong", "internal"],
+      [ASSESS_GROUP(CLAIM_B), "standard", "public"],
+      [ASSESS_GROUP(CLAIM_B), "strong", "public"],
+    ]);
+  });
+
+  it("opens no row for a pending claim read without its label, and carries on with the rest", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      state.pending = [
+        { id: CLAIM_A, sensitivity_label: null },
+        { id: CLAIM_B, sensitivity_label: "internal" },
+      ];
+      await reconcileActions();
+      expect(assessRows().map((r) => [r.params[1], r.params[6]])).toEqual([
+        [ASSESS_GROUP(CLAIM_B), "internal"],
+        [ASSESS_GROUP(CLAIM_B), "internal"],
+      ]);
+      expect(logged.mock.calls.flat().join(" ")).toContain("carries no label");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("opens a plan's formalize and attempt rows at the claim's label", async () => {
+    state.claimLabels = { [CLAIM_A]: "internal", [CLAIM_B]: "internal" };
+    state.publishedFor.add(CLAIM_B);
+    state.grant.plan.items = [
+      { action: "formalize", claim_id: CLAIM_A, rationale: "a statement" },
+      { action: "attempt_proof", claim_id: CLAIM_B, variant: "max", rationale: "a proof" },
+    ];
+    await reconcileActions();
+    expect(inserts("formalize").map((r) => r.params)).toEqual([[FORMALIZE_GROUP(CLAIM_A), CLAIM_A, 3_000_000, "internal"]]);
+    const attempts = inserts("attempt_proof");
+    expect(attempts).toHaveLength(2);
+    expect(attempts.map((r) => r.params[6])).toEqual(["internal", "internal"]);
+  });
+
+  it("leaves them at the run's label when a run, not the sweep, materializes the plan", async () => {
+    // A Grantmaker's run that writes a plan materializes it there and then:
+    // the rows are that run's work, as everything a run opens is.
+    state.claimLabels = { [CLAIM_A]: "internal" };
+    state.grant.plan.items = [{ action: "formalize", claim_id: CLAIM_A, rationale: "a statement" }];
+    await runWithUsageContext({ label: "public" }, () => reconcileActions());
+    expect(inserts("formalize").map((r) => r.params[3])).toEqual(["public"]);
+  });
 });
 
 describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {

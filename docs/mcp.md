@@ -237,7 +237,8 @@ read is free, an agent which signals allocation turns on.
   - `"provenance"`: the instances, each with its `stance` (`affirms`,
     `denies`, `poses` an open question, or `mentions`: it cites the claim or
     reports the debate without taking a side, and is never a vote for either
-    side) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
+    side; an instance of a view stated to the graph directly may also be
+    `qualifies` or `gives_probability`, which take no side either) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
     mechanical quote check, whether it is worth reading closely; null until
     recorded), plus `provenance_edges` (which assertions draw on which
     documents, with fidelity) and `source_relationships` (documents that are
@@ -485,6 +486,16 @@ read of a claim, use a card.
   `get_job`.
 - **Contributions:** `list_contributions`, `submit_appeal`, `get_appeal`,
   `list_contributors`, `get_contributor`.
+- **Stated views** (constitution §4): `state_view` (the account's own view
+  on a node, in its own words, with how it stands, its stake, and reasons if
+  it gives any; reviewed on form and good faith before it shows, public and
+  not edited or withdrawn afterwards; free, inside the hourly contribution
+  limit) and `list_stated_views` (stated views beside the judgments in
+  force: where they differ and which way, where they agree, where the node
+  has not been assessed, and where the two cannot be compared; for one
+  speaker, one node, or all). `get_contribution_status` on a stated view
+  returns it as `stated_view`, with what the node's Steward answered to its
+  reasons.
 - **Your account:** `get_account` (balance, entitlement, the cap list),
   `get_usage`, `list_owl_packs`, `get_owl_ledger`, `list_api_keys`.
 - **Requests:** `list_requests`, `get_request`, `fund_request_work`

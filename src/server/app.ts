@@ -21,6 +21,7 @@ import { argumentRoutes } from "../routes/arguments.js";
 import { formalizationsRoutes } from "../routes/formalizations.js";
 import { attemptsRoutes } from "../routes/attempts.js";
 import { setupRoutes } from "../routes/setup.js";
+import { preflightRoutes } from "../routes/preflight.js";
 import { runRoutes } from "../routes/runs.js";
 import { prizesRoutes } from "../routes/prizes.js";
 import { sourceRoutes } from "../routes/sources.js";
@@ -54,6 +55,7 @@ import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
+import { statedViewRoutes } from "../routes/stated-views.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -141,9 +143,13 @@ export async function buildApp() {
   await app.register(tagRoutes, { prefix: "/tags" });
   // The versioned setups agent runs ran under (#552 groundwork).
   await app.register(setupRoutes, { prefix: "/setup" });
+  // Whether this deployment is ready to run, for its operator (src/preflight.ts).
+  await app.register(preflightRoutes, { prefix: "/setup" });
   // Agent runs (#553): public ones in full, the rest withheld with reasons.
   await app.register(runRoutes, { prefix: "/runs" });
   await app.register(requestRoutes, { prefix: "/requests" });
+  // Spans /claims and /stated-views, so no prefix.
+  await app.register(statedViewRoutes);
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // Permissions, parties and labels exist only where a deployment is
   // members-only (src/permissions.ts). The public graph mounts none of
