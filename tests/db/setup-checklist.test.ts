@@ -36,6 +36,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { MCP_EXCLUDED_ROUTES, ROUTE_TOOLS } from "../../src/mcp/route-tools.js";
 import { PERMISSIONS } from "../../src/permissions.js";
 import { PREFLIGHT_CHECKS } from "../../src/preflight.js";
+import { PLATFORM_EXTERNAL_ID } from "../../src/services/platform-account.js";
 import type { SetupChecklist } from "../../src/services/setup-checklist-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
 
@@ -74,6 +75,8 @@ async function checklist(person: Person): Promise<SetupChecklist> {
 
 let admin: Person;
 const sourceIds: string[] = [];
+/** The deployment's own account takes the organization's name here; put back when the file is done. */
+let ownAccountNameBefore: string | null = null;
 
 beforeAll(async () => {
   // Start from a deployment that has never had an administrator and has no
@@ -88,6 +91,11 @@ beforeAll(async () => {
     `UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`
   );
   await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'dbtest') ON CONFLICT DO NOTHING`, [LABEL]);
+  const [own] = await rawQuery<{ display_name: string }>(
+    `SELECT display_name FROM contributors WHERE external_id = $1`,
+    [PLATFORM_EXTERNAL_ID]
+  );
+  ownAccountNameBefore = own?.display_name ?? null;
 
   const { buildApp } = await import("../../src/server/app.js");
   app = await buildApp();
@@ -108,6 +116,12 @@ afterAll(async () => {
   );
   await rawQuery(`DELETE FROM label_reads WHERE label = $1 OR reads = $1`, [LABEL]);
   await rawQuery(`DELETE FROM labels WHERE name = $1`, [LABEL]);
+  if (ownAccountNameBefore !== null) {
+    await rawQuery(`UPDATE contributors SET display_name = $2 WHERE external_id = $1`, [
+      PLATFORM_EXTERNAL_ID,
+      ownAccountNameBefore,
+    ]);
+  }
 });
 
 describe("who may read the checklist", () => {
@@ -190,19 +204,28 @@ describe("what the checklist says", () => {
     expect(before.owls.created_here).toBe(true);
     expect(before.usage_report).toMatchObject({ price: "metered", reporting: true, destination: "none", destination_ready: false });
 
+    // Set up with no budget, and owls created into a person's balance: the
+    // deployment's own account, whose ledger other files in the suite read
+    // whole, is left as it was.
     const setUp = await as(admin, {
       method: "POST",
       url: "/standing-mandates/general",
-      payload: { budget_owls: 40, daily_owls: 4 },
+      payload: { daily_owls: 4 },
     });
     expect(setUp.statusCode, setUp.body).toBe(201);
+    const created = await as(admin, {
+      method: "POST",
+      url: "/owls/created",
+      payload: { amount_owls: 25, account_id: admin.id },
+    });
+    expect(created.statusCode, created.body).toBe(201);
     const after = await checklist(admin);
     expect(after.standing_mandates.find((m) => m.name === "general")!.mandate).toMatchObject({
-      budget_owls: 40,
+      budget_owls: 0,
       daily_owls: 4,
     });
     expect(after.standing_mandates.find((m) => m.name === "governance")!.mandate).toBeNull();
-    expect(after.owls.created_total_owls).toBe(before.owls.created_total_owls! + 40);
+    expect(after.owls.created_total_owls).toBe(before.owls.created_total_owls! + 25);
   });
 
   it("counts the material by the party it belongs to, and returns no row's label", async () => {
