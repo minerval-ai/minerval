@@ -78,8 +78,8 @@ export function versionWithoutMaterialMessage(
     `Not recorded. This node carries the label \`${nodeLabel}\` and this run works at \`${label}\`. ` +
     `${what} at \`${label}\` is stored only when material at \`${label}\` bears on the node, and none is ` +
     `attached to it: no source labeled \`${label}\` on the node, no node labeled \`${label}\` under it, and no ` +
-    `node under it that carries a version at \`${label}\`. That keeps a \`${label}\` version different from ` +
-    `the one it reads only where \`${label}\` material makes the difference. With none, there is nothing at ` +
+    `node under it that carries a version at \`${label}\`. That keeps a version at \`${label}\` different ` +
+    `from the one it reads only where material at \`${label}\` makes the difference. With none, there is nothing at ` +
     `\`${label}\` to judge, and the version you read stands for readers at \`${label}\`. If material at ` +
     `\`${label}\` does bear on this node, attach it first (a source with record_claim_instance, or the node ` +
     `that carries it as a subclaim or a premise), say in your reasoning what it shows, and record again. ` +
@@ -106,8 +106,9 @@ export async function anotherLabelsNode(nodeId: string): Promise<{ label: string
 export function anotherLabelsNodeMessage(at: { label: string; nodeLabel: string }, what: string): string {
   return (
     `Not changed. This node carries the label \`${at.nodeLabel}\` and this run works at \`${at.label}\`. ` +
-    `A node's ${what} belongs to the Steward that works at the node's own label, and a change made from ` +
-    `\`${at.label}\` would be read by readers of \`${at.nodeLabel}\` as their own label's work. What ` +
+    `What this would change (the node's ${what}) is for the Steward that works at the node's own label to ` +
+    `change, and a change made from \`${at.label}\` would be read by readers of \`${at.nodeLabel}\` as ` +
+    `their own label's work. What ` +
     `\`${at.label}\` has to add to the node is recorded at \`${at.label}\`, beside what is there: an ` +
     `argument, a subclaim, a source, a version of its judgment. If the node should change on grounds its ` +
     `own label could see, record that as a request (file_request).`

@@ -350,7 +350,9 @@ describe("a run and the rows of another label", () => {
     ) as { success: boolean; message: string };
     expect(reworded.success).toBe(false);
     expect(reworded.message).toContain(`This node carries the label \`public\` and this run works at \`${A}\`.`);
-    expect(reworded.message).toContain("wording and type belongs to the Steward that works at the node's own label");
+    expect(reworded.message).toContain(
+      "What this would change (the node's wording and type) is for the Steward that works at the node's own label to change"
+    );
     const ranked = JSON.parse(await runAt(A, () => executeStewardTool("set_claim_importance", { claim_id: node, importance: 0.9, reasoning: "It matters to us." })));
     expect(ranked.success).toBe(false);
     // The database holds the same line for any write: a change or a delete of a row at another label is refused.
