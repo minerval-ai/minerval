@@ -429,10 +429,9 @@ export async function enqueueSteward(
  *
  * Who pays: a prize audit (bountyId) is funded at once from the bounty's
  * prize-review reserve, like the prize review itself; every other audit is
- * raised to the Governance mandates' program officers, who never fund an
- * audit whose subject is their own mandate (subjectGrantId); an audit of a
- * Governance mandate goes to the General mandate instead
- * (maintenance-funding.ts, fundAuditNow).
+ * raised to the General mandate's program officers, as upkeep, unless
+ * General is its subject (subjectGrantId): no mandate funds an audit of
+ * itself (maintenance-funding.ts, fundAuditNow).
  *
  * Returns the run id, or null when an earlier request already claimed the
  * dedupe key.
@@ -504,7 +503,7 @@ export async function requestAudit(input: {
       )
     );
   } else {
-    // Put in front of the Governance mandates' officers now (lazily:
+    // Put in front of the General mandate's officers now (lazily:
     // maintenance-funding reaches this module through its imports).
     const { fundAuditNow } = await import("./maintenance-funding.js");
     await fundAuditNow(actionId);
