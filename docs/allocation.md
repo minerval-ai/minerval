@@ -83,11 +83,11 @@ review pass) share one toolbox (llm/tools/mandate-tools.ts).
 ## Mandates steward themselves: the review pass
 
 There can be no human bottleneck between a funded mission and the work.
-On a cadence (and on demand — see continue_review), the ledger opens a
-`mandate_review` action for every active mandate, self-funded from its
-escrow, and the engine executor runs the mandate's Grantmaker in review
-mode (llm/agents/mandate-review.ts) with the affordances anyone entrusted
-with a budget and a mission would need:
+Every active mandate's Grantmaker works in one long session on it
+(llm/agents/mandate-review.ts; "The Grantmaker's session", below), opened
+by a `mandate_review` action self-funded from the escrow and run by the
+engine executor, with the affordances anyone entrusted with a budget and a
+mission would need:
 
 - **read back what its money did**: the briefing opens with what the
   mandate commissioned since the last review and how those runs used their
@@ -113,20 +113,28 @@ with a budget and a mission would need:
 - **see what its money bought** (allocation_report, the mandate's
   operations: policy, commissions, decisions and petitions;
   list_funded_assessments, claims_from_source, pipeline_report);
-- **launch research and fund requests** (delegate_research,
-  get_research_run, list_requests, fund_request), the same instrument and
-  the same request funding the owner's chat carries;
+- **commission research and fund requests** (`commission` kind
+  `research`, with `research_tier` and, optionally,
+  `contribution_budget_owls`; get_research_run, list_requests,
+  fund_request), the same instrument and the same request funding the
+  owner's chat carries; a research report returns into the session;
+- **decide what its officers escalate** (decide_petitions, hold, decline,
+  commission, naming each by id; "The Grantmaker's session", below);
 - **grow its own plan** (extend_plan): append the ingest/assess items it
   discovered; each is priced, escrow-bounded, and executes through the
   ledger, a stewarding item as a standing order the mandate commissions
   (below, "A plan item is a standing order");
-- **pace itself** (set_daily_rate), **add to the pass in hand**
-  (add_to_pass_budget) and **chain passes** (continue_review): a pass
-  that has more to do adds to its own budget from the escrow, or ends and
-  runs another immediately; both are funded out of the mandate's day like
-  the rest of its work, and the briefing says what the day has left: cost
-  discipline lives in the money the agent can see, never in narrowed
-  affordances;
+- **hold a reserve** (set_reserve; "Pace and reserve", below), **add to
+  the sitting in hand** (add_to_pass_budget) and **begin again**
+  (fresh_start): a sitting that has more to do adds to its own budget
+  from the escrow, or ends its session and opens a fresh one from the
+  workspace; both are funded within the mandate's pace like the rest of
+  its work, and the briefing says where the pace stands: cost discipline
+  lives in the money the agent can see, never in narrowed affordances.
+  The pace itself is the funder's; the Grantmaker proposes a change with
+  note_to_funder;
+- **say what wakes it** (subscribe, unsubscribe, list_subscriptions;
+  "Events and subscriptions", below);
 - **tell the funder** (note_to_funder): what only the funder can decide
   (a move above the pass's cap, a bounty confirmation, a top-up), kept on
   the mandate and shown in the funder's chat and grant_overview;
@@ -134,10 +142,10 @@ with a budget and a mission would need:
   mission** (complete_mandate): an exhausted plan is a waypoint, not an
   end; only the agent's judgment (or the funder) completes an
   agent-stewarded mandate;
-- **keep watch between passes** (spawn_lookout, list_lookouts,
+- **keep watch between sittings** (spawn_lookout, list_lookouts,
   update_lookout, poke_lookout — "Lookouts" below): the briefing lists
   every lookout the mandate funds, its precision, and every flag raised
-  since the last pass.
+  since the last fresh briefing.
 
 Every pass is metered to a budget; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
@@ -145,6 +153,52 @@ on the mandate's public page. Known gap, deliberately next: a bulk
 ingestion primitive ("ingest what this listing/feed points to") so a
 discovered index becomes a program of work in one plan item instead of an
 enumeration.
+
+### The Grantmaker's session
+
+A mandate's Grantmaker works as a person running a large project would:
+it commissions work, carries on with what does not depend on it, and when
+there is nothing more to do now it ends its turn. Its session
+(`grants.grantmaker_session_id`, an `agent_sessions` row) then pauses with
+the conversation intact until something it asked to be told of arrives
+("Events and subscriptions", below). There is no review cadence.
+
+- **When a fresh session opens.** The reconcile sweep opens the
+  mandate's `mandate_review` row only when the mandate has no live
+  Grantmaker session (running, waiting or ready): its first, after
+  `fresh_start`, or after a session expired or closed. When something is
+  escalated to a mandate with no live session, `openReviewsForEscalations`
+  (src/services/mandate-event-service.ts, on the executor's tick) opens
+  one at once rather than waiting for the sweep.
+- **What wakes it.** A fresh session holds two standing subscriptions:
+  what its officers escalate (`escalated` events on its mandate) and what
+  its funder writes (an `inbox_item` that is a funder note). Beyond those
+  it subscribes to what matters to its mission (the runs it commissioned
+  settling, nodes or subtrees moving, money committed past a figure) and
+  sets check-ins. A turn that ends with no check-in held gets one
+  `DEFAULT_CHECK_IN_HOURS` (24) out, which the briefing states.
+- **Each wake is a sitting.** Resuming commissions a `resume` row from the
+  mandate (`commissioned_by` `session_resume`) at the review-pass figure
+  (below), so a sitting works to the same budget as a fresh pass. It reads
+  a wake digest (`grantmakerWakeDigest`) beside what woke it: what is
+  escalated and undecided, where the pace stands, how many of the
+  mandate's events arrived since its last fresh briefing, and the
+  transcript's size, since every sitting re-reads it.
+- **Beginning again.** `fresh_start` ends the session, with its
+  subscriptions and check-ins, and opens a fresh pass from the workspace
+  at once. It pays for an opening turn again, so it is the right tool when
+  the transcript has grown dearer than its context is worth;
+  `add_to_pass_budget` serves a sitting that only needs more money.
+- **Escalations are decided in the session.** There is no separate
+  escalation sitting. What an officer escalates is recorded as an event
+  and delivered into the session; the sitting reads each escalated
+  petition and item as the officers saw it, labelled by its id
+  (`escalationDigest`, src/llm/agents/program-officer.ts), runs waiting
+  first, and decides with decide_petitions, hold, decline or commission.
+- **The mandate's events** (assessments on nodes it funded, decisions on
+  its contributions, sources it ingested, its lookouts' flags;
+  `collectMandateEvents`) no longer wake it. A fresh briefing lists them
+  and marks them read; a resumed sitting is told how many wait.
 
 ### What a pass works to
 
