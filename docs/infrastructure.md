@@ -486,6 +486,37 @@ since the workflow reads the ruleset API) requiring the status checks
 `check`, `db-tests`, `web` and `extension`; the workflow refuses to act
 without the ruleset.
 
+**Migration renumbering.** Two open PRs that each add a migration take the
+same number, so whichever merges second conflicts in `src/db/migrations`
+(CLAUDE.md). `.github/workflows/renumber-migrations.yml` runs on every push
+to `main`. For each open PR from this repository whose conflicts with main
+are all inside the migrations folder, it merges main, runs
+`npm run db:renumber`, and pushes the merge to the PR's branch. CI then
+runs on the result as it would on any push. A PR that also conflicts
+elsewhere is left alone and named in the run's summary; so is one where
+`db:renumber` cannot reconcile the schema, such as when main changed a
+default that a table new on the branch was created without. It never
+rebases or force-pushes: a push that loses a race is rejected and the next
+run tries again.
+
+It pushes with the repository secret `MIGRATION_RENUMBER_TOKEN`, because a
+push made with the built-in token starts no workflows, so CI would never run
+on the renumbered branch. Use a fine-grained personal access token for this
+repository only, with **Contents: read and write** and nothing else (listing
+PRs uses the built-in token). Without the secret every run fails and says
+why.
+
+Renumbering runs each branch's own code (its `renumber-migrations.ts`, and
+its `schema.ts` through drizzle-kit), and an admin's token can push to
+`main` past the ruleset, so the two never share a runner. The `prepare` job
+merges and renumbers holding no secret, and hands each merge to the `push`
+job as a git bundle. `push` runs no branch code. It pushes a merge only if
+it is a merge of main into the branch's current tip, the PR's only
+conflicts with main are in the migrations folder, it differs from git's own
+merge only inside that folder, and every `.sql` file there is one main or
+the branch already has. Anything else is refused and named in the run's
+summary.
+
 **The weekly maintenance pass** takes what the workflow leaves: major
 bumps, maintainer changes (check the release's npm provenance:
 `npm view <pkg>@<version> _npmUser dist.attestations`, then the attestation's
