@@ -58,6 +58,7 @@ import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { routeEvents } from "../services/subscription-router.js";
+import { microUsdToOwls } from "../services/owl.js";
 import { releaseHolds } from "../services/petition-service.js";
 import { runMandateReview, grantmakerWakeDigest } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
@@ -588,10 +589,15 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   const funder = await funderContext(action);
   // A Grantmaker wakes to more than the answer: what its officers escalated,
   // where its pace stands, and what re-reading this conversation costs.
+  // Every resumed run is told the budget this sitting has, which is not the
+  // paused run's: a resumption is commissioned afresh (session-service.ts).
+  const budgetLine =
+    `This resumed sitting has a budget of ${microUsdToOwls(actionBudgetMicroUsd(action))} owls, ` +
+    `metered as before; each tool result shows what you have spent.`;
   const extra =
     session.role === "grantmaker"
-      ? { newMessages: await grantmakerWakeDigest(session) }
-      : {};
+      ? { newMessages: await grantmakerWakeDigest(session), budgetLine }
+      : { budgetLine };
   const messages = await resumeMessages(session, replies, extra);
   const resume = { sessionId: session.id, messages, privateReasons: sessionPrivateReasons(session, replies) };
   const input = (session.context?.input ?? {}) as never;

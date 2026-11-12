@@ -264,7 +264,7 @@ export const WRITE_OPERATING_POLICY: Tool = {
       review_pass_owls: {
         type: "number",
         description:
-          "The budget each of your own review passes works to, in owls, from the next pass opened. It is yours to set " +
+          "The budget each of your own sittings works to, in owls, from the next one. It is yours to set " +
           "because your mandate pays for it: the whole figure is held against the mandate's pace while a pass runs, and " +
           "what the pass does not spend is freed when it ends. Each pass first pays for its opening turn (your " +
           "instructions, tool list and briefing), so set it to what a pass of yours actually needs on top of that. " +
@@ -983,7 +983,7 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
     const note = String(input.note ?? "").trim();
     if (!note) return JSON.stringify({ success: false, message: "note is required." });
     await logDecision(ctx, { itemKind: "note", decision: "noted", reason: note });
-    return JSON.stringify({ success: true, message: "Logged for the Grantmaker's next review." });
+    return JSON.stringify({ success: true, message: "Logged; the Grantmaker reads it." });
   }
 
   if (name === "write_operating_policy" && ctx.role === "grantmaker") {
@@ -1086,7 +1086,7 @@ export const AMEND_OBJECTIVE: Tool = {
     "that regranted to this one) is told immediately, with the old and new text and your note, and may " +
     "withdraw their unspent share. Afterwards, revise the operating policy so it serves the new " +
     "objective. A platform mandate's terms are re-approved the way it was funded: this records the " +
-    "amended draft for that approval instead of applying it. In a review pass, propose a change to your " +
+    "amended draft for that approval instead of applying it. Outside your funder's chat, propose a change to your " +
     "funder with note_to_funder.",
   input_schema: {
     type: "object" as const,
@@ -1145,7 +1145,7 @@ export const AMEND_PACE: Tool = {
     "as_needed: the escrow is the only bound, for a mandate whose work should run as it arrives (explore a " +
     "question, ingest a source, map a literature). steady: at most owls committed in any rolling period_hours " +
     "(24 for a day's worth, 168 for a week's), for upkeep that should spread its money evenly. The change takes " +
-    "effect at once and is recorded on the mandate's public record with your note. In a review pass, propose " +
+    "effect at once and is recorded on the mandate's public record with your note. Outside your funder's chat, propose " +
     "a change to your funder with note_to_funder.",
   input_schema: {
     type: "object" as const,
@@ -1256,7 +1256,7 @@ export async function executeMandateOperationsTool(
     if (!opts.chat) {
       return JSON.stringify({
         success: false,
-        message: "Not in a review pass: the pace is the funder's. Propose a change with note_to_funder, and amend it in their chat once they agree.",
+        message: "Only in your funder's chat: the pace is the funder's. Propose a change with note_to_funder, and amend it in their chat once they agree.",
       });
     }
     const note = String(input.note ?? "").trim();
@@ -1278,7 +1278,7 @@ export async function executeMandateOperationsTool(
     if (!opts.chat) {
       return JSON.stringify({
         success: false,
-        message: "Not in a review pass: propose the change to your funder with note_to_funder, and amend it in their chat once they agree.",
+        message: "Only in your funder's chat: propose the change to your funder with note_to_funder, and amend it in their chat once they agree.",
       });
     }
     const { amendObjective } = await import("../../services/mandate-terms-service.js");

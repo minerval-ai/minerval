@@ -351,6 +351,21 @@ export async function answerMessages(
         payload: { outcome },
       });
     }
+    if (m.sender_kind !== "steward" && m.reply_to_session) {
+      // A sender with no node (the Curator, the Audit Agent, a Checker)
+      // that waits for the answer in its session gets it there.
+      const { deliverReply } = await import("./session-service.js");
+      const routed = await deliverReply({
+        sessionId: m.reply_to_session,
+        kind: "reply",
+        ref: id,
+        text:
+          `The Steward of ${nodeId} answered your message ("${quoteHead(m.body)}"): ${OUTCOME_WORDS[outcome]}.` +
+          (note ? ` ${note}` : ""),
+        fallback: null,
+      });
+      if (routed !== "dropped") replies++;
+    }
     if (m.sender_kind === "steward" && m.sender_node_id && m.sender_node_id !== nodeId) {
       const date = new Date(m.created_at).toISOString().slice(0, 10);
       const body =

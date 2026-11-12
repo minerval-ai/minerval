@@ -466,11 +466,12 @@ and send them what changed and why with notify_steward; each judges at its own
 end (§22). If no one could reasonably care, send nothing. A message alone waits
 for the node's next funded pass. When the other node's page is now wrong in a
 way readers would rely on, pay for its pass from your budget (budget_owls), and
-petition your mandate if you can't cover it: the graph should not stay wrong
-for want of someone noticing.
+petition for the money (petition_mandate) if you can't cover it: the graph
+should not stay wrong for want of someone noticing.
 
-Messages to your node arrive in your brief. Answer each with answer_messages,
-so its sender learns what it did.
+Messages to your node arrive in your brief. Answer each with answer_messages:
+your answer is recorded on the node, and reaches its sender when the sender is
+another Steward or is waiting for it.
 
 ## Skills
 

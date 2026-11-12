@@ -616,7 +616,10 @@ export async function resumeMessages(
   extra: { newMessages?: string; budgetLine?: string }
 ): Promise<MessageParam[]> {
   const transcript = [...(s.transcript ?? [])];
-  const [changed] = !s.node_id
+  // Only a Steward's session is about its node's assessment; another
+  // agent's anchor node (the Curator's) is where it works, not what it judges.
+  const nodeScoped = Boolean(s.node_id) && s.role === "steward";
+  const [changed] = !nodeScoped
     ? [null]
     : await rawQuery<{ assessed_at: string | null; status: string | null; passes: number }>(
     `SELECT (SELECT MAX(assessed_at)::text FROM assessments WHERE claim_id = $1 AND assessed_at > $2::timestamptz) AS assessed_at,
@@ -625,14 +628,14 @@ export async function resumeMessages(
     [s.node_id, s.suspended_at ?? new Date().toISOString()]
   ).catch(() => [{ assessed_at: null, status: null, passes: 0 }]);
   const since = (s.suspended_at ?? "").slice(0, 16).replace("T", " ");
-  const changes = !s.node_id
+  const changes = !nodeScoped
     ? `You were paused since ${since} UTC; the graph may have moved meanwhile, so read again what you rely on before you record anything.`
     : changed?.assessed_at
     ? `While you were paused (since ${since} UTC), another pass on this node recorded a new assessment` +
       `${changed.status ? ` (now ${changed.status})` : ""}. Read the node again before you record anything, and reconcile with it.`
     : `Nothing on this node's assessment changed while you were paused (since ${since} UTC).`;
   const text =
-    `## Your session resumes\n\nYou paused waiting for what you asked for. It has arrived.\n\n${renderReplies(replies)}\n\n` +
+    `## Your session resumes\n\nYou paused waiting. Here is what came.\n\n${renderReplies(replies)}\n\n` +
     `${changes}` +
     (extra.newMessages ? `\n\n${extra.newMessages}` : "") +
     (extra.budgetLine ? `\n\n${extra.budgetLine}` : "") +
@@ -695,12 +698,23 @@ export async function sweepSessions(): Promise<number> {
 }
 
 /** The sentence the pausing tools and the task message use for the limits. */
+/**
+ * The limits a paused session works under, stated to every agent that can
+ * pause (session-tools.ts, wait_for_answers): how long it waits, where its
+ * answers go after that, what a resumption is paid with, and the length past
+ * which a conversation is not resumed (re-reading it costs more than a
+ * fresh start).
+ */
 export function sessionLimitsSentence(): string {
-  const hours = loadConfig().sessionWaitHours;
+  const c = loadConfig();
   return (
-    `Your session waits at most ${hours} hours for what it asked for; after that, the answer goes to ` +
-    `this node's inbox for a later pass instead. A resumed session is paid for from what this run has ` +
-    `left, by whoever paid for this run.`
+    `A paused session waits at most ${c.sessionWaitHours} hours for what it asked for (longer for a check-in ` +
+    `you set further out); after that it ends, and what arrives goes to the node's inbox for a later pass, or, ` +
+    `for a run with no node, stays where it is recorded (a research report on its research run). A resumption ` +
+    `is paid for from what the paused run had left, at least ${microUsdToOwls(MIN_RESUME_MICRO_USD)} owls, by ` +
+    `whoever paid for it. A conversation longer than about ${Math.round(c.sessionMaxTranscriptChars / 1000)} ` +
+    `thousand characters is not resumed, since re-reading it would cost more than starting again; its answers ` +
+    `go where they would after the wait.`
   );
 }
 

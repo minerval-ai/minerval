@@ -359,8 +359,8 @@ export async function executeNotifySteward(
     if (notes > 0) {
       parts.push(
         payer
-          ? `${notes} went as notes: your budget did not cover them. Petition your ` +
-              `mandate (petition_mandate) if they should run now.`
+          ? `${notes} went as notes: your budget did not cover them. Petition for the ` +
+              `money (petition_mandate) if they should run now.`
           : `${notes} went as notes: this run isn't paid in a way that can pay for ` +
               `other work.`
       );

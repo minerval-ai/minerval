@@ -243,12 +243,34 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
     }
     debitRunBudget(budget);
     const after = runBudgetLeft();
+    // An agent in a session hears how the pass it paid for went, on its next
+    // turn, without being woken for it (subscription-service.ts).
+    let told = false;
+    if (ctx.session) {
+      const { ensureSessionRow } = await import("../../services/session-service.js");
+      const { createSubscription } = await import("../../services/subscription-service.js");
+      const sessionId = await ensureSessionRow();
+      if (sessionId) {
+        await createSubscription({
+          subscriberKind: "session",
+          subscriberRef: sessionId,
+          filter: { kinds: ["run_settled", "run_closed"], action_ids: [res.actionId] },
+          delivery: "queue",
+          once: true,
+          reason: `the pass you commissioned on ${String(input.target)}`,
+          createdBy: ctx.agent ?? "agent",
+        });
+        told = true;
+      }
+    }
     return JSON.stringify({
       success: true,
       message:
         `Commissioned a ${res.tier} pass on ${String(input.target)} with a budget of ${owls(budget)} owls from your budget` +
         (after !== null ? `; you have ${owls(after)} left` : "") +
-        `. It runs on its own; its outcome is recorded on the node.` +
+        `. It runs on its own; its outcome is recorded on the node` +
+        (told ? `, and you are told when it settles, in a later tool result or when your session next resumes (it does not wake you)` : "") +
+        `.` +
         (res.parked ? ` ${res.parked.note}` : ""),
     });
   }
@@ -344,7 +366,10 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
     });
   }
   const ctx = getUsageContext();
-  const nodeId = ctx.session?.nodeId ?? ctx.claimId ?? null;
+  // Only a Steward's research serves its node: the Curator's session is
+  // anchored on a node it is curating, but what it asks is about structure,
+  // and its report is the Curator's, not that node's Steward's.
+  const nodeId = ctx.agent === "curator" ? null : ctx.session?.nodeId ?? ctx.claimId ?? null;
   // With a session the report returns into it; without one it goes to the
   // node's inbox, so a run with neither has nowhere to receive it.
   if (!nodeId && !ctx.session) {
@@ -388,7 +413,10 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
         `without it, and record what you can already conclude. When that is done, end your turn: your session ` +
         `pauses and resumes when the report arrives, with this conversation intact. If it arrives while you ` +
         `are still working, it appears in your next tool result. ` +
-        `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report goes to this node's inbox.`
+        (nodeId
+          ? `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report goes to this node's inbox.`
+          : `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report stays on the research run, ` +
+            `where a later run reads it with get_research_run.`)
       : `Commissioned research run ${res.runId} ${spent}. ` +
         (wantsWait
           ? `This run can't pause to wait for it, so its report goes to this node's inbox for its next pass.`

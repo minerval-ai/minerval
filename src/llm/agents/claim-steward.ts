@@ -804,7 +804,17 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
   const session = { id: resumed?.session.id ?? randomUUID(), role: "steward", nodeId: input.claimId };
   const initialMessages = resumed
     ? await resumeMessages(resumed.session, resumed.replies, {
-        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief].filter(Boolean).join("\n\n"),
+        // A pass that came for its own reason (not merely to resume) brings
+        // that reason: its trigger, its task and what changed, or the
+        // resumed run would answer a task it never saw.
+        newMessages: [
+          input.trigger !== "session_resume"
+            ? `This pass came for its own reason as well. Today's date: ${today}. Trigger: ${input.trigger}.\n\n${task.text}` +
+              (changesNote ? `\n\n${changesNote}` : "")
+            : "",
+          input.context.trim() ? `Context: ${input.context}` : "",
+          inbox.brief,
+        ].filter(Boolean).join("\n\n"),
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
     : [{ role: "user" as const, content: userMessage }];

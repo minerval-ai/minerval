@@ -30,7 +30,7 @@ import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { getUsageContext, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
@@ -161,7 +161,19 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const openPlan = await listPlanItems(c.id, { status: "open", limit: 200 });
   const closedPlan = await listPlanItems(c.id, { status: "closed", limit: RECENT_CLOSED_PLAN_SHOWN });
 
+  // One update a run, and a resumed run is the same run: an update this
+  // session already published counts (the session began before it).
   let published: { updateId: string } | null = null;
+  const sessionId = getUsageContext().session?.id ?? null;
+  if (sessionId) {
+    const [already] = await rawQuery<{ id: string }>(
+      `SELECT u.id FROM correspondent_updates u JOIN agent_sessions s ON s.id = $2
+        WHERE u.correspondent_id = $1 AND u.created_at >= s.created_at
+        ORDER BY u.created_at DESC LIMIT 1`,
+      [c.id, sessionId]
+    ).catch(() => []);
+    if (already) published = { updateId: already.id };
+  }
   const changesDef = graphChangeDefinition("agent");
 
   const tools: Tool[] = [
@@ -320,7 +332,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       ? `; a change in scope wakes you at most once every ${c.min_wake_hours}h, so your readers are not sent ` +
         `an update every few minutes`
       : "") +
-    `.\n- At most one update a run.\n\n` +
+    `.\n- At most one update a run, so your readers get one considered update for each time you run rather than a ` +
+    `stream of partial ones; a run that resumes after waiting is the same run.\n\n` +
     `### What woke you\n\n${events.length === 0 ? "(your heartbeat)" : events.map(renderEvent).join("\n")}\n\n` +
     `### Your window: material changes in scope since your last update\n\n` +
     (last

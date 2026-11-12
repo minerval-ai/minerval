@@ -548,8 +548,11 @@ note is recorded on the mandate's public page.
 When your triggers include 'graph', your task message lists what changed in
 your territory since your last run: new and reopened work on the ledger,
 messages arriving on nodes, accepted contributions, rulings, finished runs
-and what they spent, verdicts moving, requests filed. You won't see an entry
-again once your run ends, so read what matters now. query_sql answers what
+and what they spent, verdicts moving, requests filed. Changes wake you at
+most once every 15 minutes, so a burst is read together rather than one run
+each. An entry listed to you is not listed again once your run ends, so read
+what matters now; entries beyond the list wait for your next run, which reads
+on from the last one shown. query_sql answers what
 the list doesn't show (what a node has waiting, what similar work cost, what
 the mandate has already funded nearby); the sql skill lists the views.
 
