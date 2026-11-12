@@ -73,6 +73,18 @@ description: >-
 | `/about`, `/rewards`, `/contributor-terms`, `/terms`, `/privacy` | About the project; the rewards policy; terms |
 | `/signin` | Sign in or create an account |
 
+A private deployment, one that serves only its signed-in members, has these pages as well. The public site does not have them.
+
+| Route | What is there |
+| --- | --- |
+| `/admin` | For holders of the permission to administer: what the deployment's setup has done and what is still to do, read from the deployment itself, each item with who can do it and where (`get_setup_checklist`) |
+| `/admin/people` | For every member: what each permission covers, what the reader holds, and the log of every grant, removal and administrative act. For administrators also who holds what, and granting and removing |
+| `/admin/labels` | For administrators: the labels and which label reads which, the parties, and whose material a source is |
+| `/admin/connections`, `/admin/connections/:id` | For administrators: the organization's systems the deployment reads through MCP; one connection's state, its tools to pick one by one, and the calls agents made with which were kept as sources |
+| `/admin/owls` | For every member: what an owl is in the deployment, how many its administrators created, and what its runs spent. For administrators also creating owls and setting up the General and Governance mandates |
+| `/admin/usage-report` | For administrators: what the deployment reports to the public graph of its owl spend, with each report exactly as sent |
+| `/sources/new` | For holders of the permission to direct: add a document or an address as a source |
+
 ## Owls in the interface
 
 Bought in packs on `/account` (larger packs are discounted), where the
