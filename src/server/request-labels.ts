@@ -278,7 +278,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /parties": { rule: "none", why: ADMINISTRATION },
   "PUT /sources/:source_id/party": {
     rule: "none",
-    why: "Says whose material a source is. It changes one column of a source that is already there and adds no row; the source keeps its label.",
+    why: "Says whose material a source is. It changes one column of a source that is already there and adds no row; the source keeps its label, and the change is made at that label (services/party-service.ts), since a row is changed only by work at its own.",
   },
   "POST /labels": { rule: "none", why: ADMINISTRATION },
   "POST /labels/:label/reads": { rule: "none", why: ADMINISTRATION },

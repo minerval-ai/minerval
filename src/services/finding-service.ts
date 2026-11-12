@@ -286,15 +286,27 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
     // Joining a finding on record: a sighting, no new row.
     const joins = uuidOrNull(input.joins);
     if (joins) {
+      // The finding's own count moves only for a sighting at the finding's
+      // label: a finding at another label is not this work's to change
+      // (db/clearance.ts). Such a sighting is still recorded, below, as a
+      // row at this work's label.
       const rows = await rawQuery<{ id: string; sighting_count: number }>(
         `UPDATE agent_findings
             SET sighting_count = sighting_count + 1,
                 last_noted_at = now()
-          WHERE id = $1 AND status = 'published'
+          WHERE id = $1 AND status = 'published' AND sensitivity_label = $2
           RETURNING id, sighting_count`,
-        [joins]
+        [joins, currentLabel()]
       );
-      const row = rows[0];
+      const row =
+        rows[0] ??
+        (
+          await rawQuery<{ id: string; sighting_count: number }>(
+            `SELECT id, sighting_count FROM agent_findings
+              WHERE id = $1 AND status = 'published' AND sensitivity_label <> $2`,
+            [joins, currentLabel()]
+          )
+        )[0];
       if (!row) {
         return {
           outcome: "not_recorded",

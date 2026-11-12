@@ -34,11 +34,17 @@ function listed(labels: readonly string[], joiner: "and" | "or"): string {
   return `${names.slice(0, -1).join(", ")} ${joiner} ${names[names.length - 1]!}`;
 }
 
+/** The roles whose runs record judgments: a node's assessment, estimate or answer, and its arguments' evaluations. */
+export const ROLES_THAT_WRITE_JUDGMENTS: ReadonlySet<string> = new Set(["steward"]);
+
 /**
  * The passage for a run at `label` that reads `reads` (its own label
  * included, as the database client works it out: currentReadClearance).
+ * A run of a role that records judgments (`writesJudgments`) is told how a
+ * judgment at each label works for the one it writes; every other run is
+ * told enough to read a node that carries more than one.
  */
-export function labelNote(label: string, reads: readonly string[]): string {
+export function labelNote(label: string, reads: readonly string[], opts: { writesJudgments?: boolean } = {}): string {
   // The labels it reads besides its own, `public` last.
   const others = [...new Set(reads)]
     .filter((l) => l !== label)
@@ -60,14 +66,77 @@ export function labelNote(label: string, reads: readonly string[]): string {
     `search or a read that comes back empty has looked only at what this label can read.\n\n` +
     `What you write: each new thing this run records (a judgment, an argument, a reading of a source, ` +
     `a message, a request) carries the label ${tick(label)}, whatever you read to write it. ${whoReads} ` +
-    `A change to something that already carries another label, such as the wording of a node, keeps ` +
-    `that label, and its readers see the change.\n\n` +
-    `A node holds one judgment in force, recorded at one label. This run can replace it only where it ` +
-    `was recorded at ${tick(label)}: where a node's judgment in force carries another label, the tool ` +
-    `that records yours will refuse. A judgment at one label must not take the place of another ` +
-    `label's, and a node keeping one for each label is not built yet.\n\n` +
+    `What already carries another label is not this run's to change. A tool that would change or ` +
+    `remove it refuses and says so, because that label's readers would read the change as their own ` +
+    `label's work. What ${tick(label)} has to say about such a thing is recorded as something new, at ` +
+    `${tick(label)}.\n\n` +
+    `${opts.writesJudgments ? versionsForAWriter(label, others) : versionsForAReader()}\n\n` +
     `If the work cannot be done well on what this label can read, say so in what you record, so that ` +
     `whoever reads it or pays for the next pass knows what it rests on.`
+  );
+}
+
+/** What any run is told about a node that carries a judgment at more than one label. */
+function versionsForAReader(): string {
+  return (
+    `A node can carry a judgment at each label: a version, made by a run at that label from what that ` +
+    `label reads, and replaced only by a run at that label. Where you can read more than one, get_claim ` +
+    `lists them with their labels and says which are in force for this run. A version is in force ` +
+    `unless another one you can read was made at a label that reads its label, and so with sight of ` +
+    `everything it saw and more. Where a read gives a single judgment for a node, it is the one in ` +
+    `force, and the most recent of them if two labels that do not read each other each have one.`
+  );
+}
+
+/**
+ * What a run that records judgments is told. Each sentence states what the
+ * tools and the database do, with the reason, or what the constitution
+ * already asks (§21); whether material bears on a node, and whether a
+ * change beside its version matters, stay the Steward's judgment.
+ */
+function versionsForAWriter(label: string, others: readonly string[]): string {
+  const own = tick(label);
+  const onOtherLabels =
+    others.length === 0
+      ? `No other label is read by ${own}, so on the nodes this run reads the version at ${own} is the only one it sees.`
+      : `The versions you read at ${listed(others, "or")} are not yours to change, and nothing you record ` +
+        `replaces them. Each goes on standing for the readers and runs that work from it, and is reassessed ` +
+        `on its own inputs like any judgment. A node that carries another label is not yours to reword, ` +
+        `re-rank or restructure either: its wording, its importance and what is recorded at its label ` +
+        `belong to the Steward that works at that label. What you add to it (an argument, a subclaim, a ` +
+        `source) is recorded at ${own}, beside what is there.`;
+  return (
+    `## A judgment at each label\n\n` +
+    `A node in this graph can carry more than one judgment at once, one for each label: a version. ` +
+    `Each is made by a run at its label, which saw only what that label reads, and each is a full ` +
+    `assessment held to every standard you work under. This run writes the version at ${own} and no ` +
+    `other: the tools that record an assessment, an estimate, a question's assessment or an argument's ` +
+    `evaluation record it at ${own}.\n\n` +
+    `${onOtherLabels}\n\n` +
+    `On a node that carries another label, a version at ${own} is stored only when material at ${own} ` +
+    `bears on the node: a source labeled ${own} attached to it, a node labeled ${own} under it, or a ` +
+    `node under it that carries a version at ${own}. The tool that records the version refuses when ` +
+    `there is none. The reason is that a version at ${own} should differ from the one it reads only ` +
+    `where material at ${own} makes the difference, so that a reader can trace the difference to ` +
+    `something named. Whether a source really bears on the node is your judgment, and the tool checks ` +
+    `only that one is attached. Where nothing at ${own} bears, there is nothing at ${own} to judge: ` +
+    `record no version, say so with log_stewardship_decision, and the version you read stands for ` +
+    `readers at ${own}. A node that itself carries the label ${own} needs no such material: its ` +
+    `judgment is simply its judgment.\n\n` +
+    `Where you read a version at another label, start from it. Read its reasoning as you would a ` +
+    `colleague's, then ask what the material at ${own} changes. Your version owes that one coherence, ` +
+    `not deference (§21): where the two differ, the material at ${own} accounts for the difference, ` +
+    `and your reasoning says how. A disagreement about evidence the other version could see is a ` +
+    `case against that version, not a version of your own. Record it as a request (file_request), ` +
+    `which stays at ${own}. A version that agrees with the one you read is still worth recording ` +
+    `when material at ${own} changes the confidence, the credence, or what the verdict rests on.\n\n` +
+    `Your version records the versions it was made beside: the current version at each label that ` +
+    `${own} reads, as they stood. When one of them is replaced, readers at ${own} are shown that ` +
+    `yours was made against an earlier version, and a reassessment is opened at ${own}, which runs ` +
+    `when it is funded. Whether the change matters is your judgment when it does.\n\n` +
+    `get_claim lists a node's versions with their labels and says which are in force for this run: ` +
+    `a version is in force unless another one you can read was made at a label that reads its label. ` +
+    `Where a read gives a single judgment for a node, it is the one in force.`
   );
 }
 

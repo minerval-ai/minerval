@@ -24,6 +24,7 @@
 import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { runAtSourceLabel } from "./label-service.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
 import { getOrCreateSource, recordSourceKind } from "./source-service.js";
@@ -339,10 +340,14 @@ export async function fetchAndStoreSource(
   fetch: (url: string) => Promise<string> = (u) => fetchPublicUrl(u)
 ): Promise<string> {
   const raw = sanitizeStoredText(await fetch(source.url));
-  await rawQuery(
-    `UPDATE sources SET raw_content = $2, content_hash = $3, retrieved_at = now()
-      WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
-    [source.id, raw, sourceContentHash(raw)]
+  // The document's text is the same whoever fetches it, so it is stored at
+  // the document's label, whichever run asked for it (src/labels.ts).
+  await runAtSourceLabel(source.id, () =>
+    rawQuery(
+      `UPDATE sources SET raw_content = $2, content_hash = $3, retrieved_at = now()
+        WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
+      [source.id, raw, sourceContentHash(raw)]
+    )
   );
   await refreshSourceFactsOnce(source.id, { newText: true });
   await segmentSourceOnce(source.id);

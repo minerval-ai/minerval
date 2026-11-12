@@ -30,6 +30,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, RouteOptions } from
 import { deploymentHoldsLabels, rawQuery } from "../../db/client.js";
 import { PUBLIC_LABEL } from "../../labels.js";
 import { runWithUsageContext } from "../../llm/usage-context.js";
+import { LABEL_DESCRIPTION, VERSIONS_DESCRIPTION } from "../../services/judgment-version-service.js";
 import { membersOnly, standingOf } from "../../permissions.js";
 import { CARRIERS, REQUEST_LABELS, takesChosenLabel, type RequestLabelRule } from "../request-labels.js";
 import type { FixedLabel, RequestAuth } from "./auth.js";
@@ -280,6 +281,43 @@ export async function decideRequestLabel(
 type Handler = (this: FastifyInstance, request: FastifyRequest, reply: FastifyReply) => unknown;
 
 /**
+ * A node's read, in a members-only deployment: its response schema gains
+ * the node's `label` and the `versions` of its judgment, which the handler
+ * serves where the deployment has more than one label
+ * (services/judgment-version-service.ts). A response schema lists what is
+ * sent, so without this the two would be dropped on the way out. The
+ * public graph's schema, and its OpenAPI document, are untouched: this
+ * plugin is not registered there.
+ */
+function showVersions(route: RouteOptions): void {
+  const response = (route.schema?.response ?? {}) as Record<string, { properties?: Record<string, unknown> }>;
+  const ok = response[200] ?? response["200"];
+  if (!ok?.properties) return;
+  const claim = (ok.properties.claim ?? { type: "object" }) as { properties?: Record<string, unknown> };
+  route.schema = {
+    ...route.schema,
+    response: {
+      ...response,
+      200: {
+        ...ok,
+        properties: {
+          ...ok.properties,
+          claim: {
+            ...claim,
+            properties: { ...(claim.properties ?? {}), label: { type: "string", description: LABEL_DESCRIPTION } },
+          },
+          versions: {
+            type: "array",
+            description: VERSIONS_DESCRIPTION,
+            items: { type: "object", additionalProperties: true },
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
  * Register before any route and after the route catalog (see the module
  * comment). Registers nothing where the deployment is not members-only.
  */
@@ -288,6 +326,7 @@ export async function registerRequestLabel(app: FastifyInstance): Promise<void> 
 
   app.addHook("onRoute", (route: RouteOptions) => {
     const methods = (Array.isArray(route.method) ? route.method : [route.method]).map((m) => String(m).toUpperCase());
+    if (methods.includes("GET") && routeKey("GET", route.url) === "GET /claims/:claim_id") showVersions(route);
     const rules = methods
       .filter((m) => m !== "GET" && m !== "HEAD" && m !== "OPTIONS")
       .map((m) => REQUEST_LABELS[routeKey(m, route.url)])
@@ -295,7 +334,11 @@ export async function registerRequestLabel(app: FastifyInstance): Promise<void> 
     const rule = rules[0];
     if (!rule) return;
 
-    const worksAtAReader = rule.rule === "from" && rule.orReader === true;
+    // A route that takes no body today is given no body schema: a schema
+    // would refuse the request with no body that the route has always
+    // taken. Its `label`, where it may name one, is read from the body all
+    // the same (decideRequestLabel).
+    const worksAtAReader = rule.rule === "from" && rule.orReader === true && route.schema?.body !== undefined;
     if (takesChosenLabel(rule) || worksAtAReader) {
       const body = (route.schema?.body ?? { type: "object" }) as { properties?: Record<string, unknown> };
       // A new schema object: route schemas are often shared constants, and

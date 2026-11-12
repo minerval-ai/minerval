@@ -1313,6 +1313,32 @@ async function formalizeToolGap(claimId: string): Promise<string | null> {
 }
 
 /** The ledger status one exclusion group (or one row) reads as. */
+/**
+ * A finished ingest of this address (and focus) at another label that the
+ * work in progress reads, or null. Work at each label has its own ingest
+ * group, and an ingest finished at a label this one reads has already put
+ * the document's claims where this work reads them.
+ */
+async function ingestDoneAtALabelRead(
+  url: string,
+  focus: string | null
+): Promise<Awaited<ReturnType<typeof groupLedger>>> {
+  if (oneLabelOnly()) return null;
+  const own = currentLabel();
+  const [reads] = await rawQuery<{ labels: string[] }>(
+    `SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS labels`,
+    [own]
+  );
+  const groups = (reads?.labels ?? []).filter((l) => l !== own).map((l) => INGEST_GROUP(url, focus, l));
+  if (groups.length === 0) return null;
+  const [row] = await rawQuery<{ id: string }>(
+    `SELECT id FROM actions WHERE exclusion_group = ANY($1::text[]) AND status = 'done'
+      ORDER BY updated_at DESC LIMIT 1`,
+    [groups]
+  );
+  return row ? groupLedger({ actionId: row.id }) : null;
+}
+
 async function groupLedger(
   where: { group: string } | { actionId: string }
 ): Promise<{ status: "open" | "running" | "done" | "cancelled"; action_id: string; exclusion_group: string } | null> {
@@ -1432,7 +1458,7 @@ export async function materializeGrantPlan(
         LIMIT 1`,
       [INGEST_GROUP(item.url, normalizeFocus(item.focus))]
     );
-    if (!closed) break;
+    if (!closed && !(await ingestDoneAtALabelRead(item.url, normalizeFocus(item.focus)))) break;
     cursor++;
   }
   if (cursor !== g.plan_cursor) {
@@ -1611,8 +1637,16 @@ async function materializePlanItem(
       // (fundGrantSelfActions), until it runs. Forcing "done" on position
       // hid exactly those (#427). Only an item with no row at all (executed
       // before the ledger recorded plan work) reads done on position alone.
-      const row = await groupLedger({ group });
+      const row = (await groupLedger({ group })) ?? (await ingestDoneAtALabelRead(item.url, focus));
       return row ? fromRow(row) : { status: "done", checked_at: nowIso() };
+    }
+    // A document already read at a label this work reads has been read for
+    // this work too: its claims and instances are there to read. The item
+    // is met by that row, at no cost, as it was when a group had one row
+    // whatever the label. A fresh reading at this label is its own row.
+    if (!(await groupLedger({ group }))) {
+      const elsewhere = await ingestDoneAtALabelRead(item.url, focus);
+      if (elsewhere) return fromRow(elsewhere);
     }
     // An unexecuted one gets (or keeps) its open row, funded by the grant's
     // own escrow (fundGrantSelfActions). The focus is recorded first, so the

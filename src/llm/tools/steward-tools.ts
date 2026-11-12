@@ -4,6 +4,7 @@
  * These let the steward update assessments, modify canonical forms,
  * add decomposition edges, log decisions, and notify dependent stewards.
  */
+import { refusalForCaller } from "../../db/clearance.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
@@ -11,6 +12,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import { recordJudgmentInputs } from "../../services/judgment-inputs-service.js";
 import {
+  anotherLabelsNode,
+  anotherLabelsNodeMessage,
   recordMadeBeside,
   versionWithoutMaterial,
   versionWithoutMaterialMessage,
@@ -2066,6 +2069,12 @@ export async function executeStewardTool(
       case "update_canonical_form": {
         const claimId = input.claim_id as string;
         const newText = input.new_text as string;
+        // A node that carries another label is that label's Steward's to
+        // change (judgment-version-service.ts): refused, with the reason.
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "wording and type") });
+        }
         // Optional type correction (docs/mathematics.md §2.1): the type is a
         // facet the page, the cards, and the map read, so a theorem left as
         // "empirical, derived" is a category error the Steward can fix here.
@@ -2140,6 +2149,12 @@ export async function executeStewardTool(
 
       case "set_claim_domains": {
         const claimId = input.claim_id as string;
+        // A node that carries another label is that label's Steward's to
+        // change (judgment-version-service.ts): refused, with the reason.
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "domains") });
+        }
         const parsed = parseDomains(input.domains);
         if ("error" in parsed) {
           return JSON.stringify({ success: false, message: parsed.error });
@@ -2165,6 +2180,12 @@ export async function executeStewardTool(
 
       case "set_claim_importance": {
         const claimId = input.claim_id as string;
+        // A node that carries another label is that label's Steward's to
+        // change (judgment-version-service.ts): refused, with the reason.
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "importance and contestation") });
+        }
         const importance = clampUnit(input.importance);
         if (importance === undefined) {
           return JSON.stringify({
@@ -3261,10 +3282,14 @@ export async function executeStewardTool(
           reasoning,
           createdBy: "claim_steward",
         });
-        await db
-          .update(claims)
-          .set({ updatedAt: new Date() })
-          .where(eq(claims.id, claimId));
+        // The node's own row is touched only by work at its own label; the
+        // decision itself is the row above, at this run's label.
+        if (!(await anotherLabelsNode(claimId))) {
+          await db
+            .update(claims)
+            .set({ updatedAt: new Date() })
+            .where(eq(claims.id, claimId));
+        }
 
         return JSON.stringify({
           success: true,
@@ -3323,6 +3348,10 @@ export async function executeStewardTool(
       }
     }
   } catch (err) {
+    // The database's refusal of a write across labels is told whole, with
+    // its reason: a limit the agent works under, not a fault of the tool.
+    const refusal = refusalForCaller(err);
+    if (refusal) return JSON.stringify({ success: false, message: refusal });
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }

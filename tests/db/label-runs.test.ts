@@ -476,10 +476,10 @@ describe("a write that lands on a row already there", () => {
       `SELECT occurrence_count, body FROM agent_reports WHERE id = $1`,
       [first]
     );
-    // The count went up. The account of a run at another label is not put
-    // into the report's row, which that label's readers do not only read:
-    // it is in the sighting's own row, at the sighting's label.
-    expect(report).toMatchObject({ occurrence_count: 2, body: "First seen." });
+    // Nothing of the report's row moved, its count included: work changes
+    // only rows at its own label. The account of a run at another label is
+    // in the sighting's own row, at the sighting's label.
+    expect(report).toMatchObject({ occurrence_count: 1, body: "First seen." });
     const sightings = await rawQuery<{ body: string; sensitivity_label: string }>(
       `SELECT body, sensitivity_label FROM agent_report_sightings WHERE report_id = $1`,
       [first]
@@ -590,7 +590,11 @@ describe("what a reader is shown", () => {
 
   const carriesIt = (text: string) => /sensitivity[_ ]?label/i.test(text);
   /** The label's name as a JSON value. */
-  const namesIt = (text: string) => text.includes(`"${SECOND}"`);
+  // A read of a node or of a source says which label it carries, on a
+  // deployment with more than one, and a node's versions each say theirs
+  // (services/judgment-version-service.ts). That one field is shown by
+  // design; the label's name anywhere else is not.
+  const namesIt = (text: string) => text.replaceAll(`"label":"${SECOND}"`, "").includes(`"${SECOND}"`);
   /**
    * The one thing that names the label by design, as it did before this
    * column: the setup a run's prompt step records, which the hash chain

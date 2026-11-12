@@ -7,6 +7,7 @@
  * and each change is logged with what it was before, because the party
  * decides who holds the gate for anything that rests on the source.
  */
+import { runAtSourceLabel } from "./label-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { logAdministrativeEvent } from "./permission-service.js";
 
@@ -120,7 +121,10 @@ export async function setSourceParty(input: {
   if (input.partyId !== null && !UUID_RE.test(input.partyId)) {
     return { ok: false, code: "UNKNOWN_PARTY", message: "No party has that id." };
   }
-  return withTransaction(async (tx) => {
+  // Whose material a source is, is a column of the source's own row, and
+  // a row is changed by work at its own label (db/clearance.ts): the change
+  // is made at the source's label, for a source the administrator may read.
+  return runAtSourceLabel(input.sourceId, () => withTransaction(async (tx) => {
     const [source] = await tx.query<{ party_id: string | null }>(
       `SELECT party_id FROM sources WHERE id = $1 FOR UPDATE`,
       [input.sourceId]
@@ -143,5 +147,5 @@ export async function setSourceParty(input: {
       });
     }
     return { ok: true as const, source_id: input.sourceId, party: party ? partyView(party) : null };
-  });
+  }));
 }

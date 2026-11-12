@@ -191,7 +191,9 @@ async function labelsWhere(table: string, where: string, params: unknown[]): Pro
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 
 /** The labels on a claim's assess rows. */
-const assessLabels = (claimId: string) => labelsWhere("actions", "exclusion_group = $1", [ASSESS_GROUP(claimId)]);
+// Work at each label on a node has its own assess group (groupAtLabel), so
+// a node's rows are found by the node and the kind of work.
+const assessLabels = (claimId: string) => labelsWhere("actions", "claim_id = $1 AND kind IN ('assess', 'reassess')", [claimId]);
 
 async function setLabel(claimId: string, label: string): Promise<void> {
   await rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [claimId, label]);
@@ -423,11 +425,16 @@ const everyTableAt = (label: string) => Object.fromEntries(CONTENT_TABLES.map((t
  */
 async function runFundedPass(claimId: string, alsoWaiting: string[] = []) {
   const funder = await seedUser("graph-funder");
-  await seedAllocation({ group: ASSESS_GROUP(claimId), claimId, userId: funder, amountMicroUsd: 500 * OWL });
+  // The group of the row that is open on the node, at whatever label it was opened.
+  const [open] = await rawQuery<{ exclusion_group: string }>(
+    `SELECT exclusion_group FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess') AND status = 'open' LIMIT 1`,
+    [claimId]
+  );
+  await seedAllocation({ group: open?.exclusion_group ?? ASSESS_GROUP(claimId), claimId, userId: funder, amountMicroUsd: 500 * OWL });
   await rawQuery(
     `UPDATE actions SET status = 'cancelled'
-      WHERE status = 'open' AND kind IN ('assess', 'reassess') AND NOT (exclusion_group = ANY($1))`,
-    [[claimId, ...alsoWaiting].map((id) => ASSESS_GROUP(id))]
+      WHERE status = 'open' AND kind IN ('assess', 'reassess') AND NOT (claim_id = ANY($1::uuid[]))`,
+    [[claimId, ...alsoWaiting]]
   );
   return processNextStewardTask();
 }
@@ -584,18 +591,18 @@ describe("a row of the graph's content", () => {
     // The same writes again, from a run at the rows' own label: each lands on the row already there.
     expect(await write()).toEqual(first);
     // From a run at another label, the ones that only find the row (an
-    // edge, a link, a cut, a tag) land on it and write nothing of the run's.
+    // edge, a link, a tag) land on it and write nothing of the run's.
     await inRunAt(INTERNAL, async () => {
       const edge = await insertRelationshipEdge({
         parentId: parent, childId: child, relationType: "requires", reasoning: "A restricted reasoning.", createdBy: "claim_steward",
       });
       const link = await linkClaims({ claimId: parent, otherClaimId: child, kind: "related", reasoning: "A restricted reasoning.", createdBy: "curator" });
       expect({ edge: edge.id, link: link.id }).toEqual({ edge: first.edge, link: first.link });
-      await recordCut({ claimId: parent, quantityId: quantity, direction: "below", value: 3, createdBy: "claim_steward" });
       await setSubjectTags({ kind: "claim", subjectId: parent, source: "steward", assignments: [{ name }] });
-      // The two that would put the run's words into the row (a quantity's
-      // definition, an answer's reasoning) are refused, and say why.
+      // The three that would change the row (a cut's direction and number,
+      // a quantity's definition, an answer's reasoning) are refused, and say why.
       for (const write of [
+        () => recordCut({ claimId: parent, quantityId: quantity, direction: "below", value: 3, createdBy: "claim_steward" }),
         () => defineQuantity({ claimId: quantity, definition: { ...DEFINITION, measures: "A restricted definition." }, createdBy: "claim_steward" }),
         () => addAnswer({ questionId: question, answerId: child, basis: "quality", reasoning: "A restricted reasoning.", createdBy: "question_steward" }),
       ]) {
@@ -699,19 +706,25 @@ describe("work that starts from a claim", () => {
     }
   });
 
-  it("is reopened by the sweep at the claim's label, whatever label its finished row had", async () => {
+  it("is opened by the sweep in the claim's own label's group, and a finished row at another label stays as it was", async () => {
     const claim = await seedClaim("graph swept again");
     await setLabel(claim, INTERNAL);
-    // A row from an earlier pass, finished, at public.
+    // A row from an earlier pass, finished, at public, under the public key.
     await seedAction({ group: ASSESS_GROUP(claim), claimId: claim, costMicroUsd: 1, status: "done" });
     expect(await assessLabels(claim)).toEqual([PUBLIC_LABEL]);
     await onlyPending([claim]);
     await reconcileActions();
-    const rows = await rawQuery<{ status: string; sensitivity_label: string }>(
-      `SELECT status, sensitivity_label FROM actions WHERE exclusion_group = $1 AND variant = 'standard'`,
-      [ASSESS_GROUP(claim)]
+    const rows = await rawQuery<{ exclusion_group: string; status: string; sensitivity_label: string }>(
+      `SELECT exclusion_group, status, sensitivity_label FROM actions
+        WHERE claim_id = $1 AND kind IN ('assess', 'reassess') AND variant = 'standard' ORDER BY status`,
+      [claim]
     );
-    expect(rows).toEqual([{ status: "open", sensitivity_label: INTERNAL }]);
+    // A row's label never changes: the claim's pass has a row in its own
+    // label's group, and the public row is not reopened or relabelled.
+    expect(rows).toEqual([
+      { exclusion_group: ASSESS_GROUP(claim), status: "done", sensitivity_label: PUBLIC_LABEL },
+      { exclusion_group: ASSESS_GROUP(claim, INTERNAL), status: "open", sensitivity_label: INTERNAL },
+    ]);
   });
 
   it("is run by the Steward's fallback lane at the claim's label", async () => {
@@ -825,7 +838,7 @@ describe("work that starts from a claim", () => {
       await scanReconcileCandidates({ reconcile_candidates_max_per_sweep: 5, reconcile_candidate_min_similarity: 0.92 })
     ).toBe(2);
     const curateLabels = (pair: string[]) =>
-      labelsWhere("actions", "kind = 'curate' AND exclusion_group = ANY($1)", [pair.map((id) => CURATE_GROUP(id))]);
+      labelsWhere("actions", "kind = 'curate' AND claim_id = ANY($1::uuid[])", [pair]);
     expect(await curateLabels(restricted)).toEqual([INTERNAL]);
     expect(await curateLabels(open)).toEqual([PUBLIC_LABEL]);
     await rawQuery(`UPDATE claims SET embedding = NULL`);

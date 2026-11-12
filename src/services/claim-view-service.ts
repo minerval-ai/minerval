@@ -20,6 +20,7 @@ import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
 import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
+import { nodeVersions } from "./judgment-version-service.js";
 import {
   getArgumentsForClaim,
   getEvaluationStateForClaim,
@@ -261,6 +262,7 @@ export async function getClaimView(
     waiting,
     changes,
     covered,
+    labelled,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -295,6 +297,9 @@ export async function getClaimView(
     // What examination the node has had (#543). A read failure loses the
     // field, never the read: absent is "not said", never "examined".
     summarizeCoverage([claimId]).catch(() => null),
+    // Where the deployment has more than one label: the node's own, and
+    // the versions of its judgment the reader may read (null elsewhere).
+    nodeVersions(claimId, kind),
   ]);
   const since = sinceAssessed(changes?.get(claimId));
   const examination = coverage(covered?.get(claimId.toLowerCase()));
@@ -343,7 +348,13 @@ export async function getClaimView(
       created_at: iso(claim.createdAt),
       updated_at: iso(claim.updatedAt),
       page_url: claimPageUrl(claim.id),
+      // Who may read the node, on a deployment with more than one label.
+      ...(labelled ? { label: labelled.label } : {}),
     },
+    // The versions of the node's judgment, one for each label that has one
+    // and that the reader may read (judgment-version-service.ts). The
+    // judgment served just below is the first of them.
+    ...(labelled ? { versions: labelled.versions } : {}),
     assessment: withDeveloperDisclosure(
       formatClaimViewAssessment(assessment),
       assessment?.model,

@@ -1,3 +1,4 @@
+import { sourceLabel } from "../services/judgment-version-service.js";
 import type { FastifyInstance } from "fastify";
 import { sourceSubmitBody } from "../schemas/source.js";
 import { submitSource } from "../services/source-service.js";
@@ -130,7 +131,9 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
           error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },
         });
       }
-      return reply.send(facts);
+      // Who may read the source, on a deployment with more than one label.
+      const label = await sourceLabel(request.params.source_id);
+      return reply.send(label ? { ...facts, label } : facts);
     },
   });
 

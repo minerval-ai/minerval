@@ -194,7 +194,7 @@ describe("the labels table", () => {
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
         "reading_citations", "reconciliation_events", "regrants", "reputation_events", "request_targets", "request_work",
         "requests", "research_runs", "setup_parts", "shared_page_analyses", "source_events", "source_extractions",
-        "source_interests", "source_relationships", "source_segments", "sources", "taggings", "tags",
+        "source_interests", "source_relationships", "source_segments", "sources", "steward_slots", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });

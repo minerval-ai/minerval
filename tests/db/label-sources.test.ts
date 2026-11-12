@@ -656,7 +656,11 @@ describe("a row read from a source or written about one", () => {
   it("is a feed item's at the label of the poll that first saw it, and the page fetched for it later leaves that alone", async () => {
     const { grantId, lookoutId, site } = await seedLookout();
     stage.pages.set(`${site}/feed`, rss(site, ["a"]));
-    const feed = await inRunAt(INTERNAL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" }));
+    // A lookout's feeds are changed by work at the lookout's own label: from another it is refused.
+    expect(
+      await inRunAt(INTERNAL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" }))
+    ).toMatchObject({ ok: false, code: "OTHER_LABEL" });
+    const feed = await addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" });
     if (!feed.ok) throw new Error(JSON.stringify(feed));
     // The poller runs outside any run, at the lookout's label (label-governance.test.ts). This lookout is public.
     stage.pages.set(`${site}/feed`, rss(site, ["a", "b"]));
@@ -668,12 +672,12 @@ describe("a row read from a source or written about one", () => {
       )
     ).sort((a, b) => (a.url < b.url ? -1 : 1));
     expect(items.map((i) => [i.url, i.sensitivity_label])).toEqual([
-      [`${site}/p/a`, INTERNAL],
+      [`${site}/p/a`, PUBLIC_LABEL],
       [`${site}/p/b`, PUBLIC_LABEL],
     ]);
     // A lookout's run reads the new item: the page lands on the item already there.
     stage.pages.set(`${site}/p/b`, `<html><body><article><p>The whole post.</p></article></body></html>`);
-    const read = await inRunAt(INTERNAL, () => readItem({ lookoutId, itemId: items[1]!.id, view: "full", from: "page" }));
+    const read = await readItem({ lookoutId, itemId: items[1]!.id, view: "full", from: "page" });
     expect(read).toMatchObject({ ok: true, from: "page" });
     const [item] = await rawQuery<{ body: string | null; sensitivity_label: string }>(
       `SELECT body, sensitivity_label FROM lookout_feed_items WHERE id = $1`,
@@ -829,7 +833,11 @@ describe("a document a worker extracts", () => {
     expect(await ingested(INTERNAL)).toEqual(at(INTERNAL));
     expect(await ingested(null)).toEqual(at(PUBLIC_LABEL));
     // A document the graph already held as public, submitted at a second label: the reading is the job's, the structure the document's.
+    // The text handed over with the submission is the submitter's and is
+    // not put into the public row; the worker fetches the document from its
+    // address and stores that at the document's label.
     const known = await seedSource(PUBLIC_LABEL);
+    stage.pages.set(known.url, PAGE);
     expect(await ingested(INTERNAL, known)).toEqual({
       source: PUBLIC_LABEL, instances: [INTERNAL], extractions: [INTERNAL], segments: [PUBLIC_LABEL],
     });
@@ -854,15 +862,18 @@ describe("a fetch into a source's own row", () => {
     const url = pageUrl("cited");
     const first = await inRunAt(INTERNAL, () => getOrCreateSource({ url }));
     expect((await sourceRow(first.id)).sensitivity_label).toBe(INTERNAL);
-    // A submission outside any run carries the text. The row is found by its URL, whatever its label.
+    // A submission outside any run carries the text. The row is found by its
+    // URL, whatever its label, and the text is not put into it: a row is
+    // filled by work at its own label, or by a fetch of its address.
     const again = await getOrCreateSource({ url, title: "Now with text", content: PAGE });
     expect(again.id).toBe(first.id);
-    expect(await sourceRow(first.id)).toMatchObject({ sensitivity_label: INTERNAL, has_text: true });
+    expect(await sourceRow(first.id)).toMatchObject({ sensitivity_label: INTERNAL, has_text: false });
     // And the other way round: a run at a restricted label finds the public row.
     const open = await getOrCreateSource({ url: pageUrl("cited") });
     const found = await inRunAt(INTERNAL, () => getOrCreateSource({ url: open.url!, content: PAGE }));
     expect(found.id).toBe(open.id);
-    expect(await sourceRow(open.id)).toMatchObject({ sensitivity_label: PUBLIC_LABEL, has_text: true });
+    // The restricted run's text is not put into the public row either.
+    expect(await sourceRow(open.id)).toMatchObject({ sensitivity_label: PUBLIC_LABEL, has_text: false });
   });
 
   it("made by the page-hash fill at startup leaves every label alone", async () => {
@@ -1041,7 +1052,11 @@ describe("what a reader is shown", () => {
 
   const carriesIt = (text: string) => /sensitivity[_ ]?label/i.test(text);
   /** The label's name as a JSON value, which no response has another reason to hold. */
-  const namesIt = (text: string) => text.includes(`"${INTERNAL}"`);
+  // A read of a node or of a source says which label it carries, on a
+  // deployment with more than one, and a node's versions each say theirs
+  // (services/judgment-version-service.ts). That one field is shown by
+  // design; the label's name anywhere else is not.
+  const namesIt = (text: string) => text.replaceAll(`"label":"${INTERNAL}"`, "").includes(`"${INTERNAL}"`);
 
   it("has no view query_sql reads that exposes the column", async () => {
     // The public_read views name their columns, and Postgres stores a view

@@ -337,7 +337,12 @@ interface HeldLease {
   slot?: StewardSlot;
 }
 
-const held = new Set<HeldLease>();
+/** A lease as this process holds it: the slot is worked out once, without delaying the lease. */
+interface HeldEntry extends HeldLease {
+  slotOf: Promise<StewardSlot>;
+}
+
+const held = new Set<HeldEntry>();
 
 /**
  * Run `fn` while holding the claim's lease: the lease is refreshed every
@@ -349,15 +354,21 @@ export async function withStewardLease<T>(
   lease: HeldLease,
   fn: () => Promise<T>
 ): Promise<T> {
-  const slot = lease.slot ?? (await stewardSlot(lease.claimId));
-  const entry = { ...lease, slot };
+  // The lease is held from this moment, as it always was: the slot it
+  // refreshes is the one the caller claimed, or is worked out alongside.
+  const slotOf = lease.slot ? Promise.resolve(lease.slot) : stewardSlot(lease.claimId);
+  const entry: HeldEntry = { ...lease, slotOf };
   held.add(entry);
   const timer = setInterval(() => {
-    rawQuery(
-      `UPDATE ${slot.rel} SET stewarded_at = now()
+    slotOf
+      .then((slot) =>
+        rawQuery(
+          `UPDATE ${slot.rel} SET stewarded_at = now()
         WHERE ${slot.is("$1")} AND steward_state = 'running'`,
-      [entry.claimId]
-    ).catch((err) =>
+          [entry.claimId]
+        )
+      )
+      .catch((err) =>
       console.warn(
         `[steward-lease] heartbeat failed for ${entry.claimId}: ${
           err instanceof Error ? err.message : err
@@ -385,8 +396,9 @@ export async function abandonStewardLeases(): Promise<number> {
   const leases = [...held];
   held.clear();
   if (leases.length === 0) return 0;
+  const slots = await Promise.all(leases.map((l) => l.slotOf.catch(() => null)));
   const release = async () => {
-    const own = leases.filter((l) => l.slot?.own !== false);
+    const own = leases.filter((_, i) => slots[i]?.own !== false);
     if (own.length > 0) {
       await rawQuery(
         `UPDATE claims
@@ -395,11 +407,13 @@ export async function abandonStewardLeases(): Promise<number> {
         [own.map((l) => l.claimId), STEWARD_LEASE_STALE_MINUTES]
       );
     }
-    for (const l of leases.filter((x) => x.slot?.own === false)) {
+    for (const [i, l] of leases.entries()) {
+      const slot = slots[i];
+      if (!slot || slot.own) continue;
       await rawQuery(
         `UPDATE steward_slots
             SET stewarded_at = now() - make_interval(mins => $2 + 1)
-          WHERE ${l.slot!.is("$1")} AND steward_state = 'running'`,
+          WHERE ${slot.is("$1")} AND steward_state = 'running'`,
         [l.claimId, STEWARD_LEASE_STALE_MINUTES]
       );
     }

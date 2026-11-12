@@ -17,6 +17,8 @@
 import { rawQuery } from "../../db/client.js";
 import { getJudgmentInputs, type JudgmentInputsView } from "../../services/judgment-inputs-service.js";
 import type { NodeKind } from "../../schemas/kinds.js";
+import { nodeVersions, type NodeVersion } from "../../services/judgment-version-service.js";
+import { currentLabel } from "../usage-context.js";
 
 /**
  * How many items each list names. A handful is enough to see what kind of
@@ -148,7 +150,7 @@ export function changesSinceJudgedNote(
 export async function loadChangesSinceJudgedNote(claimId: string, kind: NodeKind): Promise<string> {
   try {
     const view = await getJudgmentInputs(claimId);
-    if (!view?.judgment) return "";
+    if (!view?.judgment) return loadVersionsNote(claimId, kind);
     const { nodeIds, sourceIds } = namedInChangesNote(view);
     const [nodes, sources] = await Promise.all([
       nodeIds.length > 0
@@ -166,10 +168,68 @@ export async function loadChangesSinceJudgedNote(claimId: string, kind: NodeKind
     ]);
     const byId = (rows: Array<{ id: string; name: string | null }>) =>
       new Map(rows.flatMap((r) => (r.name ? [[r.id, r.name] as const] : [])));
-    return changesSinceJudgedNote(kind, view, { nodes: byId(nodes), sources: byId(sources) });
+    const note = changesSinceJudgedNote(kind, view, { nodes: byId(nodes), sources: byId(sources) });
+    const versions = await loadVersionsNote(claimId, kind);
+    return versions ? `${note}\n\n${versions}` : note;
   } catch (err) {
     console.warn(
       `[steward] changes since the judgment could not be read for ${claimId}:`,
+      err instanceof Error ? err.message : err
+    );
+    return "";
+  }
+}
+
+/**
+ * What a Steward is told about the versions of its node's judgment, on a
+ * deployment where a node can carry one at each label
+ * (services/judgment-version-service.ts): which labels have one, which is
+ * its own, and whether its own was made beside one that has since been
+ * replaced. A statement of the record, like the note above. Empty on the
+ * public graph, and for a node that carries this run's label and no version
+ * at any other.
+ */
+export function versionsNote(
+  runLabel: string,
+  node: { label: string; versions: ReadonlyArray<Pick<NodeVersion, "label" | "in_force" | "made_beside" | "versions_since"> & { assessed_at?: unknown }> }
+): string {
+  const others = node.versions.filter((v) => v.label !== runLabel);
+  if (node.label === runLabel && others.length === 0) return "";
+  const own = node.versions.find((v) => v.label === runLabel);
+  const tick = (l: string) => `\`${l}\``;
+  const on = (v: { assessed_at?: unknown }) => (typeof v.assessed_at === "string" ? `, recorded ${v.assessed_at.slice(0, 10)}` : "");
+  const lines: string[] = [
+    `This node carries the label ${tick(node.label)}, and this run works at ${tick(runLabel)}. The versions of its ` +
+      `judgment that this run reads:`,
+  ];
+  if (own) {
+    const replaced = own.made_beside.filter((b) => b.replaced).map((b) => tick(b.label));
+    const since = own.versions_since.map(tick);
+    const moved = [
+      ...(replaced.length > 0 ? [`the version${replaced.length === 1 ? "" : "s"} at ${replaced.join(", ")} that it was made beside ${replaced.length === 1 ? "has" : "have"} since been replaced`] : []),
+      ...(since.length > 0 ? [`${since.join(", ")} ${since.length === 1 ? "has" : "have"} gained a version since`] : []),
+    ];
+    lines.push(
+      `- ${tick(own.label)}, this run's own${on(own)}.` +
+        (moved.length > 0 ? ` It was made against an earlier state of what it reads: ${moved.join("; ")}.` : "")
+    );
+  } else {
+    lines.push(`- ${tick(runLabel)}, this run's own: none recorded.`);
+  }
+  for (const v of others) {
+    lines.push(`- ${tick(v.label)}${on(v)}${!own && v.in_force ? ". It is the version in force for this run" : ""}.`);
+  }
+  lines.push(`get_claim returns each of them in full under \`versions\`.`);
+  return lines.join("\n");
+}
+
+async function loadVersionsNote(claimId: string, kind: NodeKind): Promise<string> {
+  try {
+    const node = await nodeVersions(claimId, kind);
+    return node ? versionsNote(currentLabel(), node) : "";
+  } catch (err) {
+    console.warn(
+      `[steward] the versions of ${claimId} could not be read:`,
       err instanceof Error ? err.message : err
     );
     return "";

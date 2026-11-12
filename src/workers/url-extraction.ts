@@ -26,6 +26,7 @@ import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
 import { enqueueClaimPipeline, requestAudit } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
+import { runAtSourceLabel } from "../services/label-service.js";
 import { currentLabel, runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
@@ -215,10 +216,15 @@ async function processUrlExtraction(
     let fetchedNow = false;
     if (!content) {
       content = await fetchUrlContent(message.url);
-      await db
-        .update(sources)
-        .set({ rawContent: content, contentHash: sourceContentHash(content) })
-        .where(eq(sources.id, source.id));
+      const fetched = content;
+      // The document's text is the same whoever fetches it, so it is stored
+      // at the document's label, whatever label the job is at (src/labels.ts).
+      await runAtSourceLabel(source.id, () =>
+        db
+          .update(sources)
+          .set({ rawContent: fetched, contentHash: sourceContentHash(fetched) })
+          .where(eq(sources.id, source.id))
+      );
       fetchedNow = true;
     }
     // The facts a source page shows without judgment (#507): authors,
@@ -633,7 +639,9 @@ async function handleDocumentProblem(
           `whether claims or instances from this source need attention.`,
       });
     } else {
-      await rawQuery(`UPDATE sources SET raw_content = NULL, content_hash = NULL WHERE id = $1`, [sourceId]);
+      await runAtSourceLabel(sourceId, () =>
+        rawQuery(`UPDATE sources SET raw_content = NULL, content_hash = NULL WHERE id = $1`, [sourceId])
+      );
     }
   } catch (err) {
     console.error(

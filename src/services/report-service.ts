@@ -795,7 +795,7 @@ async function recordSighting(
             status = CASE WHEN r.sensitivity_label = $9 AND r.status = 'actioned' THEN 'new' ELSE r.status END
        FROM (SELECT id, status AS previous_status, sensitivity_label = $9 AS own_label FROM agent_reports
               WHERE id = $1 AND origin = $8) AS prev
-      WHERE r.id = prev.id
+      WHERE r.id = prev.id AND r.sensitivity_label = $9
       RETURNING ${REPORT_COLUMNS_R}, prev.previous_status, prev.own_label`,
     [
       reportId,
@@ -809,7 +809,19 @@ async function recordSighting(
       currentLabel(),
     ]
   );
-  const row = rows[0];
+  // A report at another label is not this work's to change, its count
+  // included (work changes only rows at its own label, db/clearance.ts).
+  // The sighting below is the whole record of it: a row at this work's
+  // label, read by this label's readers, and counted where they look.
+  const elsewhere =
+    rows.length > 0
+      ? []
+      : await rawQuery<AgentReportRow>(
+          `SELECT ${REPORT_COLUMNS_R} FROM agent_reports AS r
+            WHERE r.id = $1 AND r.origin = $2 AND r.sensitivity_label <> $3`,
+          [reportId, input.origin, currentLabel()]
+        );
+  const row = rows[0] ?? (elsewhere[0] ? { ...elsewhere[0], previous_status: elsewhere[0].status, own_label: false } : undefined);
   if (!row) return null;
   await rawQuery(
     `INSERT INTO agent_report_sightings
@@ -830,6 +842,9 @@ async function recordSighting(
   );
   const reopened = row.own_label !== false && row.previous_status === "actioned";
   const { previous_status: _previous, own_label: _own, ...report } = row;
+  // Nothing of a sighting at another label reaches the tracker: the
+  // report's row is unchanged, so there is nothing to sync.
+  if (rows.length === 0) return { row: report as AgentReportRow, reopened: false };
   background(
     "sighting sync",
     syncSightingToIssue(report, {
@@ -972,6 +987,9 @@ export async function raiseIssue(
                        THEN COALESCE(EXCLUDED.job_id, agent_reports.job_id) ELSE agent_reports.job_id END,
          claim_id = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
                          THEN COALESCE(EXCLUDED.claim_id, agent_reports.claim_id) ELSE agent_reports.claim_id END
+       -- The count too is the row's own label's to move: a repeat at
+       -- another label changes nothing here and is recorded as a sighting.
+       WHERE agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
        RETURNING ${REPORT_COLUMNS}, (xmax = 0) AS inserted`,
       [
         v.kind,
@@ -996,6 +1014,11 @@ export async function raiseIssue(
     );
     const row = rows[0];
     if (!row) {
+      // The row with this key is at another label (the race the upsert is
+      // there for, lost to a report at another label): a sighting of it.
+      const [there] = await rawQuery<{ id: string }>(`SELECT id FROM agent_reports WHERE dedupe_key = $1`, [dedupeKey]);
+      const seen = there ? await recordSighting(there.id, attribution) : null;
+      if (seen) return collapsed(seen.row, seen.reopened);
       return {
         acknowledged: true,
         reportId: null,
@@ -1098,10 +1121,10 @@ export async function updateReport(
               triaged_by = CASE WHEN $3::boolean THEN $5::text ELSE triaged_by END,
               triaged_at = CASE WHEN $3::boolean THEN now() ELSE triaged_at END
         WHERE id = $1 AND origin = $6
-          -- A note is the writer's own row, at its own label. Re-rating or
-          -- withdrawing changes the report's row, which work at another
-          -- label does not do: the row is read by that label's readers.
-          AND (sensitivity_label = $7 OR ($2::text IS NULL AND NOT $3::boolean))
+          -- Re-rating or withdrawing changes the report's row, which only
+          -- work at the row's own label does: the row is read by that
+          -- label's readers. A note is the writer's own row, added below.
+          AND sensitivity_label = $7
         RETURNING ${REPORT_COLUMNS}`,
       [
         id,
@@ -1113,7 +1136,19 @@ export async function updateReport(
         currentLabel(),
       ]
     );
-    const row = rows[0];
+    // A note alone changes nothing on the report's row, so work at another
+    // label that reads the report may add one: the row is read, not written.
+    const noteOnly = !severity && !input.withdraw;
+    const row =
+      rows[0] ??
+      (noteOnly
+        ? (
+            await rawQuery<AgentReportRow>(
+              `SELECT ${REPORT_COLUMNS} FROM agent_reports WHERE id = $1 AND origin = $2`,
+              [id, input.origin ?? "internal"]
+            )
+          )[0]
+        : undefined);
     if (!row) return nothing((await atAnotherLabel(id)) ? OTHER_LABEL_REPORT : `no report on record with id ${id}`);
 
     if (note) {

@@ -19,6 +19,7 @@ import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDepend
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
 import { getQuestionDetail } from "../services/question-service.js";
+import { nodeVersions } from "../services/judgment-version-service.js";
 import { listRequests } from "../services/request-service.js";
 import { REQUEST_SCHEMA } from "./requests.js";
 import { waitingMessages } from "../services/inbox-service.js";
@@ -839,9 +840,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         ]);
         const since = sinceAssessed(changes?.get(claim.id));
         const examination = coverage(covered?.get(claim.id));
+        // Where the deployment has more than one label: the node's own, and
+        // the versions of its judgment the reader may read. Null elsewhere,
+        // and the response is then what it always was.
+        const labelled = await nodeVersions(claim.id, claim.kind ?? "claim");
 
         const response: Record<string, unknown> = {
-          claim: formatClaim(claim),
+          claim: labelled ? { ...formatClaim(claim), label: labelled.label } : formatClaim(claim),
+          ...(labelled ? { versions: labelled.versions } : {}),
           assessment: assessment ? formatAssessment(assessment) : null,
           // Beside the judgment, and present where there is none: it is
           // what says a quantity or a question has not been judged, which a

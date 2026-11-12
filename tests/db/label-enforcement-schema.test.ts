@@ -24,6 +24,7 @@ interface Catalog {
   judgmentGuards: string[];
   collisionGuards: number;
   labelFixedGuards: number;
+  ownLabelGuards: number;
 }
 
 async function catalog(tx: TxQuery): Promise<Catalog> {
@@ -42,7 +43,7 @@ async function catalog(tx: TxQuery): Promise<Catalog> {
   const guards = await tx.query<{ name: string; table_name: string }>(
     `SELECT g.tgname::text AS name, c.relname::text AS table_name
        FROM pg_trigger g JOIN pg_class c ON c.oid = g.tgrelid
-      WHERE g.tgname IN ('judgment_label_guard', 'unseen_collision_guard', 'label_fixed_guard')
+      WHERE g.tgname IN ('judgment_label_guard', 'unseen_collision_guard', 'label_fixed_guard', 'own_label_guard')
       ORDER BY c.relname`
   );
   return {
@@ -52,6 +53,7 @@ async function catalog(tx: TxQuery): Promise<Catalog> {
     judgmentGuards: guards.filter((g) => g.name === "judgment_label_guard").map((g) => g.table_name),
     collisionGuards: guards.filter((g) => g.name === "unseen_collision_guard").length,
     labelFixedGuards: guards.filter((g) => g.name === "label_fixed_guard").length,
+    ownLabelGuards: guards.filter((g) => g.name === "own_label_guard").length,
   };
 }
 
@@ -115,12 +117,13 @@ describe("with public the only label", () => {
       await publicOnly(tx);
       return catalog(tx);
     });
-    expect(now.labelled.length).toBe(98);
+    expect(now.labelled.length).toBe(99);
     expect(now.secured).toEqual([]);
     expect(now.policies).toEqual({});
     expect(now.judgmentGuards).toEqual([]);
     expect(now.collisionGuards).toBe(0);
     expect(now.labelFixedGuards).toBe(0);
+    expect(now.ownLabelGuards).toBe(0);
   });
 
   it("has every view in public reading with its caller's rights all the same, so none is ever a way past the policies", async () => {
@@ -137,9 +140,12 @@ describe("with public the only label", () => {
       );
     });
     expect(views).toEqual(
-      ["argument_evaluations_in_force", "assessments_in_force", "quantity_estimates_in_force", "question_assessments_in_force"].map(
-        (name) => ({ name, invoker: true })
-      )
+      [
+        "argument_evaluations_in_force", "argument_evaluations_versions",
+        "assessments_in_force", "assessments_versions",
+        "quantity_estimates_in_force", "quantity_estimates_versions",
+        "question_assessments_in_force", "question_assessments_versions",
+      ].map((name) => ({ name, invoker: true }))
     );
   });
 
@@ -208,16 +214,19 @@ describe("defining a second label", () => {
       return { during, after: await catalog(tx) };
     });
     expect(during.secured).toEqual(during.labelled);
-    expect(during.policies).toEqual({ label_clearance: 98, label_own_insert: 98, label_sql_read: 98 });
+    expect(during.policies).toEqual({ label_clearance: 99, label_own_insert: 99, label_sql_read: 99 });
     expect(during.judgmentGuards).toEqual(["argument_evaluations", "assessments", "quantity_estimates", "question_assessments"]);
     expect(during.collisionGuards).toBeGreaterThan(30);
     // Every labelled table keeps a row's label as it was written.
-    expect(during.labelFixedGuards).toBe(98);
+    expect(during.labelFixedGuards).toBe(99);
+    // And lets a cleared connection change or delete one only at its own label.
+    expect(during.ownLabelGuards).toBe(99);
     expect(after.secured).toEqual([]);
     expect(after.policies).toEqual({});
     expect(after.judgmentGuards).toEqual([]);
     expect(after.collisionGuards).toBe(0);
     expect(after.labelFixedGuards).toBe(0);
+    expect(after.ownLabelGuards).toBe(0);
   });
 
   it("lets the role the policies bind read the tables that say what a clearance is, and write none of them", async () => {
@@ -396,6 +405,7 @@ describe("the functions that run with their owner's rights", () => {
         "minerval_labels_changed",
         "minerval_sql_clearance",
         "minerval_unseen_collision_guard",
+        "minerval_version_standing",
       ]);
       for (const d of definers.rows) {
         expect(d.config, d.name).toEqual(["search_path=pg_catalog, pg_temp"]);

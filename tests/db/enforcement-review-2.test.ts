@@ -163,10 +163,12 @@ describe("C. work at one label does not write its words into a row at another", 
     await settle();
     const privateWords = "A-ONLY: timed out fetching https://partner-a.example/board/2026-margin-41pct.pdf";
     const second = await at(A, () => raiseIssue({ ...report, body: privateWords, claimId: claimIds[A] }));
-    expect(second).toMatchObject({ reportId: first.reportId, deduplicated: true, occurrenceCount: 2 });
+    // The report's own count does not move for a sighting at another label
+    // (work changes only rows at its own label); the sighting is its own row.
+    expect(second).toMatchObject({ reportId: first.reportId, deduplicated: true, occurrenceCount: 1 });
     // And by naming the report it joins.
     const third = await at(A, () => raiseIssue({ ...report, title: `${report.title} again`, body: privateWords, joins: first.reportId }));
-    expect(third).toMatchObject({ reportId: first.reportId, occurrenceCount: 3 });
+    expect(third).toMatchObject({ reportId: first.reportId, occurrenceCount: 1 });
     await settle();
 
     const [row] = await system(() =>
@@ -175,8 +177,8 @@ describe("C. work at one label does not write its words into a row at another", 
         [first.reportId]
       )
     );
-    // The public row has the count and none of the private run's words or ids.
-    expect(row).toEqual({ sensitivity_label: "public", body: "Timed out after 30s on a public PDF.", claim_id: null, occurrence_count: 3 });
+    // The public row is as it was: none of the private run's words or ids, and its count unmoved.
+    expect(row).toEqual({ sensitivity_label: "public", body: "Timed out after 30s on a public PDF.", claim_id: null, occurrence_count: 1 });
     // The account is in the sighting's own row, at the sighting's label.
     const sightings = await system(() =>
       rawQuery<{ sensitivity_label: string; body: string }>(

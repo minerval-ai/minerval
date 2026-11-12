@@ -106,18 +106,23 @@ export function isUnseenCollision(err: unknown): boolean {
 
 /**
  * What a caller is told when the wall refused its write, or null when the
- * error is anything else: the policy refused a row (ClearanceError), a
- * judgment at another label stood in the way (MVL02), a row with the same
- * identity exists at a label the work does not read (MVL03), or the write
- * would have changed a row's label (MVL04). These are refusals of what was
- * asked, with a reason the caller can act on, and not faults: the routes
- * answer them as a conflict, with this text.
+ * error is anything else: the policy refused a row (ClearanceError), the
+ * write would have retired another label's version of a judgment (MVL02),
+ * a row with the same identity exists at a label the work does not read
+ * (MVL03), the write would have changed a row's label (MVL04), it would
+ * have changed or deleted a row at a label other than the work's own
+ * (MVL06), or it would have recorded a version of a judgment with nothing
+ * at its label to rest on (MVL07). These are refusals of what was asked,
+ * with a reason the caller can act on, and not faults: the routes answer
+ * them as a conflict, with this text, and an agent's tool returns it.
  */
+const WALL_REFUSALS = new Set(["MVL02", "MVL03", "MVL04", "MVL06", "MVL07"]);
+
 export function refusalForCaller(err: unknown): string | null {
   const e = err as { code?: string; message?: string; hint?: string } | null;
   if (!e || typeof e.message !== "string") return null;
   if (err instanceof ClearanceError) return e.message;
-  if (e.code !== "MVL02" && e.code !== "MVL03" && e.code !== "MVL04") return null;
+  if (!WALL_REFUSALS.has(e.code ?? "")) return null;
   const sentence = `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}.`;
   return e.hint ? `${sentence} ${e.hint}` : sentence;
 }

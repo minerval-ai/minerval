@@ -209,13 +209,18 @@ export async function recordCut(input: {
   await withTransaction(async (tx) => {
     await requireKind(tx, input.claimId, "claim");
     await requireKind(tx, input.quantityId, "quantity");
-    await tx.query(
+    const written = await tx.query<{ claim_id: string }>(
       `INSERT INTO quantity_cuts (claim_id, quantity_id, direction, value, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (claim_id) DO UPDATE
-         SET quantity_id = EXCLUDED.quantity_id, direction = EXCLUDED.direction, value = EXCLUDED.value`,
+         SET quantity_id = EXCLUDED.quantity_id, direction = EXCLUDED.direction, value = EXCLUDED.value
+       ${sameLabelOnly("quantity_cuts")}
+       RETURNING claim_id`,
       [input.claimId, input.quantityId, input.direction, input.value, input.createdBy, currentLabel()]
     );
+    // A cut recorded at another label is that label's: work at this one is
+    // told that nothing was written, with the reason.
+    writtenAtOwnLabel(written, "this claim's cut of the quantity");
   });
 }
 

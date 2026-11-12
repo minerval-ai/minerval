@@ -41,7 +41,7 @@ import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
 import { withFeaturesOffNote } from "./features-off-note.js";
-import { labelNote, withLabelNote } from "./label-note.js";
+import { ROLES_THAT_WRITE_JUDGMENTS, labelNote, withLabelNote } from "./label-note.js";
 import { currentReadClearance } from "../db/client.js";
 import { enforcementLastKnown } from "../db/clearance.js";
 import { offFeatures } from "../features.js";
@@ -113,7 +113,9 @@ async function withRunLabel(messages: MessageParam[]): Promise<MessageParam[]> {
     if (known === true) throw err;
     return messages;
   }
-  return reads ? withLabelNote(messages, labelNote(currentLabel(), reads)) : messages;
+  if (!reads) return messages;
+  const writesJudgments = ROLES_THAT_WRITE_JUDGMENTS.has(getUsageContext().agent ?? "");
+  return withLabelNote(messages, labelNote(currentLabel(), reads, { writesJudgments }));
 }
 
 export async function complete(options: {

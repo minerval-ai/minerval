@@ -348,7 +348,11 @@ export async function refreshSourceFacts(
   const placeholderTitle = !row.title || row.title === row.url;
   if (placeholderTitle && next.title) filled.push("title");
 
-  await rawQuery(
+  // The facts are looked up about the document and are the same whoever
+  // asks, so they are written at the document's label, whichever run's
+  // fetch found them (src/labels.ts): no run writes into a row at a label
+  // that is not the write's own.
+  await runAtSourceLabel(sourceId, () => rawQuery(
     `UPDATE sources SET
        authors = CASE WHEN authors IS NULL OR cardinality(authors) = 0 THEN COALESCE($2::text[], authors) ELSE authors END,
        publisher = COALESCE(publisher, $3),
@@ -370,7 +374,7 @@ export async function refreshSourceFacts(
       placeholderTitle,
       next.title,
     ]
-  );
+  ));
 
   let eventsRecorded = 0;
   const fresh: SourceNotice[] = [];

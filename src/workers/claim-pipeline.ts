@@ -4,7 +4,7 @@ import { claims } from "../db/schema.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import type { QueuedClaimPipelineMessage } from "../services/queue-service.js";
 import { labelIsDefined, publicIsTheOnlyLabel } from "../services/label-service.js";
-import { runAtLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { MissingLabelError, PUBLIC_LABEL, UndefinedLabelError } from "../labels.js";
 
 /**
@@ -102,12 +102,18 @@ async function onboardClaim(claimId: string): Promise<void> {
     .select({
       id: claims.id,
       decompositionStatus: claims.decompositionStatus,
+      label: claims.sensitivityLabel,
     })
     .from(claims)
     .where(eq(claims.id, claimId))
     .limit(1);
 
   if (!claim) return;
+
+  // Onboarding hands a node to its own Steward for its first pass, and is
+  // the node's own label's work: a message at another label does not
+  // onboard it (a node's row is changed only by work at its own label).
+  if (claim.label !== currentLabel()) return;
 
   // Idempotency: only onboard once. "complete" here means "handed to the
   // Steward, which owns ongoing structure" — not that decomposition is frozen.

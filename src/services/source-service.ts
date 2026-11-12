@@ -33,7 +33,11 @@ export async function getOrCreateSource(input: {
     // that carries the text fills it in (and a placeholder title), or the
     // extraction worker re-fetches a URL the caller already had the text
     // for — arxiv answered that fetch with a 403 and a corpus post was lost.
-    if (!existing.rawContent && input.content) {
+    // The text a caller hands over is the caller's: it goes into the row
+    // only where the row is at the caller's own label. A row at another
+    // label is that label's to fill (the database refuses another's write),
+    // and its text comes from the address when a worker fetches it.
+    if (!existing.rawContent && input.content && existing.sensitivityLabel === currentLabel()) {
       const [updated] = await db
         .update(sources)
         .set({
@@ -91,13 +95,16 @@ export async function recordSourceKind(
             UPDATE sources s SET source_type = $2
               FROM prior
              WHERE s.id = $1 AND prior.source_type <> $2
+               -- What kind of document it is, as this reader judged it, is
+               -- written only into a row at the reader's own label.
+               AND s.sensitivity_label = $5
                AND ($3::boolean OR prior.source_type = 'unknown'
                     OR (prior.source_type = 'webpage' AND NOT $2 = ANY($4::text[])))
             RETURNING s.source_type)
      SELECT prior.source_type AS before,
             COALESCE((SELECT source_type FROM changed), prior.source_type) AS after
        FROM prior`,
-    [sourceId, kind, opts.read === true, [...GENERIC_SOURCE_KINDS]]
+    [sourceId, kind, opts.read === true, [...GENERIC_SOURCE_KINDS], currentLabel()]
   );
   if (!row) return { source_kind: kind };
   if (row.after === kind) return { source_kind: kind };

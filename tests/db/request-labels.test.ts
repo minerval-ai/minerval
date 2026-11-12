@@ -727,30 +727,39 @@ describe("the Assistant", () => {
       message: LABEL_MESSAGES.mismatch({ label: A, of: "Assistant conversation" }, "node", "public"),
     });
 
-    expect(JSON.parse(by("order_assessment elsewhere").text).error).toEqual({
-      code: "LABEL_MISMATCH",
-      message: LABEL_MESSAGES.mismatch({ label: A, of: "Assistant conversation" }, "node", "public"),
-    });
+    // Starting work on a node is not a change to the node: a conversation
+    // at A may order an assessment at A of a public node, which A reads.
+    // Like any order it is a card first, and it will write at A.
+    expect(JSON.parse(by("order_assessment elsewhere").text)).toMatchObject({ held: true });
     expect(JSON.parse(by("order_assessment").text)).toMatchObject({ held: true });
 
     // One card, for the call that can run. It says where it will write, and pressing it writes there.
     const read = (await as(both, { url: `/assistant/conversations/${id}` })).json().conversation;
     expect(read.label).toBe(A);
-    expect(read.held_actions).toHaveLength(1);
-    expect(read.held_actions[0]).toMatchObject({ tool: "order_assessment", status: "held", writes_at: A });
-    const pressed = await as(both, {
-      method: "POST",
-      url: `/assistant/conversations/${id}/held/${read.held_actions[0].id}`,
-      payload: { decision: "run" },
-    });
-    expect(pressed.statusCode, pressed.body).toBe(200);
-    const done = pressed.json().conversation.held_actions[0];
-    expect(done.status, JSON.stringify(done.result)).toBe("done");
-    const [order] = await rawQuery<{ sensitivity_label: string }>(
-      `SELECT sensitivity_label FROM assessment_orders WHERE user_id = $1 AND claim_id = $2`,
-      [both.id, claimAt[A]]
-    );
-    expect(order!.sensitivity_label).toBe(A);
+    expect(read.held_actions).toHaveLength(2);
+    for (const card of read.held_actions) expect(card).toMatchObject({ tool: "order_assessment", status: "held", writes_at: A });
+    for (const card of read.held_actions as Array<{ id: string }>) {
+      const pressed = await as(both, {
+        method: "POST",
+        url: `/assistant/conversations/${id}/held/${card.id}`,
+        payload: { decision: "run" },
+      });
+      expect(pressed.statusCode, pressed.body).toBe(200);
+      const done = (pressed.json().conversation.held_actions as Array<{ id: string; status: string; result: unknown }>).find(
+        (h) => h.id === card.id
+      )!;
+      expect(done.status, JSON.stringify(done.result)).toBe("done");
+    }
+    // Both orders are at the conversation's label: the one on the node at A,
+    // and the one on the public node, which is an assessment at A of a
+    // public claim and leaves public work on it alone.
+    for (const claim of [claimAt[A], claimAt.public]) {
+      const orders = await rawQuery<{ sensitivity_label: string }>(
+        `SELECT sensitivity_label FROM assessment_orders WHERE user_id = $1 AND claim_id = $2`,
+        [both.id, claim]
+      );
+      expect(orders).toEqual([{ sensitivity_label: A }]);
+    }
 
     // The next message is answered at the conversation's label, not asked for one.
     agents.runs = [];

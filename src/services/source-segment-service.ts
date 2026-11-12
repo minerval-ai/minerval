@@ -18,7 +18,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
-import { runAtLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
@@ -191,7 +191,14 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
   const text = htmlToText(row.raw_content);
   const drafts = segmentText(text);
 
-  await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1`, [sourceId]);
+  // An instance's anchor is a column of the instance, which is changed only
+  // by work at the instance's own label (db/clearance.ts). An instance at
+  // another label is anchored when work at its label next records or
+  // segments, and reads unanchored until then.
+  await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1 AND sensitivity_label = $2`, [
+    sourceId,
+    currentLabel(),
+  ]);
   // The source's label, not the label of whatever is segmenting. The
   // column is not `label`, which is a segment's heading.
   const sensitivityLabel = row.sensitivity_label;
@@ -242,8 +249,9 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
  */
 export async function anchorInstances(sourceId: string, knownText?: string): Promise<number> {
   const instances = await rawQuery<{ id: string; verbatim_text: string }>(
-    `SELECT id, verbatim_text FROM claim_instances WHERE source_id = $1 AND segment_id IS NULL`,
-    [sourceId]
+    `SELECT id, verbatim_text FROM claim_instances
+      WHERE source_id = $1 AND segment_id IS NULL AND sensitivity_label = $2`,
+    [sourceId, currentLabel()]
   );
   if (instances.length === 0) return 0;
   const segments = await rawQuery<{ id: string; kind: string; start: number; end: number }>(

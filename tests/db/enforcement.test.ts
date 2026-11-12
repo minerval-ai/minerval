@@ -34,6 +34,7 @@ import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { currentLabel, runAtLabel, runWithUsageContext, untraced, withAgent } from "../../src/llm/usage-context.js";
 import { LABEL_ON_REOPEN_SQL } from "../../src/services/action-service.js";
+import { groupAtLabel } from "../../src/services/ingest-focus-service.js";
 import { labelsReadableFrom } from "../../src/services/permission-service.js";
 import { keywordClaimSearch } from "../../src/services/search-service.js";
 import { runReadOnlyQuery, sqlClearanceToken } from "../../src/services/sql-service.js";
@@ -173,8 +174,8 @@ describe("the catalog, with a second label defined", () => {
     const facts = await enforcementFacts();
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
-    // The schema's ninety-eight (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(98);
+    // The schema's ninety-nine (tests/db/label-columns.test.ts lists them).
+    expect(facts.labelledTables.length).toBe(99);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
@@ -413,7 +414,7 @@ describe("every labelled table", () => {
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(98);
+    expect(written.size).toBe(99);
   });
 
   for (const reader of READERS) {
@@ -433,27 +434,46 @@ describe("every labelled table", () => {
     });
   }
 
-  it("lets a run change only the rows it reads, with no filter of its own", async () => {
-    // An UPDATE that names no label reaches what the clearance reaches and
-    // nothing else. It is rolled back, so the rows stay as the other tests
-    // expect them.
+  it("lets a run change only the rows at its own label, and refuses a change to one it reads at another", async () => {
+    // An UPDATE reaches what the clearance reaches and nothing else, and of
+    // those it changes only the rows at the run's own label. It is rolled
+    // back, so the rows stay as the other tests expect them.
     const rollback = new Error("rolled back by the test");
     const wrong: string[] = [];
     for (const [table, ctids] of written) {
       let touched: string[] = [];
       await at(A, () =>
         withTransaction(async (tx) => {
+          // Its own label's rows change. The statement names no label but
+          // the run's own: a row at B or C is not there for it at all.
           const rows = await tx.query<{ sensitivity_label: string }>(
-            `UPDATE "${table}" SET sensitivity_label = sensitivity_label WHERE ctid = ANY($1::tid[]) RETURNING sensitivity_label`,
+            `UPDATE "${table}" SET sensitivity_label = sensitivity_label
+              WHERE ctid = ANY($1::tid[]) AND sensitivity_label <> 'public' RETURNING sensitivity_label`,
             [ctids]
           );
           touched = sorted(rows.map((r) => r.sensitivity_label));
+          // A row it reads at another label is not its to change, and the
+          // refusal says so (the own_label_guard, MVL06).
+          const refused = await tx
+            .query(
+              `UPDATE "${table}" SET sensitivity_label = sensitivity_label WHERE ctid = ANY($1::tid[]) AND sensitivity_label = 'public'`,
+              [ctids]
+            )
+            .then(
+              () => "changed",
+              (e: unknown) => (e as { code?: string }).code ?? String(e)
+            );
+          touched.push(refused);
           throw rollback;
         })
       ).catch((err: unknown) => {
         if (err !== rollback) touched = [`error: ${err instanceof Error ? err.message : String(err)}`];
       });
-      if (JSON.stringify(touched) !== JSON.stringify(sorted([A, PUBLIC_LABEL]))) wrong.push(`${table}: ${touched.join(", ")}`);
+      // The two tables that hold money let settlement through: an update
+      // that changes nothing but an amount, as this one changes nothing at
+      // all, is allowed on another label's row (the money views' rule).
+      const other = table === "action_allocations" || table === "regrants" ? "changed" : "MVL06";
+      if (JSON.stringify(touched) !== JSON.stringify([A, other])) wrong.push(`${table}: ${touched.join(", ")}`);
     }
     expect(wrong).toEqual([]);
   });
@@ -619,6 +639,13 @@ describe("a write", () => {
   });
 
   /** The write was refused because it would have changed a row's label (MVL04). */
+  const refusedWith = async (code: string, write: () => Promise<unknown>) => {
+    const err = await write().then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect(sqlState(err), err instanceof Error ? err.message : String(err)).toBe(code);
+  };
   const labelStays = async (write: () => Promise<unknown>) => {
     const err = await write().then(
       () => null,
@@ -690,15 +717,13 @@ describe("a write", () => {
     await system(() => rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [atA!.id, A]));
   });
 
-  // The one change of label there is: a ledger row stands for its group's
-  // next piece of work, so a finished row that is opened again takes the
-  // label of the work that reopens it (LABEL_ON_REOPEN_SQL in
-  // services/action-service.ts). The trigger lets exactly that through: the
-  // row was finished by name, the statement opens it, the new label is the
-  // connection's own, and the new label reads the old one. A second review
-  // found the first version of this let any update move a row that was not
-  // open or running, down to public included.
-  it("lets a finished ledger row take the label of the work that reopens it, and nothing near that", async () => {
+  // A ledger row's label never changes. Work on something several labels
+  // can work on has a key for each label (groupAtLabel in
+  // services/ingest-focus-service.ts), so a finished row is only ever
+  // reopened by work at its own label, and the exception the trigger used
+  // to make for a reopening is gone: work at another label that names the
+  // same key is refused, and the row stays as it was.
+  it("keeps a ledger row at the label it was opened at, whoever names its key again", async () => {
     const group = `enf-reopen:${randomUUID()}`;
     const [row] = await system(() =>
       rawQuery<{ id: string }>(
@@ -714,8 +739,6 @@ describe("a write", () => {
           [row!.id]
         )
       ))[0]!;
-    const set = (status: string, label: string) =>
-      system(() => rawQuery(`UPDATE actions SET status = $2, sensitivity_label = $3 WHERE id = $1`, [row!.id, status, label]));
     /** The application's own upsert, as every producer writes it. */
     const reopen = (stamp: string, words: string) =>
       rawQuery(
@@ -726,43 +749,26 @@ describe("a write", () => {
                ${LABEL_ON_REOPEN_SQL}`,
         [group, stamp, `${words} (target)`, words]
       );
+    const asIs = { status: "done", l: PUBLIC_LABEL, label: "The public work's words", target_ref: "the public work's target" };
     try {
-      // Finished at public; work at a reopens it. It is that work's row now,
-      // and nothing of the public work's text is left in it.
-      await at(A, () => reopen(A, "Words at a"));
-      expect(await state()).toEqual({ status: "open", l: A, label: "Words at a", target_ref: "Words at a (target)" });
-      // Open: work at c, which reads a, joins it. The row keeps its label
-      // and its text; c's words do not go into a's row.
-      await at(C, () => reopen(C, "Words at c"));
-      expect(await state()).toEqual({ status: "open", l: A, label: "Words at a", target_ref: "Words at a (target)" });
-      // An open row is not handed over by a plain update either.
-      await labelStays(() => at(C, () => rawQuery(`UPDATE actions SET sensitivity_label = $2 WHERE id = $1`, [row!.id, C])));
-
-      // Finished again, at a. None of these is a reopening by work whose label reads a:
-      await set("done", A);
-      // a relabel with no reopening (the status stays as it was);
-      await labelStays(() => at(C, () => rawQuery(`UPDATE actions SET sensitivity_label = $2 WHERE id = $1`, [row!.id, C])));
-      // a reopening to a label other than the connection's own;
+      // Work at a, which reads the row, names the same key. The row is not
+      // a's to change, and nothing of a's is written into it.
+      await refusedWith("MVL06", () => at(A, () => reopen(A, "Words at a")));
+      expect(await state()).toEqual(asIs);
+      // Nor is its label changed by a plain update, to any label, by anyone held to a clearance.
+      await labelStays(() => at(A, () => rawQuery(`UPDATE actions SET sensitivity_label = $2 WHERE id = $1`, [row!.id, A])));
       await labelStays(() =>
-        at(C, () => rawQuery(`UPDATE actions SET status = 'open', sensitivity_label = 'public' WHERE id = $1`, [row!.id]))
+        at(PUBLIC_LABEL, () => rawQuery(`UPDATE actions SET status = 'open', sensitivity_label = $2 WHERE id = $1`, [row!.id, A]))
       );
-      // a person cleared for a, whose request writes at public: down, to where everyone reads it;
-      const asPerson = <T>(fn: () => Promise<T>) => runWithUsageContext({ clearance: [PUBLIC_LABEL, A] }, fn);
-      await labelStays(() => asPerson(() => rawQuery(`UPDATE actions SET sensitivity_label = 'public' WHERE id = $1`, [row!.id])));
-      await labelStays(() => asPerson(() => reopen(PUBLIC_LABEL, "Words of a public request")));
-      // and a row in a status that is not one of the finished ones by name.
-      await set("blocked", A);
-      await labelStays(() =>
-        at(C, () => rawQuery(`UPDATE actions SET status = 'open', sensitivity_label = $2 WHERE id = $1`, [row!.id, C]))
-      );
-      expect(await state()).toMatchObject({ status: "blocked", l: A, label: "Words at a" });
-      // A public-only reader never came to read the row.
-      expect(await rawQuery(`SELECT 1 FROM actions WHERE id = $1`, [row!.id])).toEqual([]);
-
-      // Finished at a; work at c, which reads a, reopens it.
-      await set("cancelled", A);
-      await at(C, () => reopen(C, "Words at c"));
-      expect(await state()).toEqual({ status: "open", l: C, label: "Words at c", target_ref: "Words at c (target)" });
+      expect(await state()).toEqual(asIs);
+      // Work at the row's own label reopens it, and it is that work's row: its text and its target are replaced.
+      await at(PUBLIC_LABEL, () => reopen(PUBLIC_LABEL, "The next public work"));
+      expect(await state()).toEqual({
+        status: "open", l: PUBLIC_LABEL, label: "The next public work", target_ref: "The next public work (target)",
+      });
+      // The key the application gives work at a on the same subject is a's own.
+      expect(groupAtLabel(group, A)).toBe(`${group} @${A}`);
+      expect(groupAtLabel(group, PUBLIC_LABEL)).toBe(group);
     } finally {
       await system(() => rawQuery(`DELETE FROM actions WHERE id = $1`, [row!.id]));
     }
@@ -801,8 +807,12 @@ describe("a write", () => {
     const [derived] = await at(C, () => at(A, () => insertAt(A)));
     cleanup.push(derived!.id);
     expect(derived!.sensitivity_label).toBe(A);
-    // A change to a row it reads needs no such step.
-    expect(await at(C, () => rawQuery(`UPDATE claims SET importance = importance WHERE id = $1 RETURNING id`, [derived!.id]))).toHaveLength(1);
+    // A change to a row it reads at another label takes the same step:
+    // made from C it is refused, and made at A it lands.
+    await refusedWith("MVL06", () => at(C, () => rawQuery(`UPDATE claims SET importance = importance WHERE id = $1 RETURNING id`, [derived!.id])));
+    expect(
+      await at(C, () => at(A, () => rawQuery(`UPDATE claims SET importance = importance WHERE id = $1 RETURNING id`, [derived!.id])))
+    ).toHaveLength(1);
   });
 
   it("cannot reach a row the run does not read: an update or a delete finds nothing", async () => {
@@ -878,19 +888,21 @@ describe("a node's judgment in force", () => {
     expect(await inForce(claimId)).toEqual([{ sensitivity_label: PUBLIC_LABEL }]);
   });
 
-  it("is not retired by a run at another label that reads it: the label below keeps its judgment", async () => {
+  it("is not retired by a run at another label that reads it: each label keeps its own version", async () => {
+    // This helper retires whatever is current on the node, as no write seam
+    // does any more: the public version is not a run at A's to retire.
     const err = await at(A, () => assess(claimId)).then(
       () => null,
       (e: unknown) => e
     );
     expect(sqlState(err)).toBe("MVL02");
     expect((err as Error).message).toBe(
-      "the judgment in force on this node was recorded at another label, and this work may not retire it"
+      "this version of the node's judgment was recorded at another label, and this work may neither retire it nor bring it back"
     );
     expect(await inForce(claimId)).toEqual([{ sensitivity_label: PUBLIC_LABEL }]);
   });
 
-  it("is not collided with by a run that cannot see it: the write is refused with the reason, not as a duplicate", async () => {
+  it("at a label a run cannot see is no obstacle to its own, which still needs material at its own label", async () => {
     await system(async () => {
       await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1`, [claimId]);
       await rawQuery(
@@ -899,14 +911,18 @@ describe("a node's judgment in force", () => {
         [claimId, B]
       );
     });
-    // A run at A sees no judgment in force on this public claim, and records one.
+    // A run at A sees no judgment on this public claim. A version of its own
+    // would not collide with B's, which it cannot see: a node carries one
+    // at each label. But nothing at A bears on the node, so there is
+    // nothing at A to judge, and the write is refused with that reason
+    // (tests/db/judgments-per-label.test.ts has the version that is stored).
     const err = await at(A, () => assess(claimId)).then(
       () => null,
       (e: unknown) => e
     );
-    expect(sqlState(err)).toBe("MVL02");
+    expect(sqlState(err)).toBe("MVL07");
     expect((err as Error).message).toBe(
-      "this node's judgment in force was recorded at another label, so this one was not recorded"
+      `this version was not recorded: nothing at the label "${A}" bears on the node, which carries the label "public"`
     );
     expect(await inForce(claimId)).toEqual([{ sensitivity_label: B }]);
   });

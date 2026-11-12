@@ -36,7 +36,7 @@ import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.
 import { segmentText } from "./source-segment-service.js";
 import { flagIngest, queueLookoutEvent } from "./lookout-service.js";
 import { normalizeFocus } from "./ingest-focus-service.js";
-import { runAtLookoutLabelOutsideAnyRun } from "./label-service.js";
+import { runAtLookoutLabel } from "./label-service.js";
 
 const USER_AGENT = "Minerval/1.0 (lookout feeds; mailto:hello@minerval.ai)";
 
@@ -746,14 +746,25 @@ export async function addFeed(input: {
   createdBy: string;
 }): Promise<AddFeedResult> {
   if (!isUuid(input.lookoutId)) return { ok: false, code: "NOT_FOUND", problem: "No such lookout on this mandate" };
-  const [lookout] = await rawQuery<{ id: string; grant_id: string; status: string }>(
-    `SELECT id, grant_id, status FROM lookouts WHERE id = $1`,
+  const [lookout] = await rawQuery<{ id: string; grant_id: string; status: string; sensitivity_label: string }>(
+    `SELECT id, grant_id, status, sensitivity_label FROM lookouts WHERE id = $1`,
     [input.lookoutId]
   );
   if (!lookout || lookout.grant_id !== input.grantId) {
     return { ok: false, code: "NOT_FOUND", problem: "No such lookout on this mandate" };
   }
   if (lookout.status === "retired") return { ok: false, code: "RETIRED", problem: "That lookout is retired" };
+  // A lookout's feeds are the lookout's own, changed by work at its label
+  // (work changes only rows at its own label, db/clearance.ts).
+  if (lookout.sensitivity_label !== currentLabel()) {
+    return {
+      ok: false,
+      code: "OTHER_LABEL",
+      problem:
+        `That lookout is labeled "${lookout.sensitivity_label}" and this work is at "${currentLabel()}". ` +
+        `A lookout's feeds are changed by work at the lookout's own label. Nothing was changed.`,
+    };
+  }
   const rule = normalizeFeedRule(input.rule ?? {});
   if (typeof rule === "string") return { ok: false, code: "RULE", problem: rule };
   const [count] = await rawQuery<{ n: number }>(
@@ -950,12 +961,13 @@ export async function pollFeed(
   feed: FeedRow,
   opts: { now?: Date; parsed?: ParsedFeed } = {}
 ): Promise<FeedPollResult> {
-  // The poller is a timer, outside any run, and the poll is the lookout's
-  // work: the items it records, the wake it queues and the ingests an
-  // auto_ingest feed raises are written at the lookout's label
-  // (label-service.ts). A poll made from inside a run (a Grantmaker adding
-  // the feed) is that run's.
-  return runAtLookoutLabelOutsideAnyRun(feed.lookout_id, () => pollFeedAtLabel(feed, opts));
+  // The poll is the lookout's work, whoever starts it: the poller's timer,
+  // or a run that reads the lookout. What a feed holds is the same whoever
+  // asks, and the items the poll records, the wake it queues, the ingests
+  // an auto_ingest feed raises and the feed's own bookkeeping are written
+  // at the lookout's label (label-service.ts), which for the lookout's own
+  // runs is the label they already have.
+  return runAtLookoutLabel(feed.lookout_id, () => pollFeedAtLabel(feed, opts));
 }
 
 async function pollFeedAtLabel(

@@ -20,6 +20,7 @@
  * model's call into a service call and a refusal into a message the agent
  * can act on. `executeKindTool` returns null for a name it does not own.
  */
+import { refusalForCaller } from "../../db/clearance.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedAliasRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
@@ -921,6 +922,8 @@ export async function executeKindTool(
   } catch (err) {
     if (err instanceof ZodError) return refuse(`Not recorded: ${zodMessage(err)}.`);
     if (err instanceof KindError || err instanceof RequestError) return refuse(err.message);
+    const refusal = refusalForCaller(err);
+    if (refusal) return refuse(refusal);
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
