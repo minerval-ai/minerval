@@ -1066,7 +1066,7 @@ These act through tools over the life of a claim and the graph:
   any suspension that has stood unexamined too long — both idempotent through
   a DB dedupe key, so concurrent processes never double-run an audit. Each
   request opens an `audit` ledger action, funded by the platform's
-  Governance mandate (or, for a prize audit, the bounty's review reserve)
+  General mandate (or, for a prize audit, the bounty's review reserve)
   and never by the mandate the audit examines (docs/allocation.md,
   "Maintenance and audit").
   Findings are persisted rows (`audit_findings`, attached to their
