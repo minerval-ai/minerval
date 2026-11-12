@@ -242,6 +242,7 @@ ALTER TABLE "source_interests" ALTER COLUMN "sensitivity_label" SET DEFAULT mine
 ALTER TABLE "source_relationships" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "source_segments" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "sources" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
+ALTER TABLE "stated_views" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "taggings" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 ALTER TABLE "tags" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
 -- A label's name is written into a connection's settings as an element of

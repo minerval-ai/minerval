@@ -901,8 +901,22 @@
     {
       "idx": 128,
       "version": "7",
-      "when": 1794497017193,
-      "tag": "0128_label_enforcement",
+      "when": 1794495765868,
+      "tag": "0128_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1794497263933,
+      "tag": "0129_stated_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1794502560220,
+      "tag": "0130_label_enforcement",
       "breakpoints": true
     }
   ]
