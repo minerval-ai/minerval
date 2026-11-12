@@ -13,7 +13,7 @@ import {
   listOrders,
   cancelOrder,
   getOpenOrderForClaim,
-  serializeOrder,
+  serializeOrders,
 } from "../services/order-service.js";
 import { getDb } from "../db/client.js";
 import { assessmentOrders } from "../db/schema.js";
@@ -36,10 +36,10 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.auth!.userId!;
       if (request.query.claim_id) {
         const order = await getOpenOrderForClaim(userId, request.query.claim_id);
-        return reply.send({ orders: order ? [serializeOrder(order)] : [] });
+        return reply.send({ orders: order ? await serializeOrders([order]) : [] });
       }
       const orders = await listOrders(userId);
-      return reply.send({ orders: orders.map(serializeOrder) });
+      return reply.send({ orders: await serializeOrders(orders) });
     },
   });
 
@@ -70,7 +70,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: "Order not found", code: "NOT_FOUND" });
       }
-      return reply.send({ order: serializeOrder(order) });
+      return reply.send({ order: (await serializeOrders([order]))[0] });
     },
   });
 
