@@ -330,3 +330,79 @@ describe("permissions in words", () => {
     expect(membersOnly({ reads: "members" })).toBe(true);
   });
 });
+
+describe("the settings", () => {
+  async function config(env: Record<string, string>) {
+    setEnv({ ENVIRONMENT: "staging", ...env });
+    return (await import("../../../src/config.js")).loadConfig();
+  }
+
+  it("start as the public graph: open, no first administrator, twelve hours", async () => {
+    const c = await config({});
+    expect(c.reads).toBe("open");
+    expect(c.firstAdministrator).toBe("");
+    expect(c.signInValidHours).toBe(12);
+  });
+
+  it("take members, a sign-in identity, and a number of hours", async () => {
+    const c = await config({ READS: "members", FIRST_ADMINISTRATOR: " oidc:00u1abcd ", SIGN_IN_VALID_HOURS: "8" });
+    expect(c.reads).toBe("members");
+    expect(c.firstAdministrator).toBe("oidc:00u1abcd");
+    expect(c.signInValidHours).toBe(8);
+  });
+
+  it("refuse a value that is neither, and a first administrator that is not an identity", async () => {
+    await expect(config({ READS: "private" })).rejects.toThrow();
+    await expect(config({ FIRST_ADMINISTRATOR: "alice@example.org" })).rejects.toThrow(
+      /FIRST_ADMINISTRATOR must be a sign-in identity of the form/
+    );
+    await expect(config({ SIGN_IN_VALID_HOURS: "0" })).rejects.toThrow();
+  });
+});
+
+describe("what an outside MCP caller is told", () => {
+  it("is nothing more on the public graph, and the tools its permissions leave out in a members-only deployment", async () => {
+    const auth = (grants: Array<{ permission: string }>) => ({
+      method: "api_key" as const,
+      userId: "u",
+      apiKeyId: "k",
+      contributorExternalId: "x:u",
+      isService: false,
+      isSession: false,
+      standing: {
+        member: true,
+        grants: grants.map((g) => ({ ...g, label: null, partyId: null, group: null })),
+        clearance: ["public"],
+        rawSourceLabels: ["public"],
+        groups: [],
+      },
+    });
+    const instructionsFor = async (env: Record<string, string>, grants: Array<{ permission: string }>) => {
+      setEnv({ ENVIRONMENT: "staging", API_KEYS: "k", ...env });
+      const { buildApp } = await import("../../../src/server/app.js");
+      const { buildMcpServer } = await import("../../../src/mcp/server.js");
+      const { MCP_INSTRUCTIONS } = await import("../../../src/mcp/caller-skills.js");
+      const app = await buildApp();
+      await app.ready();
+      try {
+        const server = buildMcpServer({ auth: auth(grants) as never, requestId: "r", app });
+        const instructions = (server.server as unknown as { _instructions?: string })._instructions ?? "";
+        return { instructions, base: MCP_INSTRUCTIONS };
+      } finally {
+        await app.close();
+      }
+    };
+
+    const open = await instructionsFor({}, []);
+    expect(open.instructions).toBe(open.base);
+
+    const limited = await instructionsFor({ READS: "members" }, [{ permission: "fund" }]);
+    expect(limited.instructions.startsWith(limited.base)).toBe(true);
+    expect(limited.instructions).toContain("your user does not hold all of them");
+    expect(limited.instructions).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
+    expect(limited.instructions).not.toMatch(/Without the permission to fund work/);
+
+    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }]);
+    expect(all.instructions).toBe(all.base);
+  });
+});

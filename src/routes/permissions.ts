@@ -4,19 +4,19 @@
  * "Members-only deployments"). Mounted only where READS=members
  * (server/app.ts), so the public graph has none of them.
  *
- *   GET    /permissions                    — what each permission covers.
- *   GET    /permissions/mine               — what the signed-in account holds.
- *   GET    /permissions/log                — every grant, removal and
+ *   GET    /permissions: what each permission covers.
+ *   GET    /permissions/mine: what the signed-in account holds.
+ *   GET    /permissions/log: every grant, removal and
  *     administrative change, newest first. Any member may read it.
- *   GET    /permissions/grants             — who holds what now.
- *   POST   /permissions/grants             — grant one permission.
- *   DELETE /permissions/grants/:grant_id   — remove a grant (the row stays).
- *   GET    /permissions/accounts           — the accounts, their groups and grants.
- *   GET    /parties, POST /parties         — whose material the graph holds.
- *   PUT    /sources/:source_id/party       — whose material one source is.
- *   GET    /labels, POST /labels           — the labels and which reads which.
+ *   GET    /permissions/grants: who holds what now.
+ *   POST   /permissions/grants: grant one permission.
+ *   DELETE /permissions/grants/:grant_id: remove a grant (the row stays).
+ *   GET    /permissions/accounts: the accounts, their groups and grants.
+ *   GET    /parties, POST /parties: whose material the graph holds.
+ *   PUT    /sources/:source_id/party: whose material one source is.
+ *   GET    /labels, POST /labels: the labels and which reads which.
  *   POST   /labels/:label/reads, DELETE /labels/:label/reads/:reads
- *   POST   /operator/administrators        — the operator key's way back in.
+ *   POST   /operator/administrators: the operator key's way back in.
  *
  * Who may call what. The reads of who holds what, and every write, need
  * the permission to administer. The writes also need a signed-in session,

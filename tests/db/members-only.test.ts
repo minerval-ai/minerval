@@ -47,6 +47,8 @@ const UUID = "11111111-1111-4111-8111-111111111111";
 const concrete = (url: string) => url.replace(/:[A-Za-z_]+/g, UUID);
 
 let app: FastifyInstance;
+/** Labels a test defined through the API, removed again when the file is done. */
+const definedLabels: string[] = [];
 
 interface Person {
   id: string;
@@ -107,6 +109,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  // The scratch database is shared with every other file in the suite, and
+  // the labels tests count rows: leave the tables this file wrote as an
+  // open deployment has them.
+  await rawQuery(`DELETE FROM administrative_events`);
+  await rawQuery(`DELETE FROM permission_grants`);
+  await rawQuery(`DELETE FROM account_groups`);
+  await rawQuery(`UPDATE sources SET party_id = NULL WHERE party_id IS NOT NULL`);
+  await rawQuery(`DELETE FROM parties`);
+  await rawQuery(`DELETE FROM label_reads`);
+  await rawQuery(`DELETE FROM labels WHERE name = ANY($1::text[])`, [["restricted", "partner-a", ...definedLabels]]);
 });
 
 describe("someone who is not signed in", () => {
@@ -516,6 +528,7 @@ describe("parties and labels", () => {
 
   it("defines labels and which reads which, and never lets public read anything", async () => {
     const name = `l${randomUUID().slice(0, 8)}`;
+    definedLabels.push(name);
     const made = await as(admin, { method: "POST", url: "/labels", payload: { name, description: "For a test.", reads: ["internal", "public"] } });
     expect(made.statusCode, made.body).toBe(201);
     const label = made.json().labels.find((l: { name: string }) => l.name === name);
