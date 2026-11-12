@@ -4521,6 +4521,46 @@ export const reconciliationEvents = pgTable("reconciliation_events", {
 });
 
 // ---------------------------------------------------------------------------
+// claim_state_changes
+//
+// One row per change to a node's lifecycle state (claims.state): archived,
+// restored, merged, un-merged, deprecated (#962). The state column says what a
+// node is now; this says when it became so, who did it, why, and which nodes
+// carry on what it stated (`successor_ids`: a merge's survivor, a split's
+// parts). Before it, an archive was a bare UPDATE and left a node reading as
+// dead with nothing to say who retired it or where its proposition went.
+// Append-only. The node's history (claim events), the changes stream and the
+// refusal a write to a retired node meets all read it.
+// ---------------------------------------------------------------------------
+export const claimStateChanges = pgTable(
+  "claim_state_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    fromState: text("from_state").notNull(),
+    toState: text("to_state").notNull(),
+    // Who made the change: 'curator' for surgery, 'operator:<name>' for a
+    // script an operator ran.
+    actor: text("actor").notNull(),
+    reason: text("reason").notNull(),
+    // Nodes that carry on what this one stated, when there are any.
+    successorIds: uuid("successor_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // The cohort an archive script retired the node with (its file's name or
+    // epoch tag), so one retirement reads as one act.
+    cohort: text("cohort"),
+    // The Curator's reversible-surgery event the change was part of.
+    reconciliationEventId: uuid("reconciliation_event_id").references(() => reconciliationEvents.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_claim_state_changes_claim").on(table.claimId, table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
 // audit_log
 //
 // The durable stewardship audit trail (#100). The constitution and the
