@@ -119,8 +119,8 @@ export type ActionKind =
   | "curate"
   // One Audit Agent run (#363): group `audit:<audit_runs.id>`, target_ref the
   // run id. Opened by requestAudit behind its dedupe key; funded by a
-  // mandate that values it (the platform's Governance mandate) or, for a
-  // prize audit, from the bounty's prize-review reserve. A mandate never
+  // mandate that values it (the platform's General mandate, as upkeep) or,
+  // for a prize audit, from the bounty's prize-review reserve. A mandate never
   // values or funds an audit whose subject it is (audit_runs.subject_grant_id).
   | "audit"
   // Take up one request (Part VIII): a Researcher run on the request as

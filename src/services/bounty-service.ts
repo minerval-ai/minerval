@@ -1162,7 +1162,7 @@ export async function fundPrizeAuditFromReserve(
   if (amount <= 0) return 0;
   // A reserve that holds the audit's whole budget commissions it; a short
   // one puts what it holds on the row, and the rest is asked of the
-  // Governance mandates' officers, whose commission then runs it.
+  // General mandate's officers, whose commission then runs it.
   const whole = amount >= cost;
   await r.query(
     `INSERT INTO action_allocations

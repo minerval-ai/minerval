@@ -2,8 +2,8 @@
  * requestAudit (#180, #363): the audit_runs row is created first and doubles
  * as the dedupe gate — a lost INSERT conflict means no duplicate run — and
  * then opens the run's `audit` ledger action, which is funded like any other
- * work: from the bounty's reserve for a prize audit, else by the Governance
- * mandate's valuation, offered at once rather than at the next sweep.
+ * work: from the bounty's reserve for a prize audit, else put to the General
+ * mandate's officers, offered at once rather than at the next sweep.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
