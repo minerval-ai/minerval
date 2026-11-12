@@ -29,18 +29,20 @@ const ROW = {
 };
 
 const mocks = vi.hoisted(() => ({
-  listFindings: vi.fn(),
+  findingsPage: vi.fn(),
   getFindingById: vi.fn(),
   listFindingSightings: vi.fn(),
   setFindingStatus: vi.fn(),
+  describeAssessmentRefs: vi.fn(async () => []),
 }));
 
 vi.mock("../../../src/services/finding-service.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../src/services/finding-service.js")>()),
-  listFindings: mocks.listFindings,
+  findingsPage: mocks.findingsPage,
   getFindingById: mocks.getFindingById,
   listFindingSightings: mocks.listFindingSightings,
   setFindingStatus: mocks.setFindingStatus,
+  describeAssessmentRefs: mocks.describeAssessmentRefs,
 }));
 
 import { findingRoutes } from "../../../src/routes/findings.js";
@@ -61,7 +63,7 @@ async function buildApp(isService: boolean) {
 }
 
 beforeEach(() => {
-  mocks.listFindings.mockReset().mockResolvedValue([ROW]);
+  mocks.findingsPage.mockReset().mockResolvedValue({ rows: [ROW], total: 1, facets: null });
   mocks.getFindingById.mockReset().mockResolvedValue(ROW);
   mocks.listFindingSightings.mockReset().mockResolvedValue([
     {
@@ -89,7 +91,7 @@ describe("GET /findings", () => {
       url: `/findings?claim_id=${CLAIM_ID}&tag=number-theory&min_importance=4&order=importance&limit=5`,
     });
     expect(res.statusCode).toBe(200);
-    expect(mocks.listFindings).toHaveBeenCalledWith(
+    expect(mocks.findingsPage).toHaveBeenCalledWith(
       expect.objectContaining({
         claimId: CLAIM_ID,
         tag: "number-theory",
@@ -100,6 +102,8 @@ describe("GET /findings", () => {
       })
     );
     const body = res.json();
+    expect(body.total).toBe(1);
+    expect(body.facets).toBeUndefined();
     expect(body.findings).toHaveLength(1);
     expect(body.findings[0]).toMatchObject({
       id: FINDING_ID,
@@ -109,6 +113,38 @@ describe("GET /findings", () => {
       refs: [{ kind: "assessment", id: ASSESSMENT_ID }],
       first_noted_at: "2026-09-03T00:00:00.000Z",
     });
+  });
+
+  it("passes a search, the agents of a role, the claim's status, and the ask for facets", async () => {
+    mocks.findingsPage.mockResolvedValue({
+      rows: [ROW],
+      total: 12,
+      facets: { agents: [{ agent: "steward", count: 12 }], claim_statuses: [], tags: [], importance: [] },
+    });
+    const app = await buildApp(false);
+    const res = await app.inject({
+      method: "GET",
+      url: "/findings?q=abstainer%20bias&agent=steward,claim_steward&claim_status=doubtful&facets=true",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.findingsPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "abstainer bias",
+        agents: ["steward", "claim_steward"],
+        claimStatus: "doubtful",
+        facets: true,
+        // A search with no order asked for comes back closest first.
+        order: "relevance",
+      })
+    );
+    expect(res.json().total).toBe(12);
+    expect(res.json().facets.agents).toEqual([{ agent: "steward", count: 12 }]);
+  });
+
+  it("lists newest first when there is no search", async () => {
+    const app = await buildApp(false);
+    await app.inject({ method: "GET", url: "/findings" });
+    expect(mocks.findingsPage).toHaveBeenCalledWith(expect.objectContaining({ order: "recent" }));
   });
 
   it("rejects an out-of-range importance filter", async () => {
