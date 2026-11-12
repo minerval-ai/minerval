@@ -314,6 +314,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /billing/checkout": SESSION_ONLY,
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 
+  "GET /setup/preflight":
+    "Reports this deployment's configuration to whoever runs it (which keys " +
+    "are missing, where reports are filed, the state of the database): " +
+    "requires the operator key, which is held outside every deployment " +
+    "surface, an MCP client included (docs/deployment.md).",
   "POST /operator/platform-mandates/fund": OPERATOR_ONLY,
   "POST /operator/platform-grantmaking-keys": OPERATOR_ONLY,
   "GET /operator/platform-grantmaking-keys": OPERATOR_ONLY,
