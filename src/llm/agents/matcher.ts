@@ -8,11 +8,8 @@ import { findSimilarClaims, keywordClaimSearch } from "../../services/search-ser
 import { SIMILAR_CLAIMS_FLOOR } from "../tools/graph-tools.js";
 import { loadConfig } from "../../config.js";
 import { getUsageContext, runBudget, withAgent, withPassBudget, withSkills } from "../usage-context.js";
-import {
-  claimReadMiss,
-  executeGraphReadTool,
-  getGraphReadToolDefinitions,
-} from "../tools/graph-read-tools.js";
+import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
+import { SeenIds, resolveId } from "../seen-ids.js";
 import { createReportTools } from "../tools/report-tools.js";
 import {
   MATCHED_INSTANCE_STANCES,
@@ -236,81 +233,27 @@ async function matchClaimImpl(input: {
   };
   const searchLog: Array<{ query: string; results: SearchHit[] }> = [];
 
-  // Every claim id the Matcher has been shown (#470). Its searches are its
-  // only source of ids, so an id in a submitted decision that none of them
-  // returned is a transcription error: a model retyping a UUID into its
+  // Every claim id the Matcher's searches returned (#470). They are its
+  // only source of candidates, so an id in a submitted decision that none of
+  // them returned is a transcription error: a model retyping a UUID into its
   // structured output has spliced two neighbours' ids into one that resolves
   // to nothing, and a caller told to weigh alternative_matches then reads a
-  // phantom near-miss as evidence. Resolve each submitted id against this
-  // set: exact, or by its first UUID group when that names one retrieved
-  // claim; anything else is not an id the Matcher could have meant.
+  // phantom near-miss as evidence. Each submitted id is resolved against
+  // this set by the one rule every agent's reads use (seen-ids.ts): exact,
+  // or the one retrieved id it most plausibly meant; anything else is not
+  // an id the Matcher could have meant.
   const retrievedIds = new Set<string>();
-  const UUID_GROUP_CHARS = 8;
   const resolveRetrievedId = (id: unknown): string | null => {
-    if (typeof id !== "string" || id.length === 0) return null;
-    if (retrievedIds.has(id)) return id;
-    if (id.length < UUID_GROUP_CHARS) return null;
-    const group = id.slice(0, UUID_GROUP_CHARS);
-    const candidates = [...retrievedIds].filter((r) => r.startsWith(group));
-    return candidates.length === 1 ? candidates[0]! : null;
+    const r = resolveId(retrievedIds, id);
+    return r.kind === "exact" || r.kind === "repaired" ? r.id : null;
   };
 
-  // The same repair for the Matcher's reads (#884). A get_claim on a retyped
-  // id answered "not found", and the Matcher, sure a search had returned
-  // that id, filed the miss as a fault in the graph and judged its leading
-  // candidate on wording alone. An id is read as given first: one a search
-  // returned is right by construction, and the prompt can carry ids no
-  // search returned. Only when that read finds no node is the id resolved
-  // against this run's retrieved ids, by the one rule above, so a repair
-  // needs exactly one candidate. A repaired read says so and names both
-  // ids; a miss that cannot be repaired lists what the searches returned.
-  const RETRIEVED_TEXT_CHARS = 160;
-  const retrievedHits = (): Array<{ id: string; canonical_form: string }> => {
-    const byId = new Map<string, string>();
-    for (const entry of searchLog) {
-      for (const hit of entry.results) {
-        if (byId.has(hit.id)) continue;
-        const text = hit.canonical_form;
-        byId.set(hit.id, text.length > RETRIEVED_TEXT_CHARS ? `${text.slice(0, RETRIEVED_TEXT_CHARS - 1)}…` : text);
-      }
-    }
-    return [...byId].map(([id, canonical_form]) => ({ id, canonical_form }));
-  };
-  const readNode = async (name: string, toolInput: Record<string, unknown>): Promise<string> => {
-    const first = (await executeGraphReadTool(name, toolInput)) ?? `Error: Unknown tool: ${name}`;
-    if (claimReadMiss(first) === null) return first;
-    const requested = toolInput.claim_id;
-    const repaired = resolveRetrievedId(requested);
-    if (repaired !== null && repaired !== requested) {
-      const second = await executeGraphReadTool(name, { ...toolInput, claim_id: repaired });
-      if (second !== null && claimReadMiss(second) === null) {
-        return JSON.stringify({
-          id_corrected: {
-            requested_id: requested,
-            resolved_id: repaired,
-            note:
-              `No node has the id you asked for. It begins like exactly one id this run's ` +
-              `searches returned, ${repaired}, and that node is the one shown here. Check it ` +
-              `is the node you meant, and use ${repaired} from now on.`,
-          },
-          ...(JSON.parse(second) as Record<string, unknown>),
-        });
-      }
-    }
-    const hits = retrievedHits();
-    return JSON.stringify({
-      code: "CLAIM_NOT_FOUND",
-      error:
-        `No node has the id ${JSON.stringify(requested ?? "")}. It is not an id this run's ` +
-        `searches returned, and it does not begin like exactly one of them, so it was not ` +
-        `corrected. Nothing is missing from the graph: this is what a retyped id looks like. ` +
-        (hits.length > 0
-          ? `retrieved_ids lists every id your searches have returned; copy the one you meant exactly.`
-          : `No search in this run has returned an id yet: search, then copy an id exactly from a result.`),
-      requested_id: requested ?? null,
-      retrieved_ids: hits,
-    });
-  };
+  // The run's record of every id it has been shown, kept across the first
+  // run and the retry, which is a fresh transcript of the same decision.
+  // The Matcher's reads (get_claim, get_decomposition) repair a mistyped id
+  // against it as every agent's do (#884, #934): the tool loop fills it and
+  // executeGraphReadTool reads it.
+  const seenIds = new SeenIds();
 
   // A submitted decision is accepted only when it is whole. The schema marks
   // is_match required, but not every provider enforces tool schemas: GLM 5.3
@@ -405,6 +348,7 @@ async function matchClaimImpl(input: {
         tools: [searchTool, ...readTools, submitTool, ...skillLoader.definitions, ...reportTools.definitions],
         system,
         model,
+        seenIds,
         // A cap, not a target: the decision itself is a few hundred tokens. But a
         // model that writes its reasoning into the turn (GLM 5.3 Flash) hit 4096
         // mid-thought on a third of the golden pairs, and a turn cut at
@@ -446,7 +390,7 @@ async function matchClaimImpl(input: {
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
           if (MATCHER_READS.has(name)) {
-            return readNode(name, toolInput);
+            return (await executeGraphReadTool(name, toolInput)) ?? `Error: Unknown tool: ${name}`;
           }
           if (name === "submit_match_decision") {
             const defect = decisionDefect(toolInput);

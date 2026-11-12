@@ -1087,6 +1087,27 @@ These agents, the officers, lookouts and the Researcher also carry
 `query_sql`, one read-only SELECT over the `public_read` views
 (services/sql-service.ts).
 
+**A mistyped id is read, never written (#934).** Models copying a uuid
+from one call into the next sometimes add, drop or change a hex digit, or
+splice one id's first group onto another's tail, and an agent told only
+"not found" files the miss as a fault in the graph. Each run therefore
+keeps a record of every id it has been shown, from its prompt and from
+every tool result, with the node's wording where the result gave it
+(llm/seen-ids.ts); the tool loops fill it and run each tool inside it.
+When `get_claim`, `get_decomposition`, `get_dependents` or `get_argument`
+finds nothing under an id, the id is resolved against that record by one
+rule: a candidate is one character away (added, dropped or changed) or
+begins with the same first group, and the read is repaired only when there
+is exactly one candidate and it is of the kind the read takes. A repaired
+read leads with `id_corrected` (both ids, the rule, and a note); one that
+cannot be repaired says why and lists `nearest_seen_ids` with their
+wording. Writes are never repaired: a Steward's edge, link or instance, or
+a consistency flag, given an id that names nothing refuses and offers the
+nearest ids instead, since a guessed target puts the change on the wrong
+node (llm/tools/id-repair.ts). Every agent that carries the graph reads
+has the repair through `executeGraphReadTool`; MCP callers keep no run
+record and get the plain miss.
+
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
 the agent's own words, for a system failure, a gap in its own tools, or a
