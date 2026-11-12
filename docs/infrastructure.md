@@ -371,7 +371,8 @@ storage past about 5 GB, or a second region.
   operator key") for the eight operator routes: the fund deposit, the
   bounty confirmation, the prize-claim sign-off, the void, the sanctions
   screening, the owl grant, the release of a `check_error` hold, and the
-  operator page, plus the platform-mandate routes (#529). The API task
+  operator page, plus the platform-mandate routes (#529) and the
+  deployment's preflight (`GET /setup/preflight`, docs/deployment.md). The API task
   reads it from the Secrets Manager entry `episteme/operator-key`, which
   the operator creates by hand before deploying (the secrets stack imports
   it by name, so its value never passes through CloudFormation). The web

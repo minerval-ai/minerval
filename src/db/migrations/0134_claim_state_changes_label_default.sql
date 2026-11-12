@@ -1,0 +1,1 @@
+ALTER TABLE "claim_state_changes" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();

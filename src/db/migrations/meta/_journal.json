@@ -915,22 +915,36 @@
     {
       "idx": 130,
       "version": "7",
-      "when": 1794503208683,
-      "tag": "0130_curation_request_defect",
+      "when": 1794502560220,
+      "tag": "0130_label_enforcement",
       "breakpoints": true
     },
     {
       "idx": 131,
       "version": "7",
-      "when": 1794503268683,
-      "tag": "0131_claim_state_changes",
+      "when": 1794509031223,
+      "tag": "0131_curation_request_defect",
       "breakpoints": true
     },
     {
       "idx": 132,
       "version": "7",
-      "when": 1794503328683,
-      "tag": "0132_platform_faults",
+      "when": 1794509031224,
+      "tag": "0132_claim_state_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1794509031225,
+      "tag": "0133_platform_faults",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1794509061840,
+      "tag": "0134_claim_state_changes_label_default",
       "breakpoints": true
     }
   ]

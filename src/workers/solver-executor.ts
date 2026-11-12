@@ -510,6 +510,18 @@ if (invokedDirectly) {
       await closeDb();
       process.exit(0);
     }
+    // The gate the API process holds its workers behind (src/preflight.ts)
+    // holds this one too: a deployment that holds private material starts no
+    // attempt until its blocking checks pass. A refusal exits non-zero, so
+    // whatever restarts the worker asks again. A deployment that holds only
+    // public material is asked the one question and carries on.
+    const { agentWorkGate, agentWorkRefusal } = await import("../preflight.js");
+    const gate = await agentWorkGate();
+    if (!gate.open) {
+      console.error(`[solver] ${agentWorkRefusal(gate.failed)}`);
+      await closeDb();
+      process.exit(1);
+    }
     const shutdown = async () => {
       console.log("[solver] shutting down");
       // A direct Steward pass still in flight hands its claim back (#482).

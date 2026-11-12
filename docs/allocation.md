@@ -819,7 +819,7 @@ The producers, each bounded:
 
 A repeat of a live request (same anchor, other claim and source) is a
 repeat. Requests recorded before #955 have no defect except the Matcher's,
-the scan's and the operator sweep's, which migration 0130 classified as
+the scan's and the operator sweep's, which migration 0131 classified as
 `duplicate`; the rest read as "not classified" beside their concern.
 
 One more row runs the Curator: a request it keeps (constitution Part

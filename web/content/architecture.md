@@ -2334,7 +2334,8 @@ See docs/allocation.md, "Platform mandates".
 A feature is an optional part of the product that a deployment can switch
 off. Each feature is its own switch, every one is on by default, and a
 deployment switches off the ones it does not want by naming them in one
-environment variable, `FEATURES_OFF` (comma-separated). There are no named
+environment variable, `FEATURES_OFF` (comma-separated), or as `features.off`
+in its config file (docs/deployment.md). There are no named
 bundles: a deployment is described by the features it has off and by nothing
 else. A name in `FEATURES_OFF` that is not a feature stops the process at
 start with the list of names that are, so a typo cannot leave a feature on
@@ -2429,6 +2430,15 @@ so the whole pipeline runs on a laptop with no AWS dependencies. The Lean
 checker is a separate stack with a security group that reaches nothing, and
 the solver worker is a second ECS service; both are described in
 docs/infrastructure.md.
+
+A deployment on someone else's machines is the same code with its own
+settings. Those can be written in one config file, read as a layer under the
+environment, in which each setting is chosen for itself and there are no
+named profiles; secrets stay in the environment. A preflight (`npm run
+preflight`, and `GET /setup/preflight` for the operator) says whether the
+deployment is ready, and a deployment that holds private material starts no
+agent work until the checks that guard it pass. Both are described in
+docs/deployment.md.
 
 ---
 
