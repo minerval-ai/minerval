@@ -435,3 +435,9 @@ connections (`checkConnections` reads the connections its caller reads; a
 check of every label's needs a caller that reads every label, and a
 decision about who is shown its report). Sets of files explored in a sandbox are in
 [file-sets.md](file-sets.md).
+
+The administrators' pages for connections are `/admin/connections` and
+`/admin/connections/:id` in a members-only build of the web app
+([accounts.md](accounts.md), "The web app"). They show `notice` in full,
+send each pick with the `definition_hash` that was on the page, and link a
+kept reading to its source page.

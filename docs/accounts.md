@@ -343,6 +343,7 @@ Mounted only where `READS=members`:
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
 | `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
 | `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
+| `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, the preflight's report included (docs/deployment.md, "The setup checklist") |
 
 Every write takes a signed-in session, as minting an API key does, so a
 leaked key, an access token, or an agent following text it read can never
@@ -437,12 +438,51 @@ prepared at build time would otherwise be served without a sign-in
 (`web/instrumentation.ts`). Whatever the web app believes, a read the API
 refuses as members-only is never answered from a fixture.
 
-The gate stands in for every page until the visitor is a signed-in member,
-and each page is still rendered behind it: what a visitor who is not signed
-in receives carries the page's empty frame, with no read behind it
-answered. Stopping the render itself needs the web app's pages to sit under
-a layout that can turn a visitor away, which comes with the private web
-shell.
+Two things keep a page from anyone who is not a signed-in member, and only
+a members-only build has either:
+
+- **The proxy** (`web/proxy.members.ts`, with its decision in
+  `web/lib/gate.ts`) runs before any page or route handler is chosen. A
+  request from a signed-in member goes through. Any other request for a page
+  is answered with an empty page (`/members-gate`) at the address that was
+  asked for, and any other request (a route handler called by a script, an
+  image, a feed) with `401`. So the page a visitor asked for is never
+  rendered for them. A layout could not do this: Next renders a page's
+  content whatever the layout around it shows, and a reader moving between
+  pages fetches a page's content without its layout being asked again.
+- **The gate** (`web/components/MembersGate.tsx`, in the root layout) stands
+  in for whatever page is shown until the visitor is a member, and says why:
+  sign in, or signed in and holding nothing, with the identity an
+  administrator will know the person by.
+
+**Files only a members-only build has.** `web/next.config.mjs` adds
+`members.tsx` and `members.ts` to the page extensions when the build is made
+with `READS=members`. A file named `page.members.tsx` is then a page, and
+`proxy.members.ts` the proxy; in any other build Next does not see them. So
+the public site has none of a private deployment's pages, compiles none of
+their code, and runs no proxy in front of its requests
+(`tests/unit/web/members-gate.test.ts`). What a private deployment adds to
+the site is named this way.
+
+**The pages a members-only build adds.** A line above each page, placed by
+the gate for a member (`web/components/MembersBand.tsx`), links the ones a
+person's permissions open: "Add a source" for holders of `direct`, "Administration" for holders
+of `administer`. A person who lacks a permission is not shown a control
+that needs it, and a page reached directly says which permission it needs.
+
+| page | who | what it is |
+|---|---|---|
+| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` (docs/deployment.md, "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
+| `/admin/people` | every member; controls for `administer` | What each permission covers, what the reader holds, and the log, with a withheld name shown as withheld. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
+| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form; what each label is cleared to be sent to; the parties; whose material a source is |
+| `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls with which were kept |
+| `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup |
+| `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
+| `/sources/new` | `direct` | Add a document or an address (`POST /sources`) |
+
+The account page shows no way to buy owls where `entitlement.owls_created_here`
+is true, gives what an owl is there in the API's words
+(`entitlement.owls_statement`), and says what the person holds.
 
 To run one locally: set `READS=members` and an `API_KEYS` entry on the API
 (there is no dev bypass), the same key and `READS=members` on the web app,

@@ -148,6 +148,8 @@ the routes for file sets (docs/file-sets.md): `list_file_sets`,
 tools for a caller who holds `direct`, and adding a set, uploading into
 one, closing one and switching one off take a session. Registering a
 directory as a set takes a session and `administer`.
+`get_setup_checklist` is the administrators' read of how far the
+deployment's setup has got (docs/setup-checklist.md).
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
