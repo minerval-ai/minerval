@@ -382,7 +382,8 @@ export async function startConversation(input: {
   const db = getDb();
   const [convo] = await db
     .insert(grantConversations)
-    .values({ userId: input.userId })
+    // The label of the request that opens the conversation (src/labels.ts).
+    .values({ userId: input.userId, sensitivityLabel: currentLabel() })
     .returning();
   return beginTurn(convo!, input.message.trim());
 }
@@ -553,6 +554,9 @@ export async function fundConversationMandate(input: {
     .insert(grants)
     .values({
       funderUserId: input.userId,
+      // The mandate takes the label of the request that funds it, which is
+      // the conversation's when the funder speaks at one (src/labels.ts).
+      sensitivityLabel: currentLabel(),
       budgetJobId: job!.id,
       name: mandate.title,
       scopeClaimId: mandate.scope_claim_id ?? null,

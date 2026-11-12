@@ -36,6 +36,7 @@ import {
   prizeClaimReviewBlock,
   rejectPrizeClaimAtReview,
 } from "../../services/prize-claim-service.js";
+import { currentLabel } from "../usage-context.js";
 
 export function getReviewerToolDefinitions(): Tool[] {
   return [
@@ -232,6 +233,7 @@ export async function executeReviewerTool(
             .insert(contributionReviews)
             .values({
               contributionId,
+              sensitivityLabel: currentLabel(),
               decision: "accept",
               reasoning,
               confidence,
@@ -275,6 +277,7 @@ export async function executeReviewerTool(
           .insert(contributionReviews)
           .values({
             contributionId,
+            sensitivityLabel: currentLabel(),
             decision,
             reasoning,
             confidence,

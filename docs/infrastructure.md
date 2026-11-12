@@ -501,10 +501,21 @@ run tries again.
 
 It pushes with the repository secret `MIGRATION_RENUMBER_TOKEN`, because a
 push made with the built-in token starts no workflows, so CI would never run
-on the renumbered branch. Use a fine-grained personal access token (or a
-GitHub App's token) for this repository only, with **Contents: read and
-write** and **Pull requests: read**. Without the secret every run fails and
-says why.
+on the renumbered branch. Use a fine-grained personal access token for this
+repository only, with **Contents: read and write** and nothing else (listing
+PRs uses the built-in token). Without the secret every run fails and says
+why.
+
+Renumbering runs each branch's own code (its `renumber-migrations.ts`, and
+its `schema.ts` through drizzle-kit), and an admin's token can push to
+`main` past the ruleset, so the two never share a runner. The `prepare` job
+merges and renumbers holding no secret, and hands each merge to the `push`
+job as a git bundle. `push` runs no branch code. It pushes a merge only if
+it is a merge of main into the branch's current tip, the PR's only
+conflicts with main are in the migrations folder, it differs from git's own
+merge only inside that folder, and every `.sql` file there is one main or
+the branch already has. Anything else is refused and named in the run's
+summary.
 
 **The weekly maintenance pass** takes what the workflow leaves: major
 bumps, maintainer changes (check the release's npm provenance:

@@ -135,7 +135,7 @@ review — is *system* usage (`user_id IS NULL`): the graph's upkeep belongs
 to everyone, and good-faith contribution stays free (#71). Curator
 reconciliation and audits are funded ledger actions (#363), so their spend
 lands on the mandate that chose to buy them (usually the platform's own
-General and Governance mandates) rather than on the contributor or on
+General mandate) rather than on the contributor or on
 nobody. The meter is **internal cost observability**;
 what the user owes is the owl ledger, below.
 

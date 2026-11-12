@@ -128,7 +128,7 @@ import { openExamination } from "../../src/services/examination-service.js";
 import type { PageAnalysis } from "../../src/services/extension-service.js";
 import { addFeed, getFeed, pollFeed, readItem } from "../../src/services/feed-service.js";
 import { recordExtraction } from "../../src/services/ingest-focus-service.js";
-import { runAtSourceLabel, runAtSourceLabelOutsideAnyRun } from "../../src/services/label-service.js";
+import { runAtSourceLabel } from "../../src/services/label-service.js";
 import { getMandatePipeline } from "../../src/services/mandate-service.js";
 import { normalizePageUrl, pageUrlHash } from "../../src/services/page-url.js";
 import { defineQuantity } from "../../src/services/quantity-service.js";
@@ -914,11 +914,13 @@ describe("work that starts from a source", () => {
     expect((await sourceRow(restricted.id)).sensitivity_label).toBe(INTERNAL);
   });
 
-  it("is noted in a mandate's pipeline by the scheduler at the label of the source someone else ingested", async () => {
+  it("is noted in a mandate's pipeline by the scheduler at the mandate's label, whatever the label of the source someone else ingested", async () => {
     const attributed = async (label: string) => {
       const funder = await seedUser("sources-plan");
       const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
-      const source = await seedSource(label);
+      // The mandate decides for its plan rows; the source carries the other label.
+      await rawQuery(`UPDATE grants SET sensitivity_label = $2 WHERE id = $1`, [grantId, label]);
+      const source = await seedSource(label === INTERNAL ? PUBLIC_LABEL : INTERNAL);
       // Another reader's ingest of the URL ran and finished.
       await rawQuery(
         `INSERT INTO jobs (type, status, input, completed_at)
@@ -944,13 +946,11 @@ describe("work that starts from a source", () => {
     expect(await attributed(PUBLIC_LABEL)).toEqual([PUBLIC_LABEL]);
   });
 
-  it("takes the source's label over the one in the air, except through the seam meant for code a run also reaches", async () => {
+  it("takes the source's label over the one in the air", async () => {
     const source = await seedSource(INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtSourceLabel(source.id, at)).toBe(INTERNAL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtSourceLabel(source.id, at))).toBe(INTERNAL);
-    expect(await runAtSourceLabelOutsideAnyRun(source.id, at)).toBe(INTERNAL);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtSourceLabelOutsideAnyRun(source.id, at))).toBe(PUBLIC_LABEL);
     // A source that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtSourceLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
     // Reading the label writes nothing.

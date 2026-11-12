@@ -32,6 +32,7 @@ import {
   type EdgeRecord,
 } from "../../services/relationship-service.js";
 import { notYourNode } from "./steward-ownership.js";
+import { currentLabel } from "../usage-context.js";
 
 export const STEWARD_STRUCTURE_TOOL_NAMES = [
   "remove_subclaim_edge",
@@ -172,7 +173,7 @@ function refuse(message: string): string {
 }
 
 async function logStructureChange(claimId: string, action: string, reasoning: string): Promise<void> {
-  await getDb().insert(auditLog).values({ claimId, action, reasoning, createdBy: "claim_steward" });
+  await getDb().insert(auditLog).values({ claimId, action, reasoning, createdBy: "claim_steward", sensitivityLabel: currentLabel() });
 }
 
 /** "requires edge, grouped under 'the argument from X'" for an audit line. */

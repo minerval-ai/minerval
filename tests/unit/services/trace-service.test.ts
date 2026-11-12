@@ -171,6 +171,18 @@ describe("recordAgentStep", () => {
     expect(rows.find((r) => r.kind === "assistant")!.seq).toBe(1);
   });
 
+  it("stamps each step with its run's label, and public for a run opened with none", async () => {
+    const trace = startAgentRun("steward", { label: "internal" })!;
+    const open = startAgentRun("steward", {})!;
+    mocks.insertValues.mockClear();
+    recordAgentStep(trace, "assistant", { stopReason: "end_turn" });
+    recordAgentStep(open, "assistant", { stopReason: "end_turn" });
+    await flush();
+    const rows = mocks.insertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    expect(rows.find((r) => r.runId === trace.runId)!.sensitivityLabel).toBe("internal");
+    expect(rows.find((r) => r.runId === open.runId)!.sensitivityLabel).toBe("public");
+  });
+
   it("caps oversized content instead of writing it whole", async () => {
     const trace = startAgentRun("steward", {})!;
     mocks.insertValues.mockClear();

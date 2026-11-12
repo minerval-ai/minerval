@@ -72,6 +72,13 @@ import { PUBLIC_LABEL } from "../labels.js";
 /** Mutable trace handle carried on the usage context for the run's duration. */
 export interface AgentTrace {
   runId: string;
+  /**
+   * The label the run writes at (src/labels.ts), fixed when the run opens.
+   * The run row carries it, and every step is stamped from here: a step is
+   * written from a queue, later than it was claimed, and belongs to its run
+   * whatever work is going on when the write lands.
+   */
+  label: string;
   /** Next step sequence number; mutated by recordAgentStep. */
   seq: { n: number };
   /**
@@ -215,8 +222,12 @@ export function openAgentRun(agent: string, attribution: RunAttribution): AgentT
     // public); a reader's own content handed to the same agent is not.
     ...(attribution.untraced ? [READERS_OWN_REASON] : []),
   ];
+  // The label the run writes at, from the context that opened it, so the
+  // run row, its steps and the rows the run writes carry the same one.
+  const label = attribution.label ?? PUBLIC_LABEL;
   const trace: AgentTrace = {
     runId,
+    label,
     seq: { n: 0 },
     ready: Promise.resolve(),
     privateReasons: new Set(initialReasons),
@@ -233,9 +244,7 @@ export function openAgentRun(agent: string, attribution: RunAttribution): AgentT
         claimId: attribution.claimId ?? null,
         requestId: attribution.requestId ?? null,
         commitSha: loadConfig().gitSha ?? null,
-        // The label the run writes at, from the context that opened it, so
-        // the run row and the rows the run writes carry the same one.
-        sensitivityLabel: attribution.label ?? PUBLIC_LABEL,
+        sensitivityLabel: label,
         // A run starts private when its agent's inputs are not public by
         // construction (llm/run-visibility.ts); tools can add reasons later.
         privateReasons: initialReasons,
@@ -413,6 +422,11 @@ export function recordAgentStep(
         content: stored,
         prevHash,
         hash,
+        // The run's label, not currentLabel(): this callback runs from the
+        // trace's queue, and a step recorded from inside work at another
+        // label (a tool that reads at a source's label, say) is still a
+        // step of this run. The hash above does not cover it.
+        sensitivityLabel: trace.label,
       });
     } catch (err) {
       trace.broken = true;
