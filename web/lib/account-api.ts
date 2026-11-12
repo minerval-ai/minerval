@@ -212,6 +212,8 @@ export interface OwlLedgerEntry {
   claim_id: string | null;
   contribution_id: string | null;
   job_id: string | null;
+  /** On a return: the id of the charge it returns part of, when known. */
+  settles_entry_id: string | null;
   created_at: string;
 }
 
@@ -345,10 +347,11 @@ export async function createOwlPackCheckout(
 }
 
 export async function fetchOwlLedger(
-  externalId: string
+  externalId: string,
+  limit = 50
 ): Promise<OwlLedgerEntry[]> {
   const r = await accountFetch<{ entries: OwlLedgerEntry[] }>(
-    "/billing/ledger",
+    `/billing/ledger?limit=${limit}`,
     { actingUser: externalId }
   );
   return r.entries;
@@ -374,6 +377,8 @@ export interface AssessmentOrderView {
   /** The quoted ceiling for this order; the settled charge can be less. */
   price_cap_owls: number;
   charged: boolean;
+  /** What a finished order cost once its unused part was returned. */
+  cost_owls: number | null;
   error: string | null;
   created_at: string;
   started_at: string | null;

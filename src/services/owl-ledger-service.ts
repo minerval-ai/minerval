@@ -384,7 +384,34 @@ export interface OwlLedgerEntryView {
   claimId: string | null;
   contributionId: string | null;
   jobId: string | null;
+  /**
+   * For a meter settlement, the charge it returns part of: the hold and its
+   * return are one piece of work, and the owl history shows them as one line.
+   * Null for every other entry, and where the charge is not known.
+   */
+  settlesEntryId: string | null;
   createdAt: Date;
+}
+
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const SETTLES_ENTRY = new RegExp(`^settle:(${UUID})$`, "i");
+const SETTLES_ORDER = new RegExp(`^settle:order:(${UUID})$`, "i");
+
+/**
+ * What a settlement's idempotency key says it settled. settleMeteredCharge
+ * is called with the charge's own entry id (quota, URL extraction) or with
+ * `order:<id>` (the order pipeline), so the key already names the charge;
+ * nothing new is stored to pair the two.
+ */
+export function settledChargeRef(
+  idempotencyKey: string | null
+): { entryId: string } | { orderId: string } | null {
+  if (!idempotencyKey) return null;
+  const entry = SETTLES_ENTRY.exec(idempotencyKey);
+  if (entry) return { entryId: entry[1]!.toLowerCase() };
+  const order = SETTLES_ORDER.exec(idempotencyKey);
+  if (order) return { orderId: order[1]!.toLowerCase() };
+  return null;
 }
 
 /** The user's owl history, newest first — powers the account-page table. */
@@ -402,11 +429,48 @@ export async function listOwlLedger(
       claimId: owlLedger.claimId,
       contributionId: owlLedger.contributionId,
       jobId: owlLedger.jobId,
+      idempotencyKey: owlLedger.idempotencyKey,
       createdAt: owlLedger.createdAt,
     })
     .from(owlLedger)
     .where(eq(owlLedger.userId, userId))
     .orderBy(sql`${owlLedger.createdAt} desc`)
     .limit(limit);
-  return rows.map((r) => ({ ...r, amountMicroUsd: Number(r.amountMicroUsd) }));
+
+  const refs = rows.map((r) =>
+    r.reason === OWL_REASONS.meterSettlement ? settledChargeRef(r.idempotencyKey) : null
+  );
+  // An order's charge: the entry the dispatcher wrote when the run began,
+  // or, for an order a proposal paid for, that proposal's charge.
+  const orderIds = [...new Set(refs.flatMap((r) => (r && "orderId" in r ? [r.orderId] : [])))];
+  const orderCharge = new Map<string, string>();
+  if (orderIds.length > 0) {
+    const found = await rawQuery<{ id: string; entry_id: string | null }>(
+      `SELECT o.id,
+              COALESCE(o.charge_entry_id,
+                       (SELECT l.id FROM owl_ledger l
+                         WHERE l.contribution_id = o.contribution_id
+                           AND l.user_id = o.user_id
+                           AND l.reason = 'charge'
+                         ORDER BY l.created_at ASC
+                         LIMIT 1)) AS entry_id
+         FROM assessment_orders o
+        WHERE o.user_id = $1 AND o.id = ANY($2::uuid[])`,
+      [userId, orderIds]
+    );
+    for (const o of found) if (o.entry_id) orderCharge.set(o.id, o.entry_id);
+  }
+
+  return rows.map(({ idempotencyKey: _key, ...r }, i) => {
+    const ref = refs[i];
+    return {
+      ...r,
+      amountMicroUsd: Number(r.amountMicroUsd),
+      settlesEntryId: !ref
+        ? null
+        : "entryId" in ref
+          ? ref.entryId
+          : (orderCharge.get(ref.orderId) ?? null),
+    };
+  });
 }
