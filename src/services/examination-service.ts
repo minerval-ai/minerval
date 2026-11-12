@@ -26,6 +26,7 @@
  * message written for the agent; the tool executors turn it into a
  * structured refusal.
  */
+import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { EXAMINATION_SCOPES, EXAMINATION_TRIGGERS } from "../schemas/common.js";
@@ -540,12 +541,40 @@ export interface ExaminationView {
   runs: Array<{ id: string; status: string; model: string; spent_usd: number; finished_at: string | null }>;
   coverage: Array<{ segment_id: string; facet: string }>;
   findings: FindingView[];
+  /**
+   * Set where each finding's `segment_label`, a heading from the document,
+   * is withheld from this reader (src/raw-sources.ts).
+   */
+  headings_withheld?: WithheldSourceText;
 }
 
-/** Every examination of the given sources, with coverage, findings, notes, and citations. */
-export async function listExaminations(sourceIds: string[]): Promise<ExaminationView[]> {
+/**
+ * Every examination of the given sources, with coverage, findings, notes, and citations.
+ *
+ * A finding's statement and evidence are what the agent wrote, which
+ * reading at the label covers. Its `segment_label` is a heading copied from
+ * the document, so a read for a person passes `rawSourceLabels`
+ * (rawSourceLabelsOf) and the heading is withheld where the person may not
+ * open the source, as GET /sources/:id/document withholds it. An agent's
+ * own run passes nothing and is not held to it.
+ */
+export async function listExaminations(
+  sourceIds: string[],
+  opts: { rawSourceLabels?: readonly string[] | null } = {}
+): Promise<ExaminationView[]> {
   const ids = sourceIds.filter((s) => UUID_RE.test(s));
   if (ids.length === 0) return [];
+  const withheldAt = new Map<string, string>();
+  if (opts.rawSourceLabels !== undefined) {
+    const held = opts.rawSourceLabels;
+    const labels = await rawQuery<{ id: string; sensitivity_label: string }>(
+      `SELECT id, sensitivity_label FROM sources WHERE id = ANY($1::uuid[])`,
+      [ids]
+    );
+    for (const row of labels) {
+      if (!mayOpenRawSources(held, row.sensitivity_label)) withheldAt.set(row.id, row.sensitivity_label);
+    }
+  }
   const exams = await rawQuery<{
     id: string;
     scope: string;
@@ -647,7 +676,7 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
       .map((f) => ({
         id: f.id,
         segment_id: f.segment_id,
-        segment_label: f.segment_label,
+        segment_label: withheldAt.has(e.source_id) ? null : f.segment_label,
         facet: f.facet,
         statement: f.statement,
         evidence: f.evidence,
@@ -658,5 +687,6 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
           .map((n) => ({ note: n.note, created_by: n.created_by, created_at: new Date(n.created_at).toISOString() })),
         cited_by_claims: citations.filter((c) => c.finding_id === f.id).map((c) => c.claim_id),
       })),
+    ...(withheldAt.has(e.source_id) ? { headings_withheld: withheldSourceText(withheldAt.get(e.source_id)!) } : {}),
   }));
 }

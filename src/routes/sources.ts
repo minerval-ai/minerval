@@ -74,7 +74,13 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
-      return reply.send({ examinations: await listExaminations([request.params.source_id]) });
+      // A finding's heading is the document's own text: withheld like the
+      // document from a reader who may not open it (src/raw-sources.ts).
+      return reply.send({
+        examinations: await listExaminations([request.params.source_id], {
+          rawSourceLabels: rawSourceLabelsOf(request.auth),
+        }),
+      });
     },
   });
 

@@ -302,6 +302,7 @@ text is returned to a person (`src/raw-sources.ts`):
 | where | without the permission |
 |---|---|
 | `GET /sources/:source_id/document` (MCP: `get_source_document`, and the Assistant's tool) | every segment comes without its text and its heading, and `text_withheld` says so and names the permission and the label. The structure, the length, and every instance the agents recorded from the document are served |
+| `GET /sources/:source_id/examinations` (MCP: `get_source_examinations`) | each finding comes without `segment_label`, the heading of the segment it is anchored to, and `headings_withheld` on the examination says so. The finding itself, which the agent wrote, is served |
 | `GET /runs/:run_id/steps`, `GET /runs/:run_id/steps/:seq` | the parts of a step that hold a source's text are replaced by the same kind of notice: the opening message of an agent that is handed a document (the Extractor), and the output of a tool that returns one (`provenance_read_source`, `examination_outline`, `get_contribution_details`). The rest of the step and its hash are served |
 
 A run's log says what its run could have opened, not which source each

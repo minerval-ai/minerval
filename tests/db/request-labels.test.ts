@@ -907,6 +907,48 @@ describe("opening raw sources", () => {
     await client.close();
   });
 
+  it("withholds a finding's segment heading in the examinations read as the document read does (review 3, finding 7)", async () => {
+    const HEADING = "SECRETHEAD Quarterly shipments";
+    const [segment] = await rawQuery<{ id: string }>(
+      `UPDATE source_segments SET label = $2
+        WHERE id = (SELECT id FROM source_segments WHERE source_id = $1 ORDER BY ordinal LIMIT 1) RETURNING id`,
+      [sourceId, HEADING]
+    );
+    const [exam] = await rawQuery<{ id: string }>(
+      `INSERT INTO examinations (scope, trigger, source_id, brief, facets, requested_by, sensitivity_label)
+       VALUES ('document', 'mechanical', $1, 'Check the count.', ARRAY['numbers'], 'curator', $2) RETURNING id`,
+      [sourceId, A]
+    );
+    await rawQuery(
+      `INSERT INTO examination_findings (examination_id, segment_id, facet, statement, evidence, sensitivity_label)
+       VALUES ($1, $2, 'numbers', 'The count is the partner''s own.', 'Stated in the memo.', $3)`,
+      [exam!.id, segment!.id, A]
+    );
+    const read = async (who: Person) => {
+      const res = await as(who, { url: `/sources/${sourceId}/examinations` });
+      expect(res.statusCode, res.body).toBe(200);
+      return { body: res.body, exam: res.json().examinations[0] };
+    };
+    // Without the permission: the finding as the agent wrote it, no heading, and a notice that says why.
+    for (const who of [reader, topOpener]) {
+      const { body, exam: seen } = await read(who);
+      expect(seen.findings).toEqual([expect.objectContaining({ statement: "The count is the partner's own.", segment_id: segment!.id, segment_label: null })]);
+      expect(seen.headings_withheld).toEqual(withheldSourceText(A));
+      expect(body).not.toContain("SECRETHEAD");
+    }
+    // With it: the heading.
+    const open = await read(opener);
+    expect(open.exam.findings[0].segment_label).toBe(HEADING);
+    expect(open.exam.headings_withheld).toBeUndefined();
+    // The same over MCP, for an agent acting for the person.
+    const { key } = await mintKey(reader, A);
+    const client = await connect({ "x-api-key": key });
+    const overMcp = toolJson(await client.callTool({ name: "get_source_examinations", arguments: { source_id: sourceId } }));
+    expect(JSON.stringify(overMcp)).not.toContain("SECRETHEAD");
+    expect(overMcp.examinations[0].headings_withheld).toEqual(withheldSourceText(A));
+    await client.close();
+  });
+
   it("leaves a public source open to every member", async () => {
     const [source] = await rawQuery<{ id: string }>(
       `INSERT INTO sources (url, title, raw_content, sensitivity_label)
