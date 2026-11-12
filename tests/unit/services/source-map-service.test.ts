@@ -220,6 +220,8 @@ describe("recordInstanceReading", () => {
       true,
       "m",
       "claim_steward",
+      // Written outside any run, so the reading is public (src/labels.ts).
+      "public",
     ]);
   });
 
@@ -327,6 +329,7 @@ describe("recordProvenanceEdge", () => {
       0.8,
       true,
       "claim_steward",
+      "public",
     ]);
   });
 
@@ -455,6 +458,7 @@ describe("writeSourceMap", () => {
       3,
       "m",
       "claim_steward",
+      "public",
     ]);
   });
 });

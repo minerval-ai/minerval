@@ -3,8 +3,10 @@
  * label_columns migration).
  *
  * The migration adds `sensitivity_label` to eighty-one tables and nothing
- * else: no write stamps it yet and nothing reads it. So there are two things
- * to check, against real Postgres:
+ * else, and nothing reads the column. The writes that stamp it come after
+ * it, a group of tables at a time (label-graph.test.ts and
+ * label-sources.test.ts for the first two). So there are two things to
+ * check here, against real Postgres:
  *
  *  - The catalog: which tables have the column, its default and its key to
  *    `labels`, the two keys that are not validated yet, the views, and the
@@ -15,8 +17,9 @@
  *    claim view and an agent's read of a claim are asked for rows that
  *    carry a second label, and none may show it.
  *
- * What stamps the column, and the fuller checks of every route and every
- * agent's read, come with the code that uses it.
+ * What stamps the column on each table is checked with the code that
+ * stamps it, and the fuller checks of every route and every agent's read
+ * come with the code that uses it.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
