@@ -146,14 +146,31 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /billing/ledger — owl history for the dashboard.
-  app.get("/ledger", {
+  app.get<{ Querystring: { limit?: number } }>("/ledger", {
     schema: {
       tags: ["billing"],
       summary: "List the authenticated user's owl ledger entries",
+      description:
+        "Newest first. A hold and the unused part returned from it are two " +
+        "entries: the return's `settles_entry_id` is the id of the charge it " +
+        "returns part of, so the two can be read as one piece of work and " +
+        "its cost (the hold less the return).",
+      querystring: {
+        type: "object",
+        properties: {
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            default: 50,
+            description: "How many entries to return, newest first.",
+          },
+        },
+      },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const entries = await listOwlLedger(request.auth!.userId!);
+      const entries = await listOwlLedger(request.auth!.userId!, request.query.limit ?? 50);
       return reply.send({
         entries: entries.map((e) => ({
           id: e.id,
@@ -163,6 +180,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
           claim_id: e.claimId,
           contribution_id: e.contributionId,
           job_id: e.jobId,
+          settles_entry_id: e.settlesEntryId,
           created_at: e.createdAt?.toISOString(),
         })),
       });

@@ -196,6 +196,8 @@ export interface OwlLedgerEntry {
   claim_id: string | null;
   contribution_id: string | null;
   job_id: string | null;
+  /** On a return: the id of the charge it returns part of, when known. */
+  settles_entry_id: string | null;
   created_at: string;
 }
 
@@ -309,10 +311,11 @@ export async function createOwlPackCheckout(
 }
 
 export async function fetchOwlLedger(
-  externalId: string
+  externalId: string,
+  limit = 50
 ): Promise<OwlLedgerEntry[]> {
   const r = await accountFetch<{ entries: OwlLedgerEntry[] }>(
-    "/billing/ledger",
+    `/billing/ledger?limit=${limit}`,
     { actingUser: externalId }
   );
   return r.entries;
@@ -338,6 +341,8 @@ export interface AssessmentOrderView {
   /** The quoted ceiling for this order; the settled charge can be less. */
   price_cap_owls: number;
   charged: boolean;
+  /** What a finished order cost once its unused part was returned. */
+  cost_owls: number | null;
   error: string | null;
   created_at: string;
   started_at: string | null;
@@ -1183,6 +1188,8 @@ export interface AssistantCitationView {
   status: string | null;
   standing: string | null;
   contestation: number | null;
+  confidence?: number | null;
+  assessed_at?: string | null;
   url: string;
 }
 
@@ -1247,6 +1254,8 @@ export interface AssistantConversationView extends AssistantSummaryView {
     error: string | null;
     partial: string | null;
     note: string | null;
+    /** What the running turn has done so far, newest last. */
+    activity: Array<{ tool: string; about: string | null }>;
     cost_micro_usd: number;
     stopping: boolean;
   };

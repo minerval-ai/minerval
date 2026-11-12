@@ -105,10 +105,15 @@
  * Some work has no row of its own to wait in. A sweep finds a claim that is
  * pending, stale or untagged and starts work on it there and then: the
  * scheduler's reconcile sweep and its staleness check, the Steward's
- * fallback lane, the Tagger, the retraction poll, the reconcile-candidate
- * scan, the monitor's audits. That work runs at the claim's label
- * (runAtClaimLabel in services/label-service.ts), so work on a restricted
- * claim is never written as public. It is a floor, not the whole rule: the
+ * fallback lane, the Tagger, the reconcile-candidate scan, the monitor's
+ * audits. That work runs at the claim's label (runAtClaimLabel in
+ * services/label-service.ts), so work on a restricted claim is never
+ * written as public. So does the letter that tells a node's Steward of a
+ * notice against a source the node rests on
+ * (services/source-notice-service.ts), whether the retraction poll found
+ * the notice or a run's fetch of the document did: the letter is the same
+ * whoever found it and is sent once, so it goes at the node's label and
+ * not the finder's. All of this is a floor, not the whole rule: the
  * claim's pending slot is one per claim and does not say what label a pass
  * was asked for at. The messages waiting on the claim do, each carrying
  * the label of whoever sent it, so a pending claim whose unread messages

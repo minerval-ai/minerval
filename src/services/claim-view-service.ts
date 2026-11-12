@@ -8,11 +8,11 @@
  * `include` sections, and a caller asks for the sections its work needs.
  *
  * The base view is everything cheap enough to read on every call: the node
- * row, its current assessment and what has changed under it since, the
- * kind's record, the formalization record, the requests bearing on it, and
- * counts. Sections that grow with the graph
- * (arguments, subclaims, instances, dependents, related links, findings,
- * check records) come only when asked for.
+ * row, its current assessment, what examination it has had and what has
+ * changed under the judgment since, the kind's record, the formalization
+ * record, the requests bearing on it, and counts. Sections that grow with
+ * the graph (arguments, subclaims, instances, dependents, related links,
+ * findings, check records) come only when asked for.
  */
 import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
@@ -47,6 +47,13 @@ import {
   sinceAssessed,
   summarizeJudgmentChanges,
 } from "./judgment-inputs-service.js";
+import {
+  COVERAGE_DESCRIPTION,
+  COVERAGE_ROW_DESCRIPTION,
+  coverage,
+  coverageRow,
+  summarizeCoverage,
+} from "./coverage-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
 import {
   STEWARD_PARKED_DESCRIPTION,
@@ -100,7 +107,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`question`: standing with its confidence and marginal_yield " +
   "(`assessment.id` is what a finding cites), answers, presuppositions, " +
   "subquestions; " +
-  "`threshold_of` on a claim that cuts a quantity); `since_assessed` (once " +
+  "`threshold_of` on a claim that cuts a quantity); `coverage`, " +
+  COVERAGE_DESCRIPTION +
+  "; `since_assessed` (once " +
   "the node has been judged), " +
   SINCE_ASSESSED_DESCRIPTION +
   " (include `judgment_inputs` to see which nodes and sources); `preliminary_seed`, the " +
@@ -119,7 +128,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`unplaced_argument_passages` passages where sources reason about the " +
   "claim that matched none of its arguments at ingestion), `subclaims` (the direct " +
   "subclaims, one row per argument each serves, with the edge's reasoning " +
-  "and their standing and credence. " +
+  "and their standing and credence, and `coverage`, " +
+  COVERAGE_ROW_DESCRIPTION +
+  ". " +
   STEWARD_PARKED_DESCRIPTION +
   "), " +
   "`provenance` (the instances with their readings and any interest " +
@@ -249,6 +260,7 @@ export async function getClaimView(
     kindJudgment,
     waiting,
     changes,
+    covered,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -280,8 +292,12 @@ export async function getClaimView(
     // keeps it. A read failure loses the field, never the read: absent is
     // "not said", which a reader cannot mistake for "unchanged".
     summarizeJudgmentChanges([claimId]).catch(() => null),
+    // What examination the node has had (#543). A read failure loses the
+    // field, never the read: absent is "not said", never "examined".
+    summarizeCoverage([claimId]).catch(() => null),
   ]);
   const since = sinceAssessed(changes?.get(claimId));
+  const examination = coverage(covered?.get(claimId.toLowerCase()));
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left
   // when it minted this node. Served only while the node has no current
@@ -334,6 +350,10 @@ export async function getClaimView(
       claim.text,
       tags.map((t) => t.name)
     ),
+    // Beside the verdict, and present where there is none: a null
+    // assessment alone does not say whether a quantity or a question has
+    // been judged, and `coverage` says it for every kind.
+    ...(examination ? { coverage: examination } : {}),
     // Beside the verdict it qualifies; for a quantity or a question, whose
     // judgment sits in the kind's record below, it describes that one.
     ...(since ? { since_assessed: since } : {}),
@@ -621,6 +641,9 @@ async function listDirectSubclaims(claimId: string) {
      ORDER BY cr.created_at, cr.id, am.created_at`,
     [claimId]
   );
+  // Whether each premise has been examined at all (#543), for every kind in
+  // one read. A failure loses the field, never the section.
+  const covered = await summarizeCoverage(rows.map((sc) => sc.child_id)).catch(() => null);
   return rows.map((sc) => ({
     id: sc.child_id,
     edge_id: sc.edge_id,
@@ -633,6 +656,7 @@ async function listDirectSubclaims(claimId: string) {
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,
     assessment_credence: sc.child_credence,
+    ...(covered ? { coverage: coverageRow(covered.get(sc.child_id.toLowerCase())) } : {}),
     argument_id: sc.argument_id,
     argument_name: sc.argument_name,
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),

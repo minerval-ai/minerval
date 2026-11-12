@@ -107,9 +107,6 @@ function NodeCard({ node }: { node: PageNodeView }) {
         {typeof node.assessment_confidence === "number" && (
           <span className="kept-fact">confidence {pct(node.assessment_confidence)}</span>
         )}
-        {typeof node.contestation === "number" && (
-          <span className="kept-fact">contestation {pct(node.contestation)}</span>
-        )}
         {node.assessed_at && <span className="kept-fact">assessed {fmtDate(node.assessed_at)}</span>}
         <Moved node={node} />
       </div>
@@ -117,7 +114,7 @@ function NodeCard({ node }: { node: PageNodeView }) {
   );
 }
 
-type SortKey = "page" | "status" | "confidence" | "contestation";
+type SortKey = "page" | "status" | "confidence";
 
 function statusRank(node: PageNodeView): number {
   if (node.kind !== "claim" || !node.assessment_status) return STATUS_ORDER.length;
@@ -132,11 +129,7 @@ function NodesTable({ ids, nodes }: { ids: string[]; nodes: Page["nodes"] }) {
     const held = ids.map((id) => nodes[id]).filter((n): n is PageNodeView => !!n);
     if (sort === "page") return held;
     const value = (n: PageNodeView) =>
-      sort === "status"
-        ? -statusRank(n)
-        : sort === "confidence"
-          ? (n.assessment_confidence ?? -1)
-          : (n.contestation ?? -1);
+      sort === "status" ? -statusRank(n) : (n.assessment_confidence ?? -1);
     return [...held].sort((a, b) => (down ? value(b) - value(a) : value(a) - value(b)));
   }, [ids, nodes, sort, down]);
   const missing = ids.filter((id) => !nodes[id]);
@@ -167,7 +160,6 @@ function NodesTable({ ids, nodes }: { ids: string[]; nodes: Page["nodes"] }) {
             {head("page", "Node")}
             {head("status", "Judgment")}
             {head("confidence", "Confidence")}
-            {head("contestation", "Contestation")}
           </tr>
         </thead>
         <tbody>
@@ -182,7 +174,6 @@ function NodesTable({ ids, nodes }: { ids: string[]; nodes: Page["nodes"] }) {
                 <Moved node={n} />
               </td>
               <td>{pct(n.assessment_confidence)}</td>
-              <td>{pct(n.contestation)}</td>
             </tr>
           ))}
         </tbody>
@@ -270,7 +261,14 @@ function exportMarkdown(page: Page): string {
   ].join("\n");
 }
 
-export function PageView({ page }: { page: Page }) {
+export function PageView({
+  page,
+  embedded = false,
+}: {
+  page: Page;
+  /** Shown in the chat's side panel: read and export here, edit on its own page. */
+  embedded?: boolean;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(page.title);
@@ -402,15 +400,21 @@ export function PageView({ page }: { page: Page }) {
         )
       )}
       <p className="ask-manage kept-manage">
-        <button className="linklike" onClick={() => setEditing(true)}>
-          Edit
-        </button>
+        {embedded ? (
+          <Link href={`/ask/pages/${page.id}`}>Open and edit</Link>
+        ) : (
+          <button className="linklike" onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
         <button className="linklike" onClick={download}>
           Export as markdown
         </button>
-        <button className="linklike danger" onClick={() => void remove()}>
-          Delete this page
-        </button>
+        {!embedded && (
+          <button className="linklike danger" onClick={() => void remove()}>
+            Delete this page
+          </button>
+        )}
       </p>
       <p className="order-caption">
         Private to you. Embedded nodes are read from the graph each time the page is opened.

@@ -41,12 +41,22 @@ function withCitations(content: string, citations: AssistantCitationView[]): str
   });
 }
 
+/** What a citation does when the reader points at it or picks it. */
+export interface CiteHandlers {
+  /** Pointed at (hover or focus), or null when the pointer leaves. */
+  onPreview?: (citation: AssistantCitationView | null) => void;
+  /** Picked: keep it showing. Absent, a click opens the node's page. */
+  onPick?: (citation: AssistantCitationView) => void;
+}
+
 export function Prose({
   content,
   citations = [],
+  cite,
 }: {
   content: string;
   citations?: AssistantCitationView[];
+  cite?: CiteHandlers;
 }) {
   const byId = new Map(citations.map((c) => [c.id, c]));
   const components: Components = {
@@ -58,7 +68,18 @@ export function Prose({
           <Link
             href={href!}
             className={`ask-cite${meta ? ` ${meta.cls}` : ""}`}
-            title={`${cited.text}${meta ? ` (${meta.label})` : ""}`}
+            aria-label={`${cited.text}${meta ? ` (${meta.label})` : ""}`}
+            onMouseEnter={() => cite?.onPreview?.(cited)}
+            onMouseLeave={() => cite?.onPreview?.(null)}
+            onFocus={() => cite?.onPreview?.(cited)}
+            onBlur={() => cite?.onPreview?.(null)}
+            onClick={(e) => {
+              if (!cite?.onPick || e.metaKey || e.ctrlKey || e.shiftKey) return;
+              // On a narrow screen there is no side panel: follow the link.
+              if (!window.matchMedia("(min-width: 1100px)").matches) return;
+              e.preventDefault();
+              cite.onPick(cited);
+            }}
           >
             {children}
             {meta && <span aria-hidden>{meta.glyph}</span>}
@@ -78,6 +99,33 @@ export function Prose({
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {withCitations(content, citations)}
       </ReactMarkdown>
+    </div>
+  );
+}
+
+/** A cited node as a card: what the side panel shows for a citation. */
+export function ClaimPreview({ citation }: { citation: AssistantCitationView }) {
+  return (
+    <div className="card ask-preview">
+      <Link href={`/claims/${citation.id}`} className="card-link">
+        <div className="card-claim">{citation.text}</div>
+      </Link>
+      <div className="card-foot">
+        {citation.kind === "claim" ? (
+          <StatusBadge status={citation.status} />
+        ) : citation.kind === "question" ? (
+          <StandingBadge standing={citation.standing} />
+        ) : (
+          <span className="tag kind">{citation.kind}</span>
+        )}
+        {citation.kind === "question" && <span className="tag kind">question</span>}
+        {typeof citation.confidence === "number" && (
+          <span className="ask-fact">confidence {citation.confidence.toFixed(2)}</span>
+        )}
+        {citation.assessed_at && (
+          <span className="ask-fact">assessed {citation.assessed_at.slice(0, 10)}</span>
+        )}
+      </div>
     </div>
   );
 }

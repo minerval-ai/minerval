@@ -99,10 +99,11 @@ function sqlState(err: unknown): string | undefined {
 /** The labels on the rows of `table` that match, without repeats. */
 async function labelsWhere(table: string, where: string, params: unknown[]): Promise<string[]> {
   const rows = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where} ORDER BY 1`,
+    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where}`,
     params
   );
-  return rows.map((r) => r.sensitivity_label);
+  // Sorted here: the database orders text by its locale, which differs between machines.
+  return rows.map((r) => r.sensitivity_label).sort();
 }
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 
@@ -290,10 +291,12 @@ describe("the columns", () => {
     expect(rows).toEqual(
       RUN_TABLES.map((table_name) => ({
         table_name, column_default: "'public'::text", is_nullable: "NO", fk: true,
-        // The key on agent_steps was added NOT VALID (migration 0125): the
-        // table is too large and too busy to scan under the lock that adds
-        // the column. When a later migration validates it, this flips.
-        validated: table_name !== "agent_steps",
+        // The keys on agent_steps and llm_usage were added NOT VALID (the
+        // label_columns migration): every live run appends to both, and
+        // neither is scanned under the lock that adds the column. When a
+        // later migration validates them, this flips
+        // (label-columns.test.ts holds the same two by name).
+        validated: table_name !== "agent_steps" && table_name !== "llm_usage",
       }))
     );
   });
@@ -334,10 +337,10 @@ describe("a row a run writes about itself", () => {
     expect((await rawQuery(`SELECT 1 FROM agent_steps WHERE run_id = $1`, [ids.runId])).length).toBe(2);
     expect(await usageLabels(ids.runId, 2)).toEqual([SECOND, SECOND]);
     const sightings = await rawQuery<{ kind: string }>(
-      `SELECT kind FROM agent_report_sightings WHERE report_id = $1 ORDER BY kind`,
+      `SELECT kind FROM agent_report_sightings WHERE report_id = $1`,
       [ids.reportId]
     );
-    expect(sightings.map((s) => s.kind)).toEqual(["note", "sighting"]);
+    expect(sightings.map((s) => s.kind).sort()).toEqual(["note", "sighting"]);
     // The ledger row that will run the audit took the same label as the audit's record.
     const [audit] = await rawQuery<{ action: string }>(
       `SELECT a.sensitivity_label AS action FROM audit_runs r JOIN actions a ON a.id = r.action_id WHERE r.id = $1`,

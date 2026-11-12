@@ -13,7 +13,7 @@
  *    its assertions or its being a republished copy of another source in
  *    the story.
  *  - `origin`: nothing upstream, and either the Steward recorded it as the
- *    beginning or its kind is a primary one (PRIMARY_SOURCE_TYPES).
+ *    beginning or its kind is a primary one (PRIMARY_SOURCE_KINDS).
  *  - `untraced`: nothing upstream and nothing that says it is a beginning.
  *    Shown apart from origins, never in their row, so a source nobody has
  *    followed upstream does not pass for one that has none.
@@ -28,7 +28,7 @@
  * map's summary.
  */
 import { rawQuery } from "../db/client.js";
-import { PRIMARY_SOURCE_TYPES } from "../schemas/common.js";
+import { PRIMARY_SOURCE_KINDS } from "../schemas/common.js";
 import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
 
 export type StoryStanding = "origin" | "untraced" | "derived";
@@ -193,7 +193,7 @@ export function buildProvenanceStory(claimId: string, input: StoryInput): Proven
     if (root?.status === "origin") value = { standing: "origin", basis: "steward" };
     else if (hasUpstream) value = { standing: "derived", basis: "upstream" };
     else if (root?.status === "untraced") value = { standing: "untraced", basis: "steward" };
-    else if (PRIMARY_SOURCE_TYPES.has(s.source_type)) value = { standing: "origin", basis: "primary_source_kind" };
+    else if (PRIMARY_SOURCE_KINDS.has(s.source_type)) value = { standing: "origin", basis: "primary_source_kind" };
     else value = { standing: "untraced", basis: "none" };
     standing.set(s.id, value);
   }

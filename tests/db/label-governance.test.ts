@@ -215,10 +215,11 @@ function inRunAt<T>(label: string, fn: () => Promise<T>): Promise<T> {
 /** The labels on the rows of `table` that match, without repeats. */
 async function labelsWhere(table: string, where: string, params: unknown[]): Promise<string[]> {
   const rows = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where} ORDER BY 1`,
+    `SELECT DISTINCT sensitivity_label FROM ${table} WHERE ${where}`,
     params
   );
-  return rows.map((r) => r.sensitivity_label);
+  // Sorted here: the database orders text by its locale, which differs between machines.
+  return rows.map((r) => r.sensitivity_label).sort();
 }
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 const setLabel = (table: string, id: string, label: string) =>
@@ -851,10 +852,12 @@ describe("a lookout's and a correspondent's work", () => {
     stage.pages.set(`${site}/feed`, rss(site, ["a", "b"]));
     expect(currentLabel()).toBe(PUBLIC_LABEL);
     expect(await feedPollTick()).toMatchObject({ polled: 1, failed: 0, newItems: 1, woke: 1 });
-    const items = await rawQuery<{ url: string; sensitivity_label: string }>(
-      `SELECT url, sensitivity_label FROM lookout_feed_items WHERE lookout_id = $1 ORDER BY url`,
-      [lookoutId]
-    );
+    const items = (
+      await rawQuery<{ url: string; sensitivity_label: string }>(
+        `SELECT url, sensitivity_label FROM lookout_feed_items WHERE lookout_id = $1`,
+        [lookoutId]
+      )
+    ).sort((a, b) => (a.url < b.url ? -1 : 1));
     expect(items).toEqual([
       { url: `${site}/p/a`, sensitivity_label: PUBLIC_LABEL },
       { url: `${site}/p/b`, sensitivity_label: SECOND },

@@ -1,6 +1,6 @@
 {
-  "id": "be9536bc-0ab7-4caa-945d-720e0779d80b",
-  "prevId": "668a18ae-61c0-4b24-a94c-6ef14b9201fe",
+  "id": "cb019482-145d-4e82-ab0c-6d87b6ca1618",
+  "prevId": "65106fbf-023c-452b-a217-bf39ae0521f0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3802,6 +3802,12 @@
         "turn_note": {
           "name": "turn_note",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_activity": {
+          "name": "turn_activity",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -18663,7 +18669,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_sources_source_type": {
+          "name": "ck_sources_source_type",
+          "value": "\"sources\".\"source_type\" IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.taggings": {

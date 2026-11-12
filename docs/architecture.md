@@ -370,6 +370,36 @@ enters the allocation formula or any policy number. The older
 is always `{}`. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
 
+A status says what the evidence shows. What evidence was looked at, and
+whether any was, is a separate fact, served as `coverage` (#543,
+`src/services/coverage-service.ts`). It is read from the record at read time
+and nobody sets it: `examined` is whether the node has a judgment in force,
+of whichever kind, so a node with a seed, sources and readings but no
+judgment is not examined, and a node judged `unknown` is; `on` lists what
+the judgment in force was made on, from a fixed vocabulary:
+`public_evidence`, and `evidence_not_shown` when a source the judgment was
+recorded against (`judgment_inputs`) had been read as `evidence_not_shown`
+by the time the judgment was written (the reading is taken from
+`claim_instance_reading_log`, which keeps every reading with its time).
+`GET /claims/:claim_id` and `get_claim` carry it beside the judgment, with a
+`note` on a node not examined saying that this is not a finding either way,
+and every node of a decomposition tree and every row of `get_claim`'s
+`subclaims` carries it in a short form, so a reader of a parent sees which
+parts under it were never looked at: on a row there is no note, and `on`
+lists only what the judgment was made on beyond public evidence and is left
+out when there is nothing beyond it (`{examined: false}`, `{examined: true}`,
+`{examined: true, on: ["evidence_not_shown"]}`), because a tree is read
+constantly and most of its nodes have nothing more to say. A quantity or a
+question never carries an assessment status, judged or not, so on those rows
+`coverage` is the one field that says it for every kind. Two further values
+wait for things the public graph does not have: evidence held at a private
+label, and a judgment held from the public copy. They are added as words in
+`on`, and on a row are listed like `evidence_not_shown`.
+A request put to a party and refused is not derivable: a request records
+whom it is addressed to (`addressed_to`), but its `declined` state and
+outcome are the keeper's or the Researcher's refusal of the request itself,
+and nothing records that the party declined or did not answer.
+
 ### Node kinds: quantities and questions
 
 A node in the graph is one of three kinds (constitution §2, §7a), recorded in
@@ -526,6 +556,36 @@ voices that take a position. The Matcher assigns `affirms`, `denies` or
 `poses` at ingestion; a mention is the Steward's reading of a source, recorded
 with `record_claim_instance`.
 
+A source's **kind** (`sources.source_type`) says what sort of document it is:
+a journal article, a news article, a court record, official statistics. There
+is one list, `SOURCE_KIND_DESCRIPTIONS` in `src/schemas/common.ts`, with what
+counts as each; a CHECK constraint holds the column to it, and
+`tests/unit/schemas/source-kinds.test.ts` holds the constraint, the web's
+type and the tool schemas to the list. A kind says what a document is, never
+how far to trust it. One thing is derived from it: a source of a primary
+kind (`PRIMARY_SOURCE_KINDS`: dataset, official statistics, transcript,
+treaty, court record, legislation) with nothing recorded upstream of it reads
+as where a claim's provenance story begins, and any other reads as untraced.
+A source starts as `unknown`, and three suppliers name it:
+
+- **The registry.** Crossref's work type, for a document with a DOI
+  (`source-facts-service.ts`).
+- **The Extractor**, on a document that comes in through ingestion: it has
+  read the whole text, and says the kind as `document_kind` when it finishes.
+- **The agent that records the source**: `source_kind` on
+  `record_claim_instance`, `record_question_instance`, `record_estimate`,
+  `record_quantity_reading` and `record_argument_instance`, and on the
+  provenance tools, `source_kind` on a reading and `to_source_kind` on an
+  upstream edge.
+
+`recordSourceKind` (`source-service.ts`) is the one writer the agents share,
+and its rule is who has seen the document. An agent that only cites a source
+fills the kind where none more specific is recorded (`unknown`, or `webpage`
+giving way to a specific kind). An agent that read it, the Extractor, or a
+reading with `source_read` or an edge with `target_read`, corrects it. Every
+call's result says what the source's kind now is, and says so when the kind
+stated was not taken.
+
 A source also carries **facts** that need no judgment (authors, publisher,
 publication date at the precision stated, DOI, an archived copy, and the
 dated `source_events` a watcher recorded against it: corrections,
@@ -534,7 +594,10 @@ sections and passages, each instance anchored to the passage its quote sits
 in (#507). Both are filled once, on ingest and when `provenance_read_source`
 first fetches a document (`refreshSourceFactsOnce`, `segmentSourceOnce`).
 Most of a page's facts are in its own metadata, so both need the document's
-text, and a source an agent cites by URL without opening it (recording an
+text. Where the URL cited is a rendering that carries no metadata, an arXiv
+PDF or full-text HTML page, the lookup reads the facts from the paper's
+abstract page instead (`factsPageUrl`), and a paper on arXiv is recorded as a
+preprint from its address alone (`kindFromUrl`). And a source an agent cites by URL without opening it (recording an
 instance, an argument passage, a reading or an upstream edge) is created
 with none. The source backfill (`src/workers/source-backfill.ts`) fills
 what those two paths miss. For a source with a URL and no stored text that
@@ -556,6 +619,21 @@ intake review, is never fetched. It runs in two stages,
   that could not be fetched is fetched when an agent next opens it, and its
   facts are looked up again then. A lease in `platform_flags`
   (`source_sweep_lease`) lets one task sweep at a time.
+
+A retraction, correction or expression of concern recorded against a
+source is also a reason to look again at what rests on it. The first time
+either watcher records one (the Crossref poll, or the facts lookup above,
+which asks Crossref about the document's DOI), the Steward of every active
+node with the source attached, or resting on it through recorded
+provenance, gets one `source_event` message naming the notice and the path
+(`src/services/source-notice-service.ts`, which holds the list of kinds).
+The message spends nothing: the node becomes a candidate, and its pass runs
+when someone commissions it (docs/allocation.md, "Node inboxes and
+messages"). A node whose Steward is reading the document when the lookup
+runs is not sent the message: the read's result lists the notice. Every
+recorded notice, of any kind, is on the source's page and is counted for a
+judgment made against the source before it (`since_assessed.source_events`):
+that is the record, and the message is the prompt.
 
 #### Source provenance: what the support rests on
 
@@ -2092,10 +2170,40 @@ Nothing else changes. The tables stay. Core routes that carry a field about
 a feature (a claim's formalization record, the prize money in a mandate's
 accounts) keep the field and report what the tables hold, which is nothing
 in a deployment that has never had the feature. The role prompts and skills
-are the same text either way. A formalization the Steward is asked
-for with `mathematics` off ends the way it does with no checker configured:
-the run is told the formal tools are unavailable and why, and logs that it
-could not proceed.
+are the same text either way.
+
+A plan cannot ask for work that only a feature can carry out. The kinds of
+work that belong to a feature are listed beside its tools
+(`ACTION_FEATURES` in `src/llm/tools/feature-tools.ts`): `formalize` and
+`attempt_proof` belong to `mathematics`. With the feature off, a plan item
+of that kind is refused where the agent proposes it (every path that writes
+a plan validates through `validatePlanItems`), with the reason and what to
+do: "formalize is not available in this deployment: mathematics is switched
+off. Leave it out of the plan." The plan tools' schema and descriptions
+still name the kind, as the prompts still describe it. An item a plan
+already held when the feature went off opens no ledger row and reads
+`blocked` with the same reason; it becomes work again if the feature is
+switched back on. A formalize row that was already open then runs once and
+ends the way it does with no checker configured: the run is told the formal
+tools are unavailable and why, and logs that it could not proceed.
+
+Because the prompts do not change, each agent run is told in its brief
+instead. One generated passage heads the first task message of the run
+(`src/llm/features-off-note.ts`), naming the features that are off here in
+words an agent would know them by, and saying that their tools are not
+offered, so what its instructions and skills say about using them does not
+apply in this deployment. What they say about reading a record the feature
+left behind (a formal statement published while mathematics was on) still
+holds: the tables stay, and so does what is in them. The LLM client adds it (`src/llm/client.ts`), so
+every agent is told without its own code knowing of it; a call that is not
+an agent's run is sent as given, and so is every call in a deployment with
+nothing off, where there is no passage at all. The passage is outside the
+role text that the prompt set hashes (`GET /setup/prompt-set`), so the
+prompt set is the same in every deployment and "this run used the published
+prompts" stays a comparison of hashes. The run's log records the passage
+with the message it heads, and its setup lists the features that were off
+for the run (`setup.featuresOff`, an empty list when none was;
+docs/run-log.md).
 
 `GET /setup/features` (`list_features` on MCP) reports each feature with
 whether it is on and what switching it off removes. That is how the web app

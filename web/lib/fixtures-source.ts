@@ -512,8 +512,8 @@ function thinkTankContext(): SourceContext {
         ],
         rest: [
           { source_type: "news_article", sources: 14, fidelity: { faithful: 9, strengthened: 5 } },
-          { source_type: "social_post", sources: 6, fidelity: { strengthened: 3, unclear: 3 } },
-          { source_type: "fact_check", sources: 3, fidelity: { faithful: 3 } },
+          { source_type: "social_media_post", sources: 6, fidelity: { strengthened: 3, unclear: 3 } },
+          { source_type: "news_article", sources: 3, fidelity: { faithful: 3 } },
         ],
       },
     },

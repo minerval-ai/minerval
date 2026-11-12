@@ -1266,6 +1266,211 @@ html { scroll-behavior: smooth; }
 .account-table code { font-size: 0.8rem; }
 .usage-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.6rem 0 1rem; }
 
+/* ---- the account page (app/account/page.tsx) -------------------------------
+   Four figures across the top answer what a visit is usually for; under them
+   each section is a main column and a narrower one beside it, which stack on
+   a phone. Hairlines and small caps as everywhere else; the one filled
+   control is the way to buy owls. */
+.account-home .page-meta { margin-bottom: 0.9rem; }
+.acct-figures {
+  display: flex; flex-wrap: wrap; margin-top: 0.3rem;
+  border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule);
+}
+.acct-figure {
+  flex: 1 1 11rem; min-width: 0; padding: 1rem 1.25rem 1.1rem;
+  border-left: 1px solid var(--rule);
+}
+.acct-figure:first-child { flex: 1.5 1 16rem; padding-left: 0; border-left: 0; }
+.acct-figure:last-child { padding-right: 0; }
+.acct-figure p { margin: 0; }
+.acct-balance {
+  display: flex; align-items: center; gap: 0.55rem; margin-top: 0.3rem;
+  font-size: 2.3rem; line-height: 1; letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-balance strong { font-weight: 600; }
+.acct-figure .acct-figure-value {
+  margin-top: 0.5rem; font-size: 1.5rem; font-weight: 600; line-height: 1.1;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* the part of an owl after the point: smaller and quieter, so "1,717.114"
+   reads as seventeen hundred owls and not as a number in the millions */
+.acct-fraction { font-size: 0.5em; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.acct-figure-value .acct-fraction { font-size: 0.6em; }
+.acct-unit { font-size: 1rem; font-weight: 400; letter-spacing: 0; color: var(--ink-soft); }
+.acct-balance .acct-unit { align-self: flex-end; padding-bottom: 0.15rem; }
+.acct-figure .acct-figure-note {
+  margin-top: 0.45rem; font-family: var(--sans); font-size: 0.7rem; line-height: 1.45;
+  color: var(--muted);
+}
+.acct-balance + .acct-figure-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; margin-top: 0.85rem;
+}
+a.acct-buy, a.acct-buy:visited {
+  display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0 1.05rem;
+  border-radius: 4px; background: var(--ink); color: var(--paper);
+  font-size: 0.74rem; font-weight: 600;
+}
+a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
+
+.acct-nav, .acct-links {
+  display: flex; flex-wrap: wrap; gap: 0.2rem 1.4rem;
+  font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
+.acct-nav { padding: 0.65rem 0; border-bottom: 1px solid var(--rule); }
+
+/* a section's anchor clears the sticky masthead */
+.acct-section { margin-top: 3.2rem; scroll-margin-top: 4rem; }
+#buy-owls { scroll-margin-top: 4rem; }
+.acct-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 0.4rem 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule);
+}
+.acct-head h2 { margin: 0; padding: 0; border: 0; }
+.acct-cols { display: flex; flex-wrap: wrap; gap: 2.2rem 3.2rem; margin-top: 1.15rem; }
+.acct-cols-flush { margin-top: 0; }
+.acct-cols-end { align-items: flex-end; gap: 0.6rem 3.2rem; }
+.acct-cols-end .key-create { margin: 0 0 0.3rem; max-width: none; }
+.acct-main { flex: 999 1 26rem; min-width: 0; }
+.acct-side { flex: 1 1 16.5rem; min-width: 0; }
+.acct-side-wide { flex-basis: 20rem; }
+.acct-sub { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.account-home h3 { margin: 0; }
+.account-home h3.acct-gap { margin-top: 1.8rem; }
+.acct-note {
+  font-family: var(--sans); font-size: 0.68rem; line-height: 1.5; color: var(--muted);
+}
+p.acct-note { margin: 0.55rem 0 0; }
+.acct-lede { max-width: 32rem; }
+.acct-prose { font-size: 0.84rem; color: var(--ink-soft); margin: 0.5rem 0 0; }
+p.acct-main.acct-prose { margin: 0; }
+.acct-measure { max-width: 34rem; }
+.acct-job + .acct-prose, .account-empty + .acct-prose { margin-top: 0.9rem; }
+.acct-quiet { color: var(--muted); }
+
+/* a list of lines: what, small print beside it, an amount at the right */
+.acct-day { padding: 1rem 0 0.3rem; border-bottom: 1px solid var(--rule); }
+.acct-line {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.05rem 1rem;
+  align-items: baseline; padding: 0.42rem 0; border-bottom: 1px solid var(--rule-soft);
+  font-size: 0.86rem;
+}
+.acct-line-3 { grid-template-columns: minmax(0, 1fr) auto auto; }
+.acct-line-under { grid-column: 1 / -1; }
+.acct-detail {
+  margin-left: 0.4rem; font-family: var(--sans); font-size: 0.68rem; color: var(--muted);
+}
+.acct-amount, .acct-num {
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-num-left { white-space: nowrap; font-variant-numeric: tabular-nums lining-nums; }
+.acct-status, .acct-record { font-family: var(--sans); font-size: 0.7rem; white-space: nowrap; }
+.acct-status { font-weight: 600; color: var(--muted); }
+.acct-status-accepted { color: var(--st-verified); }
+.acct-status-rejected { color: var(--st-contradicted); }
+
+/* several like lines of one day, folded under their sum */
+.acct-fold > summary { cursor: pointer; list-style: none; }
+.acct-fold > summary::-webkit-details-marker { display: none; }
+.acct-fold > summary > div:first-child::before {
+  content: "\25B8"; display: inline-block; width: 0.9rem; color: var(--muted);
+  font-variant-emoji: text;
+}
+.acct-fold[open] > summary > div:first-child::before { content: "\25BE"; }
+.acct-fold > .acct-line { padding-left: 0.9rem; }
+.acct-asTable { margin-top: 0.7rem; }
+.acct-asTable > summary {
+  cursor: pointer; font-family: var(--sans); font-size: 0.72rem; color: var(--link);
+}
+
+/* the two readings of the history: a pair of links, the current one filled */
+.acct-switch {
+  display: flex; border: 1px solid var(--rule-strong); border-radius: 4px; overflow: hidden;
+  font-family: var(--sans); font-size: 0.68rem; font-weight: 600;
+}
+.acct-switch a, .acct-switch a:visited {
+  padding: 0.4rem 0.75rem; color: var(--ink-soft); background: var(--paper-card);
+}
+.acct-switch a + a { border-left: 1px solid var(--rule-strong); }
+.acct-switch a:hover { text-decoration: none; background: var(--paper-sunk); }
+.acct-switch a[aria-current], .acct-switch a[aria-current]:hover {
+  background: var(--ink); color: var(--paper);
+}
+
+.acct-table { max-width: none; margin: 0.5rem 0 0; }
+.acct-table th.acct-num, .acct-table td.acct-num { text-align: right; padding-right: 0; padding-left: 0.9rem; }
+.acct-scroll { overflow-x: auto; }
+.acct-keys { min-width: 38rem; margin-top: 1rem; }
+
+/* packs, in the narrow column: two to a row, left-aligned */
+.acct-side .owl-packs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.acct-side .owl-pack { align-items: flex-start; min-width: 0; padding: 0.6rem 0.75rem; border-radius: 4px; text-align: left; }
+.acct-side .owl-pack-count { font-family: var(--serif); font-size: 1rem; }
+.acct-side .owl-pack-price { font-size: 0.74rem; }
+.owl-pack-each { color: var(--muted); white-space: nowrap; }
+
+/* a funded job: its name and spend, a meter, what is left */
+.acct-job { padding: 0.7rem 0; border-bottom: 1px solid var(--rule-soft); font-size: 0.86rem; }
+.acct-job-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0.1rem 1rem;
+}
+.acct-job-head > div:first-child { min-width: 0; }
+.acct-job .meter { max-width: none; margin: 0.45rem 0 0.3rem; }
+
+/* cost by day: one bar a day on a calendar axis, three hairline gridlines */
+.acct-chart {
+  position: relative; height: 9rem; margin-top: 1.4rem; margin-left: 2.3rem;
+  border-bottom: 1px solid var(--rule-heavy);
+}
+.acct-grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--rule-soft); }
+.acct-grid span {
+  position: absolute; right: 100%; top: 0; margin-right: 0.4rem; transform: translateY(-50%);
+  font-family: var(--sans); font-size: 0.6rem; color: var(--muted);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-bars { position: absolute; inset: 0; display: flex; align-items: stretch; }
+.acct-barcol {
+  position: relative; flex: 1 1 0; min-width: 0; padding: 0 1px;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+}
+.acct-barcol:hover { background: var(--paper-sunk); }
+.acct-bar {
+  width: 100%; max-width: 1.05rem; min-height: 2px;
+  background: var(--ink-soft); border-radius: 3px 3px 0 0;
+}
+.acct-barcol:hover .acct-bar { background: var(--ink); }
+.acct-barlabel {
+  position: absolute; white-space: nowrap; font-family: var(--sans); font-size: 0.62rem;
+  font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums lining-nums;
+}
+.acct-ticks {
+  display: flex; margin: 0.3rem 0 0 2.3rem;
+  font-family: var(--sans); font-size: 0.6rem; color: var(--muted);
+}
+.acct-ticks > div { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+
+/* cost by agent: name, bar, cost, calls */
+.acct-agents { margin-top: 0.45rem; }
+.acct-agent {
+  display: grid; grid-template-columns: 7.6rem minmax(0, 1fr) 3.7rem 2.6rem; gap: 0.5rem;
+  align-items: center; padding: 0.24rem 0; font-size: 0.78rem;
+}
+.acct-agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-agent-bar { height: 0.5rem; min-width: 2px; background: var(--ink-soft); border-radius: 0 3px 3px 0; }
+.acct-agent .acct-quiet { font-family: var(--sans); font-size: 0.68rem; }
+
+@media (max-width: 640px) {
+  .acct-figure, .acct-figure:first-child {
+    flex-basis: 100%; padding: 0.9rem 0; border-left: 0; border-top: 1px solid var(--rule);
+  }
+  .acct-figure:first-child { border-top: 0; }
+  .acct-balance { font-size: 2rem; }
+  .acct-line-3 { grid-template-columns: minmax(0, 1fr) auto; }
+  .acct-line-3 > div:first-child { grid-column: 1 / -1; }
+  .acct-agent { grid-template-columns: 6rem minmax(0, 1fr) 3.7rem 2.4rem; }
+}
+
 /* ---- contribution entry points (#174) ------------------------------------- */
 /* Visible to every reader, quiet on the page: the prompt advertises that the
    page is challengeable; the action itself is gated behind sign-in. */
@@ -1644,7 +1849,7 @@ a.ask-cite:not([class*="st-"]), a.ask-cite:not([class*="st-"]):visited { color: 
 .ask-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ask-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 0.2rem; }
 .ask-allow { display: inline-flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: baseline; font-size: 0.76rem; color: var(--muted); }
-.ask select {
+.ask-card select {
   font-family: var(--sans); font-size: 0.78rem; padding: 0.2rem 0.3rem; max-width: 100%;
   border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card); color: var(--ink);
 }
@@ -1710,3 +1915,144 @@ a.ask-cite:not([class*="st-"]), a.ask-cite:not([class*="st-"]):visited { color: 
 }
 .ask-page-card { text-decoration: none; }
 .ask-about { margin: 1.2rem 0; }
+
+/* ---- the Ask section as a chat (web/app/ask/layout.tsx) ------------------
+   Three columns under the masthead: what the account has, the conversation,
+   and a panel for a cited node or a saved page. The shell fills the window,
+   so the composer never scrolls out of view; the site footer gives way. */
+body:has(.ask-shell) { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+body:has(.ask-shell) footer.site { display: none; }
+.frame:has(.ask-shell) { max-width: none; width: 100%; padding: 0; flex: 1; min-height: 0; }
+.ask-shell {
+  display: grid; grid-template-columns: 15.5rem minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+  height: 100%; font-family: var(--sans);
+}
+.ask-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.ask-main > * { flex: 1 0 auto; }
+.ask-main > .ask-chat { flex: 1 1 0; }
+.ask-main > .ask-page { margin: 0 auto; padding: 2rem 1.6rem 4rem; }
+
+.ask-side {
+  border-right: 1px solid var(--rule-soft); background: var(--paper-sunk);
+  padding: 1rem 0.8rem 2rem; overflow-y: auto; font-size: 0.82rem;
+  display: flex; flex-direction: column; gap: 1.2rem;
+}
+.ask-side-fold { display: none; }
+.ask-side-new, .ask-side-fold .ask-side-new {
+  display: block; padding: 0.45rem 0.6rem; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--paper-card); color: var(--ink); font-weight: 600; text-align: center;
+}
+.ask-side-new:hover { text-decoration: none; background: var(--paper); }
+.ask-side h2, .ask-side-fold h2 {
+  font-family: var(--sans); font-size: 0.66rem; font-weight: 600; color: var(--faint);
+  margin: 0 0 0.3rem 0.6rem; border: none; padding: 0;
+}
+.ask-side ul, .ask-side-fold ul { list-style: none; margin: 0; padding: 0; }
+.ask-side li a, .ask-side-fold li a {
+  display: flex; gap: 0.4rem; align-items: baseline; padding: 0.3rem 0.6rem; border-radius: 5px;
+  color: var(--ink-soft);
+}
+.ask-side li a span, .ask-side-fold li a span {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ask-side li a em, .ask-side-fold li a em { font-style: normal; font-size: 0.68rem; color: var(--faint); white-space: nowrap; }
+.ask-side li a:hover, .ask-side-fold li a:hover { text-decoration: none; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.ask-side li a.active { background: color-mix(in srgb, var(--ink) 9%, transparent); color: var(--ink); }
+.ask-side-empty { margin: 0 0.6rem; font-size: 0.74rem; color: var(--faint); }
+
+.ask-chat {
+  display: grid; grid-template-columns: minmax(0, 1fr) 21rem; grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+.ask-chat.ask-chat-wide-panel { grid-template-columns: minmax(0, 1fr) minmax(24rem, 46%); }
+.ask-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ask-bar {
+  display: flex; gap: 1rem; align-items: baseline; justify-content: space-between;
+  padding: 0.55rem 1.6rem; border-bottom: 1px solid var(--rule-soft); font-size: 0.78rem;
+}
+.ask-bar-title { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ask-bar .linklike { font-size: 0.74rem; flex-shrink: 0; }
+.ask-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.ask-transcript {
+  max-width: 44rem; margin: 0 auto; padding: 1.4rem 1.6rem 1rem;
+  display: flex; flex-direction: column; gap: 1.3rem;
+}
+.ask-msg { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.ask-msg-user { align-items: flex-end; }
+.ask-bubble {
+  max-width: 85%; background: var(--paper-sunk); border: 1px solid var(--rule-soft);
+  border-radius: 12px; padding: 0.55rem 0.85rem; font-size: 0.9rem; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ask-welcome { margin: 12vh 0 0; }
+.ask-welcome h2 { font-family: var(--serif); font-size: 1.5rem; margin: 0 0 0.6rem; border: none; padding: 0; }
+.ask-welcome p { font-size: 0.86rem; line-height: 1.55; color: var(--muted); margin: 0; }
+
+/* what a running reply is doing */
+.ask-activity { list-style: none; margin: 0; padding: 0; font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.15rem; }
+.ask-activity li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-activity li span { color: var(--faint); }
+.ask-activity li:last-child { color: var(--ink-soft); }
+.ask-activity li:last-child::after { content: "…"; }
+.ask-activity-note { font-style: italic; }
+
+.ask-dock { max-width: 44rem; width: 100%; margin: 0 auto; padding: 0.4rem 1.6rem 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.ask-composer {
+  border: 1px solid var(--rule); border-radius: 12px; background: var(--paper-card);
+  padding: 0.55rem 0.6rem 0.5rem 0.85rem; display: flex; flex-direction: column; gap: 0.3rem;
+}
+.ask-composer:focus-within { border-color: var(--muted); }
+.ask-composer textarea {
+  font-family: var(--sans); font-size: 0.92rem; line-height: 1.5; color: var(--ink);
+  background: none; border: none; outline: none; resize: none; padding: 0; width: 100%;
+  min-height: 2.8rem; max-height: 14rem; field-sizing: content;
+}
+.ask-composer-row { display: flex; justify-content: flex-end; align-items: center; gap: 0.7rem; }
+.ask-composer-row .order-button { padding: 0.3rem 0.9rem; border-radius: 8px; }
+/* the model: said quietly beside the send button, a menu only when opened */
+.ask-model {
+  appearance: none; -webkit-appearance: none; border: none; background: none; padding: 0.2rem 1.1rem 0.2rem 0.3rem;
+  font-family: var(--sans); font-size: 0.76rem; color: var(--muted); cursor: pointer; border-radius: 5px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 8px) 55%, calc(100% - 4px) 55%; background-size: 4px 4px; background-repeat: no-repeat;
+}
+span.ask-model { background-image: none; padding-right: 0.3rem; cursor: default; }
+select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var(--paper-sunk); }
+.ask-dock .ask-bill { border-top: none; padding-top: 0; font-size: 0.72rem; color: var(--faint); }
+.ask-dock .ask-allowed { position: relative; font-size: 0.72rem; color: var(--faint); }
+.ask-dock .ask-allowed summary { list-style: none; cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule); }
+.ask-dock .ask-allowed summary::-webkit-details-marker { display: none; }
+.ask-allowed-pop {
+  position: absolute; right: 0; bottom: 1.6rem; width: min(24rem, 80vw); z-index: 5;
+  background: var(--paper-card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 0.7rem 0.9rem; box-shadow: 0 4px 18px rgb(var(--shadow) / 0.12);
+}
+
+/* the right panel: a cited node while it is pointed at, or a saved page */
+.ask-panel {
+  border-left: 1px solid var(--rule-soft); padding: 1.2rem 1.1rem 2rem; overflow-y: auto; min-width: 0;
+  display: flex; flex-direction: column; gap: 0.8rem; align-items: stretch;
+}
+.ask-preview { margin: 0; }
+.ask-preview .card-claim { font-family: var(--serif); font-size: 0.98rem; }
+.ask-fact { font-size: 0.72rem; color: var(--muted); }
+.ask-panel-title { font-family: var(--serif); font-size: 1.25rem; line-height: 1.25; margin: 0; border: none; padding: 0; }
+.ask-panel-close { align-self: flex-start; font-size: 0.74rem; order: -1; }
+.ask-panel .kept-view { max-width: none; }
+.kept-card .card-claim, .kept-decomposition ul { font-family: var(--serif); }
+.ask-cited-narrow { display: none; }
+.ask-card-page { align-self: flex-start; }
+
+@media (max-width: 1099px) {
+  .ask-chat, .ask-chat.ask-chat-wide-panel { grid-template-columns: minmax(0, 1fr); }
+  .ask-panel { display: none; }
+  .ask-cited-narrow { display: block; }
+}
+@media (max-width: 760px) {
+  .ask-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .ask-side { display: none; }
+  .ask-side-fold { display: block; border-bottom: 1px solid var(--rule-soft); font-size: 0.82rem; }
+  .ask-side-fold summary { padding: 0.5rem 1rem; color: var(--muted); cursor: pointer; }
+  .ask-side-fold nav { padding: 0.4rem 0.8rem 1rem; display: flex; flex-direction: column; gap: 1rem; max-height: 60dvh; overflow-y: auto; }
+  .ask-transcript, .ask-dock, .ask-bar { padding-left: 1rem; padding-right: 1rem; }
+}

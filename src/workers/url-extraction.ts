@@ -28,6 +28,8 @@ import { enqueueClaimPipeline, requestAudit } from "../services/queue-service.js
 import type { UrlExtractionMessage } from "../services/queue-service.js";
 import { currentLabel, runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
+import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
+import { recordSourceKind } from "../services/source-service.js";
 import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import { fetchPublicUrl } from "../services/url-guard.js";
@@ -233,13 +235,21 @@ async function processUrlExtraction(
     // only the claims bearing on it (ingest-focus-service.ts).
     const focus = normalizeFocus(message.focus);
     let documentProblem: DocumentProblem | null = null;
+    let documentKind: SourceKind | null = null;
     const extracted = await extractClaims({
       content,
-      sourceType: source.sourceType,
+      // The prompt's noun for what is being read: the source's kind where
+      // one is recorded, else the prompt's own default ("document").
+      ...(GENERIC_SOURCE_KINDS.has(source.sourceType)
+        ? {}
+        : { sourceType: source.sourceType.replace(/_/g, " ") }),
       additionalContext: source.title,
       ...(focus ? { focus } : {}),
       onDocumentProblem: (p) => {
         documentProblem = p;
+      },
+      onDocumentKind: (k) => {
+        documentKind = k;
       },
       // Where the document reasons about each claim (#541).
       recordArguments: true,
@@ -479,6 +489,15 @@ async function processUrlExtraction(
     const problem = documentProblem as DocumentProblem | null;
     if (problem) {
       await handleDocumentProblem(source.id, message.url, problem);
+    }
+    // What kind of document it was, as the Extractor that read it whole
+    // says: kept on the source, replacing a kind recorded by an agent that
+    // only cited it. Losing it never loses the extraction.
+    const kind = documentKind as SourceKind | null;
+    if (!problem && kind) {
+      await recordSourceKind(source.id, kind, { read: true }).catch((err) =>
+        console.error(`[url-extraction] recording the source kind failed for ${source.id}:`, err)
+      );
     }
 
     // Divide the document by its own structure and anchor the instances

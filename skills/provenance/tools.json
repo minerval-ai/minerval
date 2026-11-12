@@ -93,6 +93,34 @@
         "source_read": {
           "type": "boolean",
           "description": "True only if you read the source's text (with provenance_read_source or by opening it), not merely its excerpt and metadata."
+        },
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "dataset",
+            "official_statistics",
+            "transcript",
+            "treaty",
+            "court_record",
+            "legislation",
+            "journal_article",
+            "preprint",
+            "conference_paper",
+            "book",
+            "book_chapter",
+            "thesis",
+            "report",
+            "standard",
+            "news_article",
+            "opinion",
+            "press_release",
+            "blog_post",
+            "social_media_post",
+            "reference_work",
+            "broadcast",
+            "webpage"
+          ],
+          "description": "What kind of document the source is, when you have seen enough of it to say. 'dataset': data published as data: a data file, a database, a registry record; 'official_statistics': a statistical release from the body that compiles the figures; 'transcript': the verbatim record of what was said: a hearing, a speech, an interview or debate in full, or the recording itself; 'treaty': the text of a treaty or international agreement; 'court_record': a judgment, order, or filing in a case; 'legislation': a statute, regulation or bill, in its own text; 'journal_article': an article in a scholarly journal; 'preprint': a scholarly paper posted before or without journal publication; 'conference_paper': a paper in a conference's proceedings; 'book': a book; 'book_chapter': a chapter of a book; 'thesis': a dissertation or thesis; 'report': a report, working paper or white paper issued by an organization: an agency, a company, a think tank, a working group; 'standard': a published technical standard or specification; 'news_article': a news outlet's report of events; 'opinion': an editorial, column, essay or commentary that argues a position; 'press_release': an organization's own announcement or statement; 'blog_post': a post on a personal or organizational blog, forum or newsletter; 'social_media_post': a post or thread on a social platform; 'reference_work': an encyclopedia entry, textbook, handbook or fact sheet; 'broadcast': a podcast, programme or video that is not a verbatim record of one remark or event; 'webpage': a web page of none of the kinds above: an organization's page, documentation, a product page. Say what the document itself is, not what it reports on: a news report of a court ruling is a news_article, and the ruling is the court_record. Omit it rather than guess. With source_read true your kind replaces the one recorded, since you have seen the document; otherwise it is taken only where none more specific is recorded. The result says what the source's kind now is."
         }
       },
       "required": [
@@ -127,6 +155,34 @@
         "to_source_title": {
           "type": "string",
           "description": "With to_source_url: the document's title."
+        },
+        "to_source_kind": {
+          "type": "string",
+          "enum": [
+            "dataset",
+            "official_statistics",
+            "transcript",
+            "treaty",
+            "court_record",
+            "legislation",
+            "journal_article",
+            "preprint",
+            "conference_paper",
+            "book",
+            "book_chapter",
+            "thesis",
+            "report",
+            "standard",
+            "news_article",
+            "opinion",
+            "press_release",
+            "blog_post",
+            "social_media_post",
+            "reference_work",
+            "broadcast",
+            "webpage"
+          ],
+          "description": "What kind of document the one drawn on is, from the same list as a reading's source_kind. State it whenever you can tell: a source of a primary kind (dataset, official_statistics, transcript, treaty, court_record, legislation) with nothing recorded upstream of it reads as where the claim's story begins, and any other reads as untraced. With target_read true your kind replaces the one recorded; otherwise it is taken only where none more specific is recorded. Omit it rather than guess."
         },
         "relation_type": {
           "type": "string",

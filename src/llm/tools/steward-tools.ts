@@ -79,6 +79,7 @@ import {
   setInstanceOrder,
 } from "../../services/claim-instance-service.js";
 import { ownershipRefusal } from "./steward-ownership.js";
+import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
 import {
   executeStewardStructureTool,
@@ -392,6 +393,7 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             description: "Title of the source",
           },
+          source_kind: SOURCE_KIND_PROPERTY,
           verbatim_text: {
             type: "string",
             description:
@@ -1643,6 +1645,9 @@ export async function executeStewardTool(
           });
         }
 
+        const kindRefusal = sourceKindRefusal(input.source_kind);
+        if (kindRefusal) return JSON.stringify({ success: false, message: kindRefusal });
+
         // Found-or-created by URL, WITHOUT enqueueing extraction: recording a
         // sighting must stay a cheap side effect of this run, never spawn an
         // extraction pipeline for the source.
@@ -1650,6 +1655,9 @@ export async function executeStewardTool(
           url,
           title: optText(input.title),
         });
+        // What kind of document it is, where the agent said: filled in where
+        // the source has none more specific, and reported back either way.
+        const sourceKind = await applyStatedSourceKind(source.id, input.source_kind);
 
         // Dedup on (claim, source, speaker) so re-assessments that reread the
         // same source don't pile up duplicate instances (#278), while a
@@ -1696,6 +1704,7 @@ export async function executeStewardTool(
         // does not state the claim; a new row would silently overturn it.
         if (existing?.detached_at) {
           return JSON.stringify({
+            ...sourceKind,
             success: false,
             deduplicated: true,
             instance_id: existing.id,
@@ -1715,6 +1724,7 @@ export async function executeStewardTool(
         }
         if (existing) {
           return JSON.stringify({
+            ...sourceKind,
             success: true,
             deduplicated: true,
             instance_id: existing.id,
@@ -1765,6 +1775,7 @@ export async function executeStewardTool(
           .returning();
 
         return JSON.stringify({
+            ...sourceKind,
           success: true,
           instance_id: instance!.id,
           source_id: source.id,

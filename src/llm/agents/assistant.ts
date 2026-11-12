@@ -67,6 +67,8 @@ export interface AssistantTurnInput {
   ) => Promise<AccountToolResult | null>;
   onText?: (delta: string, turn: number) => void;
   onNote?: (text: string) => void;
+  /** A tool is about to run: its name and what it was called with. */
+  onTool?: (tool: string, input: Record<string, unknown>) => void;
 }
 
 export interface AssistantToolUse {
@@ -161,6 +163,15 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
       });
     };
 
+    // Say what is about to run before it runs, so the user watching a long
+    // reply sees the work and not a still page.
+    const announced =
+      (execute: (name: string, toolInput: Record<string, unknown>) => Promise<string>) =>
+      (name: string, toolInput: Record<string, unknown>) => {
+        input.onTool?.(name, toolInput);
+        return execute(name, toolInput);
+      };
+
     const system = getAssistantSystemPromptBlocks();
     const blocks = (extra: string[]) => [system[0]! + extra.join("")];
 
@@ -179,7 +190,7 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
         model: input.model,
         maxIterations: RUN_TURN_GUARD,
         stream: true,
-        executeTool: copy.execute,
+        executeTool: announced(copy.execute),
         beforeTurn,
         turnNote,
       });
@@ -226,7 +237,7 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
         // and their stop button (see the module comment).
         maxIterations: RUN_TURN_GUARD,
         stream: true,
-        executeTool: tools.execute,
+        executeTool: announced(tools.execute),
         beforeTurn,
         turnNote,
         onText,

@@ -367,8 +367,25 @@ text must not be able to move a person's money or name.
 
 **Turns** follow the granting conversation's protocol: a message is saved
 and returns at once with `turn.state: "replying"`, the reply forms in the
-background (`turn.partial`, `turn.note`), and callers read the
-conversation until the turn is idle.
+background, and callers read the conversation until the turn is idle.
+While it runs the turn reports what it is doing: `turn.activity` (the
+latest tool calls, each with what it was pointed at), `turn.note` (the
+Assistant's own progress line) and `turn.partial` (the text of the reply
+once it starts writing). A reply usually opens with a long run of tool
+calls and no text, so the page shows the activity.
+
+**Names.** A conversation is named from its first message by a small
+model (`ASSISTANT_TITLE_MODEL`, the cheap tier by default), in the
+background while the Assistant starts on the reply: two to six words in
+place of the message's opening words, which stand in until the name
+arrives and stay if the call fails. The call is untraced, and its cost (a
+fraction of a cent) is charged with the conversation's.
+
+**The page.** `/ask` is laid out as a chat, not as an article
+(`web/app/ask/layout.tsx`): a sidebar of the user's conversations, pages
+and mandates, the conversation with its composer pinned at the bottom, and
+a right-hand panel that shows a cited node while its citation is pointed
+at, or a saved page opened from the conversation.
 
 **Privacy.** A conversation is private to its user. Its runs are logged
 like a granting conversation's, with the transcript private to the user
@@ -559,11 +576,27 @@ handler lands.
 
 ## Dashboard
 
-`/account` on the web app: profile, owl balance with the caps list, pack
-purchase flow (when billing is enabled) and the itemized owl history, key
-management (create/name/revoke — plaintext shown exactly once), usage by
-day / agent / key (cost observability), and contributor standing including
-owls earned. `/signin` lists whichever providers are configured.
+`/account` on the web app. Four figures head the page: the owl balance,
+what is still held in escrow by running work, the metered cost of the last
+30 days, and contributor standing. Under them:
+
+- **Owl history**, read by piece of work: each hold is shown with what was
+  returned from it, as one line and its cost, and a day's repeated small
+  charges (the Assistant's) as one line. The ledger entry by entry is one
+  click away (`/account?history=entries`). The folding is done in the web
+  app (`web/lib/owl-history.ts`) from `GET /billing/ledger`, whose returns
+  carry `settles_entry_id`, the charge they return part of; it changes no
+  amount. Beside the history: pack purchase (when billing is enabled) and
+  the caps list.
+- **Funded work**: open jobs with spend against budget, by their grant's
+  name; ordered assessments by claim, with what each cost (`cost_owls` on
+  `GET /orders`: the cap less what the settlement returned).
+- **Usage**: cost by day and by agent, drawn (cost observability).
+- **API keys**: create/name/revoke (plaintext shown exactly once), each key
+  with its calls and cost in the window.
+- **Contributions**: recent decisions and standing, including owls earned.
+
+`/signin` lists whichever providers are configured.
 
 ## Operational notes
 

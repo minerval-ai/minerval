@@ -7,7 +7,7 @@ description: >-
   where it matters.
 metadata:
   minerval:
-    version: 8
+    version: 9
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
@@ -18,6 +18,7 @@ metadata:
       6: A retraction or correction notice is sent to the Steward of every claim that asserts the document or rests on it through recorded provenance (trigger source_event), not only to lookouts.
       7: "a source that reports a result from evidence it holds and has not published is read as evidence not shown (support evidence_not_shown), apart from one that asserts without evidence"
       8: "a source's interest, a stake its author or publisher has in what it says, is recorded with record_source_interest as a fact about the source, and is shown on each instance's source in provenance_get_map"
+      9: A reading and an edge say what kind of document the source is (source_kind, to_source_kind), from one list; the kind recorded on a source decides whether it reads as an origin or as untraced, and an agent that read the document corrects a kind recorded by one that only cited it.
 ---
 
 ## For every administrator
@@ -97,10 +98,13 @@ the graph does not yet hold. As you read each source against the claim,
 record a reading with `provenance_record_reading`: whether its own evidence
 bears its assertion, what it deploys the claim for, a note in the graph's
 voice where one would help a reader, and whether a later Steward should open
-it and why. Where the source draws on another document for the assertion,
+it and why. Say what kind of document it is in `source_kind`; having read
+it, your kind replaces whatever an agent that only cited it recorded. Where
+the source draws on another document for the assertion,
 record the edge with `provenance_record_edge`, naming the passage where it
 does so, the kind of dependency, and how the claim fared in the crossing;
-say whether you opened the target. Where two documents are one voice, the
+say whether you opened the target, and what kind of document it is in
+`to_source_kind`. Where two documents are one voice, the
 same authors or the same text under two mastheads, record the relation with
 `provenance_record_source_relationship`. Finish with `provenance_write_map`:
 the account of what the support rests on, and whether it is material.
@@ -154,7 +158,11 @@ at the top as one of two things. It is an origin when its kind is a
 primary one, a dataset, official statistics, a transcript, a treaty, a
 court record, legislation; otherwise it is untraced, shown apart, so that
 a source nobody has followed upstream does not pass for one with nothing
-upstream to find. Where that derivation is wrong, record your judgment
+upstream to find. The kind is the one recorded on the source, and a source
+nobody has named a kind for is "unknown" and so untraced: state the kind on
+the reading or the edge when you record it, and most origins need nothing
+more. `provenance_get_map` shows each source's recorded kind. Where the
+derivation is still wrong, record your judgment
 with `provenance_record_root`: confirm as an origin the press release that
 first published the figure or the video of the remark, or mark as untraced
 a "transcript" that is a summary of an unseen original. The basis you give
@@ -306,7 +314,10 @@ does so, the kind of dependency, and how the claim fared in the crossing.
 The commonest failure at a crossing is strengthening (a hedged finding
 stated as fact, a subgroup result stated for everyone, a correlation stated
 as a cause), and catching it is the main reason the map exists; say with
-`target_read` whether you opened the target. Where two documents are one
+`target_read` whether you opened the target. Say what kind of document each
+is, in `source_kind` on the reading and `to_source_kind` on the edge: the
+kind recorded on a source decides whether it reads on the claim page as
+where the story begins or as untraced. Where two documents are one
 voice, record the relation with `provenance_record_source_relationship`.
 Where a source you read has a stake in the claim that the map does not
 show, record it with `record_source_interest`, as a fact about the source;

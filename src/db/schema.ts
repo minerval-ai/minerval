@@ -915,6 +915,13 @@ export const sources = pgTable("sources", {
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
+  // The one list of source kinds: SOURCE_KIND_DESCRIPTIONS in
+  // src/schemas/common.ts (tests/unit/schemas/source-kinds.test.ts holds the
+  // two together).
+  check(
+    "ck_sources_source_type",
+    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')`
+  ),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1563,7 +1570,7 @@ export const claimSourceMaps = pgTable(
 //
 // Most of the distinction is derived, not stored: a source the claim's edges
 // lead upward from is not a top node at all, and a top node whose kind is a
-// primary one (PRIMARY_SOURCE_TYPES) reads as an origin on that basis. This
+// primary one (PRIMARY_SOURCE_KINDS) reads as an origin on that basis. This
 // table holds only the Steward's judgment where it overrides or confirms the
 // derivation: an origin the kind does not reveal, or a mislabelled
 // "transcript" demoted to untraced. Claim-scoped, because the same document
@@ -2645,12 +2652,13 @@ export const grants = pgTable(
     dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
       .notNull()
       .default(0),
-    // The mandate's own allocation rules, owned and amended by ITS
-    // Grantmaker (update_allocation_policy), never edited directly in
-    // code: value-formula knobs, cost priors, tier threshold, cadence.
-    // Null = inherit the shared defaults (config). The General mandate's
-    // policy governs the platform's own lane — when we learn something
-    // about allocation, we ask its Grantmaker to change the formula.
+    // The mandate's own figures for pricing and pacing work: cost priors,
+    // the re-check cadence, attempt bounds, sweep and scan settings
+    // (services/allocation-policy-service.ts). Null = the shared defaults.
+    // The General mandate's row governs the platform's own work. No agent
+    // writes this column; scripts/seed-platform-mandates.ts is the one
+    // writer. A row from before #855, when a Grantmaker tool set it, may
+    // hold keys since removed, which the loader ignores.
     allocationPolicy: jsonb("allocation_policy"),
     // The Grantmaker's own working memory: a document it reads in full at
     // the start of every review pass and rewrites as it works — its map
@@ -3628,6 +3636,8 @@ export const assistantConversations = pgTable(
     turnPartial: text("turn_partial"),
     // The running turn's one-line progress note and its cost so far.
     turnNote: text("turn_note"),
+    // What the running turn has done so far, newest last: [{tool, about}].
+    turnActivity: jsonb("turn_activity"),
     turnCostMicroUsd: bigint("turn_cost_micro_usd", { mode: "number" }).notNull().default(0),
     // Set by the user's stop button; the running turn ends at its next step.
     stopRequested: boolean("stop_requested").notNull().default(false),
