@@ -20,6 +20,7 @@ import {
   serializeBudgetJob,
 } from "../services/budget-job-service.js";
 import { microUsdToOwls } from "../services/owl.js";
+import { requirePermission } from "../server/require-permission.js";
 
 export async function budgetJobRoutes(app: FastifyInstance): Promise<void> {
   app.get("/", {
@@ -71,7 +72,7 @@ export async function budgetJobRoutes(app: FastifyInstance): Promise<void> {
         properties: { owls: { type: "number", exclusiveMinimum: 0 } },
       },
     },
-    preHandler: [app.authenticate, app.requireUser],
+    preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
     handler: async (request, reply) => {
       const result = await topUpBudgetJob({
         jobId: request.params.id,

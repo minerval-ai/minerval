@@ -88,7 +88,8 @@ import {
   REPORT_BODY_MAX_CHARS,
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
-import { registerRouteTools } from "./route-tools.js";
+import { registerRouteTools, withheldRouteTools } from "./route-tools.js";
+import { permissionsNote } from "../llm/permissions-note.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
 import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
@@ -190,6 +191,13 @@ function formatAssessment(
  * transcript of the text is kept. Text meant to become provenance goes
  * through source submission, where the fetched document is public by
  * construction and its transcript is part of the record.
+ *
+ * That holds while the run log is best-effort, as on the public graph. In
+ * record mode untraced() suppresses nothing (llm/usage-context.ts): each
+ * Extractor, Matcher and domain-prior run the tool makes is logged and
+ * sealed like any run, private to its caller, and the tool fails if a log
+ * could not be written. The runs of one call share its request id. The
+ * charge is the metered cost either way.
  */
 async function agentic<T>(
   ctx: McpRequestContext,
@@ -368,6 +376,11 @@ async function matchAssertion(
 
 // ---- server -----------------------------------------------------------------
 
+function withPermissions(instructions: string, ctx: McpRequestContext): string {
+  const note = ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "";
+  return note ? `${instructions}\n\n${note}` : instructions;
+}
+
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
   const server = new McpServer(
     {
@@ -375,7 +388,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       version: "0.1.0",
     },
     // The principles for callers, for clients that load no skills (#620).
-    { instructions: MCP_INSTRUCTIONS }
+    // In a members-only deployment a caller whose user lacks a permission
+    // is not offered the tools that need it (route-tools.ts), and is told
+    // so here, with the reason, as the Assistant is in its own brief
+    // (llm/permissions-note.ts). Everywhere else the note is empty.
+    { instructions: withPermissions(MCP_INSTRUCTIONS, ctx) }
   );
 
   // ---- free read tools ----

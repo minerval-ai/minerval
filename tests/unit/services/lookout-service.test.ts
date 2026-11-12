@@ -174,6 +174,8 @@ describe("createLookout", () => {
       2_500_000,
       [CLAIM],
       ["66666666-6666-4666-8666-666666666666"],
+      // The lookout's label: that of the run that sets it up, public outside any (src/labels.ts).
+      "public",
     ]);
     // The retired per-run count is no longer written; the column keeps its default (#695).
     expect(insert.q).not.toContain("max_ingests_per_run");
@@ -251,7 +253,8 @@ describe("flagReassessment", () => {
     expect(queries.some((x) => x.q.includes("INSERT INTO mandate_decisions") && x.q.includes("'lookout'"))).toBe(true);
     // The flag snapshots the assessment for the precision read.
     const ins = queries.find((x) => x.q.includes("INSERT INTO lookout_flags"))!;
-    expect(ins.params).toEqual([LOOKOUT, CLAIM, ACTION, expect.any(String), null, null, "supported", 0.8, "as-1"]);
+    // The last parameter is the flag's label: the lookout's run's, public outside any (src/labels.ts).
+    expect(ins.params).toEqual([LOOKOUT, CLAIM, ACTION, expect.any(String), null, null, "supported", 0.8, "as-1", "public"]);
   });
 
   it("raises the claim to the program officers without a budget, or above its limit", async () => {
@@ -305,7 +308,7 @@ describe("flagIngest", () => {
     // Nothing is appended to the plan, where it would be self-funded outside the allocator.
     expect(queries.some((x) => x.q.includes("UPDATE grants") && x.q.includes("jsonb_set"))).toBe(false);
     const flag = queries.find((x) => x.q.includes("INSERT INTO lookout_flags"))!;
-    expect(flag.params).toEqual([LOOKOUT, "https://example.org/paper", ROW, expect.any(String), null, null]);
+    expect(flag.params).toEqual([LOOKOUT, "https://example.org/paper", ROW, expect.any(String), null, null, "public"]);
   });
 
   it("records a focus before opening a scoped row", async () => {

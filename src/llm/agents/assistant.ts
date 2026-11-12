@@ -22,6 +22,7 @@ import {
   DELEGATE_SECTION,
   getAssistantSystemPromptBlocks,
 } from "../prompts/assistant.js";
+import { permissionsNote } from "../permissions-note.js";
 import {
   createAssistantTools,
   type AccountTools,
@@ -175,6 +176,12 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
     const system = getAssistantSystemPromptBlocks();
     const blocks = (extra: string[]) => [system[0]! + extra.join("")];
 
+    // In a members-only deployment, the tools this user's permissions leave
+    // out, and why (permissions-note.ts). Empty everywhere else. The reply's
+    // run and each delegated copy are told at the head of their own first
+    // message, since a copy sees nothing of this conversation.
+    const permissions = permissionsNote(input.account.withheld ?? []);
+
     // A delegated copy: the same tools without delegate, a fresh
     // conversation holding only the task, on the same meter.
     const delegate = async (task: string): Promise<string> => {
@@ -184,7 +191,9 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
         used,
       });
       const result = await toolUseLoop({
-        initialMessages: [{ role: "user", content: task }],
+        initialMessages: [
+          { role: "user", content: permissions ? `${permissions}\n\n---\n\n${task}` : task },
+        ],
         tools: copy.definitions,
         system: blocks([DELEGATE_SECTION]),
         model: input.model,
@@ -208,7 +217,7 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
       role: m.role,
       content:
         i === input.transcript.length - 1 && m.role === "user"
-          ? `${input.context}\n\n---\n\n${m.content}`
+          ? `${input.context}${permissions ? `\n\n${permissions}` : ""}\n\n---\n\n${m.content}`
           : m.content,
     }));
 

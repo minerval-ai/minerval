@@ -23,6 +23,7 @@ import { assistantPages, type AssistantPage } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { getClaimCards, CLAIM_CARDS_MAX_IDS, type ClaimCard } from "./claim-card-service.js";
 import { getClaimTree } from "./tree-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export const PAGE_MAX_BODY_CHARS = 200_000;
 export const PAGE_MAX_TITLE_CHARS = 200;
@@ -135,7 +136,9 @@ export async function savePage(input: {
   if (!input.id) {
     const [page] = await db
       .insert(assistantPages)
-      .values({ userId: input.userId, title, body, snapshot, savedAt: now })
+      // A new page carries the label of the run or request that makes it; a
+      // later save lands on the row and leaves it (src/labels.ts).
+      .values({ userId: input.userId, title, body, snapshot, savedAt: now, sensitivityLabel: currentLabel() })
       .returning();
     return { ok: true, page: page! };
   }

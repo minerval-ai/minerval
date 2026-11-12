@@ -16,7 +16,7 @@
  */
 import { getDb } from "../db/client.js";
 import { enqueueEvents } from "../db/schema.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 
 export type EnqueueTargetQueue =
@@ -61,6 +61,8 @@ function uuidOrNull(value: string | null | undefined): string | null {
 export function recordEnqueueEvent(event: EnqueueEventInput): void {
   if (!enqueueEventsEnabled()) return;
   const ctx = getUsageContext();
+  // Read with the rest of the context, before the write is cut loose.
+  const label = currentLabel();
   void (async () => {
     try {
       await getDb().insert(enqueueEvents).values({
@@ -73,6 +75,8 @@ export function recordEnqueueEvent(event: EnqueueEventInput): void {
         sourceRunId: uuidOrNull(ctx.runId),
         sourceClaimId: uuidOrNull(ctx.claimId),
         coalesced: event.coalesced ?? null,
+        // The label of the run or request that enqueued (src/labels.ts).
+        sensitivityLabel: label,
       });
     } catch (err) {
       console.error(

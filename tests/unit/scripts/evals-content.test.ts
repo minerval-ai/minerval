@@ -34,8 +34,6 @@ No standard here.
 `;
 
 const input: EvalsIndexInput = {
-  syncedAt: "2026-09-04T12:00:00.000Z",
-  gitCommit: "abc1234",
   pins: [
     { envVar: "STEWARD_MODEL", model: "claude-fable-5-1" },
     { envVar: "MATCHER_MODEL", model: "deepseek/deepseek-v4-flash" },

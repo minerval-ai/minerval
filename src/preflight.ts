@@ -709,10 +709,12 @@ function checkReportsStayInside({ config, holdsPrivate }: PreflightFacts): Outco
 }
 
 /**
- * Work that is never written to the run log, in any mode, because what it
- * handles on the public graph is a reader's own text (#356; docs/run-log.md,
- * "Record mode"). `feature` is the feature that switches the work off, or
- * null where nothing does. tests/unit/preflight.test.ts fails when a file
+ * Work the best-effort run log leaves out, because what it handles on the
+ * public graph is a reader's own text (#356). Record mode has no such
+ * exemption: there each of these is a logged run like any other
+ * (docs/run-log.md, "Work the best-effort log leaves out, and record mode
+ * does not"). `feature` is the feature that switches the work off, or null
+ * where nothing does. tests/unit/preflight.test.ts fails when a file
  * starts or stops calling untraced(), so this list is revisited then.
  */
 export const UNLOGGED_WORK: ReadonlyArray<{ file: string; what: string; feature: FeatureName | null }> = [
@@ -724,6 +726,9 @@ export const UNLOGGED_WORK: ReadonlyArray<{ file: string; what: string; feature:
 function checkFeatures({ config, holdsPrivate }: PreflightFacts): Outcome {
   const off = offFeatures(config);
   const offNow = off.length > 0 ? `Switched off: ${off.join(", ")}.` : "No feature is switched off.";
+  if (config.runLogMode === "record") {
+    return pass(`${offNow.slice(0, -1)}; the run log is in record mode, which logs every feature's work.`);
+  }
   const unlogged = UNLOGGED_WORK.filter((w) => w.feature && featureOn(w.feature, config));
   if (unlogged.length === 0) {
     return pass(`${offNow.slice(0, -1)}; no feature that is on does work the run log leaves out.`);
@@ -732,15 +737,24 @@ function checkFeatures({ config, holdsPrivate }: PreflightFacts): Outcome {
   if (!holdsPrivate) return pass(offNow);
   return fail(
     unlogged
-      .map((w) => `The ${w.feature} feature is on, and ${w.what} are never written to the run log`)
+      .map((w) => `The ${w.feature} feature is on, and ${w.what} are not written to a best-effort run log`)
       .join("; ") +
-      "; switch it off (features.off) while this deployment holds private material."
+      '; put the log in record mode (run_log.mode = "record"), or switch it off (features.off), ' +
+      "while this deployment holds private material."
   );
 }
 
-function checkWorkOutsideTheRunLog({ holdsPrivate }: PreflightFacts): Outcome {
+/**
+ * Agent work waits on the run_log check, but this work does not: it runs in
+ * the API, for a request that waits on it, which the gate does not hold
+ * (workers/agent-work-gate.ts). So it is checked here on its own.
+ */
+function checkWorkOutsideTheRunLog({ config, holdsPrivate }: PreflightFacts): Outcome {
   const unswitchable = UNLOGGED_WORK.filter((w) => !w.feature).map((w) => w.what);
   const listed = unswitchable.join(", and ");
+  if (config.runLogMode === "record") {
+    return pass(`The run log is in record mode, where ${listed} are logged runs like any other.`);
+  }
   if (holdsPrivate === null) return fail(PRIVATE_UNKNOWN);
   if (!holdsPrivate) {
     return notApplicable(
@@ -749,8 +763,8 @@ function checkWorkOutsideTheRunLog({ holdsPrivate }: PreflightFacts): Outcome {
     );
   }
   return fail(
-    `${listed.charAt(0).toUpperCase()}${listed.slice(1)} run without a log and have no switch, ` +
-      "so on this deployment they handle private material unlogged, whatever the run log's mode."
+    `${listed.charAt(0).toUpperCase()}${listed.slice(1)} are not written to a best-effort run log and have ` +
+      'no switch, so on this deployment they handle private material unlogged; put the log in record mode (run_log.mode = "record").'
   );
 }
 

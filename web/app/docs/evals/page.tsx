@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { MapDiagram } from "@/components/evals/Diagrams";
-import { fmtDate, loadEvalsData } from "@/lib/evals";
+import { loadEvalsData } from "@/lib/evals";
 import { GROUPS, TOPICS, indexRow } from "./guide";
 import s from "./evals.module.css";
 import { PageHead } from "@/components/PageHead";
@@ -89,7 +89,7 @@ export default function EvalsIndex() {
         ))}
       </p>
       <p className={s.small} style={{ marginTop: "1.2rem" }}>
-        Rendered from files committed to the repository, synced {fmtDate(d.index.syncedAt)} at commit <code>{d.index.gitCommit}</code>. Nothing here reads a live database.
+        Rendered from files committed to the repository. Nothing here reads a live database.
       </p>
     </div>
   );

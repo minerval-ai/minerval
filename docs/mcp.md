@@ -118,6 +118,14 @@ line in `ROUTE_TOOLS`. A route behind a feature that is switched off
 (docs/architecture.md, "Features") is not mounted and is therefore not a
 tool; `list_features` says which features a deployment has.
 
+The routes for permissions, parties and labels are mounted only by a
+members-only deployment (docs/accounts.md, "Members-only deployments"), so
+their tools exist only there, and the parity test builds that app too.
+Their reads are tools; their writes are excluded, because a change to who
+may do what takes a signed-in session. In such a deployment a tool whose
+route needs a permission is offered only to a caller whose account holds
+it, and the server's instructions name the tools left out and say why.
+
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
 guards, owl charges, validation, and serialization are the ones REST callers
@@ -344,7 +352,9 @@ read is free, an agent which signals allocation turns on.
   so far, for `assess_text` the judgments made so far), `complete` with the
   full result (`{claims}` / `{claims_extracted, judgments}`), or `failed`
   with an `error`. Only the account that started an analysis can read it,
-  and the text itself is not stored. The public `GET /jobs/:id` does not
+  and the text itself is not stored (a deployment that keeps its run log
+  as a record logs the analysis, privately: [run-log.md](run-log.md)). The
+  public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id?, contribution_type, content,
