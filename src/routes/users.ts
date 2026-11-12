@@ -13,6 +13,11 @@ import {
 import { microUsdToOwls } from "../services/owl.js";
 import { listOpenPrizeClaimsFor } from "../services/prize-account-service.js";
 import { trustLevelFor } from "../services/reputation-service.js";
+import { membersOnly } from "../permissions.js";
+import {
+  establishFirstAdministrator,
+  recordSignInGroups,
+} from "../services/permission-service.js";
 
 export function serializeUser(user: Contributor) {
   return {
@@ -55,6 +60,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
           display_name: { type: "string", minLength: 1 },
           email: { type: "string" },
           avatar_url: { type: "string" },
+          // The group names the identity provider put in this sign-in's
+          // claims. A field of a members-only deployment alone, where a
+          // grant can be made to a group (src/permissions.ts). When present
+          // it is the whole list: a group left out is one the person is no
+          // longer in.
+          ...(membersOnly() ? { groups: { type: "array", items: { type: "string" } } } : {}),
         },
       },
     },
@@ -65,6 +76,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         display_name: string;
         email?: string;
         avatar_url?: string;
+        groups?: string[];
       };
       const user = await provisionUser({
         externalId: body.external_id,
@@ -72,6 +84,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         email: body.email ?? null,
         avatarUrl: body.avatar_url ?? null,
       });
+      if (membersOnly()) {
+        if (body.groups !== undefined) await recordSignInGroups(user.id, body.groups);
+        // The person the FIRST_ADMINISTRATOR setting names is granted every
+        // permission the first time they sign in, once (permission-service).
+        await establishFirstAdministrator({ id: user.id, externalId: user.externalId });
+      }
       return reply.send({ user: serializeUser(user) });
     },
   });

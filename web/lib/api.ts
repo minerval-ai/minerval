@@ -33,6 +33,8 @@ import type {
   RunStep,
 } from "./types";
 import { ALL_FEATURES_ON, featuresFromResponse, type Features } from "./features";
+import { membersOnly } from "./members";
+import { viewerExternalId } from "./viewer";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
 // environment and attached here, on the server — it is never shipped to the
@@ -47,9 +49,46 @@ export function apiConfigured(): boolean {
 }
 
 class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+    // The API's own code for a refusal, where its answer carried one.
+    readonly code?: string,
+  ) {
     super(message);
   }
+}
+
+// The code in an error answer, in either shape the API uses: flat
+// { error, code }, or an { error: { code, message } } envelope.
+async function errorCode(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { code?: unknown; error?: { code?: unknown } | string };
+    const code = typeof body.error === "object" && body.error ? body.error.code ?? body.code : body.code;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// What a read sends and how long its answer may be kept.
+//
+// On the public graph a read is for anybody: the service key alone, and the
+// answer shared between readers for a short window, because the graph
+// changes as claims are reassessed.
+//
+// In a members-only deployment (lib/members.ts) the API answers by who is
+// reading, so the read names the signed-in reader and its answer is kept
+// for no one. A visitor who is not signed in is named as nobody, and the
+// API refuses the read.
+async function readOptions(): Promise<RequestInit & { next?: { revalidate: number } }> {
+  const key: Record<string, string> = KEY ? { "x-api-key": KEY } : {};
+  if (!membersOnly()) return { headers: key, next: { revalidate: 30 } };
+  const viewer = await viewerExternalId();
+  return {
+    headers: { ...key, ...(viewer ? { "x-acting-user": viewer } : {}) },
+    cache: "no-store",
+  };
 }
 
 // An id as exactly one segment of a backend path. Ids arrive from route
@@ -68,13 +107,13 @@ function pathSegment(id: string): string {
 
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
-  const res = await fetch(`${BASE}${path}`, {
-    headers: KEY ? { "x-api-key": KEY } : {},
-    // The graph changes as claims are reassessed; revalidate on a short window.
-    next: { revalidate: 30 },
-  });
+  const res = await fetch(`${BASE}${path}`, await readOptions());
   if (!res.ok) {
-    throw new ApiError(`Minerval API ${res.status} ${res.statusText} for ${path}`, res.status);
+    throw new ApiError(
+      `Minerval API ${res.status} ${res.statusText} for ${path}`,
+      res.status,
+      await errorCode(res),
+    );
   }
   return (await res.json()) as T;
 }
@@ -490,7 +529,8 @@ export async function fetchContributionStatus(id: string): Promise<{
   if (!BASE) return null;
   try {
     const res = await fetch(`${BASE}/contributions/${pathSegment(id)}`, {
-      headers: KEY ? { "x-api-key": KEY } : {},
+      // Read fresh in every deployment; in a members-only one, for the reader.
+      headers: (await readOptions()).headers,
       cache: "no-store",
     });
     if (!res.ok) return null;

@@ -47,6 +47,9 @@ vi.mock("../../../web/auth", () => ({
   githubEnabled: () => true,
   googleEnabled: () => true,
   devLoginEnabled: () => true,
+  // No single sign-on here: the page is the public site's.
+  oidcEnabled: () => false,
+  oidcName: () => "single sign-on",
 }));
 // The page asks which features are on. The real loader lives in the data
 // layer, which needs the API client and React; the page only needs the answer.

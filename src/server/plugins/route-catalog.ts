@@ -12,12 +12,20 @@
  * they are the GET route again.
  */
 import type { FastifyInstance, FastifySchema } from "fastify";
+import type { PermissionName } from "../../permissions.js";
+import { permissionsRequiredBy } from "../require-permission.js";
 
 export interface CatalogRoute {
   method: string;
   /** The full URL pattern, prefix included, trailing slash removed. */
   url: string;
   schema: FastifySchema | undefined;
+  /**
+   * The permissions the route's own guards ask for in a members-only
+   * deployment (server/require-permission.ts). Empty for most routes, and
+   * binding nowhere on the public graph.
+   */
+  permissions: PermissionName[];
 }
 
 /** `"GET /claims/:claim_id"`: how the parity table names a route. */
@@ -41,6 +49,7 @@ export async function registerRouteCatalog(app: FastifyInstance): Promise<void> 
         method: method.toUpperCase(),
         url: normalizeRouteUrl(route.url),
         schema: route.schema,
+        permissions: permissionsRequiredBy(route.preHandler),
       });
     }
   });

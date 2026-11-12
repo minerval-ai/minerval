@@ -17,7 +17,15 @@
  * a feature off (src/features.ts) does not mount that feature's routes, so
  * their generated tools are absent there: registerRouteTools walks the
  * catalog of mounted routes. The hand-written tools of a feature are gated
- * in server.ts.
+ * in server.ts. The routes for permissions, parties and labels are mounted
+ * only by a members-only deployment (src/permissions.ts), so their tools
+ * exist only there.
+ *
+ * In a members-only deployment a route may ask for a permission
+ * (server/require-permission.ts). A caller who does not hold it is not
+ * offered the route's tool: a tool that can only refuse is not an
+ * affordance. withheldRouteTools says which were left out and why, for the
+ * one caller that is told (the Assistant, llm/permissions-note.ts).
  *
  * A generated tool takes its input schema (the route's params, querystring,
  * and body, merged) and its description (the route's summary) from the
@@ -31,6 +39,12 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestAuth } from "../server/plugins/auth.js";
 import { routeKey, type CatalogRoute } from "../server/plugins/route-catalog.js";
 import { dispatchToRoute } from "./dispatch.js";
+import {
+  holdsPermission,
+  membersOnly,
+  standingOf,
+  type PermissionName,
+} from "../permissions.js";
 
 export interface RouteTool {
   name: string;
@@ -198,6 +212,16 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /runs/:run_id/steps": { name: "list_run_steps" },
   "GET /runs/:run_id/steps/:seq": { name: "get_run_step" },
 
+  // ---- permissions, parties and labels: members-only deployments only ----
+  // The reads. The writes are excluded below: they take a signed-in session.
+  "GET /permissions": { name: "list_permissions" },
+  "GET /permissions/mine": { name: "get_my_permissions" },
+  "GET /permissions/log": { name: "get_permission_log" },
+  "GET /permissions/grants": { name: "list_permission_grants" },
+  "GET /permissions/accounts": { name: "list_accounts" },
+  "GET /parties": { name: "list_parties" },
+  "GET /labels": { name: "list_labels" },
+
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
   "GET /findings": { name: "list_findings" },
@@ -270,8 +294,25 @@ const ASSISTANT_GATE =
   "would let it press its own button; the route also requires a signed-in " +
   "dashboard session.";
 
+const ADMINISTRATION_SESSION =
+  "Changes who may read, release or do what in a members-only deployment, so it takes a " +
+  "signed-in dashboard session as well as the permission to administer: a leaked key, an " +
+  "access token, or an agent following text it read can then never widen anyone's access. " +
+  "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /permissions/grants": ADMINISTRATION_SESSION,
+  "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
+  "POST /parties": ADMINISTRATION_SESSION,
+  "PUT /sources/:source_id/party": ADMINISTRATION_SESSION,
+  "POST /labels": ADMINISTRATION_SESSION,
+  "POST /labels/:label/reads": ADMINISTRATION_SESSION,
+  "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
+  "POST /operator/administrators":
+    "The way back in for a deployment whose administrators cannot sign in: requires the " +
+    "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",
+
   "GET /health": "A load-balancer liveness probe, not an affordance.",
   "PATCH /claims/:claim_id":
     "Direct service seeding only: writes an argument straight onto a " +
@@ -500,7 +541,39 @@ function toolResult(statusCode: number, contentType: string, raw: string): CallT
   };
 }
 
-/** Register a tool for every catalog route that ROUTE_TOOLS names. */
+/**
+ * The first permission a route asks for that `auth` does not hold, or null
+ * when the caller may use the route. Always null on the public graph, where
+ * no route's permission binds.
+ */
+function missingPermission(route: CatalogRoute, auth: RequestAuth): PermissionName | null {
+  if (!route.permissions || route.permissions.length === 0 || !membersOnly()) return null;
+  const standing = standingOf(auth);
+  return route.permissions.find((p) => !holdsPermission(standing, p)) ?? null;
+}
+
+/**
+ * The route tools `auth` is not offered because the account lacks the
+ * permission each needs, in the catalog's order. Empty on the public graph.
+ */
+export function withheldRouteTools(
+  app: FastifyInstance,
+  auth: RequestAuth
+): Array<{ tool: string; permission: PermissionName }> {
+  const withheld: Array<{ tool: string; permission: PermissionName }> = [];
+  for (const route of app.routeCatalog ?? []) {
+    const tool = ROUTE_TOOLS[routeKey(route.method, route.url)];
+    if (!tool) continue;
+    const permission = missingPermission(route, auth);
+    if (permission) withheld.push({ tool: tool.name, permission });
+  }
+  return withheld;
+}
+
+/**
+ * Register a tool for every catalog route that ROUTE_TOOLS names and the
+ * caller may use.
+ */
 export function registerRouteTools(
   server: McpServer,
   app: FastifyInstance,
@@ -509,6 +582,7 @@ export function registerRouteTools(
   for (const route of app.routeCatalog ?? []) {
     const tool = ROUTE_TOOLS[routeKey(route.method, route.url)];
     if (!tool) continue;
+    if (missingPermission(route, auth)) continue;
     const input = routeInput(route);
 
     server.registerTool(

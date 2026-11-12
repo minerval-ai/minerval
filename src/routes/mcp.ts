@@ -21,7 +21,7 @@ import { isOAuthAccessToken } from "../services/oauth-service.js";
 // Hosted MCP clients commonly authenticate with a Bearer token; when it's an
 // API key (not an OAuth access token, which the auth plugin resolves from the
 // Authorization header itself), map it onto the x-api-key header.
-async function bearerToApiKey(request: FastifyRequest): Promise<void> {
+export async function bearerToApiKey(request: FastifyRequest): Promise<void> {
   const authz = request.headers.authorization;
   if (!request.headers["x-api-key"] && authz?.startsWith("Bearer ")) {
     const token = authz.slice("Bearer ".length).trim();
