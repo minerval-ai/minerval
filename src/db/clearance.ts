@@ -317,6 +317,20 @@ export async function enforcementOn(ownerQuery: OwnerQuery): Promise<boolean> {
   return enforcementCheck;
 }
 
+/**
+ * Whether this process knows, without asking and without waiting, that
+ * enforcement is off: it asked within the interval, the answer was no, and
+ * it has not changed the label tables since. The client takes the owner's
+ * pool straight away when this is so, which is every query on a
+ * deployment whose only label is `public` but the one that asks, so that
+ * such a deployment's queries take the path they always took.
+ */
+export function enforcementKnownOff(): boolean {
+  if (!enforcement || enforcement.on) return false;
+  const now = Date.now();
+  return now >= unsettledUntil && now - enforcement.at < ENFORCEMENT_OFF_RECHECK_MS;
+}
+
 /** What this process last learned, without asking: null before the first check. */
 export function enforcementLastKnown(): boolean | null {
   return enforcement?.on ?? null;

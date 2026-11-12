@@ -5,13 +5,18 @@
  * and how a script says its label. What the database then does with a
  * session is in tests/db/enforcement.test.ts.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   ClearanceError,
+  ENFORCEMENT_OFF_RECHECK_MS,
+  enforcementKnownOff,
+  enforcementOn,
   isUnseenCollision,
   leaveSystemClearance,
   normalizeClearance,
+  noteStatement,
   refusalForCaller,
+  resetClearanceState,
   sessionKey,
   sessionOptions,
   startedHere,
@@ -48,6 +53,55 @@ describe("a session", () => {
     expect(sessionOptions({ role: "cleared", clearance: ["partner-a", "team_2"] })).toBe(
       "-c minerval.clearance={partner-a,public,team_2}"
     );
+  });
+});
+
+describe("knowing that enforcement is off", () => {
+  // The client sends a query straight to the owner's pool, as it did before
+  // there were labels, only while this holds. Each way it stops holding is
+  // a way a process could otherwise keep reading as the owner after a
+  // second label exists.
+  afterEach(() => {
+    vi.useRealTimers();
+    resetClearanceState();
+  });
+  const answering = (on: boolean) => vi.fn(async () => [{ on }]) as never;
+
+  it("is not known before the database has been asked", () => {
+    resetClearanceState();
+    expect(enforcementKnownOff()).toBe(false);
+  });
+
+  it("is known once the database has said so, and only for the interval", async () => {
+    vi.useFakeTimers();
+    resetClearanceState();
+    expect(await enforcementOn(answering(false))).toBe(false);
+    expect(enforcementKnownOff()).toBe(true);
+    vi.advanceTimersByTime(ENFORCEMENT_OFF_RECHECK_MS - 1);
+    expect(enforcementKnownOff()).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(enforcementKnownOff()).toBe(false);
+  });
+
+  it("is never known where enforcement is on", async () => {
+    resetClearanceState();
+    expect(await enforcementOn(answering(true))).toBe(true);
+    expect(enforcementKnownOff()).toBe(false);
+  });
+
+  it("stops being known the moment this process writes a label, until it has asked again", async () => {
+    vi.useFakeTimers();
+    resetClearanceState();
+    await enforcementOn(answering(false));
+    expect(enforcementKnownOff()).toBe(true);
+    noteStatement(`insert into "labels" ("name") values ($1)`);
+    expect(enforcementKnownOff()).toBe(false);
+    // While unsettled every statement asks, and the answer may now be yes.
+    const ask = answering(true);
+    expect(await enforcementOn(ask)).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    expect(enforcementKnownOff()).toBe(false);
   });
 });
 

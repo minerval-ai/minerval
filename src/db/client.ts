@@ -11,6 +11,7 @@ import {
   clearedRolePassword,
   currentSession,
   describeRefusal,
+  enforcementKnownOff,
   enforcementOn,
   normalizeClearance,
   noteStatement,
@@ -366,9 +367,11 @@ function asRefusal(err: unknown, session: Session): unknown {
  */
 class SessionRoutingPool {
   query(...args: unknown[]): Promise<unknown> {
+    if (enforcementKnownOff()) return (getPool().query as (...a: unknown[]) => Promise<unknown>)(...args);
     return onSessionPool((pool) => (pool.query as (...a: unknown[]) => Promise<unknown>)(...args));
   }
   connect(): Promise<pg.PoolClient> {
+    if (enforcementKnownOff()) return getPool().connect();
     return onSessionPool((pool) => pool.connect());
   }
 }
@@ -414,6 +417,12 @@ export async function rawQuery<T>(
   params: unknown[] = []
 ): Promise<T[]> {
   observe(queryText);
+  // Where `public` is the only label, and this process has lately made sure
+  // of it, the query goes to the one pool exactly as it always did.
+  if (enforcementKnownOff()) {
+    const result = await getPool().query(queryText, params);
+    return result.rows as T[];
+  }
   const result = await onSessionPool((pool) => pool.query(queryText, params));
   return result.rows as T[];
 }
@@ -441,10 +450,12 @@ export async function withTransaction<T>(
 ): Promise<T> {
   // The whole transaction runs on one connection, so it has one session:
   // that of the work that opened it.
-  const { client, session } = await onSessionPool(async (pool, session) => ({
-    client: await pool.connect(),
-    session,
-  }));
+  const { client, session } = enforcementKnownOff()
+    ? { client: await getPool().connect(), session: { role: "owner" } as Session }
+    : await onSessionPool(async (pool, session) => ({
+        client: await pool.connect(),
+        session,
+      }));
   try {
     await client.query("BEGIN");
     const tx: TxQuery = {
