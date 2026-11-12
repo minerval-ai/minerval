@@ -172,7 +172,7 @@ describe("the Curator's surgery on record", () => {
     expect(changes[1]!.reason).toBe("dbtest: they differ");
   });
 
-  it("is backfilled for live merges by migration 0130, and only for those", async () => {
+  it("is backfilled for live merges by migration 0131, and only for those", async () => {
     const survivor = await seedClaim("backfill survivor");
     const loser = await seedClaim("backfill loser");
     const unmerged = await seedClaim("reversed loser");
@@ -187,7 +187,7 @@ describe("the Curator's surgery on record", () => {
       ]
     );
     const statements = readFileSync(
-      fileURLToPath(new URL("../../src/db/migrations/0130_claim_state_changes.sql", import.meta.url)),
+      fileURLToPath(new URL("../../src/db/migrations/0131_claim_state_changes.sql", import.meta.url)),
       "utf8"
     ).split("--> statement-breakpoint");
     const backfill = statements.find((s) => s.includes('INSERT INTO "claim_state_changes"'))!;
