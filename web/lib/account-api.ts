@@ -39,7 +39,7 @@ export { AccountApiError };
 // resolves them as dot segments even when encoded. The API's ids are UUIDs,
 // which encoding leaves unchanged; a refused id reads as unknown (404), as a
 // missing one does.
-function pathSegment(id: string): string {
+export function pathSegment(id: string): string {
   if (id === "." || id === "..") {
     throw new AccountApiError(
       `Minerval API: no resource has id ${JSON.stringify(id)}`,
@@ -61,7 +61,7 @@ async function actingFor(options: { actingUser?: string; noViewer?: true }): Pro
   return viewerExternalId();
 }
 
-async function accountFetch<T>(
+export async function accountFetch<T>(
   path: string,
   options: {
     method?: string;
@@ -192,6 +192,12 @@ export interface Entitlement {
   /** Per-operation ceilings in owls. The charge is metered cost, never more. */
   caps_owls: Record<string, number>;
   credits_enabled: boolean;
+  /**
+   * True where the deployment creates its own owls and sells none, with what
+   * an owl is there in the API's own words. Absent everywhere else.
+   */
+  owls_created_here?: boolean;
+  owls_statement?: string;
   signup_grant_owls: number;
   monthly_grant_owls: number;
 }
@@ -280,7 +286,19 @@ export async function provisionUser(input: {
 export interface MyPermissions {
   account: { id: string; display_name: string | null; external_id: string | null };
   member: boolean;
+  /** The permissions held, each once, whatever label or party it is held at. */
   permissions: string[];
+  /** Each live grant that reaches the account, directly or through a group. */
+  grants: Array<{
+    permission: string;
+    label?: string;
+    party?: { id: string; name: string };
+    through_group?: string;
+  }>;
+  /** The labels the account may read. */
+  clearance: string[];
+  raw_source_labels: string[];
+  groups: string[];
 }
 
 export async function fetchMyPermissions(externalId: string): Promise<MyPermissions> {

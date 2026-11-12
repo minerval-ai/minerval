@@ -9,6 +9,7 @@ import {
   type CardItem, type Item, type ItemEdge,
 } from "@/lib/provenance-layout";
 import styles from "./provenanceMap.module.css";
+import { isReadingAddress } from "@/lib/source-address";
 
 // The claim's provenance, origins first (#507): every card a source, read top
 // to bottom as the claim's story. Confirmed origins head it; untraced sources
@@ -160,7 +161,7 @@ function Card({ item, h, focus = false, edgeInside = false }: { item: CardItem; 
         {focus && (
           <span className={styles.focusLinks}>
             <Link href={`/sources/${encodeURIComponent(n.source.id)}`}>Source page →</Link>
-            {n.source.url && <a href={n.source.url}>Original ↗&#xFE0E;</a>}
+            {n.source.url && !isReadingAddress(n.source.url) && <a href={n.source.url}>Original ↗&#xFE0E;</a>}
           </span>
         )}
       </div>

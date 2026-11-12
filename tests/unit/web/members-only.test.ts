@@ -300,7 +300,21 @@ describe("the gate", () => {
       answer(200, { account: { id: "a", display_name: "Alice", external_id: "oidc:alice" }, member: true, permissions: ["read"] })
     );
     const tree = (await gate("members")) as Node;
-    expect(tree.props.children).toBe(PAGE);
+    // The page, under the line of links a member's permissions open
+    // (components/MembersBand.tsx).
+    const [band, page] = tree.props.children as [Node, unknown];
+    expect(page).toBe(PAGE);
+    const links = (who: string[]) => {
+      const rendered = (band.type as (props: unknown) => Node | null)({
+        mine: { account: {}, member: true, permissions: who, grants: [], clearance: [], raw_source_labels: [], groups: [] },
+      });
+      return rendered === null ? null : textOf(rendered.props.children);
+    };
+    // A member who can neither direct nor administer is shown no line at all.
+    expect(links(["read"])).toBeNull();
+    expect(links(["read", "direct"])).toBe("Add a source");
+    expect(links(["administer"])).toBe("Administration");
+    expect(links(["direct", "fund", "administer"])).toBe("Add a sourceAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

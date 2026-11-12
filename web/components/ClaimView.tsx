@@ -39,6 +39,7 @@ import {
   OtherVerdict, PublicationRecord, PublishedAssessment, PublishedDecomposition, PublishedGaps, PublishedIntro,
   PublishedNotes, PublishedProvenance, TakenOut,
 } from "./claim/PublishedPage";
+import { sourceHref } from "@/lib/source-address";
 
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
@@ -47,8 +48,8 @@ function InstanceCard({ inst }: { inst: Instance }) {
     <div className="instance">
       <blockquote>{inst.verbatim_text}</blockquote>
       <div className="instance-cite">
-        {inst.source_url ? (
-          <a href={inst.source_url}>{inst.source_title}</a>
+        {sourceHref(inst.source_url, inst.source_id) ? (
+          <a href={sourceHref(inst.source_url, inst.source_id)!}>{inst.source_title}</a>
         ) : (
           <span>{inst.source_title}</span>
         )}

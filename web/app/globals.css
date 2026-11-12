@@ -253,7 +253,128 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   .masthead nav { order: 2; }
 }
 
+/* a members-only deployment's own line above each page
+   (components/MembersBand.tsx): the pages a person's permissions open. It
+   sits in the frame's top padding, so the page under it starts where it
+   always did. */
+.members-band {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.2rem 1.15rem;
+  margin: -1.75rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--sans); font-size: 0.72rem; font-weight: 500; line-height: 1.4;
+}
+.members-band a, .members-band a:visited { color: var(--ink-soft); }
+.members-band a:hover { color: var(--link); text-decoration: none; }
+
 .frame { max-width: var(--frame); margin: 0 auto; padding: 2.6rem 1.6rem 5rem; }
+
+/* ---- the administration pages of a members-only deployment (app/admin) -----
+   The account page's sections, tables and hairlines, with three things of
+   their own: a line of links between the pages, the setup checklist's rows,
+   and forms. No colour: a state is said in words, with a square that is
+   filled, empty or ruled, so it cannot be read as a verdict. */
+.admin-page h3, .admin-item h3 { margin: 0; }
+.admin-page h3.acct-gap { margin-top: 1.8rem; }
+.admin-facts td:first-child {
+  white-space: nowrap; font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
+}
+.admin-nav span[aria-current] { color: var(--ink); font-weight: 600; }
+.admin-first { margin-top: 2rem; }
+.admin-page .account-empty { margin-top: 0.8rem; }
+/* a figure in a column that is not the table's last: right-aligned, with room after it */
+.admin-page th.admin-num, .admin-page td.admin-num {
+  text-align: right; white-space: nowrap; padding-right: 1.6rem;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.admin-page .acct-sub { margin-top: 1.1rem; }
+.admin-page .acct-sub.admin-gap { margin-top: 2rem; }
+.admin-next { margin: 0.9rem 0 0; padding-left: 1.3rem; max-width: 44rem; }
+.admin-next li { margin-bottom: 0.55rem; font-size: 0.92rem; }
+.admin-next li a { font-weight: 600; margin-right: 0.5rem; }
+.admin-next li span { color: var(--ink-soft); }
+.admin-items { margin-top: 0.4rem; }
+.admin-item {
+  display: grid; grid-template-columns: 8.2rem minmax(0, 1fr); gap: 0 1.4rem;
+  padding: 1.15rem 0 1rem; border-bottom: 1px solid var(--rule-soft);
+  scroll-margin-top: 4rem;
+}
+.admin-item-body { max-width: 40rem; }
+.admin-item-body p { margin: 0.35rem 0 0; font-size: 0.9rem; color: var(--ink-soft); }
+.admin-item-body p.admin-item-link {
+  margin-top: 0.55rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
+.admin-item-next { color: var(--ink); }
+.admin-item-body p.admin-item-next { color: var(--ink); }
+.admin-item-next .sc { margin-right: 0.35rem; color: var(--ink-soft); }
+.admin-state {
+  font-family: var(--sans); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--ink-soft); padding-top: 0.3rem; white-space: nowrap;
+}
+.admin-state::before {
+  content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.45rem;
+  border: 1px solid var(--ink-soft); vertical-align: -0.02rem;
+}
+.admin-state-done { color: var(--muted); }
+.admin-state-done::before { background: var(--muted); border-color: var(--muted); }
+.admin-state-attention { color: var(--ink); }
+.admin-state-attention::before {
+  border-color: var(--ink);
+  background: repeating-linear-gradient(135deg, var(--ink) 0 1.5px, transparent 1.5px 3.5px);
+}
+.admin-state-to_do { color: var(--ink); }
+.admin-state-to_do::before { border-color: var(--ink); }
+.admin-state-optional { color: var(--faint); }
+.admin-state-optional::before { border-style: dashed; border-color: var(--faint); }
+.admin-checks { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.admin-checks li {
+  padding: 0.5rem 0; border-top: 1px solid var(--rule-soft); font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+.admin-checks li strong { color: var(--ink); }
+.admin-notice {
+  max-width: 40rem; margin: 1rem 0 1.2rem; padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 2px solid var(--rule-strong); font-size: 0.88rem; color: var(--ink-soft);
+}
+.admin-form { display: grid; gap: 0.7rem; max-width: 34rem; margin: 0.9rem 0 0; }
+.admin-form label { display: grid; gap: 0.2rem; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.admin-form label.admin-check { display: flex; align-items: baseline; gap: 0.45rem; }
+.admin-form label small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.admin-form input:not([type="checkbox"]), .admin-form select, .admin-form textarea {
+  font-family: var(--sans); font-size: 0.84rem; padding: 0.4rem 0.55rem;
+  border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--paper-card); color: var(--ink); width: 100%;
+}
+.admin-form textarea { line-height: 1.45; resize: vertical; }
+.admin-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.admin-fieldset legend { padding: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); margin-bottom: 0.25rem; }
+.admin-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.7rem; }
+.admin-form-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.9rem; }
+.admin-form-said { font-family: var(--sans); font-size: 0.76rem; color: var(--ink-soft); }
+.admin-form-error { color: var(--st-contradicted); }
+.admin-form-inline { display: inline-flex; gap: 0; margin: 0; max-width: none; vertical-align: baseline; }
+.admin-form-inline .admin-form-foot { display: inline-flex; }
+.admin-form-inline .linklike { font-size: 0.72rem; }
+.admin-grants { list-style: none; margin: 0; padding: 0; }
+.admin-grants li { margin: 0 0 0.15rem; }
+.admin-grants li .admin-form-inline { margin-left: 0.5rem; }
+.admin-tool { padding: 0.8rem 0; border-top: 1px solid var(--rule-soft); font-size: 0.88rem; }
+.admin-tool > label { display: flex; align-items: baseline; gap: 0.5rem; font-family: var(--sans); font-size: 0.86rem; color: var(--ink); }
+.admin-tool code { font-size: 0.82rem; }
+.admin-tool p { margin: 0.3rem 0 0 1.6rem; color: var(--ink-soft); max-width: 40rem; }
+.admin-tool p.admin-tool-hint { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); }
+.admin-tool details { margin: 0.3rem 0 0 1.6rem; font-family: var(--sans); font-size: 0.72rem; }
+.admin-pre {
+  font-family: var(--mono); font-size: 0.74rem; line-height: 1.45; white-space: pre-wrap;
+  word-break: break-word; background: var(--paper-sunk); border: 1px solid var(--rule-soft);
+  border-radius: 4px; padding: 0.55rem 0.7rem; margin: 0.35rem 0; max-width: 46rem; overflow-x: auto;
+}
+.admin-report { padding: 0.4rem 0 0.9rem; border-bottom: 1px solid var(--rule-soft); }
+.admin-args { font-family: var(--sans); font-size: 0.7rem; }
+.admin-hash { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.admin-withheld { font-style: italic; color: var(--muted); }
+@media (max-width: 640px) {
+  .admin-item { grid-template-columns: minmax(0, 1fr); }
+  .admin-state { padding: 0 0 0.35rem; }
+}
 
 /* text column sits left within the frame; the right gap holds sidenotes */
 .col { max-width: var(--measure); }

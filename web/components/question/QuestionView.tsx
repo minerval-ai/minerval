@@ -13,6 +13,7 @@ import { CiteClaim } from "@/components/claim/CiteClaim";
 import { EmbedClaim } from "@/components/claim/EmbedClaim";
 import styles from "./question.module.css";
 import { PageHead } from "@/components/PageHead";
+import { sourceHref } from "@/lib/source-address";
 
 // A question's page (constitution §7a): first-class, like a claim's. It
 // leads with how well the question is answered and the Steward's best
@@ -221,7 +222,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
                 <div className="instance" key={i.id}>
                   {i.verbatim_text && <blockquote>{i.verbatim_text}</blockquote>}
                   <div className="instance-cite">
-                    {i.source_url ? <a href={i.source_url}>{i.source_title}</a> : <span>{i.source_title}</span>}
+                    {sourceHref(i.source_url) ? <a href={sourceHref(i.source_url)!}>{i.source_title}</a> : <span>{i.source_title}</span>}
                     {i.source_type && <span className="tag">{i.source_type.replace(/_/g, " ")}</span>}
                   </div>
                 </div>
@@ -234,7 +235,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
               <ul className={styles.answeredBy}>
                 {answers.map((i) => (
                   <li key={i.id}>
-                    {i.source_url ? <a href={i.source_url}>{i.source_title}</a> : <span>{i.source_title}</span>}
+                    {sourceHref(i.source_url) ? <a href={sourceHref(i.source_url)!}>{i.source_title}</a> : <span>{i.source_title}</span>}
                     {i.answer_id && (
                       <span className={styles.answeredWith}>
                         {" "}answers <Link href={`/claims/${i.answer_id}`}>{answerText.get(i.answer_id) ?? "an answer"}</Link>

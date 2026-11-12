@@ -34,6 +34,8 @@ import { loadFeatures } from "../../lib/data";
 import { featureOn } from "../../lib/features";
 import type { ContributorProfile, OpenPrizeClaim } from "../../lib/types";
 import { PageHead } from "@/components/PageHead";
+import { grantText, listed } from "../../lib/admin-words";
+import { loadStanding } from "../../lib/standing";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
@@ -193,7 +195,16 @@ export default async function AccountPage({
   // Usage in the window by keys since revoked: counted in the totals, so it
   // is said here, where the table has no row for it.
   const revokedUsage = usage.by_key.filter((k) => k.api_key_id && !activeKeyIds.has(k.api_key_id));
-  const canBuy = creditsEnabled && packs.length > 0;
+  // A deployment that creates its own owls sells none: there is no buying
+  // there, and what an owl is comes in the API's own words
+  // (entitlement.owls_statement; docs/accounts.md, "Owls a deployment creates
+  // for itself").
+  const createdHere = entitlement.owls_created_here === true;
+  const canBuy = !createdHere && creditsEnabled && packs.length > 0;
+  // What the person holds in a members-only deployment. Nothing on the
+  // public graph, where this is not read.
+  const standing = await loadStanding();
+  const held = standing.state === "signed_in" ? standing.mine.grants : [];
   const priceRows = [
     ["Propose a claim (reviewed, then assessed)", caps.claim_proposal],
     ["Order a claim assessment", caps.assessment],
@@ -227,6 +238,13 @@ export default async function AccountPage({
           </>
         }
       />
+
+      {held.length > 0 && (
+        <p className="acct-prose acct-measure" id="permissions">
+          In this deployment you hold the permission to {listed([...new Set(held.map(grantText))])}.{" "}
+          <a href="/admin/people">Who may do what, and the log of every grant →</a>
+        </p>
+      )}
 
       {purchase === "success" && (
         <p className="key-reveal" role="status">
@@ -345,12 +363,23 @@ export default async function AccountPage({
               </>
             )}
             <h3 className={canBuy ? "acct-gap" : undefined}>What an owl is</h3>
-            <p className="acct-prose">
-              One owl covers {usd(entitlement.owl_cost_micro_usd)} of metered work, enough for a
-              full claim assessment by the best available model. Buying one costs{" "}
-              {usd(entitlement.owl_price_micro_usd)}. The difference is the platform&rsquo;s
-              whole margin, and it funds the graph&rsquo;s own standing mandates.
-            </p>
+            {createdHere ? (
+              <>
+                <p className="acct-prose">{entitlement.owls_statement}</p>
+                <p className="acct-prose">
+                  To add to your balance, ask an administrator of this deployment. How many owls
+                  have been created, by whom, and what the agents&rsquo; runs have spent is open
+                  to every member on <a href="/admin/owls">the Owls page →</a>
+                </p>
+              </>
+            ) : (
+              <p className="acct-prose">
+                One owl covers {usd(entitlement.owl_cost_micro_usd)} of metered work, enough for a
+                full claim assessment by the best available model. Buying one costs{" "}
+                {usd(entitlement.owl_price_micro_usd)}. The difference is the platform&rsquo;s
+                whole margin, and it funds the graph&rsquo;s own standing mandates.
+              </p>
+            )}
             <p className="acct-prose">
               Nothing has a fixed price. The figures below are ceilings: the ceiling is held
               when work starts, the cost is metered as it runs, and the unused part returns.
@@ -373,15 +402,19 @@ export default async function AccountPage({
                 ))}
               </tbody>
             </table>
-            <p className="acct-note">
-              Reading, searching and browsing the graph are free. Accepted contributions{" "}
-              <em>earn</em> owls. New accounts start with {entitlement.signup_grant_owls} free
-              owls
-              {entitlement.monthly_grant_owls > 0 && (
-                <>, and every account gets {owls(entitlement.monthly_grant_owls)} more each month</>
-              )}
-              .
-            </p>
+            {createdHere ? (
+              <p className="acct-note">Reading, searching and browsing the graph are free.</p>
+            ) : (
+              <p className="acct-note">
+                Reading, searching and browsing the graph are free. Accepted contributions{" "}
+                <em>earn</em> owls. New accounts start with {entitlement.signup_grant_owls} free
+                owls
+                {entitlement.monthly_grant_owls > 0 && (
+                  <>, and every account gets {owls(entitlement.monthly_grant_owls)} more each month</>
+                )}
+                .
+              </p>
+            )}
           </aside>
         </div>
       </section>
