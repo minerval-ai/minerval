@@ -160,7 +160,16 @@ const ENTRIES: readonly TableEntry[] = [
   { table: claimRelationships, removeBeforeWrite: true },
   { table: claimLinks, removeBeforeWrite: true },
   { table: answerRelations, removeBeforeWrite: true },
-  { table: sources },
+  {
+    table: sources,
+    leftOut: {
+      party_id: {
+        kind: "withheld",
+        reason:
+          "Points to parties, which is not mirrored: whose material a source is belongs to a private deployment, and the public graph's sources have none.",
+      },
+    },
+  },
   { table: sourceSegments, removeBeforeWrite: true },
   {
     table: arguments_,

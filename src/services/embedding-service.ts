@@ -1,6 +1,17 @@
+/**
+ * Embeddings: the vector for a text, from OpenAI's embeddings API.
+ *
+ * The text leaves the process here, so both functions first ask whether the
+ * `embeddings` service is cleared for the label of the run or request
+ * calling them (llm/provider-clearance.ts). Where it is not they throw,
+ * and nothing is sent. Most callers already treat a failed embedding as
+ * "no vector": a row is written without one and a search falls back to
+ * keywords, each as it did when the API was down.
+ */
 import OpenAI from "openai";
 import { loadConfig } from "../config.js";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./embedding-model.js";
+import { assertProviderCleared } from "../llm/provider-clearance.js";
 
 let _client: OpenAI | null = null;
 
@@ -22,6 +33,7 @@ function getClient(): OpenAI {
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {
+  await assertProviderCleared("embeddings");
   const client = getClient();
   const response = await client.embeddings.create({
     model: EMBEDDING_MODEL,
@@ -35,6 +47,7 @@ export async function generateEmbeddings(
   texts: string[]
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
+  await assertProviderCleared("embeddings");
   const client = getClient();
   const response = await client.embeddings.create({
     model: EMBEDDING_MODEL,

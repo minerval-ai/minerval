@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   ACCEPTED_MODEL_ID_SHAPES,
   isSupportedModelId,
+  parseEndpointModelId,
   providerForModel,
   resolveProvider,
   unresolvableModelIdMessage,
@@ -66,5 +67,60 @@ describe("error messages", () => {
   it("providerForModel throws on an unresolvable id", () => {
     expect(() => providerForModel("llama-3-70b")).toThrow(/does not resolve/);
     expect(providerForModel("gpt-5-nano")).toBe("openai");
+  });
+});
+
+describe("the endpoint shape: endpoint:<name>/<model>", () => {
+  it("routes to the named endpoint, whatever the model after the first slash looks like", () => {
+    expect(resolveProvider("endpoint:local/meta-llama/Llama-3.3-70B-Instruct")).toBe("endpoint:local");
+    // Ollama's names carry a colon, and a model may be named like a hosted one.
+    expect(resolveProvider("endpoint:gpu_2/llama3.3:70b")).toBe("endpoint:gpu_2");
+    expect(resolveProvider("endpoint:local/claude-like")).toBe("endpoint:local");
+    expect(resolveProvider("endpoint:local/gpt-oss-120b")).toBe("endpoint:local");
+    expect(parseEndpointModelId("endpoint:local/meta-llama/Llama-3.3-70B-Instruct")).toEqual({
+      endpoint: "local",
+      model: "meta-llama/Llama-3.3-70B-Instruct",
+    });
+  });
+
+  it("does not collide with the three hosted shapes", () => {
+    // An open-weight name with no prefix is still an OpenRouter id, as before.
+    expect(resolveProvider("meta-llama/llama-3.3-70b-instruct")).toBe("openrouter");
+    // OpenRouter's variants put a colon after the slash, never before it.
+    expect(resolveProvider("meta-llama/llama-3.3-70b-instruct:free")).toBe("openrouter");
+    expect(parseEndpointModelId("meta-llama/llama-3.3-70b-instruct:free")).toBeNull();
+    expect(parseEndpointModelId(MODELS.sonnet)).toBeNull();
+    expect(parseEndpointModelId("gpt-5-nano")).toBeNull();
+  });
+
+  it("resolves nothing for a malformed endpoint id, and never falls through to OpenRouter", () => {
+    for (const id of [
+      "endpoint:local",
+      "endpoint:/meta-llama/Llama-3.3-70B-Instruct",
+      "endpoint:local/",
+      "endpoint:Local/model",
+      "endpoint:my endpoint/model",
+    ]) {
+      expect(resolveProvider(id), id).toBeNull();
+      expect(isSupportedModelId(id), id).toBe(false);
+    }
+  });
+
+  it("says how to write one when the id begins with the prefix", () => {
+    const message = unresolvableModelIdMessage("endpoint:local");
+    expect(message).toBe(
+      '"endpoint:local" is not a complete endpoint model ID. Write "endpoint:<name>/<model>": the ' +
+        'name of an endpoint declared in MODEL_ENDPOINTS (lower-case letters, digits, "-" and "_"), ' +
+        "a slash, then the model as that endpoint knows it, for example " +
+        '"endpoint:local/meta-llama/Llama-3.3-70B-Instruct".'
+    );
+    expect(() => providerForModel("endpoint:Local/x")).toThrow(/not a complete endpoint model ID/);
+  });
+
+  it("leaves the message for every other id as it was", () => {
+    expect(unresolvableModelIdMessage("llama-3-70b")).toBe(
+      '"llama-3-70b" does not resolve to a known provider. Use an Anthropic ID ("claude-…"), an ' +
+        'OpenAI ID ("gpt-…" or "o3"), or an OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b").'
+    );
   });
 });

@@ -50,9 +50,14 @@
  * the table, so the worker checks that the label it carries is defined and
  * refuses the message if it is not (UndefinedLabelError).
  *
- * The public graph has one label, the one named here, and no pairs. Nothing
- * reads a label yet: the rows carry them and the writes stamp them, and
- * holding a reader or a run to its clearance is later work.
+ * The public graph has one label, the one named here, and no pairs. No read
+ * of a row is held to a label yet: the rows carry them and the writes stamp
+ * them, and holding a reader or a run to its clearance is later work.
+ *
+ * One thing is held to a run's label already: where its text may be sent.
+ * A model provider or an outside service receives text only from runs at
+ * the labels it is cleared for (src/provider-labels.ts), and one that
+ * nobody has cleared for a label other than this one is sent none of it.
  */
 
 /** The label of everything on the public graph, and of any write made outside a run. */
