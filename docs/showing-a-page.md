@@ -286,7 +286,10 @@ may hold `direct` and `release`.
   removals as differences with their categories, the parts it was least
   sure of first, and Audit's answer. A person who holds `release` for a
   party and does not read at the page's label sees each item's kind, its
-  removals by category and Audit's answer, and not its text.
+  removals by category and Audit's answer, and not its text. The queue says
+  so on each such item and once for the whole answer: that they are deciding
+  without reading it, and that an administrator grants reading at a label.
+  They may still decide.
 - **Standing rules.** A party's holders of `release` may set a rule at one
   boundary, as a condition the system tests from the record: release a part
   when the Redactor removed nothing from it and it rests on this party's

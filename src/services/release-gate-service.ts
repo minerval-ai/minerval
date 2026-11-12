@@ -733,8 +733,10 @@ export async function holdPage(input: { actor: GateActor; pageId: string; lift?:
 // ---- the queue --------------------------------------------------------------------
 
 const TEXT_WITHHELD =
-  "You hold the permission to release this party's material and not the permission to read at the label this page was " +
-  "written at, so its text is not shown to you. An administrator grants reading at a label.";
+  "You are deciding this without reading it. You hold the permission to release this party's material and not the " +
+  "permission to read at the label this page was written at, so its text is not shown to you: you see what kind of " +
+  "part it is, what was removed from it by category, and Audit's answer. An administrator of this deployment can " +
+  "grant you reading at that label, and you can leave the item held until one has.";
 
 /**
  * What waits on a person at the gate: every item at the gate that rests on
@@ -827,9 +829,18 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
       }
       if (more) break;
     }
+    const unread = items.filter((i) => "text_withheld" in i).length;
     return {
       items,
       more_waiting: more,
+      ...(unread > 0
+        ? {
+            deciding_without_reading:
+              `${unread} of these ${items.length} item${items.length === 1 ? "" : "s"} ${unread === 1 ? "is" : "are"} shown to you without ${unread === 1 ? "its" : "their"} text, because you do not hold the ` +
+              `permission to read at the label ${unread === 1 ? "it was" : "they were"} written at. A release of one is a release of text you have not read. ` +
+              `An administrator of this deployment grants reading at a label.`,
+          }
+        : {}),
       note:
         "Each item is released or held whole, for one party at a time. Nothing is released by time passing: an item " +
         "nobody acts on stays held, and readers on the other side see how long it has waited.",
