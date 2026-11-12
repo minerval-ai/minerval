@@ -477,7 +477,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table of the graph's content, public by default, and point at labels", async () => {
+  it("are on every table of the graph's content, default to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -494,6 +494,8 @@ describe("the columns", () => {
       [CONTENT_TABLES]
     );
     expect(rows).toEqual(
+      // The default is the function 0130 gave every labelled table: the
+      // connection's label, which is 'public' wherever it is the only one.
       CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
