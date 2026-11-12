@@ -55,6 +55,7 @@ import {
   MAX_TURN_WAIT_SECONDS,
 } from "../services/grant-conversation-service.js";
 import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
+import { requirePermission } from "../server/require-permission.js";
 
 const MESSAGE_BODY = {
   type: "object",
@@ -77,7 +78,7 @@ export async function grantConversationRoutes(
       description: TURN_PROTOCOL,
       body: MESSAGE_BODY,
     },
-    preHandler: [app.authenticate, app.requireUser],
+    preHandler: [app.authenticate, app.requireUser, requirePermission("direct")],
     handler: async (request, reply) => {
       const result = await startConversation({
         userId: request.auth!.userId!,
@@ -233,7 +234,7 @@ export async function grantConversationRoutes(
         },
         body: MESSAGE_BODY,
       },
-      preHandler: [app.authenticate, app.requireUser],
+      preHandler: [app.authenticate, app.requireUser, requirePermission("direct")],
       handler: async (request, reply) => {
         const result = await addMessage({
           conversationId: request.params.id,
@@ -286,7 +287,7 @@ export async function grantConversationRoutes(
           },
         },
       },
-      preHandler: [app.authenticate, app.requireUser],
+      preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
         const result = await fundConversationMandate({
           conversationId: request.params.id,

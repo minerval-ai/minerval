@@ -205,6 +205,8 @@ const UNCOVERED_ROUTES = new Set([
   "/claims/:claim_id/scasp",
   "/claims/:claim_id/mira",
   "/attachments/:id",
+  // A mirror batch is sent as the text that was signed.
+  "/mirror/feed/:sequence",
 ]);
 
 function covered(url: string): boolean {

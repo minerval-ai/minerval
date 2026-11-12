@@ -5,6 +5,8 @@ import {
   fetchTag, fetchTags,
 } from "./api";
 import { claimWithoutOffFeatures, listWithoutOffFeatures } from "./features";
+import { membersOnly } from "./members";
+import { refusedByMembersOnly } from "./viewer";
 import { getSourcePageFixture } from "./fixtures-source";
 import { getArgumentPageFixture } from "./fixtures-argument";
 import { REQUESTS, getRequest } from "./fixtures-kinds";
@@ -47,8 +49,22 @@ function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): Search
 // Single seam the pages call. When MINERVAL_API_URL is configured we serve live
 // data; otherwise we fall back to the design fixtures, so the UI is always
 // viewable. Live errors degrade to fixtures rather than crashing the page.
+//
+// A members-only deployment (lib/members.ts) never shows a fixture. The
+// fixtures are the public site's demo content, and inside a private
+// deployment a read that was refused, or that failed, must show nothing: a
+// reader who may not see a claim must not be shown a different one in its
+// place. So every fallback below asks `fixturesOff` first, and answers with
+// nothing found.
 
 export type DataSource = "live" | "fixture";
+
+// Whether the fixtures are off for this read: always in a members-only
+// deployment, and for any read the API refused as one, whatever this web
+// app was told about the deployment.
+function fixturesOff(err?: unknown): boolean {
+  return membersOnly() || refusedByMembersOnly(err);
+}
 
 // Which features this deployment has on (lib/features.ts). Every page that
 // shows something belonging to a feature asks here first. Memoized for the
@@ -64,11 +80,17 @@ export const loadFeatures = cache(fetchFeatures);
 export const loadClaim = cache(async (
   id: string,
 ): Promise<{ detail: ClaimDetail | null; source: DataSource }> => {
-  if (!apiConfigured()) return { detail: getClaim(id), source: "fixture" };
+  if (!apiConfigured()) {
+    return fixturesOff() ? { detail: null, source: "live" } : { detail: getClaim(id), source: "fixture" };
+  }
   const features = await loadFeatures();
   try {
     return { detail: claimWithoutOffFeatures(await fetchClaimDetail(id), features), source: "live" };
   } catch (err) {
+    if (fixturesOff(err)) {
+      console.error("[minerval] live claim fetch failed:", err);
+      return { detail: null, source: "live" };
+    }
     console.error("[minerval] live claim fetch failed, using fixture:", err);
     const fixture = getClaim(id);
     return { detail: fixture && claimWithoutOffFeatures(fixture, features), source: "fixture" };
@@ -105,6 +127,7 @@ function matchesRequest(r: RequestItem, q: string): boolean {
 export async function loadRequests(q?: string): Promise<{ requests: RequestItem[]; source: DataSource }> {
   const query = q?.trim() || undefined;
   if (!apiConfigured()) {
+    if (fixturesOff()) return { requests: [], source: "live" };
     return { requests: query ? REQUESTS.filter((r) => matchesRequest(r, query)) : REQUESTS, source: "fixture" };
   }
   try {
@@ -116,7 +139,9 @@ export async function loadRequests(q?: string): Promise<{ requests: RequestItem[
 }
 
 export async function loadRequest(id: string): Promise<{ request: RequestItem | null; source: DataSource }> {
-  if (!apiConfigured()) return { request: getRequest(id), source: "fixture" };
+  if (!apiConfigured()) {
+    return fixturesOff() ? { request: null, source: "live" } : { request: getRequest(id), source: "fixture" };
+  }
   return { request: await fetchRequest(id), source: "live" };
 }
 
@@ -126,10 +151,16 @@ export async function loadRequest(id: string): Promise<{ request: RequestItem | 
 export async function loadClaimEvents(
   id: string,
 ): Promise<{ events: ClaimEventsPage | null; source: DataSource }> {
-  if (!apiConfigured()) return { events: getClaimEvents(id), source: "fixture" };
+  if (!apiConfigured()) {
+    return fixturesOff() ? { events: null, source: "live" } : { events: getClaimEvents(id), source: "fixture" };
+  }
   try {
     return { events: await fetchClaimEvents(id), source: "live" };
   } catch (err) {
+    if (fixturesOff(err)) {
+      console.error("[minerval] live claim events fetch failed:", err);
+      return { events: null, source: "live" };
+    }
     console.error("[minerval] live claim events fetch failed, using fixture:", err);
     return { events: getClaimEvents(id), source: "fixture" };
   }
@@ -168,6 +199,7 @@ export async function loadClaims(
   filters?: ClaimFilters,
 ): Promise<{ results: SearchResultItem[]; source: DataSource }> {
   if (!apiConfigured()) {
+    if (fixturesOff()) return { results: [], source: "live" };
     return { results: applyFilters(listClaims(), filters), source: "fixture" };
   }
   // The cards' prize chip and machine-checked badge go with their features,
@@ -180,6 +212,10 @@ export async function loadClaims(
       : await fetchList(40, filters);
     return { results: listWithoutOffFeatures(results, features), source: "live" };
   } catch (err) {
+    if (fixturesOff(err)) {
+      console.error("[minerval] live claim list failed:", err);
+      return { results: [], source: "live" };
+    }
     console.error("[minerval] live claim list failed, using fixture:", err);
     return {
       results: listWithoutOffFeatures(applyFilters(listClaims(), filters), features),
@@ -196,6 +232,7 @@ export async function loadOpenPrizes(
   limit = 50,
 ): Promise<{ prizes: PrizeListItem[]; mandates: PrizeMandateNumbers[]; source: DataSource }> {
   if (!apiConfigured()) {
+    if (fixturesOff()) return { prizes: [], mandates: [], source: "live" };
     return { prizes: listOpenPrizes().slice(0, limit), mandates: listOpenPrizeMandates(), source: "fixture" };
   }
   const { prizes, mandates } = await fetchOpenPrizes(limit);
@@ -210,6 +247,7 @@ export async function loadAttempt(
   attemptId: string,
 ): Promise<{ attempt: AttemptSummary | null; source: DataSource }> {
   if (!apiConfigured()) {
+    if (fixturesOff()) return { attempt: null, source: "live" };
     const a = getAttempt(attemptId);
     return { attempt: a && a.claim_id === claimId ? a : null, source: "fixture" };
   }
@@ -254,10 +292,16 @@ export async function loadTag(slug: string): Promise<TagSummary | null> {
 export async function loadSourcePage(
   id: string,
 ): Promise<{ page: SourcePage | null; source: DataSource }> {
-  if (!apiConfigured()) return { page: getSourcePageFixture(id), source: "fixture" };
+  if (!apiConfigured()) {
+    return fixturesOff() ? { page: null, source: "live" } : { page: getSourcePageFixture(id), source: "fixture" };
+  }
   try {
     return { page: await fetchSourcePage(id), source: "live" };
   } catch (err) {
+    if (fixturesOff(err)) {
+      console.error("[minerval] live source fetch failed:", err);
+      return { page: null, source: "live" };
+    }
     console.error("[minerval] live source fetch failed, using fixture:", err);
     return { page: getSourcePageFixture(id), source: "fixture" };
   }
@@ -268,10 +312,16 @@ export async function loadSourcePage(
 export async function loadArgument(
   id: string,
 ): Promise<{ page: ArgumentPage | null; source: DataSource }> {
-  if (!apiConfigured()) return { page: getArgumentPageFixture(id), source: "fixture" };
+  if (!apiConfigured()) {
+    return fixturesOff() ? { page: null, source: "live" } : { page: getArgumentPageFixture(id), source: "fixture" };
+  }
   try {
     return { page: await fetchArgumentPage(id), source: "live" };
   } catch (err) {
+    if (fixturesOff(err)) {
+      console.error("[minerval] live argument fetch failed:", err);
+      return { page: null, source: "live" };
+    }
     console.error("[minerval] live argument fetch failed, using fixture:", err);
     return { page: getArgumentPageFixture(id), source: "fixture" };
   }

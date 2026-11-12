@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Mark } from "./Mark";
 import { THEME_SCRIPT } from "./theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MembersGate } from "@/components/MembersGate";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -43,7 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ThemeToggle />
           </div>
         </header>
-        <main className="frame">{children}</main>
+        {/* On the public graph the gate is the page itself. In a members-only
+            deployment it stands in for the page until the visitor is a
+            signed-in member (components/MembersGate.tsx). */}
+        <main className="frame">
+          <MembersGate>{children}</MembersGate>
+        </main>
         <footer className="site">
           <div className="inner">
             <p style={{ margin: "0 0 .7rem" }}>

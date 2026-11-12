@@ -34,6 +34,13 @@
  *
  * The resolved identity is exposed as request.auth; the legacy
  * request.contributorExternalId is kept in sync for existing routes.
+ *
+ * In a members-only deployment (src/permissions.ts) one hook authenticates
+ * every request before its route's own guards run
+ * (plugins/members-only.ts), and adds the request's standing: what it may
+ * do and read. A route's `app.authenticate` then finds the work done and
+ * returns. The dev bypass does not exist there: nothing is served to a
+ * request that presents no credential, whatever the environment.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { timingSafeEqual } from "node:crypto";
@@ -55,6 +62,7 @@ import {
   MCP_DISPATCH_HEADER,
   resolveDispatchedAuth,
 } from "../../mcp/dispatch.js";
+import { membersOnly, type Standing } from "../../permissions.js";
 
 export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass";
 
@@ -74,6 +82,26 @@ export interface RequestAuth {
    * API keys, so a leaked consumer key can never mint or revoke keys.
    */
   isSession: boolean;
+  /**
+   * What the request may do and read (src/permissions.ts): the grants that
+   * reach its account and the clearance they add up to. Resolved once, when
+   * the request arrives, in a members-only deployment. Absent on the public
+   * graph, where nobody holds a grant; read it with standingOf, which
+   * answers the public standing for a request that carries none.
+   */
+  standing?: Standing;
+}
+
+/**
+ * Requests the members-only hook has already authenticated. `authenticate`
+ * returns at once for one of these, so a route's own preHandler neither
+ * repeats the lookups nor replaces the identity the hook resolved, standing
+ * included. Always empty on the public graph.
+ */
+const alreadyAuthenticated = new WeakSet<FastifyRequest>();
+
+export function markAuthenticated(request: FastifyRequest): void {
+  alreadyAuthenticated.add(request);
 }
 
 export const DEV_EXTERNAL_ID = "dev:local";
@@ -144,6 +172,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
   app.decorate(
     "authenticate",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (alreadyAuthenticated.has(request)) return;
       const config = loadConfig();
       const envKeysConfigured =
         config.apiKeys.length > 0 && config.apiKeys[0] !== "";
@@ -269,7 +298,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             .code(401)
             .send({ error: "Invalid or missing API key" });
         }
-      } else if (!envKeysConfigured && config.env !== "production") {
+      } else if (!envKeysConfigured && config.env !== "production" && !membersOnly(config)) {
         // 3. Dev bypass — keyless local development acts as a fixed local
         // account (created on first use) so the full dashboard flow — keys,
         // usage, provisioning — works with zero configuration.

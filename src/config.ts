@@ -114,6 +114,38 @@ const configSchema = z.object({
     })
     .prefault(""),
 
+  // Who this deployment serves (src/permissions.ts; docs/accounts.md,
+  // "Members-only deployments"). "open", the starting value, is the public
+  // graph: a read needs no account and the rules for every act are the ones
+  // each route already carries. "members" serves nothing to anyone who is
+  // not signed in, and what a signed-in person may do follows from the
+  // permissions the deployment's administrators have granted them.
+  reads: z.enum(["open", "members"]).default("open"),
+  // The sign-in identity ("<provider>:<subject>", as an account's
+  // external_id reads) of the person setting a members-only deployment up.
+  // It is used once: the first time that person signs in while the
+  // deployment has never had an administrator, they are granted every
+  // permission, and the grants are logged as made by this setting. After
+  // that it does nothing, whatever it says. Empty by default.
+  firstAdministrator: z
+    .string()
+    .trim()
+    .refine((id) => id === "" || /^[a-z0-9_-]+:.+$/i.test(id), {
+      message:
+        'FIRST_ADMINISTRATOR must be a sign-in identity of the form "<provider>:<subject>", ' +
+        'for example "oidc:00u1abcd". A person who has signed in and holds no permission is ' +
+        "shown their own.",
+    })
+    .default(""),
+  // How long a sign-in vouches for the groups it carried, in hours, in a
+  // members-only deployment. The API never asks the identity provider
+  // anything, so a person removed from a group there is known here only by
+  // their next sign-in: a group's grants reach an account while its latest
+  // sign-in is younger than this. The web app ends a session at the same
+  // age (web/auth.ts reads the same variable), so a person at work signs in
+  // again before their groups lapse.
+  signInValidHours: z.coerce.number().positive().default(12),
+
   // CORS
   corsOrigins: z.string().default(""),
 
@@ -456,12 +488,15 @@ const configSchema = z.object({
   traceLevel: z.enum(["off", "full"]).optional(),
   // How much a run depends on its log (#552). "best_effort", the default:
   // a step that cannot be written is logged and the run carries on, closing
-  // unsealed. "record": every traceable run is traced whatever TRACE_LEVEL
-  // says, nothing in a step is cut to a size cap, the run does not return
-  // until its log is sealed, a run whose log could not be written whole
-  // fails, and the retention sweep deletes nothing. A private graph runs in
-  // record mode, since a page it publishes names its log; the public graph
-  // stays best-effort until record mode has run somewhere in earnest.
+  // unsealed. "record": every run is traced whatever TRACE_LEVEL says, the
+  // ones over a reader's own content included (untraced in
+  // llm/usage-context.ts), a model call with no run to log it in is refused
+  // (llm/logged-run.ts), nothing in a step is cut to a size cap, the run
+  // does not return until its log is sealed, a run whose log could not be
+  // written whole fails, and the retention sweep deletes nothing. A private
+  // graph runs in record mode, since a page it publishes names its log; the
+  // public graph stays best-effort until record mode has run somewhere in
+  // earnest.
   runLogMode: z.enum(["best_effort", "record"]).default("best_effort"),
   // How long agent_runs (and, by cascade, agent_steps) are kept before the
   // retention sweep (workers/trace-retention.ts) deletes them. Runs that
@@ -1231,6 +1266,43 @@ const configSchema = z.object({
   sqsContributionQueue: z.string().default(""),
   sqsArbitrationQueue: z.string().default(""),
   sqsStewardQueue: z.string().default(""),
+
+  // The mirror feed (docs/mirror.md). A deployment is a publisher, an
+  // applier, both or neither, and it is neither unless these say so: with
+  // none of them set no route is mounted, no worker starts and nothing is
+  // read or written.
+  //
+  // Publishing. "true" makes this deployment cut signed batches of its
+  // public rows on the cadence below and serve them at /mirror/feed. The
+  // signing key is an Ed25519 private key in PEM form, held as a secret;
+  // its public half is served at /mirror/feed/key and stated in every batch.
+  mirrorPublish: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
+  mirrorSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // How often a cut is made. Each cut reads and hashes the replicated
+  // tables, so this is also what the feed costs the database.
+  mirrorPublishIntervalSeconds: z.coerce.number().default(900),
+  // The most bytes of rows one batch holds. A cut larger than this (a
+  // snapshot, mostly) is split into consecutive batches, so that no batch
+  // outgrows what one process can hold and one request can carry.
+  mirrorBatchMaxBytes: z.coerce.number().default(24_000_000),
+  // Applying. Where this deployment's mirror of the public graph is fed
+  // from: the publisher's API address, or a directory of batch files where
+  // the network does not reach it. Either makes this deployment an applier.
+  mirrorFeedUrl: z.string().default(""),
+  mirrorFeedDir: z.string().default(""),
+  // The key the applier presents when it fetches a batch (x-api-key).
+  mirrorFeedApiKey: z.string().default(""),
+  // The feed's public key or keys, comma-separated, each as GET
+  // /mirror/feed/key gives it. A batch is applied only if one of these
+  // verifies its signature; the key a batch carries is never trusted.
+  mirrorFeedPublicKeys: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").map((k) => k.trim()).filter((k) => k.length > 0)),
+  mirrorApplyIntervalSeconds: z.coerce.number().default(300),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -1284,6 +1356,9 @@ export function loadConfig(): Config {
     dbPassword: process.env.DB_PASSWORD,
     apiKeys: process.env.API_KEYS,
     apiKeyContributors: process.env.API_KEYS,
+    reads: process.env.READS || undefined,
+    firstAdministrator: process.env.FIRST_ADMINISTRATOR,
+    signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
     corsOrigins: process.env.CORS_ORIGINS,
     publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
     publicReadStaleWhileRevalidateSeconds:
@@ -1512,6 +1587,15 @@ export function loadConfig(): Config {
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
+    mirrorPublish: process.env.MIRROR_PUBLISH,
+    mirrorSigningKey: process.env.MIRROR_SIGNING_KEY,
+    mirrorPublishIntervalSeconds: process.env.MIRROR_PUBLISH_INTERVAL_SECONDS,
+    mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,
+    mirrorFeedUrl: process.env.MIRROR_FEED_URL,
+    mirrorFeedDir: process.env.MIRROR_FEED_DIR,
+    mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
+    mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
+    mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
   });
 
   // What the two provider settings can only be checked for together: a name

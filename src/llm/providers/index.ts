@@ -12,6 +12,7 @@ import { endpointAdapterFor } from "./endpoint.js";
 import { openaiAdapter } from "./openai.js";
 import { openrouterAdapter } from "./openrouter.js";
 import { ENDPOINT_ID_PREFIX, providerForModel } from "./routing.js";
+import { requireLoggedRun } from "../logged-run.js";
 import type { HostedProviderName, ProviderAdapter } from "./types.js";
 
 const ADAPTERS: Record<HostedProviderName, ProviderAdapter> = {
@@ -22,9 +23,13 @@ const ADAPTERS: Record<HostedProviderName, ProviderAdapter> = {
 
 /**
  * The adapter serving `modelId`. Throws if the id matches no known shape,
- * or names an endpoint this deployment does not declare.
+ * or names an endpoint this deployment does not declare, and, in record mode,
+ * if no agent run is open to log the call in (../logged-run.ts): this is the
+ * one door to a provider, so it is where a model call made outside a logged
+ * run is caught.
  */
 export function getAdapter(modelId: string): ProviderAdapter {
+  requireLoggedRun(`A model call (${modelId})`);
   const provider = providerForModel(modelId);
   // An endpoint's adapter is made for the endpoint the id names: which ones
   // exist is the deployment's configuration, not a list here.
