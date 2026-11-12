@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 6
+    version: 7
     since_epoch: 2026-11-responsive-funding
     changelog:
+      7: "changes carries state_changed (#962): a node archived, restored, merged or deprecated, with who, why and the successors that carry on what it stated"
       6: "plan_items: a stewarding item is a standing order its mandate commissions (#849); its money is in commissions with commissioned_by plan, and waiting or blocked says the rate or escrow has no room"
       5: "nodes carries steward_park_reason (#846): why a node is parked after failed Steward passes, so a query can find premises that will not be judged until someone commissions them"
       4: "assessments carries relabeled_from (#848): the retired label a migration carried a status over from, set until the node is re-judged; a query lists that backlog with its open reassess rows"
@@ -96,7 +97,10 @@ unknown.
   submitted_at
 - `requests`: request_id, ask, why, state, keeper_kind, keeper_node_id,
   budget_owls, created_at, closed_at
-- `changes`: the change stream as one table. kind, node_id, at, summary
+- `changes`: the change stream as one table. kind, node_id, at, summary.
+  kind `state_changed` is a node archived, restored, merged or deprecated;
+  its summary reads `<from> -> <to> by <who>: <reason>`, with the
+  successors that carry on what the node stated, if any
 
 **What is fast.** Ids, node_id and target_node_id on every view, tags (use
 `= ANY` or `&&`), importance, assessed_at and created_at. Filter on these

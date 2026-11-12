@@ -1308,7 +1308,9 @@ verdict kinds (`first_assessment`, `status_moved`, `credence_moved`,
 `reassessed`), so a reader of verdicts sees what it always did. Asked with
 `kinds`, it also serves what moves on the ledger and around nodes:
 `work_commissioned`, `run_finished`, `message_arrived`, `message_answered`,
-`contribution_accepted`, `ruling`, `petition_decided` and `request_filed`.
+`contribution_accepted`, `ruling`, `petition_decided` and `request_filed`,
+and `state_changed`, a node archived, restored, merged or deprecated, read
+from `claim_state_changes` with who did it, why and the successors (#962).
 A lookout's graph feed reads the stream for its territory; a correspondent
 reads it for its readers.
 

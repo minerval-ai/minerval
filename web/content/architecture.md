@@ -857,7 +857,10 @@ receiving Steward decides, since only the owner writes.
 Every such message is a row in the node's inbox (`node_messages`,
 services/inbox-service.ts), kept whole until a pass reads it; this replaced
 appending text to `claims.steward_context` (retired; the column is kept only
-for a historical migration's test). A pass reads every unread message,
+for a historical migration's test). Only an active node has an inbox: a
+message addressed to a merged, deprecated or archived node is not kept, and
+goes instead to the live successor that node's record names, if any (#962).
+A pass reads every unread message,
 answers each (`answer_messages`: changed, no change, or disagree, with a
 reason; a reply to another node's Steward lands in that node's inbox as
 `message_reply`), and marks what it was shown read when it finishes. A

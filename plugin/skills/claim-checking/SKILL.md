@@ -66,6 +66,16 @@ skill bundles it in full, and the section numbers below point into it.
   refused and names the survivor; restate it for the survivor rather than
   resending it. An id that names nothing at all is an error, not a merge:
   copy ids exactly from a result, never retype them.
+- **An id that was retired**: a node whose `claim.state` is `archived` or
+  `deprecated` is out of the live graph. `get_claim` serves it as it was,
+  with `retired` beside it: when it was retired, by whom, why, and its
+  `successors`, the live nodes that carry on what it stated. Its verdict is
+  the one it had when it was retired and no Steward works it, so report it
+  as a retired node's last verdict, not the graph's current judgment, and
+  read a successor for that. Where `successors` is empty the graph holds no
+  live page for the proposition, which is not a finding about it. Work on a
+  retired node (an order, funding, a plan item) is refused; address a
+  successor instead.
 - **Less of any read**: the tools generated from the REST API's read routes
   (`list_claims`, `cite_claim`, `get_assessment_history`, the cards and the
   rest) take `fields`, a comma-separated list of dotted paths such as

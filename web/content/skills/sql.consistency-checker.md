@@ -1,4 +1,4 @@
-# Method skill: Sql (version 6)
+# Method skill: Sql (version 7)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -81,7 +81,10 @@ unknown.
   submitted_at
 - `requests`: request_id, ask, why, state, keeper_kind, keeper_node_id,
   budget_owls, created_at, closed_at
-- `changes`: the change stream as one table. kind, node_id, at, summary
+- `changes`: the change stream as one table. kind, node_id, at, summary.
+  kind `state_changed` is a node archived, restored, merged or deprecated;
+  its summary reads `<from> -> <to> by <who>: <reason>`, with the
+  successors that carry on what the node stated, if any
 
 **What is fast.** Ids, node_id and target_node_id on every view, tags (use
 `= ANY` or `&&`), importance, assessed_at and created_at. Filter on these
