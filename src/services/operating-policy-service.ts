@@ -158,6 +158,13 @@ export async function writeOperatingPolicy(input: {
      VALUES ($1, 'policy', $2, $3::jsonb, $4, $5)`,
     [input.grantId, input.section ?? null, JSON.stringify(next), note, input.author]
   );
+  const { recordEvent } = await import("./event-service.js");
+  await recordEvent({
+    kind: "mandate_changed",
+    grantId: input.grantId,
+    refs: { part: "policy", section: input.section ?? null },
+    summary: `The operating policy${input.section ? `'s ${input.section} section` : ""} was rewritten: ${note}`,
+  });
   return { ok: true, policy: next };
 }
 

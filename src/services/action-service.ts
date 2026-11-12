@@ -2395,7 +2395,7 @@ export async function completeAction(
   meteredMicroUsd: number,
   opts: { meteredJobId?: string | null } = {}
 ): Promise<number> {
-  return withTransaction(async (tx) => {
+  const settled = await withTransaction(async (tx) => {
     // Guarded transition: only a live (running, or reconcile-reopened)
     // action completes; a done/superseded/cancelled row is already closed
     // and its coverage already consumed — return 0 and touch nothing.
@@ -2571,8 +2571,41 @@ export async function completeAction(
       );
       await refundUser({ ...r, key: `settle:${r.id}` });
     }
+    // Recorded with the settlement, so a subscriber waiting on this run is
+    // told exactly when its money has come back (event-service.ts).
+    const [done] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(
+      `SELECT a.kind, a.claim_id, a.target_ref, a.label,
+              ARRAY(SELECT DISTINCT al.grant_id::text FROM action_allocations al
+                     WHERE al.action_id = a.id AND al.grant_id IS NOT NULL) AS grants
+         FROM actions a WHERE a.id = $1`,
+      [actionId]
+    );
+    if (done) {
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent(
+        {
+          kind: "run_settled",
+          actionId,
+          nodeId: done.claim_id,
+          grantId: done.grants[0] ?? null,
+          refs: { work_kind: done.kind, target_ref: done.target_ref, grants: done.grants },
+          summary: `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls.`,
+          payload: { spent_micro_usd: Math.round(meteredMicroUsd) },
+        },
+        tx
+      );
+    }
     return consumed;
   });
+  routeAfterCommit();
+  return settled;
+}
+
+/** Deliver events just committed without waiting for the scheduler's tick. */
+function routeAfterCommit(): void {
+  void import("./subscription-router.js")
+    .then(({ routeEvents }) => routeEvents())
+    .catch(() => {});
 }
 
 /**

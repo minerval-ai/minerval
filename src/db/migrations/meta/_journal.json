@@ -925,6 +925,13 @@
       "when": 1794508698044,
       "tag": "0131_drop_daily_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1794509649804,
+      "tag": "0132_event_log_and_subscriptions",
+      "breakpoints": true
     }
   ]
 }

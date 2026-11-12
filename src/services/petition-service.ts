@@ -270,6 +270,18 @@ export async function decidePetition(input: {
      VALUES ($1, $2, 'petition', $3, $4, $5, $6, $7, $8)`,
     [p.grant_id, input.decidedBy, status, p.requester_node_id, granted || null, reason, p.id, p.requester_action_id]
   );
+  {
+    const { recordEvent } = await import("./event-service.js");
+    await recordEvent({
+      kind: "petition_decided",
+      grantId: p.grant_id,
+      nodeId: p.requester_node_id,
+      actionId: p.requester_action_id,
+      refs: { petition: p.id, session: p.reply_to_session },
+      summary: `A ${p.kind} petition from ${p.requester_agent ?? "an agent"} was ${status === "refused" ? "refused" : status === "granted" ? `granted ${microUsdToOwls(granted)} owls` : `funded as a ${microUsdToOwls(granted)}-owl follow-up`} by the ${input.decidedBy}: ${reason}`,
+      payload: { status, granted_micro_usd: granted, decided_by: input.decidedBy },
+    });
+  }
   // The decision returns into the session that asked: shown to its run if it
   // is still working (a grant raising its ceiling then), or resuming it if
   // it paused (a grant funding that pass).

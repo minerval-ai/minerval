@@ -732,6 +732,15 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
       await rawQuery(`UPDATE mandate_inbox SET escalated_at = now(), escalation_note = $2 WHERE id = $1`, [entry.item.id, note]);
     }
     await logDecision(ctx, { itemKind: "escalation", decision: "escalated", target: entry.petition?.requester_node_id ?? entry.item?.target_node_id ?? null, reason: note });
+    const { recordEvent } = await import("../../services/event-service.js");
+    await recordEvent({
+      kind: "escalated",
+      grantId: ctx.grant.id,
+      nodeId: entry.petition?.requester_node_id ?? entry.item?.target_node_id ?? null,
+      refs: { petition: entry.petition?.id ?? null, item: entry.item?.id ?? null },
+      summary: `Your officer sent you ${entry.petition ? `a ${entry.petition.kind} petition${entry.petition.waiting ? " with a run waiting" : ""}` : "an inbox item"}: ${note}`,
+      payload: { waiting: Boolean(entry.petition?.waiting) },
+    });
     return JSON.stringify({ success: true, message: "Sent to the Grantmaker." });
   }
 
@@ -964,6 +973,13 @@ export async function executeMandateOperationsTool(
       [grantId, micro > 0 ? "held in reserve" : "released the reserve", micro, reason]
     );
     const after = await paceRoom(grantId, "delegated");
+    const { recordEvent } = await import("../../services/event-service.js");
+    await recordEvent({
+      kind: "mandate_changed",
+      grantId,
+      refs: { part: "reserve" },
+      summary: micro > 0 ? `The Grantmaker holds ${want} owls in reserve: ${reason}` : `The Grantmaker released its reserve: ${reason}`,
+    });
     return JSON.stringify({ success: true, message: after?.sentence ?? `Reserve set to ${want} owls.` });
   }
   if (name === "amend_pace") {
@@ -984,6 +1000,8 @@ export async function executeMandateOperationsTool(
       [grantId, describePace(v.pace), note]
     );
     const after = await paceRoom(grantId, "grantmaker");
+    const { recordEvent } = await import("../../services/event-service.js");
+    await recordEvent({ kind: "mandate_changed", grantId, refs: { part: "pace" }, summary: `The pace is now ${describePace(v.pace)}: ${note}` });
     return JSON.stringify({ success: true, message: after?.sentence ?? describePace(v.pace) });
   }
   if (name === "amend_objective") {

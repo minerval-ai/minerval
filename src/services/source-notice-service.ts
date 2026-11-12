@@ -114,6 +114,17 @@ export async function tellStewardsOfSourceEvents(
     }
   }
 
+  const { recordEvent } = await import("./event-service.js");
+  for (const { source: m, notice } of fresh) {
+    await recordEvent({
+      kind: "source_event",
+      sourceId: m.source_id,
+      refs: { claims: m.claim_ids, notice_doi: notice.notice_doi ?? null },
+      summary: `A ${(notice.type ?? "retraction").toLowerCase()} notice was recorded against "${m.title || m.url}" (${m.url}).`,
+      payload: { notice },
+    });
+  }
+
   let told = 0;
   for (const { claimId, notice, paths } of letters.values()) {
     const kind = (notice.type ?? "retraction").toLowerCase().replace(/[_-]/g, " ");

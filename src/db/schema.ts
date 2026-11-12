@@ -6297,6 +6297,9 @@ export const agentSessions = pgTable(
     deadline: timestamp("deadline", { withTimezone: true }),
     resumedAt: timestamp("resumed_at", { withTimezone: true }),
     resumes: integer("resumes").notNull().default(0),
+    // Not resumed before this (a Grantmaker's quiet_minutes): what arrives
+    // in a burst is read by one resumption rather than one each.
+    wakeAfter: timestamp("wake_after", { withTimezone: true }),
     // Money granted to the session while it was paused (a petition decided
     // after its run ended): [{grantId, microUsd}], each placed on the pass
     // that resumes it, beside what the paused run had left.
@@ -6320,6 +6323,88 @@ export const agentSessions = pgTable(
     ),
   ]
 );
+
+// ---------------------------------------------------------------------------
+// The event log (services/event-service.ts): one append-only row per thing
+// that happened which someone may want to be told of: a run settling, a
+// petition decided or escalated, an item raised to a mandate, a node's
+// assessment, a source's retraction, a message answered. Each carries the
+// refs it touches, so a subscription can match on any of them, and a
+// sequence number, so every reader (the subscription router, and later
+// feeds and webhooks) reads it in order from a cursor.
+// ---------------------------------------------------------------------------
+export const events = pgTable(
+  "events",
+  {
+    seq: bigint("seq", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(),
+    nodeId: uuid("node_id"),
+    actionId: uuid("action_id"),
+    grantId: uuid("grant_id"),
+    sourceId: uuid("source_id"),
+    // Any other refs: {petition, research_run, request, lookout, correspondent, session, ...}.
+    refs: jsonb("refs").notNull().default({}),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    // The label the event was recorded at (src/labels.ts): a delivery never
+    // carries a summary to a subscriber that may not read it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_events_node").on(table.nodeId, table.seq),
+    index("idx_events_action").on(table.actionId),
+    index("idx_events_grant").on(table.grantId, table.seq),
+    index("idx_events_kind").on(table.kind, table.seq),
+  ]
+);
+
+// A standing interest in events, or in a time or a money threshold
+// (services/subscription-service.ts). The subscriber is a session (its
+// agent is told, and a paused session is woken when the delivery is
+// `wake`), a mandate's inbox, a node's inbox, a lookout or a correspondent.
+// `filter` names what to match: kinds and refs (action ids, node ids, the
+// subtree under a node, the nodes resting on a node, tags, sources,
+// mandates). `due_at` makes it a scheduled check-in; `condition` a
+// threshold the router evaluates (money committed since it was set). A
+// `once` subscription ends at its first delivery.
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriberKind: text("subscriber_kind").notNull(),
+    subscriberRef: text("subscriber_ref").notNull(),
+    filter: jsonb("filter").notNull().default({}),
+    condition: jsonb("condition"),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    delivery: text("delivery").notNull().default("wake"),
+    once: boolean("once").notNull().default(false),
+    reason: text("reason").notNull(),
+    // Who made it: the agent role, or 'system' for one made on an agent's behalf.
+    createdBy: text("created_by").notNull(),
+    active: boolean("active").notNull().default(true),
+    deliveries: integer("deliveries").notNull().default(0),
+    lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_subscriptions_subscriber").on(table.subscriberKind, table.subscriberRef, table.active),
+    index("idx_subscriptions_due").on(table.dueAt).where(sql`${table.active} AND ${table.dueAt} IS NOT NULL`),
+    check("subscriptions_delivery_check", sql`${table.delivery} IN ('wake', 'queue')`),
+    check(
+      "subscriptions_subscriber_check",
+      sql`${table.subscriberKind} IN ('session', 'mandate_inbox', 'node_inbox', 'lookout', 'correspondent')`
+    ),
+  ]
+);
+
+// Where the subscription router has read the event log to.
+export const eventRouterState = pgTable("event_router_state", {
+  id: integer("id").primaryKey(),
+  lastSeq: bigint("last_seq", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // judgment_inputs: what each judgment was made against (#566)

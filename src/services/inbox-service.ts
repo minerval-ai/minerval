@@ -339,6 +339,18 @@ export async function answerMessages(
       continue;
     }
     recorded.push(label);
+    {
+      // Every answer is on the log, so a sender that is not a Steward (the
+      // Curator, the Audit Agent, a Checker, a lookout) can be told too.
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent({
+        kind: "message_answered",
+        nodeId,
+        refs: { message: id, sender_kind: m.sender_kind, sender_node: m.sender_node_id },
+        summary: `The Steward of ${nodeId} answered a message from ${m.sender_kind} ("${quoteHead(m.body)}"): ${OUTCOME_WORDS[outcome]}.` + (note ? ` ${note}` : ""),
+        payload: { outcome },
+      });
+    }
     if (m.sender_kind === "steward" && m.sender_node_id && m.sender_node_id !== nodeId) {
       const date = new Date(m.created_at).toISOString().slice(0, 10);
       const body =

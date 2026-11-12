@@ -39,7 +39,7 @@ import { postMessage, type MessageSender } from "./inbox-service.js";
 import type { CommissionPayer } from "./commission-service.js";
 import { microUsdToOwls } from "./owl.js";
 
-export type AwaitKind = "research" | "reply" | "petition";
+export type AwaitKind = "research" | "reply" | "petition" | "subscription";
 
 export interface SessionReply {
   kind: AwaitKind;
@@ -53,6 +53,12 @@ export interface SessionReply {
    * the answer, since the grant is already placed on its row.
    */
   credit_micro_usd?: number;
+  /**
+   * False for a delivery the agent asked to have waiting for its next turn
+   * (a subscription with delivery `queue`): it does not resume a paused
+   * session by itself.
+   */
+  wake?: boolean;
 }
 
 export interface SessionRow {
@@ -117,6 +123,19 @@ export async function registerAwait(kind: AwaitKind, ref: string): Promise<strin
   return session.id;
 }
 
+/** Make the running session's row if it has none yet (a subscription made before any other wait). */
+export async function ensureSessionRow(): Promise<string | null> {
+  const session = getUsageContext().session;
+  if (!session) return null;
+  await rawQuery(
+    `INSERT INTO agent_sessions (id, role, node_id, status, awaiting, sensitivity_label)
+     VALUES ($1, $2, $3, 'running', '[]'::jsonb, $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [session.id, session.role, session.nodeId, currentLabel()]
+  );
+  return session.id;
+}
+
 /** The session's id for a request that expects an answer, without registering one. */
 export function currentSessionId(): string | null {
   return getUsageContext().session?.id ?? null;
@@ -139,7 +158,10 @@ export async function deliverReply(input: {
   creditMicroUsd?: number;
   /** Money granted to a paused session: placed on the pass that resumes it. */
   grant?: { grantId: string; microUsd: number } | null;
+  /** False: show it on the session's next turn, but do not resume a paused session for it. */
+  wake?: boolean;
 }): Promise<"session" | "inbox" | "dropped"> {
+  const wake = input.wake !== false;
   const reply: SessionReply = {
     kind: input.kind,
     ref: input.ref,
@@ -147,6 +169,7 @@ export async function deliverReply(input: {
     at: new Date().toISOString(),
     delivered: false,
     ...(input.creditMicroUsd ? { credit_micro_usd: Math.round(input.creditMicroUsd) } : {}),
+    ...(wake ? {} : { wake: false }),
   };
   let resume: SessionRow | null = null;
   const took = input.sessionId
@@ -156,7 +179,7 @@ export async function deliverReply(input: {
           [input.sessionId]
         );
         if (!s || s.status === "expired" || s.status === "closed") return false;
-        const next = s.status === "waiting" ? "ready" : s.status;
+        const next = s.status === "waiting" && wake ? "ready" : s.status;
         const paused = s.status === "waiting" || s.status === "ready";
         const extra = paused && input.grant && input.grant.microUsd > 0 ? [input.grant] : [];
         const [row] = await tx.query<SessionRow>(
@@ -167,7 +190,7 @@ export async function deliverReply(input: {
             RETURNING ${COLUMNS}`,
           [s.id, JSON.stringify([reply]), next, JSON.stringify(extra)]
         );
-        if (s.status === "waiting") resume = row ?? null;
+        if (s.status === "waiting" && wake) resume = row ?? null;
         return true;
       })
     : false;
@@ -219,7 +242,9 @@ export function renderReplies(replies: SessionReply[]): string {
             ? `Research run ${r.ref} has reported`
             : r.kind === "petition"
               ? `The mandate decided your petition ${r.ref}`
-              : `An answer to your message ${r.ref}`
+              : r.kind === "subscription"
+                ? `Something you subscribed to`
+                : `An answer to your message ${r.ref}`
         }\n\n${r.text}`
     )
     .join("\n\n");
@@ -292,9 +317,25 @@ export async function suspendSession(input: {
   const status = await withTransaction(async (tx) => {
     const [s] = await tx.query<SessionRow>(`SELECT ${COLUMNS} FROM agent_sessions WHERE id = $1 FOR UPDATE`, [input.id]);
     if (!s || s.status !== "running") return s?.status ?? null;
-    const waiting = outstanding(s).length > 0;
-    const undelivered = s.replies.some((r) => !r.delivered);
+    // A session waits while something it asked for is outstanding, or while
+    // it holds a subscription that would wake it (an event, a check-in, a
+    // threshold): that is how an agent ends a turn to wait for what comes.
+    const holds = await tx.query<{ n: number; due: string | null }>(
+      `SELECT count(*) FILTER (WHERE delivery = 'wake')::int AS n, min(due_at)::text AS due
+         FROM subscriptions WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+      [s.id]
+    );
+    const subscribed = Number(holds[0]?.n ?? 0) > 0;
+    const waiting = outstanding(s).length > 0 || subscribed;
+    const undelivered = s.replies.some((r) => !r.delivered && r.wake !== false);
     const next: SessionRow["status"] = undelivered ? "ready" : waiting ? "waiting" : "closed";
+    // The session waits at least as long as the platform's wait, and past
+    // its own latest check-in when it set one later than that.
+    const dueAt = holds[0]?.due ? new Date(holds[0].due).getTime() : 0;
+    const waitSecs = Math.max(
+      Math.round(config.sessionWaitHours * 3600),
+      dueAt ? Math.round((dueAt - Date.now()) / 1000) + 3600 : 0
+    );
     const [row] = await tx.query<SessionRow>(
       `UPDATE agent_sessions
           SET status = $2, transcript = $3::jsonb, model = $4, payer = $5::jsonb,
@@ -312,13 +353,20 @@ export async function suspendSession(input: {
         input.model,
         payer ? JSON.stringify(payer) : null,
         Math.max(0, Math.round(input.budgetLeftMicroUsd)),
-        Math.round(config.sessionWaitHours * 3600),
+        waitSecs,
         input.context ? JSON.stringify(input.context) : null,
         // The pausing run's private reasons, from its trace (run-visibility.ts).
         [...(getUsageContext().trace?.privateReasons ?? [])],
       ]
     );
     if (next === "ready") resume = row ?? null;
+    if (next === "closed") {
+      await tx.query(
+        `UPDATE subscriptions SET active = false, ended_at = now()
+          WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+        [s.id]
+      );
+    }
     return next;
   });
   if (resume) await commissionResumption(resume);
@@ -631,6 +679,12 @@ export async function sweepSessions(): Promise<number> {
   );
   for (const s of rows) {
     await sendRepliesToInbox(s.node_id, s.replies.filter((x) => !x.delivered));
+    // A session that has ended holds no interest in anything.
+    await rawQuery(
+      `UPDATE subscriptions SET active = false, ended_at = now()
+        WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+      [s.id]
+    );
   }
   return rows.length;
 }
