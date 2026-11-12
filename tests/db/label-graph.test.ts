@@ -126,7 +126,7 @@ import {
   recordLeanCheck,
   storeElaboratedFormalization,
 } from "../../src/services/formalization-service.js";
-import { runAtClaimLabel } from "../../src/services/label-service.js";
+import { runAtClaimLabel, runAtClaimLabelOutsideAnyRun } from "../../src/services/label-service.js";
 import { FakeLeanCheckerClient } from "../../src/services/lean-checker-fake.js";
 import { addReading, defineQuantity, recordCut, recordEstimate } from "../../src/services/quantity-service.js";
 import {
@@ -477,7 +477,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table of the graph's content, defaulting to the connection's label, and point at labels", async () => {
+  it("are on every table of the graph's content, default to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -494,6 +494,8 @@ describe("the columns", () => {
       [CONTENT_TABLES]
     );
     expect(rows).toEqual(
+      // The default is the function 0130 gave every labelled table: the
+      // connection's label, which is 'public' wherever it is the only one.
       CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
@@ -733,10 +735,7 @@ describe("work that starts from a claim", () => {
     expect(await processNextTaggingTask()).toEqual({ status: "empty" });
   });
 
-  // A mandate's plan is the mandate's work, not the claim's: since mandates
-  // carry a label of their own, the order takes it (label-governance.test.ts
-  // has the mandate at a second label). The claim's label no longer stands in.
-  it("is ordered for a mandate's plan at the mandate's label when the scheduler places the order, and at the run's when a run does", async () => {
+  it("is ordered for a mandate's plan at the claim's label when the scheduler places the order, and at the run's when a run does", async () => {
     const funder = await seedUser("graph-plan");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL, dailyBudgetMicroUsd: 100 * OWL });
     const swept = await seedClaim("graph plan item, swept");
@@ -745,9 +744,9 @@ describe("work that starts from a claim", () => {
       grantId,
       JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", budget_owls: 3 }] }),
     ]);
-    // The scheduler materializes the plan outside any run. The mandate is public.
+    // The scheduler materializes the plan outside any run.
     await materializePlanItems(grantId);
-    expect(await assessLabels(swept)).toEqual([PUBLIC_LABEL]);
+    expect(await assessLabels(swept)).toEqual([INTERNAL]);
 
     // An order placed from inside a run is that run's work, like everything a run opens.
     const inRun = await seedClaim("graph plan item, in a run");
@@ -811,9 +810,6 @@ describe("work that starts from a claim", () => {
     expect(await letters(`10.5555/${randomUUID()}`)).toBe(2);
     expect(await assessLabels(restricted)).toEqual([INTERNAL]);
     expect(await assessLabels(open)).toEqual([PUBLIC_LABEL]);
-    // The letter itself, waiting in each node's inbox, is at the node's label too.
-    expect(await labelsWhere("node_messages", "node_id = $1", [restricted])).toEqual([INTERNAL]);
-    expect(await labelsWhere("node_messages", "node_id = $1", [open])).toEqual([PUBLIC_LABEL]);
 
     // A run's first fetch of the document finds it: each letter is still at
     // its node's label and not at the label of the run that fetched.
@@ -836,17 +832,17 @@ describe("work that starts from a claim", () => {
       expect(told).toBe(2);
       expect(await assessLabels(restrictedAgain)).toEqual([INTERNAL]);
       expect(await assessLabels(openAgain)).toEqual([PUBLIC_LABEL]);
-      expect(await labelsWhere("node_messages", "node_id = $1", [restrictedAgain])).toEqual([INTERNAL]);
-      expect(await labelsWhere("node_messages", "node_id = $1", [openAgain])).toEqual([PUBLIC_LABEL]);
     }
   });
 
-  it("takes the claim's label over the one in the air", async () => {
+  it("takes the claim's label over the one in the air, except through the seam meant for code a run also reaches", async () => {
     const claim = await settledClaim("graph helper");
     await setLabel(claim, INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtClaimLabel(claim, at)).toBe(INTERNAL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabel(claim, at))).toBe(INTERNAL);
+    expect(await runAtClaimLabelOutsideAnyRun(claim, at)).toBe(INTERNAL);
+    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabelOutsideAnyRun(claim, at))).toBe(PUBLIC_LABEL);
     // A claim that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtClaimLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
   });

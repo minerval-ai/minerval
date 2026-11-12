@@ -97,7 +97,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-nine tables, defaulting to the connection's label, each with a key to labels", async () => {
+  it("is on one hundred and six tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -105,7 +105,7 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(99);
+    expect(columns).toHaveLength(106);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
@@ -212,6 +212,10 @@ describe("the label column, in the catalog", () => {
       "queue_depth_snapshots",
       // Database time used by query_sql, per account and day.
       "sql_usage",
+      // What a deployment reports of its owl spend, and what was reported to this one: a day, a
+      // total and identifiers, taken over every label and made to leave. Nobody's words.
+      "usage_reports",
+      "usage_reports_received",
     ]);
   });
 });

@@ -18,8 +18,8 @@
  *  - A fetch that writes into a source's own row (its text, its facts, its
  *    page hash) leaves the source's label as it was.
  *  - Work that starts from a source itself, with no row of its own to wait
- *    in, runs at the source's label: the source backfill. (The scheduler's
- *    note of a source in a mandate's pipeline is the mandate's work.)
+ *    in, runs at the source's label: the source backfill, and the
+ *    scheduler's note of a source someone else ingested.
  *  - None of it reaches a reader: no view query_sql reads, no API response
  *    and no agent's read of a source carries the column.
  *
@@ -128,7 +128,7 @@ import { openExamination } from "../../src/services/examination-service.js";
 import type { PageAnalysis } from "../../src/services/extension-service.js";
 import { addFeed, getFeed, pollFeed, readItem } from "../../src/services/feed-service.js";
 import { recordExtraction } from "../../src/services/ingest-focus-service.js";
-import { runAtSourceLabel } from "../../src/services/label-service.js";
+import { runAtSourceLabel, runAtSourceLabelOutsideAnyRun } from "../../src/services/label-service.js";
 import { getMandatePipeline } from "../../src/services/mandate-service.js";
 import { normalizePageUrl, pageUrlHash } from "../../src/services/page-url.js";
 import { defineQuantity } from "../../src/services/quantity-service.js";
@@ -437,7 +437,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every source-side table, defaulting to the connection's label, and point at labels", async () => {
+  it("are on every source-side table, default to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -454,6 +454,8 @@ describe("the columns", () => {
       [SOURCE_TABLES]
     );
     expect(rows).toEqual(
+      // The default is the function 0130 gave every labelled table: the
+      // connection's label, which is 'public' wherever it is the only one.
       SOURCE_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
@@ -640,7 +642,7 @@ describe("a row read from a source or written about one", () => {
     stage.pages.set(`${site}/feed`, rss(site, ["a"]));
     const feed = await inRunAt(INTERNAL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" }));
     if (!feed.ok) throw new Error(JSON.stringify(feed));
-    // The poller runs outside any run, at the lookout's label (label-governance.test.ts). This lookout is public.
+    // The poller runs outside any run. A lookout carries no label yet, so what it records is public.
     stage.pages.set(`${site}/feed`, rss(site, ["a", "b"]));
     expect(await pollFeed((await getFeed(feed.feed_id))!)).toMatchObject({ ok: true, newItems: 1 });
     const items = (
@@ -912,15 +914,10 @@ describe("work that starts from a source", () => {
     expect((await sourceRow(restricted.id)).sensitivity_label).toBe(INTERNAL);
   });
 
-  // The note is the mandate's record of its own pipeline, written while its
-  // plan is materialized, so it carries the mandate's label now that
-  // mandates have one (label-governance.test.ts). Before, the source's
-  // label stood in for it.
-  it("is noted in a mandate's pipeline by the scheduler at the mandate's label, whatever the source's is", async () => {
-    const attributed = async (label: string, mandateLabel: string) => {
+  it("is noted in a mandate's pipeline by the scheduler at the label of the source someone else ingested", async () => {
+    const attributed = async (label: string) => {
       const funder = await seedUser("sources-plan");
       const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
-      await rawQuery(`UPDATE grants SET sensitivity_label = $2 WHERE id = $1`, [grantId, mandateLabel]);
       const source = await seedSource(label);
       // Another reader's ingest of the URL ran and finished.
       await rawQuery(
@@ -943,16 +940,17 @@ describe("work that starts from a source", () => {
       expect(item!.ledger.status).toBe("done");
       return labelsWhere("grant_sources", "grant_id = $1 AND source_id = $2", [grantId, source.id]);
     };
-    expect(await attributed(INTERNAL, PUBLIC_LABEL)).toEqual([PUBLIC_LABEL]);
-    expect(await attributed(PUBLIC_LABEL, INTERNAL)).toEqual([INTERNAL]);
-    expect(await attributed(PUBLIC_LABEL, PUBLIC_LABEL)).toEqual([PUBLIC_LABEL]);
+    expect(await attributed(INTERNAL)).toEqual([INTERNAL]);
+    expect(await attributed(PUBLIC_LABEL)).toEqual([PUBLIC_LABEL]);
   });
 
-  it("takes the source's label over the one in the air", async () => {
+  it("takes the source's label over the one in the air, except through the seam meant for code a run also reaches", async () => {
     const source = await seedSource(INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtSourceLabel(source.id, at)).toBe(INTERNAL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtSourceLabel(source.id, at))).toBe(INTERNAL);
+    expect(await runAtSourceLabelOutsideAnyRun(source.id, at)).toBe(INTERNAL);
+    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtSourceLabelOutsideAnyRun(source.id, at))).toBe(PUBLIC_LABEL);
     // A source that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtSourceLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
     // Reading the label writes nothing.
