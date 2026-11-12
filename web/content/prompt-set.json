@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "f838d9a3a8d68d8848986d728cd6ba293a91bea937235dcd68767264bf075af0",
+  "hash": "7612acfa01f7a0853e35935526695ac58b96dc9c401b55280f0a848685402386",
   "constitution": {
     "hash": "f22733782f345aa3b6fd5a4552c02e5252406af7b2ace5e57eba3829b71164db",
     "source_path": "admin_constitution.md"
@@ -24,7 +24,7 @@
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "d87c1947ddb5ec83a025d51a304e648d054c44080fa8b8eca7ea6ae714cb0a47"
+        "bd7eafbc8f07cbf4b9c59f97196d08a596900ad60bf1979a4f1dc9a73fb0d1e8"
       ]
     },
     {
@@ -52,7 +52,7 @@
       "name": "curator",
       "source_path": "src/llm/prompts/curator.ts",
       "blocks": [
-        "d93b17f5209218c594ce3648d36ce2bfb3c6c07cc3cbcbfe46394059cf0b27aa"
+        "d0cffbc4e924f6066bffea443b1b8de56608e32a7c43b8db1b2f74074c3c301a"
       ]
     },
     {
@@ -73,7 +73,7 @@
       "name": "grantmaker",
       "source_path": "src/llm/prompts/grantmaker.ts",
       "blocks": [
-        "0a9587472401dd315bd2d430d42e185fb4c51c0b99dbe09654168502a99ad2e6"
+        "0993d7ae0ed4f9675248f974331c97eb421e8d3eb43161d4d22f9cf8b4d6ffdc"
       ]
     },
     {
@@ -87,7 +87,7 @@
       "name": "matcher",
       "source_path": "src/llm/prompts/matcher.ts",
       "blocks": [
-        "aa056c05094416015fb18c83482228d9bea6f1f373cdb611b5aa21ccce4ca63e"
+        "a3b19289e9616f469630232cc4b33883593b59ece7f4aee06a8c280ee6889cf1"
       ]
     },
     {
@@ -129,8 +129,8 @@
   "skills": [
     {
       "name": "costing",
-      "version": 8,
-      "hash": "ff4adf62d5cf3e8c27f09c752e4dfda6843df0dc9d0f6d843e4abd707d0595a0"
+      "version": 9,
+      "hash": "3432b47e7e98f86054081801b2d4bac33ae2a376f361c205be6dc4837a450934"
     },
     {
       "name": "mathematics",
@@ -149,8 +149,8 @@
     },
     {
       "name": "sql",
-      "version": 7,
-      "hash": "c6fc8b4c36cb099dbe0413d210a7699afbdad301a50e25406d0900a32f0e25dc"
+      "version": 10,
+      "hash": "7de1f33d95a7ab9db1ba5cb01a65ddc5484d17417e674ea228803f147729decc"
     }
   ]
 }

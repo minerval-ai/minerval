@@ -108,6 +108,19 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
       [root, kid]
     );
     await rawQuery(`UPDATE claims SET steward_state = 'deferred' WHERE id = ANY($1::uuid[])`, [[kid, outside]]);
+    // A node in scope that is already judged and merely queued for a fresh
+    // look is not what the policy buys (#961): its work is the stubs.
+    const judged = await seedClaim("scope node, judged and queued");
+    await rawQuery(
+      `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning)
+       VALUES ($1, $2, 'requires', 'db test')`,
+      [root, judged]
+    );
+    await rawQuery(
+      `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, is_current, assessed_at)
+       VALUES ($1, 'supported', 0.8, 'db test', true, now() - interval '9 days')`,
+      [judged]
+    );
     // A rate with room for one pass at a time.
     const price = await estimate(root);
     expect(price).toBeLessThan(5 * OWL);
@@ -137,6 +150,9 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
 
     await runPass(kid, 0.25 * price, m.jobId);
     await tendMandates();
+    // The judged node was never ordered, and does not keep the mandate open.
+    expect(await orders(m.grantId, judged)).toHaveLength(0);
+    expect(await claimState(judged)).toBe("pending");
     expect(await grantStatus(m.grantId)).toBe("completed");
     // Half a pass's estimate was spent; the rest is back with the funder.
     expect(await owlBalance(funder)).toBe(20 * OWL - 2 * Math.round(0.25 * price));
@@ -146,7 +162,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
   it("pauses a mandate whose escrow is all spent, but not one whose escrow is only held by live work", async () => {
     const spent = await mandate({ budget: 2 * OWL });
     const claim = await seedClaim("spent on");
-    await setPlan(spent.grantId, [{ action: "assess", claim_id: claim, rationale: "x", budget_owls: 2 }]);
+    await setPlan(spent.grantId, [{ action: "assess", claim_id: claim, rationale: "x", variant: "standard", budget_owls: 2 }]);
     await materializePlanItems(spent.grantId);
     // The whole escrow is held by the pass that is waiting: not the floor.
     await tendMandates();
@@ -174,7 +190,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
        VALUES ('grant_planning', $1, 'standard', $2, 'planned', 1, 'done', $3)`,
       [`plan:${m.grantId}`, m.grantId, 1 * OWL]
     );
-    await setPlan(m.grantId, [{ action: "reassess", claim_id: claim, rationale: "the claim itself", budget_owls: 2 }]);
+    await setPlan(m.grantId, [{ action: "reassess", claim_id: claim, rationale: "the claim itself", variant: "standard", budget_owls: 2 }]);
     // Not yet materialized: the item is still to become work.
     await tendMandates();
     expect(await grantStatus(m.grantId)).toBe("active");

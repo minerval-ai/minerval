@@ -118,6 +118,7 @@ import {
 import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
 import { getCurrentEstimate } from "../services/quantity-service.js";
 import { getCurrentStanding } from "../services/question-service.js";
+import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -206,16 +207,35 @@ async function agentic<T>(
   const decision = await checkAgenticQuota(ctx.auth, op);
   if (!decision.allowed) return { ok: false, denied: toDenied(decision) };
 
-  const run = await withAgenticCharge(ctx.auth, op, {}, () =>
-    runWithUsageContext(
-      {
-        userId: ctx.auth.userId,
-        apiKeyId: ctx.auth.apiKeyId,
-        requestId: ctx.requestId,
-      },
-      () => untraced(fn)
-    )
-  );
+  let run: Awaited<ReturnType<typeof withAgenticCharge<T>>>;
+  try {
+    run = await withAgenticCharge(ctx.auth, op, {}, () =>
+      runWithUsageContext(
+        {
+          userId: ctx.auth.userId,
+          apiKeyId: ctx.auth.apiKeyId,
+          requestId: ctx.requestId,
+        },
+        () => untraced(fn)
+      )
+    );
+  } catch (err) {
+    // A deployment fault is answered by its class (#967): the provider's
+    // own text ("402 ... your available credits") reads to a caller as
+    // their owls, and names things that are not theirs to see. The charge
+    // was refunded when the work threw.
+    const fault = deploymentFaultOf(err);
+    if (!fault) throw err;
+    return {
+      ok: false,
+      denied: errorResult(
+        "PLATFORM_FAULT",
+        `This could not run because of ${PLATFORM_FAULT_LABELS[fault]}. It is not your balance or your ` +
+          `request, and you were not charged. Try again later.`,
+        { platform_fault: fault }
+      ),
+    };
+  }
   if (!run.ok) return { ok: false, denied: toDenied(run.denied) };
   return { ok: true, value: run.value };
 }

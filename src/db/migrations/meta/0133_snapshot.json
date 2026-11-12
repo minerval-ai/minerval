@@ -1,6 +1,6 @@
 {
-  "id": "b4887374-55cb-4446-bbee-7041e7661d2a",
-  "prevId": "4333f27a-c091-4ed9-b7ce-8ddf5dd2bf4b",
+  "id": "1ab28ad9-b8fa-49b7-a06c-331e2f6ba902",
+  "prevId": "850c6ba7-9c75-4170-a93c-c2c277699793",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10319,6 +10319,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "defect": {
+          "name": "defect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10457,6 +10463,10 @@
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
           "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
+        },
+        "ck_curation_requests_defect": {
+          "name": "ck_curation_requests_defect",
+          "value": "defect IS NULL OR defect IN ('duplicate', 'conflation', 'wrong_kind', 'mislabeled_edge', 'missing_link', 'bad_merge', 'other')"
         }
       },
       "isRLSEnabled": false
@@ -11959,6 +11969,13 @@
           "notNull": true,
           "default": false
         },
+        "daily_budget_micro_usd": {
+          "name": "daily_budget_micro_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "allocation_policy": {
           "name": "allocation_policy",
           "type": "jsonb",
@@ -12016,26 +12033,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
-        },
-        "pace": {
-          "name": "pace",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{\"kind\":\"as_needed\"}'::jsonb"
-        },
-        "reserve_micro_usd": {
-          "name": "reserve_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "reserve_reason": {
-          "name": "reserve_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -21966,6 +21963,151 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claim_state_changes": {
+      "name": "claim_state_changes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_state": {
+          "name": "from_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_state": {
+          "name": "to_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "successor_ids": {
+          "name": "successor_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+        "cohort": {
+          "name": "cohort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reconciliation_event_id": {
+          "name": "reconciliation_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
+        }
+      },
+      "indexes": {
+        "idx_claim_state_changes_claim": {
+          "name": "idx_claim_state_changes_claim",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_state_changes_claim_id_claims_id_fk": {
+          "name": "claim_state_changes_claim_id_claims_id_fk",
+          "tableFrom": "claim_state_changes",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_state_changes_reconciliation_event_id_reconciliation_events_id_fk": {
+          "name": "claim_state_changes_reconciliation_event_id_reconciliation_events_id_fk",
+          "tableFrom": "claim_state_changes",
+          "tableTo": "reconciliation_events",
+          "columnsFrom": [
+            "reconciliation_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "claim_state_changes_sensitivity_label_labels_name_fk": {
+          "name": "claim_state_changes_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_state_changes",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

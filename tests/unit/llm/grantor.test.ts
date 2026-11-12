@@ -95,7 +95,7 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
       if (["assess", "reassess", "deepen"].includes(it.action)) floor += 2;
       else if (it.action === "ingest") floor += 0.5;
     }
-    return { floor_owls: floor, per_item_owls: { steward_pass: 2, ingest: 0.5 } };
+    return { floor_owls: floor, per_item_owls: { steward_pass: 2, steward_pass_strong: 2, ingest: 0.5 } };
   },
 }));
 vi.mock("../../../src/llm/tools/kind-tools.js", () => ({
@@ -224,7 +224,8 @@ describe("runGrantor", () => {
         // The focus survives (#684): it was dropped here, and a scoped
         // ingest became a whole-document one.
         { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "grid reliability" },
-        { action: "assess", claim_id: CLAIM, rationale: "crux" },
+        // A stewarding item is stored with its tier (#956): standard when it names none.
+        { action: "assess", claim_id: CLAIM, rationale: "crux", variant: "standard" },
         { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8 },
       ],
     });

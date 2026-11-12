@@ -81,6 +81,7 @@ import {
 } from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
 import { reflectionSections } from "../../services/mandate-reflection-service.js";
+import { platformFaultBriefing } from "../../services/deployment-fault-service.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
@@ -332,7 +333,10 @@ async function runMandateReviewImpl(input: {
         "executes through the ledger like everything else: a pass you plan " +
         "is commissioned from this mandate, within its pace and outside your reserve, as soon " +
         "as there is room. Appends only; " +
-        "already-planned work stays. The items are materialized onto the " +
+        "already-planned work stays, and amend_plan_items is how you change " +
+        "the tier or budget of a standing order already in the plan, or " +
+        "withdraw it, until its pass is running. Pass preview: true to see " +
+        "what the items would commission before anything is written. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
         "standing (open, running, done, cancelled, waiting, blocked) with " +
         "the reason, so read it: a blocked item will not become work until " +
@@ -343,6 +347,14 @@ async function runMandateReviewImpl(input: {
         properties: {
           items: { type: "array", items: PLAN_ITEM_SCHEMA },
           note: { type: "string", description: "One sentence: why." },
+          preview: {
+            type: "boolean",
+            description:
+              "true to see what these items would commission without writing anything: each " +
+              "stewarding item's tier and budget per pass, whether its node's pass would be bought " +
+              "or is already met, the children a deepen item would order by id, and the total " +
+              "against the pace's room and the escrow.",
+          },
         },
         required: ["items", "note"],
       },
@@ -600,6 +612,10 @@ async function runMandateReviewImpl(input: {
         (inbox.total > inbox.events.length
           ? `\n- ...and ${inbox.total - inbox.events.length} more, shown on your next pass.`
           : ``);
+  // Platform faults (#971): open ones, ones that came and went since the
+  // last pass, and this mandate's rows waiting on one. A fault wakes no
+  // review; this is where the mandate reads of it.
+  const faultText = await platformFaultBriefing(grant.id, lastReviewAt ?? null).catch(() => "");
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -614,7 +630,8 @@ async function runMandateReviewImpl(input: {
     `directions worth pursuing once results are in. A commission past the pace is refused, by your officers' ` +
     `tools and yours alike; running work frees what it leaves as it finishes` +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
-    `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
+    `(grant_overview itemises, with each item's index, tier, budget and reason; "done" counts the ` +
+    `items whose work ran; amend_plan_items changes or withdraws a standing order until its pass is running).\n\n` +
     (reflection ? `${reflection}\n\n` : ``) +
     `Start from what happened, not from scratch. The sections above are what your money did and ` +
     `where the agents doing the work told you it fell short. Where a shortfall recurs, fix its cause ` +
@@ -637,6 +654,7 @@ async function runMandateReviewImpl(input: {
     `session resumes it is a sitting paid from your escrow within the mandate's pace, at your review-pass ` +
     `budget, and it re-reads this conversation; when that has grown dear, fresh_start begins again from ` +
     `your workspace.\n\n` +
+    (faultText ? `${faultText}\n\n` : ``) +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your correspondents (readers you fund for an audience; correspondent_report for detail):\n\n${correspondentText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
@@ -817,6 +835,10 @@ async function runMandateReviewImpl(input: {
         if (problem) return JSON.stringify({ success: false, problem });
         // Stored in the one plan-item form every path writes (#684).
         const stored = normalizePlanItems(newItems);
+        if (toolInput.preview === true) {
+          const { previewPlanOrders } = await import("../../services/standing-order-service.js");
+          return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grant.id, stored)) });
+        }
         const [appended] = await rawQuery<{ before: number }>(
           `UPDATE grants
               SET plan = jsonb_set(

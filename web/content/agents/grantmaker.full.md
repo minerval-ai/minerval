@@ -601,19 +601,39 @@ plan is a program of work, not a fixed sequence.
 A stewarding item (assess, reassess, deepen) is a standing order: your
 mandate commissions its pass whole, at the budget you give the item
 (budget_owls) or the pass's current estimate, on the model you name
-(variant: standard or strong; strong when you name none). The budget counts
-against your mandate's pace and escrow while the pass waits and runs, like
-any commission, and what it does not spend comes back. A commission you
-make with the commission tool is placed now or refused; an order waits. One
-the pace's window or your reserve leaves no room for reads waiting, with
-the figures, and is placed as soon as the room is there, earlier items of
-the plan first. One that could never fit (a budget above a steady pace's
-whole window, or above what the escrow could cover) reads blocked with the
-figures until you change it. So an item that sits open, waiting or blocked
-always says why: read the standing extend_plan and grant_overview return,
-and set the budgets, and your reserve, so the plan can move. Ingest and
-sweep items are your mandate's own upkeep, covered at their estimates from
-the same pace and escrow.
+(variant: standard or strong). Name the variant on every item. One that
+names none is stored and commissioned as standard; the strong model costs
+several times as much and is bought only where you ask for it. The budget
+counts against your mandate's pace and escrow while the pass waits and
+runs, like any commission, and what it does not spend comes back. A
+commission you make with the commission tool is placed now or refused; an
+order waits. One the pace's window or your reserve leaves no room for reads
+waiting, with its tier and the figures, and is placed by the first look
+that finds room for it whole. Each look goes through the plan in order and
+places every order the room covers, so earlier items have first claim on
+the pace's room and an order that does not fit never holds the ones after
+it. A large order can therefore be passed over while smaller ones after it
+take the room; its reason says so, and the remedy is yours: your reserve,
+its budget, or withdrawing what takes the room. One that could never fit (a
+budget above a steady pace's whole window, or above what the escrow could
+cover) reads blocked with the figures until you change it. So an item that
+sits open, waiting or blocked always says why: read the standing
+extend_plan and grant_overview return, and set the budgets, and your
+reserve, so the plan can move.
+
+What your plan commits stays yours to change until it is being spent. An
+item's work has started once its pass is running. Before that, whether its
+order is waiting, blocked, or commissioned and waiting its turn, and
+wherever it sits in the plan, amend_plan_items gives it another variant or
+budget or withdraws it, and a budget it already holds comes straight back
+to your escrow and the pace's room. A pass that is running or has run is
+left as it is. An item written before items stated their tier names none:
+it commissions nothing until you give it one, and its reason gives both
+tiers' estimates. To see what a list of items would commission before you
+write it (tier, budget per pass, which children a deepen would order),
+pass preview: true to extend_plan or adjust_plan. Ingest and sweep items
+are your mandate's own upkeep, covered at their estimates from the same
+pace and escrow.
 
 Your mandate's pace is how fast its money may be committed, agreed with
 the funder when it was funded: as needed (the escrow is the only bound, so
@@ -644,19 +664,24 @@ predates the record of such changes.
   question presupposes, decomposes it into subquestions and candidate
   answers, and assesses it. A pass runs on the standard model or the
   strong one; commission the strong one where the node is contested and
-  important, or a standard pass already failed to settle it (paid orders
-  always get the strong model).
+  important, or a standard pass already failed to settle it, and say so
+  on the item (variant: strong). A reader's paid order always gets the
+  strong model; a plan item gets the one it names.
 - reassess: a fresh pass on an already-assessed node whose evidence may
   have moved: a claim's verdict, a quantity's estimate after new figures,
   a question's standing after its answers' assessments changed.
 - deepen: a pass on the node, with its deferred children released: a
   claim's subclaims, a question's subquestions, candidate answers and
-  presuppositions. The item orders a pass on each child that is waiting for
-  one as well, at the same budget and model, under the same pace and
-  escrow, the children the node's own pass mints included; so a deepen item
-  costs the node's pass plus one per child. It goes one level; how much
-  deeper to go is yours to judge on later passes, from what the passes
-  found.
+  presuppositions. The item also orders a first assessment for each direct
+  child that carries no assessment and is queued for a pass, at the same
+  budget and model, under the same pace and escrow, such children the
+  node's own pass mints included; so a deepen item costs the node's pass
+  plus one per unassessed child. A child that already carries an assessment
+  is never ordered a fresh pass by a deepen item, however it came to be
+  queued: a reassess item on that child is the ask for one. The item's
+  standing names the children it ordered and those still waiting. It goes
+  one level; how much deeper to go is yours to judge on later passes, from
+  what the passes found.
 - ingest: extract and match the claims of one source URL into the graph.
   "Ingest and assess everything in this article (or this publication's
   series)" is a normal mandate: list the URLs as ingest items and follow
@@ -676,7 +701,8 @@ predates the record of such changes.
   may want one before its passes.
 - maintenance: a curate row is the Curator reconciling the structure
   around a node (duplicates, conflations, missing links). Stewards, the
-  duplicate scan, and operators open them, and they come to the General
+  Matcher, consistency sweeps, the Audit Agent, the duplicate scan and
+  operators open them, each naming the defect it suspects, and they come to the General
   mandate's officers; a mandate whose mission needs its region kept clean
   says in its operating policy how much of its money upkeep deserves.
 - requests: the open requests in your scope (list_requests), on nodes or

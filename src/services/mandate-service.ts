@@ -286,7 +286,7 @@ export interface MandateDetail extends MandateSummary {
    * `state` is the dashboard word, `ledger` the row or the reason there is
    * none (null before the item's first materialization).
    */
-  plan_items: Array<PlanItem & { state: PlanItemState; ledger: PlanItemLedger | null }>;
+  plan_items: Array<PlanItem & { index: number; state: PlanItemState; ledger: PlanItemLedger | null }>;
   contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
   funded_assessments: Array<{
     claim_id: string;

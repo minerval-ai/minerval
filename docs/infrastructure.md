@@ -634,8 +634,30 @@ When a cash rail exists the same job compares the provider's ledger. A
 discrepancy is an `admin_adjust` entry with a note, never an edit of an
 existing row.
 
+**A deployment fault (a provider account out of credits, a rejected key).**
+The signs: an error line `[deployment-fault] OPENED credits_fault on
+<provider>` (or `credentials_fault`) in the API task's log, one report on
+the agents' channel titled `deployment fault: the <provider> account is out
+of credits` at severity blocking, and `deploymentFaults` non-empty in
+`GET /monitors/queue_health`, with the count of ledger rows waiting on it.
+The fix is outside the code: add credits to the deployment's account with
+that provider (or raise the key's limit), or rotate the key in Secrets
+Manager and redeploy. A nearly empty account refuses large requests while
+small ones still pass, so some calls succeeding does not mean it is funded.
+Nothing needs requeueing afterwards: rows that waited are retried on their
+own, at most ten minutes apart, an ingest included, and the fault closes
+(`[deployment-fault] CLEARED`) once the provider has served a call and
+refused none for ten minutes. Work on other providers is not held up
+meanwhile. The cheap tier (the Matcher, the tagger, lookouts, program
+officers, consistency sweeps) runs on OpenRouter and the Stewards on
+Anthropic, so the two accounts fail separately (docs/architecture.md, "A
+platform fault makes the ledger row wait").
+
 ## Monitoring
 
+- `deploymentFaults` in `GET /monitors/queue_health`: empty when healthy.
+  Anything in it means paid work is waiting on the operator. Worth an alarm
+  on the `[deployment-fault] OPENED` log line.
 - Checker queue depth and per-check wall time, from `/health` and
   `lean_checks.resource`.
 - The solver's daily spend against its cap, and attempts `running` past

@@ -80,6 +80,24 @@ describe("text analyses", () => {
     });
   });
 
+  it("records a deployment fault by its class, not the provider's words (#967)", async () => {
+    const userId = await seedUser("analysis-fault");
+    const owner = { userId, apiKeyId: null };
+    const job = await startTextAnalysis("extract_claims", {}, owner, async () => {
+      throw Object.assign(
+        new Error("402 This request's maximum cost exceeds your available credits. Add credits, or lower max_tokens or prompt size."),
+        { status: 402 }
+      );
+    });
+    await settleTextAnalyses();
+    const view = await getTextAnalysis(job.id, owner);
+    expect(view).toMatchObject({ status: "failed" });
+    // To a caller, "your available credits" reads as their own balance.
+    expect(view!.error).toContain("a deployment fault");
+    expect(view!.error).toContain("It is not your balance or your request");
+    expect(view!.error).not.toMatch(/402|max_tokens|Add credits/);
+  });
+
   it("reads an analysis whose process died as failed", async () => {
     const userId = await seedUser("analysis-lost");
     const owner = { userId, apiKeyId: null };

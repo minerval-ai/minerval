@@ -25,13 +25,14 @@
  */
 import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
+import { ASSESS_GROUP, ensureAssessActions, joinFaultWait } from "./action-service.js";
 import { committerFor, paceRefusal, paceRoom, type PaceCommitter } from "./pace-service.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
 import { requestQuoteNote } from "./request-service.js";
 import { stewardPark, stewardParkNote, type StewardPark } from "./steward-park-reason.js";
+import { faultWaitSentence, type FaultWait } from "./deployment-fault.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export type CommissionPayer =
@@ -74,6 +75,30 @@ export interface CommissionInput {
  */
 export type CommissionedPark = StewardPark & { note: string };
 
+/**
+ * Set when the work commissioned cannot start yet because a platform fault
+ * is stopping its kind of work (#971, deployment-fault.ts): the commission
+ * is placed and waits with the rest, and `note` says so, with what happens
+ * to its budget meanwhile. Passed on to whoever paid, as a park's note is.
+ */
+export type CommissionedWait = FaultWait & { note: string };
+
+const waitNote = (w: FaultWait): CommissionedWait => ({
+  ...w,
+  note: `This work is placed but not starting yet: it is ${faultWaitSentence(w)}.`,
+});
+
+/** The notes a commission's payer must read (a park's, a wait's), as one string; "" when there are none. */
+export function commissionNoteText(res: { parked?: { note: string }; waiting?: { note: string } }): string {
+  return [res.parked?.note, res.waiting?.note].filter(Boolean).map((n) => ` ${n}`).join("");
+}
+
+/** The same notes as a `note` field for a structured result, or nothing. */
+export function commissionNoteField(res: { parked?: { note: string }; waiting?: { note: string } }): { note?: string } {
+  const text = commissionNoteText(res).trim();
+  return text ? { note: text } : {};
+}
+
 export type CommissionResult =
   | {
       ok: true;
@@ -83,6 +108,7 @@ export type CommissionResult =
       budgetMicroUsd: number;
       tier: CommissionTier;
       parked?: CommissionedPark;
+      waiting?: CommissionedWait;
     }
   | {
       ok: true;
@@ -103,6 +129,13 @@ export type CommissionResult =
         | "OVER_RUN_BUDGET"
         | "PAYER_INACTIVE";
       message: string;
+      /**
+       * OVER_PACE or OVER_ESCROW from a mandate: what the binding bound (the
+       * pace's window, the reserve or the escrow) had left when the
+       * commission was refused, so a caller placing several (a plan's
+       * standing orders) can tell which of the rest would fit.
+       */
+      roomMicroUsd?: number;
     };
 
 
@@ -253,6 +286,7 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     sender: message.sender,
     paid: true,
   });
+  const wait = await joinFaultWait(row.id).catch(() => null);
   return {
     ok: true,
     status: "commissioned",
@@ -261,6 +295,7 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     budgetMicroUsd: budget,
     tier: row.variant,
     ...parked,
+    ...(wait ? { waiting: waitNote(wait) } : {}),
   };
 }
 
@@ -294,6 +329,8 @@ export async function commissionAction(input: {
        * caller passes the note on in its own result.
        */
       quote?: { quoteMicroUsd: number; underQuote: boolean; note: string };
+      /** The work cannot start yet for a platform fault; see CommissionedWait. */
+      waiting?: CommissionedWait;
     }
   | { ok: true; status: "already_commissioned"; kind: string }
   | Extract<CommissionResult, { ok: false }>
@@ -335,7 +372,13 @@ export async function commissionAction(input: {
     });
     if (!res.ok) return res;
     return res.status === "commissioned"
-      ? { ok: true, status: "commissioned", allocationId: res.allocationId, kind: row.kind }
+      ? {
+          ok: true,
+          status: "commissioned",
+          allocationId: res.allocationId,
+          kind: row.kind,
+          ...(res.waiting ? { waiting: res.waiting } : {}),
+        }
       : { ok: true, status: "already_commissioned", kind: row.kind };
   }
   if (await groupLive(rawQuery, row.exclusion_group)) {
@@ -364,7 +407,15 @@ export async function commissionAction(input: {
     row.kind === "request" && row.variant === "full" && row.target_ref && quoteMicroUsd > 0
       ? { quoteMicroUsd, ...(await requestQuoteNote({ requestId: row.target_ref, budgetMicroUsd: budget, quoteMicroUsd })) }
       : undefined;
-  return { ok: true, status: "commissioned", allocationId: placed.allocationId, kind: row.kind, ...(quote ? { quote } : {}) };
+  const wait = await joinFaultWait(row.id).catch(() => null);
+  return {
+    ok: true,
+    status: "commissioned",
+    allocationId: placed.allocationId,
+    kind: row.kind,
+    ...(quote ? { quote } : {}),
+    ...(wait ? { waiting: waitNote(wait) } : {}),
+  };
 }
 
 type Placed = { ok: true; allocationId: string } | Extract<CommissionResult, { ok: false }>;
@@ -441,6 +492,9 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
           ok: false,
           code: room && room.binding === "escrow" ? "OVER_ESCROW" : "OVER_PACE",
           message: room ? paceRefusal(room, budget) : "The paying mandate is not active.",
+          // What the binding bound has left: a standing order turned away
+          // for it tells the plan's later orders what fits (standing-order-service.ts).
+          roomMicroUsd: Math.max(0, room?.availableMicroUsd ?? 0),
         } as const;
       }
       const [row] = await tx.query<{ id: string }>(

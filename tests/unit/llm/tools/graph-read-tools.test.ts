@@ -338,7 +338,22 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("get_claim", { claim_id: "dd99c243" }))!
       );
 
-      expect(out.error).toMatch(/full claim id/);
+      expect(out.code).toBe("INVALID_CLAIM_ID");
+      // Says what is wrong with the id, so the model sees it mistyped it (#952).
+      expect(out.error).toContain("it has 1 hyphen-separated group, where a uuid has 5");
+      expect(out.error).toContain("Nothing is missing from the graph");
+    });
+
+    it("names the group that is too long or too short (#934, #952)", async () => {
+      mockGetClaim.mockRejectedValue(Object.assign(new Error("invalid input syntax for type uuid"), { code: "22P02" }) as never);
+      const long = JSON.parse(
+        (await executeGraphReadTool("get_claim", { claim_id: "1ea1a55c-1361-4685-991b-3c303c74c3236" }))!
+      );
+      expect(long.error).toContain("its last group has 13 hex digits, where a uuid has 12");
+      const short = JSON.parse(
+        (await executeGraphReadTool("get_claim", { claim_id: "e15a36f4-edf3-45c5-92d9-85fceae5190" }))!
+      );
+      expect(short.error).toContain("its last group has 11 hex digits, where a uuid has 12");
     });
 
     it("still throws any other failure", async () => {

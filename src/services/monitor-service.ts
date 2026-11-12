@@ -42,6 +42,8 @@ import {
   type OverturnReport,
   type SnapshotTrend,
 } from "./monitor-math.js";
+import { PLATFORM_FAULT_LABELS, isPlatformFaultReason, type PlatformFaultReason } from "./deployment-fault.js";
+import { openDeploymentFaults, type DeploymentFaultView } from "./deployment-fault-service.js";
 
 export const MONITOR_SIGNALS = [
   "performed_settling",
@@ -609,6 +611,15 @@ export interface QueueHealthReport {
    * request ids and stays in logs and the service-scoped report (#846).
    */
   errorParked: Array<{ claimId: string; text: string; importance: number; reason: StewardErrorReason; reasonLabel: string; attempts: number; stewardedAt: string | null }>;
+  /**
+   * The deployment faults open now (#971): a provider refusing calls because
+   * the deployment's account is out of credits or its key is rejected, with
+   * since when and how many ledger rows wait on it. The operator's to fix.
+   * The class only, as for a park; an empty list is the healthy reading.
+   */
+  deploymentFaults: DeploymentFaultView[];
+  /** Open ledger rows waiting on a platform fault of any class, by class and kind. */
+  waitingOnFault: Array<{ reason: PlatformFaultReason; reasonLabel: string; kind: string; rows: number; since: string | null }>;
 }
 
 /**
@@ -618,6 +629,14 @@ export interface QueueHealthReport {
  * content.
  */
 export async function queueHealth(t: MonitorThresholds = defaultThresholds()): Promise<QueueHealthReport> {
+  const [faults, waitingRows] = await Promise.all([
+    openDeploymentFaults(),
+    rawQuery<{ fault_reason: string; kind: string; n: number; since: Date | null }>(
+      `SELECT fault_reason, kind, COUNT(*)::int AS n, MIN(fault_since) AS since
+         FROM actions WHERE status = 'open' AND fault_reason IS NOT NULL
+        GROUP BY fault_reason, kind ORDER BY MIN(fault_since)`
+    ),
+  ]);
   const [states, oldest, snaps, parked] = await Promise.all([
     rawQuery<{ steward_state: string; n: number }>(MONITOR_SQL.queue_states),
     rawQuery<{ id: string; text: string; importance: number; enqueued_at: Date; age_seconds: number }>(MONITOR_SQL.queue_oldest_pending),
@@ -633,7 +652,7 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
   return {
     signal: "queue_health",
     description:
-      "Steward lane by state, oldest pending age, queue-depth snapshot trend, and error-parked claims with the class of their failure.",
+      "Steward lane by state, oldest pending age, queue-depth snapshot trend, error-parked claims with the class of their failure, and the deployment faults open now with the ledger rows waiting on them.",
     thresholds: { snapshotPoints: t.snapshotPoints, limit: t.limit },
     states: counts,
     oldestPending: o
@@ -651,6 +670,12 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
       attempts: p.steward_attempts,
       stewardedAt: iso(p.stewarded_at),
     })),
+    deploymentFaults: faults,
+    waitingOnFault: waitingRows.flatMap((w) =>
+      isPlatformFaultReason(w.fault_reason)
+        ? [{ reason: w.fault_reason, reasonLabel: PLATFORM_FAULT_LABELS[w.fault_reason], kind: w.kind, rows: w.n, since: iso(w.since) }]
+        : []
+    ),
   };
 }
 

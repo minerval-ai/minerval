@@ -13,6 +13,9 @@
  * These functions only say what is being asked for, and bound how much can
  * be asked:
  *
+ *  - every request names the structural defect it suspects (#955), who raised
+ *    it and, when there is one, the other node; a producer with nothing to
+ *    name opens no row;
  *  - one live request per (anchor, other claim, source): a repeat is a repeat;
  *    distinct concerns are never refused, since a request only waits on the
  *    ledger until someone values and funds the curation that reads it;
@@ -49,10 +52,61 @@ export const CURATION_SOURCES = [
 ] as const;
 export type CurationSource = (typeof CURATION_SOURCES)[number];
 
+// What the requester suspects is wrong (#955). Every request names one, so
+// what reaches the officers and the Curator says what opened the row rather
+// than only which node it is about; a producer with no defect to name opens
+// no curate row. `other` is for a structural defect none of these fits, and
+// its concern must say what it is.
+//  - duplicate: the anchor and another node are one node (in other words, or
+//    as its negation): a merge;
+//  - conflation: the anchor holds distinct propositions: a split;
+//  - wrong_kind: the anchor is a claim that should be a quantity or a
+//    question, or the reverse;
+//  - mislabeled_edge: an edge between the anchor and another node carries the
+//    wrong relation;
+//  - missing_link: the anchor and another node constrain each other and are
+//    not linked;
+//  - bad_merge: a merge into the anchor joined nodes that were distinct;
+//  - other: another structural defect, said in the concern.
+export const CURATION_DEFECTS = [
+  "duplicate",
+  "conflation",
+  "wrong_kind",
+  "mislabeled_edge",
+  "missing_link",
+  "bad_merge",
+  "other",
+] as const;
+export type CurationDefect = (typeof CURATION_DEFECTS)[number];
+
+/** The defects, in the words a tool description or a briefing uses. */
+export const CURATION_DEFECT_WORDS: Record<CurationDefect, string> = {
+  duplicate: "suspected duplicate (the same node in other words, or its negation)",
+  conflation: "suspected conflation (one node holding distinct propositions)",
+  wrong_kind: "suspected wrong kind (claim, quantity or question)",
+  mislabeled_edge: "an edge that looks mislabeled",
+  missing_link: "a missing lateral link",
+  bad_merge: "a suspected bad merge",
+  other: "another structural defect",
+};
+
+/** A tool's description of the defect parameter, kept in one place. */
+export const CURATION_DEFECT_DESCRIPTION =
+  "What you suspect is wrong: " +
+  CURATION_DEFECTS.map((d) => `${d}: ${CURATION_DEFECT_WORDS[d]}`).join("; ") +
+  ". Required: a concern with no structural defect to name opens no curation. " +
+  "Use 'other' only when none fits, and say in the concern what the defect is.";
+
+export function isCurationDefect(v: unknown): v is CurationDefect {
+  return typeof v === "string" && (CURATION_DEFECTS as readonly string[]).includes(v);
+}
+
 export interface CurationRequestInput {
   anchorClaimId: string;
   otherClaimId?: string | null;
   source: CurationSource;
+  /** What the requester suspects is wrong; required (#955). */
+  defect: CurationDefect;
   concern: string;
   /** reconcile_candidate: the scan's similarity score. */
   signal?: number | null;
@@ -91,6 +145,14 @@ export async function requestCuration(
   if (input.otherClaimId && input.otherClaimId === input.anchorClaimId) {
     return { ok: false, problem: "other_claim_id is the anchor claim itself" };
   }
+  if (!isCurationDefect(input.defect)) {
+    return {
+      ok: false,
+      problem:
+        `defect ${JSON.stringify(input.defect ?? null)} is not one of ${CURATION_DEFECTS.join(", ")}. ` +
+        `Nothing was recorded: a curation is opened only for a structural defect it names.`,
+    };
+  }
   if (!concern) return { ok: false, problem: "a concern is required" };
   if (concern.length > CURATION_CONCERN_MAX_CHARS) {
     return {
@@ -121,8 +183,8 @@ export async function requestCuration(
   const inserted = await rawQuery<{ id: string }>(
     `INSERT INTO curation_requests
        (anchor_claim_id, other_claim_id, source, concern, signal,
-        requested_by_claim_id, requested_by_run_id, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        requested_by_claim_id, requested_by_run_id, defect, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT DO NOTHING
      RETURNING id`,
     [
@@ -133,6 +195,7 @@ export async function requestCuration(
       input.signal ?? null,
       input.requestedByClaimId ?? null,
       input.requestedByRunId ?? null,
+      input.defect,
       currentLabel(),
     ]
   );
@@ -161,21 +224,35 @@ export async function requestCuration(
 export interface LiveCurationRequest {
   id: string;
   other_claim_id: string | null;
+  /** The other node's text when it is active, read with the request. */
+  other_claim_text: string | null;
   source: CurationSource;
+  /** Null only on a request recorded before requests named one (#955). */
+  defect: CurationDefect | null;
   concern: string;
   signal: number | null;
+  requested_by_claim_id: string | null;
   created_at: Date;
 }
+
+/**
+ * The columns a LiveCurationRequest reads, from `curation_requests r` joined
+ * to the other node as `o`.
+ */
+export const LIVE_CURATION_REQUEST_SELECT = `
+  SELECT r.id, r.other_claim_id, o.text AS other_claim_text, r.source, r.defect,
+         r.concern, r.signal, r.requested_by_claim_id, r.created_at
+    FROM curation_requests r
+    LEFT JOIN claims o ON o.id = r.other_claim_id AND o.state = 'active'`;
 
 /** Every live request on an anchor, oldest first: what one run reads. */
 export async function liveCurationRequests(
   anchorClaimId: string
 ): Promise<LiveCurationRequest[]> {
   return rawQuery<LiveCurationRequest>(
-    `SELECT id, other_claim_id, source, concern, signal, created_at
-       FROM curation_requests
-      WHERE anchor_claim_id = $1 AND consumed_at IS NULL
-      ORDER BY created_at ASC
+    `${LIVE_CURATION_REQUEST_SELECT}
+      WHERE r.anchor_claim_id = $1 AND r.consumed_at IS NULL
+      ORDER BY r.created_at ASC
       LIMIT 50`,
     [anchorClaimId]
   );
@@ -199,34 +276,65 @@ export async function consumeCurationRequests(
   );
 }
 
-/** Who raised a request, as the Curator's briefing says it. */
-function describeSource(r: Pick<LiveCurationRequest, "source" | "signal">): string {
+/**
+ * Who raised a request, in words. Given the anchor, a Steward that escalated
+ * about its own node reads as "this node's Steward".
+ */
+export function describeCurationRaiser(
+  r: Pick<LiveCurationRequest, "source" | "signal" | "requested_by_claim_id">,
+  anchorClaimId?: string | null
+): string {
   switch (r.source) {
     case "steward_escalation":
-      return "A Steward escalated";
+      return r.requested_by_claim_id && r.requested_by_claim_id !== anchorClaimId
+        ? `the Steward of ${r.requested_by_claim_id}`
+        : "this node's Steward";
     case "consistency_sweep":
-      return "A consistency sweep found, reading its partition side by side,";
+      return "a consistency sweep, reading its partition side by side";
     case "audit":
-      return "The Audit asked, on a recorded finding,";
+      return "the Audit Agent, on a finding it recorded";
     case "matcher":
-      return "The Matcher minted it on balance and flagged a near-miss";
+      return "the Matcher, which minted this node at ingestion on balance";
     case "reconcile_candidate":
-      return `The reconcile-candidate scan paired it (similarity ${Number(r.signal ?? 0).toFixed(3)})`;
+      return `the reconcile-candidate scan (embedding similarity ${Number(r.signal ?? 0).toFixed(3)}; a scan, not a judgment)`;
     case "operator":
-      return "An operator asked";
+      return "an operator";
   }
 }
 
-/** The run's briefing: the concerns, in the requesters' words. */
-export function describeCurationRequests(requests: LiveCurationRequest[]): string {
+/**
+ * One request as the officers and the Curator read it (#955): the defect
+ * suspected, who raised it, the other node with its text, and the concern in
+ * the requester's words.
+ */
+export function describeCurationRequest(
+  r: Pick<
+    LiveCurationRequest,
+    "source" | "signal" | "requested_by_claim_id" | "defect" | "other_claim_id" | "other_claim_text" | "concern"
+  >,
+  anchorClaimId?: string | null,
+  opts: { maxConcernChars?: number } = {}
+): string {
+  const max = opts.maxConcernChars;
+  const said = r.concern.trim();
+  const concern = max && said.length > max ? `${said.slice(0, max)}… (cut here; the Curator reads it whole)` : said;
+  const defect = r.defect
+    ? CURATION_DEFECT_WORDS[r.defect]
+    : "defect not classified (recorded before requests named one; the concern says what was seen)";
+  const other = r.other_claim_id
+    ? `; the other node: ${r.other_claim_id}` +
+      (r.other_claim_text ? ` ("${r.other_claim_text.slice(0, 200)}")` : " (no longer active)")
+    : "";
+  return `${defect}, raised by ${describeCurationRaiser(r, anchorClaimId)}${other}. Concern: ${concern}`;
+}
+
+/** The run's briefing: each live request, as describeCurationRequest says it. */
+export function describeCurationRequests(
+  requests: LiveCurationRequest[],
+  anchorClaimId?: string | null
+): string {
   if (requests.length === 0) return "(no live requests)";
-  return requests
-    .map((r, i) => {
-      const who = describeSource(r);
-      const other = r.other_claim_id ? ` with claim ${r.other_claim_id}` : "";
-      return `${i + 1}. ${who}${other}: ${r.concern}`;
-    })
-    .join("\n");
+  return requests.map((r, i) => `${i + 1}. ${describeCurationRequest(r, anchorClaimId)}`).join("\n");
 }
 
 /** How far back the scan looks for claims to pair, and how many it reads. */
@@ -303,6 +411,7 @@ export async function scanReconcileCandidates(policy: {
         anchorClaimId: p.anchor,
         otherClaimId: p.other,
         source: "reconcile_candidate",
+        defect: "duplicate",
         signal: Number(p.similarity),
         concern:
           `The reconcile-candidate scan found this claim and claim ${p.other} ` +

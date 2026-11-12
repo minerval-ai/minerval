@@ -925,7 +925,10 @@ receiving Steward decides, since only the owner writes.
 Every such message is a row in the node's inbox (`node_messages`,
 services/inbox-service.ts), kept whole until a pass reads it; this replaced
 appending text to `claims.steward_context` (retired; the column is kept only
-for a historical migration's test). A pass reads every unread message,
+for a historical migration's test). Only an active node has an inbox: a
+message addressed to a merged, deprecated or archived node is not kept, and
+goes instead to the live successor that node's record names, if any (#962).
+A pass reads every unread message,
 answers each (`answer_messages`: changed, no change, or disagree, with a
 reason; a reply to another node's Steward lands in that node's inbox as
 `message_reply`), and marks what it was shown read when it finishes. A
@@ -1155,6 +1158,27 @@ program officers spend the mandate's money directly, within their limits.
 These agents, the officers, lookouts and the Researcher also carry
 `query_sql`, one read-only SELECT over the `public_read` views
 (services/sql-service.ts).
+
+**A mistyped id is read, never written (#934).** Models copying a uuid
+from one call into the next sometimes add, drop or change a hex digit, or
+splice one id's first group onto another's tail, and an agent told only
+"not found" files the miss as a fault in the graph. Each run therefore
+keeps a record of every id it has been shown, from its prompt and from
+every tool result, with the node's wording where the result gave it
+(llm/seen-ids.ts); the tool loops fill it and run each tool inside it.
+When `get_claim`, `get_decomposition`, `get_dependents` or `get_argument`
+finds nothing under an id, the id is resolved against that record by one
+rule: a candidate is one character away (added, dropped or changed) or
+begins with the same first group, and the read is repaired only when there
+is exactly one candidate and it is of the kind the read takes. A repaired
+read leads with `id_corrected` (both ids, the rule, and a note); one that
+cannot be repaired says why and lists `nearest_seen_ids` with their
+wording. Writes are never repaired: a Steward's edge, link or instance, or
+a consistency flag, given an id that names nothing refuses and offers the
+nearest ids instead, since a guessed target puts the change on the wrong
+node (llm/tools/id-repair.ts). Every agent that carries the graph reads
+has the repair through `executeGraphReadTool`; MCP callers keep no run
+record and get the plain miss.
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
@@ -1944,14 +1968,62 @@ money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
 
 Failures are classified before they are counted. Transient API errors (rate
-limits, server errors, network, exhausted budget, rejected credentials) requeue the claim untouched
-and do not count as attempts. The continuous runner answers them by slowing
+limits, server errors, network, exhausted budget, rejected credentials, a
+provider account out of credits) requeue the claim untouched
+and do not count as attempts. The continuous runner answers rate limits,
+overloads and network failures by slowing
 down, not stopping: a drain that ends on one halves the live concurrency
 (never below one) and pauses every slot for a backoff that doubles with each
 consecutive transient stop, from five seconds to five minutes, and each clean
 drain afterwards gives one slot back. The one-shot drain the harness uses keeps
 a circuit breaker that stops after a run of consecutive transient failures.
 Either way, healthy claims are never poisoned.
+
+A platform fault makes the ledger row wait, and the row says so (#971,
+`services/deployment-fault.ts`). The fault has one of three public classes:
+`credits_fault` (the provider refused the call because the deployment's
+account with it cannot pay: a 402, Anthropic's "credit balance is too low",
+OpenAI's `insufficient_quota`), `credentials_fault` (the provider rejected
+the deployment's key) and `provider_unavailable` (any other transient
+failure that outlasted the client's retries). The first two are deployment
+faults, the operator's to fix. A row whose run a platform fault stops goes
+back to open, uncounted and still funded, with the class, since when, and
+when it is tried next (`actions.fault_reason`, `fault_since`, `retry_after`;
+`waiting_on`, `waiting_since` and `next_attempt_at` in the public ledger
+view), and the funded rows of the same kind and tier wait with it, since the
+same model serves them. The wait is 30 seconds, doubling to 10 minutes; it
+ends when one of the rows runs. It is a wait and not a limit: the row is
+retried for as long as the fault lasts, and money cannot pace it, because a
+call refused for credits or credentials is answered before anything is
+billed. A deployment fault does not stop the drain or slow the runner: the
+lanes behind the failing row may run on a provider that is healthy. On
+2026-11-12 one provider's account ran out of credits, a 0.05-owl lookout run
+on it was the most-backed runnable engine row, and it was picked, refused
+and handed back every few minutes for thirteen hours; each refusal ended the
+drain and paused every slot, and the Steward lane, whose provider was
+healthy, ran nothing until deploys restarted the process.
+
+Work a deployment fault stops is never failed for good. An ingest is not
+cancelled: its row waits and the engine executor submits the source again
+(`url-extraction.ts`), and the failed job, recorded by the fault's class, is
+not an event for its mandate. A mandate reads of a fault in its
+Grantmaker's next sitting's briefing: the faults open now, those that came and went
+since its last pass, and its own rows waiting on one, with what is held.
+Held money stays held: a commission the platform cannot run yet keeps its
+budget, which counts against the mandate's pace from when it was placed,
+as any work not yet run does. A tool a fault stops
+tells its agent so by class and says what to do: `match_claim` returns
+`outcome: "unavailable"`, which is not a verdict, and the Steward's rule is
+to mint nothing on it or on an embedding search alone, and to keep the
+premise in prose.
+
+Maintainers are told once. Each deployment fault is one open row per class
+and provider (`deployment_faults`), opened with an error line in the log and
+one report on the agents' channel at severity blocking, and shown with the
+rows waiting on it in `GET /monitors` (queue health). It closes when the
+provider has served a call and refused none for ten minutes, and the rows
+that waited are tried at once. The provider's own text is kept for
+maintainers and is never on a public surface.
 Only genuine logic errors count toward the retry cap, after which the claim
 parks in an error state for inspection. The distinction exists because an
 earlier incident parked dozens of production claims over what turned out to be

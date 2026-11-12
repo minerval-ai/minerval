@@ -308,7 +308,7 @@ async function serveAttemptAction(
       error: msg,
       spentMicroUsd: 0,
     });
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     logger.warn(`attempt ${attempt.id} failed before any spend; action released: ${msg}`);
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",

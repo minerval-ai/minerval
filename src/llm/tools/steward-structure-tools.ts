@@ -33,6 +33,7 @@ import {
 } from "../../services/relationship-service.js";
 import { notYourNode } from "./steward-ownership.js";
 import { currentLabel } from "../usage-context.js";
+import { writeIdCandidates } from "./id-repair.js";
 
 export const STEWARD_STRUCTURE_TOOL_NAMES = [
   "remove_subclaim_edge",
@@ -172,6 +173,15 @@ function refuse(message: string): string {
   return JSON.stringify({ success: false, message });
 }
 
+/** A write given an argument id that names nothing: refused, with the nearest argument ids the run has seen. */
+async function refuseMissingArgument(argumentId: string): Promise<string> {
+  return JSON.stringify({
+    success: false,
+    message: `Argument not found: ${argumentId}`,
+    ...(await writeIdCandidates(argumentId, "argument")),
+  });
+}
+
 async function logStructureChange(claimId: string, action: string, reasoning: string): Promise<void> {
   await getDb().insert(auditLog).values({ claimId, action, reasoning, createdBy: "claim_steward", sensitivityLabel: currentLabel() });
 }
@@ -221,7 +231,7 @@ async function liveArgument(
   argumentId: string
 ): Promise<{ id: string; claimId: string; name: string | null; stance: string } | string> {
   const argument = await getArgument(argumentId);
-  if (!argument) return refuse(`Argument not found: ${argumentId}`);
+  if (!argument) return refuseMissingArgument(argumentId);
   if (argument.retiredAt) {
     return refuse(`Argument ${argumentId} was retired (${argument.retiredReason ?? "no reason recorded"}).`);
   }

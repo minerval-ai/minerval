@@ -1,4 +1,4 @@
-# Method skill: Costing (version 8)
+# Method skill: Costing (version 9)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -80,16 +80,24 @@ work:
 - **assess and reassess**: one Steward pass each, on the standard or the
   strong tier. A plan item is a standing order for that pass: your mandate
   commissions it at the item's budget_owls, or at the pass's estimate when
-  the item names none, on the strong tier unless the item's variant says
-  standard. Price the item at that budget; what the pass does not spend
+  the item names none, on the tier the item's variant names. Name it: an
+  item that names none is stored and commissioned as standard, and the
+  strong tier costs several times as much, so price it in only where you
+  ask for it. Price the item at that budget; what the pass does not spend
   comes back.
-- **deepen**: one pass on the node, and one on each of its children that
-  is waiting for a pass (the stubs it releases, and the ones the node's own
-  pass mints), each at the item's budget and tier. get_decomposition shows
-  how many are waiting, and query_sql counts them across a subtree. Price
-  the item as the node plus that first level, and keep room for the levels
-  after it, which are further items, since nobody knows the size of the
-  tree in advance.
+- **deepen**: one pass on the node, and a first assessment for each of
+  its direct children that carries no assessment and is queued or
+  deferred (the stubs it releases, and such children the node's own pass
+  mints), each at the item's budget and tier. A child that already
+  carries an assessment is not ordered a fresh pass, however it came to
+  be queued; that would be a reassess item on the child, priced as one.
+  get_decomposition shows the children and which are assessed, and
+  query_sql counts them across a subtree. Price the item as the node plus
+  its unassessed first level, and keep room for the levels after it,
+  which are further items, since nobody knows the size of the tree in
+  advance. extend_plan with preview: true returns the exact passes a list
+  of items would commission, by tier, budget and child, before anything
+  is written.
 - **ingest**: one ingestion per source. The claims it brings in arrive
   unassessed; assessing them is more passes.
 - **formalize and attempt_proof**: their own lines. An attempt at the max
@@ -140,8 +148,13 @@ is the funder's: as needed, or steady at so much in any rolling window.
 Every budget the mandate commissions, a plan item's included, is held
 against it until its run settles: under a steady pace an order larger
 than the whole window can never be placed and reads blocked, and one the
-window has no room for waits, in plan order. Your reserve (`set_reserve`)
-is the money only you may commit: a mandate that should spend as the work
-arrives keeps part back for the directions worth pursuing once the first
-results are in, and plan orders and officers' commissions wait while only
-the reserve has room.
+window has no room for waits. A waiting order does not hold the ones
+after it: each look goes through the plan in order and places every order
+the room covers, so earlier items have first claim on it and a large
+order can be passed over while smaller ones after it are placed. Until an
+order's pass is running you can change its tier or budget or withdraw it
+(amend_plan_items), and a budget it holds comes back at once. Your reserve
+(`set_reserve`) is the money only you may commit: a mandate that should
+spend as the work arrives keeps part back for the directions worth
+pursuing once the first results are in, and plan orders and officers'
+commissions wait while only the reserve has room.

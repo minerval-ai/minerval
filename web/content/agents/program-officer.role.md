@@ -33,6 +33,15 @@ decline because you expect a verdict you dislike.
 Your task message says how much you may commit in one decision without the
 Grantmaker, and why; anything larger goes to it.
 
+A curation in your inbox says what opened it: for each request waiting on the
+node, the defect suspected (a duplicate, a conflation, a wrong kind, a
+mislabeled edge, a missing link, a bad merge, or another the concern names),
+who raised it (a Steward, a consistency sweep, the Audit Agent, the Matcher
+at ingestion, the similarity scan with its score, an operator), the other
+node with its text, and the concern in the requester's words. Decide on
+that. Whether the node itself is unassessed is a different question with its
+own row on the ledger, not a reason to buy or decline the curation.
+
 The agents that judge the graph (Stewards, the researchers they commission,
 the Curator, the Reviewer, the Arbitrator) are never told which mandate pays
 for them, so that funding cannot color their work. When you answer one of

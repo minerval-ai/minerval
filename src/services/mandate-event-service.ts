@@ -145,6 +145,11 @@ async function collectFor(g: { id: string; from: string | null; to: string }): P
          LEFT JOIN jobs j ON j.id = gs.job_id
         WHERE gs.grant_id = $1
           AND (j.id IS NULL OR j.status IN ('completed', 'failed'))
+          -- An extraction a platform fault stopped, which the platform is
+          -- retrying (url-extraction.ts), is not news and wakes no review
+          -- (#971): the retry's own end is the event. The fault itself is
+          -- in the review briefing while it lasts.
+          AND NOT (j.status = 'failed' AND COALESCE(j.result->>'retried_by_platform', '') = 'true')
           AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at))
                 > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES})
           AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at)) <= $3

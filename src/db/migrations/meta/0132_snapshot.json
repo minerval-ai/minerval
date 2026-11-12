@@ -1,5 +1,5 @@
 {
-  "id": "4333f27a-c091-4ed9-b7ce-8ddf5dd2bf4b",
+  "id": "850c6ba7-9c75-4170-a93c-c2c277699793",
   "prevId": "055e3610-bfc2-4780-b41c-1da09651cff6",
   "version": "7",
   "dialect": "postgresql",
@@ -10319,6 +10319,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "defect": {
+          "name": "defect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10457,6 +10463,10 @@
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
           "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
+        },
+        "ck_curation_requests_defect": {
+          "name": "ck_curation_requests_defect",
+          "value": "defect IS NULL OR defect IN ('duplicate', 'conflation', 'wrong_kind', 'mislabeled_edge', 'missing_link', 'bad_merge', 'other')"
         }
       },
       "isRLSEnabled": false
@@ -12023,26 +12033,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
-        },
-        "pace": {
-          "name": "pace",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{\"kind\":\"as_needed\"}'::jsonb"
-        },
-        "reserve_micro_usd": {
-          "name": "reserve_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "reserve_reason": {
-          "name": "reserve_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

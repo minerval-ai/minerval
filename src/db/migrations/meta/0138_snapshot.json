@@ -1,6 +1,6 @@
 {
-  "id": "b6890dd8-59cc-4b21-89ee-b64f2686ffa4",
-  "prevId": "f9f40f0e-32da-4884-9b63-ecaad7284f1b",
+  "id": "9cc36302-fccf-4cab-8ddd-55826672870d",
+  "prevId": "1afa1597-f216-43f5-992c-5f074aad4ede",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -470,6 +470,31 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "fault_reason": {
+          "name": "fault_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fault_since": {
+          "name": "fault_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fault_attempts": {
+          "name": "fault_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "retry_after": {
+          "name": "retry_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1787,12 +1812,6 @@
           "notNull": true,
           "default": 0
         },
-        "wake_after": {
-          "name": "wake_after",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "extra_funding": {
           "name": "extra_funding",
           "type": "jsonb",
@@ -1827,6 +1846,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "wake_after": {
+          "name": "wake_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10325,6 +10350,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "defect": {
+          "name": "defect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10463,6 +10494,10 @@
         "ck_curation_requests_source": {
           "name": "ck_curation_requests_source",
           "value": "source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')"
+        },
+        "ck_curation_requests_defect": {
+          "name": "ck_curation_requests_defect",
+          "value": "defect IS NULL OR defect IN ('duplicate', 'conflation', 'wrong_kind', 'mislabeled_edge', 'missing_link', 'bad_merge', 'other')"
         }
       },
       "isRLSEnabled": false
@@ -11965,32 +12000,6 @@
           "notNull": true,
           "default": false
         },
-        "pace": {
-          "name": "pace",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{\"kind\":\"as_needed\"}'::jsonb"
-        },
-        "reserve_micro_usd": {
-          "name": "reserve_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "reserve_reason": {
-          "name": "reserve_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "grantmaker_session_id": {
-          "name": "grantmaker_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "allocation_policy": {
           "name": "allocation_policy",
           "type": "jsonb",
@@ -12048,6 +12057,32 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "pace": {
+          "name": "pace",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"kind\":\"as_needed\"}'::jsonb"
+        },
+        "reserve_micro_usd": {
+          "name": "reserve_micro_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reserve_reason": {
+          "name": "reserve_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grantmaker_session_id": {
+          "name": "grantmaker_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -14514,25 +14549,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "held_until": {
-          "name": "held_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hold_refs": {
-          "name": "hold_refs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "hold_reason": {
-          "name": "hold_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "sensitivity_label": {
           "name": "sensitivity_label",
           "type": "text",
@@ -16492,31 +16508,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "done_so_far": {
-          "name": "done_so_far",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "held_until": {
-          "name": "held_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hold_refs": {
-          "name": "hold_refs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "hold_reason": {
-          "name": "hold_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -16626,7 +16617,7 @@
         },
         "petitions_status_check": {
           "name": "petitions_status_check",
-          "value": "\"petitions\".\"status\" IN ('pending', 'held', 'escalated', 'granted', 'refused', 'follow_up')"
+          "value": "\"petitions\".\"status\" IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')"
         }
       },
       "isRLSEnabled": false
@@ -22031,6 +22022,260 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.claim_state_changes": {
+      "name": "claim_state_changes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_state": {
+          "name": "from_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_state": {
+          "name": "to_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "successor_ids": {
+          "name": "successor_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+        "cohort": {
+          "name": "cohort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reconciliation_event_id": {
+          "name": "reconciliation_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
+        }
+      },
+      "indexes": {
+        "idx_claim_state_changes_claim": {
+          "name": "idx_claim_state_changes_claim",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_state_changes_claim_id_claims_id_fk": {
+          "name": "claim_state_changes_claim_id_claims_id_fk",
+          "tableFrom": "claim_state_changes",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "claim_state_changes_reconciliation_event_id_reconciliation_events_id_fk": {
+          "name": "claim_state_changes_reconciliation_event_id_reconciliation_events_id_fk",
+          "tableFrom": "claim_state_changes",
+          "tableTo": "reconciliation_events",
+          "columnsFrom": [
+            "reconciliation_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "claim_state_changes_sensitivity_label_labels_name_fk": {
+          "name": "claim_state_changes_sensitivity_label_labels_name_fk",
+          "tableFrom": "claim_state_changes",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.deployment_faults": {
+      "name": "deployment_faults",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "occurrences": {
+          "name": "occurrences",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cleared_at": {
+          "name": "cleared_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_deployment_faults_open": {
+          "name": "uq_deployment_faults_open",
+          "columns": [
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"deployment_faults\".\"cleared_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_deployment_faults_first_seen": {
+          "name": "idx_deployment_faults_first_seen",
+          "columns": [
+            {
+              "expression": "first_seen_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.event_router_state": {
       "name": "event_router_state",
       "schema": "",
@@ -22147,7 +22392,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -22351,13 +22596,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -22405,21 +22643,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "subscriptions_sensitivity_label_labels_name_fk": {
-          "name": "subscriptions_sensitivity_label_labels_name_fk",
-          "tableFrom": "subscriptions",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

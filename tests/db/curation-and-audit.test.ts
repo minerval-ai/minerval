@@ -104,6 +104,7 @@ describe("curation requests (#363)", () => {
       anchorClaimId: anchor,
       otherClaimId: other,
       source: "steward_escalation",
+      defect: "duplicate",
       concern: "likely duplicate",
     });
     expect(first).toMatchObject({ ok: true, repeat: false });
@@ -111,6 +112,7 @@ describe("curation requests (#363)", () => {
       anchorClaimId: anchor,
       otherClaimId: other,
       source: "steward_escalation",
+      defect: "duplicate",
       concern: "likely duplicate (said twice)",
     });
     expect(again).toMatchObject({ ok: true, repeat: true, requestId: null });
@@ -131,6 +133,7 @@ describe("curation requests (#363)", () => {
         await requestCuration({
           anchorClaimId: a,
           source: "steward_escalation",
+          defect: "duplicate",
           concern: "conflated",
           requestedByClaimId: escalator,
         })
@@ -141,6 +144,7 @@ describe("curation requests (#363)", () => {
     const repeat = await requestCuration({
       anchorClaimId: anchors[0]!,
       source: "steward_escalation",
+      defect: "duplicate",
       concern: "conflated",
       requestedByClaimId: escalator,
     });
@@ -150,13 +154,13 @@ describe("curation requests (#363)", () => {
   it("refuses an anchor that is not an active claim", async () => {
     const gone = await claim("merged away");
     await rawQuery(`UPDATE claims SET state = 'merged' WHERE id = $1`, [gone]);
-    const r = await requestCuration({ anchorClaimId: gone, source: "operator", concern: "x" });
+    const r = await requestCuration({ anchorClaimId: gone, source: "operator", defect: "other", concern: "x" });
     expect(r.ok).toBe(false);
   });
 
   it("reopens a done row on a fresh request, and leaves a running one alone", async () => {
     const anchor = await claim("reopen");
-    await requestCuration({ anchorClaimId: anchor, source: "operator", concern: "first" });
+    await requestCuration({ anchorClaimId: anchor, source: "operator", defect: "other", concern: "first" });
     const row = (await curateRow(anchor))!;
     await rawQuery(`UPDATE actions SET status = 'running' WHERE id = $1`, [row.id]);
     await ensureCurateAction(anchor);
@@ -167,13 +171,13 @@ describe("curation requests (#363)", () => {
       [anchor]
     );
     await consumeCurationRequests(live.map((r) => r.id), row.id);
-    await requestCuration({ anchorClaimId: anchor, source: "operator", concern: "second" });
+    await requestCuration({ anchorClaimId: anchor, source: "operator", defect: "other", concern: "second" });
     expect(await curateRow(anchor)).toMatchObject({ id: row.id, status: "open" });
   });
 
   it("cancels a curate row whose anchor was merged, releasing the mandate's placement", async () => {
     const anchor = await claim("cancel");
-    await requestCuration({ anchorClaimId: anchor, source: "operator", concern: "x" });
+    await requestCuration({ anchorClaimId: anchor, source: "operator", defect: "other", concern: "x" });
     const row = (await curateRow(anchor))!;
     const funder = await seedUser("funder");
     const m = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10 * OWL });
@@ -193,11 +197,142 @@ describe("curation requests (#363)", () => {
 describe("a fresh curation (#363)", () => {
   it("is put in front of the General mandate's officers, and funds nothing by itself", async () => {
     const anchor = await claim("escalated", { importance: 0.8 });
-    await requestCuration({ anchorClaimId: anchor, source: "steward_escalation", concern: "dup" });
+    await requestCuration({ anchorClaimId: anchor, source: "steward_escalation", defect: "duplicate", concern: "dup" });
     const row = (await curateRow(anchor))!;
     expect(await raised(general.grantId, row.id)).toHaveLength(1);
     expect(await raised(governance.grantId, row.id)).toHaveLength(0);
     expect(await placements(CURATE_GROUP(anchor))).toEqual([]);
+  });
+});
+
+describe("what opened a curation, in front of the officers (#955)", () => {
+  it("refuses a request that names no defect: nothing is recorded and no row opens", async () => {
+    const anchor = await claim("no defect");
+    const r = await requestCuration({
+      anchorClaimId: anchor,
+      source: "steward_escalation",
+      defect: "unassessed" as never,
+      concern: "This node has not been assessed yet.",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.problem).toContain("duplicate, conflation");
+    const [n] = await rawQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM curation_requests WHERE anchor_claim_id = $1`,
+      [anchor]
+    );
+    expect(n!.n).toBe(0);
+    expect(await curateRow(anchor)).toBeNull();
+  });
+
+  it("opens no curate row for an anchor with no live request", async () => {
+    const anchor = await claim("nothing asked");
+    expect(await ensureCurateAction(anchor)).toBeNull();
+    expect(await curateRow(anchor)).toBeNull();
+  });
+
+  it("records the defect and puts the defect, who raised it, the other node's text and the concern in the inbox item", async () => {
+    const escalator = await claim("the escalating node");
+    const anchor = await claim("anchor A, worded one way");
+    const other = await claim("anchor A, worded another way");
+    await requestCuration({
+      anchorClaimId: anchor,
+      otherClaimId: other,
+      source: "steward_escalation",
+      defect: "duplicate",
+      concern: "Both state the same proposition.",
+      requestedByClaimId: escalator,
+    });
+    const [req] = await rawQuery<{ defect: string }>(
+      `SELECT defect FROM curation_requests WHERE anchor_claim_id = $1`,
+      [anchor]
+    );
+    expect(req!.defect).toBe("duplicate");
+    const row = (await curateRow(anchor))!;
+    const [item] = await rawQuery<{ summary: string; detail: Record<string, unknown> }>(
+      `SELECT summary, detail FROM mandate_inbox WHERE grant_id = $1 AND detail->>'action_id' = $2`,
+      [general.grantId, row.id]
+    );
+    expect(item!.summary).toContain("suspected duplicate");
+    expect(item!.summary).toContain(`raised by the Steward of ${escalator}`);
+    expect(item!.summary).toContain(`the other node: ${other} ("DB-test claim (anchor A, worded another way`);
+    expect(item!.summary).toContain("Concern: Both state the same proposition.");
+    expect(item!.detail).toMatchObject({ kind: "curate", defects: ["duplicate"], raised_by: ["steward_escalation"] });
+  });
+
+  it("raises nothing for a curate row on a claim with no live request", async () => {
+    const anchor = await claim("bare row");
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO actions (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd)
+       VALUES ('curate', $1, 'standard', $2, 'Curate around: bare row', 500000) RETURNING id`,
+      [CURATE_GROUP(anchor), anchor]
+    );
+    const { fundCurationNow } = await import("../../src/services/maintenance-funding.js");
+    await fundCurationNow(row!.id);
+    expect(await raised(general.grantId, row!.id)).toHaveLength(0);
+  });
+
+  it("rewrites a waiting item raised before requests were rendered, and retires one whose row closed", async () => {
+    const { refreshCurationInboxItems, CURATION_ITEM_RETIRED_REASON } = await import(
+      "../../src/services/maintenance-funding.js"
+    );
+    // A request recorded before defects were, under an item that carries only
+    // the anchor's text: what the officers read on 2026-11-11.
+    const legacy = await claim("legacy anchor");
+    await rawQuery(
+      `INSERT INTO curation_requests (anchor_claim_id, source, concern)
+       VALUES ($1, 'audit', 'Audit finding f: these two were merged but differ.')`,
+      [legacy]
+    );
+    const legacyRow = (await ensureCurateAction(legacy))!;
+    const [legacyItem] = await rawQuery<{ id: string }>(
+      `INSERT INTO mandate_inbox (grant_id, kind, target_node_id, source, summary, detail)
+       VALUES ($1, 'raised', $2, 'the system', 'A curation is wanted: Curate around: legacy anchor',
+               jsonb_build_object('action_id', $3::text, 'kind', 'curate'))
+       RETURNING id`,
+      [general.grantId, legacy, legacyRow]
+    );
+    // A waiting item whose row a run already finished.
+    const done = await claim("finished anchor");
+    await requestCuration({ anchorClaimId: done, source: "operator", defect: "other", concern: "x" });
+    const doneRow = (await curateRow(done))!;
+    await rawQuery(`UPDATE actions SET status = 'done' WHERE id = $1`, [doneRow.id]);
+
+    const res = await refreshCurationInboxItems(general.grantId);
+    expect(res.retired).toBeGreaterThanOrEqual(1);
+    expect(res.rewritten).toBeGreaterThanOrEqual(1);
+
+    const [rewritten] = await rawQuery<{ summary: string; handled_at: Date | null }>(
+      `SELECT summary, handled_at FROM mandate_inbox WHERE id = $1`,
+      [legacyItem!.id]
+    );
+    expect(rewritten!.handled_at).toBeNull();
+    expect(rewritten!.summary).toContain("defect not classified");
+    expect(rewritten!.summary).toContain("raised by the Audit Agent");
+    expect(rewritten!.summary).toContain("these two were merged but differ");
+
+    const [retired] = await rawQuery<{ handled_by: string; detail: Record<string, unknown> }>(
+      `SELECT handled_by, detail FROM mandate_inbox WHERE detail->>'action_id' = $1`,
+      [doneRow.id]
+    );
+    expect(retired).toMatchObject({ handled_by: "ledger" });
+    expect(retired!.detail.retired).toBe(CURATION_ITEM_RETIRED_REASON);
+    // Nothing was deleted.
+    const [count] = await rawQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM mandate_inbox WHERE id = $1`,
+      [legacyItem!.id]
+    );
+    expect(count!.n).toBe(1);
+  });
+
+  it("retires the waiting item when the reconcile sweep cancels its row", async () => {
+    const anchor = await claim("merged before decided");
+    await requestCuration({ anchorClaimId: anchor, source: "operator", defect: "conflation", concern: "x" });
+    const row = (await curateRow(anchor))!;
+    expect(await raised(general.grantId, row.id)).toHaveLength(1);
+    await rawQuery(`UPDATE claims SET state = 'merged' WHERE id = $1`, [anchor]);
+    await reconcileActions();
+    expect((await curateRow(anchor))!.status).toBe("cancelled");
+    expect(await raised(general.grantId, row.id)).toHaveLength(0);
   });
 });
 
@@ -306,14 +441,16 @@ describe("the reconcile-candidate scan (#363)", () => {
 
     const on = { ...policy, reconcile_candidates_max_per_sweep: 5 };
     expect(await scanReconcileCandidates(on)).toBe(1);
-    const pairs = await rawQuery<{ anchor_claim_id: string; other_claim_id: string; signal: number }>(
-      `SELECT anchor_claim_id, other_claim_id, signal FROM curation_requests
+    const pairs = await rawQuery<{ anchor_claim_id: string; other_claim_id: string; signal: number; defect: string }>(
+      `SELECT anchor_claim_id, other_claim_id, signal, defect FROM curation_requests
         WHERE source = 'reconcile_candidate' AND (anchor_claim_id = ANY($1::uuid[]))`,
       [[a, b, loner]]
     );
     expect(pairs).toHaveLength(1);
     expect([pairs[0]!.anchor_claim_id, pairs[0]!.other_claim_id].sort()).toEqual([a, b].sort());
     expect(Number(pairs[0]!.signal)).toBeGreaterThan(0.99);
+    // A scan's pair is a suspected duplicate, with its score (#955).
+    expect(pairs[0]!.defect).toBe("duplicate");
 
     // Consumed or not, a pair once asked about is not raised again.
     await rawQuery(`UPDATE curation_requests SET consumed_at = now() WHERE source = 'reconcile_candidate'`);

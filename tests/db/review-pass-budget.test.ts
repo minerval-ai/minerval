@@ -84,6 +84,14 @@ async function placements(grantId: string) {
 /** Open the mandate's review row and fund it from its own escrow. */
 async function openAndFund(grantId: string) {
   await reconcileActions();
+  // Every active mandate with no live Grantmaker session has its review
+  // opened by the reconcile, and the funding sweep takes the oldest open
+  // rows first: other files' mandates would fill its places ahead of this one.
+  await rawQuery(
+    `UPDATE actions SET status = 'cancelled'
+      WHERE status = 'open' AND kind IN ('mandate_review', 'grant_planning') AND target_ref <> $1`,
+    [grantId]
+  );
   await fundGrantSelfActions();
   return (await reviewRow(grantId))!;
 }

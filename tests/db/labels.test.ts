@@ -175,7 +175,9 @@ describe("the labels table", () => {
     // and the rows of work and governance, from requests and messages to
     // mandates, their lookouts and the audit trail
     // (label-governance.test.ts), with the placements and regrants that
-    // carry a brief, a reason or a note, and a stated view. The tables that
+    // carry a brief, a reason or a note, and a stated view; and
+    // claim_state_changes, the record of a node's archive, restore or merge,
+    // stamped by claim-lifecycle-service.ts. The tables that
     // carry no label are listed in label-columns.test.ts, each with its
     // reason.
     // The tables of connections (connections, connection_tools,
@@ -191,7 +193,7 @@ describe("the labels table", () => {
         "assistant_held_actions", "assistant_pages", "attachments", "audit_findings", "audit_log", "audit_notes",
         "audit_runs", "bounties", "budget_jobs", "claim_formalizations", "claim_instance_reading_log",
         "claim_instance_readings", "claim_instances", "claim_links", "claim_predictions", "claim_provenance_edges",
-        "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claims", "connection_calls",
+        "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claim_state_changes", "claims", "connection_calls",
         "connection_tools", "connections", "consistency_flags", "consistency_sweeps", "contribution_reviews",
         "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
         "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage", "examination_findings",

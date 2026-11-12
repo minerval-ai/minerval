@@ -77,7 +77,8 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueSteward: mocks.enqueueSteward,
 }));
 
-vi.mock("../../../../src/services/curation-service.js", () => ({
+vi.mock("../../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   requestCuration: mocks.requestCuration,
 }));
 
@@ -367,13 +368,19 @@ describe("recommend_recuration", () => {
       await executeAuditTool("recommend_recuration", {
         claim_id: CLAIM_ID,
         other_claim_id: CONTRIBUTION_ID,
+        defect: "bad_merge",
         finding_id: FINDING_ID,
         reason: "These were merged but say different things.",
       })
     );
     expect(out.success).toBe(true);
     const req = mocks.requestCuration.mock.calls[0]![0] as Record<string, unknown>;
-    expect(req).toMatchObject({ anchorClaimId: CLAIM_ID, otherClaimId: CONTRIBUTION_ID, source: "audit" });
+    expect(req).toMatchObject({
+      anchorClaimId: CLAIM_ID,
+      otherClaimId: CONTRIBUTION_ID,
+      source: "audit",
+      defect: "bad_merge",
+    });
     expect(String(req.concern)).toContain(`Audit finding ${FINDING_ID}`);
     expect(String(req.concern)).toContain("merged but say different things");
   });

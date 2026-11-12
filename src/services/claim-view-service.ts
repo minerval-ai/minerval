@@ -55,6 +55,7 @@ import {
   summarizeCoverage,
 } from "./coverage-service.js";
 import { developerDisclosure } from "../llm/model-developers.js";
+import { RETIRED_DESCRIPTION, getRetirement } from "./claim-lifecycle-service.js";
 import {
   STEWARD_PARKED_DESCRIPTION,
   stewardParkSelectSql,
@@ -145,6 +146,8 @@ export const CLAIM_VIEW_DESCRIPTION =
   "it since, sources attached or detached since, and notices on its " +
   "sources since). " +
   RESOLVED_FROM_DESCRIPTION +
+  " " +
+  RETIRED_DESCRIPTION +
   " Free.";
 
 export const CLAIM_VIEW_INCLUDE_DESCRIPTION =
@@ -298,6 +301,10 @@ export async function getClaimView(
   ]);
   const since = sinceAssessed(changes?.get(claimId));
   const examination = coverage(covered?.get(claimId.toLowerCase()));
+  // A node no longer active says when, by whom and why it was retired, and
+  // which nodes carry on what it stated (#962). A failure loses the field,
+  // never the read; `claim.state` still says the node is not active.
+  const retired = claim.state !== "active" ? await getRetirement(claimId).catch(() => null) : null;
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left
   // when it minted this node. Served only while the node has no current
@@ -315,6 +322,7 @@ export async function getClaimView(
   const payload: Record<string, unknown> = {
     // First, so a reader meets it before the verdict it qualifies.
     ...(resolution.resolvedFrom ? { resolved_from: resolution.resolvedFrom } : {}),
+    ...(retired ? { retired } : {}),
     claim: {
       id: claim.id,
       kind,

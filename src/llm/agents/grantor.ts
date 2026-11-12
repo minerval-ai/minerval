@@ -301,9 +301,10 @@ async function runGrantorImpl(input: {
               success: false,
               problem:
                 `the plan's items cost at least ${floor.floor_owls} owls against ` +
-                `${budgetOwls} escrowed (one strong Steward pass per assess, reassess, or ` +
-                `deepen item at ${floor.per_item_owls.steward_pass}, one ingestion per ` +
-                `ingest item at ${floor.per_item_owls.ingest}); trim it`,
+                `${budgetOwls} escrowed (each assess, reassess, or deepen item at its ` +
+                `budget_owls or one Steward pass on its variant: standard ` +
+                `${floor.per_item_owls.steward_pass}, strong ${floor.per_item_owls.steward_pass_strong}; ` +
+                `one ingestion per ingest item at ${floor.per_item_owls.ingest}); trim it`,
             });
           }
           plan = {

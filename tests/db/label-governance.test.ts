@@ -391,7 +391,7 @@ async function writeOneOfEach() {
   await adjustReputation({ contributorId: contributor, delta: -1 });
 
   // The Curator asked to look, a sweep and what it flagged, an audit finding.
-  const curation = await requestCuration({ anchorClaimId: claim, otherClaimId: other, source: "operator", concern: `These may be one node (${tag}).` });
+  const curation = await requestCuration({ anchorClaimId: claim, otherClaimId: other, source: "operator", defect: "duplicate", concern: `These may be one node (${tag}).` });
   if (!curation.ok) throw new Error(curation.problem);
   const sweepId = await startSweep({ tagId: null, partition: "residual", label: "The rest", assessed: 1 } as never, "standard");
   // Closed at once, so no other file finds a sweep in progress.
@@ -628,7 +628,7 @@ describe("a mandate's work", () => {
     await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
       grantId,
       JSON.stringify({ strategy: "s", items: [
-        { action: "assess", claim_id: claim, rationale: "first", budget_owls: 3 },
+        { action: "assess", claim_id: claim, rationale: "first", budget_owls: 3, variant: "standard" },
         { action: "ingest", url, rationale: "a source" },
       ] }),
     ]);

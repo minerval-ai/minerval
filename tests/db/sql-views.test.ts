@@ -35,7 +35,7 @@ const REVIEWED_COLUMNS: Record<string, string[]> = {
   tags: ["slug", "name", "description", "status", "node_count"],
   sources: ["id", "url", "title", "source_type", "publisher", "published_date", "doi", "retrieved_at"],
   instances: ["id", "node_id", "source_id", "stance", "speaker", "publication", "source_date", "verbatim_head", "created_at", "detached_at"],
-  ledger: ["action_id", "kind", "variant", "target_node_id", "target_ref", "label", "status", "spent_owls", "opened_at", "updated_at"],
+  ledger: ["action_id", "kind", "variant", "target_node_id", "target_ref", "label", "status", "spent_owls", "opened_at", "updated_at", "waiting_on", "waiting_since", "next_attempt_at"],
   commissions: ["commission_id", "action_id", "exclusion_group", "payer_kind", "payer_mandate_id", "budget_owls", "spent_owls", "returned_owls", "commissioned_by", "brief", "reason", "parent_action_id", "created_at", "settled_at"],
   messages: ["message_id", "node_id", "trigger", "sender_kind", "sender_node_id", "paid", "body", "created_at", "read_at", "outcome", "outcome_note"],
   mandates: ["mandate_id", "title", "objective", "status", "is_platform", "pace", "reserve_owls", "reserve_reason", "escrow_owls", "operating_policy", "created_at"],
