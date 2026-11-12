@@ -27,6 +27,7 @@ import {
 } from "./provenance-story-service.js";
 import type { InstanceReadingView, QuoteCheckResult } from "./source-map-service.js";
 import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /** The SQL predicate for an instance that belongs to its claim, for a given table alias. */
 export function activeInstanceSql(alias = "ci"): string {
@@ -395,13 +396,14 @@ export async function detachClaimInstance(input: {
       [existing.id, reason, input.detachedBy]
     );
     await tx.query(
-      `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, $5)`,
       [
         input.claimId,
         "detached_claim_instance",
         `Instance ${existing.id} (${existing.source_url ?? existing.source_title}, stance=${existing.stance}) ` +
           `detached from the claim. ${reason}`,
         input.detachedBy,
+        currentLabel(),
       ]
     );
   });
@@ -434,12 +436,13 @@ export async function reattachClaimInstance(input: {
       [existing.id]
     );
     await tx.query(
-      `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, $5)`,
       [
         input.claimId,
         "reattached_claim_instance",
         `Instance ${existing.id} (${existing.source_url ?? existing.source_title}) reattached to the claim. ${reason}`,
         input.reattachedBy,
+        currentLabel(),
       ]
     );
   });
@@ -497,13 +500,14 @@ export async function setInstanceOrder(input: {
       await tx.query(`UPDATE claim_instances SET display_rank = $2 WHERE id = $1`, [ids[i], i + 1]);
     }
     await tx.query(
-      `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, $5)`,
       [
         input.claimId,
         "set_instance_order",
         (ids.length > 0 ? `Instances ranked first, in order: ${ids.join(", ")}.` : "Instance ranks cleared.") +
           (input.reasoning?.trim() ? ` ${input.reasoning.trim()}` : ""),
         input.setBy,
+        currentLabel(),
       ]
     );
     return clearedRows.length;

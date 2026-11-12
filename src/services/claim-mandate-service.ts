@@ -147,10 +147,10 @@ export async function createClaimMandate(input: {
   };
   const [grant] = await rawQuery<{ id: string }>(
     `INSERT INTO grants
-       (funder_user_id, budget_job_id, name, scope_claim_id, policy, status, mandate)
-     VALUES ($1, $2, $3, $4, 'agent', 'planning', $5::jsonb)
+       (funder_user_id, budget_job_id, name, scope_claim_id, policy, status, mandate, sensitivity_label)
+     VALUES ($1, $2, $3, $4, 'agent', 'planning', $5::jsonb, $6)
      RETURNING id`,
-    [input.userId, job!.id, text.title, claim.id, JSON.stringify(mandate)]
+    [input.userId, job!.id, text.title, claim.id, JSON.stringify(mandate), currentLabel()]
   );
   return { ok: true, grantId: grant!.id, budgetJobId: job!.id };
 }

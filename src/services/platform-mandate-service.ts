@@ -182,9 +182,9 @@ export async function fundPlatformConversation(input: {
       `INSERT INTO grants
          (funder_user_id, budget_job_id, name, scope_claim_id, scope_query,
           policy, status, plan, plan_cursor, mandate, skills, is_platform,
-          platform_approval)
+          platform_approval, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, 'agent', 'active', $6::jsonb, 0,
-               $7::jsonb, $8, true, $9::jsonb)
+               $7::jsonb, $8, true, $9::jsonb, $10)
        RETURNING id`,
       [
         platformId,
@@ -196,6 +196,7 @@ export async function fundPlatformConversation(input: {
         JSON.stringify(mandate),
         mandate.skills ?? [],
         JSON.stringify(approval),
+        currentLabel(),
       ]
     );
     await tx.query(

@@ -144,6 +144,13 @@ describe("raise_issue tool", () => {
     expect(tools.raisedCount).toBe(1);
   });
 
+  it("says in place of a withheld body only what holds whether or not the run was logged", () => {
+    expect(UNTRACED_BODY_NOTE).toBe(
+      "(body withheld: raised from work over a reader's own content, which a " +
+        "report does not carry; see the title and context_refs)"
+    );
+  });
+
   it("withholds the body inside an untraced context (#356) but keeps the rest", async () => {
     const tools = createReportTools();
     const out = await untraced(() =>

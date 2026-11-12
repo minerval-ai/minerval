@@ -378,8 +378,10 @@ calls and no text, so the page shows the activity.
 model (`ASSISTANT_TITLE_MODEL`, the cheap tier by default), in the
 background while the Assistant starts on the reply: two to six words in
 place of the message's opening words, which stand in until the name
-arrives and stay if the call fails. The call is untraced, and its cost (a
-fraction of a cent) is charged with the conversation's.
+arrives and stay if the call fails. The call is untraced while the run log
+is best-effort, and a logged run where it is kept as a record
+(docs/run-log.md); its cost (a fraction of a cent) is charged with the
+conversation's either way.
 
 **The page.** `/ask` is laid out as a chat, not as an article
 (`web/app/ask/layout.tsx`): a sidebar of the user's conversations, pages
@@ -634,7 +636,10 @@ have to cover (#356), so the promise stays keepable as tables are added.
   never reach the database: the pipeline runs untraced and keeps its result
   only in an in-memory cache (see the extension section of
   [architecture.md](architecture.md)). Erasure has nothing to find here,
-  which is the point of keeping it that way.
+  which is the point of keeping it that way. This is true of a deployment
+  whose run log is best-effort, as the public graph's is. One that keeps
+  its log as a record (`RUN_LOG_MODE=record`) logs that work, privately,
+  and keeps the log (docs/run-log.md).
 - **Rows keyed to the account** (`contributors.id`), deletable outright:
   `api_keys`, `oauth_tokens`, `oauth_authorization_requests`,
   `grant_conversations`, `assessment_orders`, `budget_jobs`, `grants`

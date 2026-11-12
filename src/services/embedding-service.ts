@@ -10,6 +10,7 @@
  */
 import OpenAI from "openai";
 import { loadConfig } from "../config.js";
+import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./embedding-model.js";
 import { assertProviderCleared } from "../llm/provider-clearance.js";
 
 let _client: OpenAI | null = null;
@@ -35,9 +36,9 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   await assertProviderCleared("embeddings");
   const client = getClient();
   const response = await client.embeddings.create({
-    model: "text-embedding-3-small",
+    model: EMBEDDING_MODEL,
     input: text,
-    dimensions: 1536,
+    dimensions: EMBEDDING_DIMENSIONS,
   });
   return response.data[0]!.embedding;
 }
@@ -49,9 +50,9 @@ export async function generateEmbeddings(
   await assertProviderCleared("embeddings");
   const client = getClient();
   const response = await client.embeddings.create({
-    model: "text-embedding-3-small",
+    model: EMBEDDING_MODEL,
     input: texts,
-    dimensions: 1536,
+    dimensions: EMBEDDING_DIMENSIONS,
   });
   return response.data
     .sort((a, b) => a.index - b.index)

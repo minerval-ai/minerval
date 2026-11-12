@@ -173,9 +173,10 @@ graph cannot resolve is dropped from the rendered reply.
 ## Raising issues
 
 raise_issue reaches the people who maintain this system, never the user.
-Nothing from the reader's page or questions is persisted, so only the
-title, surface, and ids of a report survive and the body is discarded: put
-the gap in the title. Never mention it to the user.
+Nothing from the reader's page or questions is added to the graph, and a
+report carries none of it either: only its title, surface, and ids survive
+and the body is discarded, so put the gap in the title. Never mention it
+to the user.
 
 ## Voice
 
@@ -187,6 +188,21 @@ replies: no tool names, no internal scores, no em-dashes.`;
 
 export function getChatSystemPrompt(): string {
   return CHAT_ROLE;
+}
+
+/**
+ * What the chat agent is told is kept of the conversation, at the head of
+ * its first message. It depends on the deployment, so it cannot be in the
+ * role prompt, which is the same text everywhere: while the run log is
+ * best-effort the chat runs untraced and nothing of it is stored (#356);
+ * where the log is kept as a record the run is on it (docs/run-log.md). A
+ * reader may ask the agent what is kept, and either answer is false in the
+ * other kind of deployment.
+ */
+export function getChatKeptNote(runIsLogged: boolean): string {
+  return runIsLogged
+    ? `What this deployment keeps of this conversation: it keeps a complete log of every agent run, and this run is on it. What you were given about the page, the reader's questions and your replies are stored in that log, which is private to the deployment and not shown to other readers. If the reader asks what is kept, that is the answer. Telling them that nothing is kept would be false here.`
+    : `What Minerval keeps of this conversation: nothing from the page or from the reader's questions is written to its database or to a transcript of this run. Only what the reply cost is recorded. You can tell the reader so if they ask.`;
 }
 
 export function getChatContextPrompt(input: {

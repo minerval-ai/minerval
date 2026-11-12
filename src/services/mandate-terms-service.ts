@@ -18,6 +18,7 @@ import { rawQuery, withTransaction } from "../db/client.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export type AmendResult =
   | { ok: true; status: "applied"; notified: number }
@@ -47,9 +48,9 @@ export async function amendObjective(input: {
   const next = { title: title ?? g.title, objective: objective ?? g.objective };
   if (g.is_platform) {
     await rawQuery(
-      `INSERT INTO mandate_policy_versions (grant_id, part, content, note, author, status)
-       VALUES ($1, 'terms', $2::jsonb, $3, $4, 'awaiting_approval')`,
-      [g.id, JSON.stringify(next), note, input.author]
+      `INSERT INTO mandate_policy_versions (grant_id, part, content, note, author, status, sensitivity_label)
+       VALUES ($1, 'terms', $2::jsonb, $3, $4, 'awaiting_approval', $5)`,
+      [g.id, JSON.stringify(next), note, input.author, currentLabel()]
     );
     return { ok: true, status: "awaiting_approval" };
   }
@@ -61,14 +62,14 @@ export async function amendObjective(input: {
     [g.id, next.title, next.objective]
   );
   await rawQuery(
-    `INSERT INTO mandate_policy_versions (grant_id, part, content, note, author)
-     VALUES ($1, 'terms', $2::jsonb, $3, $4)`,
-    [g.id, JSON.stringify({ before: { title: g.title, objective: g.objective }, after: next }), note, input.author]
+    `INSERT INTO mandate_policy_versions (grant_id, part, content, note, author, sensitivity_label)
+     VALUES ($1, 'terms', $2::jsonb, $3, $4, $5)`,
+    [g.id, JSON.stringify({ before: { title: g.title, objective: g.objective }, after: next }), note, input.author, currentLabel()]
   );
   await rawQuery(
-    `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, reason)
-     VALUES ($1, 'grantmaker', 'terms', 'amended the objective', $2)`,
-    [g.id, note]
+    `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, reason, sensitivity_label)
+     VALUES ($1, 'grantmaker', 'terms', 'amended the objective', $2, $3)`,
+    [g.id, note, currentLabel()]
   );
   // Tell every other funder at once. A regranting mandate hears it in its
   // inbox; people read it on the mandate's page and in their account.
@@ -193,9 +194,9 @@ export async function withdrawFromMandate(input: {
       }
     }
     await tx.query(
-      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, owls_micro_usd, reason)
-       VALUES ($1, 'funder', 'withdrawal', 'withdrew an unspent share', $2, $3)`,
-      [input.grantId, want, "userId" in input.funder ? "a contributor withdrew" : `the mandate ${input.funder.grantId} withdrew`]
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, owls_micro_usd, reason, sensitivity_label)
+       VALUES ($1, 'funder', 'withdrawal', 'withdrew an unspent share', $2, $3, $4)`,
+      [input.grantId, want, "userId" in input.funder ? "a contributor withdrew" : `the mandate ${input.funder.grantId} withdrew`, currentLabel()]
     );
     return { ok: true, withdrawnOwls: microUsdToOwls(want) } as const;
   });

@@ -19,6 +19,7 @@
  * readable; feeding them to the Audit Agent is an operator's decision.
  */
 import { loadConfig } from "../config.js";
+import { runAtClaimLabel } from "../services/label-service.js";
 import { requestAudit } from "../services/queue-service.js";
 import {
   defaultThresholds,
@@ -121,12 +122,17 @@ export async function flagMonitorCandidates(
 
   for (const item of queue) {
     if (result.requested >= maxFlags) break;
-    const runId = await requestAudit({
-      auditType: "anomaly_investigation",
-      context: item.context,
-      triggeredBy: "monitor_signal",
-      dedupeKey: `monitor:${item.signal}:${item.claimId}:${bucket}`,
-    });
+    // The sweep is a timer and each audit is about one claim, so it is
+    // asked for at that claim's label (runAtClaimLabel): the audit's record,
+    // which quotes the claim, and the ledger row that runs it.
+    const runId = await runAtClaimLabel(item.claimId, () =>
+      requestAudit({
+        auditType: "anomaly_investigation",
+        context: item.context,
+        triggeredBy: "monitor_signal",
+        dedupeKey: `monitor:${item.signal}:${item.claimId}:${bucket}`,
+      })
+    );
     result.flags.push({ signal: item.signal, claimId: item.claimId, runId });
     if (runId !== null) result.requested++;
   }

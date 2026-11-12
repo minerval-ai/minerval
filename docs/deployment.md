@@ -370,8 +370,8 @@ at that label does not run at all.
 | `payments` | Payments are off, or on with both Stripe keys. One key without the other, or a secret key that is not a Stripe key, fails. | no |
 | `github_issues` | No repository is named, or one is named and a credential is set. A repository with no credential, or with half of the GitHub App's settings, fails. | no |
 | `reports_stay_inside` | Where private material is held, no issue repository is configured. | yes |
-| `features` | Which features are off. Where private material is held, it fails if the browser extension is on: its page analysis and chat are never written to the run log. | no |
-| `work_outside_the_run_log` | Where private material is held, it fails: the MCP tools `match_claim`, `extract_claims` and `assess_text`, and the naming of an Assistant conversation, run without a log and have no switch yet. | no |
+| `features` | Which features are off. Where private material is held and the run log is best-effort, it fails if the browser extension is on: a best-effort log leaves out its page analysis and chat. In record mode they are logged, and it passes. | no |
+| `work_outside_the_run_log` | Where private material is held and the run log is best-effort, it fails: a best-effort log leaves out the MCP tools `match_claim`, `extract_claims` and `assess_text`, and the naming of an Assistant conversation, and they have no switch. In record mode they are logged runs, and it passes. | no |
 
 The run log's test uses the writer every agent run uses. It opens a run
 under the agent name `preflight`, writes two steps, seals it, recomputes its
@@ -417,4 +417,5 @@ preflight` exits non-zero on them. They do not stop work because the
 deployment can run without them being right (a missing key fails the calls
 that need it, loudly, and a run whose model's provider is not cleared for
 its label is refused before anything is sent), or because, like
-`work_outside_the_run_log`, no setting can make them pass yet.
+`features` and `work_outside_the_run_log`, what they check runs in the API,
+which the gate does not hold.

@@ -30,6 +30,7 @@ import {
 import { getFundingLabelForJob } from "./grant-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { mergedAliasRefusals } from "./claim-alias-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export class RequestError extends Error {
   constructor(message: string) {
@@ -111,8 +112,8 @@ export async function fileRequest(input: {
       `INSERT INTO requests
          (ask, why, satisfied_by, who_could, addressed_to, bears_on_text,
           filer_kind, filer_agent, filer_contributor_id, filer_grant_id, filer_run_id,
-          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16) RETURNING id`,
+          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16, $17) RETURNING id`,
       [
         input.ask.trim(),
         input.why.trim(),
@@ -130,14 +131,15 @@ export async function fileRequest(input: {
         input.addressedTo?.trim() ? "addressed" : "open",
         embedding,
         budgetMicroUsd,
+        currentLabel(),
       ]
     );
     const id = row!.id;
     for (const claimId of claimIds) {
-      await tx.query(`INSERT INTO request_targets (request_id, claim_id) VALUES ($1, $2)`, [id, claimId]);
+      await tx.query(`INSERT INTO request_targets (request_id, claim_id, sensitivity_label) VALUES ($1, $2, $3)`, [id, claimId, currentLabel()]);
     }
     for (const sourceId of sourceIds) {
-      await tx.query(`INSERT INTO request_targets (request_id, source_id) VALUES ($1, $2)`, [id, sourceId]);
+      await tx.query(`INSERT INTO request_targets (request_id, source_id, sensitivity_label) VALUES ($1, $2, $3)`, [id, sourceId, currentLabel()]);
     }
     return { id };
   });
@@ -223,8 +225,8 @@ export async function recordWork(input: {
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO request_work
          (request_id, by_label, contributor_id, research_run_id, outcome, summary, funded_by_job_id,
-          budget_micro_usd, quote_micro_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          budget_micro_usd, quote_micro_usd, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         input.requestId,
         input.byLabel,
@@ -235,6 +237,7 @@ export async function recordWork(input: {
         input.fundedByJobId ?? null,
         input.budgetMicroUsd == null ? null : Math.round(input.budgetMicroUsd),
         input.quoteMicroUsd == null ? null : Math.round(input.quoteMicroUsd),
+        currentLabel(),
       ]
     );
     if (req.state !== "in_progress") {
@@ -380,10 +383,10 @@ export async function setRequestTargets(input: {
     }
     await tx.query(`DELETE FROM request_targets WHERE request_id = $1`, [input.requestId]);
     for (const claimId of claimIds) {
-      await tx.query(`INSERT INTO request_targets (request_id, claim_id) VALUES ($1, $2)`, [input.requestId, claimId]);
+      await tx.query(`INSERT INTO request_targets (request_id, claim_id, sensitivity_label) VALUES ($1, $2, $3)`, [input.requestId, claimId, currentLabel()]);
     }
     for (const sourceId of sourceIds) {
-      await tx.query(`INSERT INTO request_targets (request_id, source_id) VALUES ($1, $2)`, [input.requestId, sourceId]);
+      await tx.query(`INSERT INTO request_targets (request_id, source_id, sensitivity_label) VALUES ($1, $2, $3)`, [input.requestId, sourceId, currentLabel()]);
     }
     const keeperClaimId = claimIds.length === 1 && sourceIds.length === 0 ? claimIds[0]! : null;
     const keeper = keeperClaimId ? "steward" : "curator";

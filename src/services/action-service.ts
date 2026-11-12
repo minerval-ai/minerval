@@ -22,7 +22,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
-import { runAtClaimLabelOutsideAnyRun, runAtSourceLabelOutsideAnyRun } from "./label-service.js";
+import { pendingPassLabel, runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
@@ -305,8 +305,8 @@ export async function ensureCurateAction(anchorClaimId: string): Promise<string 
  * passed to a Steward.
  */
 export async function ensureRequestCurateAction(requestId: string): Promise<string | null> {
-  const [req] = await rawQuery<{ ask: string }>(
-    `SELECT ask FROM requests
+  const [req] = await rawQuery<{ ask: string; sensitivity_label: string }>(
+    `SELECT ask, sensitivity_label FROM requests
       WHERE id = $1 AND keeper_kind = 'curator'
         AND state NOT IN ('met', 'declined', 'withdrawn', 'moot')`,
     [requestId]
@@ -329,7 +329,9 @@ export async function ensureRequestCurateAction(requestId: string): Promise<stri
       requestId,
       `Judge work returned on a request: ${req.ask.slice(0, 260)}`,
       Math.max(1, Math.round(cost)),
-      currentLabel(),
+      // The request's label: judging work on a request is the request's
+      // work, whoever brought the work back (src/labels.ts).
+      req.sensitivity_label,
     ]
   );
   return row?.id ?? null;
@@ -383,8 +385,8 @@ export async function ensureAuditAction(input: {
  * Returns the open row's id, or null when there is none.
  */
 export async function ensureRequestActions(requestId: string): Promise<string | null> {
-  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null }>(
-    `SELECT ask, state, budget_micro_usd FROM requests WHERE id = $1`,
+  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null; sensitivity_label: string }>(
+    `SELECT ask, state, budget_micro_usd, sensitivity_label FROM requests WHERE id = $1`,
     [requestId]
   );
   if (!req || (CLOSED_REQUEST_STATES as readonly string[]).includes(req.state)) {
@@ -408,7 +410,12 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
                          THEN actions.status ELSE 'open' END,
            updated_at = now()
      RETURNING id`,
-    [group, variant, requestId, label, Math.max(1, Math.round(cost)), currentLabel()]
+    // The request's own label, not the caller's: the row is the request's
+    // next piece of work, and it is reopened from a route that sets a
+    // budget, from a keeper's pass and from the sweep as well as from the
+    // request's own runs. The scoping, the research and the review of a
+    // document that the row pays for all run at it (src/labels.ts).
+    [group, variant, requestId, label, Math.max(1, Math.round(cost)), req.sensitivity_label]
   );
   // Once a budget exists the scoping pass has nothing left to answer.
   if (variant === "full") {
@@ -492,14 +499,17 @@ export async function reconcileActions(): Promise<{
     // One claim's failure (a bad row, a transient DB error) must not take
     // the rest of the sweep with it: log and move on (#416).
     try {
-      // The sweep starts from the claim, not from a piece of work, so the
-      // rows it opens take the claim's label and the pass they pay for runs
-      // at it (src/labels.ts). That is a floor: work on a restricted claim
-      // is never opened as public. A pass that was asked for at a restricted
-      // label on a public claim, and whose row has since closed, is reopened
-      // here as public, because the pending slot does not say what label it
-      // was asked for at. Closing that needs one judgment per label.
-      await runAtLabel(row.sensitivity_label, `claim ${row.id}`, () => ensureAssessActions(row.id));
+      // The sweep starts from the claim, not from a piece of work. A claim
+      // is pending because of the messages waiting on it, so the rows are
+      // opened at the label those messages carry when they agree on one,
+      // and the pass they pay for runs at it (pendingPassLabel in
+      // label-service.ts). With no message waiting, or with messages of
+      // more than one label, the rows take the claim's own label: a floor,
+      // under which work on a restricted claim is never opened as public.
+      // The pending slot is one per claim and does not say which label a
+      // pass was asked for at; one slot per label is later work.
+      const label = await pendingPassLabel(row.id, row.sensitivity_label);
+      await runAtLabel(label, `claim ${row.id}`, () => ensureAssessActions(row.id));
     } catch (err) {
       console.error(
         `[reconcile] ensureAssessActions failed for claim ${row.id}: ${
@@ -516,78 +526,12 @@ export async function reconcileActions(): Promise<{
   );
   const ctx = newMaterializeContext();
   let plansFailed = 0;
+  // A mandate decides for its work: the planning row, the review row and
+  // every row its plan becomes are opened at the mandate's label
+  // (runAtMandateLabel in label-service.ts), not at the sweep's, which has
+  // none, and not at the label of whichever claim a plan item names.
   for (const g of grants) {
-    // A mandate whose Grantmaker passes have a share of the budget of their
-    // own (a decomposition: claim-mandate-service.ts) budgets each pass from
-    // what the share has left, and opens no review once it is spent.
-    const share = await grantmakerShareLeftMicroUsd(g);
-    if (g.status === "planning") {
-      await rawQuery(
-        `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
-         VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
-         ON CONFLICT (exclusion_group, variant) DO UPDATE
-           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-               sensitivity_label = EXCLUDED.sensitivity_label,
-               updated_at = now()
-           -- A grant still in 'planning' with a closed planning action
-           -- wants a fresh run (a failed write, a pushed-back plan).
-           WHERE actions.status NOT IN ('open', 'running')`,
-        [
-          PLANNING_GROUP(g.id),
-          g.id,
-          `Planning run for the mandate "${g.name}"`,
-          await reviewPassBudgetMicroUsd(g, "planning", share),
-          currentLabel(),
-        ]
-      );
-    }
-
-    // The mandate's periodic review pass — its Grantmaker stewarding the
-    // mandate with discretion. Every active mandate gets one, the General
-    // mandate included: its valuations come from a formula rather than from
-    // per-action judgment, but the formula's knobs are exactly the kind of
-    // thing a steward should revise as evidence about allocation itself
-    // accumulates, and it has the same pacing, regranting and scope
-    // decisions to make as any other. Exempting it left the platform's own
-    // lane as the one mandate no agent was ever asked to think about.
-    if (g.status === "active" && share && share.leftMicroUsd <= 0) {
-      await rawQuery(
-        `UPDATE actions SET status = 'cancelled', updated_at = now()
-          WHERE exclusion_group = $1 AND status = 'open'`,
-        [REVIEW_GROUP(g.id)]
-      );
-    } else if (g.status === "active") {
-      await rawQuery(
-        `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
-         VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
-         ON CONFLICT (exclusion_group, variant) DO UPDATE
-           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-               sensitivity_label = EXCLUDED.sensitivity_label,
-               updated_at = now()
-           WHERE actions.status IN ('done', 'superseded', 'cancelled')
-             AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
-        [
-          REVIEW_GROUP(g.id),
-          g.id,
-          `Mandate review for "${g.name}"`,
-          await reviewPassBudgetMicroUsd(g, "review", share),
-          currentLabel(),
-        ]
-      );
-    }
-
-    // The plan itself: every item becomes a ledger row or carries a stated
-    // reason why it cannot (materializeGrantPlan). One mandate's failure is
-    // logged and reported, never allowed to abort the other mandates' plans
-    // (#416: a silent abort here left plan items "queued" for days).
-    try {
-      await materializeGrantPlan(g, ctx);
-    } catch (err) {
-      plansFailed++;
-      await reportPlanFailure(g, err);
-    }
+    if (!(await runAtMandateLabelOutsideAnyRun(g.id, () => reconcileMandate(g, ctx)))) plansFailed++;
   }
 
   // A formalize row is pointless once the claim carries a published
@@ -616,8 +560,8 @@ export async function reconcileActions(): Promise<{
   // queued for it. The funding side (fundGrantSelfActions) bounds runs
   // per day; this only says what is wanted.
   const lookoutCost = capMicroUsd("lookout_run");
-  const dueLookouts = await rawQuery<{ id: string; title: string }>(
-    `SELECT l.id, l.title
+  const dueLookouts = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    `SELECT l.id, l.title, l.sensitivity_label
        FROM lookouts l
        JOIN grants g ON g.id = l.grant_id
       WHERE l.status = 'active' AND g.status = 'active'
@@ -636,7 +580,8 @@ export async function reconcileActions(): Promise<{
              sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, currentLabel()]
+      // A lookout decides for its work: its run is opened at its label.
+      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, l.sensitivity_label]
     );
   }
 
@@ -646,8 +591,8 @@ export async function reconcileActions(): Promise<{
   // (that spacing is its audience's, set for their attention; a heartbeat
   // and a poke are not held by it). What runs is the mandate's money.
   const correspondentCost = capMicroUsd("correspondent_run");
-  const dueCorrespondents = await rawQuery<{ id: string; title: string }>(
-    `SELECT c.id, c.title
+  const dueCorrespondents = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    `SELECT c.id, c.title, c.sensitivity_label
        FROM correspondents c
        JOIN grants g ON g.id = c.grant_id
       WHERE c.status = 'active' AND g.status = 'active'
@@ -669,7 +614,8 @@ export async function reconcileActions(): Promise<{
              sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, currentLabel()]
+      // And so does a correspondent: its run is opened at its label.
+      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, c.sensitivity_label]
     );
   }
 
@@ -756,6 +702,87 @@ export async function reconcileActions(): Promise<{
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
+}
+
+/**
+ * One live mandate's rows in the sweep: its planning row while it is being
+ * planned, its review row on the review cadence, and its plan. Called at
+ * the mandate's label. Returns false when the plan could not be
+ * materialized (logged and reported).
+ */
+async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promise<boolean> {
+  // A mandate whose Grantmaker passes have a share of the budget of their
+  // own (a decomposition: claim-mandate-service.ts) budgets each pass from
+  // what the share has left, and opens no review once it is spent.
+  const share = await grantmakerShareLeftMicroUsd(g);
+  if (g.status === "planning") {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             sensitivity_label = EXCLUDED.sensitivity_label,
+             updated_at = now()
+         -- A grant still in 'planning' with a closed planning action
+         -- wants a fresh run (a failed write, a pushed-back plan).
+         WHERE actions.status NOT IN ('open', 'running')`,
+      [
+        PLANNING_GROUP(g.id),
+        g.id,
+        `Planning run for the mandate "${g.name}"`,
+        await reviewPassBudgetMicroUsd(g, "planning", share),
+        currentLabel(),
+      ]
+    );
+  }
+
+  // The mandate's periodic review pass — its Grantmaker stewarding the
+  // mandate with discretion. Every active mandate gets one, the General
+  // mandate included: its valuations come from a formula rather than from
+  // per-action judgment, but the formula's knobs are exactly the kind of
+  // thing a steward should revise as evidence about allocation itself
+  // accumulates, and it has the same pacing, regranting and scope
+  // decisions to make as any other. Exempting it left the platform's own
+  // lane as the one mandate no agent was ever asked to think about.
+  if (g.status === "active" && share && share.leftMicroUsd <= 0) {
+    await rawQuery(
+      `UPDATE actions SET status = 'cancelled', updated_at = now()
+        WHERE exclusion_group = $1 AND status = 'open'`,
+      [REVIEW_GROUP(g.id)]
+    );
+  } else if (g.status === "active") {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             sensitivity_label = EXCLUDED.sensitivity_label,
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')
+           AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
+      [
+        REVIEW_GROUP(g.id),
+        g.id,
+        `Mandate review for "${g.name}"`,
+        await reviewPassBudgetMicroUsd(g, "review", share),
+        currentLabel(),
+      ]
+    );
+  }
+
+  // The plan itself: every item becomes a ledger row or carries a stated
+  // reason why it cannot (materializeGrantPlan). One mandate's failure is
+  // logged and reported, never allowed to abort the other mandates' plans
+  // (#416: a silent abort here left plan items "queued" for days).
+  try {
+    await materializeGrantPlan(g, ctx);
+  } catch (err) {
+    await reportPlanFailure(g, err);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -1410,16 +1437,14 @@ export async function materializeGrantPlan(
     };
     for (const [claimId, indices] of attemptItems) {
       try {
-        // Rows about one claim, opened by the sweep: at the claim's label,
-        // as for a formalize row below.
+        // Rows the mandate's plan asks for: at the mandate's label, as for
+        // a formalize row below.
         attemptResults.set(
           claimId,
-          await runAtClaimLabelOutsideAnyRun(claimId, () =>
-            ensureAttemptActions(claimId, indices.length, costs, {
-              cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
-              rationales: indices.map((i) => String(items[i]!.rationale ?? "")),
-            })
-          )
+          await ensureAttemptActions(claimId, indices.length, costs, {
+            cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
+            rationales: indices.map((i) => String(items[i]!.rationale ?? "")),
+          })
         );
       } catch (err) {
         console.error(
@@ -1798,13 +1823,11 @@ async function materializePlanItem(
     // One statement per claim at a time (§5.4): a second formalize item on
     // the same claim reads the same row rather than upserting it again.
     if (!o.ensuredFormalize.has(claim.id)) {
-      // A plan is materialized by the sweep as well as from inside its
-      // Grantmaker's run. From the sweep nothing says what label the item
-      // was planned at (a mandate carries none yet), so the row takes the
-      // claim's: a formal statement of a restricted claim is not written as
-      // public. From inside a run it keeps the run's label.
+      // The row is the mandate's work and is opened at the mandate's label,
+      // which whoever materializes the plan has set (materializePlanItems,
+      // reconcileActions); from inside a Grantmaker's run it is that run's.
       const cost = await o.ctx.formalizeCostMicroUsd();
-      await runAtClaimLabelOutsideAnyRun(claim.id, () => ensureFormalizeAction(claim.id, cost));
+      await ensureFormalizeAction(claim.id, cost);
       o.ensuredFormalize.add(claim.id);
     }
     const row = await groupLedger({ group: FORMALIZE_GROUP(claim.id) });
@@ -2185,7 +2208,12 @@ export async function materializePlanItems(
     [grantId]
   );
   if (!g) return [];
-  const outcomes = await materializeGrantPlan(g);
+  // A mandate decides for its work. The scheduler materializes a plan
+  // outside any run, and the rows the plan becomes (standing orders, formal
+  // statements, attempts, ingests, sweeps, the note of a source in its
+  // pipeline) are opened at the mandate's label. From inside the
+  // Grantmaker's run they are that run's, which was opened at the same one.
+  const outcomes = await runAtMandateLabelOutsideAnyRun(g.id, () => materializeGrantPlan(g));
   if (!indices) return outcomes;
   const wanted = new Set(indices);
   return outcomes.filter((o) => wanted.has(o.index));
@@ -2567,8 +2595,12 @@ export async function completeAction(
           await tx.query(
             `INSERT INTO action_allocations
                (exclusion_group, action_id, claim_id, grant_id,
-                amount_micro_usd, spent_micro_usd, released_at)
-             VALUES ($1, $2, $3, $4, $5, $5, now())`,
+                amount_micro_usd, spent_micro_usd, released_at, sensitivity_label)
+             VALUES ($1, $2, $3, $4, $5, $5, now(), (SELECT sensitivity_label FROM actions WHERE id = $2))`,
+            // A share of a settled row's cost is worked out from the row,
+            // the same whoever settles it, so it carries the row's label
+            // and not the settler's (src/labels.ts). It holds no brief or
+            // reason.
             [action.exclusion_group, actionId, claimId, grantId, share]
           );
           assigned += share;
@@ -2659,12 +2691,14 @@ async function attributeIngestedSource(grantId: string, url: string, focus: stri
       ORDER BY created_at DESC LIMIT 1`,
     [source.id, focus]
   );
-  // The scheduler materializes a plan outside any run, and this row is about
-  // a source someone else ingested, so it is written at that source's label
-  // (runAtSourceLabelOutsideAnyRun in label-service.ts): a mandate's
-  // pipeline does not name a restricted document in a public row. The
-  // source is found by its URL whatever its label, as it always was.
-  await runAtSourceLabelOutsideAnyRun(source.id, () => recordGrantSource(grantId, source.id, url, job?.id ?? null));
+  // The row says the mandate has this source in its pipeline. It is the
+  // mandate's record, written while its plan is materialized, so it carries
+  // the mandate's label like the rest of the plan's rows. (Before mandates
+  // carried a label it took the source's.) The source is found by its URL
+  // whatever its label, as it always was: a mandate at one label that names
+  // the URL of a document held at another learns here that the graph holds
+  // it, which is for the reads to close, not for this row's label.
+  await recordGrantSource(grantId, source.id, url, job?.id ?? null);
 }
 
 export async function largestActionFunder(
