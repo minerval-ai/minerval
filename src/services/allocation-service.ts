@@ -211,7 +211,7 @@ export type MandateRequestAllocateResult =
 
 /**
  * A mandate commissions the work on a request whole, by its Grantmaker's
- * decision (fund_request), within its daily rate and escrow like any of its
+ * decision (fund_request), within its pace and escrow like any of its
  * commissions.
  */
 export async function allocateMandateToRequest(input: {
@@ -357,7 +357,7 @@ export function shortPassFunding(input: {
   costEstMicroUsd: number;
   /** The estimate less what already backs the row. */
   neededMicroUsd: number;
-  /** What the day's rate and the escrow both still allow. */
+  /** What the pace and the escrow both still allow. */
   roomMicroUsd: number;
   floorMicroUsd: number;
 }): number | null {
@@ -378,7 +378,7 @@ export function shortPassFunding(input: {
  * nothing to co-fund). The engine executor then runs whatever is covered.
  *
  * Deliberation pays its own way: these allocations come out of the same
- * daily rate as everything else the mandate commissions, so thinking about
+ * pace as everything else the mandate commissions, so thinking about
  * the work competes with the work. Bounded by escrow headroom too
  * (committed money includes these allocations and any regrants out). A
  * row the day or the escrow cannot cover waits, except the Grantmaker's

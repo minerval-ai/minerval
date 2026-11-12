@@ -1016,7 +1016,7 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
 
 /**
  * What the Grantmaker is told on setting its review-pass budget: when it
- * applies, and, with figures, when the day's rate or the escrow cannot fund
+ * applies, and, with figures, when the pace or the escrow cannot fund
  * a pass that size, so the shortfall is known when the figure is chosen.
  */
 async function reviewPassSetNote(grantId: string, owls: number): Promise<string> {

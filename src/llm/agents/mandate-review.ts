@@ -3,7 +3,7 @@
  * autonomously and with discretion.
  *
  * A mandate's scope is defined in WORDS; which work falls under it is a
- * judgment call. On a cadence, the ledger opens a `mandate_review` action
+ * judgment call. When its Grantmaker has no live session, the ledger opens a `mandate_review` action
  * for every active mandate (self-funded from its escrow, metered under a
  * cap), and the engine executor runs this agent: the same Grantmaker that
  * designed the mandate, now reviewing it the way any person entrusted with
@@ -22,7 +22,7 @@
  *
  * Cost discipline lives in the mechanism, never in narrowed affordances:
  * the pass itself is capped and metered, everything it queues is priced
- * against the escrow, and daily rates pace the spend. The refusal duties
+ * against the escrow, and a pace bounds the spend. The refusal duties
  * that govern mandate design govern this pass equally.
  */
 import { openSession, executeSessionTool, getSessionToolDefinitions, type SessionResume } from "../tools/session-tools.js";
@@ -144,7 +144,7 @@ export const DEFAULT_CHECK_IN_HOURS = 24;
 /**
  * add_to_pass_budget: more of the mandate's own escrow onto the review row
  * this pass is running on, through placeCommission, the path a granted
- * petition takes (petition-service.ts), so the day's rate and the escrow
+ * petition takes (petition-service.ts), so the pace and the escrow
  * are checked under the mandate's lock and a refusal carries the figures.
  * The run's ceiling rises by what was placed, and the row settles as it
  * always does: what the pass metered is spent, the rest is freed.
@@ -178,7 +178,9 @@ export async function addToPassBudget(
   const { placeCommission } = await import("../../services/commission-service.js");
   const { creditRunBudget } = await import("../run-funding.js");
   const placed = await placeCommission({
-    group: REVIEW_GROUP(grantId),
+    // The row this sitting runs on: the review row, or a resumption's own
+    // row when the session resumed (resume:<session>:<n>).
+    group: (await rawQuery<{ g: string }>(`SELECT exclusion_group AS g FROM actions WHERE id = $1`, [actionId]))[0]?.g ?? REVIEW_GROUP(grantId),
     actionId,
     claimId: null,
     payer: { kind: "grant", grantId },
@@ -284,7 +286,7 @@ async function runMandateReviewImpl(input: {
   // The delegation channel (#298, #683): the same instrument and the same
   // request funding the management chat carries. The pass is where a
   // mandate is stewarded, so it holds the affordances its prompt describes
-  // (§19); delegate_research and fund_request refuse past the uncommitted
+  // (§19); research commissions and fund_request refuse past the uncommitted
   // budget, and the move caps below are for money leaving the mandate.
   const researchTools = createResearchTools({ requestedBy: "grantmaker", grantId: grant.id });
   // A decomposition's Grantmaker share, in owls (0 for every other mandate).

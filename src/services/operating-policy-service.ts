@@ -89,7 +89,7 @@ export function officerLimit(policy: OperatingPolicy): { microUsd: number; reaso
  * The budget a review pass of this mandate works to: the policy's own
  * figure, or the platform's default while the Grantmaker has set none
  * (DEFAULT_REVIEW_PASS_BUDGET_OWLS). A ceiling paid from the mandate's
- * escrow within its day's rate; the pass returns what it does not spend.
+ * escrow within its pace; the pass returns what it does not spend.
  */
 export function reviewPassBudget(policy: OperatingPolicy | null | undefined): {
   microUsd: number;

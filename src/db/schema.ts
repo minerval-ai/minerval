@@ -4979,7 +4979,7 @@ export const researchRuns = pgTable(
     error: text("error"),
     // A commissioned run (commission kind research): the agent session its
     // report returns to (agent_sessions), or, with none waiting, the node
-    // whose inbox gets it. Null on a run launched inline (delegate_research)
+    // whose inbox gets it. Null on a run that reports back only to its session
     // or for a request.
     replyToSession: uuid("reply_to_session"),
     deliverToNode: uuid("deliver_to_node").references((): AnyPgColumn => claims.id, {

@@ -1426,7 +1426,7 @@ export async function materializeGrantPlan(
   }
 
   const ensuredFormalize = new Set<string>();
-  // Standing orders are placed in plan order: once today's rate has turned
+  // Standing orders are placed in plan order: once the pace has turned
   // one away, the later ones wait behind it (standing-order-service.ts).
   const orderQueue = { rateHeld: false };
   let started = -1;
@@ -1667,7 +1667,7 @@ async function materializePlanItem(
 
     // The item is a standing order (#849): the mandate commissions the pass
     // whole, at the item's budget or the row's estimate, on the item's
-    // tier. What the day's rate cannot cover yet waits and is asked for
+    // tier. What the pace cannot cover yet waits and is asked for
     // again; what could never fit is blocked, with the figures either way.
     const tier = orders.orderTier(item.variant);
     const budgetMicroUsd =
@@ -2605,15 +2605,7 @@ export async function completeAction(
     }
     return consumed;
   });
-  routeAfterCommit();
   return settled;
-}
-
-/** Deliver events just committed without waiting for the scheduler's tick. */
-function routeAfterCommit(): void {
-  void import("./subscription-router.js")
-    .then(({ routeEvents }) => routeEvents())
-    .catch(() => {});
 }
 
 /**

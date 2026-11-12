@@ -1,31 +1,15 @@
 /**
- * The delegation tools (#298): `delegate_research` and `get_research_run`,
- * one bundle for every administrator that may launch the researcher (the
- * Claim Steward on its claim, the Grantmaker on its mandate).
+ * The research tools besides commissioning (#298): reading research runs
+ * (`get_research_run`), and, for a mandate's Grantmaker, funding the work on
+ * a request (`fund_request`). Research itself is commissioned with
+ * `commission` (kind research): it runs on the ledger while its commissioner
+ * carries on, and its report returns into that agent's session, or to its
+ * node's inbox, or stays on the run for `get_research_run`. Nothing launches
+ * the Researcher inline any more, so no run blocks on one.
  *
- * Only the Claim Steward's runs write to the graph. A Grantmaker serves its
- * mandate as well as the graph, and funding is kept apart from what the
- * graph says (constitution §19), so a run it launches gets neither the
- * provenance tools nor an examination: it reads and reports, and anything
- * it finds reaches the graph the way anyone's findings do.
- *
- * Launching is a judgment the administrator makes: what to ask, on which
- * tier, with how much budget, and whether the instrument should carry the
- * constitution. The tool description says what each tier can do, so the
- * brief can be written with the instrument's affordances in mind. What
- * lives here is the mechanism around that judgment: the launcher's own
- * money (a Steward pays from its pass's budget, a Grantmaker from its
- * mandate's uncommitted budget, and each is shown what it has), the daily
- * cap on research no funder pays for (stated in the description on such a
- * pass, with what is left of it in each result), the pause flag, the run
- * row, and the synchronous run itself. There is no count of runs: money
- * bounds them (CLAUDE.md, "Prefer money to counts"). The
- * launcher's tool call blocks until the researcher reports; the report comes back as the tool result and is
- * also kept on the run row for `get_research_run` and for the record.
- *
- * Same factory shape as the report tools: per-run state (how many runs
- * were launched, for the record and tests; nothing limits it) lives in a
- * closure, and `execute` returns null for any name it does not own.
+ * Also here: the sentences every brief-writer reads about what the
+ * Researcher's tiers can do (tools, the sandbox, figures), so a brief is
+ * written with the instrument's affordances in mind.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -128,7 +112,7 @@ export function getFundRequestToolDefinition(): Tool {
 /**
  * What a Researcher run can use, for whoever writes its brief (#847): a
  * brief that names a tool the Researcher lacks sends the run looking for
- * it. Shared by delegate_research and commission (kind research).
+ * it. Used by commission (kind research).
  */
 export function researcherToolsSentence(graphWrites = true): string {
   return (

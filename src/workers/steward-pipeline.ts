@@ -17,7 +17,7 @@
  * Why this shape:
  *  - The executor is a dumb loop over covered rows, so "why did this run"
  *    is always answerable from the ledger alone — no hidden ordering.
- *  - Spend is bounded by each mandate's daily rate + the LLM budget
+ *  - Spend is bounded by each mandate's pace + the LLM budget
  *    tracker (token/call limits), not by a per-process run counter that
  *    would permanently wedge a long-lived worker. Deployments with no
  *    General mandate seeded (dev, tests) fall back to direct budgeted
@@ -119,7 +119,7 @@ async function unattributedSpentTodayMicroUsd(): Promise<number> {
  * (action-service.ts) — no selection logic of its own. When nothing is
  * covered, it invites the General mandate's allocator to place the day's
  * next allocations (marginal value per dollar, best first, within its
- * daily rate and escrow) and looks again. The run happens at the winning
+ * pace and escrow) and looks again. The run happens at the winning
  * variant's tier, its metered cost is consumed pro rata from the
  * covering allocations, and the run is attributed to the largest funder
  * (which is what stamps the funding disclosure).

@@ -16,7 +16,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
-import { eventsAfter, type EventRow } from "./event-service.js";
+import { EVENT_COLUMNS, type EventRow } from "./event-service.js";
 import { matches, type SubscriptionRow } from "./subscription-service.js";
 import { committedWithinMicroUsd } from "./pace-service.js";
 
@@ -39,33 +39,39 @@ export async function routeEvents(): Promise<number> {
 }
 
 async function routeOnce(): Promise<number> {
-  const [lock] = await rawQuery<{ ok: boolean }>(`SELECT pg_try_advisory_lock(hashtext('subscription-router')) AS ok`);
-  if (!lock?.ok) return 0;
   let delivered = 0;
-  try {
-    await rawQuery(`INSERT INTO event_router_state (id, last_seq) VALUES (1, 0) ON CONFLICT DO NOTHING`);
-    for (;;) {
-      const [state] = await rawQuery<{ last_seq: string }>(`SELECT last_seq FROM event_router_state WHERE id = 1`);
-      const batch = await eventsAfter(Number(state?.last_seq ?? 0), 200);
-      if (batch.length === 0) break;
-      const subs = await rawQuery<SubscriptionRow>(
-        `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND due_at IS NULL AND condition IS NULL`
-      );
-      for (const e of batch) {
-        const graph = graphFor();
-        for (const s of subs) {
-          if (!s.active) continue;
-          if (await matches(e, s.filter ?? {}, graph)) {
-            if (await deliver(s, e)) delivered++;
-          }
+  await rawQuery(`INSERT INTO event_router_state (id, last_seq) VALUES (1, 0) ON CONFLICT DO NOTHING`);
+  for (;;) {
+    // Claim the next batch by moving the cursor past it in one statement, so
+    // two routers (two processes) never deliver the same event: each reads
+    // only the range it moved the cursor over.
+    const [claim] = await rawQuery<{ from_seq: string; to_seq: string }>(
+      `WITH cur AS (SELECT last_seq FROM event_router_state WHERE id = 1 FOR UPDATE),
+            nxt AS (SELECT max(seq) AS m FROM (SELECT e.seq FROM events e, cur WHERE e.seq > cur.last_seq
+                                                ORDER BY e.seq LIMIT 200) x)
+       UPDATE event_router_state s SET last_seq = nxt.m, updated_at = now()
+         FROM cur, nxt WHERE s.id = 1 AND nxt.m IS NOT NULL
+       RETURNING cur.last_seq AS from_seq, nxt.m AS to_seq`
+    );
+    if (!claim) break;
+    const batch = await rawQuery<EventRow>(
+      `SELECT ${EVENT_COLUMNS} FROM events WHERE seq > $1 AND seq <= $2 ORDER BY seq`,
+      [claim.from_seq, claim.to_seq]
+    );
+    const subs = await rawQuery<SubscriptionRow>(
+      `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND due_at IS NULL AND condition IS NULL`
+    );
+    for (const e of batch) {
+      const graph = graphFor();
+      for (const s of subs) {
+        if (!s.active) continue;
+        if (await matches(e, s.filter ?? {}, graph)) {
+          if (await deliver(s, e).catch(() => false)) delivered++;
         }
-        await rawQuery(`UPDATE event_router_state SET last_seq = $1, updated_at = now() WHERE id = 1`, [e.seq]);
       }
     }
-    delivered += await deliverDue();
-  } finally {
-    await rawQuery(`SELECT pg_advisory_unlock(hashtext('subscription-router'))`);
   }
+  delivered += await deliverDue();
   return delivered;
 }
 
@@ -76,8 +82,8 @@ async function deliverDue(): Promise<number> {
     `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND due_at IS NOT NULL AND due_at <= now()`
   );
   for (const s of due) {
-    if (await deliver(s, null, `The time you set has come (${s.due_at!.slice(0, 16).replace("T", " ")} UTC).`)) n++;
-    await end(s.id);
+    if (!(await claimEnd(s.id))) continue; // another router took it
+    if (await deliver({ ...s, once: false }, null, `The time you set has come (${s.due_at!.slice(0, 16).replace("T", " ")} UTC).`)) n++;
   }
   const conditions = await rawQuery<SubscriptionRow>(`SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND condition IS NOT NULL`);
   for (const s of conditions) {
@@ -86,11 +92,17 @@ async function deliverDue(): Promise<number> {
     const hours = Math.max(1, (Date.now() - new Date(c.since).getTime()) / 3_600_000);
     const committed = await committedWithinMicroUsd(c.grant_id, Math.ceil(hours));
     if (committed >= c.at_least_micro_usd) {
-      if (await deliver(s, null, `${committed / 1_000_000} owls have been committed since you set this (${c.since.slice(0, 16).replace("T", " ")} UTC), past the ${c.at_least_micro_usd / 1_000_000} you named.`)) n++;
-      await end(s.id);
+      if (!(await claimEnd(s.id))) continue;
+      if (await deliver({ ...s, once: false }, null, `${committed / 1_000_000} owls have been committed since you set this (${c.since.slice(0, 16).replace("T", " ")} UTC), past the ${c.at_least_micro_usd / 1_000_000} you named.`)) n++;
     }
   }
   return n;
+}
+
+/** End a subscription only if still active; whether this call ended it. */
+async function claimEnd(id: string): Promise<boolean> {
+  const rows = await rawQuery(`UPDATE subscriptions SET active = false, ended_at = now() WHERE id = $1 AND active RETURNING id`, [id]);
+  return rows.length > 0;
 }
 
 async function end(id: string): Promise<void> {

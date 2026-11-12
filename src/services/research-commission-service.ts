@@ -14,7 +14,7 @@
  * report, so the Researcher picks up where it stopped.
  *
  * A Steward may commission the run as an examination of a document in its
- * node's map (#865), as delegate_research does inline: the examination is
+ * node's map (#865), as an inline launch once did: the examination is
  * opened here, before any money moves, so a malformed one is refused at
  * once, and the engine launches the Researcher on it.
  */

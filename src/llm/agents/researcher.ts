@@ -621,7 +621,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...graphReadTools,
     ...readTools.definitions,
     // SQL over the public views. The Researcher runs inside another run's
-    // budget (delegate_research) or a request's, so it has no commission or
+    // budget (a commission) or a request's, so it has no commission or
     // petition of its own: what its work shows is needed, its report says.
     getSqlToolDefinition(),
     getReadPageToolDefinition(),

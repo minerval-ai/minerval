@@ -306,14 +306,11 @@ function maintenanceBudget(
   kind: "curate" | "audit",
   what: string
 ): { microUsd: number; source: string; funding: RunFunding } {
-  const config = loadConfig();
-  const owls = kind === "curate" ? config.curateRunBudgetOwls : config.auditRunBudgetOwls;
-  const floor = Math.round((owls ?? 5) * (config.owlCostMicroUsd ?? 1_000_000));
-  const covered = actionBudgetMicroUsd(action);
-  const funding = { actionId: action.id };
-  return covered >= floor
-    ? { microUsd: covered, source: `the allocations funding ${what}`, funding }
-    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers`, funding };
+  // Every run is commissioned whole, at the budget its payer chose: the run
+  // works to that budget, never one raised past it (a payer who wants more
+  // for it grants a petition).
+  void kind;
+  return { microUsd: actionBudgetMicroUsd(action), source: `the commission funding ${what}`, funding: { actionId: action.id } };
 }
 
 /**

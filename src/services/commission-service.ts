@@ -15,7 +15,7 @@
  * of unspent budget, a person's balance guard) hold for commissions too.
  *
  * Three kinds of payer:
- *  - a mandate: its money, within its daily rate (counted as what is spent
+ *  - a mandate: its money, within its pace (counted as what is spent
  *    or still held by running work, allocationDayUseSql) and its escrow;
  *  - a person: their owls, debited behind the balance guard;
  *  - a running agent, paying from its own budget: the amount moves from the

@@ -97,6 +97,8 @@ interface PlatformMandate {
    * the seed never overwrites one it has written.
    */
   operatingPolicy?: {
+    /** The Grantmaker's direction for now; seeds leave it to the Grantmaker. */
+    current?: string;
     mission?: string;
     priorities?: string;
     budgets?: string;
@@ -1054,7 +1056,7 @@ function renderMandateMarkdown(m: PlatformMandate): string {
   const keys = m.allocationPolicy
     ? Object.entries(m.allocationPolicy).map(([k, v]) => `\`${k}\` ${v}`).join("; ")
     : "none";
-  const rate = m.dailyBudgetOwls > 0 ? `daily rate [${owls(m.dailyBudgetOwls)}] owls` : "no daily rate (escrow-bounded)";
+  const rate = m.dailyBudgetOwls > 0 ? `steady pace [${owls(m.dailyBudgetOwls)}] owls per rolling day` : "paced as needed (escrow-bounded)";
   const parts = [
     `### ${m.title}`,
     `**Title.** ${m.title}`,

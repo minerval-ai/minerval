@@ -2,8 +2,8 @@
  * The event log: one append-only row per thing that happened which someone
  * may want to be told of (schema.ts, `events`). Code that makes a change
  * records it here, with the refs it touches, and the subscription router
- * (subscription-router.ts) reads the log in order and delivers each event to
- * the subscriptions that match it. Recording never fails the change it
+ * (subscription-router.ts) reads the log in order, on the engine executor's
+ * tick, and delivers each event to the subscriptions that match it. Recording never fails the change it
  * describes: a write that cannot be logged is reported and the change
  * stands.
  */
@@ -84,24 +84,11 @@ export async function recordEvent(input: EventInput, tx?: TxQuery): Promise<numb
         currentLabel(),
       ]
     );
-    if (!tx) routeSoon();
     return row ? Number(row.seq) : null;
   } catch (err) {
     console.warn(`[events] could not record ${input.kind}:`, err instanceof Error ? err.message : err);
     return null;
   }
-}
-
-/** Deliver what was just recorded without waiting for the scheduler's tick. */
-function routeSoon(): void {
-  void (async () => {
-    try {
-      const { routeEvents } = await import("./subscription-router.js");
-      await routeEvents();
-    } catch (err) {
-      console.warn(`[events] routing failed:`, err instanceof Error ? err.message : err);
-    }
-  })();
 }
 
 /** Events after a cursor, oldest first. */

@@ -11,10 +11,10 @@
  * What makes it a standing order is what happens when the money is not
  * there. A commission through the `commission` tool is now-or-refused: the
  * caller is in a turn and reads the refusal. A plan item has no turn to
- * come back in, so the materializer keeps asking: an order the day's rate
+ * come back in, so the materializer keeps asking: an order the pace
  * cannot cover yet reads `waiting` with the figures and is placed by the
  * first sweep that finds the room; one that could never fit (a budget above
- * the whole daily rate, or above what the escrow could hold even with every
+ * the whole pace window, or above what the escrow could hold even with every
  * running budget returned) reads `blocked` with the figures, because only
  * its author can change that. Every limit is money the Grantmaker can see
  * (the rate, the escrow) and is given back to it in the item's reason.
@@ -48,7 +48,7 @@ export type OrderStanding =
   | { state: "placed"; actionId: string; budgetMicroUsd: number; tier: CommissionTier }
   /** The node's pass is already paid for or running, by this mandate or anyone. */
   | { state: "live"; actionId: string }
-  /** Not placed yet; the next sweep asks again. `rate` when today's rate is what it waits on. */
+  /** Not placed yet; the next sweep asks again. `rate` when the pace is what it waits on. */
   | { state: "waiting"; reason: string; rate: boolean }
   /** Cannot be placed until the plan's author changes something. */
   | { state: "blocked"; reason: string };
@@ -202,13 +202,13 @@ export async function releaseStandingOrder(grantId: string, claimId: string): Pr
   return rows.reduce((s, r) => s + Number(r.amount), 0);
 }
 
-/** Shared across one plan's items in a sweep: once today's rate has turned an order away, later ones wait their turn. */
+/** Shared across one plan's items in a sweep: once the pace has turned an order away, later ones wait their turn. */
 export interface OrderQueue {
   rateHeld: boolean;
 }
 
 export const HELD_BEHIND_EARLIER =
-  "an earlier item of this plan is waiting for today's rate; standing orders are placed in plan " +
+  "an earlier item of this plan is waiting for the pace; standing orders are placed in plan " +
   "order, so this one is asked for once that one is placed";
 
 /**
@@ -239,7 +239,7 @@ export async function orderChildPasses(input: {
   let left = candidates.length;
   for (const child of candidates) {
     if (input.queue.rateHeld) {
-      return { children, waiting: `${left} of its children wait for today's rate. ${RETRY}.`, blocked: null };
+      return { children, waiting: `${left} of its children wait for the pace. ${RETRY}.`, blocked: null };
     }
     const res = await placeStandingOrder({
       grantId: input.grantId,
