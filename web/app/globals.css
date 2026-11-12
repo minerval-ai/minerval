@@ -2303,3 +2303,14 @@ select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var
   .ask-side-fold nav { padding: 0.4rem 0.8rem 1rem; display: flex; flex-direction: column; gap: 1rem; max-height: 60dvh; overflow-y: auto; }
   .ask-transcript, .ask-dock, .ask-bar { padding-left: 1rem; padding-right: 1rem; }
 }
+/* a page's shared link, on its owner's view */
+.kept-share {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 0.7rem 0.9rem; background: var(--paper-card);
+}
+.kept-share p { margin: 0 0 0.5rem; }
+.kept-share-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem; align-items: center; }
+.kept-share-row input {
+  flex: 1; min-width: 12rem; font-family: var(--mono); font-size: 0.74rem; padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink);
+}

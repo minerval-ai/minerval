@@ -45,6 +45,11 @@ import {
   type AssistantUser,
 } from "../services/assistant-service.js";
 import { HELD_KINDS } from "../llm/tools/assistant-tools.js";
+import {
+  assistantStreamIsLive,
+  assistantStreamState,
+  subscribeAssistantStream,
+} from "../services/assistant-stream.js";
 import { getEntitlement } from "../services/billing-service.js";
 
 const TURN_PROTOCOL =
@@ -56,6 +61,10 @@ const TURN_PROTOCOL =
   "at a time; a message sent while one runs is refused with TURN_IN_PROGRESS and not saved. " +
   "The work is charged to your owl balance as it runs, at metered cost, with no cap; the " +
   "balance is the bound, and a message is refused with INSUFFICIENT_OWLS when it is zero.";
+
+const STREAM_KEEPALIVE_MS = 15_000;
+// How often a stream on a process that is not running the turn re-reads it.
+const STREAM_REREAD_MS = 700;
 
 const ID_PARAMS = {
   type: "object",
@@ -198,6 +207,106 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
       const convo = await getAssistantConversation(request.params.id, request.auth!.userId!);
       if (!convo) return reply.code(404).send({ error: "Conversation not found", code: "NOT_FOUND" });
       return reply.send({ conversation: await serializeAssistantConversation(convo) });
+    },
+  });
+
+  // GET /assistant/conversations/:id/stream — the running turn as an event
+  // stream, for a person watching the reply form. Events: `state` (what the
+  // turn has so far: partial, note, activity), `text` ({turn, delta}: text
+  // the reply gained; a new turn starts the text over), `activity`
+  // ({tool, about}), `note`, and `done` when the turn has ended, after which
+  // the conversation holds the reply. Text arrives as it is written when
+  // this process runs the turn; otherwise the saved state is re-read and
+  // sent as `state` a few times a second. The conversation read stays the
+  // record: a client that loses the stream loses nothing.
+  app.get<{ Params: { id: string } }>("/conversations/:id/stream", {
+    schema: {
+      tags: ["assistant"],
+      summary: "Watch a conversation's running turn as a stream of events",
+      params: ID_PARAMS,
+    },
+    preHandler: guards,
+    handler: async (request, reply) => {
+      const userId = request.auth!.userId!;
+      const id = request.params.id;
+      const first = await getAssistantConversation(id, userId);
+      if (!first) return reply.code(404).send({ error: "Conversation not found", code: "NOT_FOUND" });
+
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        ...(reply.getHeaders() as Record<string, string>),
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      });
+      let open = true;
+      const send = (event: string, data: unknown) => {
+        if (open) reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+      const stateOf = async () => {
+        const convo = await getAssistantConversation(id, userId);
+        return convo ? (await serializeAssistantConversation(convo)).turn : null;
+      };
+
+      const timers: Array<ReturnType<typeof setInterval>> = [];
+      let unsubscribe = () => {};
+      const close = () => {
+        if (!open) return;
+        open = false;
+        timers.forEach(clearInterval);
+        unsubscribe();
+        reply.raw.end();
+      };
+      request.raw.on("close", close);
+
+      const turn = (await serializeAssistantConversation(first)).turn;
+      send("state", turn);
+      if (turn.state !== "replying") {
+        send("done", {});
+        return close();
+      }
+
+      // A comment line now and then keeps proxies from closing a quiet stream.
+      timers.push(setInterval(() => open && reply.raw.write(": keep-alive\n\n"), STREAM_KEEPALIVE_MS));
+
+      if (assistantStreamIsLive(id)) {
+        // What this process has, which is ahead of what it last saved: sent
+        // in the same tick as the subscription, so nothing falls between.
+        const now = assistantStreamState(id);
+        if (now) send("state", { ...turn, ...now });
+        unsubscribe = subscribeAssistantStream(id, (event) => {
+          const { type, ...data } = event;
+          send(type, data);
+          if (type === "done") close();
+        });
+        // The turn may have ended between the read above and the subscription.
+        if (!assistantStreamIsLive(id)) {
+          send("done", {});
+          close();
+        }
+        return;
+      }
+
+      // Another process runs the turn: send what it saves.
+      let busy = false;
+      timers.push(
+        setInterval(async () => {
+          if (busy || !open) return;
+          busy = true;
+          try {
+            const now = await stateOf();
+            if (!now || now.state !== "replying") {
+              send("done", {});
+              close();
+            } else send("state", now);
+          } catch (err) {
+            request.log.warn({ err }, "assistant stream: reading the turn failed");
+          } finally {
+            busy = false;
+          }
+        }, STREAM_REREAD_MS)
+      );
     },
   });
 
