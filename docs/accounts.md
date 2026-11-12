@@ -374,8 +374,19 @@ Assistant's own progress line) and `turn.partial` (the text of the reply
 once it starts writing). A reply usually opens with a long run of tool
 calls and no text, so the page shows the activity.
 
+That saved state is written about once a second. For a person watching,
+`GET /assistant/conversations/:id/stream` is the same turn as an event
+stream: `text` events carry the reply as it is written, `activity` and
+`note` the steps as they start, and `done` says the turn has ended and is
+saved. The process running the turn publishes these as they happen
+(`services/assistant-stream.ts`); a stream opened on another process
+re-reads the saved state instead and sends it as `state` events. The page
+uses the stream and keeps reading the conversation beside it, so a stream
+that drops or cannot open costs only the speed.
+
 **Names.** A conversation is named from its first message by a small
-model (`ASSISTANT_TITLE_MODEL`, the cheap tier by default), in the
+model (`ASSISTANT_TITLE_MODEL`, Claude Haiku by default, so a
+conversation's text goes to one provider), in the
 background while the Assistant starts on the reply: two to six words in
 place of the message's opening words, which stand in until the name
 arrives and stay if the call fails. The call is untraced, and its cost (a
@@ -425,6 +436,15 @@ on minerval.ai, which is the same conversation. The older
 `POST /extension/chat`, with its own flat price and prompt, is kept for
 installed versions of the extension that still call it and can be removed
 once they have updated.
+
+**Sharing a page.** A page is private until its user shares it:
+`POST /pages/:id/share` gives it a link (`/p/:token`, a random token, not
+the page's id) that anyone can read it by, signed in or not, and
+`DELETE /pages/:id/share` withdraws it; sharing again makes a new link.
+`GET /shared-pages/:token` is the public read: the page and the nodes it
+embeds as they stand, and nothing about whose it is. Both writes take the
+signed-in session and are not MCP tools, so no agent can publish what the
+user keeps. Only a page at the public label can be shared (`src/labels.ts`).
 
 **Other doors.** Node pages and `/mandates` carry an ask box that opens
 `/ask` with the question written and, from a node, the node named to the

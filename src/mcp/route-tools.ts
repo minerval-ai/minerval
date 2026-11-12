@@ -138,6 +138,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "POST /pages": { name: "save_page" },
   "GET /pages": { name: "list_pages" },
   "GET /pages/:id": { name: "get_page" },
+  "GET /shared-pages/:token": { name: "get_shared_page" },
 
   // ---- correspondents (#563) ----
   "GET /correspondents": { name: "list_correspondents" },
@@ -270,6 +271,11 @@ const ASSISTANT_GATE =
   "would let it press its own button; the route also requires a signed-in " +
   "dashboard session.";
 
+const PAGE_SHARING =
+  "Making a private page readable by anyone with the link, or withdrawing that, is the " +
+  "user's own act: it takes the signed-in dashboard session, so nothing an agent reads can " +
+  "publish what the user keeps.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "GET /health": "A load-balancer liveness probe, not an affordance.",
@@ -330,6 +336,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "the server never learns which page a reader is on. An MCP caller is " +
     "authenticated and names its page anyway, so get_page_analysis takes " +
     "the URL directly.",
+  "GET /assistant/conversations/:id/stream":
+    "An event stream of a running turn, for a person watching the reply form. A tool call " +
+    "returns once; get_assistant_conversation holds the same text, and the finished reply.",
   "POST /assistant/conversations": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/messages": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/stop": ASSISTANT_CONVERSATION,
@@ -337,6 +346,8 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /assistant/conversations/:id": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/held/:action_id": ASSISTANT_GATE,
   "PUT /assistant/allowance": ASSISTANT_GATE,
+  "POST /pages/:id/share": PAGE_SHARING,
+  "DELETE /pages/:id/share": PAGE_SHARING,
   "DELETE /pages/:id":
     "A page is its user's to throw away: deleting takes the signed-in dashboard session, so " +
     "nothing an agent reads can have it delete what the user keeps.",

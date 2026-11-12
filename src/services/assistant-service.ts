@@ -57,6 +57,7 @@ import {
   type HeldKind,
 } from "../llm/tools/assistant-tools.js";
 import { chargeMetered } from "./owl-ledger-service.js";
+import { openAssistantStream, publishAssistantEvent } from "./assistant-stream.js";
 import { getEntitlement, serializeEntitlement, serializeOwlPacks } from "./billing-service.js";
 import { getClaimCards } from "./claim-card-service.js";
 
@@ -572,6 +573,7 @@ async function runTurn(
   };
 
   const account = await openAccountTools(app, assistantAuth(user), `assistant:${convo.id}`);
+  const stream = openAssistantStream(convo.id);
   try {
     const model = modelFor(convo);
     const lastReplyAt = ((convo.messages ?? []) as AssistantMessage[])
@@ -617,14 +619,17 @@ async function runTurn(
             partial = "";
           }
           partial += delta;
+          publishAssistantEvent(convo.id, { type: "text", turn: t, delta });
         },
         onNote: (text) => {
           note = text;
+          publishAssistantEvent(convo.id, { type: "note", note: text });
         },
         onTool: (tool, toolInput) => {
           if (tool === "note_progress") return;
           steps += 1;
           activity.push({ tool, about: aboutOf(toolInput) });
+          publishAssistantEvent(convo.id, { type: "activity", tool, about: aboutOf(toolInput) });
           // The page shows the latest steps; the reply keeps the full count.
           if (activity.length > ACTIVITY_KEPT) activity.shift();
         },
@@ -683,6 +688,9 @@ async function runTurn(
     clearInterval(heartbeat);
     clearInterval(partialTimer);
     await account.close();
+    // After the reply (or the failure) is saved, so a watcher told the turn
+    // is done reads it finished.
+    stream.end();
   }
 }
 

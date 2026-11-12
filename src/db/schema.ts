@@ -3734,6 +3734,8 @@ export const assistantPages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // The label of the run or request that made the page (src/labels.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // Set while the user shares the page: whoever holds the link reads it.
+    shareToken: text("share_token").unique(),
   },
   (table) => [index("idx_assistant_pages_user").on(table.userId, table.savedAt)]
 );

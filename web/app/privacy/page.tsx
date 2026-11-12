@@ -102,7 +102,9 @@ export default function Privacy() {
         The Assistant&rsquo;s runs leave a transcript like other agents&rsquo;,
         visible only to you and kept for thirty days. Deleting a conversation
         on the Ask page deletes its text, its prepared actions and those
-        transcripts; deleting a page deletes the page. What a conversation
+        transcripts; deleting a page deletes the page. A page is private
+        unless you share it by link: then anyone who holds the link can read
+        it, without seeing whose it is, until you stop sharing or delete it. What a conversation
         cost stays in your owl history. Anything the Assistant sends to the
         graph for you (a proposed claim, a contribution, a funded mandate)
         is public like any other, and happens only when you run it or have
