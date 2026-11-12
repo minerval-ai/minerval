@@ -277,3 +277,47 @@ describe("untraced", () => {
     );
   });
 });
+
+// Record mode has no exemption (docs/run-log.md): a deployment that keeps
+// its log as a record logs work over a reader's own content like any other.
+describe("untraced in record mode", () => {
+  it("opens a run for each agent inside it, handed the mark so the run starts private", async () => {
+    mocks.record = true;
+    const trace = fakeTrace();
+    mocks.start.mockReturnValue(trace);
+    await runWithUsageContext({ userId: "user-1", requestId: "r-1" }, () =>
+      untraced(() =>
+        withAgent("extractor", async () => {
+          expect(getUsageContext()).toMatchObject({ agent: "extractor", untraced: true, runId: "run-1" });
+          expect(getUsageContext().trace).toBe(trace);
+        })
+      )
+    );
+    expect(mocks.start).toHaveBeenCalledWith(
+      "extractor",
+      expect.objectContaining({ untraced: true, userId: "user-1", requestId: "r-1" })
+    );
+    // The run waited on its seal, as every run in record mode does.
+    expect(mocks.seal).toHaveBeenCalledWith(trace, "ok");
+  });
+
+  it("fails the work when the log of a run inside it could not be written whole", async () => {
+    mocks.record = true;
+    mocks.start.mockReturnValue(fakeTrace());
+    mocks.seal.mockResolvedValue(false);
+    await expect(untraced(() => withAgent("matcher", async () => "a verdict"))).rejects.toThrow();
+  });
+
+  it("keeps an enclosing run's trace, so a call made inside it is recorded on that run", async () => {
+    mocks.record = true;
+    const outer = fakeTrace();
+    mocks.start.mockReturnValue(outer);
+    await withAgent("assistant", () =>
+      untraced(async () => {
+        expect(getUsageContext().trace).toBe(outer);
+        expect(getUsageContext().runId).toBe("run-1");
+      })
+    );
+    expect(mocks.start).toHaveBeenCalledTimes(1);
+  });
+});

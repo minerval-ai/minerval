@@ -21,6 +21,12 @@
  * questions are the reader's own. What does persist is metering: one
  * llm_usage row per call with counts and cost, never content.
  *
+ * That is the rule while the run log is best-effort, as on the public
+ * graph. A deployment in record mode has no such exemption
+ * (llm/usage-context.ts, untraced): there the pipeline's runs and the
+ * chat's are logged and sealed like any other, private to the reader. The
+ * pipeline still writes no sources and no instances.
+ *
  * Two deliberate paths sit beside this one, each with its own narrower rule,
  * and neither relaxes it:
  *  - Sharing (services/shared-analysis-service.ts): when the reader agrees,
@@ -300,7 +306,8 @@ export async function chatAboutPage(input: {
   };
 }): Promise<{ reply: string; citations: ChatCitation[] }> {
   const config = loadConfig();
-  // The conversation is the reader's own: no transcript of it is kept.
+  // The conversation is the reader's own: no transcript of it is kept
+  // (in record mode it is logged, privately; see the module comment).
   const result = await untraced(() =>
     extensionChat({
       messages: input.messages,
@@ -492,7 +499,8 @@ function launchRun(
   input: { url: string; title?: string; content: string },
   key: string
 ): Promise<PageAnalysis> {
-  // Page text is transient: no agent run in this pipeline leaves a trace.
+  // Page text is transient: no agent run in this pipeline leaves a trace
+  // (in record mode each is logged, privately; see the module comment).
   const run = untraced(() => analyzePageUncached(input, key))
     .then((analysis) => {
       cache.set(key, analysis);

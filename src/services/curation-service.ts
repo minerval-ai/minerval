@@ -27,7 +27,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { ensureCurateAction } from "./action-service.js";
-import { runAtLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
 // Who asked. Every source but the scan is an agent's or a person's
@@ -183,8 +183,8 @@ export async function requestCuration(
   const inserted = await rawQuery<{ id: string }>(
     `INSERT INTO curation_requests
        (anchor_claim_id, other_claim_id, source, concern, signal,
-        requested_by_claim_id, requested_by_run_id, defect)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        requested_by_claim_id, requested_by_run_id, defect, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT DO NOTHING
      RETURNING id`,
     [
@@ -196,6 +196,7 @@ export async function requestCuration(
       input.requestedByClaimId ?? null,
       input.requestedByRunId ?? null,
       input.defect,
+      currentLabel(),
     ]
   );
   const actionId = await ensureCurateAction(input.anchorClaimId);

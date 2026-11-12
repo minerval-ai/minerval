@@ -170,7 +170,10 @@ const WRITTEN_SCHEMA = {
  */
 async function writePlantedAssessment(instruction: string, claimText: string, oldTrace: string): Promise<WrittenAssessment> {
   const { completeStructured } = await import("../../src/llm/client.js");
-  return completeStructured<WrittenAssessment>({
+  const { withAgent } = await import("../../src/llm/usage-context.js");
+  // A run of its own, like the judge's and the red team's, so the call is
+  // logged and its cost is separable from the checker under test.
+  return withAgent("plant", () => completeStructured<WrittenAssessment>({
     model: loadConfig().stewardModel,
     schema: WRITTEN_SCHEMA,
     schemaName: "PlantedAssessment",
@@ -184,7 +187,7 @@ async function writePlantedAssessment(instruction: string, claimText: string, ol
         `the original.\n\n${instruction}\n\nDo not mention that this is a test, a revision, ` +
         `or a re-examination.\n\nCLAIM: ${claimText}\n\nEXISTING REASONING:\n${oldTrace.slice(0, 6000)}`,
     }],
-  });
+  }));
 }
 
 async function plant(n: number, outDir: string): Promise<void> {

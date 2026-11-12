@@ -517,8 +517,8 @@ export async function requestAudit(input: {
 }): Promise<string | null> {
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO audit_runs
-       (audit_type, context, triggered_by, dedupe_key, subject_grant_id, bounty_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (audit_type, context, triggered_by, dedupe_key, subject_grant_id, bounty_id, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
      RETURNING id`,
     [
@@ -528,6 +528,9 @@ export async function requestAudit(input: {
       input.dedupeKey ?? null,
       input.subjectGrantId ?? null,
       input.bountyId ?? null,
+      // The label the audit is asked for at, the same one its ledger row
+      // takes below (src/labels.ts).
+      currentLabel(),
     ]
   );
   const runId = rows[0]?.id;

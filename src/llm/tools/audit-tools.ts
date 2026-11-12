@@ -52,6 +52,7 @@ import {
   REPORT_STATUSES,
   TRIAGE_NOTE_MAX_LENGTH,
 } from "../../services/report-service.js";
+import { currentLabel } from "../usage-context.js";
 
 /** Everything a run's tool executions need to know about the run itself. */
 export interface AuditToolContext {
@@ -687,8 +688,8 @@ export async function executeAuditTool(
         const rows = await rawQuery<{ id: string }>(
           `INSERT INTO audit_findings
              (run_id, severity, category, description, evidence,
-              recommendation, claim_id, contribution_id, review_id, contributor_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+              recommendation, claim_id, contribution_id, review_id, contributor_id, sensitivity_label)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING id`,
           [
             context.runId ?? null,
@@ -701,6 +702,7 @@ export async function executeAuditTool(
             (input.contribution_id as string | undefined) ?? null,
             (input.review_id as string | undefined) ?? null,
             (input.contributor_id as string | undefined) ?? null,
+            currentLabel(),
           ]
         );
 
@@ -1285,9 +1287,9 @@ export async function executeAuditTool(
             `INSERT INTO audit_findings
                (run_id, severity, category, description, evidence,
                 recommendation, contributor_id, status, resolution_note,
-                resolved_by, resolved_at)
+                resolved_by, resolved_at, sensitivity_label)
              VALUES ($1, 'low', 'suspension_lifted', $2, $3, $4, $5,
-                     'resolved', $6, 'audit_agent', now())
+                     'resolved', $6, 'audit_agent', now(), $7)
              RETURNING id`,
             [
               context.runId ?? null,
@@ -1298,6 +1300,7 @@ export async function executeAuditTool(
               reason,
               contributorId,
               note,
+              currentLabel(),
             ]
           );
           recordedFindingId = rows[0]?.id ?? null;

@@ -20,6 +20,7 @@
  *    ones it was shown consumed.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import type { OperatingPolicy } from "./operating-policy-service.js";
 import { REVIEW_GROUP, grantmakerShareLeftMicroUsd, reviewPassBudgetMicroUsd } from "./action-service.js";
 
@@ -75,106 +76,117 @@ const CHILDREN_SQL = (node: string) => `jsonb_build_object(
 export async function collectMandateEvents(grantId?: string): Promise<number> {
   // Timestamps travel as text: a JS Date would drop Postgres's microseconds
   // and the watermark's compare-and-set below would never match.
-  const grants = await rawQuery<{ id: string; from: string | null; to: string }>(
-    `SELECT id, events_scanned_at::text AS "from", now()::text AS "to" FROM grants
+  const grants = await rawQuery<{ id: string; from: string | null; to: string; sensitivity_label: string }>(
+    `SELECT id, events_scanned_at::text AS "from", now()::text AS "to", sensitivity_label FROM grants
       WHERE status = 'active' AND ($1::uuid IS NULL OR id = $1)`,
     [grantId ?? null]
   );
   let recorded = 0;
   for (const g of grants) {
-    if (g.from) {
-      // The window reaches back OVERLAP_MINUTES past the watermark: a row's
-      // timestamp is its transaction's start, so one committed just after the
-      // last scan can carry a time before it. Rescanning the overlap records
-      // nothing twice.
-      const window = [g.id, g.from, g.to];
-      const assessed = await rawQuery(
-        `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, payload)
-         SELECT g.id, 'assessed', x.claim_id, x.id,
-                jsonb_build_object('node_kind', c.kind, 'text', LEFT(c.text, 240),
-                                   'outcome', x.outcome) || ${CHILDREN_SQL("x")}
-           FROM grants g
-           JOIN (
-             SELECT id, claim_id, funded_by_job_id, assessed_at, status AS outcome FROM assessments_in_force
-             UNION ALL
-             SELECT id, claim_id, funded_by_job_id, assessed_at, LEFT(summary, 160) FROM quantity_estimates_in_force
-             UNION ALL
-             SELECT id, claim_id, funded_by_job_id, assessed_at, standing FROM question_assessments_in_force
-           ) x ON x.assessed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND x.assessed_at <= $3
-           JOIN claims c ON c.id = x.claim_id
-          WHERE g.id = $1 AND ${INTEREST_SQL("x")}
-         ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
-         RETURNING id`,
-        window
-      );
-      const reviewed = await rawQuery(
-        `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, payload)
-         SELECT ct.grant_id, 'contribution_reviewed', ct.claim_id, r.id,
-                jsonb_build_object('contribution_id', ct.id, 'type', ct.contribution_type,
-                                   'decision', r.decision,
-                                   'proposed', LEFT(ct.proposed_canonical_form, 240),
-                                   'text', (SELECT LEFT(c.text, 240) FROM claims c WHERE c.id = ct.claim_id))
-           FROM contributions ct
-           JOIN contribution_reviews r ON r.contribution_id = ct.id AND NOT r.superseded
-          WHERE ct.grant_id = $1 AND r.reviewed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND r.reviewed_at <= $3
-         ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
-         RETURNING id`,
-        window
-      );
-      // A source is news once its extraction has finished, not when it was
-      // submitted: the event carries the outcome and the nodes linked as of
-      // then (#898). It falls in the window that holds the later of the
-      // extraction's end and the mandate's attribution, so an extraction
-      // that ends days after submission is recorded when it ends, and a
-      // mandate attributed to a source extracted long ago is told when it is
-      // attributed; the unique (mandate, kind, row) records each once. A row
-      // with no extraction job on record is settled as it stands.
-      const ingested = await rawQuery(
-        `INSERT INTO mandate_events (grant_id, kind, ref_id, payload)
-         SELECT gs.grant_id, 'source_ingested', gs.id,
-                jsonb_build_object('url', gs.url,
-                  'outcome', COALESCE(j.status, 'unknown'),
-                  'already_extracted', j.completed_at IS NOT NULL AND j.completed_at < gs.created_at,
-                  'error', LEFT(j.error, 200),
-                  'document_problem', j.result->>'document_problem',
-                  'nodes', (SELECT COUNT(DISTINCT ci.claim_id) FROM claim_instances ci
-                             WHERE ci.source_id = gs.source_id AND ci.detached_at IS NULL))
-           FROM grant_sources gs
-           LEFT JOIN jobs j ON j.id = gs.job_id
-          WHERE gs.grant_id = $1
-            AND (j.id IS NULL OR j.status IN ('completed', 'failed'))
-            -- An extraction a platform fault stopped, which the platform is
-            -- retrying (url-extraction.ts), is not news and wakes no review
-            -- (#971): the retry's own end is the event. The fault itself is
-            -- in the review briefing while it lasts.
-            AND NOT (j.status = 'failed' AND COALESCE(j.result->>'retried_by_platform', '') = 'true')
-            AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at))
-                  > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES})
-            AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at)) <= $3
-         ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
-         RETURNING id`,
-        window
-      );
-      const flagged = await rawQuery(
-        `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, payload)
-         SELECT l.grant_id, 'lookout_flag', f.claim_id, f.id,
-                jsonb_build_object('flag', f.kind, 'url', f.url, 'rationale', LEFT(f.rationale, 300))
-           FROM lookout_flags f JOIN lookouts l ON l.id = f.lookout_id
-          WHERE l.grant_id = $1 AND f.created_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND f.created_at <= $3
-         ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
-         RETURNING id`,
-        window
-      );
-      recorded += assessed.length + reviewed.length + ingested.length + flagged.length;
-    }
-    // Advance only from the watermark this scan read: a concurrent scan that
-    // already moved it (or started it) keeps its own.
-    await rawQuery(
-      `UPDATE grants SET events_scanned_at = $2
-        WHERE id = $1 AND events_scanned_at IS NOT DISTINCT FROM $3::timestamptz`,
-      [g.id, g.to, g.from]
-    );
+    // The events are collected for the mandate, by a timer, so they carry
+    // the mandate's label (src/labels.ts), whatever the label of the
+    // judgment, the review or the flag each one reports. What a mandate may
+    // be told about work at another label is for the reads to decide.
+    recorded += await runAtLabel(g.sensitivity_label, `mandate ${g.id}`, () => collectFor(g));
   }
+  return recorded;
+}
+
+/** One mandate's scan, at the mandate's label. Returns the number of events recorded. */
+async function collectFor(g: { id: string; from: string | null; to: string }): Promise<number> {
+  let recorded = 0;
+  if (g.from) {
+    // The window reaches back OVERLAP_MINUTES past the watermark: a row's
+    // timestamp is its transaction's start, so one committed just after the
+    // last scan can carry a time before it. Rescanning the overlap records
+    // nothing twice.
+    const window = [g.id, g.from, g.to, currentLabel()];
+    const assessed = await rawQuery(
+      `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, sensitivity_label, payload)
+       SELECT g.id, 'assessed', x.claim_id, x.id, $4::text,
+              jsonb_build_object('node_kind', c.kind, 'text', LEFT(c.text, 240),
+                                 'outcome', x.outcome) || ${CHILDREN_SQL("x")}
+         FROM grants g
+         JOIN (
+           SELECT id, claim_id, funded_by_job_id, assessed_at, status AS outcome FROM assessments_in_force
+           UNION ALL
+           SELECT id, claim_id, funded_by_job_id, assessed_at, LEFT(summary, 160) FROM quantity_estimates_in_force
+           UNION ALL
+           SELECT id, claim_id, funded_by_job_id, assessed_at, standing FROM question_assessments_in_force
+         ) x ON x.assessed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND x.assessed_at <= $3
+         JOIN claims c ON c.id = x.claim_id
+        WHERE g.id = $1 AND ${INTEREST_SQL("x")}
+       ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
+       RETURNING id`,
+      window
+    );
+    const reviewed = await rawQuery(
+      `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, sensitivity_label, payload)
+       SELECT ct.grant_id, 'contribution_reviewed', ct.claim_id, r.id, $4::text,
+              jsonb_build_object('contribution_id', ct.id, 'type', ct.contribution_type,
+                                 'decision', r.decision,
+                                 'proposed', LEFT(ct.proposed_canonical_form, 240),
+                                 'text', (SELECT LEFT(c.text, 240) FROM claims c WHERE c.id = ct.claim_id))
+         FROM contributions ct
+         JOIN contribution_reviews r ON r.contribution_id = ct.id AND NOT r.superseded
+        WHERE ct.grant_id = $1 AND r.reviewed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND r.reviewed_at <= $3
+       ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
+       RETURNING id`,
+      window
+    );
+    // A source is news once its extraction has finished, not when it was
+    // submitted: the event carries the outcome and the nodes linked as of
+    // then (#898). It falls in the window that holds the later of the
+    // extraction's end and the mandate's attribution, so an extraction
+    // that ends days after submission is recorded when it ends, and a
+    // mandate attributed to a source extracted long ago is told when it is
+    // attributed; the unique (mandate, kind, row) records each once. A row
+    // with no extraction job on record is settled as it stands.
+    const ingested = await rawQuery(
+      `INSERT INTO mandate_events (grant_id, kind, ref_id, sensitivity_label, payload)
+       SELECT gs.grant_id, 'source_ingested', gs.id, $4::text,
+              jsonb_build_object('url', gs.url,
+                'outcome', COALESCE(j.status, 'unknown'),
+                'already_extracted', j.completed_at IS NOT NULL AND j.completed_at < gs.created_at,
+                'error', LEFT(j.error, 200),
+                'document_problem', j.result->>'document_problem',
+                'nodes', (SELECT COUNT(DISTINCT ci.claim_id) FROM claim_instances ci
+                           WHERE ci.source_id = gs.source_id AND ci.detached_at IS NULL))
+         FROM grant_sources gs
+         LEFT JOIN jobs j ON j.id = gs.job_id
+        WHERE gs.grant_id = $1
+          AND (j.id IS NULL OR j.status IN ('completed', 'failed'))
+          -- An extraction a platform fault stopped, which the platform is
+          -- retrying (url-extraction.ts), is not news and wakes no review
+          -- (#971): the retry's own end is the event. The fault itself is
+          -- in the review briefing while it lasts.
+          AND NOT (j.status = 'failed' AND COALESCE(j.result->>'retried_by_platform', '') = 'true')
+          AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at))
+                > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES})
+          AND GREATEST(gs.created_at, COALESCE(j.completed_at, gs.created_at)) <= $3
+       ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
+       RETURNING id`,
+      window
+    );
+    const flagged = await rawQuery(
+      `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, sensitivity_label, payload)
+       SELECT l.grant_id, 'lookout_flag', f.claim_id, f.id, $4::text,
+              jsonb_build_object('flag', f.kind, 'url', f.url, 'rationale', LEFT(f.rationale, 300))
+         FROM lookout_flags f JOIN lookouts l ON l.id = f.lookout_id
+        WHERE l.grant_id = $1 AND f.created_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND f.created_at <= $3
+       ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
+       RETURNING id`,
+      window
+    );
+    recorded += assessed.length + reviewed.length + ingested.length + flagged.length;
+  }
+  // Advance only from the watermark this scan read: a concurrent scan that
+  // already moved it (or started it) keeps its own.
+  await rawQuery(
+    `UPDATE grants SET events_scanned_at = $2
+      WHERE id = $1 AND events_scanned_at IS NOT DISTINCT FROM $3::timestamptz`,
+    [g.id, g.to, g.from]
+  );
   return recorded;
 }
 
@@ -188,8 +200,9 @@ export async function wakeDueMandateReviews(): Promise<number> {
   const due = await rawQuery<{
     id: string;
     mandate: { grantmaker_share_owls?: number | null; operating_policy?: OperatingPolicy | null } | null;
+    sensitivity_label: string;
   }>(
-    `SELECT g.id, g.mandate FROM grants g
+    `SELECT g.id, g.mandate, g.sensitivity_label FROM grants g
        JOIN actions a ON a.exclusion_group = 'review:' || g.id::text AND a.kind = 'mandate_review'
       WHERE g.status = 'active'
         AND a.status IN ('done', 'superseded', 'cancelled')
@@ -201,13 +214,16 @@ export async function wakeDueMandateReviews(): Promise<number> {
     const share = await grantmakerShareLeftMicroUsd(g).catch(() => null);
     if (share && share.leftMicroUsd <= 0) continue;
     // Reopened at the pass budget as it stands now (the policy may have
-    // changed it, and a pass started short lowered the row's estimate).
+    // changed it, and a pass started short lowered the row's estimate), and
+    // at the mandate's label: the review is the mandate's work, and a row
+    // reopened by an UPDATE would otherwise keep whatever label its last
+    // pass had (src/labels.ts).
     const rows = await rawQuery(
-      `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
+      `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, sensitivity_label = $3, updated_at = now()
         WHERE exclusion_group = $1 AND kind = 'mandate_review'
           AND status IN ('done', 'superseded', 'cancelled')
         RETURNING id`,
-      [REVIEW_GROUP(g.id), await reviewPassBudgetMicroUsd(g, "review", share)]
+      [REVIEW_GROUP(g.id), await reviewPassBudgetMicroUsd(g, "review", share), g.sensitivity_label]
     );
     woken += rows.length;
   }

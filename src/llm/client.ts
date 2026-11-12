@@ -17,7 +17,9 @@
  * deployment with features switched off is told which (withRunBrief below),
  * and where a call is refused before anything is sent when its model's
  * provider is not cleared for the label the run works at (clearedAdapter
- * below; src/provider-labels.ts).
+ * below; src/provider-labels.ts). And every call here reaches its provider
+ * through getAdapter, which in record mode refuses a call that no agent run
+ * would log (logged-run.ts).
  *
  * This file does dispatch and provider-independent control flow only. The
  * request-building, wire format, and response parsing for each backend live in
@@ -259,8 +261,9 @@ function recordPromptStep(step: {
       resolveProvider(step.model)
     );
     const agent = context.agent ?? "unknown";
+    // A part is stored at the label of the run this step belongs to.
     void import("../services/setup-service.js")
-      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent)))
+      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent), trace.label))
       .catch((err) =>
         console.error("[trace] failed to store setup parts:", err instanceof Error ? err.message : err)
       );

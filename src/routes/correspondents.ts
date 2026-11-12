@@ -34,6 +34,7 @@ import {
   renderUpdateText,
   type CorrespondentUpdateRow,
 } from "../services/correspondent-service.js";
+import { requirePermission } from "../server/require-permission.js";
 
 const idParam = {
   type: "object",
@@ -204,7 +205,7 @@ export async function correspondentRoutes(app: FastifyInstance): Promise<void> {
         required: ["note"],
       },
     },
-    preHandler: [app.authenticate, app.requireUser],
+    preHandler: [app.authenticate, app.requireUser, requirePermission("direct")],
     handler: async (request, reply) => {
       const c = isUuid(request.params.id) ? await getCorrespondent(request.params.id) : null;
       if (!c) return reply.code(404).send(errorBody("NOT_FOUND", "Correspondent not found"));

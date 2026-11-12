@@ -15,8 +15,6 @@ export interface Rates {
 }
 
 export interface EvalsIndex {
-  syncedAt: string;
-  gitCommit: string | null;
   pins: Array<{ agent: string; envVar: string; model: string; label: string }>;
   judge: { model: string; label: string };
   rates: Record<string, Rates | null>;

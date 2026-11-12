@@ -1966,6 +1966,7 @@ export async function executeStewardTool(
           .join(", ");
         await db.insert(auditLog).values({
           claimId,
+          sensitivityLabel: currentLabel(),
           action: "updated_claim_instance",
           reasoning:
             `Instance ${instanceId} (${existing.source_url ?? "source"}): ` +
@@ -3126,6 +3127,7 @@ export async function executeStewardTool(
         // says which node's Steward and why.
         await db.insert(auditLog).values({
           claimId,
+          sensitivityLabel: currentLabel(),
           action: "add_parent_claim",
           reasoning:
             `Minted parent ${parentKind} ${parent.id} ("${parentText}") and attached ` +
@@ -3246,6 +3248,7 @@ export async function executeStewardTool(
         const db = getDb();
         await db.insert(auditLog).values({
           claimId,
+          sensitivityLabel: currentLabel(),
           action: actionTaken,
           reasoning,
           createdBy: "claim_steward",

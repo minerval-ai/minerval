@@ -132,11 +132,11 @@ export function resetInFlightChecksForTests(): void {
  */
 export async function reclaimStalePrizeChecks(): Promise<number> {
   const config = loadConfig();
-  const rows = await rawQuery<{ id: string }>(
+  const rows = await rawQuery<{ id: string; sensitivity_label: string }>(
     `UPDATE prize_claims SET status = 'queued', updated_at = now()
       WHERE status = 'checking'
         AND updated_at < now() - ($1 || ' minutes')::interval
-      RETURNING id`,
+      RETURNING id, sensitivity_label`,
     [String(config.prizeCheckReclaimMinutes)]
   );
   for (const row of rows) {
@@ -144,8 +144,10 @@ export async function reclaimStalePrizeChecks(): Promise<number> {
     const pc = await getPrizeClaimById(row.id);
     if (pc) {
       await rawQuery(
-        `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'prize_claim:queued', $2, 'prize_check_pipeline')`,
-        [pc.claim_id, `prize claim ${pc.id}: check reclaimed after ${config.prizeCheckReclaimMinutes} minutes without a poll`]
+        `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, 'prize_claim:queued', $2, 'prize_check_pipeline', $3)`,
+        // The sweep is a timer and the entry is about one prize claim: it
+        // carries that prize claim's label (src/labels.ts).
+        [pc.claim_id, `prize claim ${pc.id}: check reclaimed after ${config.prizeCheckReclaimMinutes} minutes without a poll`, row.sensitivity_label]
       );
     }
   }

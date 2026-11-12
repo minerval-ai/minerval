@@ -12,6 +12,26 @@
  * notice against it, the edges that say what draws on what, an examination
  * and its findings, a recorded stake, a page analysis kept for the next
  * reader, a feed item waiting to be read.
+ * And so does what a run writes about itself: each step of its transcript,
+ * the usage row of each model call, the parts of its setup, an
+ * investigation it launches, a report or a finding it files and each later
+ * sighting of one, an audit it asks for.
+ * And so do the rows that work is asked for and governed with: a request
+ * and the work recorded on it, a message in a node's inbox, a petition, a
+ * mandate with its decisions, its events and its policy, the conversations
+ * a mandate is drafted in and the ones a user holds with their Assistant, a
+ * page kept for a user, a review and a ruling, an audit's findings and the
+ * audit trail on a claim, a sweep and its flags, a bounty and a prize
+ * claim, a lookout and a correspondent with what each queues, flags and
+ * publishes, a view stated to the graph, money placed on a piece of work
+ * with its brief and reason, and money moved between two mandates with its
+ * note. A placement and a regrant take the label of the work that made
+ * them. Two placements are worked out and not written by anyone: a
+ * mandate's money put on its own row by the scheduler is at the mandate's
+ * label, and a share of a settled row's cost is at the row's. The tables
+ * that carry none are the accounts and their keys,
+ * the owl ledger and what is paid from it, the platform's own switches and
+ * counters, and the labels themselves.
  * The column is not simply `label` because that name is already a display
  * name on tables that will need a label too (actions.label,
  * source_segments.label), and one name has to be free on every table.
@@ -39,6 +59,24 @@
  * examination it opens and the stake it records. A write that lands on a
  * row already there (an upsert) leaves that row's label as it was, and so
  * does the text or the facts a fetch writes into a source's own row.
+ *
+ * A step of a run's transcript is the run's in the strictest sense: it
+ * carries the label the run was opened at, which the run's handle keeps
+ * (AgentTrace.label in services/trace-service.ts), and not the label in the
+ * air when it is written. Steps are written from a queue, later than they
+ * are claimed, and a step can be recorded from inside work that set another
+ * label; it is a step of its run either way. The transcript is the most
+ * sensitive thing a run leaves, so its label does not depend on timing.
+ *
+ * A part of a run's setup (the constitution, a role prompt, a tool's
+ * descriptor) is stored once, under the hash of its text, and shared by
+ * every run that used the same text. It carries the label of the run that
+ * stored it first (storeSetupParts in services/setup-service.ts). It is
+ * not derived from any row whose label it could take, and nothing tells
+ * the repository's own text, the same whoever asks, from text a deployment
+ * wrote for itself. So a text first used by a restricted run stays
+ * restricted for the public runs that use it afterwards. Telling those
+ * apart takes a key with the label in it, which is later work.
  *
  * What is derived mechanically from a row, with no judgment of the run in
  * it, carries that row's label. A document's segments are computed from
@@ -73,23 +111,50 @@
  * Some work has no row of its own to wait in. A sweep finds a claim that is
  * pending, stale or untagged and starts work on it there and then: the
  * scheduler's reconcile sweep and its staleness check, the Steward's
- * fallback lane, the Tagger, the reconcile-candidate scan, and a mandate's
- * plan when the scheduler materializes it. That work runs at the claim's
- * label (runAtClaimLabel in services/label-service.ts), so work on a
- * restricted claim is never written as public. So does the letter that
- * tells a node's Steward of a notice against a source the node rests on
+ * fallback lane, the Tagger, the reconcile-candidate scan, the monitor's
+ * audits. That work runs at the claim's label (runAtClaimLabel in
+ * services/label-service.ts), so work on a restricted claim is never
+ * written as public. So does the letter that tells a node's Steward of a
+ * notice against a source the node rests on
  * (services/source-notice-service.ts), whether the retraction poll found
  * the notice or a run's fetch of the document did: the letter is the same
  * whoever found it and is sent once, so it goes at the node's label and
- * not the finder's. All of this is a floor, not the whole rule: a pass
- * asked for at a restricted label on a public claim is not told apart from
- * a public one by the claim's pending slot, and those paths take it up as
- * public. Closing that takes one judgment per label, which is later work.
+ * not the finder's. All of this is a floor, not the whole rule: the
+ * claim's pending slot is one per claim and does not say what label a pass
+ * was asked for at. The messages waiting on the claim do, each carrying
+ * the label of whoever sent it, so a pending claim whose unread messages
+ * agree on a label is taken up at that label, whatever the claim's own is
+ * (pendingPassLabel). When they carry more than one, the pass runs at the
+ * claim's label and reads them all. Keeping those apart takes a slot, or a
+ * judgment, per label, which is later work.
+ *
+ * Other work belongs to a row that carries a label of its own, and runs at
+ * that row's label whichever sweep, timer or run happens to start it. A
+ * mandate decides for its work: the rows its plan becomes, its planning
+ * and review passes, the wake that reopens a review, the events collected
+ * for it and the sittings on its inbox are opened at the mandate's label
+ * (runAtMandateLabel), not at the label of a claim or a source a plan item
+ * names. A lookout and a correspondent decide for theirs: their runs, a
+ * lookout's feed poll and what it records, and the inputs a timer queues
+ * for either. A request decides for the ledger rows that scope it, take it
+ * up and bring it back to its keeper, so the research and the review of a
+ * document that a request pays for run at the request's label. A petition
+ * decides for its follow-up, and a paused session for the answers it sends
+ * on to its node's inbox when it expires.
+ *
+ * Three places hold work to one label by reading it, because the work
+ * would otherwise cross from one label to another by itself. A Steward's
+ * pass resumes only a session of the label the pass runs at. An officers'
+ * sitting, which runs at its mandate's label, works only the petitions and
+ * inbox items of that label, and one raised at another label waits. And a
+ * session takes only an answer of its own label: an answer written by work
+ * at another goes to the node's inbox as a message at the answer's label,
+ * and the session waits on. None of these asks what a label may read.
+ * They keep unlike labels apart until something does.
  *
  * A source is the same kind of carrier. The source backfill finds a
- * document with no facts, no text or no segments and fills them in, and
- * the scheduler, placing a mandate's plan, notes a document someone else
- * ingested. That work runs at the source's label (runAtSourceLabel in
+ * document with no facts, no text or no segments and fills them in. That
+ * work runs at the source's label (runAtSourceLabel in
  * services/label-service.ts), and it is the same floor: what a worker
  * writes about a restricted source is never public. A restricted run that
  * reads a public source is not covered by it. Its judgments carry its

@@ -1208,7 +1208,8 @@ backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick) embeds
 such reports afterwards.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
-rule holds for this channel too. External agents on the MCP surface get
+rule holds for this channel too, including where the work itself is logged
+because the run log is kept as a record. External agents on the MCP surface get
 `raise_issue` only, attributed and rate-limited, matched against
 external-origin reports only, and their reports triage as testimony rather
 than findings.
@@ -2302,14 +2303,23 @@ the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
-Page text the extension sends is not persisted (#356). The page is whatever
+While the run log is best-effort, which is how the public graph runs, page
+text the extension sends is not persisted (#356). The page is whatever
 the reader has open, so the analysis pipeline runs untraced (no `agent_runs`
 or `agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or
 instances, and keeps its result only in an in-memory cache. Chat is the
 exception since it became the Assistant: a conversation is kept in the
 user's account, with the page's address, title and marked passages (never
 its text), and its runs are logged privately like any Assistant run. The MCP's
-on-demand analysis tools follow the same rule. Only source submission, where
+on-demand analysis tools follow the same rule as the pipeline. A deployment that
+keeps its log as a record (`RUN_LOG_MODE=record`) logs the analysis
+pipeline's runs and the on-demand tools' like any others, private to the
+reader (docs/run-log.md, "Work the best-effort log leaves out, and record
+mode does not"); it still writes no sources and no instances from them.
+The older page chat, which installed versions of the extension may still
+call, is told at the head of each conversation which of the two holds, so
+that what it tells a reader about what is kept is true where it runs.
+Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)
 holds that a claim is about the world, not a private person, and the
@@ -2484,6 +2494,23 @@ not shown, and a page that exists only for it (the prize listing, the prize
 rules, a proof attempt's report) answers "not found". If the list cannot be
 read, the web app shows everything, so a passing error never hides part of a
 site that has it.
+
+---
+
+## Who a deployment serves
+
+One setting, `READS`, says who a deployment serves. At `open`, its starting
+value, a read needs no account and every act is guarded by the rules its
+route carries: this document describes that deployment. At `members` the
+deployment is private. One hook authenticates every request, nothing is
+served to anyone who is not signed in, and what a signed-in person may do
+follows from permissions the deployment's own administrators grant: to
+direct the graph, to release one party's material, to fund, to read at a
+label, to open raw sources at a label, and to administer. The setting, the
+permissions, how the first administrator is established, and sign-in
+through an organization's identity provider are in
+[accounts.md](accounts.md), "Members-only deployments". With the setting at
+its starting value none of that code runs.
 
 ---
 

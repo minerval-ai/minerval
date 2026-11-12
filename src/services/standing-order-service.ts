@@ -46,7 +46,7 @@ import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { microUsdToOwls } from "./owl.js";
-import { runAtClaimLabelOutsideAnyRun } from "./label-service.js";
+import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 
 /** Who placed it, on the allocation and in the mandate's commission list. */
 export const PLAN_ORDER_COMMISSIONER = "plan";
@@ -147,13 +147,12 @@ export const newOrderQueue = (): OrderQueue => ({ rateRoomMicroUsd: null });
  * node's inbox for it a second time.
  */
 export async function placeStandingOrder(input: StandingOrderInput): Promise<OrderStanding> {
-  // An order is placed by the scheduler's sweep as well as from inside a
-  // Grantmaker's run. From the sweep nothing says what label the plan item
-  // was written at (a mandate carries none yet), so the pass is ordered at
-  // the claim's label: a restricted claim's pass is never opened as public
-  // (runAtClaimLabel in label-service.ts). From inside a run the order is
-  // that run's work and keeps its label.
-  return runAtClaimLabelOutsideAnyRun(input.claimId, () => placeOrder(input));
+  // An order is placed by the scheduler's sweeps as well as from inside a
+  // Grantmaker's run. It is the mandate's work, so from a sweep the pass is
+  // ordered at the mandate's label (runAtMandateLabel in label-service.ts),
+  // whatever the claim's is. From inside a run the order is that run's work
+  // and keeps its label.
+  return runAtMandateLabelOutsideAnyRun(input.grantId, () => placeOrder(input));
 }
 
 interface StandingOrderInput {

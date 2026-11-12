@@ -24,6 +24,11 @@
  * each time, which the limit itself bounds. Preflights and health checks
  * are not counted, and neither is keyless local development, where every
  * caller is the dev account (src/server/plugins/auth.ts, "Dev bypass").
+ * A members-only deployment (src/permissions.ts) has no dev account in any
+ * environment, so nothing is skipped there: a request with no key, or with
+ * a made-up one, is counted whether or not a key is configured, and is
+ * refused past the limit before the hook that authenticates every request
+ * (src/server/plugins/members-only.ts) looks anything up.
  *
  * Where it runs. In this process, per API instance: with several instances
  * behind the load balancer an address can reach each one's limit, so the
@@ -53,6 +58,7 @@ import {
   resolveDispatchedAuth,
 } from "../../mcp/dispatch.js";
 import { operatorKeyMatches } from "./auth.js";
+import { membersOnly } from "../../permissions.js";
 
 export const ANONYMOUS_RATE_LIMIT_WINDOW_SECONDS = 60;
 const WINDOW_MS = ANONYMOUS_RATE_LIMIT_WINDOW_SECONDS * 1000;
@@ -145,9 +151,11 @@ export async function registerAnonymousRateLimit(
     if (request.method === "OPTIONS") return;
     const path = request.url.split("?")[0]!;
     if (UNCOUNTED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) return;
-    // Keyless local development: every caller is the dev account.
+    // Keyless local development: every caller is the dev account. Not in a
+    // members-only deployment, which has no dev account: there a caller
+    // with no key, or a made-up one, is anonymous in every environment.
     const envKeysConfigured = config.apiKeys.length > 0 && config.apiKeys[0] !== "";
-    if (!envKeysConfigured && config.env !== "production") return;
+    if (!envKeysConfigured && config.env !== "production" && !membersOnly(config)) return;
     if (await presentsRecognisedCredential(request)) return;
 
     const now = Date.now();

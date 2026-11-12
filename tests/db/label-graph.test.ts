@@ -126,7 +126,7 @@ import {
   recordLeanCheck,
   storeElaboratedFormalization,
 } from "../../src/services/formalization-service.js";
-import { runAtClaimLabel, runAtClaimLabelOutsideAnyRun } from "../../src/services/label-service.js";
+import { runAtClaimLabel } from "../../src/services/label-service.js";
 import { FakeLeanCheckerClient } from "../../src/services/lean-checker-fake.js";
 import { addReading, defineQuantity, recordCut, recordEstimate } from "../../src/services/quantity-service.js";
 import {
@@ -735,11 +735,12 @@ describe("work that starts from a claim", () => {
     expect(await processNextTaggingTask()).toEqual({ status: "empty" });
   });
 
-  it("is ordered for a mandate's plan at the claim's label when the scheduler places the order, and at the run's when a run does", async () => {
+  it("is ordered for a mandate's plan at the mandate's label when the scheduler places the order, and at the run's when a run does", async () => {
     const funder = await seedUser("graph-plan");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL, dailyBudgetMicroUsd: 100 * OWL });
+    // The mandate decides for its plan rows, whatever label the claim it names carries.
+    await rawQuery(`UPDATE grants SET sensitivity_label = $2 WHERE id = $1`, [grantId, INTERNAL]);
     const swept = await seedClaim("graph plan item, swept");
-    await setLabel(swept, INTERNAL);
     await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
       grantId,
       JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", variant: "standard", budget_owls: 3 }] }),
@@ -835,14 +836,12 @@ describe("work that starts from a claim", () => {
     }
   });
 
-  it("takes the claim's label over the one in the air, except through the seam meant for code a run also reaches", async () => {
+  it("takes the claim's label over the one in the air", async () => {
     const claim = await settledClaim("graph helper");
     await setLabel(claim, INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtClaimLabel(claim, at)).toBe(INTERNAL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabel(claim, at))).toBe(INTERNAL);
-    expect(await runAtClaimLabelOutsideAnyRun(claim, at)).toBe(INTERNAL);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabelOutsideAnyRun(claim, at))).toBe(PUBLIC_LABEL);
     // A claim that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtClaimLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
   });

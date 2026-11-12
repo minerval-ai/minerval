@@ -61,6 +61,7 @@ import {
   type RunnableAction,
 } from "../services/action-service.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
+import { pendingPassLabel } from "../services/label-service.js";
 import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
@@ -206,13 +207,14 @@ export async function processNextStewardTask(
     return { status: pending > 0 ? "budget" : "empty" };
   }
   // This lane picks a claim, not a piece of work: no row here says what
-  // label the pending pass was asked for at. The claim's own label is the
-  // one thing that does say what the work is about, so the pass runs at it
-  // (below), and a restricted claim is never stewarded as public. That is a
-  // floor. A pass asked for at a restricted label on a public claim runs
-  // here as public, because the pending slot does not record the asking
-  // label; a deployment with more than one label should leave the lane off
-  // until it does (one judgment per label).
+  // label the pending pass was asked for at. The messages waiting on the
+  // claim do, when they agree on one, and the pass runs at that label;
+  // otherwise it runs at the claim's own, so a restricted claim is never
+  // stewarded as public (pendingPassLabel in label-service.ts, below).
+  // With messages of two labels waiting, the pass runs at the claim's label
+  // and reads them all: the pending slot is one per claim, and one per
+  // label is later work. A deployment with more than one label should
+  // leave the lane off until then.
   // The fallback lane IS unattributed work, so the breaker applies: don't
   // even claim a task if it is already spent this window.
   try {
@@ -249,9 +251,10 @@ export async function processNextStewardTask(
   );
   if (rows.length === 0) return { status: "empty" };
   const task = rows[0]!;
-  // The run and the bookkeeping after it are inside the claim's label, as
-  // a covered action's are inside its row's.
-  return runAtLabel(task.sensitivity_label, `claim ${task.id}`, () =>
+  // The run and the bookkeeping after it are inside the pass's label, as a
+  // covered action's are inside its row's.
+  const label = await pendingPassLabel(task.id, task.sensitivity_label);
+  return runAtLabel(label, `claim ${task.id}`, () =>
     runStewardOnClaim(task, {
       model: opts.model ?? config.stewardModel,
       passBudget,

@@ -225,4 +225,39 @@ describe("keyless local development", () => {
     expect(res.headers["ratelimit-policy"]).toBeUndefined();
     expect(await statuses(a, LIMIT + 3)).not.toContain(429);
   });
+
+  it("is still not counted when the deployment says it is open in so many words", async () => {
+    const a = await build({ API_KEYS: "", ENVIRONMENT: "development", READS: "open" });
+    expect(await statuses(a, LIMIT + 3, { "x-api-key": "made-up" })).not.toContain(429);
+    expect(await statuses(a, LIMIT + 3)).not.toContain(429);
+  });
+});
+
+// A members-only deployment has no dev account (src/permissions.ts), so the
+// keyless case does not exist there: with no key configured, outside
+// production, a caller with no key or a made-up one is counted all the same.
+describe("a members-only deployment with no key configured", () => {
+  const KEYLESS = { API_KEYS: "", ENVIRONMENT: "development", READS: "members" };
+
+  it("counts a request with no credential", async () => {
+    const a = await build(KEYLESS);
+    const first = await a.inject({ url: "/read" });
+    expect(first.headers["ratelimit-policy"]).toBe(`${LIMIT};w=60`);
+    expect(await statuses(a, LIMIT)).toEqual([200, 200, 429]);
+  });
+
+  it("counts a made-up key like no key at all", async () => {
+    const a = await build(KEYLESS);
+    const headers = { "x-api-key": "made-up" };
+    expect(await statuses(a, LIMIT + 1, headers)).toEqual([200, 200, 200, 429]);
+    const refused = await a.inject({ url: "/read", headers });
+    expect(refused.json().error.code).toBe("ANONYMOUS_RATE_LIMITED");
+  });
+
+  it("still exempts a live key and the operator key", async () => {
+    const a = await build(KEYLESS);
+    mocks.resolveApiKey.mockResolvedValue({ user: { id: "u1" }, key: { id: "k1" } });
+    expect(await statuses(a, LIMIT + 2, { "x-api-key": "epk_live" })).not.toContain(429);
+    expect(await statuses(a, LIMIT + 2, { "x-operator-key": "operator-secret" })).not.toContain(429);
+  });
 });
