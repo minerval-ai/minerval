@@ -39,6 +39,12 @@ export async function createApiKey(input: {
    * minted with the operator key (services/platform-account.ts).
    */
   scope?: "user" | "service" | typeof PLATFORM_GRANTMAKING_SCOPE;
+  /**
+   * The label the key works at (server/request-labels.ts). Left out, the
+   * column's default applies, which is `public`: what every key works at
+   * on a deployment with one label.
+   */
+  workLabel?: string;
 }): Promise<CreatedApiKey> {
   const plaintext = generateApiKeyPlaintext();
   const db = getDb();
@@ -50,6 +56,7 @@ export async function createApiKey(input: {
       keyPrefix: plaintext.slice(0, DISPLAY_PREFIX_LENGTH),
       keyHash: hashApiKey(plaintext),
       scope: input.scope ?? "user",
+      ...(input.workLabel !== undefined ? { workLabel: input.workLabel } : {}),
     })
     .returning();
   return { key: key!, plaintext };

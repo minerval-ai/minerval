@@ -291,6 +291,17 @@ export async function currentReadClearance(): Promise<string[] | null> {
 }
 
 /**
+ * Whether this deployment holds material at more than one label, which is
+ * when the database holds reads and writes to a clearance. False on the
+ * public graph. For what asks a person to say which label something is for
+ * (server/plugins/request-label.ts): where there is one label there is
+ * nothing to ask.
+ */
+export async function deploymentHoldsLabels(): Promise<boolean> {
+  return enforcementOn(ownerQuery);
+}
+
+/**
  * Whether the work in progress is on a connection the policies bind. False
  * on a deployment whose only label is `public`, and for system work.
  */

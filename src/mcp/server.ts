@@ -88,6 +88,10 @@ import {
 } from "../services/report-service.js";
 import { registerRouteTools, withheldRouteTools } from "./route-tools.js";
 import { permissionsNote } from "../llm/permissions-note.js";
+import { membersOnly } from "../permissions.js";
+import { enforcementLastKnown } from "../db/clearance.js";
+import { REQUEST_LABELS } from "../server/request-labels.js";
+import { decideRequestLabel } from "../server/plugins/request-label.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
 import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
@@ -367,9 +371,34 @@ async function matchAssertion(
 
 // ---- server -----------------------------------------------------------------
 
+/**
+ * What a caller is told about the one label its key or token works at
+ * (server/request-labels.ts), where the deployment holds material at more
+ * than one: a limit it works under, stated up front with the reason. The
+ * Assistant is told the same in its run's brief (llm/label-note.ts).
+ */
+export function connectionLabelNote(label: string): string {
+  return (
+    `This deployment holds material that only some of its readers may see, and everything in it ` +
+    `carries a label saying who may read it. This connection works at one label, fixed by your ` +
+    `user when its key or token was made: \`${label}\`. You read what that label reads. Everything ` +
+    `you add is filed at \`${label}\`, and you can act only on things that carry it: a call about ` +
+    `something at another label is refused and says so. You cannot choose or change the label, so ` +
+    `that nothing you read can be filed where more people would see it. get_my_labels says who ` +
+    `reads \`${label}\`.`
+  );
+}
+
 function withPermissions(instructions: string, ctx: McpRequestContext): string {
-  const note = ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "";
-  return note ? `${instructions}\n\n${note}` : instructions;
+  const notes = [
+    ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "",
+    // The members-only hook asked whether labels are held before this
+    // request got here, so what this process last learned is current.
+    membersOnly() && ctx.auth.fixedLabel && enforcementLastKnown() === true
+      ? connectionLabelNote(ctx.auth.fixedLabel.label)
+      : "",
+  ].filter((note) => note.length > 0);
+  return notes.length > 0 ? `${instructions}\n\n${notes.join("\n\n")}` : instructions;
 }
 
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
@@ -922,6 +951,18 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       if (input.claim_id) {
         const claim = await getClaimById(input.claim_id);
         if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      }
+      // The label the contribution is filed at, by the rule of the route
+      // this tool stands in for (server/request-labels.ts): this
+      // connection's one label, and a node at another label is refused.
+      // Decided only in a members-only deployment, as for the route.
+      if (membersOnly()) {
+        const decided = await decideRequestLabel(REQUEST_LABELS["POST /contributions"]!, {
+          auth: ctx.auth,
+          params: {},
+          body: input,
+        });
+        if ("refusal" in decided) return errorResult(decided.refusal.code, decided.refusal.error);
       }
       // A contribution addressed to a merged node is refused and told the
       // survivor (#884), as POST /contributions refuses it.

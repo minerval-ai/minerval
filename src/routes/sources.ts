@@ -11,6 +11,7 @@ import { getSourceDocument } from "../services/source-segment-service.js";
 import { listExaminations } from "../services/examination-service.js";
 import { getSourceContext } from "../services/source-context-service.js";
 import { requirePermission } from "../server/require-permission.js";
+import { rawSourceLabelsOf } from "../raw-sources.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -91,7 +92,11 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
-      const doc = await getSourceDocument(request.params.source_id);
+      // Opening a source's own text is a permission of its own in a
+      // members-only deployment (src/raw-sources.ts).
+      const doc = await getSourceDocument(request.params.source_id, {
+        rawSourceLabels: rawSourceLabelsOf(request.auth),
+      });
       if (!doc) {
         return reply.code(404).send({
           error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },

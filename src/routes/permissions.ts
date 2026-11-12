@@ -15,6 +15,7 @@
  *   GET    /parties, POST /parties: whose material the graph holds.
  *   PUT    /sources/:source_id/party: whose material one source is.
  *   GET    /labels, POST /labels: the labels and which reads which.
+ *   GET    /labels/mine: the labels the caller may file new material at.
  *   POST   /labels/:label/reads, DELETE /labels/:label/reads/:reads
  *   POST   /operator/administrators: the operator key's way back in.
  *
@@ -33,7 +34,9 @@ import {
   heldPermissions,
   standingOf,
 } from "../permissions.js";
+import { deploymentHoldsLabels } from "../db/client.js";
 import { requirePermission } from "../server/require-permission.js";
+import { choosableLabels } from "../services/label-service.js";
 import { getContributorById } from "../services/contributor-service.js";
 import {
   LABEL_DESCRIPTION_MAX_CHARS,
@@ -333,6 +336,36 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: administrator,
     handler: async (_request, reply) => reply.send({ labels: await listLabels() }),
+  });
+
+  // What a page, or an agent, needs where a label is chosen or shown
+  // (server/request-labels.ts): the labels this request may file new
+  // material at, and what each means for who reads it.
+  app.get("/labels/mine", {
+    schema: {
+      tags: ["permissions"],
+      summary:
+        "The labels you may file new material at, and who reads each: for choosing a label when you start something new",
+      description:
+        "must_choose is true when this deployment holds material at more than one label and the " +
+        "request is a signed-in session: a request that starts something new (a source, a " +
+        "proposed node, a granting conversation, a conversation with the Assistant, an API key) " +
+        "must then name one of these in `label`, and there is no default. works_at is set " +
+        "instead when the request was made with an API key or an access token, or by the " +
+        "Assistant: that credential works at one label, fixed when it was made, and names none. " +
+        "For each label: what else its readers read, who reads it (who_reads, in words), and the " +
+        "labels that read it, of which only those you may read are named.",
+    },
+    preHandler: signedIn,
+    handler: async (request, reply) => {
+      const held = await deploymentHoldsLabels();
+      const fixed = held ? request.auth?.fixedLabel : undefined;
+      return reply.send({
+        must_choose: held && !fixed,
+        works_at: fixed?.label ?? null,
+        labels: await choosableLabels(),
+      });
+    },
   });
 
   app.post<{ Body: { name: string; description: string; reads?: string[] } }>("/labels", {

@@ -60,7 +60,8 @@ describe("GET /runs/:id visibility gate", () => {
     await (await app()).inject({ url: `/runs/${RUN}?include_private=true` });
     expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: true });
     await (await app()).inject({ url: `/runs/${RUN}/steps/0?include_private=true` });
-    expect(mocks.getRunStep).toHaveBeenCalledWith(RUN, 0, { isService: true });
+    // On the public graph nothing holds a reader back from source text.
+    expect(mocks.getRunStep).toHaveBeenCalledWith(RUN, 0, { isService: true, rawSourceLabels: null });
   });
 
   it("does not open private runs to a signed-in session, even with the service key", async () => {

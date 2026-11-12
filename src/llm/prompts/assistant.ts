@@ -213,8 +213,27 @@ export function getAssistantContext(input: {
   waiting: string[];
   decided: string[];
   maxTurns: number;
+  /**
+   * The label the conversation works at, where the deployment holds
+   * material at more than one (server/request-labels.ts). Absent everywhere
+   * else, and then nothing is said.
+   */
+  label?: string;
 }): string {
   const list = (items: string[]) => (items.length > 0 ? items.join("; ") : "none");
+  // What the run's own brief says about the label covers what the run reads
+  // and writes (label-note.ts). This adds what is true of the tools that act
+  // for the user, which are held to the conversation's label as a key is.
+  const label = input.label
+    ? `
+Label: This conversation works at the label \`${input.label}\`, which your user chose when they
+started it and which cannot be changed. The tools that act for your user file what they add at
+\`${input.label}\`, and act only on things that carry it: a call about something at another label
+is refused and says so. That is so that nothing you read here can be filed where more people
+would see it. Your user can act on such a thing themselves from its page, or start a
+conversation at its label. A held action's card shows them the label it will write at.
+`
+    : "";
   return `Context for this reply (from the system, not from your user).
 
 Opened from: ${input.openedFrom}
@@ -224,7 +243,7 @@ This conversation has cost so far: ${usd(input.conversationMicroUsd)}.
 Allowed without asking: ${input.allowedKinds.length > 0 ? input.allowedKinds.join(", ") : "nothing"}. Anything else that spends owls on the graph or publishes is held for your user.
 Held actions waiting on your user: ${list(input.waiting)}
 Their decisions since your last reply: ${list(input.decided)}
-
+${label}
 Budget: Your work is metered at real cost, model tokens and any paid tool,
 and charged to your user's balance as it runs. Nothing else limits it:
 there is no ceiling on this reply. If the balance runs out the run ends

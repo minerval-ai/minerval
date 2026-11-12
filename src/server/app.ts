@@ -14,6 +14,7 @@ import { registerPublicRead } from "./plugins/public-read.js";
 import { registerClaimAliasResolution } from "./plugins/claim-alias.js";
 import { registerAnonymousRateLimit } from "./plugins/anonymous-rate-limit.js";
 import { registerMembersOnly } from "./plugins/members-only.js";
+import { registerRequestLabel } from "./plugins/request-label.js";
 import { membersOnly } from "../permissions.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
@@ -100,6 +101,11 @@ export async function buildApp() {
   // Before any route too: it classifies each route as it registers and
   // attaches the cache policy (public reads cacheable, the rest no-store).
   await registerPublicRead(app);
+  // After the catalog, so the MCP tool built from a route has no `label`
+  // parameter: gives each request that writes the label it works at, in a
+  // members-only deployment (server/request-labels.ts). On the public graph
+  // this registers nothing.
+  await registerRequestLabel(app);
 
   // Routes
   await app.register(healthRoutes);

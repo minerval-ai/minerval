@@ -221,6 +221,13 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /permissions/accounts": { name: "list_accounts" },
   "GET /parties": { name: "list_parties" },
   "GET /labels": { name: "list_labels" },
+  "GET /labels/mine": {
+    name: "get_my_labels",
+    note:
+      "Free. works_at is the one label this connection works at where the deployment holds " +
+      "material at more than one: everything you add is filed there, and you act only on what " +
+      "carries it.",
+  },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },

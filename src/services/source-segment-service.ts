@@ -19,6 +19,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
 import { runAtLabel } from "../llm/usage-context.js";
+import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
@@ -308,7 +309,11 @@ export interface DocumentSegmentView {
   label: string | null;
   char_start: number;
   char_end: number;
-  /** Leaves carry their text; a section's text is its children's. */
+  /**
+   * Leaves carry their text; a section's text is its children's. Null too,
+   * with `label`, on every segment of a document whose text is withheld
+   * from this reader (text_withheld on the document says so).
+   */
   text: string | null;
   instances: DocumentInstanceView[];
 }
@@ -326,16 +331,36 @@ export interface SourceDocumentView {
    * before extractions were recorded.
    */
   extractions: ExtractionRecord[];
+  /**
+   * Present when the reader may read this source and may not open it
+   * (src/raw-sources.ts): the segments then come without their text and
+   * headings, and this says so and which permission opens them. What the
+   * agents recorded from the document is shown either way.
+   */
+  text_withheld?: WithheldSourceText;
 }
 
 /**
  * The document as annotated text: its segments in order, each passage with
  * the claims that assert or engage it and each claim Steward's reading. The
  * source page's body. Anchors instances recorded since the last pass first.
+ *
+ * `rawSourceLabels` is the labels whose raw sources the reader may open, or
+ * null where nothing is held (the public graph, and work that is not a
+ * person's read). A reader who may not open this source's label gets its
+ * structure and what the agents recorded, with the text withheld and said
+ * to be.
  */
-export async function getSourceDocument(sourceId: string): Promise<SourceDocumentView | null> {
-  const [row] = await rawQuery<{ raw_content: string | null }>(`SELECT raw_content FROM sources WHERE id = $1`, [sourceId]);
+export async function getSourceDocument(
+  sourceId: string,
+  opts: { rawSourceLabels?: readonly string[] | null } = {}
+): Promise<SourceDocumentView | null> {
+  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string }>(
+    `SELECT raw_content, sensitivity_label FROM sources WHERE id = $1`,
+    [sourceId]
+  );
   if (!row) return null;
+  const open = mayOpenRawSources(opts.rawSourceLabels ?? null, row.sensitivity_label);
   const text = htmlToText(row.raw_content ?? "");
   await anchorInstances(sourceId, text).catch(() => 0);
   const [segments, instances] = await Promise.all([
@@ -403,13 +428,15 @@ export async function getSourceDocument(sourceId: string): Promise<SourceDocumen
       parent_id: s.parent_id,
       ordinal: s.ordinal,
       kind: s.kind,
-      label: s.label,
+      // A heading is the document's own words, like the passage under it.
+      label: open ? s.label : null,
       char_start: s.char_start,
       char_end: s.char_end,
-      text: s.kind === "section" ? null : text.slice(s.char_start, s.char_end),
+      text: !open || s.kind === "section" ? null : text.slice(s.char_start, s.char_end),
       instances: bySegment.get(s.id) ?? [],
     })),
     unanchored,
     extractions: await sourceExtractions(sourceId),
+    ...(open ? {} : { text_withheld: withheldSourceText(row.sensitivity_label) }),
   };
 }

@@ -25,6 +25,7 @@ import {
   listRunSteps,
   verifyRunLog,
 } from "../services/run-view-service.js";
+import { rawSourceLabelsOf } from "../raw-sources.js";
 
 const RUN_ID = { type: "string", pattern: "^[0-9a-fA-F-]{36}$" } as const;
 
@@ -113,6 +114,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
         kind,
         tool,
         isService: isService(request),
+        rawSourceLabels: rawSourceLabelsOf(request.auth),
       });
       if (!page) return notFound(reply, request, "Run");
       return reply.send(page);
@@ -134,6 +136,9 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const step = await getRunStep(request.params.run_id, request.params.seq, {
         isService: isService(request),
+        // Text a step holds from a source is a permission of its own in a
+        // members-only deployment (src/raw-sources.ts).
+        rawSourceLabels: rawSourceLabelsOf(request.auth),
       });
       if (!step) return notFound(reply, request, "Step");
       return reply.send(step);

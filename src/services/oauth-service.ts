@@ -183,6 +183,12 @@ export interface ConsentOutcome {
 export async function approveAuthorizationRequest(input: {
   requestId: string;
   userId: string;
+  /**
+   * The label the tokens this consent issues will work at
+   * (server/request-labels.ts), named by the person approving. Left out on
+   * a deployment with one label, where the tokens work at `public`.
+   */
+  workLabel?: string;
 }): Promise<ConsentOutcome | null> {
   const db = getDb();
   const code = randomToken(AUTH_CODE_PREFIX);
@@ -193,6 +199,7 @@ export async function approveAuthorizationRequest(input: {
       userId: input.userId,
       codeHash: hashToken(code),
       codeExpiresAt: new Date(Date.now() + CODE_TTL_MS),
+      ...(input.workLabel !== undefined ? { workLabel: input.workLabel } : {}),
     })
     .where(
       and(
@@ -247,12 +254,17 @@ async function issueTokenPair(
     clientId: string; // oauth_clients.id (uuid)
     userId: string;
     scope: string | null;
+    /** The label the pair works at; absent, the column's default, `public`. */
+    workLabel?: string | null;
   },
   db: TxQuery["db"] = getDb()
 ): Promise<IssuedTokens> {
   const accessToken = randomToken(ACCESS_TOKEN_PREFIX);
   const refreshToken = randomToken(REFRESH_TOKEN_PREFIX);
   const now = Date.now();
+  // The label is the consent's, the same for the access token and the
+  // refresh token and for every pair a refresh issues after them.
+  const label = input.workLabel ? { workLabel: input.workLabel } : {};
   await db.insert(oauthTokens).values([
     {
       grantId: input.grantId,
@@ -262,6 +274,7 @@ async function issueTokenPair(
       tokenType: "access",
       scope: input.scope,
       expiresAt: new Date(now + ACCESS_TOKEN_TTL_MS),
+      ...label,
     },
     {
       grantId: input.grantId,
@@ -271,6 +284,7 @@ async function issueTokenPair(
       tokenType: "refresh",
       scope: input.scope,
       expiresAt: new Date(now + REFRESH_TOKEN_TTL_MS),
+      ...label,
     },
   ]);
   return {
@@ -342,6 +356,7 @@ export async function exchangeAuthorizationCode(input: {
     clientId: row.clientId,
     userId: row.userId,
     scope: row.scope,
+    workLabel: row.workLabel,
   });
 }
 
@@ -393,6 +408,7 @@ export async function refreshAccessToken(input: {
         clientId: row.clientId,
         userId: row.userId,
         scope: row.scope,
+        workLabel: row.workLabel,
       },
       tx.db
     );

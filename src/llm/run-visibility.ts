@@ -36,6 +36,27 @@ export interface Classification {
   why: string;
 }
 
+/**
+ * Where a run's log holds a source's stored text (src/raw-sources.ts): the
+ * agents whose opening message carries a document, and the tools whose
+ * output is a window of one. A reader of the log who may not open raw
+ * sources is shown these parts as withheld (services/run-view-service.ts).
+ * A passage an agent chose to quote is not on this list: that is what the
+ * agent wrote, and reading at the label covers it.
+ *
+ * tests/unit/db/raw-source-text.test.ts fails when a tool file comes to
+ * read a source's stored text and is not accounted for here.
+ */
+export const AGENTS_GIVEN_SOURCE_TEXT: Readonly<Record<string, string>> = {
+  extractor: "the document it is asked to read is in its opening message",
+};
+
+export const TOOLS_RETURNING_SOURCE_TEXT: Readonly<Record<string, string>> = {
+  provenance_read_source: "a window of the source's stored text",
+  examination_outline: "the opening words of each segment of the examined document",
+  get_contribution_details: "an excerpt of the stored text of a source proposed for intake",
+};
+
 /** Agents whose inputs are public by construction; any other agent starts private. */
 export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   assistant: { reads: "private", why: "a user's private conversation with their own agent" },

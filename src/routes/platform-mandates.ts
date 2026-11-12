@@ -135,7 +135,7 @@ export async function platformMandateRoutes(app: FastifyInstance): Promise<void>
     preHandler: [app.requireOperator],
     handler: async (_request, reply) => {
       const keys = await listPlatformGrantmakingKeys();
-      return reply.send({ keys: keys.map(serializeKey) });
+      return reply.send({ keys: keys.map((k) => serializeKey(k)) });
     },
   });
 

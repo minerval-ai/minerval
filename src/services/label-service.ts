@@ -1,4 +1,4 @@
-import { rawQuery } from "../db/client.js";
+import { currentReadClearance, rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 
@@ -177,4 +177,88 @@ export async function pendingPassLabel(claimId: string, claimLabel: string): Pro
     [claimId]
   );
   return waiting.length === 1 ? waiting[0]!.sensitivity_label : claimLabel;
+}
+
+/** One label as the place where a label is chosen shows it. */
+export interface ChoosableLabel {
+  name: string;
+  description: string;
+  /** The other labels whose material a reader of this one also reads. */
+  reads: string[];
+  /** Everyone signed in to the deployment reads it. True of `public` alone. */
+  read_by_everyone: boolean;
+  /**
+   * The other labels whose readers also read this one, as far as the asker
+   * may know them: only labels the asker reads are named.
+   */
+  also_read_from: string[];
+  /** How many more labels read this one that the asker may not read, and so are not named. */
+  also_read_from_others: number;
+  /** The same, as a sentence or two a person can be shown. */
+  who_reads: string;
+}
+
+const quotedList = (labels: readonly string[]): string => {
+  const names = labels.map((l) => `"${l}"`);
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
+};
+
+/** Who reads material filed at a label, in words (the `who_reads` of a ChoosableLabel). */
+export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" | "also_read_from_others">): string {
+  if (label.name === PUBLIC_LABEL) {
+    return "Everyone who is signed in to this deployment can read it, and anyone may open its sources.";
+  }
+  const also: string[] = [];
+  if (label.also_read_from.length > 0) also.push(`at ${quotedList(label.also_read_from)}`);
+  if (label.also_read_from_others > 0) {
+    const n = label.also_read_from_others;
+    also.push(`at ${n} ${also.length > 0 ? "more " : ""}label${n === 1 ? "" : "s"} you are not cleared to read`);
+  }
+  return (
+    `People granted the permission to read at "${label.name}" can read it` +
+    (also.length > 0 ? `, and so can people granted it ${also.join(" and ")}, which read${label.also_read_from.length + label.also_read_from_others === 1 ? "s" : ""} "${label.name}"` : "") +
+    `. A source filed here can be opened in full only by people who also hold the permission to ` +
+    `open raw sources at "${label.name}". The others read what the agents wrote from it.`
+  );
+}
+
+/**
+ * The labels the work in progress may file new material at, with what a
+ * page or an agent needs to say what each one means: its description, what
+ * it reads, and who reads it. They are the labels the request reads: a
+ * person's clearance, or for a key, a token or the Assistant, what that
+ * credential's one label reads within it.
+ *
+ * Which labels read a label is worked out for every label the deployment
+ * has, and then only the ones the asker reads are named: the name of a
+ * label a person may not read is not theirs to learn (as in the
+ * administrators' log), and the count says that there are some.
+ */
+export async function choosableLabels(): Promise<ChoosableLabel[]> {
+  const readable = (await currentReadClearance()) ?? [PUBLIC_LABEL];
+  const rows = await rawQuery<{ name: string; description: string; reads: string[] }>(
+    `SELECT l.name, l.description, minerval_labels_readable_from(ARRAY[l.name]) AS reads FROM labels l`
+  );
+  const mine = new Set(readable);
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  return readable
+    .filter((name) => byName.has(name))
+    .sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1))
+    .map((name) => {
+      const row = byName.get(name)!;
+      const readers = rows.filter((r) => r.name !== name && r.reads.includes(name)).map((r) => r.name);
+      const facts = {
+        name,
+        also_read_from: name === PUBLIC_LABEL ? [] : readers.filter((r) => mine.has(r)).sort(),
+        also_read_from_others: name === PUBLIC_LABEL ? 0 : readers.filter((r) => !mine.has(r)).length,
+      };
+      return {
+        ...facts,
+        description: row.description,
+        reads: row.reads.filter((r) => r !== name).sort(),
+        read_by_everyone: name === PUBLIC_LABEL,
+        who_reads: whoReads(facts),
+      };
+    });
 }

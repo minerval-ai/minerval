@@ -149,6 +149,19 @@ const sensitivityLabelColumn = () =>
     .default(sql`minerval_default_label()`)
     .references(() => labels.name);
 
+// The one label a credential works at (src/server/request-labels.ts): an API
+// key's, and an access token's. It is `work_label` and not sensitivity_label
+// because it does not say who may read the row. A key and a token are the
+// account's own and carry no label of that kind, and the step that holds
+// every table with a sensitivity_label column to a clearance must not take
+// these tables for labelled ones. A credential minted before a deployment
+// had a second label works at 'public', which was the only label there was.
+const workLabelColumn = () =>
+  text("work_label")
+    .notNull()
+    .default("public")
+    .references(() => labels.name);
+
 // ---------------------------------------------------------------------------
 // parties: whose material a source is (src/permissions.ts)
 //
@@ -2005,6 +2018,10 @@ export const apiKeys = pgTable(
     keyPrefix: text("key_prefix").notNull(),
     keyHash: text("key_hash").notNull().unique(),
     scope: text("scope").notNull().default("user"),
+    // The label every request made with this key works at, fixed when the
+    // key is minted and never changed: an outside agent holding the key
+    // does not choose a label call by call.
+    workLabel: workLabelColumn(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -4021,6 +4038,10 @@ export const oauthAuthorizationRequests = pgTable(
       onDelete: "cascade",
     }),
     codeHash: text("code_hash").unique(),
+    // The label the person approving named for the tokens this consent
+    // issues; null until it is approved, and where the approval named none
+    // (a deployment whose only label is 'public').
+    workLabel: text("work_label").references(() => labels.name),
     // The consent window: an unapproved request dies after this.
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     // The minted code's own (shorter) lifetime.
@@ -4053,6 +4074,10 @@ export const oauthTokens = pgTable(
     tokenHash: text("token_hash").notNull().unique(),
     tokenType: text("token_type").notNull(), // 'access' | 'refresh'
     scope: text("scope"),
+    // The label every request made with this token works at: the one the
+    // person named when they approved the consent, carried through each
+    // refresh. Fixed for the life of the grant.
+    workLabel: workLabelColumn(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

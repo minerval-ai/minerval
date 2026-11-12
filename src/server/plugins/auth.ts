@@ -66,6 +66,15 @@ import { membersOnly, type Standing } from "../../permissions.js";
 
 export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass";
 
+/**
+ * The one label a credential works at (server/request-labels.ts), and what
+ * kind of credential it is, for the sentence a refusal says.
+ */
+export interface FixedLabel {
+  label: string;
+  of: "API key" | "access token" | "Assistant conversation";
+}
+
 export interface RequestAuth {
   method: AuthMethod;
   /** Acting account id (contributors.id); null when no user identity applies. */
@@ -90,6 +99,17 @@ export interface RequestAuth {
    * answers the public standing for a request that carries none.
    */
   standing?: Standing;
+  /**
+   * Set when the request came with a credential an agent can hold: an API
+   * key, an access token, or the Assistant acting in one conversation. Such
+   * a credential works at one label, fixed by the person when it was made:
+   * the request reads what that label reads, within what the person may
+   * read, and writes at that label and no other. Absent for a signed-in
+   * session, where each request that writes gets its label from the row it
+   * is about or from the person (server/plugins/request-label.ts), and
+   * absent on the public graph.
+   */
+  fixedLabel?: FixedLabel;
 }
 
 /**
@@ -244,6 +264,9 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
           contributorExternalId: resolved.user.externalId,
           isService: false,
           isSession: false,
+          ...(membersOnly(config)
+            ? { fixedLabel: { label: resolved.token.workLabel, of: "access token" as const } }
+            : {}),
         };
       } else if (presented) {
         // 1. DB-backed key
@@ -280,6 +303,9 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             contributorExternalId: resolved.user.externalId,
             isService: resolved.key.scope === "service",
             isSession: false,
+            ...(membersOnly(config)
+              ? { fixedLabel: { label: resolved.key.workLabel, of: "API key" as const } }
+              : {}),
           };
         } else if (envKeysConfigured && config.apiKeys.includes(presented)) {
           // 2. Env-configured operator key
@@ -352,8 +378,11 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             .code(403)
             .send({ error: "Account suspended", code: "ACCOUNT_SUSPENDED" });
         }
+        // A session is the person, not the key the web tier presented for
+        // them: it has no fixed label, and says or derives one per request.
+        const { fixedLabel: _ofTheServiceKey, ...withoutFixedLabel } = auth;
         auth = {
-          ...auth,
+          ...withoutFixedLabel,
           userId: actingUser.id,
           contributorExternalId: actingUser.externalId,
           isSession: true,

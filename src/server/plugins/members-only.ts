@@ -34,16 +34,28 @@
  *
  * Standing is resolved here, once (services/permission-service.ts), put on
  * request.auth, and its clearance entered into the async context for the
- * rest of the request (currentClearance in llm/usage-context.ts).
+ * rest of the request (currentClearance in llm/usage-context.ts). A request
+ * made with an API key or an access token also has that credential's one
+ * label entered there (server/request-labels.ts); a session's request gets
+ * its label later, from the route (plugins/request-label.ts).
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteOptions } from "fastify";
 import { runWithUsageContext } from "../../llm/usage-context.js";
 import { membersOnly } from "../../permissions.js";
 import { bearerToApiKey } from "../../routes/mcp.js";
 import { resolveStanding } from "../../services/permission-service.js";
+import { deploymentHoldsLabels } from "../../db/client.js";
 import { refuse } from "../require-permission.js";
+import { LABEL_MESSAGES } from "./request-label.js";
 import { markAuthenticated, presentsCredentials } from "./auth.js";
 import { routeKey } from "./route-catalog.js";
+
+/**
+ * The fixed label of the credential a request came with, where the
+ * deployment holds more than one label. Entered on the async context with
+ * the clearance, so every read and write of the request is held to it.
+ */
+const labelOfRequest = new WeakMap<FastifyRequest, string>();
 
 export type SignInClass = "anyone" | "own_credential" | "service" | "signed_in" | "member";
 
@@ -168,6 +180,21 @@ export async function registerMembersOnly(app: FastifyInstance): Promise<void> {
     if (!standing.member) {
       return refuse(reply, 403, { error: NOT_A_MEMBER_MESSAGE, code: "NOT_A_MEMBER" });
     }
+    // A key, a token and the Assistant in one conversation work at one
+    // label (server/request-labels.ts). Where the deployment holds more
+    // than one, the whole request is held to it, reads included, and a
+    // credential whose label the person may no longer read is refused: it
+    // never reads more than the person it acts for.
+    const fixed = auth.fixedLabel;
+    if (fixed && (await deploymentHoldsLabels())) {
+      if (!standing.clearance.includes(fixed.label)) {
+        return refuse(reply, 403, {
+          error: LABEL_MESSAGES.credentialNotReadable(fixed),
+          code: "CREDENTIAL_LABEL_NOT_READABLE",
+        });
+      }
+      labelOfRequest.set(request, fixed.label);
+    }
   });
 
   // The clearance goes on the async context for whatever runs next. `done`
@@ -177,7 +204,8 @@ export async function registerMembersOnly(app: FastifyInstance): Promise<void> {
   const enterClearance = (request: FastifyRequest, _reply: FastifyReply, done: () => void) => {
     const standing = request.auth?.standing;
     if (!standing) return done();
-    runWithUsageContext({ clearance: standing.clearance }, done);
+    const label = labelOfRequest.get(request);
+    runWithUsageContext({ clearance: standing.clearance, ...(label !== undefined ? { label } : {}) }, done);
   };
   app.addHook("onRequest", enterClearance);
   app.addHook("preValidation", enterClearance);

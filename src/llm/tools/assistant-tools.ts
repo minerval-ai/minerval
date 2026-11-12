@@ -206,9 +206,14 @@ export interface AccountTools {
  * API key. Whatever the request that started the turn carried (the web
  * tier's service key acting for a signed-in user), the Assistant's own calls
  * get no service or session trust, so it can do nothing an MCP client
- * holding the user's key could not.
+ * holding the user's key could not. `label` is the label of the
+ * conversation the calls are made in, which they are held to as a key is
+ * held to its own.
  */
-export function assistantAuth(user: { id: string; externalId: string | null }): RequestAuth {
+export function assistantAuth(
+  user: { id: string; externalId: string | null },
+  label?: string
+): RequestAuth {
   return {
     method: "api_key",
     userId: user.id,
@@ -216,6 +221,10 @@ export function assistantAuth(user: { id: string; externalId: string | null }): 
     contributorExternalId: user.externalId,
     isService: false,
     isSession: false,
+    // The conversation's label (server/request-labels.ts): every call the
+    // Assistant makes in it reads and writes at that label, like a key
+    // minted for it.
+    ...(label !== undefined ? { fixedLabel: { label, of: "Assistant conversation" as const } } : {}),
   };
 }
 
