@@ -475,10 +475,10 @@ unspent money. Contributors propose requests, answers and
 estimates, and offer material for a request, through the Contribution
 Reviewer like any other contribution, and propose a question directly
 (`POST /claims/propose` with `kind: "question"`). Research a Grantmaker
-launches with `contribution_budget_usd` submits what it establishes as
+commissions with `contribution_budget_owls` submits what it establishes as
 contributions under the mandate: reviewed like anyone's, with the review
 metered to the mandate's budget job, shown as "a funded mandate", and
-earning no one reputation or owls. The budget is a dollar amount of the
+earning no one reputation or owls. The budget is an amount, in owls, of the
 mandate's budget that the Grantmaker delegates for those reviews
 (`research_runs.contribution_budget_micro_usd`). Each submission reserves
 an estimate of its review's cost (the average of recent reviews, or
@@ -489,7 +489,7 @@ replaces the estimate. The budget is visible to both agents: the
 Researcher sees what is committed, what is left and what a review is
 expected to cost in its task message, after every turn and in each
 submission's result, and the Grantmaker sees the same in the
-`delegate_research` and `get_research_run` results. A review that costs
+`get_research_run` results. A review that costs
 more than estimated can carry a run somewhat past its budget.
 
 ### Formal statements and machine-checked arguments
@@ -1101,15 +1101,18 @@ These act through tools over the life of a claim and the graph:
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest
   costs, and drafts or refuses a mandate; once the mandate is live it writes
-  the operating policy its program officers carry out and takes autonomous
-  review passes that read back what its money did, revise the policy, grow
-  the plan, pace the spend, and move budget between peer mandates.
+  the operating policy its program officers carry out and works in one
+  long session on it, woken by what it subscribed to and its check-ins, in
+  which it reads back what its money did, decides what its officers
+  escalate, revises the policy, grows the plan, holds a reserve, and moves
+  budget between peer mandates.
 - **Program officer** works a mandate's inbox on the cheap tier
   (llm/agents/program-officer.ts): petitions from the runs the mandate pays
   for, what its lookouts raised, curations, audits, requests and
   consistency flags put in front of it. It decides under the operating
-  policy, up to the limit the policy states with its reason, and escalates
-  the rest to the Grantmaker, which decides in the same sitting. Every
+  policy, up to the limit the policy states with its reason, holds what is
+  better decided once related work reports, and escalates the rest into
+  the Grantmaker's session. Every
   decision is logged with its reason (`mandate_decisions`). Like the
   Grantmaker it serves the mandate; the agents whose runs it pays for are
   never told which mandate it is.
@@ -1121,7 +1124,7 @@ These act through tools over the life of a claim and the graph:
   record, and the open web and acts on what it finds: a claim to reassess
   or a source to ingest, commissioned from the mandate within the limit the
   Grantmaker delegated or raised to the mandate's program officers; a note
-  for the next review pass. It writes no assessment and sets no importance,
+  for the Grantmaker. It writes no assessment and sets no importance,
   and every flag is
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
@@ -1148,8 +1151,9 @@ These act through tools over the life of a claim and the graph:
 The agents that run on a budget of their own (the Stewards, the Curator,
 the Consistency Checker, the Audit Agent, the Correspondent) carry
 `commission`, which pays for another agent's run from that budget, and
-`petition_mandate`, which asks the mandate paying for the run for more and
-gets the answer in the run (docs/allocation.md, "Petitions"). Lookouts and
+`petition_mandate`, which asks the mandate paying for the run for more
+without blocking it; the answer comes back into the run's session
+(docs/allocation.md, "Petitions"). Lookouts and
 program officers spend the mandate's money directly, within their limits.
 These agents, the officers, lookouts and the Researcher also carry
 `query_sql`, one read-only SELECT over the `public_read` views
@@ -1426,17 +1430,16 @@ mandate's plan and its result goes to the claim's Steward, which files a
 request when it needs one no plan funds; docs/mathematics.md 7.2, #768). An administrator (the
 Claim Steward on its claim, a Grantmaker on a funded mandate, the Curator
 on the graph's structure, the Audit Agent on a decision under review)
-launches it
-with `delegate_research`: a brief written for a capable assistant that
-knows nothing of the claim and cannot ask a question back, a model tier, a
-dollar ceiling, an effort level, and whether the constitution is prepended
-to its prompt, which it is by default. That run is synchronous: the
-launcher's tool call blocks until the researcher reports, and the report is
-the tool result. A Steward may instead commission research (`commission`,
-kind `research`): a `research` ledger row the engine executor runs on its
-own, whose report returns into the Steward's session when it has paused to
-wait for it, or into the node's inbox (docs/allocation.md, "Sessions that
-pause and resume"). It answers only to its launcher, owns nothing, and cannot
+commissions it (`commission`, kind `research`; the Grantmaker through its
+mandate's `commission`, with `research_tier`): a brief written for a
+capable assistant that knows nothing of the claim and cannot ask a question
+back, a model tier and a budget. The run is a `research` ledger row the
+engine executor runs on its own, paid whole from the launcher's budget;
+nobody blocks on it. Its report returns into the launcher's session, shown
+in its next tool result or resuming it if it has paused, or, with no
+session waiting, into the node's inbox (docs/allocation.md, "Sessions that
+pause and resume"). `delegate_research`, which ran the researcher inside
+the launcher's turn and blocked it, is retired. It answers only to its launcher, owns nothing, and cannot
 launch instruments of its own. The report opens with an outcome (answered,
 partly answered, not answered, ill posed) and gives each finding with its
 locator and the words or numbers it rests on, so the launcher can check the
@@ -1451,7 +1454,7 @@ the ordinary loop on the cheap tier, and is the right choice for reading and
 mapping a large literature economically. A tier carries the code-execution
 sandbox (Python, no network), an Anthropic server tool, when its configured
 model is Anthropic-served; by default that is strong and standard, and the
-`delegate_research` description names the tiers that have it in the
+`commission` description names the tiers that have it in the
 deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere), `read_page`, and `read_arxiv_source`, which
@@ -1498,7 +1501,7 @@ reviewed by the Steward with `provenance_get_map`, and the map's reader-
 facing summary stays the Steward's to write. A run a Grantmaker launched
 writes only its notebook: a Grantmaker serves its mandate as well as the
 graph, and funding is kept apart from what the graph says (§19), so
-`delegate_research` from a mandate takes no `claim_id` and no
+research a mandate commissions has no node and no
 `examine_source_id`, and the researcher withholds the provenance and
 examination tools from any run whose launcher is not a Claim Steward or a
 request (`launcherWritesGraph`, `src/services/research-run-service.ts`).
@@ -1518,9 +1521,8 @@ notebook and report, so a programme carried out in stages begins each
 stage where the last stopped.
 
 **Document reviews (#865).** An examination of a document is claim-scoped
-when a Steward launches it on a document in its claim's map, inline
-(`delegate_research` with `examine_source_id`) or on its own (`commission`
-kind research with `examine_source_id`). A review of a document for its
+when a Steward commissions it on a document in its claim's map
+(`commission` kind research with `examine_source_id`). A review of a document for its
 own sake is a request that bears on that document and on no node
 (`documentUnderReview`, `src/services/request-service.ts`): anyone may file
 one, the Curator keeps it, and a mandate funds it or not like any request.
@@ -1539,9 +1541,9 @@ own reading or does not, and there is no source-level verdict.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both
-loops, a wrap-up notice at 85 percent of it, a wall cap
-(`RESEARCHER_MAX_WALL_MINUTES` on a delegated run, a longer backstop on a
-request run) and a turn cap (`RESEARCHER_MAX_TURNS`); on
+loops, a wrap-up notice at 85 percent of it, a wall-clock backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`) and a turn cap
+(`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
 then stopped. What a run may be given is the launcher's own money, and
@@ -1554,27 +1556,21 @@ the cap a buyer was quoted for a paid order, and the remaining budget of
 the job funding a money trigger or a deep decomposition. (A mandate's plan
 items are commissions on ledger actions, so a pass they buy works to the
 allocation covering it.) What is left is that budget less the pass's metered
-spend, the research it already launched included; a pass with no budget is
-not offered `delegate_research`. A Grantmaker pays from its mandate's
-uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
-which covers a run's `budget_usd` and any `contribution_budget_usd`; there
-is no deployment cap on either, and no count of runs per pass; a delegated run's
-wall-clock time is capped (`RESEARCHER_MAX_WALL_MINUTES`) because its
-launcher waits on it, and the launcher is told so. A request run from the
-ledger has no launcher waiting; its budget bounds it, and a long backstop
-(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240) only ends a run that has
-stopped making progress, which the run is told with that reason. A durable daily
-cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
-it for research no funder pays for (a pass with neither a user nor a job
-on its usage context), as the LLM budget tracker's limits apply only to
-unattributed calls; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
-the solver is, and while off no launcher is offered `delegate_research`;
+spend, the research it already commissioned included. A Grantmaker pays
+from its mandate's money within its pace and escrow, like any commission
+(docs/allocation.md, "Pace and reserve"), which covers a run's budget and
+any `contribution_budget_owls`; there is no deployment cap on either, and
+no count of runs. Since nobody waits on a research run, every one has its
+budget as its bound and the long backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240), which only ends a run that
+has stopped making progress, and the run is told so with that reason.
+`RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
+the solver is, and while it is off or paused a funded `research` row waits;
 production sets it in `infra/lib/api-stack.ts`),
 and a `researcher_paused` row in `platform_flags` halts a run in flight.
-The spend is metered under the launcher's usage context, so it lands on the
-claim and the job that funded the launching run, appears in `llm_usage`
-under agent `researcher`, and is added to the launcher's own cost meter, so
-the launching action is charged for it. The shared pieces of this harness,
+The spend is metered to the `research` row and settled like any
+commission, against the payer the money came from (it keeps its payer down
+the chain), and appears in `llm_usage` under agent `researcher`. The shared pieces of this harness,
 the stop reasons, the reminder fraction, and the container
 metering, live in `src/llm/instrument-harness.ts` and serve the solver too.
 
@@ -2011,12 +2007,12 @@ healthy, ran nothing until deploys restarted the process.
 Work a deployment fault stops is never failed for good. An ingest is not
 cancelled: its row waits and the engine executor submits the source again
 (`url-extraction.ts`), and the failed job, recorded by the fault's class, is
-not an event that wakes its mandate's review. A mandate reads of a fault in
-its next review's briefing: the faults open now, those that came and went
+not an event for its mandate. A mandate reads of a fault in its
+Grantmaker's next sitting's briefing: the faults open now, those that came and went
 since its last pass, and its own rows waiting on one, with what is held.
 Held money stays held: a commission the platform cannot run yet keeps its
-budget, which counts toward the daily rate of the UTC day it was placed on,
-as any work not yet run does, and not of later days. A tool a fault stops
+budget, which counts against the mandate's pace from when it was placed,
+as any work not yet run does. A tool a fault stops
 tells its agent so by class and says what to do: `match_claim` returns
 `outcome: "unavailable"`, which is not a verdict, and the Steward's rule is
 to mint nothing on it or on an embedding search alone, and to keep the
@@ -2127,10 +2123,12 @@ one; there is no prize fund), `prize_claims`, `prize_payouts`,
 `commissioned_by`, a brief, a reason and the `parent_action_id` of the run
 that paid for it) and, per mandate: `mandate_inbox` (what waits for its
 program officers), `petitions` (agents asking it for more, with the chain
-of runs behind each), `mandate_decisions` (every decision its officers,
+of runs behind each, and any hold on them), `mandate_decisions` (every decision its officers,
 Grantmaker and lookouts made, with the reason), and
 `mandate_policy_versions` (every version of its operating policy and its
-terms). `node_messages` is each node's inbox. The `public_read` schema holds
+terms). `events` is the log of what happened that someone may be told of,
+and `subscriptions` who wants to be told of what (docs/allocation.md,
+"Events and subscriptions"). `node_messages` is each node's inbox. The `public_read` schema holds
 the views `query_sql` reads, behind their own login roles, and `sql_usage`
 holds each caller's daily database time and the one-query-at-a-time lock.
 ### Attachments

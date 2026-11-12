@@ -1487,6 +1487,17 @@ export async function executeStewardTool(
         if (kindRefusal) return kindRefusal;
 
         const db = getDb();
+        // The verdict in force before this one, for the event a subscriber
+        // reads; never a reason to fail the verdict itself.
+        let before: { status: string | null } | undefined;
+        try {
+          [before] = await db
+            .select({ status: assessmentsInForce.status })
+            .from(assessmentsInForce)
+            .where(eq(assessmentsInForce.claimId, claimId));
+        } catch {
+          before = undefined;
+        }
 
         // Mark previous assessment as non-current
         await db
@@ -1532,6 +1543,18 @@ export async function executeStewardTool(
         // standing with inputs_recorded false, which readers report as "not
         // recorded", rather than failing a verdict that is already written.
         if (written?.id) {
+          const { recordEvent } = await import("../../services/event-service.js");
+          await recordEvent({
+            kind: "assessed",
+            nodeId: claimId,
+            refs: { assessment: written.id },
+            summary: before?.status
+              ? before.status === status
+                ? `Reassessed: still ${status} (confidence ${confidence}).`
+                : `Its verdict moved from ${before.status} to ${status} (confidence ${confidence}).`
+              : `First assessed: ${status} (confidence ${confidence}).`,
+            payload: { status_before: before?.status ?? null, status_after: status, confidence },
+          });
           try {
             await recordJudgmentInputs(rawQuery, "assessment", written.id, claimId);
           } catch (err) {

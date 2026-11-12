@@ -1,6 +1,6 @@
 /**
  * What a Grantmaker's own pass is told about its budget (#820): what the
- * figure is and who set it, that it is held against the day while the pass
+ * figure is and who set it, that it is held against the pace while the pass
  * runs, how to add to it, and, with figures, when the pass was started with
  * less than the figure. These sentences are the `basis` of the budget line
  * (turn-budget.ts) for the review and planning passes, whose budgets are
@@ -45,21 +45,21 @@ export interface ReviewPassBudgetFacts {
   /** A decomposition: its passes are paid from the Grantmaker share. */
   fromShare: boolean;
   floorOwls: number;
-  dailyRateMicroUsd: number;
-  /** Committed against today's rate so far, this pass's budget included. */
-  dayUsedMicroUsd: number;
+  /** Steady pace only: what the window allows and holds now, this pass's budget included. */
+  windowMicroUsd: number | null;
+  windowUsedMicroUsd: number | null;
   /** Escrow not yet committed, this pass's budget already taken out. */
   escrowFreeMicroUsd: number;
 }
 
 export function reviewPassBudgetBasis(f: ReviewPassBudgetFacts): string {
-  const paced = f.dailyRateMicroUsd > 0;
+  const paced = f.windowMicroUsd != null && f.windowMicroUsd > 0;
   const held = paced
-    ? `The whole of it is held against today's rate while this pass runs, and what you do not spend is freed when it ends.`
+    ? `The whole of it is held against your pace's window while this pass runs, and what you do not spend is freed when it ends.`
     : `The whole of it is held from your escrow while this pass runs, and what you do not spend is freed when it ends.`;
   const standing =
     (paced
-      ? `now ${owls(f.dayUsedMicroUsd)} of ${owls(f.dailyRateMicroUsd)} owls of today's rate are committed, ` +
+      ? `now ${owls(f.windowUsedMicroUsd ?? 0)} of ${owls(f.windowMicroUsd!)} owls of the pace's window are committed, ` +
         `this pass's budget included, and `
       : `now `) + `${owls(f.escrowFreeMicroUsd)} owls of escrow are uncommitted`;
   const short =
@@ -83,9 +83,9 @@ export function reviewPassBudgetBasis(f: ReviewPassBudgetFacts): string {
       `reason, from the next pass opened.`;
   const add =
     `If this pass needs more, add_to_pass_budget moves more of your escrow onto it, within what ` +
-    (paced ? `today's rate and the escrow have left` : `the escrow has left`) +
+    (paced ? `the pace's window and the escrow have left` : `the escrow has left`) +
     `, and gives you the figures when it cannot` +
-    (paced ? ` (the rate is yours to raise with set_daily_rate)` : ``) +
+    (paced ? ` (the pace is the funder's to change)` : ``) +
     `. That is cheaper than a second pass, which pays for the opening turn again.`;
   return `${what}${short} ${held} ${OPENING_TURN} ${add}`;
 }

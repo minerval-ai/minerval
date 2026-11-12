@@ -157,12 +157,13 @@ const minute = (iso: string | null): string => (iso ? `${iso.slice(0, 16).replac
  * failed attempt is charged.
  *
  * The decision on held money (#971): a commission the platform cannot run
- * yet keeps its hold, and the hold counts toward the daily rate of the UTC
- * day it was placed on, as any work not yet run does (day-use.ts). Freeing
- * it would let a mandate place a second day's worth of work behind the same
- * fault, and all of it would run, past the rate its funder set, the moment
- * the fault cleared. The hold does not carry into the next day's rate, and
- * what a pass leaves unspent returns when it runs. No limit is added and
+ * yet keeps its hold, and the hold counts against the mandate's pace from
+ * when it was placed, as any work not yet run does (pace-service.ts).
+ * Freeing it would let a mandate place a second window's worth of work
+ * behind the same fault, and all of it would run, past the pace its funder
+ * set, the moment the fault cleared. Under a steady pace the hold ages out
+ * of the window like any commitment, and what a pass leaves unspent returns
+ * when it runs. No limit is added and
  * none is lifted; the state and its reason are what the payer is shown.
  */
 export function faultWaitSentence(w: FaultWait): string {
@@ -172,7 +173,7 @@ export function faultWaitSentence(w: FaultWait): string {
     `. The platform retries it on its own` +
     (w.next_attempt_at ? ` (next attempt about ${minute(w.next_attempt_at)})` : "") +
     `; nothing about the work has failed and no attempt is charged. Its budget stays held for it ` +
-    `meanwhile and counts toward the daily rate of the day it was placed on, not of later days`
+    `meanwhile and counts against the mandate's pace from when it was placed, as any held budget does`
   );
 }
 
@@ -182,8 +183,8 @@ export const FAULT_WAIT_DESCRIPTION =
   "fault stopped the attempt (`waiting_on` is one of credits_fault, credentials_fault, " +
   "provider_unavailable; `waiting_since` and `next_attempt_at` say since when and when it is tried " +
   "next). Nothing about the work failed and no attempt is charged. The platform retries it on its own " +
-  "until it runs; its budget stays held for it meanwhile, counted toward the daily rate of the day it " +
-  "was placed on and not of later days. Commissioning it again does not help.";
+  "until it runs; its budget stays held for it meanwhile, counted against the mandate's pace from when " +
+  "it was placed, as any held budget is. Commissioning it again does not help.";
 
 /**
  * What a tool tells an agent whose call a platform fault stopped, in place

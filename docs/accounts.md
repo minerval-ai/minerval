@@ -443,7 +443,10 @@ model, running with the full constitution, surveys the scope, quotes
 expected costs in owls, pushes back where judgment differs, and drafts a
 mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
 the budget and starts the grant with the mandate as its plan; nothing runs
-or is charged before that.
+or is charged before that. The draft carries the mandate's pace, agreed
+with the funder: as needed (the escrow is the only bound, the default) or
+steady (at most so many owls committed in any rolling window), which only
+the funder changes afterwards (docs/allocation.md, "Pace and reserve").
 
 The Grantmaker replies in the background. Sending a message saves it and
 returns at once with the message's place (`message.index`,
@@ -469,11 +472,12 @@ and can be taken over by the next message. The Grantmaker works for the integrit
 graph and declines mandates that attempt to steer conclusions, at any
 budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
 items. A live mandate executes through the action ledger
-(docs/allocation.md): planning runs, its Grantmaker's periodic review
-passes, and ingest items are self-funded ledger actions run by the engine
+(docs/allocation.md): planning runs, the sittings of its Grantmaker's
+session, and ingest items are ledger actions the mandate commissions
+itself, run by the engine
 executor (`src/workers/engine-executor.ts`); a plan's claim items, and
 the nodes a 'deepen' policy mandate's scope holds waiting, are Steward
-passes the mandate commissions within its daily rate and escrow
+passes the mandate commissions within its pace and escrow
 (`src/services/standing-order-service.ts`), run with every other
 commissioned pass; everything else a mandate pays for, its officers and
 lookouts commission under its operating policy. Mandates also fund each other as peers (regrants) and can spawn

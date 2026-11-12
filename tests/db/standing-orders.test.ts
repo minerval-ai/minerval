@@ -1,7 +1,7 @@
 /**
  * Plan items as standing orders, against real Postgres (#849): an assess,
  * reassess or deepen item is commissioned from its mandate, whole, within
- * the daily rate and the escrow; what the day cannot cover waits with the
+ * the pace and the escrow; what the pace cannot cover waits with the
  * figures and is placed when the room is there; what could never fit is
  * blocked; a sweep never pays twice. And what its first day showed (#956,
  * #961): an item names its tier or commissions nothing, an order that does
@@ -19,7 +19,8 @@ import {
   reconcileActions,
   type PlanItemLedger,
 } from "../../src/services/action-service.js";
-import { commissionNodePass, grantDayUseMicroUsd } from "../../src/services/commission-service.js";
+import { commissionNodePass } from "../../src/services/commission-service.js";
+import { committedWithinMicroUsd } from "../../src/services/pace-service.js";
 import { grantEscrowBreakdown } from "../../src/services/regrant-service.js";
 import { PLAN_ORDER_COMMISSIONER, previewPlanOrders } from "../../src/services/standing-order-service.js";
 import { amendPlanItems, releaseUnstartedOrders } from "../../src/services/plan-amend-service.js";
@@ -167,7 +168,7 @@ describe("a plan item is a standing order (#849)", () => {
     expect(first.cursor).toBe(0);
     expect(await claimState(a)).toBe("pending");
     // The day holds what was commissioned.
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(3 * OWL + Number(placedB[0]!.amount));
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(3 * OWL + Number(placedB[0]!.amount));
 
     // Again, twice, and on the full sweep: no second placement, no second message.
     await materializePlanItems(m.grantId);
@@ -191,7 +192,7 @@ describe("a plan item is a standing order (#849)", () => {
     expect(await orders(m.grantId, a)).toHaveLength(0);
   });
 
-  it("waits, with the figures, for room in the day's rate without holding later items that fit, and is placed when the room opens", async () => {
+  it("waits, with the figures, for room in the pace without holding later items that fit, and is placed when the room opens", async () => {
     const m = await mandate({ budget: 50 * OWL, daily: 4 * OWL });
     const a = await seedClaim("paced a");
     const b = await seedClaim("paced b");
@@ -217,7 +218,7 @@ describe("a plan item is a standing order (#849)", () => {
     expect(p.ledgers[2]).toMatchObject({ status: "open" });
     expect(await orders(m.grantId, b)).toHaveLength(0);
     expect(Number((await orders(m.grantId, c))[0]!.amount)).toBe(1 * OWL);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(4 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(4 * OWL);
     // Nothing reached the inbox of a node whose pass is not paid for yet.
     const [unsent] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM node_messages WHERE node_id = $1`, [b]);
     expect(unsent!.n).toBe(0);
@@ -231,7 +232,7 @@ describe("a plan item is a standing order (#849)", () => {
     expect(p.ledgers.map((l) => l!.status)).toEqual(["done", "open", "open"]);
     expect(Number((await orders(m.grantId, b))[0]!.amount)).toBe(2 * OWL);
     expect(Number((await orders(m.grantId, c))[0]!.amount)).toBe(1 * OWL);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(4 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(4 * OWL);
     // The one item whose work has run is the plan's started prefix.
     expect(p.cursor).toBe(1);
   });
@@ -248,11 +249,11 @@ describe("a plan item is a standing order (#849)", () => {
     await materializePlanItems(m.grantId);
     let p = await plan(m.grantId);
     expect(p.ledgers[0]!.status).toBe("blocked");
-    expect(p.ledgers[0]!.reason).toMatch(/5 owls.*whole daily rate \(4 owls\)/);
+    expect(p.ledgers[0]!.reason).toMatch(/5 owls.*whole pace window \(4 owls per 24 hours\)/);
     expect(p.ledgers[1]).toMatchObject({ status: "open" });
 
     // Unpaced, the escrow is the bound: 6 owls, 1 held by `fine`.
-    await rawQuery(`UPDATE grants SET daily_budget_micro_usd = 0 WHERE id = $1`, [m.grantId]);
+    await rawQuery(`UPDATE grants SET pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [m.grantId]);
     await setPlan(m.grantId, [
       { action: "assess", claim_id: fine, rationale: "y", budget_owls: 1, ledger: p.ledgers[1] },
       { action: "assess", claim_id: deep, rationale: "z", budget_owls: 5.5 },
@@ -394,7 +395,7 @@ describe("a plan item is a standing order (#849)", () => {
     expect(p.ledgers[0]!.reason).toMatch(/1 of its unassessed children is not commissioned yet/);
     expect(p.ledgers[0]!.reason).toContain(kid);
     expect(p.ledgers[0]!.children_waiting).toEqual([kid]);
-    // The node's pass spends 1.5 of the day's 3: the child's 2 still do not fit.
+    // The node's pass spends 1.5 of the window's 3: the child's 2 still do not fit.
     await runPass(parent, 1.5 * OWL, m.jobId);
     await materializePlanItems(m.grantId);
     p = await plan(m.grantId);
@@ -402,7 +403,7 @@ describe("a plan item is a standing order (#849)", () => {
     expect(p.ledgers[0]!.reason).toMatch(/the pass on the node ran/);
     // The node's row reopens for someone else's ask: the item does not order its pass again.
     await rawQuery(`UPDATE actions SET status = 'open' WHERE exclusion_group = $1`, [ASSESS_GROUP(parent)]);
-    await rawQuery(`UPDATE grants SET daily_budget_micro_usd = $2 WHERE id = $1`, [m.grantId, 10 * OWL]);
+    await rawQuery(`UPDATE grants SET pace = (CASE WHEN $2::bigint > 0 THEN jsonb_build_object('kind','steady','owls',$2::bigint / 1000000.0,'period_hours',24) ELSE '{"kind":"as_needed"}'::jsonb END) WHERE id = $1`, [m.grantId, 10 * OWL]);
     await materializePlanItems(m.grantId);
     p = await plan(m.grantId);
     expect(p.ledgers[0]!.status).toBe("done");
@@ -452,7 +453,7 @@ describe("what the first day of standing orders showed (#956)", () => {
     // The items after them are placed.
     for (const c of later) expect(Number((await orders(m.grantId, c))[0]!.amount)).toBe(0.8 * OWL);
     expect(p.ledgers.slice(2).map((l) => l!.status)).toEqual(["open", "open", "open"]);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(2.4 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(2.4 * OWL);
     // And stay so on every later look.
     await materializeStandingOrders();
     await reconcileActions();
@@ -488,7 +489,7 @@ describe("what the first day of standing orders showed (#956)", () => {
     expect(await orders(m.grantId, old2)).toHaveLength(0);
   });
 
-  it("an order the day cannot cover is passed by every later order that fits, and the day's room is used", async () => {
+  it("an order the pace cannot cover is passed by every later order that fits, and the pace's room is used", async () => {
     const m = await mandate({ budget: 200 * OWL, daily: 25 * OWL });
     const big = [await seedClaim("big 1"), await seedClaim("big 2"), await seedClaim("big 3"), await seedClaim("big 4")];
     const small: string[] = [];
@@ -499,7 +500,7 @@ describe("what the first day of standing orders showed (#956)", () => {
     ]);
     await materializePlanItems(m.grantId);
     const p = await plan(m.grantId);
-    // Three big orders take 21 of the day's 25; the fourth cannot fit in 4.
+    // Three big orders take 21 of the window's 25; the fourth cannot fit in 4.
     expect(p.ledgers.slice(0, 3).map((l) => l!.status)).toEqual(["open", "open", "open"]);
     expect(p.ledgers[3]!.status).toBe("waiting");
     expect(p.ledgers[3]!.reason).toMatch(/7 owls \(strong tier\)/);
@@ -511,7 +512,7 @@ describe("what the first day of standing orders showed (#956)", () => {
     expect(p.ledgers.slice(9).map((l) => l!.status)).toEqual(["waiting", "waiting", "waiting", "waiting"]);
     expect(p.ledgers[9]!.reason).toMatch(/0\.8 owls \(standard tier\)/);
     expect(p.ledgers[9]!.reason).toMatch(/0 of 25 owls/);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(25 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(25 * OWL);
     expect(await orders(m.grantId, big[3]!)).toHaveLength(0);
     expect(await orders(m.grantId, small[5]!)).toHaveLength(0);
 
@@ -547,7 +548,7 @@ describe("what the first day of standing orders showed (#956)", () => {
     expect(Number(placed[0]!.amount)).toBe(1 * OWL);
     // The room it gave back is used in the same call: y is placed.
     expect(Number((await orders(m.grantId, y))[0]!.amount)).toBe(5 * OWL);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(6 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(6 * OWL);
     expect((await grantEscrowBreakdown({ id: m.grantId, budgetJobId: m.jobId })).held).toBe(6 * OWL);
   });
 
@@ -580,15 +581,18 @@ describe("what the first day of standing orders showed (#956)", () => {
     expect(res).toMatchObject({ success: true, returned_owls: 3 });
     expect(res.items[0].ledger.status).toBe("cancelled");
     expect(res.items[0].ledger.reason).toMatch(/before its pass began/);
-    expect(res.items[0].ledger.reason).toMatch(/3 owls it held are back in the escrow and in the day's room/);
+    expect(res.items[0].ledger.reason).toMatch(/3 owls it held are back in the escrow and in the pace's room/);
     expect(res.items[1].ledger.status).toBe("cancelled");
     expect(res.items[1].ledger.reason).toMatch(/It held no money/);
     expect(await orders(m.grantId, a)).toHaveLength(0);
     expect((await grantEscrowBreakdown({ id: m.grantId, budgetJobId: m.jobId })).held).toBe(0);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(0.5 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(0.5 * OWL);
 
     // Room opens: neither is placed, on the scheduler's look or the full sweep.
-    await rawQuery(`UPDATE grants SET daily_budget_micro_usd = $2 WHERE id = $1`, [m.grantId, 40 * OWL]);
+    await rawQuery(`UPDATE grants SET pace = $2::jsonb WHERE id = $1`, [
+      m.grantId,
+      JSON.stringify({ kind: "steady", owls: 40, period_hours: 24, reason: "db test" }),
+    ]);
     await materializeStandingOrders();
     await reconcileActions();
     p = await plan(m.grantId);
@@ -757,7 +761,7 @@ describe("a deepen item orders first assessments, not fresh passes on judged chi
       expect(placed).toHaveLength(1);
       expect(Number(placed[0]!.amount)).toBe(1 * OWL);
     }
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(3 * OWL);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(3 * OWL);
 
     // Once the node's pass has run and every child is ordered, the item is
     // done: there is nothing left of it to withdraw, and the tool says so.
@@ -799,7 +803,7 @@ describe("a deepen item orders first assessments, not fresh passes on judged chi
       budget_from: "estimate",
       budget_owls_per_pass: microUsdToOwls(est.standardMicroUsd),
     });
-    expect(preview.today).toEqual({ daily_rate_owls: 20, room_owls: 20 });
+    expect(preview.pace).toEqual({ pace: expect.stringMatching(/20 owls/), room_owls: 20 });
     expect(preview.escrow_uncommitted_owls).toBe(100);
     expect(preview.note).toMatch(/nothing was added to the plan or commissioned/);
     // Nothing happened.
@@ -807,7 +811,7 @@ describe("a deepen item orders first assessments, not fresh passes on judged chi
     expect(await orders(m.grantId, stub)).toHaveLength(0);
     expect(await claimState(stub)).toBe("deferred");
     expect(await items(m.grantId).catch(() => [])).toEqual(before);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(0);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(0);
   });
 });
 

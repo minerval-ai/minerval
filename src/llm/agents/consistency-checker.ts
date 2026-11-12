@@ -239,9 +239,9 @@ async function runConsistencyCheckerImpl(input: {
         "Raise a tension you judged real, or a consideration established elsewhere " +
         "that the primary's assessment does not weigh. The primary may be anywhere in " +
         "the graph, in this partition or not. Its Steward is asked to " +
-        "reconcile it: the flag goes to its inbox, and the reassessment is put " +
-        "to the General mandate's officers with your expected_gain, who decide " +
-        "whether to pay for it. If it matters enough to pay for now, commission " +
+        "reconcile it: the flag goes to its inbox, and the reassessment it asks " +
+        "for is put, with your expected_gain, to whoever funds such passes, who " +
+        "decides whether to pay for it. If it matters enough to pay for now, commission " +
         "the pass yourself from your budget. The primary is " +
         "the node whose judgment looks wrong: a claim's verdict, a quantity's " +
         "estimate or a question's standing. A primary whose earlier flag is " +

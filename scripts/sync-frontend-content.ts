@@ -160,7 +160,7 @@ const AGENTS: AgentMeta[] = [
     model: modelLabel(MODELS.frontier), fn: getDisputeArbitratorSystemPrompt },
   { key: "audit-agent", name: "Audit Agent", stage: 7, group: "governance",
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
-    invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
+    invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the General mandate funds.",
     model: "Claude Opus 5.5", fn: getAuditAgentSystemPrompt },
   { key: "grantmaker", name: "Grantmaker", stage: 8, group: "governance",
     tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",

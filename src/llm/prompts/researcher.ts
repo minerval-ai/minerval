@@ -516,11 +516,9 @@ export function budgetGuide(input: ResearcherTaskInput): string {
     `After every turn you will see what you have spent and about how many turns remain at your recent rate, and a notice when about fifteen percent remains. ` +
       `Separately, a guard of ${input.maxTurns} turns stops a stuck loop` +
       (input.maxWallMinutes
-        ? input.requestedBy === "request" || input.requestedBy === "request_scope"
-          ? // Nobody waits on a request run (#734): the backstop only ends a
-            // run that has stopped making progress, and says so.
-            `, and a backstop of ${input.maxWallMinutes} minutes of wall-clock time ends a run that has stopped making progress. Nobody is waiting on this run: your budget is what bounds the work.`
-          : `, and the run must report within ${input.maxWallMinutes} minutes of wall-clock time, because whoever launched it is waiting on the report.`
+        ? // Nobody blocks on a research run (#734): the backstop only ends a
+          // run that has stopped making progress, and says so.
+          `, and a backstop of ${input.maxWallMinutes} minutes of wall-clock time ends a run that has stopped making progress. Nobody is blocked waiting on this run: your budget is what bounds the work.`
         : ".")
   );
   const costs: string[] = [];

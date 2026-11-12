@@ -15,7 +15,7 @@
  * of unspent budget, a person's balance guard) hold for commissions too.
  *
  * Three kinds of payer:
- *  - a mandate: its money, within its daily rate (counted as what is spent
+ *  - a mandate: its money, within its pace (counted as what is spent
  *    or still held by running work, allocationDayUseSql) and its escrow;
  *  - a person: their owls, debited behind the balance guard;
  *  - a running agent, paying from its own budget: the amount moves from the
@@ -26,8 +26,7 @@
 import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions, joinFaultWait } from "./action-service.js";
-import { allocationDayUseSql } from "./day-use.js";
-import { grantCommittedMicroUsd } from "./regrant-service.js";
+import { committerFor, paceRefusal, paceRoom, type PaceCommitter } from "./pace-service.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
@@ -124,32 +123,21 @@ export type CommissionResult =
       code:
         | "BAD_AMOUNT"
         | "NOT_FOUND"
-        | "OVER_DAILY_RATE"
+        | "OVER_PACE"
         | "OVER_ESCROW"
         | "INSUFFICIENT_OWLS"
         | "OVER_RUN_BUDGET"
         | "PAYER_INACTIVE";
       message: string;
       /**
-       * OVER_DAILY_RATE from a mandate: what today's rate had left when the
+       * OVER_PACE or OVER_ESCROW from a mandate: what the binding bound (the
+       * pace's window, the reserve or the escrow) had left when the
        * commission was refused, so a caller placing several (a plan's
        * standing orders) can tell which of the rest would fit.
        */
       roomMicroUsd?: number;
     };
 
-/** A mandate's day so far: what is spent or held by running work today. */
-export async function grantDayUseMicroUsd(grantId: string, tx?: TxQuery): Promise<number> {
-  const q = <T,>(text: string, params: unknown[]) => (tx ? tx.query<T>(text, params) : rawQuery<T>(text, params));
-  const [row] = await q<{ used: number }>(
-    `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS used
-       FROM action_allocations
-      WHERE grant_id = $1
-        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grantId]
-  );
-  return Number(row?.used ?? 0);
-}
 
 interface LiveRow {
   action_id: string;
@@ -462,6 +450,12 @@ interface PlaceInput {
   commissionedBy: string;
   brief: string | null;
   reason: string | null;
+  /**
+   * Who the money counts as committed by, for the reserve (pace-service.ts).
+   * Defaults from commissionedBy. A granted petition passes "grantmaker":
+   * its decision was checked against the reserve when it was made.
+   */
+  committer?: PaceCommitter;
 }
 
 async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { ok: false; live: LiveRow }> {
@@ -482,9 +476,8 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       );
       const live = await liveInGroup(tx);
       if (live) return { ok: false, live } as const;
-      const [g] = await tx.query<{ budget_job_id: string; daily: number; escrow: number; status: string; job_status: string }>(
-        `SELECT g.budget_job_id, g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow,
-                g.status, j.status AS job_status
+      const [g] = await tx.query<{ status: string; job_status: string }>(
+        `SELECT g.status, j.status AS job_status
            FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
           WHERE g.id = $1`,
         [payer.grantId]
@@ -492,27 +485,16 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       if (!g || g.status !== "active" || g.job_status !== "running") {
         return { ok: false, code: "PAYER_INACTIVE", message: "The paying mandate is not active." } as const;
       }
-      const daily = Number(g.daily);
-      if (daily > 0) {
-        const used = await grantDayUseMicroUsd(payer.grantId, tx);
-        if (used + budget > daily) {
-          return {
-            ok: false,
-            code: "OVER_DAILY_RATE",
-            message:
-              `A budget of ${owls(budget)} owls is more than today's rate has left ` +
-              `(${owls(Math.max(0, daily - used))} of ${owls(daily)} owls). Running work frees ` +
-              `its unspent budget as it finishes.`,
-            roomMicroUsd: Math.max(0, daily - used),
-          } as const;
-        }
-      }
-      const committed = await grantCommittedMicroUsd({ id: payer.grantId, budgetJobId: g.budget_job_id }, tx);
-      if (committed + budget > Number(g.escrow)) {
+      // The pace, the reserve and the escrow, in one reading (pace-service.ts).
+      const room = await paceRoom(payer.grantId, input.committer ?? committerFor(input.commissionedBy), tx);
+      if (!room || budget > room.availableMicroUsd) {
         return {
           ok: false,
-          code: "OVER_ESCROW",
-          message: `A budget of ${owls(budget)} owls is more than the escrow holds uncommitted (${owls(Math.max(0, Number(g.escrow) - committed))} owls).`,
+          code: room && room.binding === "escrow" ? "OVER_ESCROW" : "OVER_PACE",
+          message: room ? paceRefusal(room, budget) : "The paying mandate is not active.",
+          // What the binding bound has left: a standing order turned away
+          // for it tells the plan's later orders what fits (standing-order-service.ts).
+          roomMicroUsd: Math.max(0, room?.availableMicroUsd ?? 0),
         } as const;
       }
       const [row] = await tx.query<{ id: string }>(

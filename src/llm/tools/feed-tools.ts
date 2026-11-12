@@ -166,7 +166,7 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
         "min_wake_hours spaces wakes out; poll_hours is how often it is " +
         "checked; retain_days is how long an untriaged item waits before it " +
         "expires. A feed your Grantmaker set to auto_ingest is theirs to " +
-        "change. Say why in note: it reaches your Grantmaker's next review.",
+        "change. Say why in note: it reaches your Grantmaker with the change.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -271,7 +271,7 @@ export function createLookoutFeedTools(ctx: {
             retainDays: input.retain_days,
           },
         });
-        // The why reaches the Grantmaker's next review pass with the change.
+        // The why reaches the Grantmaker with the change.
         const note = typeof input.note === "string" ? input.note.trim() : "";
         if (res.ok && note.length >= 10) {
           await flagNote({

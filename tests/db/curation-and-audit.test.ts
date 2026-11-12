@@ -370,7 +370,7 @@ describe("audits on the ledger (#363)", () => {
     expect(await placements(`audit:${runId}`)).toEqual([]);
   });
 
-  it("funds a prize audit from the bounty's reserve, and asks General for what a short reserve cannot cover", async () => {
+  it("funds a prize audit from the bounty's reserve when it covers it, and otherwise asks General for the whole audit", async () => {
     const claimId = await claim("prize");
     const ns = `Minerval.S${randomUUID().slice(0, 8)}_v1`;
     const [f] = await rawQuery<{ id: string }>(
@@ -405,15 +405,15 @@ describe("audits on the ledger (#363)", () => {
       claimId,
     }))!;
     const group = `audit:${runId}`;
-    const [reserveShare] = await rawQuery<{ amount_micro_usd: string; commissioned_by: string | null }>(
-      `SELECT amount_micro_usd, commissioned_by FROM action_allocations
+    // A commission is whole, from one payer: a reserve short of the audit's
+    // budget places nothing, and keeps what it holds.
+    const reserveShares = await rawQuery<{ amount_micro_usd: string }>(
+      `SELECT amount_micro_usd FROM action_allocations
         WHERE exclusion_group = $1 AND user_id = $2 AND released_at IS NULL`,
       [group, reserve.user_id]
     );
-    expect(Number(reserveShare!.amount_micro_usd)).toBe(200_000);
-    // Short of the whole: not a commission by itself.
-    expect(reserveShare!.commissioned_by).toBeNull();
-    expect((await reserveRoomMicroUsd(b!.id)).room).toBe(0);
+    expect(reserveShares).toHaveLength(0);
+    expect((await reserveRoomMicroUsd(b!.id)).room).toBe(200_000);
     const actionId = await auditAction(runId);
     const items = await raised(general.grantId, actionId);
     expect(items).toHaveLength(1);

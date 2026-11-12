@@ -7,7 +7,7 @@ description: >-
   where it matters.
 metadata:
   minerval:
-    version: 9
+    version: 10
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
@@ -18,6 +18,7 @@ metadata:
       6: A retraction or correction notice is sent to the Steward of every claim that asserts the document or rests on it through recorded provenance (trigger source_event), not only to lookouts.
       7: "a source that reports a result from evidence it holds and has not published is read as evidence not shown (support evidence_not_shown), apart from one that asserts without evidence"
       8: "a source's interest, a stake its author or publisher has in what it says, is recorded with record_source_interest as a fact about the source, and is shown on each instance's source in provenance_get_map"
+      10: "an examination is commissioned with commission (kind research), and its report returns into the Steward's session; delegate_research is retired for Stewards"
       9: A reading and an edge say what kind of document the source is (source_kind, to_source_kind), from one list; the kind recorded on a source decides whether it reads as an origin or as untraced, and an agent that read the document corrects a kind recorded by one that only cited it.
 ---
 
@@ -212,10 +213,10 @@ too. That is one reason to record the edges.
 
 **Examining a document.** Some sources deserve more than a reading: the
 study the whole claim rests on, a report whose figure every later source
-repeats. Launch the researcher on it as an examination, inline
-(`delegate_research` with `examine_source_id` and the facets to check, such
-as the data, the quotation, the method) or on its own while you carry on
-(`commission` kind research, with the same two fields). It records what it
+repeats. Commission the researcher on it as an examination (`commission`
+kind research, with `examine_source_id` and the facets to check, such as
+the data, the quotation, the method); it runs while you carry on and its
+report returns into your session. It records what it
 examined and what it found on the document's own passages, and that
 record outlives your pass: it sits on the document's page for whoever
 reads the document next, the Stewards of other claims resting on it

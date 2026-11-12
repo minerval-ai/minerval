@@ -23,9 +23,7 @@
  * reads and the change stream), so anyone can build one outside Minerval
  * from MCP alone; such a one is not registered here and needs nothing here.
  */
-import { allocationDayUseSql } from "./day-use.js";
 import { rawQuery } from "../db/client.js";
-import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
 import {
   decodeChangeCursor,
@@ -916,29 +914,16 @@ export function correspondentAtom(
 }
 
 /**
- * What the mandate has left, as a run is shown it: the escrow's headroom
- * and the day's remaining room under its daily rate (null = unpaced). A
- * correspondent sees these so it knows why a run may come late, not to
- * spend against them: its own run's budget is its ceiling.
+ * Where the mandate's money stands, as a run is shown it (pace-service.ts):
+ * its pace, what is uncommitted, and the Grantmaker's reserve, which a
+ * Correspondent's runs cannot draw on. A correspondent sees this so it
+ * knows why a run may come late, not to spend against it: its own run's
+ * budget is its ceiling.
  */
-export async function mandateRoom(grantId: string): Promise<{ headroomMicroUsd: number; dayRoomMicroUsd: number | null } | null> {
-  const [g] = await rawQuery<{ budget_job_id: string; daily_budget_micro_usd: number; budget_micro_usd: number }>(
-    `SELECT g.budget_job_id, g.daily_budget_micro_usd, j.budget_micro_usd
-       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
-    [grantId]
-  );
-  if (!g) return null;
-  const committed = await grantCommittedMicroUsd({ id: grantId, budgetJobId: g.budget_job_id });
-  const [today] = await rawQuery<{ placed: number }>(
-    `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS placed FROM action_allocations
-      WHERE grant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grantId]
-  );
-  const rate = Number(g.daily_budget_micro_usd);
-  return {
-    headroomMicroUsd: Math.max(0, Number(g.budget_micro_usd) - committed),
-    dayRoomMicroUsd: rate > 0 ? Math.max(0, rate - Number(today?.placed ?? 0)) : null,
-  };
+export async function mandateRoom(grantId: string): Promise<{ sentence: string } | null> {
+  const { paceRoom } = await import("./pace-service.js");
+  const room = await paceRoom(grantId, "delegated");
+  return room ? { sentence: room.sentence } : null;
 }
 
 /** A correspondent as the public reads it: everything but its private-to-run fields. */

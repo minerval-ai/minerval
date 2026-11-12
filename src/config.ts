@@ -311,11 +311,6 @@ const configSchema = z.object({
   // Grantmaker's run deciding what its officers escalated at the second.
   // Both are ceilings; a run returns what it does not spend.
   officerRunBudgetOwls: z.coerce.number().positive().default(1),
-  grantmakerDecisionBudgetOwls: z.coerce.number().positive().default(4),
-  // How long a run waiting on its petition waits. A run is paused on the
-  // answer, which is the reason the decision has a clock at all; past it
-  // the petition stays open and, if granted later, funds a follow-up pass.
-  petitionWaitSeconds: z.coerce.number().int().positive().default(180),
   // How long a paused agent session waits for what it asked for before its
   // answers go to its node's inbox instead (session-service.ts). Stated to
   // the agent in the tools that pause it.
@@ -343,7 +338,7 @@ const configSchema = z.object({
   // survey and its decisions to pay for (#820 saw 1 owl leave nothing after
   // the opening turn). A ceiling: the pass returns what it does not spend.
   defaultReviewPassBudgetOwls: z.coerce.number().positive().default(5),
-  // The least a review or planning pass is started with when today's rate
+  // The least a review or planning pass is started with when the pace
   // or the escrow cannot fund its budget in full
   // (allocation-service.ts, fundGrantSelfActions). Money alone cannot
   // serve here: a pass started with less than its opening turn costs
@@ -567,7 +562,7 @@ const configSchema = z.object({
   //
   // What it was really standing in for was fan-out cost, and that now has a
   // proper control: extracted claims become ledger actions, and a mandate's
-  // allocator funds only what clears its daily rate. Claims beyond what anyone
+  // allocator funds only what clears its pace. Claims beyond what anyone
   // will pay to assess simply sit pending — bounded by money, which is the
   // honest bound, rather than by a count chosen in advance. The claim bar in
   // the extractor's own prompt ("emit only claims that pass the bar; a short
@@ -620,7 +615,7 @@ const configSchema = z.object({
   // and p80 3.30. A prior that low is not a harmless guess — it under-funds
   // every action until the live series exists, and the shortfall is spent off
   // the escrow without passing through an allocation, so it escapes the
-  // mandate's daily rate entirely. These now sit near the p80 of a real run at
+  // mandate's pace entirely. These now sit near the p80 of a real run at
   // each tier, which is what the live estimate converges to.
   estStewardRunCostOwls: z.coerce.number().default(1.4),
   estStewardRunCostStrongOwls: z.coerce.number().default(3.3),
@@ -630,13 +625,13 @@ const configSchema = z.object({
   //
   // The estimate is a CAP: the allocator covers an action for it, the run costs
   // what it costs, and the excess is drawn off the escrow outside any
-  // allocation — unpaced by the daily rate. Run cost is right-skewed (mean 2.31
+  // allocation — unpaced by the pace. Run cost is right-skewed (mean 2.31
   // owls against a p90 of 4.36 and a max of 7.01 in the first epoch), so the
   // mean under-funds about half of all runs and always in the expensive
   // direction. p80 funds the large majority outright.
   //
   // Higher is tighter but slower: a bigger per-action estimate means fewer
-  // actions clear the same daily rate. 0.5 reproduces the old median-ish
+  // actions clear the same pace. 0.5 reproduces the old median-ish
   // behaviour if throughput ever matters more than pacing accuracy.
   costEstimatePercentile: z.coerce.number().min(0).max(1).default(0.8),
   // The background lane's total metered spend per UTC day, in owls
@@ -710,7 +705,7 @@ const configSchema = z.object({
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables). Every claim past its interval is re-enqueued; which of
-  // them run is the ledger's call, bounded by the mandates' daily rates.
+  // them run is the ledger's call, bounded by the mandates' paces.
   allocationSweepIntervalHours: z.coerce.number().default(6),
   stalenessBaseDays: z.coerce.number().default(60),
   // Grant policy 'maintain': in-scope assessments older than this many days
@@ -886,14 +881,11 @@ const configSchema = z.object({
     .string()
     .transform((s) => s === "true")
     .prefault("false"),
-  // What a researcher run may spend is its ceiling, which the launcher sets
-  // out of its own budget (the run is billed to the launcher's), or out of
-  // the mandate's uncommitted budget when a Grantmaker funds it. Two bounds
-  // remain, neither of them a judgment: the durable daily cap on researcher
-  // spend no funder pays for (an operator's circuit breaker), and the
-  // wall-clock cap on one run, because the launching agent's run blocks on
-  // the report and holds its lease while it waits. The researcher is told
-  // the wall cap up front.
+  // What a researcher run may spend is its ceiling, the budget its
+  // commission placed (from the commissioning run's budget, or from a
+  // mandate's money when its Grantmaker commissions it). Beside it remain
+  // the durable daily cap on researcher spend no funder pays for (an
+  // operator's circuit breaker) and the wall-clock backstop below.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
   // The review cost each contribution from a mandate's research reserves
   // against the budget its Grantmaker delegated (Part VIII) until its review
@@ -909,12 +901,10 @@ const configSchema = z.object({
   // instance.
   contributionReviewBudgetUsd: z.coerce.number().min(0).default(1),
   arbitrationBudgetUsd: z.coerce.number().min(0).default(3),
-  researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
-  // A request run from the ledger (#734) has no launcher waiting on it, so
-  // the 20-minute cap above has no reason there: its budget, the quote its
-  // funders paid, bounds the work. This is only a backstop against a run
-  // that has stopped making progress without spending, and the run is told
-  // it with that reason.
+  // No research run has a launcher blocked on it (every one is commissioned
+  // on the ledger, #734): its budget bounds the work. This is only a
+  // backstop against a run that has stopped making progress without
+  // spending, and the run is told it with that reason.
   researcherRequestMaxWallMinutes: z.coerce.number().min(1).default(240),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
@@ -1018,7 +1008,7 @@ const configSchema = z.object({
   // --- Mathematics: the mandates' sizing (§10.7) ---
   // Read from the environment rather than written as literals in the seed,
   // so the program is robust to far more money without a code change: the
-  // Mathematics mandate's escrow (owls at cost) and daily rate (must exceed
+  // Mathematics mandate's escrow (owls at cost) and steady pace per day (must exceed
   // one max attempt's prior plus a day of passes, or attempts never fund),
   // and the Mathematics prizes mandate's escrow, the only source of its
   // prizes.
@@ -1484,7 +1474,6 @@ export function loadConfig(): Config {
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     contributionReviewBudgetUsd: process.env.CONTRIBUTION_REVIEW_BUDGET_USD,
     arbitrationBudgetUsd: process.env.ARBITRATION_BUDGET_USD,
-    researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
     researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
@@ -1535,8 +1524,6 @@ export function loadConfig(): Config {
     lookoutModel: process.env.LOOKOUT_MODEL,
     programOfficerModel: process.env.PROGRAM_OFFICER_MODEL,
     officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
-    grantmakerDecisionBudgetOwls: process.env.GRANTMAKER_DECISION_BUDGET_OWLS,
-    petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
     sessionWaitHours: process.env.SESSION_WAIT_HOURS,
     sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
     sessionWaitForAnswersSeconds: process.env.SESSION_WAIT_FOR_ANSWERS_SECONDS,

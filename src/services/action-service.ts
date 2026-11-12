@@ -169,8 +169,6 @@ export const ATTEMPT_GROUP = (formalizationId: string, n: number) =>
 /** The two solver variants every attempt group carries as siblings (§7.2). */
 export const ATTEMPT_VARIANTS = ["standard", "max"] as const;
 
-/** How often a mandate's Grantmaker takes a review pass. */
-const REVIEW_CADENCE_HOURS = 24;
 
 /**
  * A formalize item whose claim still has no published statement is wanted
@@ -770,8 +768,8 @@ async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promi
     );
   }
 
-  // The mandate's periodic review pass — its Grantmaker stewarding the
-  // mandate with discretion. Every active mandate gets one, the General
+  // The mandate's review pass: its Grantmaker's session, opened fresh when
+  // none is live — its Grantmaker stewarding the mandate with discretion. Every active mandate gets one, the General
   // mandate included: its valuations come from a formula rather than from
   // per-action judgment, but the formula's knobs are exactly the kind of
   // thing a steward should revise as evidence about allocation itself
@@ -794,7 +792,15 @@ async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promi
              sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')
-           AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
+           -- A mandate's Grantmaker works in one long session that wakes
+           -- on what it subscribed to and on the check-ins it set
+           -- (mandate-review.ts). A fresh pass opens only when it has
+           -- none live: the first, after fresh_start, or after a session
+           -- expired or closed.
+           AND NOT EXISTS (
+             SELECT 1 FROM grants gg JOIN agent_sessions sx ON sx.id = gg.grantmaker_session_id
+              WHERE gg.id::text = EXCLUDED.target_ref
+                AND sx.status IN ('running', 'waiting', 'ready'))`,
       [
         REVIEW_GROUP(g.id),
         g.id,
@@ -1516,7 +1522,7 @@ export async function materializeGrantPlan(
 
   const ensuredFormalize = new Set<string>();
   // Standing orders are asked for in plan order, and each is placed when
-  // the day's room covers it: one the rate turns away waits without holding
+  // the pace's room covers it: one the pace turns away waits without holding
   // the ones after it (#956). The queue carries the room across the look.
   const orderQueue: { rateRoomMicroUsd: number | null } = { rateRoomMicroUsd: null };
   let started = -1;
@@ -1664,7 +1670,7 @@ async function materializeWithdrawn(
     reason:
       `${said} before its pass began. ` +
       (back > 0
-        ? `The ${microUsdToOwls(back)} owls it held are back in the escrow and in the day's room.`
+        ? `The ${microUsdToOwls(back)} owls it held are back in the escrow and in the pace's room.`
         : "It held no money."),
     checked_at: nowIso(),
   };
@@ -1831,7 +1837,7 @@ async function materializePlanItem(
 
     // The item is a standing order (#849): the mandate commissions the pass
     // whole, at the item's budget or the row's estimate, on the item's
-    // tier. What the day's rate cannot cover yet waits and is asked for
+    // tier. What the pace cannot cover yet waits and is asked for
     // again; what could never fit is blocked, with the figures either way.
     // An item that names no tier (one stored before items had to, #956)
     // places nothing new: what it already placed is found, the rest reads
@@ -2498,9 +2504,9 @@ export function actionBudgetMicroUsd(action: {
 
 /**
  * The next action the mechanism says to run, for the given kinds: among
- * covered open actions, resolve each exclusion group to its winner (most
- * backing, tie → cheapest), then take the winner with the most backing
- * overall. Pure function of allocations; no valuations involved.
+ * open actions someone has commissioned, resolve each exclusion group to its
+ * winner (most backing, tie → cheapest), then take the winner with the most
+ * backing overall. Pure function of commissions; no valuations involved.
  */
 export async function nextRunnableAction(
   kinds: ActionKind[]
@@ -2513,7 +2519,9 @@ export async function nextRunnableAction(
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
         AND ${COVERAGE_SQL} > 0
-        AND (${COVERAGE_SQL} >= a.cost_est_micro_usd OR ${COMMISSIONED_SQL})
+        -- Every run is commissioned: whole, from one payer, at a budget
+        -- someone set. Money placed without a commission funds nothing.
+        AND ${COMMISSIONED_SQL}
         AND ${NOT_WAITING_ON_FAULT_SQL}
       ORDER BY coverage_micro_usd DESC, a.updated_at ASC
       LIMIT 20`,
@@ -2907,6 +2915,30 @@ export async function completeAction(
         [r.id]
       );
       await refundUser({ ...r, key: `settle:${r.id}` });
+    }
+    // Recorded with the settlement, so a subscriber waiting on this run is
+    // told exactly when its money has come back (event-service.ts).
+    const [done] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(
+      `SELECT a.kind, a.claim_id, a.target_ref, a.label,
+              ARRAY(SELECT DISTINCT al.grant_id::text FROM action_allocations al
+                     WHERE al.action_id = a.id AND al.grant_id IS NOT NULL) AS grants
+         FROM actions a WHERE a.id = $1`,
+      [actionId]
+    );
+    if (done) {
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent(
+        {
+          kind: "run_settled",
+          actionId,
+          nodeId: done.claim_id,
+          grantId: done.grants[0] ?? null,
+          refs: { work_kind: done.kind, target_ref: done.target_ref, grants: done.grants },
+          summary: `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls.`,
+          payload: { spent_micro_usd: Math.round(meteredMicroUsd) },
+        },
+        tx
+      );
     }
     return consumed;
   });

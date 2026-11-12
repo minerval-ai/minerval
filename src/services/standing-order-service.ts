@@ -11,13 +11,14 @@
  * What makes it a standing order is what happens when the money is not
  * there. A commission through the `commission` tool is now-or-refused: the
  * caller is in a turn and reads the refusal. A plan item has no turn to
- * come back in, so the materializer keeps asking: an order the day's rate
- * cannot cover yet reads `waiting` with the figures and is placed by the
- * first sweep that finds the room; one that could never fit (a budget above
- * the whole daily rate, or above what the escrow could hold even with every
- * running budget returned) reads `blocked` with the figures, because only
- * its author can change that. Every limit is money the Grantmaker can see
- * (the rate, the escrow) and is given back to it in the item's reason.
+ * come back in, so the materializer keeps asking: an order the pace (its
+ * window, or the Grantmaker's reserve) cannot cover yet reads `waiting` with
+ * the figures and is placed by the first sweep that finds the room; one that
+ * could never fit (a budget above a steady pace's whole window, or above
+ * what the escrow could hold even with every running budget returned) reads
+ * `blocked` with the figures, because only its author can change that. Every
+ * limit is money the Grantmaker can see (the pace, the reserve, the escrow)
+ * and is given back to it in the item's reason.
  *
  * What the first day of this showed (#956, #961), and what follows from it:
  *
@@ -27,7 +28,7 @@
  *    written now is stored with its tier (standard when its author names
  *    none); a stored item that still names none commissions nothing until
  *    its Grantmaker gives it one (amend_plan_items), and says so.
- *  - An order the day cannot cover does not hold the ones after it. Each
+ *  - An order the pace cannot cover does not hold the ones after it. Each
  *    look goes through the plan in order and places every order the room
  *    covers, so plan order is first claim on the room, never a queue with
  *    one head. A 5.9-owl order used to keep twenty-nine 0.8-owl ones
@@ -45,7 +46,8 @@ import { commissionNodePass, liveNodeCommission, type CommissionTier } from "./c
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { enqueueSteward } from "./queue-service.js";
-import { microUsdToOwls } from "./owl.js";
+import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { describePace, paceRoom, parsePace } from "./pace-service.js";
 import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 
 /** Who placed it, on the allocation and in the mandate's commission list. */
@@ -75,7 +77,7 @@ export type OrderStanding =
   | { state: "placed"; actionId: string; budgetMicroUsd: number; tier: CommissionTier }
   /** The node's pass is already paid for or running, by this mandate or anyone. */
   | { state: "live"; actionId: string }
-  /** Not placed yet; the next sweep asks again. `rate` when today's rate is what it waits on. */
+  /** Not placed yet; the next sweep asks again. `rate` when the pace is what it waits on. */
   | { state: "waiting"; reason: string; rate: boolean }
   /** Cannot be placed until the plan's author changes something. */
   | { state: "blocked"; reason: string };
@@ -88,13 +90,13 @@ const RETRY =
 export const AMEND_HINT = "amend_plan_items changes this item's tier or budget, or withdraws it";
 
 /**
- * Said on an order today's rate cannot cover: it does not hold the plan.
+ * Said on an order the pace cannot cover: it does not hold the plan.
  * A large order can be passed over, look after look, while smaller ones
  * after it take the room, so the reason says that too, and what moves it.
  */
 const PASSED_OVER =
   "It does not hold the items after it: each look goes through the plan in order and places " +
-  "every order the day's room covers, so smaller orders after this one can be placed first, and " +
+  "every order the pace's room covers, so smaller orders after this one can be placed first, and " +
   "this one is placed by the first look that finds room for it whole";
 
 /** The budget a pass on the node is estimated at, on the tier asked for (or standard, where no strong row exists). */
@@ -128,13 +130,13 @@ export async function unnamedTierReason(passes: string): Promise<string> {
 }
 
 /**
- * Shared across one plan's orders in one look. Once today's rate has turned
+ * Shared across one plan's orders in one look. Once the pace has turned
  * an order away, the room it reported is kept here and counted down as
  * later orders are placed, so an order that plainly does not fit is told so
  * without another trip to the ledger, and one that does fit is still placed.
  */
 export interface OrderQueue {
-  /** What today's rate has left, in micro-USD; null until an order has been turned away for it. */
+  /** What the pace has left for the plan, in micro-USD; null until an order has been turned away for it. */
   rateRoomMicroUsd: number | null;
 }
 
@@ -187,8 +189,8 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
   const tier = input.tier;
   if (!tier) return { state: "blocked", reason: await unnamedTierReason("its pass is") };
 
-  const [grant] = await rawQuery<{ daily: string; escrow: string; budget_job_id: string }>(
-    `SELECT g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow, g.budget_job_id
+  const [grant] = await rawQuery<{ pace: unknown; escrow: string; budget_job_id: string }>(
+    `SELECT g.pace, j.budget_micro_usd AS escrow, g.budget_job_id
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
     [input.grantId]
   );
@@ -202,29 +204,35 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
       ? `the item's budget of ${owls(budget)} owls (${tier} tier)`
       : `the ${tier} pass's estimate of ${owls(budget)} owls`;
 
-  // A budget above the whole daily rate never fits, on any day.
-  const daily = Number(grant.daily);
-  if (daily > 0 && budget > daily) {
+  // A budget above a steady pace's whole window never fits, in any window.
+  const pace = parsePace(grant.pace);
+  if (pace.kind === "steady" && budget > owlsToMicroUsd(pace.owls)) {
     return {
       state: "blocked",
       reason:
-        `${what} is more than the mandate's whole daily rate (${owls(daily)} owls), so no day can ` +
-        `cover it. Raise the rate (set_daily_rate) or give the item a smaller budget_owls` +
+        `${what} is more than the mandate's whole pace window (${pace.owls} owls per ${pace.period_hours} hours), ` +
+        `so no window can cover it. Give the item a smaller budget_owls` +
         (tier === "strong" ? " or the standard variant" : "") +
-        ` (amend_plan_items)`,
+        ` (amend_plan_items); the pace is the funder's to change`,
     };
   }
+  // Under an as-needed pace only the Grantmaker's reserve can turn an
+  // order away for the pace; under a steady one, the window or the reserve.
   const overRate = (roomMicroUsd: number): OrderStanding => ({
     state: "waiting",
     rate: true,
     reason:
-      `${what} is more than today's rate has left (${owls(roomMicroUsd)} of ${owls(daily)} owls). ` +
-      `Running work frees its unspent budget as it finishes. ${RETRY}. ${PASSED_OVER}. ${AMEND_HINT}.`,
+      `${what} is more than the pace leaves for the plan now (` +
+      (pace.kind === "steady"
+        ? `${owls(roomMicroUsd)} of ${pace.owls} owls per ${pace.period_hours} hours, outside any reserve`
+        : `${owls(roomMicroUsd)} owls outside the Grantmaker's reserve`) +
+      `). Room returns as running work settles${pace.kind === "steady" ? " and as commitments age out of the window" : ""}, ` +
+      `or when the Grantmaker lowers its reserve. ${RETRY}. ${PASSED_OVER}. ${AMEND_HINT}.`,
   });
-  // The day's room is known from an order turned away earlier in this look:
+  // The pace's room is known from an order turned away earlier in this look:
   // one that does not fit in it is not asked for again, one that does is.
   const queue = input.queue;
-  if (daily > 0 && queue && queue.rateRoomMicroUsd !== null && budget > queue.rateRoomMicroUsd) {
+  if (queue && queue.rateRoomMicroUsd !== null && budget > queue.rateRoomMicroUsd) {
     return overRate(queue.rateRoomMicroUsd);
   }
 
@@ -245,7 +253,9 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
     }
     return { state: "placed", actionId: res.actionId, budgetMicroUsd: res.budgetMicroUsd, tier: res.tier };
   }
-  if (res.code === "OVER_DAILY_RATE") {
+  if (res.code === "OVER_PACE") {
+    // The window or the Grantmaker's reserve: either frees, the reserve when
+    // the Grantmaker lowers it or commissions the order itself.
     const room = Math.max(0, Number(res.roomMicroUsd ?? 0));
     if (queue) queue.rateRoomMicroUsd = room;
     return overRate(room);
@@ -449,7 +459,7 @@ export interface OrderPreview {
   node: string;
   /** deepen only. */
   children?: { would_order: string[]; assessed_left_alone: number; note: string };
-  /** What the item would hold against the day's rate and the escrow if all of it were placed now. */
+  /** What the item would hold against the pace and the escrow if all of it were placed now. */
   would_hold_owls: number;
 }
 
@@ -457,7 +467,7 @@ export interface OrderPreview {
  * What a list of items would commission, before any of it is written to
  * the plan: each stewarding item's tier and budget per pass, whether the
  * node's pass would be bought or is already met, and for a deepen item the
- * children it would order by id, with the total against the day's room and
+ * children it would order by id, with the total against the pace's room and
  * the escrow. Reads only; nothing is placed, released or queued.
  */
 export async function previewPlanOrders(
@@ -466,19 +476,19 @@ export async function previewPlanOrders(
 ): Promise<{
   items: OrderPreview[];
   total_would_hold_owls: number;
-  today: { daily_rate_owls: number; room_owls: number | null };
+  pace: { pace: string; room_owls: number | null };
   escrow_uncommitted_owls: number;
   note: string;
 }> {
-  const { grantDayUseMicroUsd } = await import("./commission-service.js");
   const est = await stewardTierCostEstimates();
-  const [grant] = await rawQuery<{ daily: string; escrow: string; budget_job_id: string }>(
-    `SELECT g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow, g.budget_job_id
+  const [grant] = await rawQuery<{ pace: unknown; escrow: string; budget_job_id: string }>(
+    `SELECT g.pace, j.budget_micro_usd AS escrow, g.budget_job_id
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
     [grantId]
   );
-  const daily = Number(grant?.daily ?? 0);
-  const used = grant && daily > 0 ? await grantDayUseMicroUsd(grantId) : 0;
+  // What the plan's orders may commit now: they are not the Grantmaker's
+  // own, so the reserve is not theirs (pace-service.ts).
+  const room = grant ? await paceRoom(grantId, "delegated") : null;
   const money = grant
     ? await grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id })
     : { committed: 0 };
@@ -548,14 +558,14 @@ export async function previewPlanOrders(
   return {
     items: out,
     total_would_hold_owls: Math.round(total * 1_000_000) / 1_000_000,
-    today: {
-      daily_rate_owls: microUsdToOwls(daily),
-      room_owls: daily > 0 ? microUsdToOwls(Math.max(0, daily - used)) : null,
+    pace: {
+      pace: describePace(parsePace(grant?.pace)),
+      room_owls: room ? microUsdToOwls(room.availableMicroUsd) : null,
     },
     escrow_uncommitted_owls: microUsdToOwls(Math.max(0, Number(grant?.escrow ?? 0) - money.committed)),
     note:
       "A preview: nothing was added to the plan or commissioned. Each order is placed whole when " +
-      "the day's room and the escrow cover it, earlier items of the plan first; one that does not " +
+      "the pace's room (outside the reserve) and the escrow cover it, earlier items of the plan first; one that does not " +
       "fit waits without holding the ones after it. Budgets are ceilings: a pass returns what it " +
       "does not spend. Estimates are the ledger's current figures and move.",
   };

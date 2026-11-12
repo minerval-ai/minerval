@@ -5,7 +5,7 @@
  * replaces only what follows the plan's started prefix, in the funder's
  * conversation. So a Grantmaker whose review pass found an old item about
  * to commission a strong pass it would not have chosen could not re-tier
- * it, shrink it or drop it; it raised the daily rate for a few minutes and
+ * it, shrink it or drop it; it raised its daily rate (since replaced by the pace) for a few minutes and
  * bought throwaway standard passes on the same nodes so the items would be
  * met. This is the tool it lacked.
  *
@@ -14,7 +14,7 @@
  * the order is waiting for room, blocked, or placed and waiting its turn in
  * the queue, and wherever the item sits in the plan, its Grantmaker may
  * change its tier or budget or withdraw it. A budget the order already
- * holds comes straight back to the escrow and the day's room, and an
+ * holds comes straight back to the escrow and the pace's room, and an
  * amended order is asked for again on its new terms in the same call. A
  * pass that is running or has run is left exactly as it is: money being
  * spent is not taken from under a run. A deepen item is several passes, so
@@ -22,7 +22,7 @@
  * has not started.
  *
  * No count bounds any of this. What an amended order may hold is bounded
- * where every order is: by the day's rate and the escrow.
+ * where every order is: by the pace, the reserve and the escrow.
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";

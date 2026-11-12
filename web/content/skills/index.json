@@ -64,7 +64,7 @@
       "name": "costing",
       "displayName": "Costing",
       "description": "How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.",
-      "version": 8,
+      "version": 9,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -162,7 +162,7 @@
           }
         }
       ],
-      "bodyChars": 12082
+      "bodyChars": 12573
     },
     {
       "name": "mathematics",
@@ -565,7 +565,7 @@
       "name": "provenance",
       "displayName": "Provenance",
       "description": "How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.",
-      "version": 9,
+      "version": 10,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -1172,7 +1172,7 @@
           }
         }
       ],
-      "bodyChars": 23565
+      "bodyChars": 23550
     },
     {
       "name": "search",
@@ -1257,7 +1257,7 @@
       "name": "sql",
       "displayName": "Sql",
       "description": "How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.",
-      "version": 9,
+      "version": 10,
       "sinceEpoch": "2026-11-responsive-funding",
       "kind": "method",
       "domains": [],
@@ -1330,7 +1330,7 @@
         }
       ],
       "tools": [],
-      "bodyChars": 9911
+      "bodyChars": 10174
     }
   ]
 }

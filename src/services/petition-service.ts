@@ -22,8 +22,8 @@
  * answer. A follow-up is commissioned once the petitioner's run has ended,
  * with its plan as the new pass's brief.
  */
-import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { rawQuery } from "../db/client.js";
 import { getGeneralMandate } from "./allocation-policy-service.js";
 import { commissionNodePass, placeCommission } from "./commission-service.js";
 import { microUsdToOwls } from "./owl.js";
@@ -62,6 +62,9 @@ export interface PetitionRow {
   decided_at: string | null;
   /** The session the decision returns into, when the petitioner waits in one. */
   reply_to_session?: string | null;
+  done_so_far?: string | null;
+  held_until?: string | null;
+  hold_reason?: string | null;
 }
 
 /**
@@ -70,7 +73,8 @@ export interface PetitionRow {
  */
 export const PETITION_COLUMNS = `id, grant_id, kind, asked_micro_usd, plan, why, if_refused, requester_agent,
   requester_action_id, requester_node_id, chain, waiting, status, granted_micro_usd, decided_by, reason,
-  follow_up_commissioned_at, created_at, decided_at, reply_to_session`;
+  follow_up_commissioned_at, created_at, decided_at, reply_to_session, done_so_far,
+  held_until::text AS held_until, hold_reason`;
 
 /** The chain of runs that led to `actionId`, root first. */
 export async function runChain(actionId: string): Promise<ChainLink[]> {
@@ -143,6 +147,8 @@ export async function filePetition(input: {
   waiting: boolean;
   /** The session the decision returns into (session-service.ts). */
   replyToSession?: string | null;
+  /** What the asking run has established so far and what is still open. */
+  doneSoFar?: string | null;
 }): Promise<string> {
   const chain = input.requesterActionId ? await runChain(input.requesterActionId) : [];
   if (chain.length > 0 && input.spentMicroUsd != null) {
@@ -151,8 +157,8 @@ export async function filePetition(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO petitions
        (grant_id, kind, asked_micro_usd, plan, why, if_refused, requester_agent,
-        requester_action_id, requester_node_id, chain, waiting, reply_to_session, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
+        requester_action_id, requester_node_id, chain, waiting, reply_to_session, done_so_far, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14)
      RETURNING id`,
     [
       input.grantId,
@@ -167,10 +173,132 @@ export async function filePetition(input: {
       JSON.stringify(chain),
       input.waiting,
       input.replyToSession ?? null,
+      input.doneSoFar?.trim() || null,
       currentLabel(),
     ]
   );
   return row!.id;
+}
+
+/**
+ * The latest a held petition may be held to, when a run waits on it: its
+ * session's deadline less a margin. The one limit on holding, because a
+ * caller waits on the result (CLAUDE.md, "Constraints on agents"); the
+ * officer's brief states it for each petition.
+ */
+export const HOLD_MARGIN_MINUTES = 60;
+
+export async function latestHold(p: Pick<PetitionRow, "reply_to_session" | "waiting">): Promise<Date | null> {
+  if (!p.waiting || !p.reply_to_session) return null;
+  const [s] = await rawQuery<{ deadline: string | null; status: string }>(
+    `SELECT deadline::text AS deadline, status FROM agent_sessions WHERE id = $1`,
+    [p.reply_to_session]
+  );
+  if (!s || !["waiting", "ready", "running"].includes(s.status)) return null;
+  // A running session has not paused yet: it waits at least the platform's
+  // wait once it does.
+  const deadline = s.deadline ? new Date(s.deadline) : new Date(Date.now() + loadSessionWaitMs());
+  return new Date(deadline.getTime() - HOLD_MARGIN_MINUTES * 60_000);
+}
+
+function loadSessionWaitMs(): number {
+  return Math.round(loadConfig().sessionWaitHours * 3_600_000);
+}
+
+/**
+ * Hold a petition for perspective: until a time, or until named runs settle
+ * (whichever comes first), with what it waits to learn. The asking run is
+ * told at once, without being woken, so it knows the answer is coming later
+ * and why. A hold for a waiting run must end before its session's deadline.
+ */
+export async function holdPetition(input: {
+  petitionId: string;
+  until: Date;
+  refs: string[];
+  criteria: string;
+  decidedBy: "officer" | "grantmaker";
+}): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+  const p = await getPetition(input.petitionId);
+  if (!p) return { ok: false, message: "No such petition." };
+  if (p.status !== "pending" && p.status !== "escalated") return { ok: false, message: `That petition is ${p.status}.` };
+  const criteria = input.criteria.trim();
+  if (!criteria) return { ok: false, message: "criteria is required: what the hold waits to learn, for the asker and the record." };
+  const latest = await latestHold(p);
+  if (latest && input.until.getTime() > latest.getTime()) {
+    return {
+      ok: false,
+      message:
+        `A run is waiting on this petition, and its session waits until ${latest.toISOString().slice(0, 16).replace("T", " ")} UTC ` +
+        `(its deadline less ${HOLD_MARGIN_MINUTES} minutes), so a hold must end by then. Hold it for less, or decide it now.`,
+    };
+  }
+  await rawQuery(
+    `UPDATE petitions SET status = 'held', held_until = $2, hold_refs = $3::jsonb, hold_reason = $4, decided_by = $5 WHERE id = $1`,
+    [p.id, input.until.toISOString(), JSON.stringify(input.refs), criteria, input.decidedBy]
+  );
+  await rawQuery(
+    `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, reason, petition_id, action_id, sensitivity_label)
+     VALUES ($1, $2, 'petition', 'held', $3, $4, $5, $6, $7)`,
+    [p.grant_id, input.decidedBy, p.requester_node_id, criteria, p.id, p.requester_action_id, currentLabel()]
+  );
+  if (p.reply_to_session) {
+    const { deliverReply } = await import("./session-service.js");
+    await deliverReply({
+      sessionId: p.reply_to_session,
+      kind: "petition",
+      // Not the petition's own ref: a hold is not its answer.
+      ref: `${p.id}:held`,
+      text:
+        `The mandate is holding your petition until ${input.until.toISOString().slice(0, 16).replace("T", " ")} UTC at the latest` +
+        `${input.refs.length ? `, or until ${input.refs.length} related run(s) report` : ""}, to decide it with more in front of it: ` +
+        `${criteria}. Carry on with what you can do; the decision will come to you.`,
+      fallback: null,
+      wake: false,
+    });
+  }
+  return { ok: true, message: `Held until ${input.until.toISOString().slice(0, 16).replace("T", " ")} UTC${input.refs.length ? ` or until the named runs settle` : ""}.` };
+}
+
+/**
+ * Return held petitions and items whose time has come (or whose named runs
+ * have all settled) to the officers, with what they were held for. Never
+ * refused by time: a held decision comes back to be decided. Returns the
+ * mandates whose inbox has something back.
+ */
+export async function releaseHolds(): Promise<string[]> {
+  const settled = `NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(hold_refs) r
+                     JOIN actions a ON a.id::text = r WHERE a.status IN ('open', 'running'))`;
+  // A hold comes back to whoever placed it: the Grantmaker's to its session
+  // (as an escalation, which wakes it), an officer's to the officers.
+  const petitions = await rawQuery<{ id: string; grant_id: string; status: string; requester_node_id: string | null; hold_reason: string | null }>(
+    `UPDATE petitions
+        SET status = CASE WHEN decided_by = 'grantmaker' THEN 'escalated' ELSE 'pending' END,
+            decided_by = NULL,
+            reason = 'Held until ' || to_char(held_until AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC to learn: ' ||
+                     COALESCE(hold_reason, '') || '. It is back for a decision.'
+      WHERE status = 'held'
+        AND (held_until <= now() OR (jsonb_array_length(hold_refs) > 0 AND ${settled}))
+      RETURNING id, grant_id, status, requester_node_id, hold_reason`
+  );
+  const { recordEvent } = await import("./event-service.js");
+  for (const p of petitions.filter((x) => x.status === "escalated")) {
+    await recordEvent({
+      kind: "escalated",
+      grantId: p.grant_id,
+      nodeId: p.requester_node_id,
+      refs: { petition: p.id },
+      summary: `A petition you held is back for a decision: ${p.hold_reason ?? ""}`,
+    });
+  }
+  const items = await rawQuery<{ grant_id: string }>(
+    `UPDATE mandate_inbox
+        SET held_until = NULL,
+            summary = summary || E'\n(Held to learn: ' || COALESCE(hold_reason, '') || '. Back for a decision.)'
+      WHERE handled_at IS NULL AND held_until IS NOT NULL
+        AND (held_until <= now() OR (jsonb_array_length(hold_refs) > 0 AND ${settled}))
+      RETURNING grant_id`
+  );
+  return [...new Set([...petitions, ...items].map((r) => r.grant_id))];
 }
 
 export async function getPetition(id: string): Promise<PetitionRow | null> {
@@ -216,6 +344,17 @@ export async function decidePetition(input: {
     const amount = input.owlsMicroUsd ?? Number(p.asked_micro_usd);
     granted = Math.round(input.decision === "grant" ? Math.min(amount, Number(p.asked_micro_usd)) : amount);
     if (!(granted > 0)) return { ok: false, message: "A grant or follow-up needs an amount above zero." };
+    // The reserve is checked here, when the decision is made, since a grant
+    // may be placed later (on a paused session's resumption, or as a
+    // follow-up): an officer grants only from money outside it.
+    const { paceRoom, paceRefusal } = await import("./pace-service.js");
+    const room = await paceRoom(p.grant_id, input.decidedBy === "grantmaker" ? "grantmaker" : "delegated");
+    if (!room || granted > room.availableMicroUsd) {
+      return {
+        ok: false,
+        message: room ? `Nothing was decided. ${paceRefusal(room, granted)}` : "The mandate is not active.",
+      };
+    }
     if (input.decision === "follow_up") {
       status = "follow_up";
     } else {
@@ -236,6 +375,7 @@ export async function decidePetition(input: {
             payer: { kind: "grant", grantId: p.grant_id },
             budget: granted,
             commissionedBy: "petition",
+            committer: "grantmaker",
             brief: p.plan,
             reason,
           });
@@ -260,6 +400,18 @@ export async function decidePetition(input: {
      VALUES ($1, $2, 'petition', $3, $4, $5, $6, $7, $8, $9)`,
     [p.grant_id, input.decidedBy, status, p.requester_node_id, granted || null, reason, p.id, p.requester_action_id, currentLabel()]
   );
+  {
+    const { recordEvent } = await import("./event-service.js");
+    await recordEvent({
+      kind: "petition_decided",
+      grantId: p.grant_id,
+      nodeId: p.requester_node_id,
+      actionId: p.requester_action_id,
+      refs: { petition: p.id, session: p.reply_to_session },
+      summary: `A ${p.kind} petition from ${p.requester_agent ?? "an agent"} was ${status === "refused" ? "refused" : status === "granted" ? `granted ${microUsdToOwls(granted)} owls` : `funded as a ${microUsdToOwls(granted)}-owl follow-up`} by the ${input.decidedBy}: ${reason}`,
+      payload: { status, granted_micro_usd: granted, decided_by: input.decidedBy },
+    });
+  }
   // The decision returns into the session that asked: shown to its run if it
   // is still working (a grant raising its ceiling then), or resuming it if
   // it paused (a grant funding that pass).
@@ -392,7 +544,8 @@ export async function inboxWaiting(grantId: string): Promise<{ officer: number; 
   const [row] = await rawQuery<{ officer: number; grantmaker: number }>(
     `SELECT
        (SELECT count(*) FROM petitions WHERE grant_id = $1 AND status = 'pending')
-       + (SELECT count(*) FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL AND escalated_at IS NULL) AS officer,
+       + (SELECT count(*) FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL AND escalated_at IS NULL
+                                              AND held_until IS NULL) AS officer,
        (SELECT count(*) FROM petitions WHERE grant_id = $1 AND status = 'escalated')
        + (SELECT count(*) FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL AND escalated_at IS NOT NULL) AS grantmaker`,
     [grantId]
@@ -400,30 +553,3 @@ export async function inboxWaiting(grantId: string): Promise<{ officer: number; 
   return { officer: Number(row?.officer ?? 0), grantmaker: Number(row?.grantmaker ?? 0) };
 }
 
-/**
- * Wait for a petition's answer, working the mandate's inbox if no one else
- * is. `work` runs one sitting (officer, then Grantmaker for escalations); it
- * is injected so the agents stay out of this service.
- */
-export async function awaitDecision(
-  petitionId: string,
-  work: (grantId: string) => Promise<void>,
-  opts: { deadlineMs?: number; pollMs?: number } = {}
-): Promise<PetitionRow | null> {
-  const deadline = Date.now() + (opts.deadlineMs ?? loadConfig().petitionWaitSeconds * 1000);
-  const poll = opts.pollMs ?? 1000;
-  let p = await getPetition(petitionId);
-  while (p && (p.status === "pending" || p.status === "escalated") && Date.now() < deadline) {
-    if (await takeInboxLease(p.grant_id)) {
-      try {
-        await work(p.grant_id);
-      } finally {
-        await releaseInboxLease(p.grant_id);
-      }
-    } else {
-      await new Promise((r) => setTimeout(r, poll));
-    }
-    p = await getPetition(petitionId);
-  }
-  return p;
-}

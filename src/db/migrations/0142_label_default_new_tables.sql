@@ -1,0 +1,2 @@
+ALTER TABLE "events" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();--> statement-breakpoint
+ALTER TABLE "subscriptions" ALTER COLUMN "sensitivity_label" SET DEFAULT minerval_default_label();

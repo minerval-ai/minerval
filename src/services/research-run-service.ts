@@ -316,7 +316,7 @@ export async function readResearcherPaused(): Promise<boolean> {
 
 /**
  * Who opens research runs, as `research_runs.requested_by`: the four
- * administrators that may launch the researcher with delegate_research, and
+ * administrators that may commission the researcher, and
  * the ledger's request runs.
  */
 export const RESEARCH_LAUNCHERS = [

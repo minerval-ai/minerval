@@ -14,7 +14,7 @@ import {
   materializePlanItems,
   materializeStandingOrders,
 } from "../../src/services/action-service.js";
-import { grantDayUseMicroUsd } from "../../src/services/commission-service.js";
+import { committedWithinMicroUsd } from "../../src/services/pace-service.js";
 import { tendMandates } from "../../src/services/mandate-lifecycle-service.js";
 import { PLAN_ORDER_COMMISSIONER } from "../../src/services/standing-order-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
@@ -124,7 +124,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
     // A rate with room for one pass at a time.
     const price = await estimate(root);
     expect(price).toBeLessThan(5 * OWL);
-    await rawQuery(`UPDATE grants SET scope_claim_id = $2, daily_budget_micro_usd = $3 WHERE id = $1`, [
+    await rawQuery(`UPDATE grants SET scope_claim_id = $2, pace = (CASE WHEN $3::bigint > 0 THEN jsonb_build_object('kind','steady','owls',$3::bigint / 1000000.0,'period_hours',24) ELSE '{"kind":"as_needed"}'::jsonb END) WHERE id = $1`, [
       m.grantId,
       root,
       Math.round(price * 1.5),
@@ -138,7 +138,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
     expect(Number(placed[0]!.amount)).toBe(price);
     expect(await orders(m.grantId, kid)).toHaveLength(0);
     expect(await orders(m.grantId, outside)).toHaveLength(0);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(price);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(price);
     expect(await grantStatus(m.grantId)).toBe("active");
 
     await runPass(root, 0.25 * price, m.jobId);

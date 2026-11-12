@@ -5,7 +5,7 @@
  * Two kinds, opened two ways:
  *
  * - Claim-scoped: a Steward launches the researcher on a document in its
- *   claim's map while assessing the claim, inline (delegate_research with
+ *   claim's map while assessing the claim, (commission kind research, with
  *   examine_source_id) or on its own (commission kind research with
  *   examine_source_id).
  * - Document-scoped (#865): a review of the document for its own sake,

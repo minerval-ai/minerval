@@ -242,12 +242,12 @@ describe("the curate action", () => {
     expect(state.reopened).toEqual([]);
   });
 
-  it("works to the 5-owl run budget when its allocations cover less, and says whose it is", async () => {
+  it("works to the budget its commission set, never raised past it, and says whose it is", async () => {
     state.covered = curateAction();
     await processNextEngineAction();
     expect(state.budgets[0]).toEqual({
-      microUsd: 5_000_000,
-      source: "this curation's run budget, which its funding mandate covers",
+      microUsd: 250_000,
+      source: "the commission funding this curation",
       funding: { actionId: expect.any(String) },
     });
   });
@@ -345,7 +345,8 @@ describe("the audit action", () => {
     expect(state.contexts[0]).toEqual({ userId: "u-funder", jobId: "gov-job" });
     expect(state.completed).toEqual([{ id: "act-a", metered: 120_000, meteredJobId: "gov-job" }]);
     expect(state.auditClosed).toEqual([[RUN_ID]]);
-    expect(state.budgets[0]!.microUsd).toBe(5_000_000);
+    // The commission's budget, as placed: nothing raises it.
+    expect(state.budgets[0]!.microUsd).toBe(500_000);
   });
 
   it("runs a prize audit under the bounty's reserve job and the platform account", async () => {

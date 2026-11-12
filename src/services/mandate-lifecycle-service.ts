@@ -8,7 +8,7 @@
  * stubs in its scope. Both used to be finished, and the second kind run, by
  * the direct steward lane (workers/grant-pipeline.ts), which ran passes off
  * the ledger, metered to the mandate's job with no allocation and no regard
- * for its daily rate (#849). That lane is gone: every pass a mandate pays
+ * for its pace (#849). That lane is gone: every pass a mandate pays
  * for is a commission (standing-order-service.ts), and this module keeps
  * the three things the lane did besides running passes.
  *

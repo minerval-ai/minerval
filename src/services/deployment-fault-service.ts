@@ -325,7 +325,7 @@ export async function platformFaultBriefing(grantId: string, since: string | nul
     `its ledger row stays open and funded, reads as waiting (the ledger view's waiting_on, waiting_since and ` +
     `next_attempt_at; a plan item's reason), and is retried by the platform until it runs, an ingest included. ` +
     `Do not commission such work again or re-add its plan item: that buys nothing. Its budget stays held ` +
-    `for it and counts toward the daily rate of the day it was placed on, not of later days. While a fault ` +
+    `for it and counts against your pace from when it was placed, as any held budget does. While a fault ` +
     `lasts, an agent whose tool it stops is told so and works without the tool: a Steward that cannot reach ` +
     `the Matcher keeps a premise in prose, named as unmatched, rather than mint a node nothing checked, so ` +
     `a pass that ran during a fault may be worth a second look once it is over. A fault does not wake your ` +

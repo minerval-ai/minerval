@@ -1126,13 +1126,13 @@ export async function reserveRoomMicroUsd(bountyId: string, tx?: Runner): Promis
 }
 
 /**
- * Fund a prize audit's `audit` action from the bounty's reserve (§8.6,
- * #363), the way fundPrizeReviewAction funds the review: an allocation
- * pinned to the action, placed by the platform account, for as much of the
- * estimate as the reserve still holds. The docs always said the reserve
- * pays for the audit; until the audit was a ledger action it ran unmetered
- * against nothing. Idempotent: a second call tops up nothing already
- * placed. Returns the amount placed.
+ * Commission a prize audit's `audit` action from the bounty's reserve
+ * (§8.6, #363), whole: one payer, one budget, as every commission is. A
+ * reserve that holds the audit's whole budget pays for it. One that holds
+ * less places nothing, and the audit goes to the General mandate's
+ * officers, who commission it whole from their own money, told what the
+ * reserve holds. Idempotent: a second call places nothing already placed.
+ * Returns the amount placed.
  */
 export async function fundPrizeAuditFromReserve(
   bountyId: string,
@@ -1159,31 +1159,26 @@ export async function fundPrizeAuditFromReserve(
   );
   if (Number(existing?.n ?? 0) > 0) return 0;
   const cost = Math.max(0, Math.round(Number(action.cost_est_micro_usd)));
-  const amount = Math.min(room, cost);
-  if (amount <= 0) return 0;
-  // A reserve that holds the audit's whole budget commissions it; a short
-  // one puts what it holds on the row, and the rest is asked of the
-  // General mandate's officers, whose commission then runs it.
-  const whole = amount >= cost;
+  if (cost <= 0) return 0;
+  if (room < cost) {
+    // Never part of a budget from here and the rest from a mandate: the
+    // General mandate's officers commission the whole audit or decline it.
+    const { fundAuditNow } = await import("./maintenance-funding.js");
+    await fundAuditNow(actionId, {
+      note:
+        `The prize's review reserve holds ${Math.max(0, room) / 1_000_000} of the ${cost / 1_000_000} USD ` +
+        `this audit is estimated to need, so it pays for none of it.`,
+    });
+    return 0;
+  }
   await r.query(
     `INSERT INTO action_allocations
        (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [
-      action.exclusion_group, actionId, action.claim_id, job.user_id, amount,
-      whole ? "prize_reserve" : null,
-      whole ? "The prize's review reserve pays for its audits." : null,
-      // The label of the work that placed the money (src/labels.ts).
-      currentLabel(),
-    ]
+     VALUES ($1, $2, $3, $4, $5, 'prize_reserve', 'The prize''s review reserve pays for its audits.', $6)`,
+    // The label of the work that placed the money (src/labels.ts).
+    [action.exclusion_group, actionId, action.claim_id, job.user_id, cost, currentLabel()]
   );
-  if (!whole) {
-    const { fundAuditNow } = await import("./maintenance-funding.js");
-    await fundAuditNow(actionId, {
-      note: `The prize's review reserve holds ${amount / 1_000_000} of the ${cost / 1_000_000} USD this audit is estimated to need.`,
-    });
-  }
-  return amount;
+  return cost;
 }
 
 // ---------------------------------------------------------------------------

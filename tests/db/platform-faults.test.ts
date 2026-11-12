@@ -63,7 +63,7 @@ import {
   platformFaultBriefing,
   resetDeploymentFaultState,
 } from "../../src/services/deployment-fault-service.js";
-import { collectMandateEvents, pendingMandateEvents, wakeDueMandateReviews, WAKE_AFTER_MINUTES } from "../../src/services/mandate-event-service.js";
+import { collectMandateEvents, pendingMandateEvents } from "../../src/services/mandate-event-service.js";
 import { queueHealth } from "../../src/services/monitor-service.js";
 import { createJob } from "../../src/services/job-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
@@ -361,7 +361,7 @@ describe("what the payer reads", () => {
     expect(note).toContain("placed but not starting yet");
     expect(note).toContain("waiting on a deployment fault");
     expect(note).toContain("budget stays held");
-    expect(note).toContain("counts toward the daily rate of the day it was placed on, not of later days");
+    expect(note).toContain("counts against the mandate's pace from when it was placed");
     // It reads as waiting on the ledger from the start.
     expect((await row(res.actionId)).fault_reason).toBe("credits_fault");
     // The hold is as it was for any work not yet run: no limit added or lifted.
@@ -399,7 +399,7 @@ describe("what the payer reads", () => {
     expect(text).toContain("The operator has been told");
     expect(text).toContain("2 of your funded lookout_run rows (1.22 owls held) are waiting on a deployment fault");
     expect(text).toContain("Do not commission such work again");
-    expect(text).toContain("counts toward the daily rate of the day it was placed on, not of later days");
+    expect(text).toContain("counts against your pace from when it was placed");
     expect(text).toContain("A fault does not wake your review");
     // The class, never the provider's words or its name.
     expect(text).not.toMatch(/402|max_tokens|openrouter/i);
@@ -437,7 +437,7 @@ describe("an ingest a deployment fault stops", () => {
       `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, status, updated_at)
        VALUES ('mandate_review', $1, 'standard', $2, 'review', 500000, 'done', now() - make_interval(mins => $3))
        RETURNING id`,
-      [`review:${grantId}`, grantId, WAKE_AFTER_MINUTES + 5]
+      [`review:${grantId}`, grantId, 60]
     );
     const message = { sourceId: source.id, jobId: job.id, url, ingestGroup: group, meterJobId: budgetJobId, grantId };
     return { grantId, url, group, actionId, allocationId, jobId: job.id, reviewId: review!.id, message };
@@ -474,15 +474,13 @@ describe("an ingest a deployment fault stops", () => {
     await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE id = $1`, [p.actionId]);
   });
 
-  it("does not wake a paid review: the failed extraction is not an event, and the retry's end is", async () => {
+  it("is not news for the mandate: the failed extraction is not an event, and the retry's end is", async () => {
     const p = await plannedIngest();
     h.extractError = refused();
     await handleUrlExtraction(p.message);
 
     expect(await collectMandateEvents(p.grantId)).toBe(0);
     expect((await pendingMandateEvents(p.grantId)).total).toBe(0);
-    await wakeDueMandateReviews();
-    expect(await rawQuery(`SELECT status FROM actions WHERE id = $1`, [p.reviewId])).toEqual([{ status: "done" }]);
 
     // The platform's retry: a new job for the same source, which finishes.
     h.extractError = null;
@@ -498,8 +496,6 @@ describe("an ingest a deployment fault stops", () => {
     const { events } = await pendingMandateEvents(p.grantId);
     expect(events[0]).toMatchObject({ kind: "source_ingested" });
     expect(events[0]!.payload).toMatchObject({ outcome: "completed" });
-    expect(await wakeDueMandateReviews()).toBeGreaterThanOrEqual(1);
-    expect(await rawQuery(`SELECT status FROM actions WHERE id = $1`, [p.reviewId])).toEqual([{ status: "open" }]);
   });
 
   it("is still cancelled, and still news, when the failure is the source's own", async () => {

@@ -6,7 +6,7 @@
  * reason and the successors; nothing is delivered to a retired node's inbox,
  * and what is addressed to one with a live successor goes there; the inbox
  * clean-up script closes what sat on retired nodes before; and migration
- * 0133's backfill gives each live merge its record.
+ * 0134's backfill gives each live merge its record.
  *
  * The scratch DB is shared across files, so every assertion is about the
  * rows seeded here.

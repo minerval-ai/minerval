@@ -190,22 +190,22 @@ export const PLAN_KIND_RULES =
   "name, standard or strong. Name it: an item that names none is stored " +
   "and commissioned as standard, and strong, which costs several times as " +
   "much, is bought only where you ask for it. " +
-  "The budget is held against your daily rate and escrow while the pass " +
+  "The budget is held against your mandate's pace and escrow while the pass " +
   "waits and runs, and what it does not spend comes back. Unlike " +
   "`commission`, which is placed now or refused, an order waits for " +
-  "room: one today's rate cannot cover reads waiting, with its tier and " +
-  "the figures, and is placed by the first look that finds room for it " +
-  "whole. Each look goes through the plan in order and places every order " +
-  "the room covers: earlier items have first claim on the day's room, and " +
-  "an order that does not fit never holds the ones after it. So a large " +
-  "order can be passed over while smaller ones after it take the room, " +
-  "until you raise the rate, give it a smaller budget, or withdraw what is " +
-  "taking the room. One the " +
+  "room: one the pace's window or your reserve leaves no room for reads " +
+  "waiting, with its tier and the figures, and is placed by the first look " +
+  "that finds room for it whole. Each look goes through the plan in order " +
+  "and places every order the room covers: earlier items have first claim " +
+  "on the pace's room, and an order that does not fit never holds the ones " +
+  "after it. So a large order can be passed over while smaller ones after " +
+  "it take the room, until room returns, you lower your reserve, give it a " +
+  "smaller budget, or withdraw what is taking the room. One the " +
   "escrow cannot cover beside the budgets running work holds waits the " +
-  "same way. One that could never fit, a budget above your whole daily " +
-  "rate or above what the escrow could cover with every running budget " +
-  "returned, reads blocked with the figures until you change the budget, " +
-  "the variant, the rate, or the escrow is topped up. An item's work has " +
+  "same way. One that could never fit, a budget above a steady pace's whole " +
+  "window or above what the escrow could cover with every running budget " +
+  "returned, reads blocked with the figures until you change the budget " +
+  "or the variant, or the escrow is topped up. An item's work has " +
   "started once its pass is running; until then, whether it is waiting, " +
   "blocked, or commissioned and waiting its turn, and wherever it sits in " +
   "the plan, you can change its variant or budget_owls or withdraw it " +
@@ -223,7 +223,7 @@ export const PLAN_KIND_RULES =
   "subquestions, candidate answers and presuppositions) and orders a " +
   "first assessment for each direct child that carries no assessment and " +
   "is queued for a pass, at the same budget and variant, under the same " +
-  "rate and escrow, including such children the node's own pass mints. A " +
+  "pace and escrow, including such children the node's own pass mints. A " +
   "child that already carries an assessment is never ordered a fresh pass " +
   "by a deepen item, however it came to be queued: that is a reassess " +
   "item on the child. The item's standing names the children it ordered " +
@@ -243,7 +243,7 @@ export const PLAN_KIND_RULES =
   "claims to be swept on its own, or \"residual\" for the claims no such " +
   "tag covers; the item opens (or keeps) the partition's two sweep rows " +
   "(standard and strong readers, priced by the partition's assessed " +
-  "nodes) and funds one from your escrow and daily rate: the variant you " +
+  "nodes) and funds one from your escrow within the pace: the variant you " +
   "name, or without one the same marginal-return rule the platform's own " +
   "sweeps follow. The item is done when a sweep of the partition finishes " +
   "after it opened, whoever funded it; add another item for a re-sweep. A " +
@@ -333,7 +333,7 @@ export const PLAN_ITEM_SCHEMA = {
       type: "number",
       description:
         "assess, reassess, deepen, optional: the budget of each pass the " +
-        "item commissions, in owls, held against your daily rate and " +
+        "item commissions, in owls, held against your mandate's pace and " +
         "escrow until the pass settles. Omit for the pass's current " +
         "estimate on its variant (cost_sheet). A deepen item's budget is " +
         "per pass: the node's, and each child's it orders.",

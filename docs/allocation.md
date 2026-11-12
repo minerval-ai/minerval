@@ -24,9 +24,12 @@ with `commissioned_by` set, a budget, the brief its payer wrote and the
 reason it gave (src/services/commission-service.ts). The rule is short:
 
     a row with a live commission runs;
-    a row whose allocations cover its estimated cost runs (a mandate's
-      own upkeep, below);
     nothing else anywhere decides what runs.
+
+A mandate's own upkeep (its Grantmaker's passes, its lookouts' and
+Correspondents' runs, its plan's ingests and sweeps) is commissioned by
+the mandate itself at the row's estimate (`commissioned_by` `mandate`);
+money placed without a commission runs nothing (`nextRunnableAction`).
 
 Settlement is the ledger's: the run's metered cost is consumed from the
 allocations that paid for it and the rest is released to each payer
@@ -47,8 +50,8 @@ page.
 Budgets are set at the high end of what work of that kind costs (the
 costing skill), because a run that has what it needs finishes the work and
 gives back the rest. When the work turns out to need more, its agent
-**petitions** the mandate paying for the run and gets the answer in the
-run. Neither a budget nor a petition is ever a verdict input: what a
+**petitions** the mandate paying for the run and gets the answer in its
+session, carrying on meanwhile. Neither a budget nor a petition is ever a verdict input: what a
 mandate chose to pay for orders work and selects effort, and appears
 nowhere in an assessment.
 
@@ -83,11 +86,11 @@ review pass) share one toolbox (llm/tools/mandate-tools.ts).
 ## Mandates steward themselves: the review pass
 
 There can be no human bottleneck between a funded mission and the work.
-On a cadence (and on demand — see continue_review), the ledger opens a
-`mandate_review` action for every active mandate, self-funded from its
-escrow, and the engine executor runs the mandate's Grantmaker in review
-mode (llm/agents/mandate-review.ts) with the affordances anyone entrusted
-with a budget and a mission would need:
+Every active mandate's Grantmaker works in one long session on it
+(llm/agents/mandate-review.ts; "The Grantmaker's session", below), opened
+by a `mandate_review` action self-funded from the escrow and run by the
+engine executor, with the affordances anyone entrusted with a budget and a
+mission would need:
 
 - **read back what its money did**: the briefing opens with what the
   mandate commissioned since the last review and how those runs used their
@@ -113,9 +116,13 @@ with a budget and a mission would need:
 - **see what its money bought** (allocation_report, the mandate's
   operations: policy, commissions, decisions and petitions;
   list_funded_assessments, claims_from_source, pipeline_report);
-- **launch research and fund requests** (delegate_research,
-  get_research_run, list_requests, fund_request), the same instrument and
-  the same request funding the owner's chat carries;
+- **commission research and fund requests** (`commission` kind
+  `research`, with `research_tier` and, optionally,
+  `contribution_budget_owls`; get_research_run, list_requests,
+  fund_request), the same instrument and the same request funding the
+  owner's chat carries; a research report returns into the session;
+- **decide what its officers escalate** (decide_petitions, hold, decline,
+  commission, naming each by id; "The Grantmaker's session", below);
 - **grow its own plan** (extend_plan): append the ingest/assess items it
   discovered; each is priced, escrow-bounded, and executes through the
   ledger, a stewarding item as a standing order the mandate commissions
@@ -123,13 +130,17 @@ with a budget and a mission would need:
   has ordered** (amend_plan_items): the tier or budget of a standing
   order whose pass is not yet running, or its withdrawal, with any budget
   it held returned;
-- **pace itself** (set_daily_rate), **add to the pass in hand**
-  (add_to_pass_budget) and **chain passes** (continue_review): a pass
-  that has more to do adds to its own budget from the escrow, or ends and
-  runs another immediately; both are funded out of the mandate's day like
-  the rest of its work, and the briefing says what the day has left: cost
-  discipline lives in the money the agent can see, never in narrowed
-  affordances;
+- **hold a reserve** (set_reserve; "Pace and reserve", below), **add to
+  the sitting in hand** (add_to_pass_budget) and **begin again**
+  (fresh_start): a sitting that has more to do adds to its own budget
+  from the escrow, or ends its session and opens a fresh one from the
+  workspace; both are funded within the mandate's pace like the rest of
+  its work, and the briefing says where the pace stands: cost discipline
+  lives in the money the agent can see, never in narrowed affordances.
+  The pace itself is the funder's; the Grantmaker proposes a change with
+  note_to_funder;
+- **say what wakes it** (subscribe, unsubscribe, list_subscriptions;
+  "Events and subscriptions", below);
 - **tell the funder** (note_to_funder): what only the funder can decide
   (a move above the pass's cap, a bounty confirmation, a top-up), kept on
   the mandate and shown in the funder's chat and grant_overview;
@@ -137,10 +148,10 @@ with a budget and a mission would need:
   mission** (complete_mandate): an exhausted plan is a waypoint, not an
   end; only the agent's judgment (or the funder) completes an
   agent-stewarded mandate;
-- **keep watch between passes** (spawn_lookout, list_lookouts,
+- **keep watch between sittings** (spawn_lookout, list_lookouts,
   update_lookout, poke_lookout — "Lookouts" below): the briefing lists
   every lookout the mandate funds, its precision, and every flag raised
-  since the last pass.
+  since the last fresh briefing.
 
 Every pass is metered to a budget; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
@@ -148,6 +159,52 @@ on the mandate's public page. Known gap, deliberately next: a bulk
 ingestion primitive ("ingest what this listing/feed points to") so a
 discovered index becomes a program of work in one plan item instead of an
 enumeration.
+
+### The Grantmaker's session
+
+A mandate's Grantmaker works as a person running a large project would:
+it commissions work, carries on with what does not depend on it, and when
+there is nothing more to do now it ends its turn. Its session
+(`grants.grantmaker_session_id`, an `agent_sessions` row) then pauses with
+the conversation intact until something it asked to be told of arrives
+("Events and subscriptions", below). There is no review cadence.
+
+- **When a fresh session opens.** The reconcile sweep opens the
+  mandate's `mandate_review` row only when the mandate has no live
+  Grantmaker session (running, waiting or ready): its first, after
+  `fresh_start`, or after a session expired or closed. When something is
+  escalated to a mandate with no live session, `openReviewsForEscalations`
+  (src/services/mandate-event-service.ts, on the executor's tick) opens
+  one at once rather than waiting for the sweep.
+- **What wakes it.** A fresh session holds two standing subscriptions:
+  what its officers escalate (`escalated` events on its mandate) and what
+  its funder writes (an `inbox_item` that is a funder note). Beyond those
+  it subscribes to what matters to its mission (the runs it commissioned
+  settling, nodes or subtrees moving, money committed past a figure) and
+  sets check-ins. A turn that ends with no check-in held gets one
+  `DEFAULT_CHECK_IN_HOURS` (24) out, which the briefing states.
+- **Each wake is a sitting.** Resuming commissions a `resume` row from the
+  mandate (`commissioned_by` `session_resume`) at the review-pass figure
+  (below), so a sitting works to the same budget as a fresh pass. It reads
+  a wake digest (`grantmakerWakeDigest`) beside what woke it: what is
+  escalated and undecided, where the pace stands, how many of the
+  mandate's events arrived since its last fresh briefing, and the
+  transcript's size, since every sitting re-reads it.
+- **Beginning again.** `fresh_start` ends the session, with its
+  subscriptions and check-ins, and opens a fresh pass from the workspace
+  at once. It pays for an opening turn again, so it is the right tool when
+  the transcript has grown dearer than its context is worth;
+  `add_to_pass_budget` serves a sitting that only needs more money.
+- **Escalations are decided in the session.** There is no separate
+  escalation sitting. What an officer escalates is recorded as an event
+  and delivered into the session; the sitting reads each escalated
+  petition and item as the officers saw it, labelled by its id
+  (`escalationDigest`, src/llm/agents/program-officer.ts), runs waiting
+  first, and decides with decide_petitions, hold, decline or commission.
+- **The mandate's events** (assessments on nodes it funded, decisions on
+  its contributions, sources it ingested, its lookouts' flags;
+  `collectMandateEvents`) no longer wake it. A fresh briefing lists them
+  and marks them read; a resumed sitting is told how many wait.
 
 ### What a pass works to
 
@@ -162,7 +219,9 @@ was: its passes are paid from its Grantmaker share, half for the opening
 plan and what is left for each review. One function states all of this,
 `reviewPassBudgetMicroUsd` (src/services/action-service.ts), and every site
 that opens or reopens the row writes its figure as the row's estimate: the
-reconcile sweep, the wake on new events, and continue_review. Before, the
+reconcile sweep, `openReviewsForEscalations`, and `fresh_start`; a resumed
+sitting is commissioned at the same figure (session-service.ts,
+`grantmakerSittingMicroUsd`). Before, the
 row carried the public assessment price cap, a deployment constant that
 knows nothing about the mandate, and a pass spent most of it on its
 opening turn (the Grantmaker's instructions, some seventy tool schemas and
@@ -170,51 +229,45 @@ the briefing) before it could survey or value anything.
 
 The money path is the one every self-funded row takes. `fundGrantSelfActions`
 places the budget on the row from the escrow, counted whole against the
-day's rate while the pass runs; settlement spends what the pass metered and
-frees the rest. Two things are particular to the Grantmaker's own passes:
+mandate's pace while the pass runs; settlement spends what the pass metered
+and frees the rest. The Grantmaker's own passes may draw on its reserve.
+Two more things are particular to them:
 
-- **A pass the day or the escrow cannot fund in full starts short.** Other
+- **A pass the pace or the escrow cannot fund in full starts short.** Other
   self-funded work waits for room. A review or planning pass is started
   with what there is, and its row's estimate lowered to that, when it is at
   least `REVIEW_PASS_FLOOR_OWLS` (1); below the floor it waits. The reason
   for starting short is that the pass is the only thing that can fix what
-  keeps it from running (the rate, the figure, a note to the funder). The
+  keeps it from running (the figure, the reserve, a note to the funder). The
   reason for the floor is that a pass started with less than its opening
   turn costs spends it reading the briefing, decides nothing, and is opened
   again, so the mandate would pay for nothing repeatedly. A short pass is
   told so in its briefing with the figures: what the policy names, what it
-  was started with, where the day's rate and the escrow stand, and the
+  was started with, where the pace's window and the escrow stand, and the
   floor. `write_operating_policy` also says, when the figure is set, if it
-  is more than the daily rate or the uncommitted escrow.
+  is more than a steady pace's whole window or the uncommitted escrow.
 - **A pass can add to its own budget** (`add_to_pass_budget`): the amount is
   placed from the mandate onto the running review row by `placeCommission`,
-  the path a granted petition takes, so the day's rate and the escrow are
+  the path a granted petition takes, so the pace and the escrow are
   checked under the mandate's lock and a refusal carries the figures
-  (`OVER_DAILY_RATE`, `OVER_ESCROW`); then the run's ceiling rises
+  (`OVER_PACE`, `OVER_ESCROW`); then the run's ceiling rises
   (`creditRunBudget`). It adds to the mandate's one live placement on the
   row, so settlement is unchanged. A decomposition's passes are not offered
   it: the share is their bound.
 
-continue_review stays, described for what it costs: it ends the pass and
-opens another at the pass budget, which starts from the workspace and pays
-for the opening turn again. It is the right tool when a fresh context is
-worth that (a long pass whose every further turn re-reads a large
-transcript, work that divides into stages); for a pass that only needs more
-money, add_to_pass_budget does the same without the second opening turn.
-
 The briefing's budget line states the figure, whose it is (the policy's,
 with its reason, or the platform's default and why), that it is held
-against today's rate while the pass runs, that the opening turn is paid
+against the pace while the pass runs, that the opening turn is paid
 from it, and how to add to it (src/llm/prompts/pass-budget.ts). The line
 other agents get, that a budget is "set at the high end of what work like
 this usually costs", is true of a commission budgeted from the costing
 skill and was never true of these passes, so they do not get it.
 
-The opening turn itself is not made cheaper here. Passes are thirty
-minutes or more apart (`WAKE_AFTER_MINUTES`), past the provider's prompt
-cache, so every pass reads its prompt and tool list uncached; shrinking
-that is a matter of restructuring the prompt and the tool list, which this
-change does not attempt.
+The opening turn itself is not made cheaper here. Sittings are usually
+further apart than the provider's prompt cache lasts, so each reads its
+prompt, tool list and transcript uncached; the wake digest states the
+transcript's size so the Grantmaker can judge when `fresh_start` is
+cheaper than carrying on.
 
 ## Regrants: mandates fund mandates, as peers
 
@@ -246,22 +299,22 @@ The operations view (`get_mandate_allocation`, `allocation_report`, the
 mandate's page) breaks the last thirty days down by kind of work, and
 every allocation of the mandate's is in it: a row per kind and
 **funding**, `commissioned` for the runs an agent, a plan item or the
-funder chose and budgeted, `self_funded` for the mandate's own upkeep
-covered at its estimate (planning and review passes, lookout and
-correspondent runs, planned ingests and sweeps). The table used to show
-commissions alone, so a mandate could spend most of its day on review
+funder chose and budgeted, `self_funded` for the mandate's own upkeep,
+which the mandate commissions itself at its estimate (`commissioned_by`
+`mandate`: planning and review passes, lookout and correspondent runs,
+planned ingests and sweeps). The table used to show commissions alone, so
+a mandate could spend most of its money on review
 passes and lookouts and see none of it there. A run's overage counts with
 the run. What the mandate's job metered outside the ledger altogether (in
 practice the Grantmaker's chat with the funder) is in `spent` and in no
 kind's row, so the view states it on its own, `outside_ledger_owls`: it
-draws on the escrow and is not held to the daily rate.
+draws on the escrow and is not held to the pace.
 
 ## Lookouts: cheap standing watch
 
-A review pass is judgment at mandate scale: it wakes when the mandate's
-work produces something to judge, chains when it has more to do, and
-otherwise runs about once a day, each pass paid from the day's room; the
-world moves between passes, and most of what moves is cheap to notice
+The Grantmaker's session is judgment at mandate scale: it wakes on what it
+subscribed to and on its check-ins, each sitting paid within the mandate's
+pace; the world moves between sittings, and most of what moves is cheap to notice
 and expensive to have missed: a retracted source under an assessed
 claim, a replication that failed, a dependency whose verdict changed. A
 **lookout** is the mandate's answer: the cheapest agent in the system
@@ -312,7 +365,8 @@ requests and unanswered messages.
 
 **Runs are ledger actions.** A due lookout (heartbeat passed, or an event
 waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
-mandate's escrow out of its day like a review pass, with a budget per run
+mandate's escrow within its pace like a review pass, outside the
+Grantmaker's reserve, with a budget per run
 (`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) that the
 lookout is shown as it works. There is no count of runs a day: a burst of
 events waits for the next funded run, which reads them all. The engine executor runs it on
@@ -465,8 +519,8 @@ on its own models, under whatever instructions its owner chooses.
 
 **Triggers, as a lookout's.** Being due opens one `correspondent_run` row
 (group `correspondent:<id>`, priced at `CAP_CORRESPONDENT_RUN_OWLS`),
-funded by `fundGrantSelfActions` from the mandate's headroom and its day's
-room like a lookout run, with no count of runs. It is due when:
+funded by `fundGrantSelfActions` from the mandate's headroom within its
+pace, outside the reserve, like a lookout run, with no count of runs. It is due when:
 
 - its **heartbeat** passes (168 hours, weekly, by default; 0 for
   event-only), or
@@ -482,8 +536,8 @@ room like a lookout run, with no count of runs. It is due when:
   updates for the readers' attention, which no budget prices. A heartbeat
   and a poke are not held by it.
 
-The run is shown its budget, the mandate's uncommitted escrow and the
-day's remaining room, and why a run may come late.
+The run is shown its budget, the sentence every mandate agent reads about
+where the mandate's pace stands (`paceRoom`), and why a run may come late.
 
 **Updates are structured items with a prose rendering.** `publish_update`
 takes items (a node, the reason it deserves the readers' attention, the
@@ -579,7 +633,7 @@ request (docs/architecture.md describes the Steward lanes). The agent
 is told the figure in its task message, sees what it has spent after every
 turn (the spend line, the same one the instruments use), and gets a notice
 when most of it is gone and another when all of it is. A paid tool (web
-search, Elicit, Pangram, a proof check, a delegated researcher run) states
+search, Elicit, Pangram, a proof check) states
 its price and declines a call the remainder cannot cover, saying what the
 call would cost and what is left.
 
@@ -587,17 +641,19 @@ That replaces counts. There is no number of searches, Elicit calls, Lean
 checks, new subclaims, reports, flags, plan items, review passes,
 lookout runs or lookout ingests per run or per day: an agent spends its budget across its
 tools as the work warrants, and a run that needs more petitions the
-mandate paying for it (below, "Petitions") and gets the answer in the
-run; a Grantmaker's review pass, whose payer is its own mandate, adds to
+mandate paying for it (below, "Petitions") and gets the answer in its
+session; a Grantmaker's sitting, whose payer is its own mandate, adds to
 its budget itself (add_to_pass_budget) under the same checks. What stays
 is short, and each item is told to the
 agent with its reason: a turn guard far above any real run (it halts a
 loop that has stopped spending, not work), the escrow-fraction limits on
 autonomous money moves (they stand against injected text, not cost), the
-researcher's wall-clock cap (its launcher's run waits on it), the floor
+researcher's long wall-clock backstop (it ends a run that has stopped
+making progress; nobody waits on it), a hold's latest end when a run
+waits on the petition (a caller waiting on the result), the floor
 below which a Grantmaker's pass is not started short (a pass that cannot
 pay for its opening turn buys nothing, and would be bought again), and the
-operator's daily circuit breakers on solver and researcher spend.
+operator's daily circuit breaker on solver spend.
 
 The Assistant (docs/accounts.md, "The Assistant") is the one agent with
 no budget, because its payer is not absent: the user it works for is in
@@ -647,8 +703,8 @@ within a day of its last sweep; the reconcile sweep opens an exclusive
 set of two `consistency_sweep` rows (`consistency:<tag_id|residual>`)
 for every due partition: a standard variant on the cheap tier
 (`CONSISTENCY_MODEL`) and a strong one (`CONSISTENCY_STRONG_MODEL`). The
-General mandate funds one of the two from its escrow and its daily rate
-like a review pass, with no count of sweeps (`CONSISTENCY_SWEEPS_ENABLED`
+General mandate commissions one of the two from its escrow within its
+pace like a review pass, with no count of sweeps (`CONSISTENCY_SWEEPS_ENABLED`
 is a deployment switch, off by default).
 
 **Mandates buy sweeps too** (#831). Coverage of a region is something a
@@ -658,7 +714,7 @@ a partition (a tag's slug, or `residual`) and optionally a variant; the
 plan materializer opens (or keeps) that partition's two rows, due or not,
 priced the same way, and `fundGrantSelfActions` funds the named variant
 (or, naming none, the one the marginal-return rule below picks) from the
-mandate's escrow and day, as it funds an ingest item. One item buys one
+mandate's escrow within its pace, as it funds an ingest item. One item buys one
 sweep: it reads done once a sweep of the partition finishes after the
 item first opened its rows, whoever funded that sweep, and a re-sweep is
 another item. The reconcile sweep leaves open the rows a live sweep item
@@ -726,8 +782,8 @@ is what lets the evidence accrue: at the default estimates the strong
 price is about 8 times the standard's below the caps and 5 times where both
 caps bind (400 nodes and up), so 5 buys the strong read for the largest
 partitions and the standard for the rest. (The earlier default of 3 meant
-the strong variant was never bought.) Thinking about the work competes with the work: a day's
-sweeps come out of the same rate as the passes they ask for.
+the strong variant was never bought.) Thinking about the work competes with the work: sweeps
+come out of the same pace as the passes they ask for.
 
 **A flag is information; paying is a separate choice.**
 `flag_inconsistency` names a primary claim (the one whose assessment looks
@@ -756,8 +812,8 @@ Curation (the Curator's merges, splits and cross-claim links) and audit
 (the Audit Agent's runs) are real work the graph needs, and they are
 bought through the ledger like everything else (#363). They used to be
 fire-and-forget queue messages: a Curator run was billed to whichever
-mandate's Steward happened to escalate, uncapped and outside its day
-room, and audits ran attributed to nobody. Neither party pays
+mandate's Steward happened to escalate, uncapped and outside the
+rate it then had, and audits ran attributed to nobody. Neither party pays
 automatically now. Maintenance is work someone chooses to commission, and
 General is simply the mandate whose scope is the whole graph and
 therefore the one that usually does.
@@ -770,11 +826,11 @@ metered runs on the ledger (`actions.metered_cost_micro_usd`) once
 (`est_curate_cost_owls`, `est_audit_cost_owls`), and both run through the
 engine executor under their largest funder, metered and settled like any
 other action. The action row is the queue, so neither is lost to a
-restart. A commissioned run works to its commission; one funded by
-coverage works to the larger of its coverage and its run budget
+restart. Like every run, each is commissioned; a run works to the larger
+of what its commission placed and its run budget
 (`CURATE_RUN_BUDGET_OWLS`, `AUDIT_RUN_BUDGET_OWLS`, 5 owls each, as a paid
-assessment's pass does), and what it spends past its allocations is
-metered to the funding mandate.
+assessment's pass does; `maintenanceBudget` in the engine executor), and
+what it spends past its allocations is metered to the funding mandate.
 
 **What opens a curate row.** A **curation request**
 (`curation_requests`, services/curation-service.ts) records a structural
@@ -837,7 +893,7 @@ row, and nothing runs the Curator but the executor
 **Who decides curation.** A fresh curate row is put in front of the
 General mandate's program officers (`fundCurationNow`, services/
 maintenance-funding.ts), who commission it or not under its operating
-policy; the policy says how much of the day upkeep deserves and which
+policy; the policy says how much of its money upkeep deserves and which
 requests come first (an agent's escalation ahead of a scan's pair, an
 anchor the Matcher only just admitted after it). Any mandate whose mission
 needs its region kept clean says so in its own policy and commissions
@@ -864,15 +920,15 @@ one inbox item per such open row and changes nothing else.
 
 **Who funds audits.** The General mandate, as upkeep. A fresh audit row is
 put in front of its officers (`fundAuditNow`), whose operating policy funds
-every audit that is not a duplicate and, when the day is short, takes
+every audit that is not a duplicate and, when the pace leaves little room, takes
 prize acceptances and bad-faith flags first and periodic sweeps last,
 letting an audit that has waited move up. Any other mandate may commission
 an audit in its territory.
 
 A separate Governance mandate (policy `governance`) used to pay for audits,
-so that audits would not compete with assessments for General's day room
+so that audits would not compete with assessments for General's money
 and so that General would never decide whether an audit of it ran. Neither
-reason held up: audits are upkeep, which is what General's day is for, and
+reason held up: audits are upkeep, which is what General's money is for, and
 nothing audits General's decisions (the only audit that names a mandate as
 its subject is a bounty's, and General posts none). It cost a second
 mandate's sittings and review passes to fund about two owls of audits a
@@ -891,9 +947,11 @@ officer's decline is logged with its reason.
 the docs always said pays for them: an audit requested with a bounty
 (the posting audit, a Steward's acceptance, a checker failure) is paid at
 once from the reserve. A reserve that holds the audit's whole estimated
-budget commissions it (`commissioned_by = 'prize_reserve'`); a short one
-puts what it holds on the row and asks the General mandate's officers
-for the rest, whose commission then runs it. The reserve's accounting (its
+budget commissions it (`commissioned_by = 'prize_reserve'`,
+`fundPrizeAuditFromReserve`); a short one places nothing, and the audit
+goes to the General mandate's officers, told what the reserve holds,
+who commission the whole of it or decline it. One run never has part of
+its budget from the reserve and the rest from a mandate. The reserve's accounting (its
 room, its release, the mandate's committed money) counts it beside the
 reviews (prize-commitment.ts `reserveActionPredicateSql`).
 
@@ -938,7 +996,7 @@ alone. One variant is open at a time.
 **Who pays.** Whether a request is worth its budget is a judgment, made by
 whoever pays. A fresh request row is put in front of the General mandate's
 officers (`fundRequestNow`). A Grantmaker commissions one directly
-(`fund_request`), whole, within its daily rate and escrow. A reader
+(`fund_request`), whole, within its pace and escrow. A reader
 commissions it with `POST /requests/:id/contribute` (MCP
 `fund_request_work`) at the budget they choose. Once one commission is on
 the row, another payer is charged nothing. The row runs at once, and what
@@ -973,9 +1031,55 @@ live metered prices of research runs by tier, Steward passes, scoping
 passes and paid tools. Every role that files, scopes or reviews requests
 carries the tool and can load the skill.
 
-Research an agent delegates from its own budget (`delegate_research`) is
-not on the ledger: it is that agent spending what it holds, under the
-ceiling the agent sets.
+Research an agent commissions from its own budget (`commission` kind
+`research`) is on the ledger too: a `research` row paid whole from that
+agent's budget ("Sessions that pause and resume", below).
+
+## Pace and reserve
+
+A mandate's **pace** says how fast its money may be committed
+(src/services/pace-service.ts, `grants.pace`). It is one of two kinds:
+
+- `as_needed`, the default: the escrow is the only bound. Most mandates
+  are projects (explore a question, ingest a source, map a literature)
+  whose money is naturally spent as the work arrives, much of it at the
+  start.
+- `steady` {owls, period_hours}: at most that many owls committed in any
+  rolling window of that many hours (24 for a day's worth, 168 for a
+  week's), for upkeep that should spread its money evenly. The window is
+  rolling, so there is no midnight at which a day's room appears at once.
+  It counts each allocation's amount while it is live and its spend once
+  it is released (`allocationDayUseSql`, src/services/day-use.ts), so
+  running work holds its budget against the window and frees what it
+  leaves as it finishes.
+
+The funder agrees the pace when funding: the Grantmaker drafts it with
+them (`propose_mandate`'s `pace`) and it is written when the draft is
+funded (src/services/grant-conversation-service.ts). Only the funder
+changes it: `amend_pace` works only in the funder's chat, and elsewhere the
+Grantmaker proposes a change with note_to_funder. Platform mandates are
+seeded with a steady pace per 24 hours where they had a daily figure
+(scripts/seed-platform-mandates.ts).
+
+Within the pace the Grantmaker holds a **reserve** (`set_reserve`;
+`grants.reserve_micro_usd`, `reserve_reason`): money its program officers,
+lookouts, plan orders and the mandate's routine runs cannot commit, and it
+can. It is how a project mandate spends freely on the first wave of work
+while keeping money back for the directions worth pursuing once results
+are in. It says who may commit, never when; it is at most the uncommitted
+escrow; the Grantmaker draws on it or lowers it whenever it judges. Its
+own commissions and passes, the sittings that decide what to fund (an
+officer's included: a mandate that cannot pay to decide could never
+release its reserve either) and session resumptions may draw on it
+(`committerFor`); everything else commits from outside it.
+
+`paceRoom` is the one reading of the window, the reserve and the escrow:
+every check of a mandate's money asks it (or its SQL twin,
+`windowRoomSql`, where many rows are funded at once), and every agent that
+spends a mandate's money reads the same sentence from it about where the
+pace stands, with the figures and the reason. The pace, the reserve and its
+reason are public on the mandate's page and in `public_read.mandates`
+(`pace`, `reserve_owls`, `reserve_reason`).
 
 ## Commissions and budgets
 
@@ -984,24 +1088,23 @@ The payer chooses the budget; the run's agent is told it in its task
 message, and the run starts as soon as the executor reaches the row. Three
 kinds of payer:
 
-- **a mandate**: its money, within its daily rate and its escrow. The day's
-  use counts each allocation's amount while it is live and its spend once
-  it is released (`allocationDayUseSql`, src/services/day-use.ts), so
-  running work holds its budget against the rate and frees what it leaves
-  as it finishes. A commission past the day's room, or past the escrow's
-  uncommitted money, is refused whole with the figures; it is never
-  clipped. Commissions from one mandate serialize on a per-mandate lock,
-  so parallel commissions commit the rate once. A commission the platform
+- **a mandate**: its money, within its pace and its escrow, and outside
+  the Grantmaker's reserve unless the Grantmaker commits it ("Pace and
+  reserve", above). A commission past the pace or the reserve
+  (`OVER_PACE`), or past the escrow's uncommitted money (`OVER_ESCROW`),
+  is refused whole with the figures; it is never clipped. Commissions
+  from one mandate serialize on a per-mandate lock, so parallel
+  commissions commit the same room once. A commission the platform
   cannot run yet, because a platform fault is stopping its kind of work
   (docs/architecture.md, "A platform fault makes the ledger row wait"),
-  keeps its hold: it still counts toward the daily rate of the UTC day it
-  was placed on, as any work not yet run does, and not of later days.
-  Freeing it would let a mandate place a second day's worth of work behind
-  the same fault, all of which would run, past the rate its funder set, the
-  moment the fault cleared. The row says it is waiting and why
-  (`waiting_on` in the ledger view, the note on the commission's result,
-  the review briefing), which is the rule here: no limit is added and none
-  is lifted, and the payer sees the state and its reason.
+  keeps its hold: it still counts against the pace from when it was
+  placed, as any work not yet run does. Freeing it would let a mandate
+  place a second window's worth of work behind the same fault, all of
+  which would run, past the pace its funder set, the moment the fault
+  cleared. The row says it is waiting and why (`waiting_on` in the ledger
+  view, the note on the commission's result, the review briefing), which
+  is the rule here: no limit is added and none is lifted, and the payer
+  sees the state and its reason.
 - **a person**: their owls, debited behind the balance guard
   (`POST /claims/:id/contribute`, `POST /requests/:id/contribute`, MCP
   `fund_claim_assessment` and `fund_request_work`). The reader chooses the
@@ -1020,11 +1123,11 @@ exclusive set: one of its variants runs, and that run closes the others.
 A commission on a node's standard pass is the node's commission, and a
 second payer asking for the strong one is told so and charged nothing; so
 with a sweep's two readers, and so for a mandate's self-funding, which
-does not cover a variant whose sibling is already paid for or running.
+does not commission a variant whose sibling is already paid for or running.
 The check is made again behind a lock on the group as the money is
 placed, so payers who look at the same moment do not both pay (#849: one
 node carried a mandate's budget on both its variants, which counted twice
-against the day).
+against its rate).
 
 A pass can be commissioned by its node (`commission` with `target`) or by
 its row (`action_id`); the two are the same act. A pass needs its node
@@ -1045,7 +1148,8 @@ important, or a standard pass already failed to settle it. Paid orders
 An `assess`, `reassess` or `deepen` item of a mandate's plan is an order
 for a Steward pass, and the mandate commissions it
 (`src/services/standing-order-service.ts`, from the plan materializer):
-whole, from its escrow and within its daily rate, at the item's
+whole, from its escrow, within its pace and outside the Grantmaker's
+reserve, at the item's
 `budget_owls` or, naming none, the row's estimate, on the item's
 `variant` (standard or strong). The allocation's `commissioned_by` is
 `plan`, and it shows in the mandate's commissions like any other. Before
@@ -1073,25 +1177,28 @@ change it like any other order that has not started.
 refusal. A plan item has no turn to come back in, so the mechanism keeps
 asking for it:
 
-- an order today's rate cannot cover reads `waiting`, with its tier, the
-  budget, what the day has left and the rate, and is placed by the first
-  look that finds room for it whole. **It does not hold the items after
-  it.** Each look goes through the plan in order and places every order
-  the room covers, so plan order is first claim on the day's room and
-  never a queue with one head. (For a day it was one: once the rate turned
-  an order away every later one waited behind it, and a 5.9-owl order
-  kept twenty-nine 0.8-owl orders waiting beside 1.2 owls of unused room,
-  #956, #961.) The cost of this choice is stated on the order that pays
-  it: a large order can be passed over, look after look, while smaller
-  ones after it take the room. What moves it is the Grantmaker's: the
-  rate, the order's budget or tier, or withdrawing what takes the room;
+- an order the pace's window or the reserve leaves no room for reads
+  `waiting`, with its tier, the budget and what the pace has left, and is
+  placed by the first look that finds room for it whole (the window frees
+  as running work settles and commitments age out of it; the reserve when
+  the Grantmaker lowers it or commissions the order itself). **It does
+  not hold the items after it.** Each look goes through the plan in order
+  and places every order the room covers, so plan order is first claim on
+  the room and never a queue with one head. (For a day it was one: once
+  the rate turned an order away every later one waited behind it, and a
+  5.9-owl order kept twenty-nine 0.8-owl orders waiting beside 1.2 owls
+  of unused room, #956, #961.) The cost of this choice is stated on the
+  order that pays it: a large order can be passed over, look after look,
+  while smaller ones after it take the room. What moves it is the
+  Grantmaker's: its reserve, the order's budget or tier, or withdrawing
+  what takes the room;
 - an order the escrow cannot cover beside the budgets held by work that
   is waiting or running reads `waiting` too, with what is free and what is
   held, since held budgets return what they do not spend;
 - an order that could never fit reads `blocked`, with the figures: a
-  budget above the whole daily rate, or above what the escrow could cover
-  with every held budget returned. Only its author can change that (the
-  budget, the variant, the rate, a top-up);
+  budget above a steady pace's whole window, or above what the escrow
+  could cover with every held budget returned. Only its author can change
+  that (the budget, the variant, a top-up), or the funder the pace;
 - a node whose pass someone already paid for is not paid for again: the
   item is met when that pass finishes, and nothing is posted to the node's
   inbox on its account;
@@ -1112,7 +1219,7 @@ review passes and the funder's conversation alike). An item's work has
 waiting for room, blocked, or placed and waiting its turn in the queue,
 and wherever the item sits in the plan, the Grantmaker may give it
 another variant or budget, or withdraw it. A budget the order already
-holds is released at once, back to the escrow and the day's room; an
+holds is released at once, back to the escrow and the pace's room; an
 amended order is asked for again on its new terms in the same call, and
 a withdrawn item reads `cancelled` with the Grantmaker's note, stays in
 the plan as a record, and is never asked for again. A pass that is
@@ -1123,7 +1230,7 @@ named by index and node, both checked, and a call is refused whole, with
 each reason, if any of its changes cannot be made. Before this a plan
 was append-only for the review pass, and `adjust_plan` could replace
 only what followed the last started item, so the one way to stop an
-order was to raise the rate and buy a throwaway pass on the same node
+order was to raise the daily rate (since replaced by the pace) and buy a throwaway pass on the same node
 (#956). `adjust_plan` uses the same meaning of started: it keeps the plan
 up to the last item whose work has run or is running, replaces the rest,
 and withdraws the orders the replaced items had placed.
@@ -1132,13 +1239,13 @@ A Grantmaker can see what a list of items would commission before it
 writes them: `extend_plan` and `adjust_plan` take `preview: true`, which
 returns each stewarding item's tier and budget per pass, whether its
 node's pass would be bought or is already met, the children a deepen
-item would order by id, and the total against the day's room and the
+item would order by id, and the total against the pace's room and the
 escrow, and writes nothing (`previewPlanOrders`).
 
 A `deepen` item is two things: the pass on its node, and a **first
 assessment for each of the node's direct children that carries no
 judgment** and is queued for a pass, at the same budget and tier under
-the same rate and escrow. It releases the node's deferred children (the
+the same pace and escrow. It releases the node's deferred children (the
 stubs the importance brake held out) and orders the unjudged ones, most
 important first, each once per item, and looks again after the node's
 own pass has run, which is when the children that pass minted exist. A
@@ -1162,11 +1269,14 @@ reader's order) before its own money was used.
 **A mandate's own upkeep is self-funded.** Its planning pass, review
 passes, lookout and correspondent runs, the ingest items its plan names,
 and (for the General mandate) the consistency sweeps are rows the mandate
-covers at their estimated cost from its escrow and its day
-(`fundGrantSelfActions`, src/services/allocation-service.ts): deliberating
-about the work competes with the work. These rows run by coverage; their
-estimates are live p80s of metered runs once enough exist
-(cost-estimate-service.ts), else policy priors.
+commissions itself, whole, at their estimated cost (`cost_est_micro_usd`),
+from its escrow within its pace (`fundGrantSelfActions`,
+src/services/allocation-service.ts; `commissioned_by` `mandate`, with the
+reason on its record): deliberating about the work competes with the
+work. Only the Grantmaker's own passes may draw on its reserve, and only
+they start short (above); other upkeep waits for room. The estimates are
+live p80s of metered runs once enough exist (cost-estimate-service.ts),
+else policy priors.
 
 **Cadence** (#283) only makes candidates. An assessed claim is due a fresh
 look after `stalenessBaseDays / clamp(queue_priority, 0.25, 2)` days, where
@@ -1181,9 +1291,9 @@ Any agent with a budget carries `petition_mandate` (src/llm/tools/
 spend-tools.ts). It asks the mandate paying for the run for more, in two
 forms: `more_budget` (add to this run's budget, to spend directly or to
 commission work) and `follow_up` (a fresh pass after this run ends, with
-the agent's plan as its brief). The agent says what it would do with the
-money, why its budget cannot cover it, and what it will conclude if the
-answer is no.
+the agent's plan as its brief). The agent says what it has established so
+far (`done_so_far`, required), what it would do with the money, why its
+budget cannot cover it, and what it will conclude if the answer is no.
 
 **Routing.** A petition goes to the mandate whose money the run is spending
 (src/services/petition-service.ts): the mandate behind the allocations
@@ -1196,22 +1306,36 @@ is: its work serves the graph, not its funder.
 **Deciding.** Every petition starts a sitting at once. A sitting takes the
 mandate's inbox lease (`grants.officer_lease_until`), pauses
 `OFFICER_BATCH_MS` (2 seconds) so petitions that arrive together are decided
-together, and runs a program officer, then the Grantmaker on whatever the
-officer escalated (src/llm/agents/program-officer.ts).
+together, and runs a program officer (src/llm/agents/program-officer.ts).
+What the officer escalates goes into the Grantmaker's session ("The
+Grantmaker's session", above); a petition with a run waiting that the
+officer neither decides nor holds is escalated when the sitting ends, so
+the run is not left without an answer.
 
-**Waiting, or not.** A petition never blocks the run that asks. Every agent
+**Never blocking.** A petition never blocks the run that asks. Every agent
 that spends (the Stewards, the Curator, the Consistency Checker, the Audit
 Agent, Correspondents) runs in a session, and the petition carries its id
 (`petitions.reply_to_session`) and the agent carries on; the decision
-returns into the session (docs below, "Sessions that pause and resume"),
+returns into the session (below, "Sessions that pause and resume"),
 appearing in its next tool result. An agent with nothing else to do calls
 `wait_for_answers`, which holds it at most `SESSION_WAIT_FOR_ANSWERS_SECONDS`
 (60), since most petitions are decided in seconds and waiting holds the
 node's lock and a worker. Past that, it ends its turn and its session pauses
-until the decision arrives. A run with no session (none today, but the path
-remains) waits in the call, up to `PETITION_WAIT_SECONDS` (180); past that
-the petition stays open, and a grant that comes later funds a follow-up
-pass.
+until the decision arrives.
+
+**Holding.** An officer or the Grantmaker may hold a petition or an inbox
+item rather than decide it now (`hold`; `petitions.status` `held`,
+`held_until`, `hold_refs`, `hold_reason`): until a time, or until named
+runs on the ledger settle, whichever comes first, with what it waits to
+learn. Holding is a decision, recorded with its criteria. The asking run
+is told at once, without being woken, that its answer will come later and
+why. A hold on a petition a run waits on must end before that run's
+session deadline less `HOLD_MARGIN_MINUTES` (60), and the brief states that
+latest time for each. When its time comes or its runs settle,
+`releaseHolds` (petition-service.ts, on the executor's tick) returns it to
+whoever placed it: an officer's to the officers, the Grantmaker's to its
+session as an escalation, which wakes it. A held decision is never refused
+by time passing.
 
 **Applying.** A grant of more budget to a running run is a commission from
 the deciding mandate on the running row, settled with the run like any
@@ -1229,14 +1353,18 @@ conclusion.
 
 A mandate's **operating policy** is prose its Grantmaker writes
 (`write_operating_policy`, src/services/operating-policy-service.ts), in
-five sections: mission (in working terms), priorities, budgets (how to
-budget each kind of work), petitions (how to answer them), and delegation
-(what to send the Grantmaker). It carries the **officers' limit**, the most
+six sections. `current` is its direction for now, beside the standing
+policy (which branches look promising, what to grant and what to hold
+until which work reports); it is dated when written, rendered first, and
+rewritten as often as things change. The standing sections are mission
+(in working terms), priorities, budgets (how to budget each kind of work),
+petitions (how to answer them), and delegation (what to send the
+Grantmaker). It carries the **officers' limit**, the most
 an officer may commit in one decision, with the reason the Grantmaker gives
 for it, which the officers are told (`DEFAULT_OFFICER_LIMIT_OWLS`, 5, when
 the policy sets none), and the **review-pass budget**, what each of the
-Grantmaker's own review passes works to, with its reason, which each pass
-is told (`review_pass_owls`; `DEFAULT_REVIEW_PASS_BUDGET_OWLS`, 5, when the
+Grantmaker's own review passes and resumed sittings works to, with its
+reason, which each is told (`review_pass_owls`; `DEFAULT_REVIEW_PASS_BUDGET_OWLS`, 5, when the
 policy sets none; "What a pass works to", above). Either figure can be set
 alone, leaving the prose as it is. It is stored on the mandate
 (`grants.mandate.operating_policy`), every version is kept
@@ -1249,20 +1377,39 @@ mandate-inbox-service.ts: a fresh curation, audit or request, a consistency
 flag), notices (a regranted mandate's amended objective), and notes from
 its funder. A repeat of an item still waiting on the same ledger row is
 folded into the earlier one. An officer runs on the cheap tier
-(`PROGRAM_OFFICER_MODEL`) and reads one brief: the mandate's approved terms,
-its operating policy, where its money stands, its recent decisions, and the
-items in front of it, each petition with the chain of runs behind it and
-how similar petitions went. It decides each item (`decide_petitions`,
-`commission`, `decline`, `escalate`, `log_note`), up to its limit; what is
-past the limit or what the policy does not settle goes to the Grantmaker,
-which decides in the same sitting on the strong tier and, where the policy
-did not settle it, changes the policy so the next one is settled.
+(`PROGRAM_OFFICER_MODEL`) and reads one brief (`buildBrief`):
 
-Both runs are commissioned from the mandate on their own rows
-(`officer:<grant>` at `OFFICER_RUN_BUDGET_OWLS`, 1; `escalation:<grant>` at
-`GRANTMAKER_DECISION_BUDGET_OWLS`, 4), so deciding counts against the
-mandate's rate and escrow like any of its work and returns what it does not
-spend. The scheduler also holds sittings for inboxes no run is waiting on
+- where the mandate's money stands (the pace sentence, from outside the
+  reserve) and what deciding has cost over the last seven days;
+- **what else the money could buy**: inbox items waiting beyond this
+  brief, petitions held, plan orders waiting for room, and open, unpaid
+  work on nodes the mandate has paid for before or their premises, with an
+  estimate beside each, so each ask is weighed against these;
+- the mandate's approved terms and its operating policy;
+- its decisions over the last fourteen days, and every decision ever made
+  on the nodes in front of it, so a branch is judged as a branch;
+- each petition (`describePetition`) with the chain of runs that funded
+  it, what it has established so far (`done_so_far`), what the run has
+  already commissioned from its own budget and how that went, its plan,
+  the node's neighbours (the other premises of the same parent, with their
+  standing and any open asks on them), the return on past grants like it
+  (of the granted petitions of that kind from that agent, how many were
+  followed by an assessment and in how many the status or confidence
+  moved: information gained, not a verdict the money bought), and, where
+  a run waits on it, the latest time a hold may end.
+
+It decides each item (`decide_petitions`, `commission`, `hold`, `decline`,
+`escalate`, `log_note`), up to its limit; what is past the limit or what
+the policy does not settle goes to the Grantmaker's session, where it is
+decided on the strong tier and, where the policy did not settle it, the
+policy is changed so the next one is settled. Research is commissioned by
+the Grantmaker only, since its report returns into a session an officer's
+sitting does not have.
+
+A sitting is commissioned from the mandate on its own row
+(`officer:<grant>` at `OFFICER_RUN_BUDGET_OWLS`, 1), so deciding counts
+against the mandate's pace and escrow like any of its work and returns what
+it does not spend. The scheduler also holds sittings for inboxes no run is waiting on
 (`workWaitingInboxes`), when `OFFICER_SITTINGS_ENABLED` is true; it is a
 deployment switch, off by default, since sittings run models.
 
@@ -1316,7 +1463,9 @@ its context.
   still works is shown in its next tool result (`toolUseLoop`'s
   `pendingInput`).
 - **Pausing.** When the agent has done what it can, it ends its turn, as any
-  agent does to wait. With answers outstanding, the session pauses: its
+  agent does to wait. With answers outstanding, or holding a subscription
+  that would wake it ("Events and subscriptions", below), the session
+  pauses instead of closing: its
   transcript is kept, made portable (thinking blocks dropped, server-tool
   blocks turned into text), with what the run had left and who paid for it.
 - **Resuming.** An answer to a paused session commissions a pass on its
@@ -1328,7 +1477,8 @@ its context.
   anything is recorded) and any messages that arrived meanwhile. A session
   may pause and resume more than once.
 - **Limits, stated to the agent.** A session waits at most
-  `SESSION_WAIT_HOURS` (24 by default); after that it expires and its
+  `SESSION_WAIT_HOURS` (24 by default), or until an hour past its latest
+  check-in when that is later; after that it expires and its
   answers go to the node's inbox (`research_report`, `message_reply`), where
   the next pass reads them. A transcript longer than
   `SESSION_MAX_TRANSCRIPT_CHARS` is not resumed: its answers go to the inbox
@@ -1341,8 +1491,14 @@ its context.
 (the money keeps its payer), run by the engine executor, and settled like
 any commission; its report goes to the waiting session, or with none to the
 node's inbox. `follow_up_of` continues an earlier run with its notebook and
-report. `delegate_research` remains for a short check the agent cannot
-conclude without, run inside its turn.
+report. This is the only way research is launched (`delegate_research`,
+which ran the Researcher inside the launcher's turn, is retired): agents
+with a budget commission it from their own (spend-tools.ts), the
+Grantmaker from its mandate (its `commission`, with `research_tier` and
+`contribution_budget_owls`). Since nobody blocks on a research run, every
+one gets the long wall-clock backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240), which ends only a run that
+has stopped making progress; its budget is what bounds it.
 
 Every agent that spends runs in a session. A Steward's session is on its
 node and resumes through a pass on that node. The Curator, the Consistency
@@ -1397,7 +1553,63 @@ verdict kinds (`first_assessment`, `status_moved`, `credence_moved`,
 and `state_changed`, a node archived, restored, merged or deprecated, read
 from `claim_state_changes` with who did it, why and the successors (#962).
 A lookout's graph feed reads the stream for its territory; a correspondent
-reads it for its readers.
+reads it for its readers. The stream is computed from the tables at read
+time; it is separate from the event log below.
+
+## Events and subscriptions
+
+**The event log** (`events`, src/services/event-service.ts) is one
+append-only row per thing that happened that someone may want to be told
+of, recorded by the code that makes the change, with the refs it touches:
+`run_settled` (a ledger run settled), `run_closed` (a row closed without
+running), `petition_decided`, `escalated` (an officer sent something to
+the Grantmaker, or a hold the Grantmaker placed came back), `inbox_item`
+(something raised to a mandate's inbox), `assessed`, `source_event` (a
+source retracted, corrected or superseded), `message_answered` and
+`mandate_changed` (its operating policy, pace, reserve or terms).
+Recording never fails the change it describes.
+
+**A subscription** (`subscriptions`, src/services/subscription-service.ts)
+is a standing interest held by a subscriber: a session, a mandate's inbox,
+a node's inbox or a lookout. It is one of three kinds:
+
+- **an event**, by kinds and refs: runs by action id, nodes, everything
+  under a node, the nodes over it (resting on it), tags, sources,
+  mandates, and other refs an event carries (a petition, a research run,
+  an item's kind). Every key a filter names must match, and within a key
+  one of its ids is enough; to be told of either of two things, hold two
+  subscriptions;
+- **a time**: a check-in at a set time;
+- **money**: once the mandate has committed a given amount since the
+  subscription was made.
+
+Delivery is `wake` (the default) or `queue`, and `once` ends a
+subscription at its first delivery; a check-in and a threshold always end
+when they fire. Holding a subscription costs nothing.
+
+**The router** (src/services/subscription-router.ts) is plain code with no
+model in it. It reads the log in order from where it last stopped, as
+events are recorded and again on the engine executor's tick, and delivers
+each event to every active subscription it matches; on the tick it also
+delivers the check-ins that are due and the thresholds that have been
+crossed. To a session, a delivery is an answer in its transcript, shown in
+its next tool result if it is running; a `wake` delivery resumes it if it
+has paused, and a `queue` one waits for its next turn. To a mandate's
+inbox it is an item its officers read; to a node's inbox, a message its
+Steward's next pass reads, never waking one; to a lookout, a queued input
+for its next run (src/services/subscription-sinks.ts). A delivery carries
+an event's text only when the event is public or was recorded at the
+subscriber's own label; inboxes and lookouts receive only public events.
+
+**Agents subscribe for themselves** with `subscribe`, `unsubscribe` and
+`list_subscriptions` (src/llm/tools/subscription-tools.ts); the
+subscriber is always the calling run's own session. A session that holds a
+subscription that would wake it pauses when it ends its turn instead of
+closing, and waits at least until an hour past its latest check-in. Each
+wake is a resumption paid like any other and re-reads the conversation, so
+the tool asks for a few subscriptions that matter over many that do not,
+and for queueing what can wait. Today the Grantmaker is the agent that
+carries these tools ("The Grantmaker's session", above).
 
 ## Grantmakers: a conversation, not a form
 
@@ -1500,8 +1712,8 @@ Design principles, in force in the implementation:
   `claim_ref`, the proposal that will become one, and are commissioned
   once it is a node) and are standing orders the mandate commissions,
   once per item ("A plan item is a standing order", above: `open` is a
-  pass paid for and waiting its turn, `waiting` an order the rate or the
-  escrow has no room for yet, `blocked` one that could never fit; a
+  pass paid for and waiting its turn, `waiting` an order the pace, the
+  reserve or the escrow has no room for yet, `blocked` one that could never fit; a
   finished pass stays finished, whoever paid for it: a pass that ran
   elsewhere while the row sat open reads done from the assessment's date;
   an `assess` item on a claim that already carries an assessment reads
@@ -1548,7 +1760,7 @@ A mandate made there under the mechanical `deepen` policy has no plan and
 no Grantmaker judgment in it: its work is a pass on every node in its
 scope that is waiting for one, the queued before the deferred, the most
 important first. Those passes are commissions from the mandate too, on
-the strong tier, within its rate and escrow, placed by the scheduler
+the strong tier, within its pace and escrow, placed by the scheduler
 (`src/services/mandate-lifecycle-service.ts`); when the scope has none
 left and none of its money is on live work it completes and refunds,
 unless a bounty is held against its escrow.
@@ -1560,7 +1772,7 @@ job with no allocation, given the whole uncommitted escrow as their
 budget, and never held to the daily rate. That is how a mandate with a
 rate of 25 owls a day could show 48 allocated in one (#849). Every pass a
 mandate pays for is now a commission, so it has a budget its payer chose,
-counts against the rate while it runs, and appears in the ledger and the
+counts against the pace while it runs, and appears in the ledger and the
 operations view. What the lane did besides running passes moved with it:
 finishing a mandate no agent ends (a `deepen` mandate with nothing left
 in scope; a decomposition whose Grantmaker share is spent and whose plan
@@ -1611,7 +1823,7 @@ is a mandate, funded and started in one step
   budget it chooses, where the claim warrants the strong model), and the
   plan runs at once on the
   ledger: each item's pass is commissioned from the escrow as the plan is
-  drafted, like any plan's standing orders. It has no daily rate, so the
+  drafted, like any plan's standing orders. Its pace is as needed, so the
   escrow is the bound, and an order waits while earlier passes hold the
   escrow and is placed as they settle.
 - **The Grantmaker gets a tenth.** Its own passes (planning, and the
@@ -1694,7 +1906,7 @@ audits, work someone is waiting on, passes where
 something under a published verdict changed, and the unassessed premises
 of published verdicts. It does not pay to extend coverage; first
 assessments are for the mandates and readers whose scope they are. Its
-operating policy gives that upkeep first claim on the day's rate.
+operating policy gives that upkeep first claim on its money.
 
 ## Mandates are public
 
@@ -1749,18 +1961,18 @@ Grantmaker judges which are worth doing (a formalization is cheap and
 enabling; an attempt is expected information, how much the problem matters
 times how tractable it looks, with a sub-result several open problems rest
 on worth more, and the tractability stated in the rationale), the mandate
-pays for them from its escrow inside its day room, and their metered cost,
+pays for them from its escrow within its pace, and their metered cost,
 Lean compute included, lands on `llm_usage` under the funding job like any
 other spend. Cost priors are
 policy keys on the mandate (`est_formalize_cost_owls`,
 `est_attempt_standard_cost_owls`, `est_attempt_max_cost_owls`,
 `est_prize_review_cost_owls`) that yield to the live p80 once five runs
-exist. Because a payment larger than the day's room is refused outright,
-the mandate's daily rate must exceed one attempt's estimate or attempts
-never run.
+exist. Because a commission larger than a steady pace's whole window is
+refused outright, a mandate on a steady pace must allow at least one
+attempt's estimate per window or attempts never run.
 
 `prize_review` is paid for by the posting mandate but reserved outside its
-day room, because a mandate's escrow can be paused, exhausted, or closing
+pace, because a mandate's escrow can be paused, exhausted, or closing
 while a claim waits, and a claimant must never pay for the review of a
 submission. When a bounty opens, the platform mints owls worth
 `PRIZE_REVIEW_RESERVE_FRACTION` (0.10) of its amount, at cost, into a
@@ -1768,7 +1980,10 @@ platform-owned prize-review reserve job, as a hold releasable only to
 `prize_review` actions on that bounty's claims; the reserve is a term in
 the posting mandate's committed money for as long as the bounty is live
 (its budget while the job runs, and what was actually placed on the
-reviews once it is released). The prize-check worker is the executor: it
+reviews once it is released). Each review is a commission from that
+reserve (`commissioned_by` `prize_reserve`, `fundPrizeReviewAction`), at
+its estimate or what the reserve still holds if less. The prize-check
+worker is the executor: it
 claims each such action, runs the check, the Reviewer, and the Steward
 under that job, and completes the action with the metered amount; the
 unspent remainder returns when the bounty closes and only what was placed
@@ -1873,7 +2088,7 @@ human claim filed before the attempt completed is judged first.
 
 Until purchase volume exists, the platform subsidizes: signup grants
 (5 owls), the monthly trickle, contribution awards, and the General
-assessment mandate's own daily rate are all deliberate traction costs. They are bounded
+assessment mandate's own pace are all deliberate traction costs. They are bounded
 and legitimate — but the unit economics must stay visible
 (`GET /usage/allocation`), so subsidy is a chosen number, not an accident.
 
@@ -1890,9 +2105,9 @@ and legitimate — but the unit economics must stay visible
    and charged at metered cost as it runs.
 4. Every money number (caps, budgets, commissions, spend, decisions and
    their reasons) is inspectable by anyone.
-5. Bounded spending everywhere: escrows, daily rates and per-run budgets
-   bound what runs (every pass a mandate pays for is a commission or its
-   own covered upkeep, on the ledger and inside its rate; no lane spends
+5. Bounded spending everywhere: escrows, paces and per-run budgets
+   bound what runs (every run a mandate pays for is a commission, its own
+   upkeep included, on the ledger and inside its pace; no lane spends
    a mandate's money beside it), so a producer may raise candidates freely (flags,
    curation requests, reassessments, plan items) without cascading
    spend. Money, not a count, is the bound wherever money can be. The

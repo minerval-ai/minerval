@@ -77,7 +77,7 @@ async function tend(): Promise<void> {
  * A tick between full sweeps: the standing orders of mandates' plans are
  * asked for again and brought up to date, and the mandates are tended. This
  * is where the direct steward lane's every-tick work went when its passes
- * became commissions (#849): room that opens in a day's rate or an escrow
+ * became commissions (#849): room that opens in a pace's window or an escrow
  * is used at the scheduler's next tick (STANDING_ORDER_RETRY_MINUTES), not
  * at the next six-hour sweep.
  */

@@ -194,6 +194,26 @@ const MANDATE_SCHEMA = {
         "Optional keyword search hint for graph tooling. Not the scope: " +
         "the mandate's scope is its words, judged by you.",
     },
+    pace: {
+      type: "object",
+      description:
+        "How fast the money may be committed, as the funder wants it; tell " +
+        "them in plain words before they fund. as_needed (the default): the " +
+        "escrow is the only bound, so the work runs as it arrives, which " +
+        "suits a mandate that explores a question, ingests a source or maps " +
+        "a literature. steady: at most owls committed in any rolling " +
+        "period_hours (24 for a day's worth, 168 for a week's), for upkeep " +
+        "or a funder who wants the money spread out. Either way you can hold " +
+        "part of it in reserve (set_reserve) for the directions worth " +
+        "pursuing once the first results are in.",
+      properties: {
+        kind: { type: "string", enum: ["as_needed", "steady"] },
+        owls: { type: "number" },
+        period_hours: { type: "number" },
+        reason: { type: "string", description: "The funder's reason, in a phrase." },
+      },
+      required: ["kind"],
+    },
     plan: {
       type: "object",
       properties: {
@@ -462,29 +482,19 @@ async function runGrantmakerTurnImpl(input: {
       required: ["title", "objective", "owls", "note"],
     },
   };
-  const rateTool: Tool = {
-    name: "set_daily_rate",
-    description:
-      "Set this mandate's daily allocation rate, in owls per day. The " +
-      "escrow is the hard bound either way.",
-    input_schema: {
-      type: "object" as const,
-      properties: { owls_per_day: { type: "number" } },
-      required: ["owls_per_day"],
-    },
-  };
   const adjustTool: Tool = {
     name: "adjust_plan",
     description:
       "Replace the not-yet-started remainder of the grant's plan with new " +
       "items. An item's work has started once it is running or has run. " +
       "Items are kept up to the last one whose work has started: those are " +
-      "history. What follows is replaced, whether it was waiting for room, " +
-      "blocked, or commissioned and still waiting its turn: an order a " +
-      "replaced item had placed is withdrawn and its budget comes back to " +
-      "the escrow and the day's room (a pass that began running in the " +
-      "meantime finishes). To change or withdraw single standing orders " +
-      "anywhere in the plan, kept ones included, use amend_plan_items. Use this when " +
+      "history. What follows is replaced, whether it was waiting for room in " +
+      "the pace or outside the reserve, blocked, or commissioned and still " +
+      "waiting its turn: an order a replaced item had placed is withdrawn and " +
+      "its budget comes back to the escrow and the pace's room (a pass that " +
+      "began running in the meantime finishes). To change or withdraw single " +
+      "standing orders anywhere in the plan, kept ones included, use " +
+      "amend_plan_items. Use this when " +
       "the funder and you agree the mandate's remaining budget should be " +
       "spent differently. Same item rules as propose_mandate; the same " +
       "refusal duties apply. Does not change the budget.",
@@ -506,7 +516,7 @@ async function runGrantmakerTurnImpl(input: {
             "true to see what these items would commission without writing anything: each " +
             "stewarding item's tier and budget per pass, whether its node's pass would be bought " +
             "or is already met, the children a deepen item would order by id, and the total " +
-            "against today's room and the escrow.",
+            "against the pace's room and the escrow.",
         },
       },
       required: ["items", "note"],
@@ -585,7 +595,6 @@ async function runGrantmakerTurnImpl(input: {
           adjustTool,
           regrantTool,
           spawnTool,
-          rateTool,
           ...bountyTools,
           ...lookoutTools,
         ]
@@ -895,7 +904,7 @@ export function getManagementReadToolDefinitions(): Tool[] {
         "the operating policy in force and the officers' limit, the escrow " +
         "(spent, held by running work, regranted, held for prizes, and what " +
         "remains; the five add up to the escrow, counted as grant_overview " +
-        "counts them) and today's use of the daily rate, what the mandate paid for in " +
+        "counts them) and where the pace stands (its window, if steady, and your reserve), what the mandate paid for in " +
         "the last 30 days by kind (kinds: one row per kind and funding, " +
         "commissioned for the runs you, your officers, your lookouts or a " +
         "plan item chose and budgeted, self_funded for the mandate's own " +
@@ -904,8 +913,8 @@ export function getManagementReadToolDefinitions(): Tool[] {
         "commissions run by run (budget, spent, state, reason; a plan " +
         "item's reads commissioned_by plan), outside_ledger_owls (the part " +
         "of spent metered to the mandate outside the ledger, mostly this " +
-        "chat with the funder: in no kind's row and not held to the daily " +
-        "rate), its officers' and your recent decisions, the petitions it " +
+        "chat with the funder: in no kind's row and not held to the pace), " +
+        "its officers' and your recent decisions, the petitions it " +
         "heard, and what waits in its inbox. Use this for 'where is the " +
         "money going and why' questions; query_sql reaches further back.",
       input_schema: {
@@ -1288,22 +1297,6 @@ export async function executeManagementTool(
     });
     return JSON.stringify(res);
   }
-  if (name === "set_daily_rate") {
-    const owlsPerDay = Number(toolInput.owls_per_day);
-    if (!Number.isFinite(owlsPerDay) || owlsPerDay < 0) {
-      return JSON.stringify({
-        success: false,
-        problem: "owls_per_day must be a non-negative number",
-      });
-    }
-    const { owlsToMicroUsd } = await import("../../services/owl.js");
-    await rawQuery(
-      `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now()
-        WHERE id = $1 AND status = 'active'`,
-      [grantId, owlsToMicroUsd(owlsPerDay)]
-    );
-    return JSON.stringify({ success: true, owls_per_day: owlsPerDay });
-  }
   if (name === "allocation_report") {
     const { getMandateAllocationView } = await import(
       "../../services/mandate-service.js"
@@ -1395,7 +1388,7 @@ export async function executeManagementTool(
       executed_items_kept: kept,
       new_remaining_items: items.length,
       ...(withdrawnMicroUsd > 0
-        ? { orders_withdrawn_owls: microUsdToOwls(withdrawnMicroUsd), orders_withdrawn_note: "Budgets the replaced items' orders held, back in the escrow and the day's room." }
+        ? { orders_withdrawn_owls: microUsdToOwls(withdrawnMicroUsd), orders_withdrawn_note: "Budgets the replaced items' orders held, back in the escrow and the pace's room." }
         : {}),
       items: materialized,
       ...(materializeProblem

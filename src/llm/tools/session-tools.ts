@@ -5,9 +5,9 @@
  *
  * A petition, research and a question to another Steward never block when
  * sent. Their answers appear in the run's next tool result. A run with nothing
- * else to do calls wait_for_answers, which holds it for a short, stated time,
- * since most petitions are decided in seconds; past that, the run ends its
- * turn and its session pauses until the answers arrive.
+ * else to do calls wait_for_answers, which holds it for a short, stated time;
+ * past that, the run ends its turn and its session pauses until the answers
+ * arrive.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { rawQuery } from "../../db/client.js";
@@ -18,6 +18,7 @@ import { runWithUsageContext } from "../usage-context.js";
 import { randomUUID } from "node:crypto";
 import { originalPayer } from "../../services/commission-service.js";
 import {
+  sessionLimitsSentence,
   RESEARCH_REPORT_REASON,
   outstanding,
   renderResearchSessionArrivals,
@@ -36,13 +37,15 @@ export function getSessionToolDefinitions(): Tool[] {
     {
       name: WAIT_FOR_ANSWERS,
       description:
-        "Wait for what you are waiting on: a petition's decision, research you commissioned, or an " +
-        "answer to a message you sent with expects_reply. Call it only when you have nothing else to " +
-        "do without them: answers that arrive while you work appear in your next tool result anyway. " +
-        `It waits at most ${seconds} seconds and returns as soon as one arrives. The limit is short ` +
-        "because waiting holds this node and a worker that other work needs, and most petitions are " +
-        "decided in seconds. If nothing has come by then, end your turn: your session pauses with this " +
-        "conversation intact and resumes when the answers arrive.",
+        "Wait for what you are waiting on: a petition's decision, research you commissioned, an " +
+        "answer to a message you sent with expects_reply, or something you subscribed to. Call it only when " +
+        "you have nothing else to do without them: answers that arrive while you work appear in your next " +
+        `tool result anyway. It waits at most ${seconds} seconds and returns as soon as one arrives. The ` +
+        "limit is short because waiting holds a worker (and a Steward's node) that other work needs; a routine " +
+        "petition is usually decided within a minute or two, research takes longer. If nothing has come by " +
+        "then, end your turn: your session pauses with this conversation intact and resumes when the answers " +
+        "arrive. " +
+        sessionLimitsSentence(),
       input_schema: { type: "object" as const, properties: {}, required: [] },
     },
   ];

@@ -68,7 +68,8 @@
  *   --note "<why>"           the public reason recorded with --replace-policy.
  *   --mandate <key>          the mandate a money flag applies to; defaults
  *                            to the --update-mandate key when both are given.
- *   --daily-owls N           set the mandate's daily rate.
+ *   --daily-owls N           set the mandate's pace to steady at N owls per
+ *                            rolling 24 hours (0: as needed, escrow-bound).
  *   --top-up-owls N          mint and escrow N more platform owls into the
  *                            mandate under a batch-keyed idempotency key
  *                            (see --top-up-batch), exactly as creation does.
@@ -88,6 +89,7 @@ interface PlatformMandate {
   strategy: string;
   budgetOwls: number;
   policy: "general" | "cover";
+  /** A steady pace of this many owls per rolling 24 hours; 0 is as needed. */
   dailyBudgetOwls: number;
   /** The mandate's domain skills (grants.skills); none for the General mandate. */
   skills: string[];
@@ -99,6 +101,8 @@ interface PlatformMandate {
    * the seed never overwrites one it has written.
    */
   operatingPolicy?: {
+    /** The Grantmaker's direction for now; seeds leave it to the Grantmaker. */
+    current?: string;
     mission?: string;
     priorities?: string;
     budgets?: string;
@@ -136,6 +140,13 @@ const percent = (fraction: number) => `${Math.round(fraction * 100)} percent`;
  * say which mandate posts prizes in this epoch. The bounds are read from
  * the environment so the text says what the mechanism enforces.
  */
+/** The pace a seeded figure stands for: steady per rolling day, or as needed at 0. */
+function steadyPerDay(owlsPerDay: number): { kind: "steady"; owls: number; period_hours: number; reason: string } | { kind: "as_needed" } {
+  return owlsPerDay > 0
+    ? { kind: "steady", owls: owlsPerDay, period_hours: 24, reason: "the platform's upkeep, spread evenly" }
+    : { kind: "as_needed" };
+}
+
 function commonPrizePolicy(): string {
   const config = loadConfig();
   return (
@@ -694,9 +705,9 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
     const [grant] = await tx.query<{ id: string }>(
       `INSERT INTO grants
          (funder_user_id, budget_job_id, name, scope_query, policy, status,
-          plan, mandate, is_platform, daily_budget_micro_usd, skills,
+          plan, mandate, is_platform, pace, skills,
           allocation_policy)
-       VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8, $9,
+       VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8::jsonb, $9,
                $10::jsonb)
        RETURNING id`,
       [
@@ -707,7 +718,7 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
         JSON.stringify({ strategy: m.strategy, items: [] }),
         JSON.stringify(mandate),
         m.policy,
-        owlsToMicroUsd(m.dailyBudgetOwls),
+        JSON.stringify(steadyPerDay(m.dailyBudgetOwls)),
         m.skills,
         m.allocationPolicy ? JSON.stringify(m.allocationPolicy) : null,
       ]
@@ -770,11 +781,15 @@ async function applyMoney(
   const revisions: string[] = [];
   if (args.dailyOwls !== null) {
     await tx.query(
-      `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now() WHERE id = $1`,
-      [existing.id, owlsToMicroUsd(args.dailyOwls)]
+      `UPDATE grants SET pace = $2::jsonb, updated_at = now() WHERE id = $1`,
+      [existing.id, JSON.stringify(steadyPerDay(args.dailyOwls))]
     );
-    revisions.push(`The daily rate was set to ${owls(args.dailyOwls)} owls on ${today}.`);
-    console.log(`~ ${m.title}: daily rate ${owls(args.dailyOwls)} owls`);
+    revisions.push(
+      args.dailyOwls > 0
+        ? `The pace was set to ${owls(args.dailyOwls)} owls per rolling day on ${today}.`
+        : `The pace was set to as needed on ${today}.`
+    );
+    console.log(`~ ${m.title}: pace ${args.dailyOwls > 0 ? `${owls(args.dailyOwls)} owls per rolling day` : "as needed"}`);
   }
   if (args.topUpOwls !== null) {
     const micro = owlsToMicroUsd(args.topUpOwls);
@@ -995,7 +1010,7 @@ function renderMandateMarkdown(m: PlatformMandate): string {
   const keys = m.allocationPolicy
     ? Object.entries(m.allocationPolicy).map(([k, v]) => `\`${k}\` ${v}`).join("; ")
     : "none";
-  const rate = m.dailyBudgetOwls > 0 ? `daily rate [${owls(m.dailyBudgetOwls)}] owls` : "no daily rate (escrow-bounded)";
+  const rate = m.dailyBudgetOwls > 0 ? `steady pace [${owls(m.dailyBudgetOwls)}] owls per rolling day` : "paced as needed (escrow-bounded)";
   const parts = [
     `### ${m.title}`,
     `**Title.** ${m.title}`,

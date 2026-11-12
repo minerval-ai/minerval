@@ -39,7 +39,7 @@ import { postMessage, type MessageSender } from "./inbox-service.js";
 import type { CommissionPayer } from "./commission-service.js";
 import { microUsdToOwls } from "./owl.js";
 
-export type AwaitKind = "research" | "reply" | "petition";
+export type AwaitKind = "research" | "reply" | "petition" | "subscription";
 
 export interface SessionReply {
   kind: AwaitKind;
@@ -53,6 +53,12 @@ export interface SessionReply {
    * the answer, since the grant is already placed on its row.
    */
   credit_micro_usd?: number;
+  /**
+   * False for a delivery the agent asked to have waiting for its next turn
+   * (a subscription with delivery `queue`): it does not resume a paused
+   * session by itself.
+   */
+  wake?: boolean;
 }
 
 export interface SessionRow {
@@ -117,6 +123,19 @@ export async function registerAwait(kind: AwaitKind, ref: string): Promise<strin
   return session.id;
 }
 
+/** Make the running session's row if it has none yet (a subscription made before any other wait). */
+export async function ensureSessionRow(): Promise<string | null> {
+  const session = getUsageContext().session;
+  if (!session) return null;
+  await rawQuery(
+    `INSERT INTO agent_sessions (id, role, node_id, status, awaiting, sensitivity_label)
+     VALUES ($1, $2, $3, 'running', '[]'::jsonb, $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [session.id, session.role, session.nodeId, currentLabel()]
+  );
+  return session.id;
+}
+
 /** The session's id for a request that expects an answer, without registering one. */
 export function currentSessionId(): string | null {
   return getUsageContext().session?.id ?? null;
@@ -150,7 +169,10 @@ export async function deliverReply(input: {
   creditMicroUsd?: number;
   /** Money granted to a paused session: placed on the pass that resumes it. */
   grant?: { grantId: string; microUsd: number } | null;
+  /** False: show it on the session's next turn, but do not resume a paused session for it. */
+  wake?: boolean;
 }): Promise<"session" | "inbox" | "dropped"> {
+  const wake = input.wake !== false;
   const reply: SessionReply = {
     kind: input.kind,
     ref: input.ref,
@@ -158,6 +180,7 @@ export async function deliverReply(input: {
     at: new Date().toISOString(),
     delivered: false,
     ...(input.creditMicroUsd ? { credit_micro_usd: Math.round(input.creditMicroUsd) } : {}),
+    ...(wake ? {} : { wake: false }),
   };
   let resume: SessionRow | null = null;
   const took = input.sessionId
@@ -167,7 +190,7 @@ export async function deliverReply(input: {
           [input.sessionId, currentLabel()]
         );
         if (!s || s.status === "expired" || s.status === "closed") return false;
-        const next = s.status === "waiting" ? "ready" : s.status;
+        const next = s.status === "waiting" && wake ? "ready" : s.status;
         const paused = s.status === "waiting" || s.status === "ready";
         const extra = paused && input.grant && input.grant.microUsd > 0 ? [input.grant] : [];
         const [row] = await tx.query<SessionRow>(
@@ -178,7 +201,7 @@ export async function deliverReply(input: {
             RETURNING ${COLUMNS}`,
           [s.id, JSON.stringify([reply]), next, JSON.stringify(extra)]
         );
-        if (s.status === "waiting") resume = row ?? null;
+        if (s.status === "waiting" && wake) resume = row ?? null;
         return true;
       })
     : false;
@@ -230,7 +253,9 @@ export function renderReplies(replies: SessionReply[]): string {
             ? `Research run ${r.ref} has reported`
             : r.kind === "petition"
               ? `The mandate decided your petition ${r.ref}`
-              : `An answer to your message ${r.ref}`
+              : r.kind === "subscription"
+                ? `Something you subscribed to`
+                : `An answer to your message ${r.ref}`
         }\n\n${r.text}`
     )
     .join("\n\n");
@@ -303,9 +328,25 @@ export async function suspendSession(input: {
   const status = await withTransaction(async (tx) => {
     const [s] = await tx.query<SessionRow>(`SELECT ${COLUMNS} FROM agent_sessions WHERE id = $1 FOR UPDATE`, [input.id]);
     if (!s || s.status !== "running") return s?.status ?? null;
-    const waiting = outstanding(s).length > 0;
-    const undelivered = s.replies.some((r) => !r.delivered);
+    // A session waits while something it asked for is outstanding, or while
+    // it holds a subscription that would wake it (an event, a check-in, a
+    // threshold): that is how an agent ends a turn to wait for what comes.
+    const holds = await tx.query<{ n: number; due: string | null }>(
+      `SELECT count(*) FILTER (WHERE delivery = 'wake')::int AS n, min(due_at)::text AS due
+         FROM subscriptions WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+      [s.id]
+    );
+    const subscribed = Number(holds[0]?.n ?? 0) > 0;
+    const waiting = outstanding(s).length > 0 || subscribed;
+    const undelivered = s.replies.some((r) => !r.delivered && r.wake !== false);
     const next: SessionRow["status"] = undelivered ? "ready" : waiting ? "waiting" : "closed";
+    // The session waits at least as long as the platform's wait, and past
+    // its own latest check-in when it set one later than that.
+    const dueAt = holds[0]?.due ? new Date(holds[0].due).getTime() : 0;
+    const waitSecs = Math.max(
+      Math.round(config.sessionWaitHours * 3600),
+      dueAt ? Math.round((dueAt - Date.now()) / 1000) + 3600 : 0
+    );
     const [row] = await tx.query<SessionRow>(
       `UPDATE agent_sessions
           SET status = $2, transcript = $3::jsonb, model = $4, payer = $5::jsonb,
@@ -323,13 +364,20 @@ export async function suspendSession(input: {
         input.model,
         payer ? JSON.stringify(payer) : null,
         Math.max(0, Math.round(input.budgetLeftMicroUsd)),
-        Math.round(config.sessionWaitHours * 3600),
+        waitSecs,
         input.context ? JSON.stringify(input.context) : null,
         // The pausing run's private reasons, from its trace (run-visibility.ts).
         [...(getUsageContext().trace?.privateReasons ?? [])],
       ]
     );
     if (next === "ready") resume = row ?? null;
+    if (next === "closed") {
+      await tx.query(
+        `UPDATE subscriptions SET active = false, ended_at = now()
+          WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+        [s.id]
+      );
+    }
     return next;
   });
   if (resume) await commissionResumption(resume);
@@ -362,8 +410,13 @@ async function commissionResumptionAtLabel(s: SessionRow): Promise<void> {
   // The pass is commissioned from whoever paid for the paused run, at what it
   // had left; with no such payer, from the first grant that came while it was
   // paused. Any grants are then placed on the same pass.
+  // A Grantmaker's session is its mandate's standing deliberation, not one
+  // run's leftover: each sitting it resumes for works to the review-pass
+  // figure its operating policy names, as a fresh pass would.
+  const sittingBudget =
+    s.role === "grantmaker" && payer?.kind === "grant" ? await grantmakerSittingMicroUsd(payer.grantId) : null;
   const first = payer
-    ? { payer, budget: Math.max(MIN_RESUME_MICRO_USD, Number(s.budget_left_micro_usd)), rest: extras }
+    ? { payer, budget: sittingBudget ?? Math.max(MIN_RESUME_MICRO_USD, Number(s.budget_left_micro_usd)), rest: extras }
     : extras.length > 0
       ? { payer: { kind: "grant", grantId: extras[0]!.grantId } as CommissionPayer, budget: Number(extras[0]!.microUsd), rest: extras.slice(1) }
       : null;
@@ -391,6 +444,7 @@ async function commissionResumptionAtLabel(s: SessionRow): Promise<void> {
         payer: { kind: "grant", grantId: e.grantId },
         budget: Math.round(Number(e.microUsd)),
         commissionedBy: "petition",
+        committer: "grantmaker",
         brief: null,
         reason: "Granted on a petition while the session was paused.",
       });
@@ -450,6 +504,7 @@ async function commissionResumeRow(
         payer: { kind: "grant", grantId: e.grantId },
         budget: Math.round(Number(e.microUsd)),
         commissionedBy: "petition",
+        committer: "grantmaker",
         brief: null,
         reason: "Granted on a petition while the session was paused.",
       });
@@ -579,7 +634,10 @@ export async function resumeMessages(
   extra: { newMessages?: string; budgetLine?: string }
 ): Promise<MessageParam[]> {
   const transcript = [...(s.transcript ?? [])];
-  const [changed] = !s.node_id
+  // Only a Steward's session is about its node's assessment; another
+  // agent's anchor node (the Curator's) is where it works, not what it judges.
+  const nodeScoped = Boolean(s.node_id) && s.role === "steward";
+  const [changed] = !nodeScoped
     ? [null]
     : await rawQuery<{ assessed_at: string | null; status: string | null; passes: number }>(
     `SELECT (SELECT MAX(assessed_at)::text FROM assessments WHERE claim_id = $1 AND assessed_at > $2::timestamptz) AS assessed_at,
@@ -588,14 +646,14 @@ export async function resumeMessages(
     [s.node_id, s.suspended_at ?? new Date().toISOString()]
   ).catch(() => [{ assessed_at: null, status: null, passes: 0 }]);
   const since = (s.suspended_at ?? "").slice(0, 16).replace("T", " ");
-  const changes = !s.node_id
+  const changes = !nodeScoped
     ? `You were paused since ${since} UTC; the graph may have moved meanwhile, so read again what you rely on before you record anything.`
     : changed?.assessed_at
     ? `While you were paused (since ${since} UTC), another pass on this node recorded a new assessment` +
       `${changed.status ? ` (now ${changed.status})` : ""}. Read the node again before you record anything, and reconcile with it.`
     : `Nothing on this node's assessment changed while you were paused (since ${since} UTC).`;
   const text =
-    `## Your session resumes\n\nYou paused waiting for what you asked for. It has arrived.\n\n${renderReplies(replies)}\n\n` +
+    `## Your session resumes\n\nYou paused waiting. Here is what came.\n\n${renderReplies(replies)}\n\n` +
     `${changes}` +
     (extra.newMessages ? `\n\n${extra.newMessages}` : "") +
     (extra.budgetLine ? `\n\n${extra.budgetLine}` : "") +
@@ -647,18 +705,47 @@ export async function sweepSessions(): Promise<number> {
   );
   for (const s of rows) {
     await sendRepliesToInbox(s, s.replies.filter((x) => !x.delivered));
+    // A session that has ended holds no interest in anything.
+    await rawQuery(
+      `UPDATE subscriptions SET active = false, ended_at = now()
+        WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+      [s.id]
+    );
   }
   return rows.length;
 }
 
 /** The sentence the pausing tools and the task message use for the limits. */
+/**
+ * The limits a paused session works under, stated to every agent that can
+ * pause (session-tools.ts, wait_for_answers): how long it waits, where its
+ * answers go after that, what a resumption is paid with, and the length past
+ * which a conversation is not resumed (re-reading it costs more than a
+ * fresh start).
+ */
 export function sessionLimitsSentence(): string {
-  const hours = loadConfig().sessionWaitHours;
+  const c = loadConfig();
   return (
-    `Your session waits at most ${hours} hours for what it asked for; after that, the answer goes to ` +
-    `this node's inbox for a later pass instead. A resumed session is paid for from what this run has ` +
-    `left, by whoever paid for this run.`
+    `A paused session waits at most ${c.sessionWaitHours} hours for what it asked for (longer for a check-in ` +
+    `you set further out); after that it ends, and what arrives goes to the node's inbox for a later pass, or, ` +
+    `for a run with no node, stays where it is recorded (a research report on its research run). A resumption ` +
+    `is paid for from what the paused run had left, at least ${microUsdToOwls(MIN_RESUME_MICRO_USD)} owls, by ` +
+    `whoever paid for it. A conversation longer than about ${Math.round(c.sessionMaxTranscriptChars / 1000)} ` +
+    `thousand characters is not resumed, since re-reading it would cost more than starting again; its answers ` +
+    `go where they would after the wait.`
   );
 }
 
 export const owls = (micro: number) => microUsdToOwls(micro);
+
+/** The budget a Grantmaker's resumed sitting works to: its mandate's review-pass figure. */
+async function grantmakerSittingMicroUsd(grantId: string): Promise<number | null> {
+  const [g] = await rawQuery<{ id: string; mandate: Record<string, unknown> | null }>(
+    `SELECT id, mandate FROM grants WHERE id = $1`,
+    [grantId]
+  );
+  if (!g) return null;
+  const { reviewPassBudgetMicroUsd, grantmakerShareLeftMicroUsd } = await import("./action-service.js");
+  const share = await grantmakerShareLeftMicroUsd(g as never).catch(() => null);
+  return reviewPassBudgetMicroUsd(g as never, "review", share);
+}

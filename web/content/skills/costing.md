@@ -17,8 +17,9 @@ officer decides to pay for), set the budget at the high end of what
 cost_sheet says such work costs, not the middle: a run that has what it
 needs finishes the work, and the rest returns. Go higher when you expect
 this run to be larger than most, and say why in the brief. A budget is
-held against its payer's daily rate while the run is working, so a padded
-one delays other work by a few minutes; a short one stops work half done.
+held against its payer's pace while the run is working, so a padded one
+can delay other work a little where the pace is steady; a short one stops
+work half done.
 
 **When your own run needs more.** If doing the work properly needs more
 than your budget holds, ask with petition_mandate: say what you would do
@@ -114,39 +115,45 @@ work:
   decision at the new price; when the run that returned it carries that
   mark, it stopped for want of budget, so do not read it as what the work
   can find, and do not buy another run the same size.
-- **research you launch**: one run at the tier you choose, plus, when it
-  may submit contributions, a review for each one it submits, paid from
+- **research you commission**: one run at the tier you choose, plus, when
+  it may submit contributions, a review for each one it submits, paid from
   its contribution budget.
 - **lookouts**: one run each time a trigger fires. A daily trigger fires
   about thirty times a month.
 - **contributions you submit**: a review each.
-- **your own passes**: the planning pass, each review pass on your
-  cadence, and the granting conversation. A review pass works to the
-  figure your operating policy names (`review_pass_owls`, with your
-  reason; the platform's default until you set one), held against the
-  day's rate while it runs and settled to what it spent. Every pass pays
-  first for its opening turn, your instructions, tool list and briefing,
-  so a figure near that cost buys no work; a pass that needs more for
-  once adds to its own budget (`add_to_pass_budget`), which is cheaper
-  than a second pass.
+- **your own sittings**: the planning pass, the granting conversation,
+  and each sitting of your session, which resumes when something you
+  subscribed to arrives, when your officers escalate, or at a check-in
+  you set. A sitting works to the figure your operating policy names
+  (`review_pass_owls`, with your reason; the platform's default until you
+  set one), held against the pace while it runs and settled to what it
+  spent. Every sitting pays first for re-reading its conversation, which
+  grows as the session goes on, so a figure near that cost buys no work,
+  and many small wakes cost more than a few that come with something to
+  decide; `fresh_start` begins again from your workspace when the
+  conversation has grown dear. A sitting that needs more for once adds to
+  its own budget (`add_to_pass_budget`).
 - **your officers**: each sitting on the mandate's inbox is a program
-  officer run, and a run of yours on what it escalates; both are
-  commissioned from the mandate and give back what they do not spend.
-  Petitions and lookouts make sittings, so a busy mandate has more.
+  officer run, commissioned from the mandate, giving back what it does not
+  spend. Petitions and lookouts make sittings, so a busy mandate has more.
 - **petitions**: what your officers grant to runs that turned out to need
   more. Keep room for it in proportion to how hard the work is to foresee.
 
-The daily rate decides how fast the budget is spent, not how much. Every
-budget the mandate commissions, a plan item's included, is held against
-the day's rate until its run settles, so set the rate above the largest
-single budget you plan: an order larger than the whole rate can never be
-placed and reads blocked, and one the day has no room left for waits for
-room. A waiting order does not hold the ones after it: each look goes
-through the plan in order and places every order the room covers, so
-earlier items have first claim on the day and a large order can be passed
-over while smaller ones after it are placed. Until an order's pass is
-running you can change its tier or budget or withdraw it
-(amend_plan_items), and a budget it holds comes back at once.
+The pace decides how fast the budget may be spent, not how much, and it
+is the funder's: as needed, or steady at so much in any rolling window.
+Every budget the mandate commissions, a plan item's included, is held
+against it until its run settles: under a steady pace an order larger
+than the whole window can never be placed and reads blocked, and one the
+window has no room for waits. A waiting order does not hold the ones
+after it: each look goes through the plan in order and places every order
+the room covers, so earlier items have first claim on it and a large
+order can be passed over while smaller ones after it are placed. Until an
+order's pass is running you can change its tier or budget or withdraw it
+(amend_plan_items), and a budget it holds comes back at once. Your reserve
+(`set_reserve`) is the money only you may commit: a mandate that should
+spend as the work arrives keeps part back for the directions worth
+pursuing once the first results are in, and plan orders and officers'
+commissions wait while only the reserve has room.
 
 ## For the Contribution Reviewer and the Dispute Arbitrator
 

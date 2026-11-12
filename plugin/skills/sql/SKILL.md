@@ -52,8 +52,8 @@ unknown.
   retries), waiting_since, next_attempt_at. A row with waiting_on has not
   failed and is not cancelled: it stays funded, no attempt is charged, and
   the platform retries it on its own, so commissioning it again buys
-  nothing. Its budget stays held meanwhile and counts toward the daily
-  rate of the day it was placed on
+  nothing. Its budget stays held meanwhile and counts against the
+  mandate's pace from when it was placed, as any held budget does
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,
@@ -62,8 +62,11 @@ unknown.
 - `messages`: what was sent to a node's Steward. message_id, node_id,
   trigger, sender_kind, sender_node_id, paid, body, created_at, read_at,
   outcome (changed, no_change, disagree), outcome_note
-- `mandates`: mandate_id, title, objective, status, is_platform,
-  daily_rate_owls, escrow_owls, operating_policy, created_at
+- `mandates`: mandate_id, title, objective, status, is_platform, pace
+  (jsonb: `{"kind":"as_needed"}`, or `{"kind":"steady","owls":…,
+  "period_hours":…}` for at most that much committed in any rolling
+  window), reserve_owls and reserve_reason (what only the Grantmaker may
+  commit, and why), escrow_owls, operating_policy, created_at
 - `mandate_decisions`: every commission, grant, refusal, decline and note
   a mandate's agents made. decision_id, mandate_id, decided_by, item_kind,
   decision, target, owls, reason, petition_id, action_id, created_at
@@ -85,13 +88,13 @@ unknown.
   An `assess`, `reassess` or `deepen` item is a
   standing order its mandate commissions: once placed, its money is the
   row in `commissions` on that action_id with commissioned_by `plan`. A
-  ledger_status of `waiting` on one is an order the mandate's daily rate
-  or escrow has no room for yet, and `blocked` one that could never fit,
-  or one stored with no variant, which commissions nothing until its
-  Grantmaker names a tier; ledger_reason gives the tier and the figures.
-  `cancelled` with a ledger_reason beginning "withdrawn" is an item its
-  Grantmaker withdrew before its pass began. A deepen item orders passes
-  only on the node's children that carry no assessment.
+  ledger_status of `waiting` on one is an order the mandate's pace, its
+  Grantmaker's reserve, or its escrow has no room for yet, and `blocked` one
+  that could never fit, or one stored with no variant, which commissions
+  nothing until its Grantmaker names a tier; ledger_reason gives the tier
+  and the figures. `cancelled` with a ledger_reason beginning "withdrawn" is
+  an item its Grantmaker withdrew before its pass began. A deepen item
+  orders passes only on the node's children that carry no assessment.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,
   decided_at

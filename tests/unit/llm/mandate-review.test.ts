@@ -51,6 +51,36 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
   withAgent: (_a: string, fn: () => unknown) => fn(),
   withSkills: (_s: string[], fn: () => unknown) => fn(),
   getUsageContext: () => ({}),
+  runWithUsageContext: (_c: unknown, fn: () => unknown) => fn(),
+  markCurrentRunPrivate: () => {},
+  currentLabel: () => "public",
+}));
+// The Grantmaker's session (session-tools.ts) stands in: the run is the
+// test's, and its pause is not.
+vi.mock("../../../src/llm/tools/session-tools.js", () => ({
+  openSession: () => ({
+    session: { id: "gm-session", role: "grantmaker", nodeId: null },
+    initialMessages: (fresh: unknown) => fresh,
+    run: (fn: () => unknown) => fn(),
+    loop: {},
+    close: async () => {},
+  }),
+  getSessionToolDefinitions: () => [{ name: "wait_for_answers" }],
+  executeSessionTool: async () => null,
+}));
+vi.mock("../../../src/llm/tools/subscription-tools.js", () => ({
+  getSubscriptionToolDefinitions: () => [{ name: "subscribe" }, { name: "unsubscribe" }, { name: "list_subscriptions" }],
+  executeSubscriptionTool: async () => null,
+}));
+vi.mock("../../../src/services/pace-service.js", () => ({
+  paceRoom: async () => ({ sentence: "Pace as needed: the escrow is the only bound.", windowMicroUsd: null, windowUsedMicroUsd: null }),
+}));
+vi.mock("../../../src/services/subscription-service.js", () => ({
+  createSubscription: async () => ({ id: "s" }),
+  nextDueAt: async () => null,
+}));
+vi.mock("../../../src/services/session-service.js", () => ({
+  ensureSessionRow: async () => "gm-session",
 }));
 vi.mock("../../../src/llm/prompts/grantmaker.js", () => ({
   getGrantmakerSystemPromptBlocks: () => ["ROLE"],
@@ -60,7 +90,7 @@ vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
 }));
 vi.mock("../../../src/llm/tools/research-tools.js", () => ({
   createResearchTools: () => ({
-    definitions: [{ name: "delegate_research" }, { name: "get_research_run" }, { name: "fund_request" }],
+    definitions: [{ name: "get_research_run" }, { name: "fund_request" }],
     execute: async () => null,
   }),
 }));
@@ -74,7 +104,6 @@ vi.mock("../../../src/services/regrant-service.js", () => ({
   spawnFundedMandate: vi.fn(),
 }));
 vi.mock("../../../src/services/mandate-event-service.js", () => ({
-  WAKE_AFTER_MINUTES: 30,
   consumeMandateEvents: async () => {},
   describeMandateEvent: () => "",
   pendingMandateEvents: async () => ({ events: [], total: 0 }),
@@ -141,7 +170,7 @@ describe("runMandateReview", () => {
   it("offers every mandate the research, request and read tools, and its operating policy and commissions as its lever", async () => {
     await runMandateReview({ grantId: GRANT });
     for (const n of [
-      "delegate_research", "get_research_run", "fund_request", "list_requests",
+      "get_research_run", "fund_request", "list_requests",
       "list_funded_assessments", "claims_from_source", "allocation_report",
       "write_operating_policy", "commission", "query_sql", "withdraw_regrant", "note_to_funder",
     ]) {
@@ -188,13 +217,16 @@ describe("runMandateReview", () => {
 
   // #820: the pass can add to its own budget, and is told how; a
   // decomposition, bounded by its Grantmaker share, is not offered it.
-  it("offers add_to_pass_budget and says when continue_review is worth its second opening turn", async () => {
+  it("offers add_to_pass_budget, and fresh_start with what a long conversation costs", async () => {
     await runMandateReview({ grantId: GRANT });
     expect(names()).toContain("add_to_pass_budget");
     expect(state.loop!.briefing).toContain("add to its budget (add_to_pass_budget)");
-    const cont = state.loop!.tools.find((t) => t.name === "continue_review") as unknown as { description: string };
-    expect(cont.description).toContain("pays for its opening turn");
-    expect(cont.description).toContain("add_to_pass_budget");
+    const fresh = state.loop!.tools.find((t) => t.name === "fresh_start") as unknown as { description: string };
+    expect(fresh.description).toContain("re-reads this whole conversation");
+    expect(fresh.description).toContain("Your subscriptions and check-ins end with this session");
+    // It works in a session: it can subscribe and wait.
+    expect(names()).toEqual(expect.arrayContaining(["subscribe", "list_subscriptions", "wait_for_answers"]));
+    expect(state.loop!.briefing).toContain("You work in one long session on this mandate");
   });
 
   it("does not offer add_to_pass_budget to a decomposition", async () => {

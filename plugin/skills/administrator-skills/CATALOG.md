@@ -5,7 +5,7 @@ administrators' prompts in `src/llm/prompts/`. Do not edit by hand.
 
 ## Skills
 
-### Costing (`skills/costing.md`, version 8, method skill)
+### Costing (`skills/costing.md`, version 9, method skill)
 
 How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.
 
@@ -17,7 +17,7 @@ How the constitution applies to propositions of mathematics: proofs as arguments
 
 Sections: For every administrator; For the Claim Steward; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the Audit Agent; For the Curator; For the Matcher; For the Extractor; For the researcher; Standards for judging; Failure modes.
 
-### Provenance (`skills/provenance.md`, version 9, method skill)
+### Provenance (`skills/provenance.md`, version 10, method skill)
 
 How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.
 
@@ -29,7 +29,7 @@ How to search for evidence on a claim or question so that what the search did no
 
 Sections: For every administrator.
 
-### Sql (`skills/sql.md`, version 9, method skill)
+### Sql (`skills/sql.md`, version 10, method skill)
 
 How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.
 

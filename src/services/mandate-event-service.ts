@@ -1,37 +1,26 @@
 /**
- * A mandate's inbox: what its work produced since its Grantmaker last
- * looked, and the wake that brings a review pass when there is something to
- * look at.
- *
- * A mandate used to learn what its money bought only on its next scheduled
- * review, a day later; digging one level deeper took a day per level. Now:
+ * A mandate's events: what its work produced since its Grantmaker last
+ * read its briefing.
  *
  *  - collectMandateEvents reads the graph since each mandate's watermark
  *    (`grants.events_scanned_at`) and records what bears on its work: an
  *    assessment on a node it funded (with the children that pass left
  *    waiting), a decision on a contribution it submitted, a source in its
- *    pipeline whose extraction finished, a lookout's flag. Collecting from the tables, not from hooks
- *    in every lane, means no Steward lane or reviewer path can skip it.
- *  - wakeDueMandateReviews reopens the review row of a mandate with pending
- *    events once its last pass is WAKE_AFTER_MINUTES old; the drain funds it
- *    from the escrow, within the daily rate, like any of the mandate's own
- *    rows (fundGrantSelfActions). The daily review stays as a heartbeat.
- *  - The review pass reads the pending events in its briefing and marks the
- *    ones it was shown consumed.
+ *    pipeline whose extraction finished, a lookout's flag. Collecting from
+ *    the tables, not from hooks in every lane, means no Steward lane or
+ *    reviewer path can skip it.
+ *  - These events no longer wake the Grantmaker. It works in one long
+ *    session and decides what wakes it (subscriptions, check-ins); a fresh
+ *    briefing lists the pending events and marks them read.
+ *  - openReviewsForEscalations: what the officers escalate is delivered into
+ *    the Grantmaker's session; a mandate whose session has ended gets a
+ *    fresh review pass at once, so nothing escalated waits on the reconcile
+ *    sweep.
  */
 import { rawQuery } from "../db/client.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import type { OperatingPolicy } from "./operating-policy-service.js";
 import { REVIEW_GROUP, grantmakerShareLeftMicroUsd, reviewPassBudgetMicroUsd } from "./action-service.js";
-
-/**
- * How long after a review pass ends before events can wake the next one. A
- * coalescing window, not a spending limit (the daily rate and the escrow
- * bound spending): a burst of finished passes is judged by one review rather
- * than one review each, so the money goes to the work. Stated to the agent
- * in its briefing.
- */
-export const WAKE_AFTER_MINUTES = 15;
 
 /** How often the drain collects events and checks for due wakes. */
 const TICK_MS = 60_000;
@@ -191,12 +180,12 @@ async function collectFor(g: { id: string; from: string | null; to: string }): P
 }
 
 /**
- * Reopen the review of every active mandate with pending events whose last
- * pass ended at least WAKE_AFTER_MINUTES ago. A decomposition mandate whose
- * Grantmaker share is spent is not woken (its reviews are paid from the
- * share). Returns the number of reviews reopened.
+ * Open a fresh review pass for every active mandate with something escalated
+ * to its Grantmaker and no live Grantmaker session to deliver it to. A
+ * decomposition mandate whose Grantmaker share is spent is not opened (its
+ * reviews are paid from the share). Returns the number opened.
  */
-export async function wakeDueMandateReviews(): Promise<number> {
+export async function openReviewsForEscalations(): Promise<number> {
   const due = await rawQuery<{
     id: string;
     mandate: { grantmaker_share_owls?: number | null; operating_policy?: OperatingPolicy | null } | null;
@@ -206,10 +195,13 @@ export async function wakeDueMandateReviews(): Promise<number> {
        JOIN actions a ON a.exclusion_group = 'review:' || g.id::text AND a.kind = 'mandate_review'
       WHERE g.status = 'active'
         AND a.status IN ('done', 'superseded', 'cancelled')
-        AND a.updated_at < now() - make_interval(mins => ${WAKE_AFTER_MINUTES})
-        AND EXISTS (SELECT 1 FROM mandate_events e WHERE e.grant_id = g.id AND e.consumed_at IS NULL)`
+        AND NOT EXISTS (SELECT 1 FROM agent_sessions s WHERE s.id = g.grantmaker_session_id
+                         AND s.status IN ('running', 'waiting', 'ready'))
+        AND (EXISTS (SELECT 1 FROM petitions p WHERE p.grant_id = g.id AND p.status = 'escalated')
+             OR EXISTS (SELECT 1 FROM mandate_inbox i WHERE i.grant_id = g.id AND i.escalated_at IS NOT NULL
+                          AND i.handled_at IS NULL))`
   );
-  let woken = 0;
+  let opened = 0;
   for (const g of due) {
     const share = await grantmakerShareLeftMicroUsd(g).catch(() => null);
     if (share && share.leftMicroUsd <= 0) continue;
@@ -225,12 +217,12 @@ export async function wakeDueMandateReviews(): Promise<number> {
         RETURNING id`,
       [REVIEW_GROUP(g.id), await reviewPassBudgetMicroUsd(g, "review", share), g.sensitivity_label]
     );
-    woken += rows.length;
+    opened += rows.length;
   }
-  return woken;
+  return opened;
 }
 
-/** The drain's tick: collect, then wake. At most once a minute; never throws. */
+/** The drain's tick: collect, then open reviews for escalations nobody can receive. At most once a minute; never throws. */
 export async function mandateEventsTick(now: number = Date.now()): Promise<{ recorded: number; woken: number }> {
   if (now - lastTickAt < TICK_MS) return { recorded: 0, woken: 0 };
   lastTickAt = now;
@@ -238,8 +230,8 @@ export async function mandateEventsTick(now: number = Date.now()): Promise<{ rec
     console.error(`[mandate-events] collect failed: ${err instanceof Error ? err.message : String(err)}`);
     return 0;
   });
-  const woken = await wakeDueMandateReviews().catch((err: unknown) => {
-    console.error(`[mandate-events] wake failed: ${err instanceof Error ? err.message : String(err)}`);
+  const woken = await openReviewsForEscalations().catch((err: unknown) => {
+    console.error(`[mandate-events] opening reviews failed: ${err instanceof Error ? err.message : String(err)}`);
     return 0;
   });
   return { recorded, woken };
