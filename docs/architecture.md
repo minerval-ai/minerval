@@ -2240,9 +2240,10 @@ its starting value none of that code runs.
 
 Every row that holds content carries a label in `sensitivity_label`
 (`src/labels.ts`): who may read it. The public graph has one label,
-`public`, and there nothing below applies: no table has row-level security,
-every query runs on the one pool it always had, and no query pays for any of
-it.
+`public`, and there nothing below applies: no table has row-level security
+and every query runs on the one pool it always had. The only cost is one
+catalog lookup per process every ten seconds, which is how a process learns
+that a second label has been defined.
 
 A deployment that defines a second label is held to it by the database, not
 by the queries (`src/db/clearance.ts`). A clearance is a set of labels. A run
