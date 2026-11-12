@@ -62,6 +62,7 @@ import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
 import { connectionRoutes } from "../routes/connections.js";
 import { fileSetRoutes } from "../routes/file-sets.js";
+import { setupChecklistRoutes } from "../routes/setup-checklist.js";
 import { createdOwlRoutes, standingMandateRoutes } from "../routes/owls.js";
 import { usageReportReceivingRoutes, usageReportSendingRoutes } from "../routes/usage-reports.js";
 import { owlsCreatedHere } from "../services/owl.js";
@@ -192,6 +193,9 @@ export async function buildApp() {
     // Creating owls exists only where the deployment creates its own
     // (OWLS=created, which needs READS=members).
     if (owlsCreatedHere(config)) await app.register(createdOwlRoutes);
+    // What the administrators read to see how far setup has got, the
+    // preflight's report included (routes/setup-checklist.ts).
+    await app.register(setupChecklistRoutes);
   }
   // Every graph admits pages other graphs publish, as sources their
   // publishers submit (docs/published-pages.md). It is the public graph

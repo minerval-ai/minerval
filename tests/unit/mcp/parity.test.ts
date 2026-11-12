@@ -65,7 +65,7 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|release|redaction-policies|outbound|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|release|redaction-policies|outbound|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$|^\/setup\/checklist$/;
 /** Mounted only by a members-only deployment that creates its own owls. */
 const CREATED_OWLS_ROUTE = /^\/owls\/created$/;
 /** Not mounted where owls are created: the routes that sell them. */

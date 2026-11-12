@@ -486,6 +486,8 @@ describe("what a permission guards", () => {
       "POST /standing-mandates/:name": ["administer"],
       "GET /usage-reports/outgoing": ["administer"],
       "POST /usage-reports/outgoing/send": ["administer"],
+      // The setup checklist (tests/db/setup-checklist.test.ts).
+      "GET /setup/checklist": ["administer"],
     });
     // The routes that any one of several permissions opens: the reads of
     // the file sets, for a person who directs, who uploads sets, or an

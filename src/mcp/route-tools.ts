@@ -310,6 +310,11 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "created by its administrators and not bought.",
   },
   "GET /usage-reports/outgoing": { name: "list_usage_reports" },
+  // How far the deployment's setup has got, for its administrators.
+  "GET /setup/checklist": {
+    name: "get_setup_checklist",
+    note: "Free. Each call runs the preflight's checks afresh, which takes a few seconds.",
+  },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
