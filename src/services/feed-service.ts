@@ -29,6 +29,7 @@
 import { capMicroUsd } from "./owl.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
+import { isUnseenCollision } from "../db/clearance.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.js";
@@ -1011,7 +1012,13 @@ async function pollFeedAtLabel(
         // runs it, the run's when a run does (pollFeed above).
         currentLabel(),
       ]
-    );
+    ).catch((err: unknown) => {
+      // An item recorded first by work at a label this poll does not read
+      // has been seen, which is all the poll needs to know of it: it is
+      // not new, and the poll goes on to the next (db/clearance.ts).
+      if (isUnseenCollision(err)) return [];
+      throw err;
+    });
     if (rows.length > 0 && !seeding) result.newItems++;
   }
   await rawQuery(

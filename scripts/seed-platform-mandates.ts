@@ -42,6 +42,10 @@
  *     --overrides '{"containerOverrides":[{"name":"api",
  *       "command":["npm","run","seed:platform-mandates"]}]}'
  *
+ * On a deployment with more than one label, say which label the mandates
+ * work at: --label <name> (src/script-label.ts). Without it the seed is
+ * refused there, since a mandate is never public by omission.
+ *
  * Flags (docs/mathematics.md §10.9):
  *   --update-mandate <key>   update an existing mandate's text, skills, and
  *                            allocation policy keys from this file; never
@@ -71,6 +75,7 @@
  *   --top-up-batch <key>     the top-up's batch key (default: today's date).
  */
 import { rawQuery, withTransaction, closeDb } from "../src/db/client.js";
+import { runAtScriptLabel } from "../src/script-label.js";
 import { loadConfig } from "../src/config.js";
 import { owlsToMicroUsd } from "../src/services/owl.js";
 
@@ -1091,7 +1096,12 @@ async function main() {
   }
 }
 
-main()
+// On a deployment with more than one label the mandates are seeded at the
+// label the operator names (--label, src/script-label.ts): the label the
+// deployment's ordinary work is at. Their work then runs at that label, and
+// a mandate that needs to pay for work it cannot read regrants to one at a
+// label that can. On the public graph nothing is named and nothing changes.
+runAtScriptLabel("seed-platform-mandates", main)
   .then(async () => {
     await closeDb();
     process.exit(0);

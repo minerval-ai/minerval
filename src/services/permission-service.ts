@@ -41,20 +41,20 @@ function sqlState(err: unknown): string | undefined {
  * Every label readable from `labels`: the labels themselves, and each label
  * one of them reads, followed through label_reads to the end. `public` is
  * always in the answer. Sorted.
+ *
+ * The answer is the database's (minerval_labels_readable_from), which is
+ * also what a run's label is turned into a clearance with
+ * (db/clearance.ts): one definition of what a label reads, for people and
+ * for runs.
  */
 export async function labelsReadableFrom(labels: readonly string[]): Promise<string[]> {
   const start = [...new Set([PUBLIC_LABEL, ...labels])];
   if (start.length === 1) return start;
-  const rows = await rawQuery<{ label: string }>(
-    `WITH RECURSIVE reach(label) AS (
-       SELECT unnest($1::text[])
-       UNION
-       SELECT lr.reads FROM label_reads lr JOIN reach r ON lr.label = r.label
-     )
-     SELECT label FROM reach ORDER BY label`,
+  const [row] = await rawQuery<{ labels: string[] }>(
+    `SELECT minerval_labels_readable_from($1::text[]) AS labels`,
     [start]
   );
-  return rows.map((r) => r.label);
+  return [...new Set(row?.labels ?? start)].sort();
 }
 
 /**

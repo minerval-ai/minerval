@@ -23,9 +23,10 @@
  * may read: `public`, every label a `read` grant names, and every label
  * those read (the pairs in label_reads, followed to the end). It is put on
  * the request's async context (currentClearance in llm/usage-context.ts) so
- * that whatever holds reads to a clearance can pick it up without a
- * parameter. Nothing holds a read to it yet: that is the database's job
- * and is later work.
+ * that what holds reads to a clearance can pick it up without a
+ * parameter. The database does: where a deployment has more than one
+ * label, a request's queries run on a connection that reads those labels
+ * and no others (db/clearance.ts).
  *
  * A member is an account that holds at least one live grant. An account
  * that has signed in and holds none is not a member, and is served nothing

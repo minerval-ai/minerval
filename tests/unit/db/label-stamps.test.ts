@@ -1,12 +1,15 @@
 /**
  * Every insert into a table that carries a label says what the label is.
  *
- * The column defaults to 'public' (src/labels.ts), which is right for the
- * rows that existed before labels and for a write outside any run, and wrong
- * for an insert that simply forgot: that row would be written as public
- * from inside a restricted run, with no error and no sign. The DB tests
- * drive one seam for each table; this reads the source, so an insert site
- * none of them reaches, or one added later, is held to the same rule.
+ * An insert that names no label gets the label of the connection it arrives
+ * on (the column's default, src/db/clearance.ts): inside a run that is the
+ * run's label, so a forgotten stamp is no longer written as public. It is
+ * still not what the code meant to say. A row derived from another carries
+ * that row's label, not the run's, and an insert on a connection with no
+ * label is refused where a second label exists. So every insert under src
+ * says its label itself, and this reads the source to hold each one to
+ * that: the DB tests drive one seam for each table, and an insert site none
+ * of them reaches, or one added later, is held to the same rule.
  *
  * The rule is about the statement, not the value: an insert names
  * sensitivity_label (raw SQL) or sets sensitivityLabel (drizzle). What it

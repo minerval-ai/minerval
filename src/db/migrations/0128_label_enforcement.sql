@@ -258,13 +258,16 @@ $$;
 -- match is one of those. So a keyword search on a table under row-level
 -- security cannot use its index. A view owned by the tables' owner is not
 -- under the policy; it carries the same test as an ordinary condition, and
--- the index is used. Each view here exposes only what the search needs to
--- find rows (an id and the indexed column), and the caller joins back to
--- the table, where the policy applies as everywhere else.
+-- the index is used. Each view here exposes only the columns the search
+-- reads, so a later change to any other column of its table does not meet
+-- it. claims_search stands in for claims in the search queries
+-- (services/search-service.ts); requests_text gives the ids a request
+-- search matched, and the rows are then read from the table under the
+-- policy (services/request-service.ts).
 CREATE SCHEMA IF NOT EXISTS minerval_readable;
 --> statement-breakpoint
-CREATE OR REPLACE VIEW minerval_readable.claims_text AS
-SELECT c.id, c.text_search
+CREATE OR REPLACE VIEW minerval_readable.claims_search AS
+SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.merged_into, c.importance, c.text_search, c.embedding
   FROM public.claims c
  WHERE c.sensitivity_label = ANY ((SELECT public.minerval_clearance())::text[]);
 --> statement-breakpoint
@@ -278,6 +281,118 @@ CREATE OR REPLACE FUNCTION minerval_enforcement_on() RETURNS boolean
 LANGUAGE sql STABLE
 AS $$
   SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'label_clearance')
+$$;
+--> statement-breakpoint
+-- One judgment in force per node, and each label's own.
+--
+-- A node holds one judgment in force today (a unique index on the rows
+-- where is_current is true), whatever its label. Under the policies that
+-- leaves two ways for one label's judgment to take another's place. A run
+-- that reads the label of the judgment in force can retire it and record
+-- its own, and readers of the first label are left with none. A run that
+-- cannot read it sees no judgment, and its insert collides with the row it
+-- cannot see. A node keeping one judgment for each label is later work.
+-- Until then this trigger refuses both, with a reason: on a cleared
+-- connection a judgment is retired only by work at its own label, and one
+-- is recorded as in force only where none stands at another label. The
+-- owner's connection is not held to it. The step below puts the trigger on
+-- every labelled table that has an is_current column and a unique index
+-- over its rows in force, and names that index's column as the node's.
+CREATE OR REPLACE FUNCTION minerval_judgment_label_guard() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  own text := COALESCE(NULLIF(current_setting('minerval.label', true), ''), 'public');
+  node_column text := TG_ARGV[0];
+  node text;
+  elsewhere boolean;
+BEGIN
+  IF session_user <> 'minerval_cleared' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.is_current AND NOT NEW.is_current AND OLD.sensitivity_label <> own THEN
+      RAISE EXCEPTION 'the judgment in force on this node was recorded at another label, and this work may not retire it'
+        USING ERRCODE = 'MVL02',
+              HINT = 'A judgment at one label must not take the place of another label''s, and a node keeping one for each label is not built yet. Nothing was changed.';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.is_current THEN
+    EXECUTE format('SELECT ($1).%I::text', node_column) INTO node USING NEW;
+    EXECUTE format(
+      'SELECT EXISTS (SELECT 1 FROM public.%I WHERE %I::text = $1 AND is_current AND sensitivity_label <> $2)',
+      TG_TABLE_NAME, node_column) INTO elsewhere USING node, NEW.sensitivity_label;
+    IF elsewhere THEN
+      RAISE EXCEPTION 'this node''s judgment in force was recorded at another label, so this one was not recorded'
+        USING ERRCODE = 'MVL02',
+              HINT = 'A judgment at one label must not take the place of another label''s, and a node keeping one for each label is not built yet. Nothing was recorded.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+-- A write that would collide with a row the writer cannot read.
+--
+-- A unique index holds for every row of its table, whatever the labels, so
+-- a run can try to write a row whose key is already taken by one it cannot
+-- see: a tag with the same slug, an edge between the same two nodes, a
+-- source at the same address. Left alone, Postgres answers in three ways,
+-- none of them clear: a plain insert fails as a duplicate; an insert that
+-- does nothing on conflict does nothing, and the code that then reads the
+-- row back finds no row; an upsert is refused by the policy. Each label
+-- keeping its own row is later work. Until then this trigger makes the
+-- three one: an insert on a cleared connection whose key is held by a row
+-- outside the connection's clearance is refused, and says so.
+--
+-- The step below gives it the table's unique indexes as arguments, in
+-- pairs: an index's columns, and its predicate where it is partial. Indexes
+-- over expressions are not handled, and a lone id is left out. It does not
+-- look at updates that change a key.
+CREATE OR REPLACE FUNCTION minerval_unseen_collision_guard() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  reads text[];
+  i int := 0;
+  columns text[];
+  predicate text;
+  applies boolean;
+  taken boolean;
+BEGIN
+  IF session_user <> 'minerval_cleared' THEN
+    RETURN NEW;
+  END IF;
+  reads := public.minerval_clearance();
+  WHILE i < TG_NARGS LOOP
+    columns := string_to_array(TG_ARGV[i], ',');
+    predicate := TG_ARGV[i + 1];
+    i := i + 2;
+    IF predicate <> '' THEN
+      -- A partial index binds the new row only where its predicate holds for it.
+      EXECUTE format('SELECT (%s) FROM (SELECT ($1).*) AS candidate', predicate) INTO applies USING NEW;
+      CONTINUE WHEN applies IS NOT TRUE;
+    END IF;
+    EXECUTE format(
+      'SELECT EXISTS (SELECT 1 FROM public.%I AS existing WHERE (%s) = (%s)%s AND existing.sensitivity_label <> ALL ($2))',
+      TG_TABLE_NAME,
+      (SELECT string_agg(format('existing.%I', c), ', ') FROM unnest(columns) AS c),
+      (SELECT string_agg(format('($1).%I', c), ', ') FROM unnest(columns) AS c),
+      CASE WHEN predicate <> '' THEN format(' AND (%s)', predicate) ELSE '' END
+    ) INTO taken USING NEW, reads;
+    IF taken THEN
+      RAISE EXCEPTION 'this was not written: a row with the same identity already exists at a label this work does not read'
+        USING ERRCODE = 'MVL03',
+              TABLE = TG_TABLE_NAME,
+              DETAIL = format('In %s, by %s.', TG_TABLE_NAME, array_to_string(columns, ', ')),
+              HINT = 'A table holds one row for each identity whatever the labels, and each label keeping its own is not built yet. Nothing was changed.';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END
 $$;
 --> statement-breakpoint
 -- The one step that turns enforcement on and off.
@@ -296,6 +411,9 @@ $$;
 --     write a row only at a label in the connection's clearance, and
 --     label_sql_read, which lets the public_read views show a row only at
 --     a label in the session's signed clearance;
+--   - a labelled table that holds judgments in force gets the trigger
+--     above, and one with a unique index gets the trigger that refuses a
+--     collision with a row the writer cannot read;
 --   - then, and only then, the table is granted to minerval_cleared, so a
 --     table is never reachable before it is covered.
 -- Every view in public is made to run with its caller's rights
@@ -303,8 +421,8 @@ $$;
 -- owner, whom the policies do not bind. The public_read views are handed
 -- to minerval_sql_views, which the policies do bind.
 --
--- Off: the policies are dropped and row-level security is disabled. Grants
--- and view options are left as they are; nothing uses them.
+-- Off: the policies and the triggers are dropped and row-level security is
+-- disabled. Grants and view options are left as they are; nothing uses them.
 --
 -- It returns one line per change it made, and no lines when everything was
 -- already as it should be. It takes locks only for changes.
@@ -331,7 +449,9 @@ BEGIN
     FOR t IN
       SELECT c.relname, c.relrowsecurity,
              EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
-             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql
+             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
+             EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
+             EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS has_collision_guard
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
@@ -344,6 +464,12 @@ BEGIN
       END IF;
       IF t.has_sql THEN
         EXECUTE format('DROP POLICY label_sql_read ON public.%I', t.relname);
+      END IF;
+      IF t.has_guard THEN
+        EXECUTE format('DROP TRIGGER judgment_label_guard ON public.%I', t.relname);
+      END IF;
+      IF t.has_collision_guard THEN
+        EXECUTE format('DROP TRIGGER unseen_collision_guard ON public.%I', t.relname);
       END IF;
       IF t.relrowsecurity THEN
         EXECUTE format('ALTER TABLE public.%I DISABLE ROW LEVEL SECURITY', t.relname);
@@ -369,7 +495,38 @@ BEGIN
            EXISTS (SELECT 1 FROM pg_attribute a
                     WHERE a.attrelid = c.oid AND a.attname = 'sensitivity_label' AND NOT a.attisdropped) AS labelled,
            EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_clearance') AS has_clearance,
-           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql
+           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'label_sql_read') AS has_sql,
+           EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'judgment_label_guard') AS has_guard,
+           -- The node a judgment is of: the column of the unique index over
+           -- the rows in force. Null on a table that holds no judgments.
+           (SELECT a.attname::text
+              FROM pg_index i
+              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+             WHERE i.indrelid = c.oid AND i.indisunique AND i.indnatts = 1 AND i.indpred IS NOT NULL
+               AND pg_get_expr(i.indpred, i.indrelid) LIKE '%is_current%'
+             ORDER BY i.indexrelid
+             LIMIT 1) AS judged_node,
+           -- The unique indexes a collision could happen on, as the guard
+           -- takes them: columns, then predicate, for each. Indexes over
+           -- expressions and a lone id are left out.
+           (SELECT array_agg(part ORDER BY ix.relname, ord)
+              FROM pg_index i
+              JOIN pg_class ix ON ix.oid = i.indexrelid
+              CROSS JOIN LATERAL (
+                VALUES (1, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord)
+                              FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                             WHERE k.ord <= i.indnkeyatts)),
+                       (2, COALESCE(pg_get_expr(i.indpred, i.indrelid), ''))
+              ) AS parts(ord, part)
+             WHERE i.indrelid = c.oid AND i.indisunique AND i.indisvalid
+               AND NOT (0 = ANY (i.indkey::int2[]))
+               AND NOT (i.indnkeyatts = 1 AND i.indpred IS NULL
+                        AND (SELECT a.attname FROM pg_attribute a
+                              WHERE a.attrelid = i.indrelid AND a.attnum = i.indkey[0]) = 'id')
+           ) AS collision_keys,
+           (SELECT array_remove(string_to_array(encode(g.tgargs, 'escape'), '\000'), NULL)
+              FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'unseen_collision_guard') AS guarded_keys
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
@@ -389,6 +546,25 @@ BEGIN
         EXECUTE format(
           'CREATE POLICY label_sql_read ON public.%I AS PERMISSIVE FOR SELECT TO minerval_sql_views USING (%s)',
           t.relname, sql_test);
+      END IF;
+      IF t.judged_node IS NOT NULL AND NOT t.has_guard THEN
+        EXECUTE format(
+          'CREATE TRIGGER judgment_label_guard BEFORE INSERT OR UPDATE OF is_current ON public.%I '
+          'FOR EACH ROW EXECUTE FUNCTION public.minerval_judgment_label_guard(%L)',
+          t.relname, t.judged_node);
+      END IF;
+      -- The trigger's arguments end with an empty one in the catalog's form.
+      IF t.collision_keys IS DISTINCT FROM t.guarded_keys[1:cardinality(t.guarded_keys) - 1] THEN
+        IF t.guarded_keys IS NOT NULL THEN
+          EXECUTE format('DROP TRIGGER unseen_collision_guard ON public.%I', t.relname);
+        END IF;
+        IF t.collision_keys IS NOT NULL THEN
+          EXECUTE format(
+            'CREATE TRIGGER unseen_collision_guard BEFORE INSERT ON public.%I '
+            'FOR EACH ROW EXECUTE FUNCTION public.minerval_unseen_collision_guard(%s)',
+            t.relname,
+            (SELECT string_agg(quote_literal(k), ', ' ORDER BY ord) FROM unnest(t.collision_keys) WITH ORDINALITY AS u(k, ord)));
+        END IF;
       END IF;
     END IF;
     IF NOT (has_table_privilege('minerval_cleared', t.oid, 'SELECT')

@@ -100,7 +100,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { currentLabel, runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
-import { withSystemClearance } from "../../src/db/clearance.js";
+import { ClearanceError, withSystemClearance } from "../../src/db/clearance.js";
 import { executeGovernanceTool } from "../../src/llm/tools/governance-tools.js";
 import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { createLookoutFeedTools } from "../../src/llm/tools/feed-tools.js";
@@ -757,10 +757,24 @@ describe("what is derived mechanically from a document", () => {
     }
   });
 
-  it("is not recorded against a source that does not exist, which fails as it always did", async () => {
+  // The notice takes its label from the source. A source that is not there
+  // has none to give, and nothing stands in for it: the insert is refused
+  // for want of a label (it used to fall through to public and then fail on
+  // the source it named).
+  it("is not recorded against a source that does not exist, or one the work cannot read", async () => {
+    const NOT_NULL_VIOLATION = "23502";
     await expect(
       recordSourceEvent({ sourceId: randomUUID(), kind: "correction", noticeUrl: "https://doi.org/10.5555/never", detectedBy: "facts_fetch" })
-    ).rejects.toSatisfy((err) => sqlState(err) === FOREIGN_KEY_VIOLATION);
+    ).rejects.toSatisfy((err) => sqlState(err) === NOT_NULL_VIOLATION);
+    const restricted = await seedSource(INTERNAL);
+    // For work that cannot read the source the same holds, and the policy
+    // refuses the row before the missing label is looked at.
+    await expect(
+      runAtLabel(PUBLIC_LABEL, "a public run", () =>
+        recordSourceEvent({ sourceId: restricted.id, kind: "correction", noticeUrl: "https://doi.org/10.5555/unread", detectedBy: "facts_fetch" })
+      )
+    ).rejects.toBeInstanceOf(ClearanceError);
+    expect(await labelsOn("source_events", restricted.id)).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { rawQuery } from "../db/client.js";
+import { rawQuery, searchableClaims } from "../db/client.js";
 import { generateEmbedding } from "./embedding-service.js";
 import type { NodeKind } from "../schemas/kinds.js";
 import {
@@ -182,6 +182,7 @@ async function hybridSearchWithEmbedding(
   const filterSql = filterClauses(filters, params);
   params.push(limit);
   const limitIdx = params.length;
+  const claimsTable = await searchableClaims();
 
   // Order by semantic proximity, not a keyword/semantic blend: ts_rank and
   // cosine similarity live on different scales, so blending scrambled the
@@ -197,7 +198,7 @@ async function hybridSearchWithEmbedding(
       1 - (c.embedding <=> $2::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
     ${KIND_JOIN_SQL}
@@ -236,6 +237,7 @@ async function keywordSearch(
   const filterSql = filterClauses(filters, params);
   params.push(limit);
   const limitIdx = params.length;
+  const claimsTable = await searchableClaims();
 
   const rows = await rawQuery<SearchResult & { text_rank: number }>(
     `
@@ -243,7 +245,7 @@ async function keywordSearch(
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
     ${KIND_JOIN_SQL}
@@ -290,12 +292,13 @@ export async function keywordClaimSearch(
     excludeClause = "AND c.id != $3";
     params.push(excludeId);
   }
+  const claimsTable = await searchableClaims();
   const rows = await rawQuery<SearchResult & { text_rank: number }>(
     `
     SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND c.text_search @@ websearch_to_tsquery('english', $1)
@@ -334,13 +337,14 @@ export async function findSimilarClaims(
     excludeClause = "AND c.id != $4";
     params.push(excludeId);
   }
+  const claimsTable = await searchableClaims();
 
   const rows = await rawQuery<SearchResult & { semantic_score: number }>(
     `
     SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
       1 - (c.embedding <=> $1::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND 1 - (c.embedding <=> $1::vector) > $2

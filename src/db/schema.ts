@@ -89,7 +89,8 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // switches and counters, and the two tables here. One kind of row takes
 // its label from neither a run nor a request: what is derived mechanically
 // from a document (its segments, the notices against it) carries the
-// document's label. No reader is held to a clearance yet.
+// document's label. Where a second label exists, every read and write is
+// held to a clearance by row-level security on these tables (db/clearance.ts).
 // ---------------------------------------------------------------------------
 export const labels = pgTable(
   "labels",

@@ -20,7 +20,6 @@
  * fails leaves the fact null, and the page says it was not found.
  */
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
@@ -216,6 +215,11 @@ export interface RecordSourceEventInput {
  * the same whoever asks, so it holds no judgment of the run that asked, and
  * one recorded at a reader's label would keep the same notice from being
  * recorded for the document's other readers (src/labels.ts).
+ *
+ * There is no label to fall back on. A source that does not exist, or that
+ * the work in progress may not read (db/clearance.ts), has none to give,
+ * and the insert is refused for want of one: a notice is never recorded as
+ * public against a document that is not.
  */
 export async function recordSourceEvent(input: RecordSourceEventInput): Promise<{ recorded: boolean }> {
   if (!(SOURCE_EVENT_KINDS as readonly string[]).includes(input.kind)) {
@@ -224,7 +228,7 @@ export async function recordSourceEvent(input: RecordSourceEventInput): Promise<
   const occurred = input.occurredAt ? new Date(input.occurredAt) : null;
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO source_events (source_id, kind, occurred_at, notice_url, note, detected_by, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE((SELECT sensitivity_label FROM sources WHERE id = $1), $7))
+     VALUES ($1, $2, $3, $4, $5, $6, (SELECT sensitivity_label FROM sources WHERE id = $1))
      ON CONFLICT (source_id, kind, notice_url) DO NOTHING
      RETURNING id`,
     [
@@ -234,9 +238,6 @@ export async function recordSourceEvent(input: RecordSourceEventInput): Promise<
       (input.noticeUrl ?? "").trim(),
       input.note ?? null,
       input.detectedBy,
-      // Never written: a source that does not exist has no label to give,
-      // and the insert then fails on the source it names, as it always did.
-      PUBLIC_LABEL,
     ]
   );
   return { recorded: rows.length > 0 };

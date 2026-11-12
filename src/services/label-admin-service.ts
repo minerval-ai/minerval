@@ -11,6 +11,7 @@
  * Reading the two tables for work in flight stays in label-service.ts.
  */
 import { rawQuery, withTransaction } from "../db/client.js";
+import { armEnforcement } from "../db/enforcement.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { logAdministrativeEvent } from "./permission-service.js";
 
@@ -103,6 +104,12 @@ export async function defineLabel(input: {
     const problem = pairProblem(name, read);
     if (problem) return problem;
   }
+  // The database holds reads to a clearance from the moment a second label
+  // exists. Before the first one is defined, that is turned on and every
+  // process of the deployment is given time to notice (db/enforcement.ts),
+  // so nothing can be written at the new label while any process still
+  // reads unfiltered. It returns at once every other time.
+  if (name !== PUBLIC_LABEL) await armEnforcement();
   return withTransaction(async (tx): Promise<Outcome> => {
     const existing = await tx.query(`SELECT 1 FROM labels WHERE name = $1`, [name]);
     if (existing.length > 0) return refuse("LABEL_EXISTS", `A label named "${name}" is already defined.`);

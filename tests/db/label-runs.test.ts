@@ -481,23 +481,39 @@ describe("a write that lands on a row already there", () => {
     expect(await labelsWhere("agent_report_sightings", "report_id = $1", [first])).toEqual([SECOND]);
   });
 
+  // The finding is public and is met again by a run at the second label,
+  // which reads it. The other way round the finding is not there to join:
+  // a public run does not read a finding at the second label, and its note
+  // is answered as one that rests on no record it can see.
   it("leaves a finding's label alone and gives the sighting the label of the run that met it again", async () => {
-    const { ids } = await oneRunAt(SECOND);
-    const joined = await runAt(null, async () =>
+    const { ids } = await oneRunAt(null);
+    const joined = await runAt(SECOND, async () =>
       ok(
         await createFindingTools().execute("note_finding", {
-          headline: "The same finding.", account: "Met a third time, from a public run.", claim_id: ids.claim,
+          headline: "The same finding.", account: "Met a third time, from a run at the second label.", claim_id: ids.claim,
           refs: [{ kind: "claim", id: ids.claim }], importance: 4, joins: ids.findingId,
         })
       )
     );
     expect(joined.finding_id).toBe(ids.findingId);
-    expect(await labelOf("agent_findings", ids.findingId)).toBe(SECOND);
+    expect(await labelOf("agent_findings", ids.findingId)).toBe(PUBLIC_LABEL);
     const sightings = await rawQuery<{ sensitivity_label: string }>(
       `SELECT sensitivity_label FROM agent_finding_sightings WHERE finding_id = $1 ORDER BY noted_at`,
       [ids.findingId]
     );
-    expect(sightings.map((s) => s.sensitivity_label)).toEqual([SECOND, PUBLIC_LABEL]);
+    expect(sightings.map((s) => s.sensitivity_label)).toEqual([PUBLIC_LABEL, SECOND]);
+
+    const restricted = await oneRunAt(SECOND);
+    const refused = JSON.parse(
+      (await runAt(null, () =>
+        createFindingTools().execute("note_finding", {
+          headline: "The same finding.", account: "Met from a public run.", claim_id: restricted.ids.claim,
+          refs: [{ kind: "claim", id: restricted.ids.claim }], importance: 4, joins: restricted.ids.findingId,
+        })
+      ))!
+    );
+    expect(refused).toMatchObject({ success: false, status: "not_recorded" });
+    expect(await rawQuery(`SELECT 1 FROM agent_finding_sightings WHERE finding_id = $1 AND sensitivity_label = $2`, [restricted.ids.findingId, PUBLIC_LABEL])).toEqual([]);
   });
 
   it("leaves a setup part at the label of the run that first stored its text, whichever came first", async () => {

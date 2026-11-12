@@ -34,7 +34,7 @@ import {
 import { setStatementObserver } from "../db/statement-observer.js";
 import { writesGraph } from "../db/graph-writes.js";
 import { MissingLabelError, PUBLIC_LABEL } from "../labels.js";
-import { leaveSystemClearance, setSessionContextReader } from "../db/clearance.js";
+import { leaveSystemClearance, setSessionContextReader, startedHere } from "../db/clearance.js";
 
 export interface UsageContext {
   userId?: string | null;
@@ -204,7 +204,9 @@ export function runAtLabel<T>(label: string | null | undefined, work: string, fn
   // into the run. What a run may read follows from its own label. Nor is it
   // system work: a worker that found the row while seeing every label
   // (withSystemClearance) runs it seeing only what the row's label reads.
-  return leaveSystemClearance(() => runWithUsageContext({ label, clearance: undefined }, fn));
+  // What `fn` hands back is started inside: a query built here and awaited
+  // by the caller would otherwise run on the caller's connection.
+  return leaveSystemClearance(() => runWithUsageContext({ label, clearance: undefined }, () => startedHere(fn())));
 }
 
 export function runWithUsageContext<T>(
@@ -255,7 +257,7 @@ export function withAgent<T>(agent: string, fn: () => T): T {
   // and says so on its context so that the reads agree with the stamps.
   const label = getUsageContext().label ?? PUBLIC_LABEL;
   return leaveSystemClearance(() =>
-    runWithUsageContext({ label, clearance: undefined }, () => openAgentRun(agent, fn))
+    runWithUsageContext({ label, clearance: undefined }, () => openAgentRun(agent, () => startedHere(fn())))
   );
 }
 

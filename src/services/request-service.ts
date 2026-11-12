@@ -10,7 +10,7 @@
  * on a request is recorded with its outcome, and every outcome (a negative
  * result, a finding that it cannot be met, a refusal) is a complete one.
  */
-import { rawQuery, withTransaction } from "../db/client.js";
+import { rawQuery, requestTextMatch, withTransaction } from "../db/client.js";
 import {
   CLOSED_REQUEST_STATES,
   REQUEST_OUTCOMES,
@@ -869,7 +869,7 @@ export async function listRequests(opts: {
       where.push(`(r.text_search @@ ${tsq} OR ${similarity} > $${params.length})`);
       order = `COALESCE(${similarity}, 0) DESC, ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
     } else {
-      where.push(`r.text_search @@ ${tsq}`);
+      where.push(await requestTextMatch("r", tsq));
       order = `ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
     }
   }

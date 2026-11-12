@@ -35,6 +35,7 @@
  * exist (#553): its text could carry run-specific material.
  */
 import { rawQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { KNOWN_ROLES } from "../llm/prompts/known-roles.js";
@@ -144,8 +145,22 @@ function partKey(p: { kind: string; name: string; hash: string }): string {
  * numbers of one (kind, name) count every label's texts together. Telling
  * those apart takes a key with the label in it, or a record of which labels
  * have used a part, which is later work with the rest of the reads.
+ *
+ * Because one row and one run of version numbers serve every label, the
+ * store is done seeing every label (db/clearance.ts): a run that could not
+ * see another label's parts would number its own text with a version
+ * already taken, or store nothing where its text was first stored
+ * elsewhere, and its log would name a part that failed to store. Reading
+ * a part is held to the reader's clearance like any read.
  */
 export async function storeSetupParts(parts: readonly SetupPart[], label: string = currentLabel()): Promise<void> {
+  return withSystemClearance(
+    "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",
+    () => storeSetupPartsSeeingAll(parts, label)
+  );
+}
+
+async function storeSetupPartsSeeingAll(parts: readonly SetupPart[], label: string): Promise<void> {
   const commit = loadConfig().gitSha ?? null;
   for (const p of parts) {
     const key = partKey(p);

@@ -172,10 +172,17 @@
  * the table, so the worker checks that the label it carries is defined and
  * refuses the message if it is not (UndefinedLabelError).
  *
- * The public graph has one label, the one named here, and no pairs. No
- * reader and no run is held to a clearance yet: the rows carry their
- * labels and the writes stamp them, and what a holder of one label may
- * read of another is later work.
+ * The public graph has one label, the one named here, and no pairs, and
+ * there nothing is held: every query runs as it always did. Where a
+ * deployment defines a second label, the database holds every read and
+ * write to a clearance, the set of labels a run or a reader may read
+ * (db/clearance.ts): a run reads its own label and the labels it reads, a
+ * request reads what its account was granted, and work with nothing in
+ * context reads `public` alone. An insert that names no label is given
+ * the label of the connection it arrives on, so a forgotten stamp inside
+ * a run lands at the run's label. Each label keeping its own judgment of
+ * a node, and its own copy of a source, is later work; until then a
+ * judgment is replaced only by work at its own label.
  */
 
 /** The label of everything on the public graph, and of any write made outside a run. */

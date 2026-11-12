@@ -78,6 +78,19 @@ export class ClearanceError extends Error {
   }
 }
 
+/**
+ * Whether an insert was refused because a row with the same identity
+ * already exists at a label the work does not read (the database's
+ * unseen_collision_guard, SQLSTATE MVL03). A table holds one row for each
+ * identity whatever the labels, so until each label keeps its own, such an
+ * insert is refused and says why. A caller for whom "already there" is all
+ * it needed to know (a feed item another label's poll recorded first, say)
+ * asks this and carries on; everyone else lets the refusal stand.
+ */
+export function isUnseenCollision(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "MVL03";
+}
+
 // ---- system work ------------------------------------------------------------
 
 const systemStore = new AsyncLocalStorage<{ reason: string } | null>();
@@ -103,12 +116,30 @@ export function withSystemClearance<T>(reason: string, fn: () => T): T {
   if (reason.trim().length === 0) {
     throw new ClearanceError("withSystemClearance needs the reason the work must see every label");
   }
-  return systemStore.run({ reason }, fn);
+  return systemStore.run({ reason }, () => startedHere(fn()));
 }
 
 /** Run `fn` outside any enclosing withSystemClearance. Called by runAtLabel. */
 export function leaveSystemClearance<T>(fn: () => T): T {
-  return systemStore.getStore() ? systemStore.run(null, fn) : fn();
+  return systemStore.getStore() ? systemStore.run(null, () => startedHere(fn())) : fn();
+}
+
+/**
+ * A query builder is run when it is awaited, not when it is made. One
+ * handed back unrun from a function that sets the session (this file's, or
+ * runAtLabel) would be awaited by the caller, outside, and run on the
+ * caller's connection: a run's query at system clearance, if the caller is
+ * a worker. So what such a function hands back is started before it
+ * returns: anything that can be awaited and is not already a promise is
+ * turned into one here, inside. Everything else is returned as it is.
+ */
+export function startedHere<T>(result: T): T {
+  if (result instanceof Promise) return result;
+  const then = (result as { then?: unknown } | null | undefined)?.then;
+  if (typeof then !== "function") return result;
+  return new Promise((resolve, reject) => {
+    (then as (ok: (v: unknown) => void, no: (e: unknown) => void) => void).call(result, resolve, reject);
+  }) as unknown as T;
 }
 
 /** The reason of the enclosing withSystemClearance, or null outside any. */
@@ -183,13 +214,25 @@ export function sessionOptions(session: Session): string {
 }
 
 /**
- * The cleared role's password, derived from the owner's connection string.
- * Every process of a deployment shares DATABASE_URL and so derives the same
- * one, with no second secret to configure or rotate. It gives nothing to
- * anyone who does not already hold the owner's credentials.
+ * The cleared role's password, derived from the owner's credentials in
+ * DATABASE_URL. Every process of a deployment shares those and so derives
+ * the same one, with no second secret to configure or rotate. It gives
+ * nothing to anyone who does not already hold the owner's credentials.
+ *
+ * Only the credentials go in, not the host or the database's name: a role
+ * belongs to the whole database server, so every database on it that the
+ * same owner uses must agree on the password. Two deployments with
+ * different owners on one server would not, and should not share one.
  */
 export function clearedRolePassword(databaseUrl: string): string {
-  return createHmac("sha256", databaseUrl).update(`${CLEARED_ROLE} login`).digest("hex");
+  let credentials = databaseUrl;
+  try {
+    const url = new URL(databaseUrl);
+    credentials = `${url.username}:${url.password}`;
+  } catch {
+    // Not a URL: the whole string is the secret.
+  }
+  return createHmac("sha256", credentials).update(`${CLEARED_ROLE} login`).digest("hex");
 }
 
 // ---- whether enforcement is on ----------------------------------------------

@@ -235,6 +235,43 @@ export async function currentReadClearance(): Promise<string[] | null> {
   return session.role === "cleared" ? normalizeClearance(session.clearance) : ["public"];
 }
 
+/**
+ * Whether the work in progress is on a connection the policies bind. False
+ * on a deployment whose only label is `public`, and for system work.
+ */
+export async function readsAreHeld(): Promise<boolean> {
+  return (await currentSession(ownerQuery)).role === "cleared";
+}
+
+/**
+ * What the search queries read claims from, so that keyword search keeps
+ * its index whether or not reads are held.
+ *
+ * Where they are not, it is the table, and the query is exactly what it
+ * always was. Where they are, a full-text match on the table could not use
+ * the index: a row-level security policy is tested before any condition
+ * Postgres cannot prove harmless on rows the reader may not see, and a
+ * full-text match is one of those, so the table would be read whole. The
+ * search then reads a view that applies the same clearance as an ordinary
+ * condition (minerval_readable.claims_search, created with the policies)
+ * and exposes the columns search uses. Everything the search joins to is
+ * still read from its table under the policy.
+ */
+export async function searchableClaims(): Promise<string> {
+  return (await readsAreHeld()) ? "minerval_readable.claims_search" : "claims";
+}
+
+/**
+ * A full-text match on requests, for the same reason: the plain condition
+ * where reads are not held, and where they are, the ids the match finds
+ * through a view that applies the clearance (minerval_readable.
+ * requests_text), with the rows read from the table under the policy.
+ */
+export async function requestTextMatch(alias: string, tsquery: string): Promise<string> {
+  if (!(await readsAreHeld())) return `${alias}.text_search @@ ${tsquery}`;
+  return `${alias}.id IN (SELECT readable.id FROM minerval_readable.requests_text readable WHERE readable.text_search @@ ${tsquery})`;
+}
+
 /** 28P01: wrong password. 28000: the role may not log in. */
 function loginRefused(err: unknown): boolean {
   const code = (err as { code?: string }).code;
