@@ -9,7 +9,7 @@
  */
 import { runAtSourceLabel } from "./label-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
-import { logAdministrativeEvent } from "./permission-service.js";
+import { OWN_ORGANIZATION_SETUP_NAME, logAdministrativeEvent } from "./permission-service.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UNIQUE_VIOLATION = "23505";
@@ -77,6 +77,22 @@ export async function addParty(input: {
   }
   try {
     const party = await withTransaction(async (tx) => {
+      // The organization's own party exists from setup, under a placeholder
+      // name (permission-service.ts, establishFirstAdministrator). Adding
+      // "the organization itself" while it still has that name gives it its
+      // name. The row, and the grants of release for it, stay as they are.
+      if (input.isOwnOrganization === true) {
+        const [named] = await tx.query<PartyRow>(
+          `UPDATE parties SET name = $1, created_by = $2
+            WHERE is_own_organization AND created_by IS NULL AND name = $3
+            RETURNING id, name, is_own_organization, created_at`,
+          [name, input.actorId, OWN_ORGANIZATION_SETUP_NAME]
+        );
+        if (named) {
+          await logAdministrativeEvent(tx, "own_organization_named", input.actorId, { party_id: named.id });
+          return named;
+        }
+      }
       const [row] = await tx.query<PartyRow>(
         `INSERT INTO parties (name, is_own_organization, created_by)
          VALUES ($1, $2, $3)

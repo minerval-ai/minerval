@@ -246,10 +246,17 @@ describe("the first administrator", () => {
     const held = rows.map((r) => (r.label ? `${r.permission}@${r.label}` : r.permission)).sort();
     expect(held).toEqual(expect.arrayContaining(["administer", "direct", "fund", "read@internal", "read@restricted", "read_sources@internal", "read_sources@partner-a"]));
     expect(held).not.toContain("read@public");
+    // The organization itself is a party from setup, and the person who set the deployment up releases for it.
+    const own = await rawQuery<{ name: string; holds: boolean }>(
+      `SELECT p.name, EXISTS (SELECT 1 FROM permission_grants g WHERE g.party_id = p.id AND g.account_id = $1 AND g.permission = 'release' AND g.removed_at IS NULL) AS holds
+         FROM parties p WHERE p.is_own_organization`,
+      [admin.id]
+    );
+    expect(own).toEqual([{ name: "This organization", holds: true }]);
 
     const mine = (await as(admin, { url: "/permissions/mine" })).json();
     expect(mine.member).toBe(true);
-    expect(mine.permissions).toEqual(["direct", "fund", "read", "read_sources", "administer"]);
+    expect(mine.permissions).toEqual(["direct", "release", "fund", "read", "read_sources", "administer"]);
   });
 
   it("is established once: signing in again grants nothing more", async () => {
@@ -662,13 +669,8 @@ describe("an MCP caller and the Assistant", () => {
     await wider.close();
 
     const everything = await openAccountTools(app, assistantAuth({ id: admin.id, externalId: admin.externalId }), "t3");
-    // The first administrator holds every permission that is held with no scope. Releasing is
-    // granted for one party, so its two tools wait for that grant.
-    expect(everything.withheld).toEqual([
-      { permission: "release", tool: "get_release_queue" },
-      { permission: "release", tool: "list_release_rules" },
-    ]);
-    expect(permissionsNote(everything.withheld!)).toMatch(/Without the permission to release one party's material: get_release_queue, list_release_rules/);
+    expect(everything.withheld).toEqual([]);
+    expect(permissionsNote(everything.withheld!)).toBe("");
     // No one is offered a tool that changes who may do what: those take a session.
     const all = everything.definitions.map((d) => d.name);
     expect(all.filter((n) => /grant_permission|remove_permission|add_party|define_label|set_source_party/.test(n))).toEqual([]);

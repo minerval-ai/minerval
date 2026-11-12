@@ -328,7 +328,7 @@ export const accountGroups = pgTable(
 // `detail`.
 //
 // `action` is a name the code gives the act ('label_defined',
-// 'label_read_added', 'label_read_removed', 'party_added',
+// 'label_read_added', 'label_read_removed', 'party_added', 'own_organization_named',
 // 'source_party_set'). It is not held to a list here, so that a later kind
 // of administrative act is a new name and not a migration. actor_id is the
 // administrator who did it; null only for a change no person made.

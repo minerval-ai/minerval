@@ -235,7 +235,8 @@ afterAll(async () => {
   await rawQuery(`DELETE FROM permission_grants`);
   await rawQuery(`DELETE FROM account_groups`);
   await rawQuery(`DELETE FROM label_reads WHERE label = ANY($1::text[])`, [MINE]);
-  await rawQuery(`DELETE FROM parties WHERE name = $1`, [OWN_ORGANIZATION]).catch(() => undefined);
+  // The organization's own party, made when this file's first administrator signed in.
+  await rawQuery(`DELETE FROM parties WHERE name = $1 OR (is_own_organization AND created_by IS NULL)`, [OWN_ORGANIZATION]).catch(() => undefined);
 });
 
 beforeEach(() => {

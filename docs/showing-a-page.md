@@ -68,9 +68,12 @@ Every act on a showing is a row that names who did it and the permissions
 they held then (`showing_acts`), so a reader on the other side can see when
 a person who directed the work also released it.
 
-A deployment must have said which party is the organization itself before
-anything can be shown (`parties.is_own_organization`), because a part that
-rests on no outside party's material is the organization's to release.
+A part that rests on no outside party's material is the organization's to
+release, so the organization itself must be a party
+(`parties.is_own_organization`). It is from setup, and the person who set
+the deployment up holds `release` for it ([accounts.md](accounts.md)). A
+deployment set up before that was so is refused, with the reason, until an
+administrator adds the party.
 
 ## The parts of a page
 

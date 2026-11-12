@@ -372,6 +372,16 @@ administrator, they are granted every permission: `direct`, `fund` and
 like any other, marked as made by the setting. From then on they hand
 permissions out, to themselves included when they define a new label.
 
+The organization itself is a party from that moment. If the deployment has
+none, one is made then under the name "This organization", and the first
+administrator holds `release` for it: a part of a shown page that rests on
+no outside party's material is the organization's to release
+([showing-a-page.md](showing-a-page.md)). Adding a party as the organization
+itself (`POST /parties` with `is_own_organization`) while it still has that
+name gives it its name. A deployment whose first administrator was
+established before this existed has no such party until an administrator
+adds one, and is told so when a page is first asked to be shown.
+
 The setting works once. Once any administrator has existed, removed ones
 included, it does nothing whatever it says, so a person the administrators
 later removed cannot return by signing in, and a stale setting grants no

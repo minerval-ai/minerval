@@ -168,7 +168,17 @@ export async function recordSignInGroups(accountId: string, groups: readonly unk
  * with no scope, the two reading permissions at each label that exists
  * besides `public`, and release for each party that exists. Each is a row
  * marked as granted by the setting. Returns whether it granted.
+ *
+ * The organization itself is a party from this moment: the row is made here
+ * if the deployment has none, under a placeholder name an administrator
+ * replaces (party-service.ts, addParty). A part of a page that rests on no
+ * outside party's material is the organization's to release
+ * (services/showing-service.ts), so without this row and the grant for it
+ * nobody could release anything until an administrator had thought to add
+ * both.
  */
+export const OWN_ORGANIZATION_SETUP_NAME = "This organization";
+
 export async function establishFirstAdministrator(account: {
   id: string;
   externalId: string | null;
@@ -208,6 +218,14 @@ function establish(account: { id: string; externalId: string | null }): Promise<
     for (const { name } of labels) {
       await insert("read", name, null);
       await insert("read_sources", name, null);
+    }
+    const [own] = await tx.query<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    if (!own) {
+      const [made] = await tx.query<{ id: string }>(
+        `INSERT INTO parties (name, is_own_organization) VALUES ($1, true) RETURNING id`,
+        [OWN_ORGANIZATION_SETUP_NAME]
+      );
+      await logAdministrativeEvent(tx, "party_added", account.id, { party_id: made!.id });
     }
     const parties = await tx.query<{ id: string }>(`SELECT id FROM parties ORDER BY created_at, id`);
     for (const { id } of parties) await insert("release", null, id);
@@ -560,6 +578,8 @@ export type AdministrativeAction =
   | "label_read_added"
   | "label_read_removed"
   | "party_added"
+  // The organization's own party, made at setup under a placeholder name, was given its name.
+  | "own_organization_named"
   | "source_party_set";
 
 export interface LogEntry {
