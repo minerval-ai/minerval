@@ -78,9 +78,9 @@ const MIRROR_REQUEST =
 
 /** That work on a mirrored node at the node's own label is not done here, and why. */
 const MIRROR_NO_PUBLIC_PASS =
-  `No pass on a mirrored node at ${tick(PUBLIC_LABEL)} is opened, paid for or run in this deployment: its ` +
-  `assessment there is the public graph's own, and a second one made here would be this deployment's, shown ` +
-  `to readers as the public graph's. A fresh public assessment is funded on the public graph.`;
+  `No pass on a mirrored node at ${tick(PUBLIC_LABEL)} is opened, paid for or run in this deployment: an ` +
+  `assessment of it made here at ${tick(PUBLIC_LABEL)} would be this deployment's, shown to readers as the ` +
+  `public graph's. A fresh public assessment is funded on the public graph.`;
 
 /** The start of the note, by which a first message that already carries one is known. */
 export const LABEL_NOTE_HEADING = "## This run's label\n\n";

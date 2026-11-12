@@ -224,8 +224,8 @@ describe("on a deployment that mirrors the public graph", () => {
     expect(note).toContain("A mirrored row is not changed by any run in this deployment, at any label");
     expect(note).toContain(
       "On a mirrored node the version at `public` is the public graph's own assessment. No pass on a mirrored node " +
-        "at `public` is opened, paid for or run in this deployment: its assessment there is the public graph's own, " +
-        "and a second one made here would be this deployment's, shown to readers as the public graph's. A fresh " +
+        "at `public` is opened, paid for or run in this deployment: an assessment of it made here at `public` would " +
+        "be this deployment's, shown to readers as the public graph's. A fresh " +
         "public assessment is funded on the public graph. If you judge that the public graph has a mirrored node " +
         "wrong, in its wording, its structure or its assessment, that is a request (file_request, where your role " +
         "has it; otherwise say so in what you report). A request about a mirrored node stays in this deployment " +
@@ -239,7 +239,7 @@ describe("on a deployment that mirrors the public graph", () => {
     expect(note).toContain(
       "On a mirrored node the version at `public` is the public graph's own assessment, which arrives with the " +
         "mirror, and no run in this deployment records one. No pass on a mirrored node at `public` is opened, paid " +
-        "for or run in this deployment: its assessment there is the public graph's own, and a second one made here " +
+        "for or run in this deployment: an assessment of it made here at `public` " +
         "would be this deployment's, shown to readers as the public graph's. A fresh public assessment is funded on " +
         "the public graph. If you judge that the public graph has a mirrored node wrong, that is a request " +
         "(file_request)."
@@ -257,8 +257,8 @@ describe("on a deployment that mirrors the public graph", () => {
         "graph would overwrite the change, and until then readers would take it for the public graph's own. A tool " +
         "that would change one refuses and says so. What this run adds to a mirrored node (an argument, a subclaim, " +
         "a source) is a row of this deployment's own, beside what is there. No pass on a mirrored node at `public` " +
-        "is opened, paid for or run in this deployment: its assessment there is the public graph's own, and a " +
-        "second one made here would be this deployment's, shown to readers as the public graph's. A fresh public " +
+        "is opened, paid for or run in this deployment: an assessment of it made here at `public` would be this " +
+        "deployment's, shown to readers as the public graph's. A fresh public " +
         "assessment is funded on the public graph. No run here records an assessment of a mirrored node " +
         "either.\n\n" +
         "If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its " +

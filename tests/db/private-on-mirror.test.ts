@@ -1073,7 +1073,7 @@ describe("what a run is told", () => {
     expect(labelNote(A, [A, PUBLIC_LABEL], { writesJudgments: true, mirror: null })).toBe(plain);
     // A deployment that mirrors and has one label has no label note: the passage stands alone.
     expect(mirrorNote({ publicGraphAsOf: asOf }, { writesJudgments: true })).toContain(
-      "No pass on a mirrored node at `public` is opened, paid for or run in this deployment: its assessment there is the public graph's own"
+      "No pass on a mirrored node at `public` is opened, paid for or run in this deployment: an assessment of it made here at `public` would be this deployment's"
     );
   });
 });

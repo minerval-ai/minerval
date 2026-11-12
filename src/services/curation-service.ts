@@ -404,7 +404,7 @@ export function convergenceConcern(publicNodeId: string, similarity: number): st
   return (
     `The public graph now holds a node unusually like this one (embedding similarity ` +
     `${similarity.toFixed(3)}): ${publicNodeId}, which arrived with the mirror. They may be one claim, ` +
-    `counterparts, or simply neighbours; decide which, and do nothing if they are distinct. If they are ` +
+    `counterparts, or simply neighbors; decide which, and do nothing if they are distinct. If they are ` +
     `one, this node is the one to fold in: merge_claims with the public node as the survivor moves what ` +
     `is recorded on this node (its sources, arguments and edges) onto the public node, each row at the ` +
     `label it has, and its judgment is then made again there at that label. The public node cannot be ` +
