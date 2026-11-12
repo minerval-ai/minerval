@@ -31,6 +31,11 @@ retention_days = 30
 use = false
 ```
 
+Two settings are structured, and are written as TOML's own structures: the
+model endpoints a deployment runs itself are one `[[model_providers.endpoints]]`
+group each, and the labels each provider is cleared for are the lines of
+`[provider_labels]`. Both are described under their groups below.
+
 [`deploy/minerval.example.toml`](../deploy/minerval.example.toml) is public
 Minerval's own settings, written out, with a comment on each group. Copy it
 and change what you need.
@@ -91,7 +96,9 @@ dot (`run_log.mode`).
 
 Which model serves each role. An id starting `claude-` is served by
 Anthropic, one starting `gpt-` by OpenAI, and a `vendor/model` id by
-OpenRouter; the provider's key must be in the environment.
+OpenRouter; the provider's key must be in the environment. An id of the form
+`endpoint:<name>/<model>` is served by a model endpoint the deployment
+declares under `[[model_providers.endpoints]]`, below.
 
 | Name | The role | Environment variable |
 |---|---|---|
@@ -122,9 +129,64 @@ OpenRouter; the provider's key must be in the environment.
 |---|---|---|
 | `openrouter_provider_sort` | How OpenRouter picks among a model's hosts: `"price"`, `"throughput"` or `"latency"`. Left out, OpenRouter decides. | `OPENROUTER_PROVIDER_SORT` |
 
-The providers' keys are secrets (above). There is no setting yet for a
-provider's address; a model endpoint of the deployment's own is separate
-work.
+The providers' keys are secrets (above).
+
+#### `[[model_providers.endpoints]]`
+
+A deployment can serve open-weight models from a server it runs itself
+(vLLM, llama.cpp's server, TGI, Ollama), beside or instead of the hosted
+providers ([architecture.md](architecture.md), "Providers"). Each server is one group, headed `[[model_providers.endpoints]]`
+with double brackets, and the groups together are the setting `endpoints`,
+whose environment variable is `MODEL_ENDPOINTS` (the same list as JSON).
+
+```toml
+[[model_providers.endpoints]]
+name = "local"
+base_url = "http://vllm.internal:8000/v1"
+key_env = "LOCAL_LLM_KEY"
+input_usd_per_mtok = 0.5
+output_usd_per_mtok = 1.5
+```
+
+| Name | What it sets | In `MODEL_ENDPOINTS` |
+|---|---|---|
+| `name` | What model ids and `[provider_labels]` call the endpoint: a role's model is `"endpoint:local/<model>"`, and its clearance is the line `"endpoint:local"`. Lower-case letters, digits, `-` and `_`. | `name` |
+| `base_url` | Where its OpenAI-compatible API is served, up to and including the version segment. | `baseUrl` |
+| `key_env` | The name of the environment variable that holds the endpoint's key, never the key, so the file holds no secret. Left out for an endpoint that takes no key. | `keyEnv` |
+| `input_usd_per_mtok`, `output_usd_per_mtok` | What a call costs, in US dollars per million tokens. Both are required: budgets and owls are counted in this cost, and only the deployment knows what its own hardware costs. A deployment that counts its endpoint as free writes `0`. | `inputUsdPerMtok`, `outputUsdPerMtok` |
+
+#### `[provider_labels]`
+
+Which labels each model provider and each outside service may be sent text
+at ([architecture.md](architecture.md), "Providers cleared by label"). One
+line for each provider: its name, and the list of labels it is cleared for.
+The environment variable is `PROVIDER_LABELS` (the same lines as one JSON
+object).
+
+```toml
+[provider_labels]
+anthropic = ["public", "internal"]
+"endpoint:local" = ["public", "internal", "restricted"]
+embeddings = ["public", "internal"]
+```
+
+The names are `anthropic`, `openai` and `openrouter`; `"endpoint:<name>"`
+for each declared endpoint, in quotes because of the colon; and the outside
+services `embeddings`, `web_search`, `web_pages`, `elicit` and `pangram`.
+
+A provider with no line is cleared for `public` and for nothing else, so a
+deployment with only the `public` label needs no `[provider_labels]` at all,
+and a deployment that defines another label sends nothing at that label
+anywhere until a line here says who may receive it. A provider with a line
+is cleared for exactly the labels on it, so `[]` clears it for none,
+`public` included. Labels are named, never created, here: a name that is not
+a defined label refuses every call until it is defined or corrected, and the
+preflight check `provider_labels` says which name.
+
+Two mistakes in these settings stop the server at start with a message that
+uses the environment variables' names, because they can only be found once
+both settings are read: a line in `[provider_labels]` for a name that is not
+a provider here, and a role's model on an endpoint that is not declared.
 
 #### `[outside_services.elicit]`, `[outside_services.pangram]`, `[outside_services.payments]`
 
@@ -277,7 +339,17 @@ the blocking checks.
 
 On a deployment with only the `public` label, which is public Minerval,
 every check is information. Nothing is refused, and the server starts as it
-always has.
+always has. The three clearance checks (`model_clearance`,
+`embeddings_clearance`, `outside_service_clearance`) do not apply there and
+say so: every provider is cleared for `public` unless `[provider_labels]`
+says otherwise, and there is no other label.
+
+The clearance checks do not treat an outside service that is not cleared as
+a fault. Which outside party may be sent private text is the deployment's
+choice, and leaving one uncleared sends nothing out. So `embeddings_clearance`
+and `outside_service_clearance` pass and state what each label goes without.
+Only a role whose own model cannot serve a label fails, because agent work
+at that label does not run at all.
 
 ### The checks
 
@@ -286,11 +358,15 @@ always has.
 | `config_file` | Which file the settings were read from, and which of its settings the environment overrides. | no |
 | `database` | The database can be reached, has the pgvector extension, and has applied every migration the code has. It also fails when the database was migrated by newer code, and when a migration is waiting that the migrator would pass over. | yes |
 | `run_log` | A test run is written to the run log, sealed, checked against its seal and removed. Where private material is held, the log must also be in record mode. | yes |
-| `models` | Every role's model resolves to a provider whose key is set. Roles of a feature that is off are left out. No provider is called. | no |
+| `models` | Every role's model resolves to a provider whose key is set. A model on one of the deployment's own endpoints needs the endpoint declared, and the variable its `key_env` names set if it has one. Roles of a feature that is off are left out. No provider is called. | no |
+| `provider_labels` | Every label `[provider_labels]` names is a defined label. A name that is not refuses every model call and every call to an outside service, at every label, so nothing is lost by holding agent work back until it is put right. | yes |
+| `model_clearance` | For each label besides `public`, the provider of every role's model is cleared for it. It fails naming the label, the provider and the roles whose runs there would be refused. It does not block: there is one gate for the whole deployment, so closing it would also stop the work at the labels that are served, and a refused run sends nothing. | no |
 | `embeddings` | `OPENAI_API_KEY` is set. | no |
+| `embeddings_clearance` | For each label besides `public`, whether embeddings are cleared for it. Where they are not, it passes and says what that label goes without: rows written there have no vector, and a search there matches on keywords. | no |
 | `web_search` | Every role that searches the web has what its search needs: models Anthropic does not search for go through OpenRouter and need its key. | no |
 | `page_reading` | Nothing to configure; it says that page reading has no off switch. | no |
 | `elicit`, `pangram` | The service is off, or on with its key. Switched on with no key fails. | no |
+| `outside_service_clearance` | For each label besides `public`, which of open-web search through OpenRouter, page reading, Elicit and Pangram are cleared for it, which are not, and which are not in use at all. It passes either way and says what runs at the label go without, and that roles on models Anthropic searches for still search the web under Anthropic's clearance. | no |
 | `payments` | Payments are off, or on with both Stripe keys. One key without the other, or a secret key that is not a Stripe key, fails. | no |
 | `github_issues` | No repository is named, or one is named and a credential is set. A repository with no credential, or with half of the GitHub App's settings, fails. | no |
 | `reports_stay_inside` | Where private material is held, no issue repository is configured. | yes |
@@ -314,7 +390,8 @@ in one place (`src/workers/agent-work-gate.ts`), behind the gate:
 - A deployment that holds only public material is asked one question (is
   `public` the only label?) and its work starts. No check runs.
 - A deployment that holds private material starts no agent work until
-  `database`, `run_log` and `reports_stay_inside` all pass. The server logs
+  `database`, `run_log`, `provider_labels` and `reports_stay_inside` all
+  pass. The server logs
   one line naming each failed check with its sentence. The API still starts
   and serves, so `GET /setup/preflight` can be read.
 - The gate is looked at again every minute. Work that was refused starts
@@ -338,5 +415,6 @@ do not ask it.
 The checks that fail without blocking are still failures: `npm run
 preflight` exits non-zero on them. They do not stop work because the
 deployment can run without them being right (a missing key fails the calls
-that need it, loudly), or because, like `work_outside_the_run_log`, no
-setting can make them pass yet.
+that need it, loudly, and a run whose model's provider is not cleared for
+its label is refused before anything is sent), or because, like
+`work_outside_the_run_log`, no setting can make them pass yet.

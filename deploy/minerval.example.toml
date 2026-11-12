@@ -20,7 +20,8 @@ off = []
 
 # Which model serves each role. An id starting "claude-" is served by
 # Anthropic, "gpt-" by OpenAI, and "vendor/model" by OpenRouter; the
-# provider's key must be in the environment.
+# provider's key must be in the environment. "endpoint:<name>/<model>" is
+# served by a model endpoint this deployment declares below.
 [models]
 steward = "claude-opus-5-5"
 steward_strong = "claude-fable-5-2"
@@ -57,6 +58,20 @@ judge = "claude-sonnet-5-5"
 # "latency". Left out, OpenRouter decides.
 # openrouter_provider_sort = "throughput"
 
+# A model server this deployment runs itself (vLLM, llama.cpp's server, TGI,
+# Ollama), one group for each. Public Minerval declares none. A role's model
+# "endpoint:local/<model>" is served by the endpoint named "local". key_env
+# is the name of the environment variable that holds its key, never the key;
+# leave it out for an endpoint that takes none. The two prices are what a
+# call costs in US dollars per million tokens, and are required: budgets and
+# owls are counted in them. Write 0 for an endpoint counted as free.
+# [[model_providers.endpoints]]
+# name = "local"
+# base_url = "http://vllm.internal:8000/v1"
+# key_env = "LOCAL_LLM_KEY"
+# input_usd_per_mtok = 0.5
+# output_usd_per_mtok = 1.5
+
 # Elicit, a paid scholarly search the Steward can use. `use` says whether
 # this deployment uses it at all; its key is ELICIT_API_KEY.
 [outside_services.elicit]
@@ -91,6 +106,19 @@ include_external_reports = true
 api_base_url = "https://api.github.com"
 app_id = "4911585"
 app_installation_id = "160924398"
+
+# The labels each model provider and outside service may be sent text at,
+# one line for each. Public Minerval has none: a provider with no line is
+# cleared for "public" and nothing else, which is all the public graph has.
+# A deployment that defines another label sends nothing at it to anyone
+# until a line here says who may receive it. The names are anthropic,
+# openai, openrouter, "endpoint:<name>" for each endpoint above, and the
+# outside services embeddings, web_search, web_pages, elicit and pangram.
+# An empty list clears a provider for no label, "public" included.
+# [provider_labels]
+# anthropic = ["public", "internal"]
+# "endpoint:local" = ["public", "internal"]
+# embeddings = ["public", "internal"]
 
 # How much a run depends on its log (docs/run-log.md). "best_effort": a step
 # that cannot be written is noted and the run carries on. "record": the run
