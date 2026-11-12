@@ -61,6 +61,15 @@ async function freshConfig() {
   return import("../../src/config.js");
 }
 
+/**
+ * The heading a setting is written under: its group, or for a structured
+ * setting (model_providers.endpoints, provider_labels) the setting itself,
+ * which is written as groups of its own.
+ */
+function headingOf(key: { key: string; kind: string }): string {
+  return key.kind === "groups" || key.kind === "lists" ? key.key : key.key.slice(0, key.key.lastIndexOf("."));
+}
+
 function problemsOf(fn: () => unknown): string[] {
   try {
     fn();
@@ -78,9 +87,19 @@ describe("the table of settings", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(envs).size).toBe(envs.length);
     for (const key of settableConfigFileKeys()) {
-      const group = key.key.slice(0, key.key.lastIndexOf("."));
+      const group = headingOf(key);
       expect(CONFIG_FILE_GROUPS[group], `a line on [${group}]`).toBeTruthy();
     }
+  });
+
+  it("puts a setting written as groups of its own last in its group, where its heading ends nothing", () => {
+    const keys = settableConfigFileKeys();
+    keys.forEach((key, i) => {
+      if (key.kind !== "groups") return;
+      const group = key.key.slice(0, key.key.lastIndexOf("."));
+      const later = keys.slice(i + 1).filter((k) => k.key.startsWith(`${group}.`));
+      expect(later.map((k) => k.key), key.key).toEqual([]);
+    });
   });
 
   it("maps every setting onto a field the config schema has", () => {
@@ -134,6 +153,31 @@ const SAMPLES: Record<string, { file: ConfigFileValue; loads?: unknown }> = {
   "outside_services.pangram.max_words": { file: 77 },
   "outside_services.github_issues.include_external_reports": { file: true },
   "outside_services.github_issues.repo": { file: "an-owner/a-repo" },
+  "model_providers.endpoints": {
+    file: [
+      {
+        name: "local",
+        base_url: "http://vllm.internal:8000/v1",
+        key_env: "LOCAL_LLM_KEY",
+        input_usd_per_mtok: 0.5,
+        output_usd_per_mtok: 1.5,
+      },
+      { name: "second", base_url: "https://models.example.test/v1", input_usd_per_mtok: 0, output_usd_per_mtok: 0 },
+    ],
+    loads: [
+      {
+        name: "local",
+        baseUrl: "http://vllm.internal:8000/v1",
+        keyEnv: "LOCAL_LLM_KEY",
+        inputUsdPerMtok: 0.5,
+        outputUsdPerMtok: 1.5,
+      },
+      { name: "second", baseUrl: "https://models.example.test/v1", inputUsdPerMtok: 0, outputUsdPerMtok: 0 },
+    ],
+  },
+  provider_labels: {
+    file: { anthropic: ["public", "internal"], "endpoint:local": ["public", "internal", "restricted"], pangram: [] },
+  },
   "run_log.mode": { file: "record" },
   "run_log.level": { file: "off" },
   "hosting.environment": { file: "staging" },
@@ -284,7 +328,7 @@ describe("what a file is refused for", () => {
   it("names an unknown group or setting, what is near it, and what the place holds", () => {
     expect(problemsOf(() => parse('[run_logs]\nmode = "record"\n'))).toEqual([
       "run_logs is not a group of settings. Did you mean run_log? The groups are: features, models, " +
-        "model_providers, outside_services, run_log, hosting, database, pricing.",
+        "model_providers, outside_services, provider_labels, run_log, hosting, database, pricing.",
     ]);
     expect(problemsOf(() => parse('[run_log]\nmodes = "record"\n'))).toEqual([
       "run_log.modes is not a setting. Did you mean run_log.mode? [run_log] holds: mode, level, retention_days.",
@@ -345,6 +389,62 @@ describe("what a file is refused for", () => {
     );
   });
 
+  it("takes the model endpoints as groups and the provider labels as lines, and says what is wrong in the file's names", () => {
+    const endpoint =
+      '[[model_providers.endpoints]]\nname = "local"\nbase_url = "http://localhost:8000/v1"\n' +
+      "input_usd_per_mtok = 0.5\noutput_usd_per_mtok = 1.5\n";
+    expect(parse(`${endpoint}[provider_labels]\n"endpoint:local" = ["public", "internal"]\nembeddings = []\n`)).toEqual({
+      "model_providers.endpoints": [
+        { name: "local", base_url: "http://localhost:8000/v1", input_usd_per_mtok: 0.5, output_usd_per_mtok: 1.5 },
+      ],
+      provider_labels: { "endpoint:local": ["public", "internal"], embeddings: [] },
+    });
+
+    // The JSON spelling of a name, and a key written where the name of its variable belongs.
+    expect(
+      problemsOf(() => parse('[[model_providers.endpoints]]\nname = "local"\nbaseUrl = "http://localhost:8000/v1"\n'))
+    ).toEqual([
+      'model_providers.endpoints entry 1 has "baseUrl", which is not a setting of one. ' +
+        "Each holds: name, base_url, key_env, input_usd_per_mtok, output_usd_per_mtok.",
+    ]);
+    // What an endpoint may be is the config schema's to say, here in the file's names, one finding each.
+    expect(
+      problemsOf(() =>
+        parse('[[model_providers.endpoints]]\nname = "local"\nbase_url = "ftp://x"\nkey_env = "sk-live 123"\n')
+      )
+    ).toEqual([
+      'model_providers.endpoints entry 1 ("local") needs a "base_url": the http or https address its ' +
+        'OpenAI-compatible API is served at, for example "http://localhost:8000/v1".',
+      'model_providers.endpoints entry 1 ("local") has a "key_env" that is not the name of an environment variable. ' +
+        'It names the variable that holds the endpoint\'s key (for example "LOCAL_LLM_KEY"), not the key itself.',
+      'model_providers.endpoints entry 1 ("local") needs "input_usd_per_mtok" and "output_usd_per_mtok": what a ' +
+        "call to it costs, in US dollars per million tokens, as numbers of 0 or more. Budgets and owls are " +
+        "counted in this cost, so it has no default.",
+    ]);
+    expect(problemsOf(() => parse(endpoint + endpoint))).toEqual([
+      'model_providers.endpoints declares "local" more than once. Each endpoint needs its own name.',
+    ]);
+    expect(problemsOf(() => parse('[model_providers]\nendpoints = "local"\n'))).toEqual([
+      "model_providers.endpoints must be one or more groups, each headed [[model_providers.endpoints]], " +
+        'but the file has the text "local".',
+    ]);
+    expect(problemsOf(() => parse('provider_labels = "public"\n'))).toEqual([
+      "provider_labels must be a group, headed [provider_labels], of lists of text " +
+        '(for example anthropic = ["public"]), but the file has the text "public".',
+    ]);
+    expect(problemsOf(() => parse('[provider_labels]\nanthropic = "public"\n'))).toEqual([
+      'provider_labels gives "anthropic" the text "public", and what each name has is a list of text in ' +
+        'square brackets (for example ["public"], or [] for none).',
+    ]);
+    expect(problemsOf(() => parse('[provider_labels]\nanthropic = ["public", " "]\n'))).toEqual([
+      'provider_labels gives "anthropic" a list with an empty name in it.',
+    ]);
+    expect(problemsOf(() => parse('MODEL_ENDPOINTS = "[]"\n'))).toEqual([
+      "MODEL_ENDPOINTS is an environment variable's name, not a setting in the file. " +
+        "In the file it is model_providers.endpoints.",
+    ]);
+  });
+
   it("refuses every secret, under its name in the file or its environment variable's, naming the variable to use", () => {
     for (const key of secretConfigFileKeys()) {
       const group = key.key.slice(0, key.key.lastIndexOf("."));
@@ -396,6 +496,12 @@ describe("writing settings back", () => {
     "hosting.cors_origins": [],
     "pricing.cap_source_ingest_owls": 0.1,
     "pricing.owl_packs": ["5:2000:Clutch", "25:9000:Perch", "100:30000:Wisdom", "500:100000:Parliament"],
+    "model_providers.openrouter_provider_sort": "price",
+    "model_providers.endpoints": [
+      { name: "local", base_url: "http://localhost:8000/v1", input_usd_per_mtok: 0.5, output_usd_per_mtok: 1.5 },
+      { name: "second", base_url: "http://localhost:8001/v1", key_env: "SECOND_KEY", input_usd_per_mtok: 0, output_usd_per_mtok: 0 },
+    ],
+    provider_labels: { anthropic: ["public", "internal"], "endpoint:local": ["internal"], embeddings: [] },
   };
 
   it("round-trips: what is written reads back as the same settings", () => {
@@ -404,6 +510,24 @@ describe("writing settings back", () => {
     // Written in the table's order under a line on each group, whatever order they came in.
     expect(text).toContain(`# ${CONFIG_FILE_GROUPS.run_log}\n[run_log]\nmode = "record"\nretention_days = 0\n`);
     expect(text.indexOf("[features]")).toBeLessThan(text.indexOf("[models]"));
+    // The structured settings are written as TOML's own groups, never as JSON in a text value.
+    expect(text).toContain(
+      `[model_providers]\nopenrouter_provider_sort = "price"\n\n` +
+        `# ${CONFIG_FILE_GROUPS["model_providers.endpoints"]}\n` +
+        `[[model_providers.endpoints]]\nname = "local"\nbase_url = "http://localhost:8000/v1"\n` +
+        `input_usd_per_mtok = 0.5\noutput_usd_per_mtok = 1.5\n\n` +
+        `[[model_providers.endpoints]]\nname = "second"\nbase_url = "http://localhost:8001/v1"\n` +
+        `key_env = "SECOND_KEY"\ninput_usd_per_mtok = 0\noutput_usd_per_mtok = 0\n`
+    );
+    expect(text).toContain(
+      `# ${CONFIG_FILE_GROUPS.provider_labels}\n[provider_labels]\n` +
+        `anthropic = ["public", "internal"]\n"endpoint:local" = ["internal"]\nembeddings = []\n`
+    );
+    // A deployment that declares no endpoint, and one that clears nobody, can say so.
+    const none: ConfigFileSettings = { "model_providers.endpoints": [], provider_labels: {} };
+    const written = renderConfigFile(none, configFieldProblem);
+    expect(written).toContain("[model_providers]\nendpoints = []\n");
+    expect(parseConfigFile(written, configFieldProblem)).toEqual(none);
     const reversed = Object.fromEntries(Object.entries(settings).reverse());
     expect(renderConfigFile(reversed, configFieldProblem)).toBe(text);
   });
@@ -436,6 +560,17 @@ describe("the page that explains the file, docs/deployment.md", () => {
 
   it("describes every setting the file can hold, under its group, with its environment variable", () => {
     for (const key of settableConfigFileKeys()) {
+      if (key.kind === "groups" || key.kind === "lists") {
+        // A structured setting has a heading of its own, written as its groups are in the file.
+        const brackets = key.kind === "groups" ? `[[${key.key}]]` : `[${key.key}]`;
+        const own = page.indexOf(`#### \`${brackets}\``);
+        expect(own, `a heading for ${brackets}`).toBeGreaterThan(-1);
+        expect(page.indexOf(`\`${key.env}\``, own), key.key).toBeGreaterThan(-1);
+        for (const member of Object.keys(key.members ?? {})) {
+          expect(page.indexOf(`\`${member}\``, own), `${key.key}: ${member}`).toBeGreaterThan(-1);
+        }
+        continue;
+      }
       const group = key.key.slice(0, key.key.lastIndexOf("."));
       // A group of outside_services is headed by its full name; a setting in one is named from the service on.
       const heading = page.indexOf(`\`[${group}]\``);
@@ -475,7 +610,8 @@ describe("the example file, deploy/minerval.example.toml", () => {
   });
 
   it("shows every setting a file can hold, set or as a commented line", () => {
-    const uncommented = text.replace(/^# (\[[a-z_.]+\]|[a-z_]+ = .+)$/gm, "$1");
+    // A commented line that is a heading ([group] or [[group]]) or a setting (a name, bare or in quotes).
+    const uncommented = text.replace(/^# (\[\[?[a-z_.]+\]\]?|(?:[a-z_]+|"[a-z_:]+") = .+)$/gm, "$1");
     const shown = parseConfigFile(uncommented, configFieldProblem);
     expect(Object.keys(shown).sort()).toEqual(
       settableConfigFileKeys()
