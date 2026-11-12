@@ -833,6 +833,27 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
 
 // ---------------------------------------------------------------------------
 
+describe("the monitor's sweep on a mirrored node (review 3, finding 1)", () => {
+  it("opens no audit at public of the public graph's judgment, and says nothing there of a's version", async () => {
+    // The mirrored node's public judgment is the public graph's. a holds a settled version and instances both ways.
+    await pub.query(`UPDATE claims SET importance = 900 WHERE id = $1`, [id.other]);
+    await ins(pub, "assessments", { id: randomUUID(), claim_id: id.other, status: "verified", confidence: 0.99, summary: "The public graph is sure.", reasoning_trace: "Reasons." });
+    for (const stance of ["affirms", "denies"]) {
+      const sourceId = randomUUID();
+      await ins(pub, "sources", { id: sourceId, url: `https://journal.example/${tag}/upland-${stance}`, title: `Upland ${stance}` });
+      await ins(pub, "claim_instances", { id: randomUUID(), claim_id: id.other, source_id: sourceId, verbatim_text: "A public passage.", stance });
+    }
+    await publishAndApply();
+    const { flagMonitorCandidates } = await import("../../src/workers/monitor-scheduler.js");
+    const result = await flagMonitorCandidates({ maxFlags: 100 });
+    // Settled, with instances both ways from two sources: a candidate anywhere else. Here it is the public graph's to audit.
+    expect(result.flags.filter((f) => f.claimId === id.other)).toEqual([]);
+    expect(await system(() => rawQuery(`SELECT 1 FROM audit_runs WHERE context LIKE '%' || $1 || '%'`, [id.other]))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe("what the public graph changes on a node a version at a rests on", () => {
   it("is in the Steward's note of what changed since its version, at its next pass", async () => {
     // The version at a on the parent was recorded just above. Now the public graph moves.

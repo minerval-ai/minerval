@@ -1,3 +1,4 @@
+import { enforcementLastKnown } from "../db/clearance.js";
 import { currentReadClearance, rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
@@ -21,6 +22,37 @@ import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 export async function publicIsTheOnlyLabel(): Promise<boolean> {
   const others = await rawQuery(`SELECT 1 FROM labels WHERE name <> $1 LIMIT 1`, [PUBLIC_LABEL]);
   return others.length === 0;
+}
+
+/**
+ * Every label this deployment has, `public` first: for a sweep that works
+ * label by label. A sweep that looks for something to say about a node
+ * (a candidate for audit, a partition due a consistency sweep, how many
+ * reports are waiting) and then writes it down has to find it with the
+ * clearance of the label it writes at, or the words it writes are made of
+ * rows that label's readers may not read. So it does not look once with
+ * every label in sight: it looks once for each label, inside that label
+ * (runAtLabel), and writes there what it found there.
+ *
+ * Where this process knows of no label but `public` nothing is asked.
+ */
+export async function everyLabel(): Promise<string[]> {
+  if (enforcementLastKnown() !== true) return [PUBLIC_LABEL];
+  const rows = await rawQuery<{ name: string }>(`SELECT name FROM labels`);
+  const names = rows.map((r) => r.name).filter((name) => name !== PUBLIC_LABEL);
+  return [PUBLIC_LABEL, ...names.sort()];
+}
+
+/**
+ * A key that says which piece of work something is, at a label: the plain
+ * key at `public`, and the key with the label after it elsewhere, as a
+ * ledger group has (groupAtLabel in ingest-focus-service.ts). For a key
+ * that is unique across a table whatever the labels (an audit's dedupe
+ * key), so that one label's work neither stands in for another's nor
+ * collides with it.
+ */
+export function keyAtLabel(key: string, label: string): string {
+  return label === PUBLIC_LABEL ? key : `${key} @${label}`;
 }
 
 /**
