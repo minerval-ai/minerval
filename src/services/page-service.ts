@@ -15,7 +15,9 @@
  * A page is private to its user. It is saved by the user's Assistant or by
  * their own agent over MCP (save_page), and edited by the user on its page.
  */
+import { randomBytes } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
+import { PUBLIC_LABEL } from "../labels.js";
 import { getDb } from "../db/client.js";
 import { assistantPages, type AssistantPage } from "../db/schema.js";
 import { loadConfig } from "../config.js";
@@ -185,6 +187,59 @@ export function pageUrl(id: string): string {
   return `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/ask/pages/${id}`;
 }
 
+export type ShareResult =
+  | { ok: true; page: AssistantPage }
+  | { ok: false; code: "NOT_FOUND" | "NOT_PUBLIC"; message: string };
+
+/**
+ * Let anyone who holds the link read the page. The link is a random token,
+ * not the page's id, so it can be withdrawn and issued afresh. Only a page
+ * made at the public label can be shared: a page carries the label of the
+ * run that wrote it, and a link read by anyone is a public reading.
+ */
+export async function sharePage(id: string, userId: string): Promise<ShareResult> {
+  const page = await getPage(id, userId);
+  if (!page) return { ok: false, code: "NOT_FOUND", message: "Page not found" };
+  if (page.sensitivityLabel !== PUBLIC_LABEL) {
+    return {
+      ok: false,
+      code: "NOT_PUBLIC",
+      message: "This page was made from material that is not public, so it cannot be shared by link",
+    };
+  }
+  if (page.shareToken) return { ok: true, page };
+  const [shared] = await getDb()
+    .update(assistantPages)
+    .set({ shareToken: randomBytes(24).toString("base64url") })
+    .where(and(eq(assistantPages.id, id), eq(assistantPages.userId, userId)))
+    .returning();
+  return { ok: true, page: shared! };
+}
+
+/** Withdraw the link: it stops working at once, and sharing again makes a new one. */
+export async function unsharePage(id: string, userId: string): Promise<boolean> {
+  const rows = await getDb()
+    .update(assistantPages)
+    .set({ shareToken: null })
+    .where(and(eq(assistantPages.id, id), eq(assistantPages.userId, userId)))
+    .returning({ id: assistantPages.id });
+  return rows.length > 0;
+}
+
+export async function getSharedPage(token: string): Promise<AssistantPage | null> {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
+  const [page] = await getDb()
+    .select()
+    .from(assistantPages)
+    .where(eq(assistantPages.shareToken, token))
+    .limit(1);
+  return page && page.sensitivityLabel === PUBLIC_LABEL ? page : null;
+}
+
+export function sharedPageUrl(token: string): string {
+  return `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/p/${token}`;
+}
+
 /** A page as a list shows it. */
 export function serializePageSummary(page: AssistantPage) {
   return {
@@ -193,6 +248,8 @@ export function serializePageSummary(page: AssistantPage) {
     saved_at: page.savedAt.toISOString(),
     created_at: page.createdAt.toISOString(),
     page_url: pageUrl(page.id),
+    /** The link anyone can read the page by, while it is shared. */
+    shared_url: page.shareToken ? sharedPageUrl(page.shareToken) : null,
   };
 }
 
@@ -240,5 +297,18 @@ export async function serializePage(page: AssistantPage) {
       title: v.title,
       saved_at: v.saved_at,
     })),
+  };
+}
+
+/** What a holder of a shared link reads: the page, and nothing about whose it is. */
+export async function serializeSharedPage(page: AssistantPage) {
+  const full = await serializePage(page);
+  return {
+    title: full.title,
+    saved_at: full.saved_at,
+    body: full.body,
+    nodes: full.nodes,
+    decompositions: full.decompositions,
+    unresolved: full.unresolved,
   };
 }

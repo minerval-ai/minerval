@@ -1,6 +1,6 @@
 {
-  "id": "9cc36302-fccf-4cab-8ddd-55826672870d",
-  "prevId": "1afa1597-f216-43f5-992c-5f074aad4ede",
+  "id": "1afa1597-f216-43f5-992c-5f074aad4ede",
+  "prevId": "b4887374-55cb-4446-bbee-7041e7661d2a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4405,6 +4405,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "share_token": {
+          "name": "share_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4459,7 +4465,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "assistant_pages_share_token_unique": {
+          "name": "assistant_pages_share_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "share_token"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -12075,12 +12089,6 @@
         "reserve_reason": {
           "name": "reserve_reason",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "grantmaker_session_id": {
-          "name": "grantmaker_session_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         }

@@ -358,6 +358,16 @@ function toolPhrase(tool: string): string {
   return tool.replace(/_/g, " ");
 }
 
+/** A running turn as its event stream reports it. */
+interface Live {
+  partial: string;
+  /** The model turn the text belongs to; a new one starts the text over. */
+  turn: number;
+  note: string | null;
+  activity: Array<{ tool: string; about: string | null }>;
+}
+const EMPTY_LIVE: Live = { partial: "", turn: -1, note: null, activity: [] };
+
 type Panel = { type: "claim"; citation: AssistantCitationView } | { type: "page"; id: string } | null;
 
 export function AssistantConversation({
@@ -429,12 +439,82 @@ export function AssistantConversation({
     };
   }, [id, replying, router]);
 
+  // The same turn as a stream: text as it is written and steps as they
+  // start, ahead of the once-a-second saved state the reads above return.
+  // If the stream cannot be opened or drops, the reads carry on alone.
+  const [live, setLive] = useState<Live | null>(null);
+  useEffect(() => {
+    if (!id || !replying || typeof EventSource === "undefined") return;
+    let closed = false;
+    let retries = 0;
+    let source: EventSource | null = null;
+    const connect = () => {
+      if (closed) return;
+      source = new EventSource(`/api/assistant/conversations/${id}/stream`);
+      const on = (name: string, handle: (data: never) => void) =>
+        source!.addEventListener(name, (e) => {
+          try {
+            handle(JSON.parse((e as MessageEvent).data) as never);
+          } catch {
+            // an event that does not parse is skipped
+          }
+        });
+      on("state", (turn: Convo["turn"] & { turn?: number }) =>
+        setLive({
+          partial: turn.partial ?? "",
+          turn: turn.turn ?? -1,
+          note: turn.note,
+          activity: turn.activity ?? [],
+        })
+      );
+      on("text", (e: { turn: number; delta: string }) =>
+        setLive((l) => {
+          const base = l ?? EMPTY_LIVE;
+          // Text already held with no turn yet came from the opening state:
+          // the first delta continues it.
+          const same = base.turn === e.turn || (base.turn === -1 && base.partial !== "");
+          return { ...base, turn: e.turn, partial: same ? base.partial + e.delta : e.delta };
+        })
+      );
+      on("activity", (e: { tool: string; about: string | null }) =>
+        setLive((l) => ({ ...(l ?? EMPTY_LIVE), activity: [...(l ?? EMPTY_LIVE).activity, e].slice(-12) }))
+      );
+      on("note", (e: { note: string }) => setLive((l) => ({ ...(l ?? EMPTY_LIVE), note: e.note })));
+      on("done", () => {
+        closed = true;
+        source?.close();
+        // The turn has ended and is saved: read it now, not on the next tick.
+        void fetch(`/api/assistant/conversations/${id}`, { cache: "no-store" })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data: { conversation?: Convo } | null) => {
+            if (data?.conversation) {
+              setConvo(data.conversation);
+              router.refresh();
+            }
+          })
+          .catch(() => undefined);
+      });
+      source.onerror = () => {
+        source?.close();
+        // A stream cut by a time limit is reopened; one that never opens is left.
+        if (!closed && retries++ < 5) setTimeout(connect, 1_000 * retries);
+        else setLive(null);
+      };
+    };
+    connect();
+    return () => {
+      closed = true;
+      source?.close();
+      setLive(null);
+    };
+  }, [id, replying, router]);
+
   // Follow the reply down the page unless the reader has scrolled up.
-  const activityCount = convo?.turn.activity?.length ?? 0;
+  const activityCount = (live?.activity ?? convo?.turn.activity)?.length ?? 0;
   useEffect(() => {
     const el = scrollRef.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [convo?.messages.length, convo?.turn.partial, activityCount, replying]);
+  }, [convo?.messages.length, convo?.turn.partial, live?.partial, activityCount, replying]);
 
   const send = async () => {
     const message = draft.trim();
@@ -532,7 +612,10 @@ export function AssistantConversation({
   const allowedCount = new Set([...always, ...inConversation]).size;
   const offered = convo?.models ?? models;
   const shown: Panel = preview ? { type: "claim", citation: preview } : pinned;
-  const activity = convo?.turn.activity ?? [];
+  // What the running turn shows: the stream's, where there is one.
+  const activity = live?.activity ?? convo?.turn.activity ?? [];
+  const runningNote = live ? live.note : (convo?.turn.note ?? null);
+  const runningText = live ? live.partial : (convo?.turn.partial ?? "");
 
   return (
     <div className={`ask-chat${pinned?.type === "page" ? " ask-chat-wide-panel" : ""}`}>
@@ -602,18 +685,18 @@ export function AssistantConversation({
               <div className="ask-msg ask-msg-assistant" aria-live="polite">
                 {/* what it is doing: its own line, then its latest steps */}
                 <ul className="ask-activity">
-                  {convo.turn.note && <li className="ask-activity-note">{convo.turn.note}</li>}
+                  {runningNote && <li className="ask-activity-note">{runningNote}</li>}
                   {activity.slice(-4).map((a, i) => (
                     <li key={`${activity.length}-${i}`}>
                       {toolPhrase(a.tool)}
                       {a.about && <span> {a.about}</span>}
                     </li>
                   ))}
-                  {!convo.turn.note && activity.length === 0 && !convo.turn.partial && (
+                  {!runningNote && activity.length === 0 && !runningText && (
                     <li className="ask-activity-note">Starting…</li>
                   )}
                 </ul>
-                {convo.turn.partial && <Prose content={convo.turn.partial} />}
+                {runningText && <Prose content={runningText} />}
               </div>
             )}
             {convo?.turn.state === "failed" && (

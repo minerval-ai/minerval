@@ -1414,6 +1414,8 @@ export interface PageSummaryView {
   saved_at: string;
   created_at: string;
   page_url: string;
+  /** The link anyone can read the page by, while it is shared. */
+  shared_url: string | null;
 }
 
 /** What the graph held for a node when its page was saved. */
@@ -1472,6 +1474,62 @@ export function savePage(
 
 export function deletePage(externalId: string, id: string): Promise<{ deleted: boolean }> {
   return accountFetch(`/pages/${pathSegment(id)}`, { method: "DELETE", actingUser: externalId });
+}
+
+// --- sharing a page by link, and watching a turn as it runs ------------------
+
+export async function sharePage(externalId: string, id: string): Promise<PageSummaryView> {
+  const r = await accountFetch<{ page: PageSummaryView }>(`/pages/${pathSegment(id)}/share`, {
+    method: "POST",
+    body: {},
+    actingUser: externalId,
+  });
+  return r.page;
+}
+
+export function unsharePage(externalId: string, id: string): Promise<{ shared: boolean }> {
+  return accountFetch(`/pages/${pathSegment(id)}/share`, {
+    method: "DELETE",
+    actingUser: externalId,
+  });
+}
+
+/** What a holder of a shared link reads. */
+export type SharedPageView = Pick<
+  PageView,
+  "title" | "saved_at" | "body" | "nodes" | "decompositions" | "unresolved"
+>;
+
+/** A page read by its shared link; null when nothing is shared there. */
+export async function getSharedPage(token: string): Promise<SharedPageView | null> {
+  try {
+    const r = await accountFetch<{ page: SharedPageView }>(`/shared-pages/${pathSegment(token)}`);
+    return r.page;
+  } catch (err) {
+    if (err instanceof AccountApiError && (err.status === 404 || err.status === 400)) return null;
+    throw err;
+  }
+}
+
+/**
+ * The API's event stream of a conversation's running turn, to be passed on
+ * to the browser as it arrives.
+ */
+export function assistantTurnStream(
+  externalId: string,
+  id: string,
+  signal: AbortSignal
+): Promise<Response> {
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  return fetch(`${BASE}/assistant/conversations/${pathSegment(id)}/stream`, {
+    headers: {
+      ...(KEY ? { "x-api-key": KEY } : {}),
+      "x-acting-user": externalId,
+      accept: "text/event-stream",
+    },
+    cache: "no-store",
+    signal,
+  });
 }
 
 // --- a view stated to the graph directly (constitution §4) -------------------

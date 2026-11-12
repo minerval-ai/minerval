@@ -1,6 +1,6 @@
 {
-  "id": "b4887374-55cb-4446-bbee-7041e7661d2a",
-  "prevId": "4333f27a-c091-4ed9-b7ce-8ddf5dd2bf4b",
+  "id": "4333f27a-c091-4ed9-b7ce-8ddf5dd2bf4b",
+  "prevId": "9a2875ff-cbaa-4e63-a287-98948fd69bb9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4399,6 +4399,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "share_token": {
+          "name": "share_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4453,7 +4459,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "assistant_pages_share_token_unique": {
+          "name": "assistant_pages_share_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "share_token"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -11993,6 +12007,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "daily_budget_micro_usd": {
+          "name": "daily_budget_micro_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "allocation_policy": {
           "name": "allocation_policy",

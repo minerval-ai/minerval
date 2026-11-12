@@ -1,6 +1,6 @@
 {
-  "id": "b6890dd8-59cc-4b21-89ee-b64f2686ffa4",
-  "prevId": "f9f40f0e-32da-4884-9b63-ecaad7284f1b",
+  "id": "f9f40f0e-32da-4884-9b63-ecaad7284f1b",
+  "prevId": "409bde64-af57-4ede-a358-e8cf4a8f43aa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1812,12 +1812,6 @@
           "notNull": true,
           "default": 0
         },
-        "wake_after": {
-          "name": "wake_after",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "extra_funding": {
           "name": "extra_funding",
           "type": "jsonb",
@@ -1852,6 +1846,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "wake_after": {
+          "name": "wake_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4405,6 +4405,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "share_token": {
+          "name": "share_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4459,7 +4465,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "assistant_pages_share_token_unique": {
+          "name": "assistant_pages_share_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "share_token"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -12000,32 +12014,6 @@
           "notNull": true,
           "default": false
         },
-        "pace": {
-          "name": "pace",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{\"kind\":\"as_needed\"}'::jsonb"
-        },
-        "reserve_micro_usd": {
-          "name": "reserve_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "reserve_reason": {
-          "name": "reserve_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "grantmaker_session_id": {
-          "name": "grantmaker_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "allocation_policy": {
           "name": "allocation_policy",
           "type": "jsonb",
@@ -12083,6 +12071,32 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "pace": {
+          "name": "pace",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"kind\":\"as_needed\"}'::jsonb"
+        },
+        "reserve_micro_usd": {
+          "name": "reserve_micro_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reserve_reason": {
+          "name": "reserve_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grantmaker_session_id": {
+          "name": "grantmaker_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -14549,6 +14563,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
+        },
         "held_until": {
           "name": "held_until",
           "type": "timestamp with time zone",
@@ -14567,13 +14588,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -16527,6 +16541,26 @@
           "primaryKey": false,
           "notNull": false
         },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
+        },
         "done_so_far": {
           "name": "done_so_far",
           "type": "text",
@@ -16551,26 +16585,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -22436,7 +22450,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {
@@ -22646,7 +22660,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_default_label()"
+          "default": "'public'"
         }
       },
       "indexes": {

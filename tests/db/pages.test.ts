@@ -11,8 +11,12 @@ import {
   listPages,
   pageEmbeds,
   PAGE_MAX_NODES,
+  getSharedPage,
   savePage,
   serializePage,
+  serializeSharedPage,
+  sharePage,
+  unsharePage,
 } from "../../src/services/page-service.js";
 import { seedClaim, seedUser } from "./helpers.js";
 
@@ -137,5 +141,69 @@ describe("pages", () => {
     expect(await deletePage(saved.page.id, other)).toBe(false);
     expect(await deletePage(saved.page.id, owner)).toBe(true);
     expect(await getPage(saved.page.id, owner)).toBeNull();
+  });
+
+  it("is read by its link while shared, and by no one once the link is withdrawn", async () => {
+    const owner = await seedUser("page-sharer");
+    const other = await seedUser("page-stranger");
+    const a = await seedClaim("page shared");
+    await assess(a, "supported");
+    const saved = await savePage({ userId: owner, title: "To share", body: `See [claim:${a}].` });
+    if (!saved.ok) throw new Error(saved.message);
+    expect((await serializePage(saved.page)).shared_url).toBeNull();
+
+    // Only its owner can share it.
+    expect((await sharePage(saved.page.id, other)).ok).toBe(false);
+    const shared = await sharePage(saved.page.id, owner);
+    if (!shared.ok) throw new Error(shared.message);
+    const token = shared.page.shareToken!;
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect((await serializePage(shared.page)).shared_url).toMatch(new RegExp(`/p/${token}$`));
+    // Sharing again keeps the link people already hold.
+    const again = await sharePage(saved.page.id, owner);
+    expect(again.ok && again.page.shareToken).toBe(token);
+
+    // The link gives the page and its nodes, and nothing about whose it is.
+    const read = await serializeSharedPage((await getSharedPage(token))!);
+    expect(read).toMatchObject({ title: "To share", body: `See [claim:${a}].` });
+    expect(read.nodes[a]).toMatchObject({ assessment_status: "supported" });
+    expect(Object.keys(read).sort()).toEqual(
+      ["body", "decompositions", "nodes", "saved_at", "title", "unresolved"].sort()
+    );
+    expect(JSON.stringify(read)).not.toContain(owner);
+    expect(JSON.stringify(read)).not.toContain(saved.page.id);
+
+    // The page's id is not its link, and neither is a guess.
+    expect(await getSharedPage(saved.page.id)).toBeNull();
+    expect(await getSharedPage("x".repeat(32))).toBeNull();
+
+    expect(await unsharePage(saved.page.id, other)).toBe(false);
+    expect(await unsharePage(saved.page.id, owner)).toBe(true);
+    expect(await getSharedPage(token)).toBeNull();
+    // A new share is a new link: the old one stays dead.
+    const fresh = await sharePage(saved.page.id, owner);
+    expect(fresh.ok && fresh.page.shareToken).not.toBe(token);
+    expect(await getSharedPage(token)).toBeNull();
+  });
+
+  it("cannot be shared when it was made from material that is not public", async () => {
+    const owner = await seedUser("page-private");
+    const saved = await savePage({ userId: owner, title: "Held back", body: "Private." });
+    if (!saved.ok) throw new Error(saved.message);
+    await rawQuery(
+      `INSERT INTO labels (name, description) VALUES ('dbtest-restricted', 'dbtest') ON CONFLICT DO NOTHING`
+    );
+    await rawQuery(`UPDATE assistant_pages SET sensitivity_label = 'dbtest-restricted' WHERE id = $1`, [
+      saved.page.id,
+    ]);
+    const refused = await sharePage(saved.page.id, owner);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.code).toBe("NOT_PUBLIC");
+    // And a link it somehow had would not open it.
+    await rawQuery(`UPDATE assistant_pages SET share_token = $2 WHERE id = $1`, [
+      saved.page.id,
+      "t".repeat(32),
+    ]);
+    expect(await getSharedPage("t".repeat(32))).toBeNull();
   });
 });

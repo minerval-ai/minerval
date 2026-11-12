@@ -1,6 +1,6 @@
 {
-  "id": "f9f40f0e-32da-4884-9b63-ecaad7284f1b",
-  "prevId": "409bde64-af57-4ede-a358-e8cf4a8f43aa",
+  "id": "409bde64-af57-4ede-a358-e8cf4a8f43aa",
+  "prevId": "9cc36302-fccf-4cab-8ddd-55826672870d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4405,6 +4405,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "share_token": {
+          "name": "share_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4459,7 +4465,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "assistant_pages_share_token_unique": {
+          "name": "assistant_pages_share_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "share_token"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -14555,25 +14569,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
-        },
-        "held_until": {
-          "name": "held_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hold_refs": {
-          "name": "hold_refs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "hold_reason": {
-          "name": "hold_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16546,31 +16541,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
-        },
-        "done_so_far": {
-          "name": "done_so_far",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "held_until": {
-          "name": "held_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hold_refs": {
-          "name": "hold_refs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "hold_reason": {
-          "name": "hold_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16661,7 +16631,7 @@
         },
         "petitions_status_check": {
           "name": "petitions_status_check",
-          "value": "\"petitions\".\"status\" IN ('pending', 'held', 'escalated', 'granted', 'refused', 'follow_up')"
+          "value": "\"petitions\".\"status\" IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')"
         }
       },
       "isRLSEnabled": false

@@ -1,6 +1,6 @@
 {
-  "id": "409bde64-af57-4ede-a358-e8cf4a8f43aa",
-  "prevId": "9cc36302-fccf-4cab-8ddd-55826672870d",
+  "id": "9cc36302-fccf-4cab-8ddd-55826672870d",
+  "prevId": "1afa1597-f216-43f5-992c-5f074aad4ede",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4405,6 +4405,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
+        },
+        "share_token": {
+          "name": "share_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4459,7 +4465,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "assistant_pages_share_token_unique": {
+          "name": "assistant_pages_share_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "share_token"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -22596,13 +22610,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
         }
       },
       "indexes": {
@@ -22650,21 +22657,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "subscriptions_sensitivity_label_labels_name_fk": {
-          "name": "subscriptions_sensitivity_label_labels_name_fk",
-          "tableFrom": "subscriptions",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
