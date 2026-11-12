@@ -38,7 +38,7 @@ const REVIEWED_COLUMNS: Record<string, string[]> = {
   ledger: ["action_id", "kind", "variant", "target_node_id", "target_ref", "label", "status", "spent_owls", "opened_at", "updated_at"],
   commissions: ["commission_id", "action_id", "exclusion_group", "payer_kind", "payer_mandate_id", "budget_owls", "spent_owls", "returned_owls", "commissioned_by", "brief", "reason", "parent_action_id", "created_at", "settled_at"],
   messages: ["message_id", "node_id", "trigger", "sender_kind", "sender_node_id", "paid", "body", "created_at", "read_at", "outcome", "outcome_note"],
-  mandates: ["mandate_id", "title", "objective", "status", "is_platform", "daily_rate_owls", "escrow_owls", "operating_policy", "created_at"],
+  mandates: ["mandate_id", "title", "objective", "status", "is_platform", "pace", "reserve_owls", "reserve_reason", "escrow_owls", "operating_policy", "created_at"],
   mandate_decisions: ["decision_id", "mandate_id", "decided_by", "item_kind", "decision", "target", "owls", "reason", "petition_id", "action_id", "created_at"],
   plan_items: ["mandate_id", "item_index", "plan_cursor", "action", "node_id", "url", "partition", "variant", "focus", "rationale", "ledger_status", "ledger_reason", "action_id", "exclusion_group", "ledger_checked_at", "proposed_kind", "proposed_text", "proposal_ref", "node_ref", "contribution_id"],
   petitions: ["petition_id", "mandate_id", "kind", "asked_owls", "granted_owls", "requester_agent", "requester_node_id", "status", "plan", "reason", "created_at", "decided_at"],

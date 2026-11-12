@@ -522,15 +522,21 @@ export interface MandateAllocationView {
     spent_owls: number;
     /**
      * The part of spent_owls metered to the mandate's job outside the
-     * ledger, which no row in `kinds` shows and the daily rate does not
+     * ledger, which no row in `kinds` shows and the pace does not
      * bound: the Grantmaker's chat with the funder, and spend past what a
      * run's allocations covered where no allocation of the mandate's
      * recorded it.
      */
     outside_ledger_owls: number;
-    daily_rate_owls: number;
-    /** Spent or held by running work today, against the daily rate. */
-    used_today_owls: number;
+    /** The mandate's pace (pace-service.ts): as_needed, or steady over a rolling window. */
+    pace: import("./pace-service.js").Pace;
+    /** Steady only: what the window holds now (spent, or held by running work). */
+    pace_window_used_owls: number | null;
+    /** Owls only the Grantmaker may commit, and why. */
+    reserve_owls: number;
+    reserve_reason: string | null;
+    /** Where the pace stands, as the mandate's agents read it. */
+    pace_sentence: string | null;
     /** Budgets commissioned and not yet settled. */
     held_owls: number;
     /** Regranted to other mandates, net of returned shares. */
@@ -566,11 +572,10 @@ export async function getMandateAllocationView(
     name: string;
     title: string | null;
     budget_job_id: string;
-    daily_budget_micro_usd: number;
     budget_micro_usd: number;
   }>(
     `SELECT g.id, g.name, g.mandate->>'title' AS title, g.budget_job_id,
-            g.daily_budget_micro_usd, j.budget_micro_usd
+            j.budget_micro_usd
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1 AND g.status = 'active'`,
     [grantId]
@@ -580,14 +585,14 @@ export async function getMandateAllocationView(
   const { getOperatingPolicy, renderOperatingPolicy, officerLimit, reviewPassBudget } = await import(
     "./operating-policy-service.js"
   );
-  const { grantDayUseMicroUsd } = await import("./commission-service.js");
+  const { paceRoom } = await import("./pace-service.js");
   const policy = await getOperatingPolicy(grantId);
   const limit = officerLimit(policy);
   const reviewPass = reviewPassBudget(policy);
 
-  const [money, usedToday] = await Promise.all([
+  const [money, pace] = await Promise.all([
     grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id }),
-    grantDayUseMicroUsd(grantId),
+    paceRoom(grantId, "delegated"),
   ]);
 
   const window = `now() - make_interval(days => ${OPERATIONS_WINDOW_DAYS})`;
@@ -703,8 +708,11 @@ export async function getMandateAllocationView(
       escrow_owls: microUsdToOwls(escrow),
       spent_owls: microUsdToOwls(Math.min(money.spent, escrow)),
       outside_ledger_owls: microUsdToOwls(Math.min(money.outsideLedger, escrow)),
-      daily_rate_owls: microUsdToOwls(Number(grant.daily_budget_micro_usd)),
-      used_today_owls: microUsdToOwls(usedToday),
+      pace: pace?.pace ?? { kind: "as_needed" },
+      pace_window_used_owls: pace?.windowUsedMicroUsd != null ? microUsdToOwls(pace.windowUsedMicroUsd) : null,
+      reserve_owls: microUsdToOwls(pace?.reserveMicroUsd ?? 0),
+      reserve_reason: pace?.reserveReason ?? null,
+      pace_sentence: pace?.sentence ?? null,
       held_owls: microUsdToOwls(money.held),
       regranted_owls: microUsdToOwls(money.regrants),
       prizes_owls: microUsdToOwls(money.prizes),

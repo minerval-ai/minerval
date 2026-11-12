@@ -25,6 +25,7 @@
  * against the escrow, and daily rates pace the spend. The refusal duties
  * that govern mandate design govern this pass equally.
  */
+import { paceRoom } from "../../services/pace-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -77,7 +78,6 @@ import {
 } from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
 import { reflectionSections } from "../../services/mandate-reflection-service.js";
-import { allocationDayUseSql } from "../../services/day-use.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
@@ -185,8 +185,8 @@ export async function addToPassBudget(
       code: placed.code,
       problem:
         placed.message +
-        (placed.code === "OVER_DAILY_RATE"
-          ? " Ask for what is left, or raise the rate with set_daily_rate if the mission warrants it."
+        (placed.code === "OVER_PACE"
+          ? " Ask for what is left; the pace is the funder's to change (note_to_funder)."
           : placed.code === "OVER_ESCROW"
             ? " Ask for what is left; more escrow is the funder's to add (note_to_funder)."
             : ""),
@@ -201,7 +201,7 @@ export async function addToPassBudget(
     left_owls: microUsdToOwls(left),
     note:
       `Added. This pass's budget is now ${microUsdToOwls(budget.microUsd)} owls, with ` +
-      `${microUsdToOwls(left)} left; the addition is held against today's rate like the rest, and what you ` +
+      `${microUsdToOwls(left)} left; the addition is held against the mandate's pace like the rest, and what you ` +
       `do not spend is freed when the pass ends.`,
   });
 }
@@ -231,7 +231,6 @@ async function runMandateReviewImpl(input: {
     mandate: GrantMandate | null;
     plan: { strategy?: string; items?: PlanItem[] } | null;
     plan_cursor: number;
-    daily_budget_micro_usd: number;
     budget_job_id: string;
     budget_micro_usd: number;
     workspace: string | null;
@@ -239,7 +238,7 @@ async function runMandateReviewImpl(input: {
     skills: string[] | null;
   }>(
     `SELECT g.id, g.name, g.policy, g.mandate, g.plan, g.plan_cursor,
-            g.daily_budget_micro_usd, g.budget_job_id, j.budget_micro_usd,
+            g.budget_job_id, j.budget_micro_usd,
             g.workspace, g.funder_user_id, g.skills
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1 AND g.status = 'active'`,
@@ -256,21 +255,9 @@ async function runMandateReviewImpl(input: {
     id: grant.id,
     budgetJobId: grant.budget_job_id,
   });
-  // Today's draw on the daily rate, so a decision to chain another pass is
-  // made knowing what the day has left for everything else.
-  const [todayRow] = await rawQuery<{ allocated: string | number; passes: number }>(
-    `SELECT COALESCE(SUM(${allocationDayUseSql("al")}), 0)::bigint AS allocated,
-            COUNT(*) FILTER (WHERE a.kind = 'mandate_review')::int AS passes
-       FROM action_allocations al
-       LEFT JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1
-        AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grant.id]
-  ).catch(() => []);
-  const today = {
-    allocatedMicroUsd: Number(todayRow?.allocated ?? 0),
-    reviewPasses: Number(todayRow?.passes ?? 0),
-  };
+  // Where the pace stands, so a decision to chain another pass, or to
+  // hold money back, is made knowing what the mandate has left.
+  const pace = await paceRoom(grant.id, "grantmaker");
 
   // Web search on every provider: the server runs it on an Anthropic model,
   // the loop executes it elsewhere (tools/web-search-tool.ts).
@@ -330,8 +317,8 @@ async function runMandateReviewImpl(input: {
         "Append new items to your mandate's plan: sources you found that should be ingested, claims that " +
         "need passes, a claim, quantity or question the graph does not hold yet with the passes you want on it. Each item is priced and bounded by your escrow, and " +
         "executes through the ledger like everything else: a pass you plan " +
-        "is commissioned from this mandate, within its daily rate, as soon " +
-        "as the rate and escrow have the room. Appends only; " +
+        "is commissioned from this mandate, within its pace and outside your reserve, as soon " +
+        "as there is room. Appends only; " +
         "already-planned work stays. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
         "standing (open, running, done, cancelled, waiting, blocked) with " +
@@ -386,17 +373,6 @@ async function runMandateReviewImpl(input: {
       },
     },
     {
-      name: "set_daily_rate",
-      description:
-        "Set your mandate's daily allocation rate, in owls per day. The " +
-        "escrow is the hard bound either way.",
-      input_schema: {
-        type: "object" as const,
-        properties: { owls_per_day: { type: "number" } },
-        required: ["owls_per_day"],
-      },
-    },
-    {
       name: "pipeline_report",
       description:
         "What your mandate's ingestion has actually produced: each source " +
@@ -417,10 +393,9 @@ async function runMandateReviewImpl(input: {
             description:
               "Add to this pass's budget from your mandate's escrow, so the pass can finish what it is doing. " +
               "The amount is placed on this pass the way a granted petition is placed on a run: it is held " +
-              "against today's rate and the escrow at once, and what the pass does not spend is freed when it " +
-              "ends. It is refused, with the figures, when today's rate or the uncommitted escrow has less than " +
-              "you ask for; ask for what is left, or raise the rate with set_daily_rate if the mission " +
-              "warrants it. This is the cheap way to carry on: continue_review starts a new pass, which pays " +
+              "against the mandate's pace and escrow at once (your reserve included), and what the pass does not " +
+              "spend is freed when it ends. It is refused, with the figures, when the pace or the uncommitted escrow " +
+              "has less than you ask for; ask for what is left. This is the cheap way to carry on: continue_review starts a new pass, which pays " +
               "for the opening turn again. If you keep adding, your policy's review_pass_owls is set too low.",
             input_schema: {
               type: "object" as const,
@@ -436,8 +411,8 @@ async function runMandateReviewImpl(input: {
       name: "continue_review",
       description:
         "Declare this pass finished but the work not: another review pass " +
-        "runs right away, at your review-pass budget, funded from your escrow out of today's room under " +
-        "your daily rate, the same room your assessments and lookouts draw " +
+        "runs right away, at your review-pass budget, funded from your escrow within the mandate's pace, " +
+        "the same room your assessments and lookouts draw " +
         "on (the briefing says what is left). The new pass starts from your workspace with none of this " +
         "one's context, and pays for its opening turn (instructions, tool list, briefing) again. So when " +
         "this pass only needs more money, use add_to_pass_budget; use this when a fresh start is worth " +
@@ -622,15 +597,12 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties), ` +
-    `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
-    `(yours to set)` +
-    (Number(grant.daily_budget_micro_usd) > 0
-      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is committed so far today ` +
-        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included. ` +
-        `A commission that would take the day past its rate is refused, by your officers' tools ` +
-        `and yours alike; running work frees what it leaves as it finishes`
-      : ``) +
+    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties). ` +
+    (pace ? `${pace.sentence} ` : ``) +
+    `The pace is the funder's, agreed at funding (propose a change with note_to_funder); the reserve is yours ` +
+    `(set_reserve): money your officers, lookouts and plan orders cannot commit and you can, for the ` +
+    `directions worth pursuing once results are in. A commission past the pace is refused, by your officers' ` +
+    `tools and yours alike; running work frees what it leaves as it finishes` +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
     `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
     (reflection ? `${reflection}\n\n` : ``) +
@@ -646,7 +618,7 @@ async function runMandateReviewImpl(input: {
     `Your reviews wake when your mandate's work produces something like ` +
     `this, ${WAKE_AFTER_MINUTES} minutes or more after your last pass ended so that ` +
     `a burst is judged together, and otherwise once a day. Each pass is ` +
-    `paid from your escrow within your daily rate.\n\n` +
+    `paid from your escrow within the mandate's pace.\n\n` +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your correspondents (readers you fund for an audience; correspondent_report for detail):\n\n${correspondentText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
@@ -681,8 +653,8 @@ async function runMandateReviewImpl(input: {
     ),
     fromShare: shareOwls > 0,
     floorOwls: config.reviewPassFloorOwls ?? 1,
-    dailyRateMicroUsd: Number(grant.daily_budget_micro_usd),
-    dayUsedMicroUsd: today.allocatedMicroUsd,
+    windowMicroUsd: pace?.windowMicroUsd ?? null,
+    windowUsedMicroUsd: pace?.windowUsedMicroUsd ?? null,
     escrowFreeMicroUsd: Number(grant.budget_micro_usd) - committed,
   });
 
@@ -896,22 +868,6 @@ async function runMandateReviewImpl(input: {
         if (res.ok) recordMove(owls);
         return JSON.stringify(res);
       }
-      if (name === "set_daily_rate") {
-        const owlsPerDay = Number(toolInput.owls_per_day);
-        if (!Number.isFinite(owlsPerDay) || owlsPerDay < 0) {
-          return JSON.stringify({
-            success: false,
-            problem: "owls_per_day must be a non-negative number",
-          });
-        }
-        const micro = owlsToMicroUsd(owlsPerDay);
-        await rawQuery(
-          `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now()
-            WHERE id = $1`,
-          [grant.id, micro]
-        );
-        return JSON.stringify({ success: true, owls_per_day: owlsPerDay });
-      }
       if (name === "pipeline_report") {
         const { getMandatePipeline } = await import(
           "../../services/mandate-service.js"
@@ -927,8 +883,8 @@ async function runMandateReviewImpl(input: {
         return JSON.stringify({
           success: true,
           note:
-            "Another pass runs after this one at your review-pass budget, paid from what is left of " +
-            "today's rate; if the day or the escrow cannot cover that budget it starts with what there is, " +
+            "Another pass runs after this one at your review-pass budget, paid within the mandate's pace; " +
+            "if the pace or the escrow cannot cover that budget it starts with what there is, " +
             "and not at all below the floor your briefing states. Make sure your workspace is current, then finish.",
         });
       }

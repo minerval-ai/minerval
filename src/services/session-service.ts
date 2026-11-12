@@ -380,6 +380,7 @@ async function commissionResumptionAtLabel(s: SessionRow): Promise<void> {
         payer: { kind: "grant", grantId: e.grantId },
         budget: Math.round(Number(e.microUsd)),
         commissionedBy: "petition",
+        committer: "grantmaker",
         brief: null,
         reason: "Granted on a petition while the session was paused.",
       });
@@ -439,6 +440,7 @@ async function commissionResumeRow(
         payer: { kind: "grant", grantId: e.grantId },
         budget: Math.round(Number(e.microUsd)),
         commissionedBy: "petition",
+        committer: "grantmaker",
         brief: null,
         reason: "Granted on a petition while the session was paused.",
       });

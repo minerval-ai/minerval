@@ -28,7 +28,8 @@ import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import { claimAction, completeAction, releaseAction } from "../../services/action-service.js";
-import { commissionAction, commissionNodePass, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
+import { commissionAction, commissionNodePass, placeCommission } from "../../services/commission-service.js";
+import { describePace, paceRoom, parsePace, validatePace } from "../../services/pace-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import {
   decidePetition,
@@ -100,8 +101,8 @@ export const COMMISSION_FOR_MANDATE: Tool = {
     "costing skill (the high end, unless the operating policy says otherwise), " +
     "a tier, a brief for the Steward, and your reason for the public record. " +
     "The brief reaches the node's Steward as a message; it may not name the " +
-    "mandate or describe its mission. Runs count against today's rate as they " +
-    "spend and are released as they finish; an entry the day or the escrow " +
+    "mandate or describe its mission. Runs count against the mandate's pace as they " +
+    "spend and are released as they finish; an entry the pace, the reserve or the escrow " +
     "can't cover is refused and named. Work is paid for once: where a run " +
     "is already commissioned or under way, on any variant of the same work " +
     "(a node's standard and strong pass, a sweep's two readers), nothing " +
@@ -218,7 +219,7 @@ export const WRITE_OPERATING_POLICY: Tool = {
         type: "number",
         description:
           "The budget each of your own review passes works to, in owls, from the next pass opened. It is yours to set " +
-          "because your mandate pays for it: the whole figure is held against the day's rate while a pass runs, and " +
+          "because your mandate pays for it: the whole figure is held against the mandate's pace while a pass runs, and " +
           "what the pass does not spend is freed when it ends. Each pass first pays for its opening turn (your " +
           "instructions, tool list and briefing), so set it to what a pass of yours actually needs on top of that. " +
           "Your note is recorded as its reason and stated in each pass's briefing. To set it and leave the text as " +
@@ -246,7 +247,6 @@ interface GrantRow {
   objective: string | null;
   budget_job_id: string;
   funder_user_id: string;
-  daily: number;
   escrow: number;
 }
 
@@ -275,7 +275,7 @@ function ago(iso: string): string {
 async function loadGrant(grantId: string): Promise<GrantRow | null> {
   const [g] = await rawQuery<GrantRow>(
     `SELECT g.id, g.mandate->>'title' AS title, g.mandate->>'objective' AS objective,
-            g.budget_job_id, g.funder_user_id, g.daily_budget_micro_usd AS daily,
+            g.budget_job_id, g.funder_user_id,
             j.budget_micro_usd AS escrow
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1`,
@@ -377,8 +377,8 @@ async function buildBrief(
 ): Promise<string> {
   const policy = await getOperatingPolicy(grant.id);
   const limit = officerLimit(policy);
-  const dayUsed = await grantDayUseMicroUsd(grant.id);
-  const committed = await grantCommittedMicroUsd({ id: grant.id, budgetJobId: grant.budget_job_id });
+  // Officers commit from outside the reserve; the Grantmaker may draw on it.
+  const pace = await paceRoom(grant.id, role === "officer" ? "delegated" : "grantmaker");
   const [deciding] = await rawQuery<{ deciding: number; spent: number }>(
     `SELECT COALESCE(SUM(al.spent_micro_usd) FILTER (WHERE al.exclusion_group LIKE 'officer:%' OR al.exclusion_group LIKE 'escalation:%'), 0)::bigint AS deciding,
             COALESCE(SUM(al.spent_micro_usd), 0)::bigint AS spent
@@ -406,7 +406,6 @@ async function buildBrief(
     return describeItem(it, label);
   });
   const waiting = petitions.filter((p) => p.waiting).length;
-  const daily = Number(grant.daily);
 
   const head =
     role === "officer"
@@ -424,10 +423,7 @@ async function buildBrief(
   return [
     head,
     `## Position\n\n` +
-      (daily > 0
-        ? `Daily rate ${owls(daily)} owls; used today (spent, or held by running work) ${owls(dayUsed)}. `
-        : `No daily rate: bounded by the escrow alone. `) +
-      `Escrow not yet committed: ${owls(Math.max(0, Number(grant.escrow) - committed))} owls. ` +
+      (pace ? `${pace.sentence} ` : "") +
       `Deciding has cost ${decidingShare}% of the mandate's spend over the last seven days. ` +
       (runBudgetSentence() || ""),
     `## The mandate\n\nTerms, as its funder approved them: ${grant.title ?? "(untitled)"}. ${grant.objective ?? ""}\n\n` +
@@ -780,8 +776,8 @@ export async function executeOfficerTool(name: string, input: Record<string, unk
  * a pass that size, so the shortfall is known when the figure is chosen.
  */
 async function reviewPassSetNote(grantId: string, owls: number): Promise<string> {
-  const [g] = await rawQuery<{ daily: string; escrow: string; budget_job_id: string }>(
-    `SELECT g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow, g.budget_job_id
+  const [g] = await rawQuery<{ pace: unknown; escrow: string; budget_job_id: string }>(
+    `SELECT g.pace, j.budget_micro_usd AS escrow, g.budget_job_id
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
     [grantId]
   ).catch(() => []);
@@ -789,11 +785,12 @@ async function reviewPassSetNote(grantId: string, owls: number): Promise<string>
   if (!g) return note;
   const micro = owlsToMicroUsd(owls);
   const floor = loadConfig().reviewPassFloorOwls ?? 1;
-  const daily = Number(g.daily);
+  const pace = parsePace(g.pace);
+  const window = pace.kind === "steady" ? owlsToMicroUsd(pace.owls) : 0;
   const short = (bound: string) =>
     ` That is more than ${bound}, so a pass will start with what can be found, when that is at least ${floor} owls, ` +
     `and its briefing will say so.`;
-  if (daily > 0 && micro > daily) note += short(`your daily rate (${microUsdToOwls(daily)} owls)`);
+  if (window > 0 && micro > window) note += short(`the mandate's whole pace window (${microUsdToOwls(window)} owls)`);
   else {
     const committed = await grantCommittedMicroUsd({ id: grantId, budgetJobId: g.budget_job_id }).catch(() => null);
     const free = committed == null ? null : Math.max(0, Number(g.escrow) - committed);
@@ -876,14 +873,57 @@ export const WITHDRAW_REGRANT: Tool = {
   },
 };
 
+export const SET_RESERVE: Tool = {
+  name: "set_reserve",
+  description:
+    "Hold part of your mandate's uncommitted money in reserve: owls your program officers, lookouts, plan " +
+    "orders and the mandate's routine runs cannot commit, and only you can. Use it to spend freely on the " +
+    "first wave of work while keeping money back for the directions that turn out to be worth pursuing once " +
+    "results come in, and lower it (to 0 to release it all) when you have decided where it goes. It says who " +
+    "may commit the money, never when: you may commission from it at any time. The reserve and your reason " +
+    "are stated to your officers and lookouts in every brief, and shown on the mandate's page. It can be at " +
+    "most what the escrow holds uncommitted.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      owls: { type: "number", description: "The reserve, in owls: 0 releases it." },
+      reason: { type: "string", description: "What it is held for, in words your officers and the public read." },
+    },
+    required: ["owls", "reason"],
+  },
+};
+
+export const AMEND_PACE: Tool = {
+  name: "amend_pace",
+  description:
+    "Change how fast the mandate's money may be committed, its pace, which its funder agreed when funding it. " +
+    "Use it only in conversation with the funder, when they ask for the change or agree to one you proposed. " +
+    "as_needed: the escrow is the only bound, for a mandate whose work should run as it arrives (explore a " +
+    "question, ingest a source, map a literature). steady: at most owls committed in any rolling period_hours " +
+    "(24 for a day's worth, 168 for a week's), for upkeep that should spread its money evenly. The change takes " +
+    "effect at once and is recorded on the mandate's public record with your note. In a review pass, propose " +
+    "a change to your funder with note_to_funder.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      kind: { type: "string", enum: ["as_needed", "steady"] },
+      owls: { type: "number", description: "steady: owls committed per period at most." },
+      period_hours: { type: "number", description: "steady: the rolling window, in hours (24 a day, 168 a week)." },
+      note: { type: "string", description: "Why, in words the public record reads." },
+    },
+    required: ["kind", "note"],
+  },
+};
+
 /** The Grantmaker's spending tools, in review passes and the management chat. */
 export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): Tool[] {
   return [
     WRITE_OPERATING_POLICY,
     COMMISSION_FOR_MANDATE,
+    SET_RESERVE,
     getSqlToolDefinition(),
     WITHDRAW_REGRANT,
-    ...(opts.chat ? [AMEND_OBJECTIVE] : []),
+    ...(opts.chat ? [AMEND_OBJECTIVE, AMEND_PACE] : []),
   ];
 }
 
@@ -899,6 +939,53 @@ export async function executeMandateOperationsTool(
   opts: { chat: boolean }
 ): Promise<string | null> {
   if (name === "query_sql") return executeSqlTool(name, input);
+  if (name === "set_reserve") {
+    const reason = String(input.reason ?? "").trim();
+    const want = Number(input.owls);
+    if (!Number.isFinite(want) || want < 0) return JSON.stringify({ success: false, message: "owls must be 0 or more." });
+    if (!reason) return JSON.stringify({ success: false, message: "reason is required: your officers and the public read it." });
+    const room = await paceRoom(grantId, "grantmaker");
+    if (!room) return JSON.stringify({ success: false, message: "No such mandate." });
+    const uncommitted = Math.max(0, room.escrowMicroUsd - room.committedMicroUsd);
+    const micro = owlsToMicroUsd(want);
+    if (micro > uncommitted) {
+      return JSON.stringify({
+        success: false,
+        message: `A reserve of ${want} owls is more than the escrow holds uncommitted (${microUsdToOwls(uncommitted)} owls).`,
+      });
+    }
+    await rawQuery(
+      `UPDATE grants SET reserve_micro_usd = $2, reserve_reason = $3, updated_at = now() WHERE id = $1`,
+      [grantId, micro, micro > 0 ? reason : null]
+    );
+    await rawQuery(
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, owls_micro_usd, reason)
+       VALUES ($1, 'grantmaker', 'reserve', $2, $3, $4)`,
+      [grantId, micro > 0 ? "held in reserve" : "released the reserve", micro, reason]
+    );
+    const after = await paceRoom(grantId, "delegated");
+    return JSON.stringify({ success: true, message: after?.sentence ?? `Reserve set to ${want} owls.` });
+  }
+  if (name === "amend_pace") {
+    if (!opts.chat) {
+      return JSON.stringify({
+        success: false,
+        message: "Not in a review pass: the pace is the funder's. Propose a change with note_to_funder, and amend it in their chat once they agree.",
+      });
+    }
+    const note = String(input.note ?? "").trim();
+    if (!note) return JSON.stringify({ success: false, message: "note is required: the public record reads it." });
+    const v = validatePace({ kind: input.kind, owls: input.owls, period_hours: input.period_hours, reason: note });
+    if (!v.ok) return JSON.stringify({ success: false, message: v.problem });
+    await rawQuery(`UPDATE grants SET pace = $2::jsonb, updated_at = now() WHERE id = $1`, [grantId, JSON.stringify(v.pace)]);
+    await rawQuery(
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, reason)
+       VALUES ($1, 'grantmaker', 'pace', $2, $3)`,
+      [grantId, describePace(v.pace), note]
+    );
+    const after = await paceRoom(grantId, "grantmaker");
+    return JSON.stringify({ success: true, message: after?.sentence ?? describePace(v.pace) });
+  }
   if (name === "amend_objective") {
     if (!opts.chat) {
       return JSON.stringify({

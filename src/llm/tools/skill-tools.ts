@@ -181,7 +181,6 @@ const AGENT_INLINE_TOOL_NAMES = [
   "adjust_plan",
   "regrant",
   "spawn_mandate",
-  "set_daily_rate",
   "extend_plan",
   "update_workspace",
   "add_to_pass_budget",

@@ -2903,13 +2903,17 @@ export const grants = pgTable(
     // Platform-run mandates (Minerval's own: Mathematics, AI Economics, …)
     // get pride of place on the public /mandates page.
     isPlatform: boolean("is_platform").notNull().default(false),
-    // Optional spend rate: at most this much metered cost per UTC day
-    // (0 = no rate cap, pace bounded by escrow alone). Shared mandate
-    // infrastructure — Minerval's General mandate paces itself
-    // with this, and any funder can set one on their own mandate.
-    dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
-      .notNull()
-      .default(0),
+    // How fast the money may be committed (services/pace-service.ts):
+    // {kind: 'as_needed'}, the escrow the only bound, or {kind: 'steady',
+    // owls, period_hours}, at most that much committed in any rolling
+    // window. Drafted with the funder and changed only with the funder.
+    pace: jsonb("pace").notNull().default(sql`'{"kind":"as_needed"}'::jsonb`),
+    // Owls only the Grantmaker may commit (set_reserve), with its reason:
+    // money held back for the directions worth pursuing once the first
+    // wave of work reports. Officers, lookouts and routine runs see it and
+    // cannot draw on it.
+    reserveMicroUsd: bigint("reserve_micro_usd", { mode: "number" }).notNull().default(0),
+    reserveReason: text("reserve_reason"),
     // The mandate's own figures for pricing and pacing work: cost priors,
     // the re-check cadence, attempt bounds, sweep and scan settings
     // (services/allocation-policy-service.ts). Null = the shared defaults.

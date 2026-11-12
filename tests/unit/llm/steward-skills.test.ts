@@ -189,7 +189,7 @@ describe("Steward toolset without a domain tag", () => {
       view: await opts.executeTool("load_skill", { name: "provenance" }),
       recorded: [...(getUsageContext().skills ?? [])],
     }));
-    expect(view.startsWith("# Method skill: Provenance (version 9)")).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 10)")).toBe(true);
     expect(view).toContain("## For the Claim Steward");
     expect(recorded).toEqual(["provenance"]);
     const unknown = JSON.parse(await opts.executeTool("load_skill", { name: "alchemy" }));

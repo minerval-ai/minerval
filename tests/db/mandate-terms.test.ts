@@ -187,7 +187,7 @@ describe("the operations view", () => {
   it("shows the policy, the day's use, the commissions and the decisions", async () => {
     const m = await mandateWithTerms(await seedUser("ops-view"), 10 * OWL);
     await rawQuery(
-      `UPDATE grants SET daily_budget_micro_usd = $2,
+      `UPDATE grants SET pace = (CASE WHEN $2::bigint > 0 THEN jsonb_build_object('kind','steady','owls',$2::bigint / 1000000.0,'period_hours',24) ELSE '{"kind":"as_needed"}'::jsonb END),
               mandate = mandate || jsonb_build_object('operating_policy', jsonb_build_object('mission', 'Fund the deep-ocean questions first.'))
         WHERE id = $1`,
       [m.grantId, 5 * OWL]
@@ -205,7 +205,7 @@ describe("the operations view", () => {
     );
     const view = (await getMandateAllocationView(m.grantId))!;
     expect(view.operating_policy).toContain("Fund the deep-ocean questions first.");
-    expect(view.budget).toMatchObject({ daily_rate_owls: 5, used_today_owls: 2, held_owls: 2 });
+    expect(view.budget).toMatchObject({ pace: { kind: "steady", owls: 5, period_hours: 24 }, pace_window_used_owls: 2, held_owls: 2 });
     expect(view.kinds).toEqual([
       { kind: "assess", funding: "commissioned", runs: 1, running: 1, budget_owls: 2, spent_owls: 0 },
     ]);

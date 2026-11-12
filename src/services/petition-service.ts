@@ -214,6 +214,17 @@ export async function decidePetition(input: {
     const amount = input.owlsMicroUsd ?? Number(p.asked_micro_usd);
     granted = Math.round(input.decision === "grant" ? Math.min(amount, Number(p.asked_micro_usd)) : amount);
     if (!(granted > 0)) return { ok: false, message: "A grant or follow-up needs an amount above zero." };
+    // The reserve is checked here, when the decision is made, since a grant
+    // may be placed later (on a paused session's resumption, or as a
+    // follow-up): an officer grants only from money outside it.
+    const { paceRoom, paceRefusal } = await import("./pace-service.js");
+    const room = await paceRoom(p.grant_id, input.decidedBy === "grantmaker" ? "grantmaker" : "delegated");
+    if (!room || granted > room.availableMicroUsd) {
+      return {
+        ok: false,
+        message: room ? `Nothing was decided. ${paceRefusal(room, granted)}` : "The mandate is not active.",
+      };
+    }
     if (input.decision === "follow_up") {
       status = "follow_up";
     } else {
@@ -234,6 +245,7 @@ export async function decidePetition(input: {
             payer: { kind: "grant", grantId: p.grant_id },
             budget: granted,
             commissionedBy: "petition",
+            committer: "grantmaker",
             brief: p.plan,
             reason,
           });

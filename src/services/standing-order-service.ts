@@ -24,7 +24,8 @@ import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { commissionNodePass, liveNodeCommission, type CommissionTier } from "./commission-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { enqueueSteward } from "./queue-service.js";
-import { microUsdToOwls } from "./owl.js";
+import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { parsePace } from "./pace-service.js";
 
 /** Who placed it, on the allocation and in the mandate's commission list. */
 export const PLAN_ORDER_COMMISSIONER = "plan";
@@ -100,8 +101,8 @@ export async function placeStandingOrder(input: {
     return { state: "live", actionId: live.action_id };
   }
 
-  const [grant] = await rawQuery<{ daily: string; escrow: string; budget_job_id: string }>(
-    `SELECT g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow, g.budget_job_id
+  const [grant] = await rawQuery<{ pace: unknown; escrow: string; budget_job_id: string }>(
+    `SELECT g.pace, j.budget_micro_usd AS escrow, g.budget_job_id
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
     [input.grantId]
   );
@@ -111,15 +112,16 @@ export async function placeStandingOrder(input: {
   if (!(budget > 0)) return { state: "blocked", reason: "no pass on this node could be priced" };
   const what = named > 0 ? `the item's budget of ${owls(budget)} owls` : `the pass's estimate of ${owls(budget)} owls`;
 
-  // A budget above the whole daily rate never fits, on any day.
-  const daily = Number(grant.daily);
-  if (daily > 0 && budget > daily) {
+  // A budget above a steady pace's whole window never fits, in any window.
+  const pace = parsePace(grant.pace);
+  if (pace.kind === "steady" && budget > owlsToMicroUsd(pace.owls)) {
     return {
       state: "blocked",
       reason:
-        `${what} is more than the mandate's whole daily rate (${owls(daily)} owls), so no day can ` +
-        `cover it. Raise the rate (set_daily_rate) or give the item a smaller budget_owls` +
-        (input.tier === "strong" ? ", or the standard variant" : ""),
+        `${what} is more than the mandate's whole pace window (${pace.owls} owls per ${pace.period_hours} hours), ` +
+        `so no window can cover it. Give the item a smaller budget_owls` +
+        (input.tier === "strong" ? ", or the standard variant" : "") +
+        `; the pace is the funder's to change`,
     };
   }
 
@@ -138,7 +140,9 @@ export async function placeStandingOrder(input: {
       ? { state: "placed", actionId: res.actionId, budgetMicroUsd: res.budgetMicroUsd, tier: res.tier }
       : { state: "live", actionId: res.actionId };
   }
-  if (res.code === "OVER_DAILY_RATE") {
+  if (res.code === "OVER_PACE") {
+    // The window or the Grantmaker's reserve: either frees, the reserve when
+    // the Grantmaker lowers it or commissions the order itself.
     return { state: "waiting", rate: true, reason: `${res.message} ${RETRY}.` };
   }
   if (res.code === "OVER_ESCROW") {

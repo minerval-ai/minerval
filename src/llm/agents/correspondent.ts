@@ -61,8 +61,6 @@ const RECENT_UPDATES_SHOWN = 5;
 /** Recently closed plan items shown, so it remembers what it finished or gave up. */
 const RECENT_CLOSED_PLAN_SHOWN = 5;
 
-const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
-
 /** One change as a line of the briefing. */
 export function renderChange(c: GraphChange): string {
   const move =
@@ -313,9 +311,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     `### Your bounds\n\n` +
     `- ${runBudgetSentence({ canSpend: true }) || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     (room
-      ? `- Your mandate has ${usd(room.headroomMicroUsd)} uncommitted in escrow` +
-        (room.dayRoomMicroUsd !== null ? ` and ${usd(room.dayRoomMicroUsd)} left of today's rate` : "") +
-        `. Your runs are paid from it alongside the mandate's other work; when it runs short, a run waits ` +
+      ? `- Your mandate's money: ${room.sentence} Your runs are paid from it alongside the mandate's other work; when it runs short, a run waits ` +
         `until it is funded, and your next update starts from wherever you left off.\n`
       : "") +
     `- Heartbeat: ${c.heartbeat_hours > 0 ? `every ${c.heartbeat_hours}h` : "none (event-driven)"}; ` +

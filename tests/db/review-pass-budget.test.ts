@@ -42,7 +42,7 @@ import {
   reviewPassBudgetMicroUsd,
 } from "../../src/services/action-service.js";
 import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
-import { grantDayUseMicroUsd } from "../../src/services/commission-service.js";
+import { committedWithinMicroUsd } from "../../src/services/pace-service.js";
 import { wakeDueMandateReviews } from "../../src/services/mandate-event-service.js";
 import {
   getOperatingPolicy,
@@ -175,7 +175,7 @@ describe("a pass the day or the escrow cannot fund in full", () => {
     expect(seen.briefing).toContain("This run has a budget of $3.00");
     expect(seen.briefing).toContain("the platform's default for a review pass, 5 owls");
     expect(seen.briefing).toContain("This pass was started with less than that, 3 owls");
-    expect(seen.briefing).toContain("3 of 3 owls of today's rate are committed, this pass's budget included");
+    expect(seen.briefing).toContain("3 of 3 owls of the pace's window are committed, this pass's budget included");
     expect(seen.briefing).toContain("add_to_pass_budget");
     // The sentence that was never true of this pass.
     expect(seen.briefing).not.toContain("high end of what work like this usually costs");
@@ -238,18 +238,18 @@ describe("add_to_pass_budget", () => {
     expect(ceilingAfter).toBe(8 * OWL);
     // The mandate's one live placement on the row grew; no second row.
     expect((await placements(grantId)).map((p) => Number(p.amount))).toEqual([8 * OWL]);
-    expect(await grantDayUseMicroUsd(grantId)).toBe(8 * OWL);
+    expect(await committedWithinMicroUsd(grantId, 24)).toBe(8 * OWL);
 
     // 8 of today's 10 owls are held: 5 more is refused, with what is left.
-    expect(out[1]).toMatchObject({ success: false, code: "OVER_DAILY_RATE" });
+    expect(out[1]).toMatchObject({ success: false, code: "OVER_PACE" });
     expect(String(out[1]!.problem)).toContain("2 of 10 owls");
-    expect(String(out[1]!.problem)).toContain("set_daily_rate");
+    expect(String(out[1]!.problem)).toContain("the pace is the funder's to change");
     expect((await placements(grantId)).map((p) => Number(p.amount))).toEqual([8 * OWL]);
 
     // Settlement is the usual one: what the pass metered is spent, the rest freed.
     await completeAction(row.id, 6_500_000);
     expect(await placements(grantId)).toEqual([{ amount: String(8 * OWL), spent: "6500000", released: true }]);
-    expect(await grantDayUseMicroUsd(grantId)).toBe(6_500_000);
+    expect(await committedWithinMicroUsd(grantId, 24)).toBe(6_500_000);
   });
 
   it("refuses past the uncommitted escrow with figures", async () => {

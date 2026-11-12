@@ -130,7 +130,6 @@ export const POLICY_BOUNDS: Record<
 export interface GeneralMandate {
   grantId: string;
   budgetJobId: string;
-  dailyBudgetMicroUsd: number;
   budgetMicroUsd: number;
   jobStatus: string;
   allocationPolicy: Partial<AllocationPolicy> | null;
@@ -163,12 +162,11 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
     const [row] = await rawQuery<{
       id: string;
       budget_job_id: string;
-      daily_budget_micro_usd: number;
       allocation_policy: Partial<AllocationPolicy> | null;
       budget_micro_usd: number;
       job_status: string;
     }>(
-      `SELECT g.id, g.budget_job_id, g.daily_budget_micro_usd,
+      `SELECT g.id, g.budget_job_id,
               g.allocation_policy, j.budget_micro_usd, j.status AS job_status
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
         WHERE g.is_platform = true AND g.policy = 'general'
@@ -180,7 +178,6 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
       value = {
         grantId: row.id,
         budgetJobId: row.budget_job_id,
-        dailyBudgetMicroUsd: Number(row.daily_budget_micro_usd),
         budgetMicroUsd: Number(row.budget_micro_usd),
         jobStatus: row.job_status,
         allocationPolicy: row.allocation_policy,

@@ -17,7 +17,7 @@
  * judgment of a claim; it buys attention, never conclusions.
  */
 import { rawQuery } from "../db/client.js";
-import { allocationDayUseSql } from "./day-use.js";
+import { windowRoomSql } from "./pace-service.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { REQUEST_GROUP, ensureRequestActions } from "./action-service.js";
@@ -394,8 +394,10 @@ export async function fundGrantSelfActions(): Promise<number> {
     cost_est: number;
     needed: number;
     headroom: number;
-    /** Null when the mandate has no daily rate: unpaced, escrow-bounded only. */
+    /** Null when the mandate's pace is as needed: escrow-bounded only. */
     day_room: number | null;
+    /** The Grantmaker's reserve, which only its own passes may draw on. */
+    reserve: number;
   }>(
     `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
             a.cost_est_micro_usd::bigint AS cost_est,
@@ -436,16 +438,11 @@ export async function fundGrantSelfActions(): Promise<number> {
                            WHERE r.from_grant_id = g.id), 0)
               - ${prizeCommitmentSql("g.id")})::bigint
               AS headroom,
-            -- The day's remaining room under the mandate's rate, counted the
-            -- same way a commission counts it (grantDayUseMicroUsd). A rate
-            -- of 0 means unpaced.
-            (CASE WHEN g.daily_budget_micro_usd > 0
-                  THEN GREATEST(0, g.daily_budget_micro_usd
-                    - COALESCE((SELECT SUM(${allocationDayUseSql("al")})
-                                  FROM action_allocations al
-                                 WHERE al.grant_id = g.id
-                                   AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0))
-                  ELSE NULL END)::bigint AS day_room
+            -- The room the mandate's pace leaves in its rolling window,
+            -- counted the way a commission counts it (pace-service.ts);
+            -- null for a pace that is as needed.
+            ${windowRoomSql("g")}::bigint AS day_room,
+            g.reserve_micro_usd::bigint AS reserve
        FROM actions a
        JOIN grants g
          ON (a.kind IN ('grant_planning', 'mandate_review') AND a.target_ref = g.id::text)
@@ -565,7 +562,11 @@ export async function fundGrantSelfActions(): Promise<number> {
       row.day_room === null
         ? Number.POSITIVE_INFINITY
         : Number(row.day_room) - drawn;
-    const room = Math.min(Number(row.headroom) - drawn, dayRoom);
+    // The Grantmaker's own passes may draw on its reserve; the mandate's
+    // routine runs (lookouts, Correspondents, plan ingests, sweeps) may not.
+    const ownPass = row.kind === "mandate_review" || row.kind === "grant_planning";
+    const reserve = ownPass ? 0 : Math.max(0, Number(row.reserve ?? 0));
+    const room = Math.min(Number(row.headroom) - drawn - reserve, dayRoom);
     // Work is funded whole or not at all, except the Grantmaker's own
     // passes: a review or planning pass the day or the escrow cannot fund
     // in full is started with what there is (shortPassFunding), because a

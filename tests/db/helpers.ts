@@ -160,6 +160,7 @@ export async function seedGrantWithJob(input: {
   budgetMicroUsd: number;
   grantStatus?: string;
   jobStatus?: string;
+  /** A steady pace of this much per rolling 24 hours; 0 or absent is as needed. */
   dailyBudgetMicroUsd?: number;
   policy?: string;
   withEscrowHold?: boolean;
@@ -180,15 +181,19 @@ export async function seedGrantWithJob(input: {
   const grantRows = await rawQuery<{ id: string }>(
     `INSERT INTO grants
        (funder_user_id, budget_job_id, name, policy, status,
-        daily_budget_micro_usd)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        pace)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id`,
     [
       input.funderId,
       jobId,
       `DB-test mandate ${randomUUID().slice(0, 8)}`,
       input.policy ?? "agent",
       input.grantStatus ?? "active",
-      input.dailyBudgetMicroUsd ?? 0,
+      JSON.stringify(
+        (input.dailyBudgetMicroUsd ?? 0) > 0
+          ? { kind: "steady", owls: input.dailyBudgetMicroUsd! / 1_000_000, period_hours: 24 }
+          : { kind: "as_needed" }
+      ),
     ]
   );
   return { grantId: grantRows[0]!.id, jobId };

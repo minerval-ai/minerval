@@ -178,18 +178,18 @@ export const PLAN_KIND_RULES =
   "commission you make yourself, at budget_owls or, naming none, the " +
   "pass's current estimate (cost_sheet), on the variant you name, " +
   "standard or strong (strong when you name none, as a paid order gets). " +
-  "The budget is held against your daily rate and escrow while the pass " +
+  "The budget is held against your mandate's pace and escrow while the pass " +
   "waits and runs, and what it does not spend comes back. Unlike " +
   "`commission`, which is placed now or refused, an order waits for " +
-  "room: one today's rate cannot cover reads waiting, with the figures, " +
-  "and is placed as soon as the rate has the room, earlier items of the " +
+  "room: one the pace's window or your reserve leaves no room for reads " +
+  "waiting, with the figures, and is placed as soon as there is room, earlier items of the " +
   "plan first (so put first what matters most; a large budget early in " +
   "the plan holds the smaller ones behind it until it fits). One the " +
   "escrow cannot cover beside the budgets running work holds waits the " +
-  "same way. One that could never fit, a budget above your whole daily " +
-  "rate or above what the escrow could cover with every running budget " +
-  "returned, reads blocked with the figures until you change the budget, " +
-  "the variant, the rate, or the escrow is topped up. A node that " +
+  "same way. One that could never fit, a budget above a steady pace's whole " +
+  "window or above what the escrow could cover with every running budget " +
+  "returned, reads blocked with the figures until you change the budget " +
+  "or the variant, or the escrow is topped up. A node that " +
   "already has a pass paid for, by anyone, is not paid for twice: the " +
   "item is met when that pass finishes. Once per item: a finished pass " +
   "stays finished, whoever paid for it; add another item for another " +
@@ -200,7 +200,7 @@ export const PLAN_KIND_RULES =
   "children into the queue (a claim's subclaims, a question's " +
   "subquestions, candidate answers and presuppositions) and orders a pass " +
   "on each child that is waiting for one, at the same budget and variant, " +
-  "under the same rate and escrow, including the children the node's own " +
+  "under the same pace and escrow, including the children the node's own " +
   "pass mints; so price a deepen item as the node's pass plus one per " +
   "child. It goes one level. If the Steward parks a node after repeated " +
   "failures, the item reads cancelled and its budget is back in your escrow. " +
@@ -216,7 +216,7 @@ export const PLAN_KIND_RULES =
   "claims to be swept on its own, or \"residual\" for the claims no such " +
   "tag covers; the item opens (or keeps) the partition's two sweep rows " +
   "(standard and strong readers, priced by the partition's assessed " +
-  "nodes) and funds one from your escrow and daily rate: the variant you " +
+  "nodes) and funds one from your escrow within the pace: the variant you " +
   "name, or without one the same marginal-return rule the platform's own " +
   "sweeps follow. The item is done when a sweep of the partition finishes " +
   "after it opened, whoever funded it; add another item for a re-sweep. A " +
@@ -305,7 +305,7 @@ export const PLAN_ITEM_SCHEMA = {
       type: "number",
       description:
         "assess, reassess, deepen, optional: the budget of each pass the " +
-        "item commissions, in owls, held against your daily rate and " +
+        "item commissions, in owls, held against your mandate's pace and " +
         "escrow until the pass settles. Omit for the pass's current " +
         "estimate on its variant (cost_sheet).",
     },

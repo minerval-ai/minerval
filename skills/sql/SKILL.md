@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 6
+    version: 7
     since_epoch: 2026-11-responsive-funding
     changelog:
+      7: "mandates carries pace and the Grantmaker's reserve in place of the daily rate"
       6: "plan_items: a stewarding item is a standing order its mandate commissions (#849); its money is in commissions with commissioned_by plan, and waiting or blocked says the rate or escrow has no room"
       5: "nodes carries steward_park_reason (#846): why a node is parked after failed Steward passes, so a query can find premises that will not be judged until someone commissions them"
       4: "assessments carries relabeled_from (#848): the retired label a migration carried a status over from, set until the node is re-judged; a query lists that backlog with its open reassess rows"
@@ -64,8 +65,11 @@ unknown.
 - `messages`: what was sent to a node's Steward. message_id, node_id,
   trigger, sender_kind, sender_node_id, paid, body, created_at, read_at,
   outcome (changed, no_change, disagree), outcome_note
-- `mandates`: mandate_id, title, objective, status, is_platform,
-  daily_rate_owls, escrow_owls, operating_policy, created_at
+- `mandates`: mandate_id, title, objective, status, is_platform, pace
+  (jsonb: `{"kind":"as_needed"}`, or `{"kind":"steady","owls":…,
+  "period_hours":…}` for at most that much committed in any rolling
+  window), reserve_owls and reserve_reason (what only the Grantmaker may
+  commit, and why), escrow_owls, operating_policy, created_at
 - `mandate_decisions`: every commission, grant, refusal, decline and note
   a mandate's agents made. decision_id, mandate_id, decided_by, item_kind,
   decision, target, owls, reason, petition_id, action_id, created_at
@@ -86,8 +90,8 @@ unknown.
   An `assess`, `reassess` or `deepen` item is a
   standing order its mandate commissions: once placed, its money is the
   row in `commissions` on that action_id with commissioned_by `plan`. A
-  ledger_status of `waiting` on one is an order the mandate's daily rate
-  or escrow has no room for yet, and `blocked` one that could never fit;
+  ledger_status of `waiting` on one is an order the mandate's pace, its
+  Grantmaker's reserve, or its escrow has no room for yet, and `blocked` one that could never fit;
   ledger_reason gives the figures.
 - `petitions`: petition_id, mandate_id, kind, asked_owls, granted_owls,
   requester_agent, requester_node_id, status, plan, reason, created_at,

@@ -124,7 +124,7 @@ export function getFundRequestToolDefinition(): Tool {
       "the work is done and what it finds are not yours to shape. Every outcome is a complete one and " +
       "paid for alike, and is recorded on the request for its keeper to judge. The run starts at once; " +
       "what it does not spend comes back when it settles, and all of it if the request closes first. " +
-      "It counts against your daily rate and escrow like any commission.",
+      "It counts against your mandate's pace and escrow like any commission.",
     input_schema: {
       type: "object",
       properties: {
