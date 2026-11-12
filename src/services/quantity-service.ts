@@ -32,9 +32,11 @@ export async function defineQuantity(input: {
   const def = quantityDefinitionSchema.parse(input.definition);
   await withTransaction(async (tx) => {
     await convertKind(tx, input.claimId, "quantity");
+    // A first definition takes this run's label; a revision of one keeps
+    // the label the definition has (src/labels.ts).
     await tx.query(
-      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (claim_id) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
              conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
@@ -45,6 +47,7 @@ export async function defineQuantity(input: {
         def.conditions ?? null,
         JSON.stringify(def.unit),
         input.createdBy,
+        currentLabel(),
       ]
     );
   });
@@ -161,8 +164,9 @@ export async function addReading(input: {
   return withTransaction(async (tx) => {
     await requireKind(tx, input.claimId, "quantity");
     const [row] = await tx.query<{ id: string }>(
-      `INSERT INTO quantity_readings (claim_id, source_id, measured, figure, bearing, bearing_claim_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      `INSERT INTO quantity_readings
+         (claim_id, source_id, measured, figure, bearing, bearing_claim_id, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [
         input.claimId,
         input.sourceId,
@@ -171,6 +175,7 @@ export async function addReading(input: {
         input.bearing,
         input.bearingClaimId ?? null,
         input.createdBy,
+        currentLabel(),
       ]
     );
     return { id: row!.id };
@@ -190,11 +195,11 @@ export async function recordCut(input: {
     await requireKind(tx, input.claimId, "claim");
     await requireKind(tx, input.quantityId, "quantity");
     await tx.query(
-      `INSERT INTO quantity_cuts (claim_id, quantity_id, direction, value, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO quantity_cuts (claim_id, quantity_id, direction, value, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (claim_id) DO UPDATE
          SET quantity_id = EXCLUDED.quantity_id, direction = EXCLUDED.direction, value = EXCLUDED.value`,
-      [input.claimId, input.quantityId, input.direction, input.value, input.createdBy]
+      [input.claimId, input.quantityId, input.direction, input.value, input.createdBy, currentLabel()]
     );
   });
 }

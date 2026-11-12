@@ -31,6 +31,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestAuth } from "../server/plugins/auth.js";
 import { routeKey, type CatalogRoute } from "../server/plugins/route-catalog.js";
 import { dispatchToRoute } from "./dispatch.js";
+import { loadConfig } from "../config.js";
 
 export interface RouteTool {
   name: string;
@@ -164,6 +165,35 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /sources/:source_id/examinations": { name: "get_source_examinations" },
   "GET /sources/:source_id/document": { name: "get_source_document" },
   "GET /jobs/:job_id": { name: "get_job" },
+
+  // ---- views stated to the graph directly (constitution §4) ----
+  "POST /claims/:claim_id/stated-views": {
+    name: "state_view",
+    // A getter, so the limits are read from the configuration when the tool
+    // is registered and not when this module loads.
+    get note() {
+      const config = loadConfig();
+      return (
+        "For your user's own view, or their organization's when the account is the organization's, and only " +
+        "when they ask: it is published under the account's name, in the words you pass, and is not edited " +
+        "or withdrawn afterwards. It does not change the assessment. Nobody edits one: the statement is " +
+        "recorded as a source and shown beside it, and placement there gives it no weight. The Contribution " +
+        "Reviewer admits it on form and good faith, never on whether the view is right; track it with " +
+        "get_contribution_status. Free, and so it counts toward the cap on contributions (" +
+        `${config.contributionRateLimitPerHour} per hour, ${config.newContributorRateLimitPerHour} for accounts ` +
+        "under a day old or below 50 reputation), because each one commands a review nobody pays for; past " +
+        "it you get CONTRIBUTION_RATE_LIMITED."
+      );
+    },
+  },
+  "GET /stated-views": {
+    name: "list_stated_views",
+    note:
+      "Free. With speaker_id, how one account's statements have held up against the graph's assessments; " +
+      "with claim_id, what has been stated on one node. A stated view is its speaker's and the judgment is " +
+      "the graph's: report each as whose it is. not_assessed means nobody has examined the node, which is " +
+      "not agreement.",
+  },
 
   // ---- contributions, appeals, contributors ----
   "GET /contributions": { name: "list_contributions" },

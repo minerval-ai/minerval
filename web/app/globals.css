@@ -1518,11 +1518,20 @@ a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
   display: flex; flex-wrap: wrap; gap: 0.2rem 1.4rem;
   font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
 }
-.acct-nav { padding: 0.65rem 0; border-bottom: 1px solid var(--rule); }
+/* The section links stay with the reader down a long page, under the
+   masthead, which is itself stuck to the top. */
+.acct-nav {
+  position: sticky; top: var(--masthead-height, 3.22rem); z-index: 10;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--rule); background: var(--paper);
+}
+.acct-pager {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  padding-top: 0.8rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
 
 /* a section's anchor clears the sticky masthead */
-.acct-section { margin-top: 3.2rem; scroll-margin-top: 4rem; }
-#buy-owls { scroll-margin-top: 4rem; }
+.acct-section { margin-top: 3.2rem; scroll-margin-top: 6.2rem; }
+#buy-owls { scroll-margin-top: 6.2rem; }
 .acct-head {
   display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
   gap: 0.4rem 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule);
@@ -1667,6 +1676,12 @@ p.acct-main.acct-prose { margin: 0; }
   }
   .acct-figure:first-child { border-top: 0; }
   .acct-balance { font-size: 2rem; }
+  /* the masthead's links wrap to a second line at this width */
+  .acct-nav {
+    top: var(--masthead-height, 4.7rem);
+    /* one line that scrolls sideways, so the bar stays a single row */
+    flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: 0 1.2rem;
+  }
   .acct-line-3 { grid-template-columns: minmax(0, 1fr) auto; }
   .acct-line-3 > div:first-child { grid-column: 1 / -1; }
   .acct-agent { grid-template-columns: 6rem minmax(0, 1fr) 3.7rem 2.4rem; }
@@ -1675,6 +1690,37 @@ p.acct-main.acct-prose { margin: 0; }
 /* ---- contribution entry points (#174) ------------------------------------- */
 /* Visible to every reader, quiet on the page: the prompt advertises that the
    page is challengeable; the action itself is gated behind sign-in. */
+
+/* ----- stated views (constitution §4) -----
+   An instance in the instance's own markup, with the speaker's line above
+   the words and the facts about the statement beneath. */
+.stated-view-head {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--muted);
+  display: flex; gap: 0.55rem; align-items: baseline; flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.stated-view-head a { color: var(--ink); font-weight: 600; }
+.stated-view-stands {
+  font-family: var(--sans); font-size: 0.84rem; color: var(--ink-soft); margin: 0 0 0.45rem;
+}
+.stated-view-facts p {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  margin: 0 0 0.3rem; max-width: 36rem;
+}
+.stated-view-facts .sc, .stated-view-stands .sc { color: var(--muted); margin-right: 0.3rem; }
+.stated-view-links { color: var(--muted); }
+.stated-rows { list-style: none; padding: 0; margin: 0.6rem 0 1.6rem; }
+.stated-rows > li { border-top: 1px solid var(--rule-soft); padding: 0.75rem 0 0.7rem; }
+.stated-rows .stated-node { font-size: 1rem; margin: 0 0 0.3rem; }
+.stated-rows .stated-pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1.4rem;
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft);
+}
+.stated-rows .stated-pair blockquote { margin: 0.2rem 0 0; font-style: italic; color: var(--ink); }
+.stated-rows .stated-summary {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0;
+}
+@media (max-width: 640px) { .stated-rows .stated-pair { grid-template-columns: 1fr; } }
 
 .contribute-lede { font-family: var(--sans); font-size: 0.86rem; color: var(--muted); max-width: 36rem; }
 .contribute-open {
