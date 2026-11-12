@@ -52,6 +52,7 @@ import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { fetchAndStoreSource } from "../services/source-map-service.js";
 import { runAtSourceLabel } from "../services/label-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 /**
  * The pass's cursor. The key carries a version because the pass now fetches:
@@ -300,7 +301,10 @@ export function startSourceBackfill(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await sourceBackfillTick();
+      const result = await withSystemClearance(
+        "The backfill finds sources at every label that lack facts or segments and fills each at the source's label.",
+        () => sourceBackfillTick()
+      );
       if (result.taken > 0) {
         options.logger.info(
           `Source backfill: took ${result.taken} source(s); fetched ${result.fetched}, ` +

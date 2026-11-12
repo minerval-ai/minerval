@@ -275,7 +275,7 @@ beforeAll(async () => {
 });
 
 describe("the columns", () => {
-  it("are on every table of run material, public by default, and point at labels", async () => {
+  it("are on every table of run material, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean; validated: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, k.oid IS NOT NULL AS fk, COALESCE(k.convalidated, false) AS validated
          FROM information_schema.columns c
@@ -290,7 +290,7 @@ describe("the columns", () => {
     );
     expect(rows).toEqual(
       RUN_TABLES.map((table_name) => ({
-        table_name, column_default: "'public'::text", is_nullable: "NO", fk: true,
+        table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true,
         // The keys on agent_steps and llm_usage were added NOT VALID (the
         // label_columns migration): every live run appends to both, and
         // neither is scanned under the lock that adds the column. When a

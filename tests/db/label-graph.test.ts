@@ -105,6 +105,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { currentLabel, runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { withSystemClearance } from "../../src/db/clearance.js";
 import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { executeKindTool } from "../../src/llm/tools/kind-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
@@ -477,7 +478,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table of the graph's content, public by default, and point at labels", async () => {
+  it("are on every table of the graph's content, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -494,7 +495,7 @@ describe("the columns", () => {
       [CONTENT_TABLES]
     );
     expect(rows).toEqual(
-      CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 
@@ -740,7 +741,6 @@ describe("work that starts from a claim", () => {
     const funder = await seedUser("graph-plan");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL, dailyBudgetMicroUsd: 100 * OWL });
     const swept = await seedClaim("graph plan item, swept");
-    await setLabel(swept, INTERNAL);
     await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
       grantId,
       JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", budget_owls: 3 }] }),
@@ -749,14 +749,34 @@ describe("work that starts from a claim", () => {
     await materializePlanItems(grantId);
     expect(await assessLabels(swept)).toEqual([PUBLIC_LABEL]);
 
-    // An order placed from inside a run is that run's work, like everything a run opens.
+    // An order placed from inside a run is that run's work, like everything
+    // a run opens: on a public claim, from a run at another label, it is
+    // the run's and not the claim's.
     const inRun = await seedClaim("graph plan item, in a run");
-    await setLabel(inRun, INTERNAL);
-    const placed = await inRunAt(PUBLIC_LABEL, () =>
+    const placed = await inRunAt(INTERNAL, () =>
       placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." })
     );
     expect(placed.state).toBe("placed");
-    expect(await assessLabels(inRun)).toEqual([PUBLIC_LABEL]);
+    expect(await assessLabels(inRun)).toEqual([INTERNAL]);
+  });
+
+  // Reads are held to a clearance (tests/db/enforcement.test.ts), so a
+  // mandate's plan cannot order work on a claim its own label does not
+  // read. Before, the pass was opened at the mandate's label, public, on a
+  // claim that was not. Now the claim is not there for the plan, and the
+  // item says so on the plan's own ledger, where its Grantmaker reads it.
+  it("is not ordered by a mandate's plan on a claim the mandate's label does not read", async () => {
+    const funder = await seedUser("graph-plan-unreadable");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL, dailyBudgetMicroUsd: 100 * OWL });
+    const swept = await seedClaim("graph plan item, out of reach");
+    await setLabel(swept, INTERNAL);
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
+      grantId,
+      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", budget_owls: 3 }] }),
+    ]);
+    const [item] = await materializePlanItems(grantId);
+    expect(item!.ledger).toMatchObject({ status: "blocked", reason: `claim ${swept} does not exist` });
+    expect(await assessLabels(swept)).toEqual([]);
   });
 
   it("is raised by the reconcile-candidate scan at the anchor claim's label", async () => {
@@ -846,7 +866,15 @@ describe("work that starts from a claim", () => {
     await setLabel(claim, INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtClaimLabel(claim, at)).toBe(INTERNAL);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabel(claim, at))).toBe(INTERNAL);
+    // A sweep sees every label (withSystemClearance), whatever label is in the air around it.
+    expect(
+      await withSystemClearance("A test stands in for a sweep.", () =>
+        runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabel(claim, at))
+      )
+    ).toBe(INTERNAL);
+    // Work that does not read the claim's label cannot move itself to it:
+    // the claim is not there for that work, and it runs as it would have.
+    expect(await runAtLabel(PUBLIC_LABEL, "a public run", () => runAtClaimLabel(claim, at))).toBe(PUBLIC_LABEL);
     // A claim that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtClaimLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
   });

@@ -30,10 +30,24 @@
  *     The login roles' CONNECTION LIMITs cap how many run at once; a full
  *     pool answers at once rather than queueing. Identical queries within 30
  *     seconds are served from cache.
+ *
+ * Where a deployment has more than one label, the views show a row only at
+ * a label the asker reads (db/clearance.ts). Whoever writes the SQL could
+ * set any setting if a layer above failed, so the clearance is not a
+ * setting taken on trust. The views are owned by a role the row-level
+ * security policies bind, and the policy reads the session's clearance
+ * from a token this service signs for the one connection the query runs
+ * on (sqlClearanceToken below; minerval_sql_clearance in the database
+ * checks it). A session with no token, a forged one, an expired one or one
+ * made for another connection reads `public` alone. The key is in a schema
+ * the SQL roles hold nothing on. The result says which labels were read.
  */
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { loadConfig } from "../config.js";
-import { databaseSsl, rawQuery } from "../db/client.js";
+import { currentReadClearance, databaseSsl, rawQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
+import { PUBLIC_LABEL } from "../labels.js";
 
 /** The views callers and agents may read (migration 0093). */
 export const SQL_VIEWS = [
@@ -243,6 +257,87 @@ export interface SqlResult {
   truncated: boolean;
   elapsed_ms: number;
   plan_cost: number;
+  /**
+   * Present only where the deployment has more than one label: which rows
+   * the views showed this asker, and why (sqlClearanceNote).
+   */
+  note?: string;
+}
+
+// ---------------------------------------------------------------------------
+// The asker's clearance, carried to the query's own connection
+// ---------------------------------------------------------------------------
+
+const sha256Hex = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+let clearanceKey: Promise<string> | null = null;
+
+/** The key the database checks a clearance token against. Read once, as the owner. */
+function sqlClearanceKey(): Promise<string> {
+  clearanceKey ??= withSystemClearance(
+    "The key that signs read-only SQL's clearance is readable by the tables' owner alone.",
+    async () => {
+      const [row] = await rawQuery<{ key: string }>(`SELECT key FROM minerval_private.sql_clearance_key`);
+      if (!row) throw new Error("no key to sign read-only SQL's clearance with");
+      return row.key;
+    }
+  ).catch((err) => {
+    clearanceKey = null;
+    throw err;
+  });
+  return clearanceKey;
+}
+
+/**
+ * A clearance for one connection: "expiry.pid.labels.signature". The
+ * database returns the labels only for a token whose signature is right,
+ * that has not expired, on the backend it names (minerval_sql_clearance).
+ * `public` is read by every session and is left out.
+ */
+export function sqlClearanceToken(input: {
+  key: string;
+  labels: readonly string[];
+  backendPid: number;
+  expiresAtEpochSeconds: number;
+}): string {
+  const labels = [...new Set(input.labels)].filter((l) => l !== PUBLIC_LABEL).sort();
+  const signed = `${Math.floor(input.expiresAtEpochSeconds)}.${input.backendPid}.${labels.join(",")}`;
+  return `${signed}.${sha256Hex(input.key + sha256Hex(input.key + signed))}`;
+}
+
+/**
+ * The labels the asker reads, or null where nothing is held. Working it out
+ * asks the main database, which read-only SQL otherwise does not depend on
+ * (callers read a replica). If that fails the query still runs, with no
+ * token: where the views are held they then show `public` alone, and where
+ * they are not, nothing has changed.
+ */
+async function askerClearance(): Promise<string[] | null> {
+  try {
+    return await currentReadClearance();
+  } catch (err) {
+    console.error("[sql] could not work out the asker's clearance; the query reads public alone:", err);
+    return null;
+  }
+}
+
+/**
+ * What a result says about the rows it was computed over, on a deployment
+ * with more than one label. The asker is told which labels it read and
+ * that everything else was left out before the query ran, since a count
+ * that silently covers less than the whole graph would mislead.
+ */
+export function sqlClearanceNote(clearance: readonly string[]): string {
+  const read = [...clearance].sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1));
+  const names = read.map((l) => `\`${l}\``);
+  const list =
+    names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
+  return (
+    `This graph holds material that only some of its readers may see. These views showed you the rows ` +
+    `labeled ${list}, which is what you may read. Rows at any other label were left out before your ` +
+    `query ran, so a count, a sum or an empty result here is over what you can read and not over ` +
+    `everything the graph holds.`
+  );
 }
 
 const MAX_ROWS = 500;
@@ -299,6 +394,10 @@ export async function runReadOnlyQuery(
     throw new SqlRefusal("NOT_CONFIGURED", "Read-only SQL is not configured in this deployment yet.");
   }
   await checkQuery(sql);
+  // What the asker reads: the run's label and what it reads, or the
+  // request's clearance. Null on a deployment whose only label is `public`,
+  // where nothing below changes.
+  const clearance = await askerClearance();
   const timeoutMs = (opts.audience === "agent" ? config.sqlAgentTimeoutSeconds : config.sqlCallerTimeoutSeconds) * 1000;
   const maxRows = Math.max(1, Math.min(MAX_ROWS, Math.floor(opts.maxRows ?? 100)));
   const body = sql.trim().replace(/;\s*$/, "");
@@ -326,6 +425,16 @@ export async function runReadOnlyQuery(
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     await client.query("SET LOCAL lock_timeout = 1000");
     await client.query("SET LOCAL search_path = public_read");
+    if (clearance && clearance.some((l) => l !== PUBLIC_LABEL)) {
+      const [backend] = (await client.query(`SELECT pg_backend_pid() AS pid`)).rows as Array<{ pid: number }>;
+      const token = sqlClearanceToken({
+        key: await sqlClearanceKey(),
+        labels: clearance,
+        backendPid: backend!.pid,
+        expiresAtEpochSeconds: Date.now() / 1000 + timeoutMs / 1000 + 60,
+      });
+      await client.query(`SELECT set_config('minerval.sql_clearance', $1, true)`, [token]);
+    }
     const explained = await client.query(`EXPLAIN (FORMAT JSON) ${wrapped}`, params);
     const planCost = Number(
       (explained.rows[0]?.["QUERY PLAN"] as Array<{ Plan?: { "Total Cost"?: number } }> | undefined)?.[0]?.Plan?.["Total Cost"] ?? 0
@@ -359,6 +468,7 @@ export async function runReadOnlyQuery(
       truncated,
       elapsed_ms: Date.now() - started,
       plan_cost: Math.round(planCost),
+      ...(clearance ? { note: sqlClearanceNote(clearance) } : {}),
     };
   } catch (err) {
     if (err instanceof SqlRefusal) throw err;
@@ -408,7 +518,9 @@ export async function runCallerQuery(input: {
 }): Promise<CallerSqlResult> {
   const config = loadConfig();
   const allowance = input.paid ? config.sqlPaidAllowanceSeconds : config.sqlFreeAllowanceSeconds;
-  const key = JSON.stringify([input.sql.trim(), input.params, input.maxRows ?? 100]);
+  // A cached result is one asker's rows: it is served again only to an
+  // asker who reads the same labels.
+  const key = JSON.stringify([input.sql.trim(), input.params, input.maxRows ?? 100, await askerClearance()]);
   const hit = cache.get(key);
   const [usage] = await rawQuery<{ seconds: number }>(
     `SELECT seconds FROM sql_usage WHERE account_key = $1 AND day = (now() AT TIME ZONE 'UTC')::date`,

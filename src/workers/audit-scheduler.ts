@@ -22,6 +22,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { requestAudit } from "../services/queue-service.js";
 import { countNewReportsSince } from "../services/report-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export interface AuditSchedulerTickResult {
   sweepRequested: boolean;
@@ -152,7 +153,10 @@ export function startAuditScheduler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await auditSchedulerTick();
+      const result = await withSystemClearance(
+        "The audit scheduler asks for sweeps over decisions made at every label; each audit then runs at the label of its own row.",
+        () => auditSchedulerTick()
+      );
       if (
         result.sweepRequested ||
         result.suspensionReviewsRequested > 0 ||

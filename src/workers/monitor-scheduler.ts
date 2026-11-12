@@ -28,6 +28,7 @@ import {
   type EmptyChairCandidate,
   type PerformedSettlingCandidate,
 } from "../services/monitor-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export interface MonitorFlag {
   signal: "performed_settling" | "empty_chairs";
@@ -180,7 +181,10 @@ export function startMonitorScheduler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await monitorSchedulerTick();
+      const result = await withSystemClearance(
+        "The monitor looks for candidates among claims at every label and asks for each audit at the claim's label.",
+        () => monitorSchedulerTick()
+      );
       if (result.swept && result.flags) {
         options.logger.info(
           `Monitor scheduler: ${result.flags.candidates} candidate(s), ` +

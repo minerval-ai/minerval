@@ -126,7 +126,8 @@ import { executeGovernanceTool } from "../../src/llm/tools/governance-tools.js";
 import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { createResearcherReadTools } from "../../src/llm/tools/researcher-read-tools.js";
 import { executeReviewerTool } from "../../src/llm/tools/reviewer-tools.js";
-import { currentLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { currentLabel, runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { withSystemClearance } from "../../src/db/clearance.js";
 import {
   ASSESS_GROUP,
   LOOKOUT_GROUP,
@@ -183,7 +184,7 @@ import { placeStandingOrder } from "../../src/services/standing-order-service.js
 import { feedPollTick, retractionPollTick } from "../../src/workers/lookout-triggers.js";
 import { reclaimStalePrizeChecks } from "../../src/workers/prize-check-pipeline.js";
 import { processNextStewardTask } from "../../src/workers/steward-pipeline.js";
-import { OWL, creditOwls, seedAction, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, creditOwls, readViewsAs, seedAction, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 /** The second label: not a word any of these rows holds for another reason. */
 const SECOND = "embargoed";
@@ -530,7 +531,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table of work and governance, public by default, and point at labels", async () => {
+  it("are on every table of work and governance, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -547,7 +548,7 @@ describe("the columns", () => {
       [GOVERNANCE_TABLES]
     );
     expect(rows).toEqual(
-      GOVERNANCE_TABLES.map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+      GOVERNANCE_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 
@@ -561,9 +562,13 @@ describe("the columns", () => {
         ORDER BY t.table_name`
     );
     expect(rows.map((r) => r.table_name)).toEqual([
+      // What a sign-in asserted about an account: the groups it carried.
+      "account_groups",
       // Money placed on the ledger. It also carries a commission's brief
       // and reason, so it is not settled that it should stay without one.
       "action_allocations",
+      // The administrators' own log: who granted what, and which labels were defined.
+      "administrative_events",
       // Accounts and their keys.
       "api_keys",
       // A per-account allowance: a number.
@@ -581,6 +586,9 @@ describe("the columns", () => {
       "oauth_tokens",
       // The owl ledger and what is paid out of it.
       "owl_ledger",
+      // Whose material a source is, and who may do what (src/permissions.ts).
+      "parties",
+      "permission_grants",
       // Switches and marks the platform keeps for itself.
       "platform_flags",
       "prize_payouts",
@@ -694,7 +702,15 @@ describe("a mandate's work", () => {
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtMandateLabel(grantId, at)).toBe(SECOND);
     expect(await runAtMandateLabelOutsideAnyRun(grantId, at)).toBe(SECOND);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtMandateLabel(grantId, at))).toBe(SECOND);
+    // A sweep sees every label (withSystemClearance), whatever label is in the air around it.
+    expect(
+      await withSystemClearance("A test stands in for a sweep.", () =>
+        runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtMandateLabel(grantId, at))
+      )
+    ).toBe(SECOND);
+    // Work that does not read the mandate's label cannot move itself to it:
+    // the mandate is not there for that work, and it runs as it would have.
+    expect(await runAtLabel(PUBLIC_LABEL, "a public run", () => runAtMandateLabel(grantId, at))).toBe(PUBLIC_LABEL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtMandateLabelOutsideAnyRun(grantId, at))).toBe(PUBLIC_LABEL);
     // A mandate that does not exist has nothing to run at.
     expect(await runAtMandateLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
@@ -704,9 +720,14 @@ describe("a mandate's work", () => {
     await setLabel("claims", swept, PUBLIC_LABEL);
     expect((await placeStandingOrder({ grantId, claimId: swept, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." })).state).toBe("placed");
     expect(new Set(await assessLabels(swept))).toEqual(new Set([SECOND]));
+    // The run is at a label of its own that reads the mandate's: a run that
+    // did not read it could not place an order for it.
+    const reader = "reads-embargoed";
+    await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'Defined for one test.') ON CONFLICT (name) DO NOTHING`, [reader]);
+    await rawQuery(`INSERT INTO label_reads (label, reads) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [reader, SECOND]);
     const inRun = await seedClaim("governance order, in a run");
-    await inRunAt(PUBLIC_LABEL, () => placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." }));
-    expect(new Set(await assessLabels(inRun))).toEqual(new Set([PUBLIC_LABEL]));
+    await inRunAt(reader, () => placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." }));
+    expect(new Set(await assessLabels(inRun))).toEqual(new Set([reader]));
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = ANY($1::uuid[])`, [[swept, inRun]]);
 
     // materializePlanItems, as a route or the retry sweep calls it.
@@ -842,8 +863,16 @@ describe("a lookout's and a correspondent's work", () => {
     const { grantId, lookoutId } = await lookoutAt(SECOND, ["feed"]);
     const site = `https://blog-${randomUUID().slice(0, 8)}.example`;
     stage.pages.set(`${site}/feed`, rss(site, ["a"]));
-    // The Grantmaker adds the feed in a public run: the feed, and what it held then, are that run's.
-    const feed = await inRunAt(PUBLIC_LABEL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, rule: { wake: "each" }, createdBy: "grantmaker:chat" }));
+    // The feed, and what it held when it was added, carry the label of the
+    // work that added it: public here. A run at public could not have added
+    // it to this lookout, which it does not read, so the feed is added as
+    // an operator's script would add it, seeing every label and writing at
+    // public.
+    const feed = await withSystemClearance("A test adds a feed as an operator's script would.", () =>
+      runWithUsageContext({ label: PUBLIC_LABEL }, () =>
+        addFeed({ grantId, lookoutId, url: `${site}/feed`, rule: { wake: "each" }, createdBy: "grantmaker:chat" })
+      )
+    );
     if (!feed.ok) throw new Error(JSON.stringify(feed));
     await rawQuery(`UPDATE lookout_feeds SET next_poll_at = now() - interval '1 minute' WHERE id = $1`, [feed.feed_id]);
     await rawQuery(`UPDATE lookout_feeds SET next_poll_at = now() + interval '1 day' WHERE id <> $1`, [feed.feed_id]);
@@ -1117,7 +1146,9 @@ describe("what a reader is shown", () => {
       ["messages", "node_id = $1", [ids.other]],
     ];
     for (const [view, where, params] of reads) {
-      const found = await rawQuery<Record<string, unknown>>(`SELECT * FROM public_read.${view} WHERE ${where}`, params);
+      // The rows were written at the second label, and the views show a row
+      // only to an asker who reads its label (tests/db/enforcement.test.ts).
+      const found = await readViewsAs([SECOND], `SELECT * FROM ${view} WHERE ${where}`, params);
       expect(found.length, view).toBeGreaterThan(0);
       expect(carriesIt(JSON.stringify(found)), view).toBe(false);
       expect(namesIt(JSON.stringify(found)), view).toBe(false);

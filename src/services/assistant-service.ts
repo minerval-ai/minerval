@@ -715,9 +715,17 @@ async function beginTurn(
         "read the conversation until its turn is idle, or stop the turn, then send it.",
     };
   }
-  const running = runTurn(app, user, claim.claimed, claim.startedAt).finally(() =>
-    pendingTurns.delete(running)
-  );
+  // A turn is a run, and a run works at one label: the conversation's,
+  // which is the label of the request that opened it (src/labels.ts). So
+  // the turn reads what that label reads, and its reply, the calls it holds
+  // and its log carry it. The request that sent this message may be
+  // cleared for more; that clearance does not carry into the turn, or text
+  // read with it would be kept in a conversation labeled for fewer readers.
+  // The tools the turn calls act as its user (openAccountTools), so they
+  // are held to the user's clearance as well as to the turn's label.
+  const running = runAtLabel(claim.claimed.sensitivityLabel, `conversation ${claim.claimed.id}`, () =>
+    runTurn(app, user, claim.claimed, claim.startedAt)
+  ).finally(() => pendingTurns.delete(running));
   pendingTurns.add(running);
   return { ok: true, conversation: claim.claimed };
 }

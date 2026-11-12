@@ -29,6 +29,7 @@ import {
   type TagAssignment,
   resolveTagBySlug,
 } from "../services/tag-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 /** The provenance stamp the tagger's taggings carry. */
 export const TAGGER_SOURCE = "tagger";
@@ -278,7 +279,10 @@ export function startTaggingScheduler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await taggingTick();
+      const result = await withSystemClearance(
+        "The tagging drain leases untagged claims at every label and tags each at the claim's label.",
+        () => taggingTick()
+      );
       if (result.processed > 0 || result.budget) {
         options.logger.info(
           `Tagging: ${result.processed} claim(s) tagged (${result.attached} tags, ` +

@@ -97,7 +97,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on ninety-five tables, public by default, each with a key to labels", async () => {
+  it("is on ninety-five tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -107,7 +107,7 @@ describe("the label column, in the catalog", () => {
     );
     expect(columns).toHaveLength(95);
     for (const column of columns) {
-      expect(column, column.table_name).toMatchObject({ column_default: "'public'::text", is_nullable: "NO", data_type: "text" });
+      expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
     // One key each, and on no table that lacks the column.
     expect((await keys()).map((k) => k.table_name)).toEqual(columns.map((c) => c.table_name));
@@ -175,9 +175,13 @@ describe("the label column, in the catalog", () => {
         ORDER BY t.table_name`
     );
     expect(rows.map((r) => r.table_name)).toEqual([
+      // What a sign-in asserted about an account: the groups it carried.
+      "account_groups",
       // Money placed on the ledger. It also carries a commission's brief
       // and reason, so it is not settled that it should stay without one.
       "action_allocations",
+      // The administrators' own log: who granted what, and which labels were defined.
+      "administrative_events",
       // Accounts and their keys.
       "api_keys",
       // A per-account allowance: a number.
@@ -195,6 +199,9 @@ describe("the label column, in the catalog", () => {
       "oauth_tokens",
       // The owl ledger and what is paid out of it.
       "owl_ledger",
+      // Whose material a source is, and who may do what (src/permissions.ts).
+      "parties",
+      "permission_grants",
       // Switches and marks the platform keeps for itself.
       "platform_flags",
       "prize_payouts",

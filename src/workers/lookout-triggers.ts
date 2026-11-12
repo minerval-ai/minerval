@@ -62,6 +62,7 @@ import {
   type FreshSourceEvent,
 } from "../services/source-notice-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 const FLAG_KEY = "lookout_retraction_poll";
 /** First poll looks back this far; later polls resume from the mark. */
@@ -327,7 +328,10 @@ export function startLookoutTriggers(options: {
     try {
       if (retractions) {
         try {
-          const r = await retractionPollTick();
+          const r = await withSystemClearance(
+            "The retraction poll matches notices against sources at every label and queues each lookout's input at that lookout's label.",
+            () => retractionPollTick()
+          );
           if (!r.skipped) {
             options.logger.info(
               `Lookout retraction poll: ${r.notices} notices, ${r.matchedSources} matched ` +
@@ -343,14 +347,20 @@ export function startLookoutTriggers(options: {
         }
       }
       try {
-        const g = await graphFeedTick();
+        const g = await withSystemClearance(
+          "The graph feed wakes every lookout that watches the graph, whatever its label; each then runs at its own.",
+          () => graphFeedTick()
+        );
         if (g.woke > 0) options.logger.info(`Lookout graph feed: ${g.woke} lookouts woken`);
       } catch (err) {
         options.logger.error("Lookout graph feed error", err instanceof Error ? err.message : err);
       }
       if (feeds) {
         try {
-          const f = await feedPollTick();
+          const f = await withSystemClearance(
+            "The feed poll finds every due feed, whatever its lookout's label, and polls each at that label.",
+            () => feedPollTick()
+          );
           if (f.polled > 0 || f.expired > 0) {
             options.logger.info(
               `Lookout feed poll: ${f.polled} feeds (${f.failed} failed), ${f.newItems} new items, ` +

@@ -41,6 +41,9 @@ import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
 import { withFeaturesOffNote } from "./features-off-note.js";
+import { labelNote, withLabelNote } from "./label-note.js";
+import { currentReadClearance } from "../db/client.js";
+import { enforcementLastKnown } from "../db/clearance.js";
 import { offFeatures } from "../features.js";
 import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
 import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
@@ -72,9 +75,12 @@ const LONG_RUN_MAX_TOKENS = 128_000;
  * What the seam adds to the first task message of an agent run: the note
  * that says which features this deployment has switched off
  * (features-off-note.ts), and nothing when every feature is on, which is how
- * the public deployment runs. The role prompts cannot say it, because they
- * are the same text in every deployment, and an agent is told the limits it
- * works under, with the reason.
+ * the public deployment runs; and, on a graph with more than one label, the
+ * note that says which label the run works at and what it reads and writes
+ * (label-note.ts), which the public graph, whose only label is `public`,
+ * never has. The role prompts cannot say either, because they are the same
+ * text in every deployment, and an agent is told the limits it works under,
+ * with the reason.
  *
  * An agent run is a call with an agent on the usage context, which withAgent
  * sets and every agent's entry point passes through; a run that is not
@@ -83,9 +89,31 @@ const LONG_RUN_MAX_TOKENS = 128_000;
  * a conversation that already carries the note is left alone, so a loop's
  * later turns and a resumed transcript are told once, in the first message.
  */
-function withRunBrief(messages: MessageParam[]): MessageParam[] {
+async function withRunBrief(messages: MessageParam[]): Promise<MessageParam[]> {
   if (!getUsageContext().agent) return messages;
-  return withFeaturesOffNote(messages);
+  return withFeaturesOffNote(await withRunLabel(messages));
+}
+
+/**
+ * The label note, where this deployment has more than one label. A process
+ * that knows `public` is the only label asks nothing and adds nothing. One
+ * that has not yet asked the database asks now, and a failure there (no
+ * database at all, as when the client is driven alone) leaves the messages
+ * as given. Once the process knows reads are held, a run is not started
+ * without being told: a failure to work out what it reads fails the call.
+ */
+async function withRunLabel(messages: MessageParam[]): Promise<MessageParam[]> {
+  const known = enforcementLastKnown();
+  if (known === false) return messages;
+  let reads: string[] | null;
+  try {
+    // Null where `public` is the only label: nothing is held and nothing is said.
+    reads = await currentReadClearance();
+  } catch (err) {
+    if (known === true) throw err;
+    return messages;
+  }
+  return reads ? withLabelNote(messages, labelNote(currentLabel(), reads)) : messages;
 }
 
 export async function complete(options: {
@@ -102,7 +130,7 @@ export async function complete(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages),
+    messages: await withRunBrief(options.messages),
   };
   const model = options.model ?? DEFAULT_MODEL;
   // Sonnet 5.5 runs adaptive thinking by default and thinking spend counts
@@ -283,7 +311,7 @@ export async function completeWithTools(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages),
+    messages: await withRunBrief(options.messages),
   };
   return getAdapter(model).completeWithTools({
     ...options,
@@ -316,7 +344,7 @@ export async function completeStructured<T>(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages),
+    messages: await withRunBrief(options.messages),
   };
   const model = options.model ?? DEFAULT_MODEL;
   const result = await getAdapter(model).completeStructured<T>({
@@ -547,7 +575,7 @@ export async function toolUseLoop(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: withRunBrief(options.initialMessages),
+    initialMessages: await withRunBrief(options.initialMessages),
   };
   const messages = [...options.initialMessages];
   const finish = (r: ToolCompletionResult): ToolCompletionResult => {
@@ -925,7 +953,7 @@ export async function longRunToolLoop(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: withRunBrief(options.initialMessages),
+    initialMessages: await withRunBrief(options.initialMessages),
   };
   const model = options.model ?? DEFAULT_MODEL;
   const adapter = getAdapter(model);

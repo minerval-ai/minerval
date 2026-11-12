@@ -5,6 +5,7 @@ import {
 } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export type MessageHandler<T> = (message: T) => Promise<void>;
 
@@ -45,7 +46,10 @@ export function startPoller<T>(options: {
 
             try {
               const parsed = JSON.parse(msg.Body) as T;
-              await options.handler(parsed);
+              await withSystemClearance(
+                "A queue handler loads the row its message names, at whatever label, and then runs the work at that row's label.",
+                () => options.handler(parsed)
+              );
 
               // Delete message on success
               await client.send(

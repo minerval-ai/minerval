@@ -217,7 +217,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table that stands for work waiting, public by default, and point at labels", async () => {
+  it("are on every table that stands for work waiting, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -235,7 +235,7 @@ describe("the columns", () => {
     );
     expect(rows).toEqual(
       ["actions", "agent_sessions", "appeals", "assessment_orders", "assistant_held_actions", "budget_jobs", "contributions", "jobs"].map(
-        (table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true })
+        (table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true })
       )
     );
   });
@@ -794,9 +794,13 @@ describe("a research commission and a paused session", () => {
     const grantId = await mandate();
     const anchor = await seedClaim("carried cross-label anchor");
     const { sessionId, researchGroup, actionId } = await pauseOnResearch(INTERNAL, grantId, anchor);
-    // The research row is moved to public, standing in for an answer that
-    // comes from other work: a different run, or the sweep.
+    // The research is moved to public, its ledger row and its own record,
+    // standing in for an answer that comes from other work: a different
+    // run, or the sweep.
     await rawQuery(`UPDATE actions SET sensitivity_label = 'public' WHERE id = $1`, [actionId]);
+    await rawQuery(`UPDATE research_runs SET sensitivity_label = 'public' WHERE id = $1`, [
+      researchGroup.slice("research:".length),
+    ]);
     expect(await runOnly(researchGroup)).toMatchObject({ status: "processed", kind: "research" });
     expect(stage.seen[0]!.label).toBe(PUBLIC_LABEL);
 

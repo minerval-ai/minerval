@@ -897,6 +897,13 @@
       "when": 1794447271565,
       "tag": "0127_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1794448221807,
+      "tag": "0128_label_enforcement",
+      "breakpoints": true
     }
   ]
 }

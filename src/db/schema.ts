@@ -20,7 +20,6 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { eq, sql, type SQL } from "drizzle-orm";
-import { PUBLIC_LABEL } from "../labels.js";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -92,13 +91,24 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // from a document (its segments, the notices against it) carries the
 // document's label. No reader is held to a clearance yet.
 // ---------------------------------------------------------------------------
-export const labels = pgTable("labels", {
-  name: text("name").primaryKey(),
-  description: text("description").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const labels = pgTable(
+  "labels",
+  {
+    name: text("name").primaryKey(),
+    description: text("description").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // A label's name is written into a connection's settings (the clearance
+    // a connection reads with, db/clearance.ts), so the table holds it to
+    // the plain word the administrator's route already requires
+    // (services/label-admin-service.ts): nothing in a name can end the
+    // setting it is written in.
+    check("labels_name_plain", sql`${table.name} ~ '^[a-z][a-z0-9_-]{0,62}$'`),
+  ]
+);
 
 export const labelReads = pgTable(
   "label_reads",
@@ -115,12 +125,21 @@ export const labelReads = pgTable(
 
 // The label column of a row that carries one. It is sensitivity_label, not
 // label, because some tables that will need one already have a `label` that
-// is a display name (actions, source_segments). The default is what a row
-// written before labels existed is, and what a write outside any run gets.
+// is a display name (actions, source_segments).
+//
+// The default is for an insert that does not say its label, and it is the
+// label of the connection the insert arrives on (minerval_default_label(),
+// defined in the migration that set it; db/clearance.ts says how a
+// connection gets its label). So a write that forgot its stamp inside a
+// run lands at the run's label, which is what the stamp would have said.
+// Where the connection carries no label the default is 'public' only while
+// 'public' is the one label the deployment has, which is every write on the
+// public graph. Where a second label exists and nothing says which one the
+// row is for, the insert is refused: a row is never public by omission.
 const sensitivityLabelColumn = () =>
   text("sensitivity_label")
     .notNull()
-    .default(PUBLIC_LABEL)
+    .default(sql`minerval_default_label()`)
     .references(() => labels.name);
 
 // ---------------------------------------------------------------------------

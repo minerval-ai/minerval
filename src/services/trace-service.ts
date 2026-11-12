@@ -56,6 +56,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { agentPrivateReason } from "../llm/run-visibility.js";
 import { agentRuns, agentSteps } from "../db/schema.js";
 import { loadConfig } from "../config.js";
@@ -174,6 +175,22 @@ const MAX_PROMPT_STEP_CONTENT_CHARS = 2_000_000;
 export type AgentStepKind = "prompt" | "assistant" | "tool_results" | "completion";
 
 /**
+ * Every write of a run's log goes through here. The log is written about
+ * the run, at the run's label (AgentTrace.label), from a queue: a step can
+ * be written while the work in progress is at another label (a tool that
+ * reads at a source's label, say), and a connection held to that label's
+ * clearance would be refused the run's own row (db/clearance.ts). The log
+ * must not depend on that, so it is written on the owner's connection. It
+ * reads nothing back.
+ */
+function writingRunLog<T>(write: () => Promise<T>): Promise<T> {
+  return withSystemClearance(
+    "A run's log is written at the run's label whatever the work in progress may read, so a step is never refused by the clearance of the moment.",
+    write
+  );
+}
+
+/**
  * Open a run for `agent`, snapshotting the ambient attribution. Returns null
  * when tracing is off (callers skip all trace work on null).
  */
@@ -197,7 +214,7 @@ export function startAgentRun(
     tail: Promise.resolve(),
     head: genesisHash(runId),
   };
-  trace.ready = (async () => {
+  trace.ready = writingRunLog(async () => {
     try {
       await getDb().insert(agentRuns).values({
         id: runId,
@@ -219,7 +236,7 @@ export function startAgentRun(
         err instanceof Error ? err.message : err
       );
     }
-  })();
+  });
   return trace;
 }
 
@@ -233,7 +250,7 @@ export function recordAgentRunSkills(
   trace: AgentTrace,
   skills: readonly string[]
 ): void {
-  void (async () => {
+  void writingRunLog(async () => {
     try {
       await trace.ready;
       await getDb()
@@ -246,7 +263,7 @@ export function recordAgentRunSkills(
         err instanceof Error ? err.message : err
       );
     }
-  })();
+  });
 }
 
 /**
@@ -257,7 +274,7 @@ export function recordAgentRunSkills(
 export function markRunWroteGraph(trace: AgentTrace): void {
   if (trace.wroteGraph) return;
   trace.wroteGraph = true;
-  void (async () => {
+  void writingRunLog(async () => {
     try {
       await trace.ready;
       await getDb()
@@ -270,7 +287,7 @@ export function markRunWroteGraph(trace: AgentTrace): void {
         err instanceof Error ? err.message : err
       );
     }
-  })();
+  });
 }
 
 /**
@@ -283,7 +300,7 @@ export function markRunPrivate(trace: AgentTrace, reason: string): void {
   const seen = (trace.privateReasons ??= new Set());
   if (seen.has(reason)) return;
   seen.add(reason);
-  void (async () => {
+  void writingRunLog(async () => {
     try {
       await trace.ready;
       await rawQuery(
@@ -298,7 +315,7 @@ export function markRunPrivate(trace: AgentTrace, reason: string): void {
         err instanceof Error ? err.message : err
       );
     }
-  })();
+  });
 }
 
 /**
@@ -312,7 +329,7 @@ export function sealAgentRun(
   outcome: "ok" | "error",
   error?: unknown
 ): Promise<boolean> {
-  return (async () => {
+  return writingRunLog(async () => {
     try {
       await trace.tail;
       await trace.ready;
@@ -338,7 +355,7 @@ export function sealAgentRun(
       );
       return false;
     }
-  })();
+  });
 }
 
 /** Close the run without waiting on it: the best-effort close. */
@@ -364,7 +381,8 @@ export function recordAgentStep(
   content: unknown
 ): void {
   const seq = trace.seq.n++;
-  trace.tail = trace.tail.then(async () => {
+  trace.tail = trace.tail.then(() =>
+    writingRunLog(async () => {
     try {
       await trace.ready;
       const stored = storedContent(
@@ -398,7 +416,8 @@ export function recordAgentStep(
         err instanceof Error ? err.message : err
       );
     }
-  });
+    })
+  );
 }
 
 /**

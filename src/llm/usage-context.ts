@@ -34,6 +34,7 @@ import {
 import { setStatementObserver } from "../db/statement-observer.js";
 import { writesGraph } from "../db/graph-writes.js";
 import { MissingLabelError, PUBLIC_LABEL } from "../labels.js";
+import { leaveSystemClearance, setSessionContextReader } from "../db/clearance.js";
 
 export interface UsageContext {
   userId?: string | null;
@@ -109,7 +110,9 @@ export interface UsageContext {
    * the account (server/plugins/members-only.ts), and read with
    * currentClearance below. Absent means `public` alone. It is a request's,
    * never a run's: runAtLabel clears it, so work a request starts does not
-   * read with the clearance of whoever asked for it.
+   * read with the clearance of whoever asked for it. A run reads what its
+   * label reads, which the database client works out from the label
+   * (db/clearance.ts).
    */
   clearance?: readonly string[];
 }
@@ -147,6 +150,14 @@ export function passBudgetLeftMicroUsd(ctx: UsageContext = getUsageContext()): n
 
 const storage = new AsyncLocalStorage<UsageContext>();
 
+// The database client holds every query to a clearance (db/clearance.ts),
+// and this context is where it learns the label and the clearance of the
+// work in progress.
+setSessionContextReader(() => {
+  const context = storage.getStore();
+  return { label: context?.label, clearance: context?.clearance };
+});
+
 export function getUsageContext(): UsageContext {
   return storage.getStore() ?? {};
 }
@@ -163,11 +174,13 @@ export function currentLabel(): string {
 const PUBLIC_CLEARANCE: readonly string[] = Object.freeze([PUBLIC_LABEL]);
 
 /**
- * The labels a read made now may see: the enclosing request's clearance,
- * and `public` alone where none was set. So a read outside any request, a
- * read in a run, and a read on a path that never resolved a standing all
- * see what anyone may see and nothing more: a missing clearance fails
- * closed. Nothing holds a read to this yet (src/permissions.ts).
+ * The labels the enclosing request may read, and `public` alone where none
+ * was set: a path that never resolved a standing sees what anyone may see
+ * and nothing more. This is the request's clearance as its routes may want
+ * to show or test it. It is not what holds a read: the database does that,
+ * for a request from this clearance and for a run from its label
+ * (db/clearance.ts), so inside a run this still answers `public` alone
+ * while the run reads what its label reads.
  */
 export function currentClearance(): readonly string[] {
   return getUsageContext().clearance ?? PUBLIC_CLEARANCE;
@@ -188,8 +201,10 @@ export function runAtLabel<T>(label: string | null | undefined, work: string, fn
   if (typeof label !== "string" || label.length === 0) throw new MissingLabelError(work);
   // A run is not a request: where the in-process runner picks work up inside
   // the request that enqueued it, the request's clearance must not carry on
-  // into the run. What a run may read follows from its own label.
-  return runWithUsageContext({ label, clearance: undefined }, fn);
+  // into the run. What a run may read follows from its own label. Nor is it
+  // system work: a worker that found the row while seeing every label
+  // (withSystemClearance) runs it seeing only what the row's label reads.
+  return leaveSystemClearance(() => runWithUsageContext({ label, clearance: undefined }, fn));
 }
 
 export function runWithUsageContext<T>(
@@ -233,6 +248,18 @@ export function markCurrentRunPrivate(reason: string): void {
 }
 
 export function withAgent<T>(agent: string, fn: () => T): T {
+  // No agent's run reads at system clearance (db/clearance.ts), whoever
+  // opened it, and none reads with the clearance of a request it was
+  // started from: a run reads what its label reads. A run nothing gave a
+  // label works at `public`, which is what its rows were always stamped,
+  // and says so on its context so that the reads agree with the stamps.
+  const label = getUsageContext().label ?? PUBLIC_LABEL;
+  return leaveSystemClearance(() =>
+    runWithUsageContext({ label, clearance: undefined }, () => openAgentRun(agent, fn))
+  );
+}
+
+function openAgentRun<T>(agent: string, fn: () => T): T {
   const context = getUsageContext();
   const trace = context.untraced ? null : startAgentRun(agent, context);
   if (!trace) return runWithUsageContext({ agent }, fn);

@@ -26,6 +26,7 @@ import {
   ORDINARY_REVIEW_TYPE_FILTER,
   REVIEW_RECLAIM_MINUTES,
 } from "./contribution-pipeline.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 /** Don't re-enqueue rows younger than this — their original message is
  * almost certainly still queued or in flight. */
@@ -146,7 +147,10 @@ export function startRecoverySweep(options: {
   const sweep = async () => {
     if (!running) return;
     try {
-      const stats = await sweepStalledReviewWork();
+      const stats = await withSystemClearance(
+        "The recovery sweep finds stalled reviews and orders at every label and re-enqueues each at its own.",
+        () => sweepStalledReviewWork()
+      );
       const requeued =
         stats.contributionsRequeued +
         stats.escalationsRequeued +

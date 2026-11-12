@@ -229,3 +229,41 @@ export async function seedValuation(input: {
 export function pgCode(err: unknown): string | undefined {
   return (err as { code?: string } | null)?.code;
 }
+
+const SQL_TEST_ROLE = "minerval_sql_dbtest";
+const SQL_TEST_PASSWORD = "dbtest-sql";
+
+/**
+ * Rows of the public_read views as read-only SQL returns them to a reader
+ * cleared for `labels`: each row as an object keyed by column. Where a
+ * deployment has more than one label the views show a row only at a label
+ * the asker reads (src/db/clearance.ts), so a test that looks through a
+ * view at rows it wrote at another label says what the asker reads. It runs
+ * the service's own path (runReadOnlyQuery), on the login role the SQL
+ * tests use, so the query must be one the service allows.
+ */
+export async function readViewsAs(
+  labels: readonly string[],
+  sql: string,
+  params: unknown[] = []
+): Promise<Array<Record<string, unknown>>> {
+  const { loadConfig } = await import("../../src/config.js");
+  const { runReadOnlyQuery } = await import("../../src/services/sql-service.js");
+  const { runWithUsageContext } = await import("../../src/llm/usage-context.js");
+  const { TEST_DATABASE_URL } = await import("./urls.js");
+  await rawQuery(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${SQL_TEST_ROLE}') THEN
+      CREATE ROLE ${SQL_TEST_ROLE} LOGIN PASSWORD '${SQL_TEST_PASSWORD}' CONNECTION LIMIT 3 IN ROLE minerval_sql;
+    END IF; END $$`);
+  const config = loadConfig();
+  if (!config.sqlAgentDatabaseUrl) {
+    const url = new URL(TEST_DATABASE_URL);
+    url.username = SQL_TEST_ROLE;
+    url.password = SQL_TEST_PASSWORD;
+    Object.assign(config, { sqlAgentDatabaseUrl: url.toString() });
+  }
+  const result = await runWithUsageContext({ clearance: [...labels] }, () =>
+    runReadOnlyQuery(sql, params, { audience: "agent", maxRows: 500 })
+  );
+  return result.rows.map((row) => Object.fromEntries(result.columns.map((c, i) => [c, row[i]])));
+}

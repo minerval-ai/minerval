@@ -46,6 +46,7 @@ import { scanReconcileCandidates } from "../services/curation-service.js";
 import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export interface AllocationTickResult {
   actionsReconciled: number;
@@ -218,7 +219,10 @@ export function startAllocationScheduler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await allocationSchedulerTick();
+      const result = await withSystemClearance(
+        "The scheduler reconciles the ledger and looks for stale or pending work at every label; each piece it starts runs at its own row's label.",
+        () => allocationSchedulerTick()
+      );
       if (result.prioritiesRefreshed > 0 || result.stalenessEnqueued > 0) {
         options.logger.info(
           `Allocation scheduler: actions reconciled=${result.actionsReconciled}, ` +
