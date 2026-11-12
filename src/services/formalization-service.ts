@@ -29,6 +29,7 @@ import {
   type Verdict,
 } from "./lean-checker-client.js";
 import { emitClaimEvent } from "./claim-events-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 import type {
   FormalizationSummary,
   VerificationSummary,
@@ -828,10 +829,10 @@ export async function recordLeanCheck(input: RecordLeanCheckInput): Promise<Lean
          (formalization_id, mode, kind, submission_sha256, submission_source,
           submitted_by, prize_claim_id, attempt_id, run_id, verdict, checks,
           diagnostics, truncated, resource, pin_id, image_digest,
-          checker_version, second_opinion, cost_micro_usd, finished_at)
+          checker_version, second_opinion, cost_micro_usd, finished_at, sensitivity_label)
        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8::uuid, $9::uuid, $10,
                $11::jsonb, $12::jsonb, $13::boolean, $14::jsonb, $15, $16, $17,
-               $18::jsonb, $19::bigint, $20::timestamptz)
+               $18::jsonb, $19::bigint, $20::timestamptz, $21)
        ON CONFLICT (formalization_id, submission_sha256, checker_version, mode)
        DO UPDATE SET
          verdict = EXCLUDED.verdict,
@@ -871,6 +872,9 @@ export async function recordLeanCheck(input: RecordLeanCheckInput): Promise<Lean
         input.secondOpinion === undefined ? null : JSON.stringify(input.secondOpinion),
         cost,
         r.finished_at ? new Date(r.finished_at) : null,
+        // A check recorded for the first time takes this run's label; a
+        // repeat that lands on the stored row leaves its label alone.
+        currentLabel(),
       ]
     );
     return inserted!;
@@ -941,12 +945,12 @@ export async function storeElaboratedFormalization(
           mathlib_tag, image_digest, namespace, statement_source, source_hash,
           expr_hash, pp_type, constants, definitions_axioms, witness_present,
           own_definitions, correspondence, review_notes, status, authored_by, model,
-          created_by_run_id, reviewed_by_run_id, reviewed_at)
+          created_by_run_id, reviewed_by_run_id, reviewed_at, sensitivity_label)
        VALUES ($1::uuid, $2::int, 'lean4', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
                $13::jsonb, $14::jsonb, $15::boolean, $22::boolean, $16, $17, $18::text,
                $19, $20, $21::uuid,
                CASE WHEN $18::text = 'reviewed' THEN $21::uuid END,
-               CASE WHEN $18::text = 'reviewed' THEN now() END)
+               CASE WHEN $18::text = 'reviewed' THEN now() END, $23)
        RETURNING ${FORMALIZATION_COLUMNS}`,
       [
         input.claimId,
@@ -971,6 +975,7 @@ export async function storeElaboratedFormalization(
         input.model ?? null,
         input.runId ?? null,
         input.ownDefinitions === true,
+        currentLabel(),
       ]
     );
     return inserted!;

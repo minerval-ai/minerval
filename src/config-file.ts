@@ -28,6 +28,16 @@
  * `secret`, so that a file holding one is refused with the name of the
  * environment variable to use instead, and so the writer can never emit one.
  *
+ * Two settings are structured, and the file writes them as TOML's own
+ * structures and not as JSON inside a text value: the model endpoints a
+ * deployment declares are a list of groups ([[model_providers.endpoints]]),
+ * and the labels each provider is cleared for are a group of lists
+ * ([provider_labels]). Each becomes the JSON its environment variable holds
+ * (MODEL_ENDPOINTS, PROVIDER_LABELS), so the schema that reads the variable
+ * is still the one place that says what an endpoint or a clearance may be.
+ * An endpoint's key is named by its environment variable (key_env), never
+ * written, so neither holds a secret.
+ *
  * This module imports nothing from the rest of the code, so config.ts can
  * load it first.
  */
@@ -44,11 +54,18 @@ export const DEFAULT_CONFIG_FILE = "minerval.toml";
 /**
  * What a value is in the file. The environment holds only text, so each kind
  * has one way of being written there: a number in digits, a boolean as
- * "true" or "false", a list as its items joined by commas.
+ * "true" or "false", a list as its items joined by commas. The two
+ * structured kinds are written there as JSON: "groups" is a list of groups
+ * that each hold the same few settings (a JSON list of objects), and "lists"
+ * is one group whose names the deployment chooses, each with a list of text
+ * (a JSON object of lists).
  */
-export type ConfigFileKind = "text" | "number" | "boolean" | "list";
+export type ConfigFileKind = "text" | "number" | "boolean" | "list" | "groups" | "lists";
 
-export type ConfigFileValue = string | number | boolean | string[];
+/** One group of a "groups" setting, by the names its settings have in the file. */
+export type ConfigFileGroupValue = Record<string, string | number | boolean>;
+
+export type ConfigFileValue = string | number | boolean | string[] | ConfigFileGroupValue[] | Record<string, string[]>;
 
 /** A file's settings, keyed by the dotted name of each (`run_log.mode`). */
 export type ConfigFileSettings = Record<string, ConfigFileValue>;
@@ -66,6 +83,11 @@ export interface ConfigFileKey {
   field?: string;
   /** A secret: refused in a file and never written to one. */
   secret?: true;
+  /**
+   * For "groups": the settings each group holds, in the order they are
+   * written, from the name in the file to the name in the variable's JSON.
+   */
+  members?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -129,6 +151,21 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   secret("model_providers.anthropic_api_key", "ANTHROPIC_API_KEY"),
   secret("model_providers.openai_api_key", "OPENAI_API_KEY"),
   secret("model_providers.openrouter_api_key", "OPENROUTER_API_KEY"),
+  // The deployment's own model endpoints (src/llm/providers/endpoint-config.ts).
+  // Written last in its group: a [[...]] heading ends the plain settings above it.
+  {
+    key: "model_providers.endpoints",
+    env: "MODEL_ENDPOINTS",
+    kind: "groups",
+    field: "modelEndpoints",
+    members: {
+      name: "name",
+      base_url: "baseUrl",
+      key_env: "keyEnv",
+      input_usd_per_mtok: "inputUsdPerMtok",
+      output_usd_per_mtok: "outputUsdPerMtok",
+    },
+  },
 
   { key: "outside_services.elicit.use", env: "ELICIT_ENABLED", kind: "boolean", field: "elicitEnabled" },
   { key: "outside_services.elicit.url", env: "ELICIT_MCP_URL", kind: "text", field: "elicitMcpUrl" },
@@ -191,6 +228,10 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   },
   secret("outside_services.github_issues.token", "GITHUB_TOKEN"),
   secret("outside_services.github_issues.app_private_key", "GITHUB_APP_PRIVATE_KEY"),
+
+  // Which labels each model provider and outside service may be sent text at
+  // (src/provider-labels.ts). A group of its own: it speaks of both.
+  { key: "provider_labels", env: "PROVIDER_LABELS", kind: "lists", field: "providerLabels" },
 
   { key: "run_log.mode", env: "RUN_LOG_MODE", kind: "text", field: "runLogMode" },
   { key: "run_log.level", env: "TRACE_LEVEL", kind: "text", field: "traceLevel" },
@@ -272,6 +313,9 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
   features: "The optional parts of the product this deployment switches off. Everything not named is on.",
   models: "Which model serves each role. A model's provider needs its key in the environment.",
   model_providers: "How the model providers are called. Their keys are secrets and stay in the environment.",
+  "model_providers.endpoints":
+    "A model server this deployment runs itself. A model id \"endpoint:<name>/<model>\" is served by it. " +
+    "key_env names the environment variable that holds its key, if it takes one.",
   "outside_services.elicit": "Elicit, a paid scholarly search the Steward can use. Its key is ELICIT_API_KEY.",
   "outside_services.pangram":
     "Pangram, paid detection of machine-written text and of a text's original source. Its key is PANGRAM_API_KEY.",
@@ -280,6 +324,9 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
   "outside_services.github_issues":
     "Filing the agents' problem reports as GitHub issues. An empty repo files nothing. " +
     "Its credential is GITHUB_APP_PRIVATE_KEY or GITHUB_TOKEN.",
+  provider_labels:
+    "The labels each model provider and outside service may be sent text at. " +
+    "One that is not named here is cleared for \"public\" alone.",
   run_log: "How much a run depends on its log, and how long logs of runs that wrote nothing are kept.",
   hosting: "Where this deployment is reached and how the API listens.",
   database: "Where the database is. Its password is DB_PASSWORD.",
@@ -288,8 +335,15 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
 
 const KEYS_BY_NAME = new Map(CONFIG_FILE_KEYS.map((k) => [k.key, k]));
 
+/** The group a setting is in; "" for a setting that is a group of its own at the top of the file. */
 function groupOf(key: string): string {
-  return key.slice(0, key.lastIndexOf("."));
+  const dot = key.lastIndexOf(".");
+  return dot < 0 ? "" : key.slice(0, dot);
+}
+
+/** A setting written as groups of its own, under its own heading, and not as `name = value`. */
+function isStructured(key: ConfigFileKey): boolean {
+  return key.kind === "groups" || key.kind === "lists";
 }
 
 /** Every group and every group that holds one, e.g. "outside_services" for "outside_services.elicit". */
@@ -331,12 +385,23 @@ export class ConfigFileError extends Error {
   }
 }
 
-const EXAMPLE: Record<ConfigFileKind, string> = {
-  text: 'text in quotes (for example "value")',
-  number: "a number (for example 30)",
-  boolean: "true or false",
-  list: 'a list of text in square brackets (for example ["one", "two"])',
-};
+/** What a value of each kind looks like, for the sentence that says a value is of the wrong kind. */
+function expected(key: ConfigFileKey): string {
+  switch (key.kind) {
+    case "text":
+      return 'text in quotes (for example "value")';
+    case "number":
+      return "a number (for example 30)";
+    case "boolean":
+      return "true or false";
+    case "list":
+      return 'a list of text in square brackets (for example ["one", "two"])';
+    case "groups":
+      return `one or more groups, each headed [[${key.key}]]`;
+    case "lists":
+      return `a group, headed [${key.key}], of lists of text (for example anthropic = ["public"])`;
+  }
+}
 
 /** What a value in the file is, in the words an installer would use. */
 function describeValue(value: unknown): string {
@@ -408,7 +473,7 @@ function secretProblem(path: string, key: ConfigFileKey): string {
 
 /** The text a value becomes in the environment, or what is wrong with it for its kind. */
 function toEnvironmentText(key: ConfigFileKey, value: unknown): { text: string } | { problem: string } {
-  const wrong = { problem: `${key.key} must be ${EXAMPLE[key.kind]}, but the file has ${describeValue(value)}.` };
+  const wrong = { problem: `${key.key} must be ${expected(key)}, but the file has ${describeValue(value)}.` };
   switch (key.kind) {
     case "text":
       return typeof value === "string" ? { text: value } : wrong;
@@ -426,7 +491,62 @@ function toEnvironmentText(key: ConfigFileKey, value: unknown): { text: string }
       }
       return { text: (value as string[]).join(",") };
     }
+    case "groups": {
+      if (!Array.isArray(value) || value.some((entry) => !isGroupValue(entry))) return wrong;
+      const members = key.members ?? {};
+      const entries: Array<Record<string, unknown>> = [];
+      for (const [i, entry] of (value as Array<Record<string, unknown>>).entries()) {
+        const unknown = Object.keys(entry).filter((name) => !Object.hasOwn(members, name));
+        if (unknown.length > 0) {
+          return {
+            problem:
+              `${key.key} entry ${i + 1} has ${unknown.map((name) => `"${name}"`).join(", ")}, which ` +
+              `${unknown.length === 1 ? "is not a setting" : "are not settings"} of one. ` +
+              `Each holds: ${Object.keys(members).join(", ")}.`,
+          };
+        }
+        const structured = Object.entries(entry).find(([, v]) => typeof v === "object" && v !== null);
+        if (structured) {
+          return {
+            problem:
+              `${key.key} entry ${i + 1} gives "${structured[0]}" ${describeValue(structured[1])}, ` +
+              `and each of its settings is text or a number.`,
+          };
+        }
+        entries.push(Object.fromEntries(Object.entries(entry).map(([name, v]) => [members[name]!, v])));
+      }
+      return { text: JSON.stringify(entries) };
+    }
+    case "lists": {
+      if (!isGroupValue(value)) return wrong;
+      for (const [name, labels] of Object.entries(value)) {
+        if (Array.isArray(labels) && labels.some((item) => typeof item === "string" && item.trim().length === 0)) {
+          return { problem: `${key.key} gives ${JSON.stringify(name)} a list with an empty name in it.` };
+        }
+        if (!Array.isArray(labels) || labels.some((item) => typeof item !== "string")) {
+          return {
+            problem:
+              `${key.key} gives ${JSON.stringify(name)} ${describeValue(labels)}, and what each name has is a ` +
+              `list of text in square brackets (for example ["public"], or [] for none).`,
+          };
+        }
+      }
+      return { text: JSON.stringify(value) };
+    }
   }
+}
+
+/**
+ * What the config schema said about a structured setting, in the file's
+ * words: the schema speaks of the environment variable and its JSON names,
+ * and a reader of the file knows the setting by the names it has there.
+ */
+function inTheFilesWords(key: ConfigFileKey, said: string): string {
+  let text = said.split(key.env).join(key.key);
+  for (const [inFile, inJson] of Object.entries(key.members ?? {})) {
+    text = text.split(`"${inJson}"`).join(`"${inFile}"`);
+  }
+  return text;
 }
 
 /** Each setting as its environment variable would hold it, and everything wrong with the settings. */
@@ -452,6 +572,12 @@ function checkSettings(
       continue;
     }
     const refused = key.field ? check(key.field, converted.text) : null;
+    if (refused && isStructured(key)) {
+      // What is wrong already names the setting and the entry in it. The
+      // schema's findings arrive as sentences joined by "; ", one each here.
+      problems.push(...inTheFilesWords(key, refused).split(/(?<=\.); /));
+      continue;
+    }
     if (refused) {
       // A list is not repeated back: what is wrong with it names the item.
       const shown = Array.isArray(value) ? "is not accepted" : `is ${JSON.stringify(value)}, which is not accepted`;
@@ -611,12 +737,40 @@ function tomlText(value: string): string {
   return JSON.stringify(value).replace(/\u007f/g, "\\u007F");
 }
 
-function tomlValue(value: ConfigFileValue): string {
+function tomlValue(value: string | number | boolean | string[]): string {
   if (typeof value === "string") return tomlText(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   const items = value.map(tomlText);
   const inline = `[${items.join(", ")}]`;
   return inline.length <= 72 ? inline : `[\n${items.map((item) => `  ${item},`).join("\n")}\n]`;
+}
+
+/** A name on the left of `=`: bare where TOML allows it, in quotes otherwise ("endpoint:local"). */
+function tomlName(name: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(name) ? name : tomlText(name);
+}
+
+/** A structured setting as the lines of its own groups. */
+function structuredLines(key: ConfigFileKey, value: ConfigFileValue): string[] {
+  const lines = [""];
+  const about = CONFIG_FILE_GROUPS[key.key];
+  if (about) lines.push(`# ${about}`);
+  if (key.kind === "lists") {
+    lines.push(`[${key.key}]`);
+    for (const [name, labels] of Object.entries(value as Record<string, string[]>)) {
+      lines.push(`${tomlName(name)} = ${tomlValue(labels)}`);
+    }
+    return lines;
+  }
+  const entries = value as ConfigFileGroupValue[];
+  entries.forEach((entry, i) => {
+    if (i > 0) lines.push("");
+    lines.push(`[[${key.key}]]`);
+    for (const name of Object.keys(key.members ?? {})) {
+      if (entry[name] !== undefined) lines.push(`${name} = ${tomlValue(entry[name]!)}`);
+    }
+  });
+  return lines;
 }
 
 /**
@@ -636,6 +790,15 @@ export function renderConfigFile(settings: ConfigFileSettings, check: FieldCheck
   for (const key of settableConfigFileKeys()) {
     const value = settings[key.key];
     if (value === undefined) continue;
+    // A list of groups with none in it has no heading to be written under,
+    // so it is written as the empty list it is, among the plain settings.
+    const empty = key.kind === "groups" && (value as unknown[]).length === 0;
+    if (isStructured(key) && !empty) {
+      lines.push(...structuredLines(key, value));
+      // Its heading ended the group above, so a plain setting after it opens its group again.
+      group = null;
+      continue;
+    }
     if (groupOf(key.key) !== group) {
       group = groupOf(key.key);
       lines.push("");
@@ -643,7 +806,7 @@ export function renderConfigFile(settings: ConfigFileSettings, check: FieldCheck
       if (about) lines.push(`# ${about}`);
       lines.push(`[${group}]`);
     }
-    lines.push(`${key.key.slice(group.length + 1)} = ${tomlValue(value)}`);
+    lines.push(`${key.key.slice(group.length + 1)} = ${empty ? "[]" : tomlValue(value as string[])}`);
   }
   return lines.join("\n") + "\n";
 }

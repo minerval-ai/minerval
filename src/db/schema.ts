@@ -91,11 +91,13 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // from a document (its segments, the notices against it) carries the
 // document's label. No reader is held to a clearance yet.
 //
-// The tables that got the column in the label_columns migration are not
-// stamped yet. The writes that stamp them, and the runs opened at a row's
-// label, come in the changes after it; until then each of those columns
-// holds its default, 'public', on every row, and the comment on each says
-// what label the row will carry.
+// Two groups of tables that got the column in the label_columns migration
+// are not stamped yet: what a run writes about itself, and the rows work is
+// asked for and governed with. The writes that stamp them, and the runs
+// opened at a mandate's, a lookout's, a correspondent's or a request's
+// label, come in the change after this one; until then each of those
+// columns holds its default, 'public', on every row, and the comment on
+// each says what label the row will carry.
 // ---------------------------------------------------------------------------
 export const labels = pgTable(
   "labels",

@@ -45,8 +45,11 @@ run wrote at, the `provider` that served it, and the features that were
 switched off for it (`featuresOff`).
 
 A label says who may read a row (`src/labels.ts`). Every judgment and source
-a run writes is stamped with the run's label (the `sensitivity_label`
-column), and so is its `agent_runs` row. Recording the label in the setup puts it under the chain: the label a
+a run writes, every row of the graph's own content (a node, an edge, an
+argument, a tag, a formal statement), and everything it records from or
+about a source (an instance, a reading, a provenance edge, an examination's
+findings), is stamped with the run's label (the
+`sensitivity_label` column), and so is its `agent_runs` row. Recording the label in the setup puts it under the chain: the label a
 sealed run worked at cannot be changed afterwards without the log no longer
 reaching its seal. The public graph has one label, `public`, so every run
 there records `"label": "public"`; a run logged before labels existed has
@@ -57,7 +60,14 @@ waited in (a job, a ledger action, an order, a contribution, a paused
 session) was stamped with the label of the run or request that created it,
 and the worker that picks the row up opens the run at that label. So the
 label in a run's setup is the label of whatever asked for the run, through
-however many hand-overs, and never something the agent chose.
+however many hand-overs, and never something the agent chose. A run that
+starts from a claim itself, with no such row (the Tagger's, or a pass the
+scheduler's sweep opens for a pending claim), works at the claim's label.
+Work that starts from a source the same way (the source backfill) is done
+at the source's label; it opens no run. Two kinds of row are not the run's
+at all: a document's segments and the notices against it are derived from
+the document, the same whoever asks, and carry the document's label even
+when a run's fetch produced them.
 
 `provider` is what served the run's model: `anthropic`, `openai`,
 `openrouter`, or `endpoint:<name>` for an endpoint the deployment runs

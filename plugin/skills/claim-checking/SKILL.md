@@ -300,6 +300,15 @@ support matters:
   - **A verdict you think is wrong**: `submit_contribution` with a
     `challenge` that engages the claim's recorded reasoning. Substance
     wins, not tone or volume; the reviewer answers either way (§13, §14).
+  - **Your user, or their organization, holds a view and wants it on
+    the record**: `state_view` states it on the node in their own words,
+    under their account's name, with how they stand, their stake, and
+    their reasons if they give any. It changes no assessment: nobody
+    edits one. The statement is recorded as a source and shown beside the
+    assessment, and its reasons are put to the node's Steward and answered
+    (§4, §14). It is public and cannot be edited or withdrawn, so pass
+    only words the user wrote or approved. `list_stated_views` shows where
+    stated views and assessments differ, for one account or for all.
   - **Unassessed and it matters now**: `order_assessment` funds a pass.
     It buys scheduling, never a verdict (§19).
   - **The tools failed you**: `raise_issue`.

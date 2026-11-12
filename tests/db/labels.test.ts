@@ -164,13 +164,18 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Fourteen of these are stamped by the code that writes them: the
-    // judgments, sources and runs (this file), and the rows that stand for
+    // Fifty-one of these are stamped by the code that writes them: the
+    // judgments, sources and runs (this file); the rows that stand for
     // work waiting to be done, which hand their label to the run that
-    // takes it up (label-carried.test.ts). The other eighty-one got the
-    // column in the label_columns migration and hold its default until the
-    // code that stamps them lands (label-columns.test.ts, which also lists
-    // the tables that carry no label, each with its reason).
+    // takes it up (label-carried.test.ts); the graph's own content, from
+    // nodes and edges to formal statements (label-graph.test.ts); and what
+    // is read from a source or written about one, from instances and
+    // segments to examinations (label-sources.test.ts). The other
+    // forty-four, what a run writes about itself and the rows work is
+    // asked for and governed with, got the column in the label_columns
+    // migration and hold its default until the code that stamps them lands
+    // (label-columns.test.ts, which also lists the tables that carry no
+    // label, each with its reason).
     // The tables of connections (connections, connection_tools,
     // connection_calls) and of file sets (file_sets, file_set_files,
     // file_set_keeps, sandbox_calls) were created with the column, and are

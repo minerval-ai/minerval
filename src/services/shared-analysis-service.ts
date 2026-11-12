@@ -27,6 +27,7 @@
  */
 import { eq, and, gte, lt, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { sharedPageAnalyses } from "../db/schema.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { htmlToText, normalizeForQuoteCheck } from "./source-map-service.js";
@@ -145,9 +146,12 @@ export function shareIfPublic(
       analyzedAt: new Date(analysis.analyzed_at),
       verifiedAt: new Date(),
     };
+    // A page's first entry takes the label of the request whose analysis
+    // it is. A later analysis replaces the entry in place and leaves that
+    // label as it was (src/labels.ts).
     await getDb()
       .insert(sharedPageAnalyses)
-      .values(row)
+      .values({ ...row, sensitivityLabel: currentLabel() })
       .onConflictDoUpdate({
         target: sharedPageAnalyses.urlHash,
         set: {
