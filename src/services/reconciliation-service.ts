@@ -643,7 +643,7 @@ export async function createClaim(input: {
       pipelineEpoch: loadConfig().pipelineEpoch,
       createdBy: input.createdBy ?? "curator",
     })
-    .returning();
+    .returning({ id: claims.id });
   if (definition) {
     await rawQuery(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)

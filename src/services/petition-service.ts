@@ -63,6 +63,14 @@ export interface PetitionRow {
   reply_to_session?: string | null;
 }
 
+/**
+ * The columns a petition is read with, named: a column the table gains (its
+ * label, src/labels.ts) does not ride along into a brief or a reply.
+ */
+export const PETITION_COLUMNS = `id, grant_id, kind, asked_micro_usd, plan, why, if_refused, requester_agent,
+  requester_action_id, requester_node_id, chain, waiting, status, granted_micro_usd, decided_by, reason,
+  follow_up_commissioned_at, created_at, decided_at, reply_to_session`;
+
 /** The chain of runs that led to `actionId`, root first. */
 export async function runChain(actionId: string): Promise<ChainLink[]> {
   const chain: ChainLink[] = [];
@@ -164,7 +172,7 @@ export async function filePetition(input: {
 }
 
 export async function getPetition(id: string): Promise<PetitionRow | null> {
-  const [row] = await rawQuery<PetitionRow>(`SELECT * FROM petitions WHERE id = $1`, [id]);
+  const [row] = await rawQuery<PetitionRow>(`SELECT ${PETITION_COLUMNS} FROM petitions WHERE id = $1`, [id]);
   return row ?? null;
 }
 
@@ -324,7 +332,7 @@ export async function commissionFollowUps(actionId: string): Promise<number> {
   const [running] = await rawQuery<{ status: string }>(`SELECT status FROM actions WHERE id = $1`, [actionId]);
   if (running?.status === "running") return 0;
   const rows = await rawQuery<PetitionRow>(
-    `SELECT * FROM petitions
+    `SELECT ${PETITION_COLUMNS} FROM petitions
       WHERE requester_action_id = $1 AND status = 'follow_up' AND follow_up_commissioned_at IS NULL`,
     [actionId]
   );
