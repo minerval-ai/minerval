@@ -78,7 +78,7 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
-| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`) |
+| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`); and the deployment's preflight (`GET /setup/preflight`, docs/deployment.md), which moves no money but reports the deployment's configuration |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
 
