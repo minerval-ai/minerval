@@ -85,6 +85,11 @@ interface StewardTaskRow {
   queue_priority: number;
 }
 
+/** A claim the fallback lane took, with the label its pass runs at. */
+interface FallbackTaskRow extends StewardTaskRow {
+  sensitivity_label: string;
+}
+
 // If this many claims in a row fail transiently, the API itself is down (e.g. a
 // credit outage): stop the drain instead of hammering it and re-parking work.
 const TRANSIENT_CIRCUIT_BREAK = 5;
@@ -201,9 +206,13 @@ export async function processNextStewardTask(
     return { status: pending > 0 ? "budget" : "empty" };
   }
   // This lane picks a claim, not a piece of work: no row here says what
-  // label the pending pass was asked for at, so its run opens with none and
-  // writes as public. A deployment with more than one label must not turn
-  // the lane on until the claim's pending slot carries a label.
+  // label the pending pass was asked for at. The claim's own label is the
+  // one thing that does say what the work is about, so the pass runs at it
+  // (below), and a restricted claim is never stewarded as public. That is a
+  // floor. A pass asked for at a restricted label on a public claim runs
+  // here as public, because the pending slot does not record the asking
+  // label; a deployment with more than one label should leave the lane off
+  // until it does (one judgment per label).
   // The fallback lane IS unattributed work, so the breaker applies: don't
   // even claim a task if it is already spent this window.
   try {
@@ -220,7 +229,7 @@ export async function processNextStewardTask(
     if (spent >= budgetMicro) return { status: "budget" };
     passBudget = { microUsd: budgetMicro - spent, source: "what is left of today's background budget" };
   }
-  const rows = await rawQuery<StewardTaskRow>(
+  const rows = await rawQuery<FallbackTaskRow>(
     `UPDATE claims
         SET steward_state = 'running', stewarded_at = now(),
             steward_requeued = false
@@ -236,13 +245,18 @@ export async function processNextStewardTask(
          FOR UPDATE SKIP LOCKED
       )
       RETURNING id, steward_trigger, steward_attempts,
-                queue_priority`
+                queue_priority, sensitivity_label`
   );
   if (rows.length === 0) return { status: "empty" };
-  return runStewardOnClaim(rows[0]!, {
-    model: opts.model ?? config.stewardModel,
-    passBudget,
-  });
+  const task = rows[0]!;
+  // The run and the bookkeeping after it are inside the claim's label, as
+  // a covered action's are inside its row's.
+  return runAtLabel(task.sensitivity_label, `claim ${task.id}`, () =>
+    runStewardOnClaim(task, {
+      model: opts.model ?? config.stewardModel,
+      passBudget,
+    })
+  );
 }
 
 /**

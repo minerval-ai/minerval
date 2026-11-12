@@ -165,6 +165,9 @@ export async function retractionPollTick(
   for (const m of matches) {
     const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
     if (!notice) continue;
+    // Each event is written at the label of the source the notice is
+    // against, by recordSourceEvent itself: a notice against a restricted
+    // document says the graph holds it, and is not written as public.
     const { recorded } = await recordSourceEvent({
       sourceId: m.source_id,
       kind: eventKindForCrossref(notice.type),

@@ -10,6 +10,7 @@
  * every other failure propagates.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { CLAIM_LINK_KINDS } from "../schemas/common.js";
 
 export type ClaimLinkKind = (typeof CLAIM_LINK_KINDS)[number];
@@ -44,11 +45,11 @@ export async function linkClaims(input: {
   }
   const [a, b] = orderPair(input.claimId, input.otherClaimId);
   const inserted = await rawQuery<{ id: string }>(
-    `INSERT INTO claim_links (claim_a_id, claim_b_id, kind, reasoning, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO claim_links (claim_a_id, claim_b_id, kind, reasoning, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (claim_a_id, claim_b_id, kind) DO NOTHING
      RETURNING id`,
-    [a, b, input.kind, input.reasoning, input.createdBy]
+    [a, b, input.kind, input.reasoning, input.createdBy, currentLabel()]
   );
   if (inserted[0]) return { id: inserted[0].id, created: true };
   const [existing] = await rawQuery<{ id: string }>(

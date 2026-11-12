@@ -15,6 +15,7 @@ import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
 import { insertRelationshipEdge } from "./relationship-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   quantityDefinitionSchema,
   quantityEstimateSchema,
@@ -231,9 +232,11 @@ async function logEvent(
   payload: unknown,
   tx?: TxQuery
 ): Promise<string | undefined> {
-  const sql = `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
-     VALUES ($1, $2, $3::jsonb, 'curator') RETURNING id`;
-  const params = [operation, reasoning, JSON.stringify(payload)];
+  // The record of a piece of surgery carries the label of the run that did
+  // it (src/labels.ts), like the rows the surgery wrote.
+  const sql = `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by, sensitivity_label)
+     VALUES ($1, $2, $3::jsonb, 'curator', $4) RETURNING id`;
+  const params = [operation, reasoning, JSON.stringify(payload), currentLabel()];
   const rows = tx ? await tx.query<{ id: string }>(sql, params) : await rawQuery<{ id: string }>(sql, params);
   return rows[0]?.id;
 }
@@ -283,14 +286,14 @@ async function reinsertEdges(edges: EdgeRow[]): Promise<void> {
     const argumentIds = e.argument_ids ?? [];
     if (argumentIds.length === 0) continue;
     await rawQuery(
-      `INSERT INTO argument_subclaims (argument_id, relationship_id)
-       SELECT a.id, cr.id
+      `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
+       SELECT a.id, cr.id, $3
          FROM arguments a
          JOIN claim_relationships cr ON cr.id = $2
         WHERE a.id = ANY($1::uuid[])
           AND a.claim_id = cr.parent_claim_id
        ON CONFLICT DO NOTHING`,
-      [argumentIds, id]
+      [argumentIds, id, currentLabel()]
     );
   }
 }
@@ -310,15 +313,15 @@ async function repointMemberships(
   // RETURNING yields only the rows this statement created, so the reversal
   // can remove exactly the memberships the merge added and nothing older.
   return rawQuery<MembershipRef>(
-    `INSERT INTO argument_subclaims (argument_id, relationship_id)
-     SELECT am.argument_id, e.id
+    `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
+     SELECT am.argument_id, e.id, $3
        FROM argument_subclaims am
        JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claim_relationships e ON ${equivalentEdgeJoin}
       WHERE cr.id = ANY($2::uuid[])
      ON CONFLICT DO NOTHING
      RETURNING argument_id, relationship_id`,
-    [survivorId, edgeIds]
+    [survivorId, edgeIds, currentLabel()]
   );
 }
 
@@ -591,9 +594,11 @@ export async function changeNodeKind(input: {
     [claimId]
   );
   if (definition) {
+    // A definition written for the first time takes this run's label; one
+    // that is revised keeps the label it has (src/labels.ts).
     await rawQuery(
-      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-       VALUES ($1, $2, $3, $4, $5, 'curator')
+      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, 'curator', $6)
        ON CONFLICT (claim_id) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
              conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
@@ -603,6 +608,7 @@ export async function changeNodeKind(input: {
         definition.population ?? null,
         definition.conditions ?? null,
         JSON.stringify(definition.unit),
+        currentLabel(),
       ]
     );
   }
@@ -653,12 +659,14 @@ export async function createClaim(input: {
       embedding: embedding ?? undefined,
       pipelineEpoch: loadConfig().pipelineEpoch,
       createdBy: input.createdBy ?? "curator",
+      // A node split off by the Curator is the splitting run's (src/labels.ts).
+      sensitivityLabel: currentLabel(),
     })
     .returning({ id: claims.id });
   if (definition) {
     await rawQuery(
-      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         claim!.id,
         definition.measures,
@@ -666,6 +674,7 @@ export async function createClaim(input: {
         definition.conditions ?? null,
         JSON.stringify(definition.unit),
         input.createdBy ?? "curator",
+        currentLabel(),
       ]
     );
   }
@@ -707,8 +716,8 @@ export async function setQuantityDefinition(input: {
     [input.claimId]
   );
   await rawQuery(
-    `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-     VALUES ($1, $2, $3, $4, $5, 'curator')
+    `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, 'curator', $6)
      ON CONFLICT (claim_id) DO UPDATE
        SET measures = EXCLUDED.measures, population = EXCLUDED.population,
            conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
@@ -718,6 +727,7 @@ export async function setQuantityDefinition(input: {
       definition.population ?? null,
       definition.conditions ?? null,
       JSON.stringify(definition.unit),
+      currentLabel(),
     ]
   );
   const eventId = await logEvent("set_definition", input.reasoning, {
@@ -899,11 +909,11 @@ export async function mergeArguments(input: {
       [absorbedId]
     );
     const addedMemberships = await tx.query<{ relationship_id: string }>(
-      `INSERT INTO argument_subclaims (argument_id, relationship_id)
-       SELECT $1, rid FROM unnest($2::uuid[]) AS rid
+      `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
+       SELECT $1, rid, $3 FROM unnest($2::uuid[]) AS rid
         WHERE NOT EXISTS (SELECT 1 FROM argument_subclaims WHERE argument_id = $1 AND relationship_id = rid)
        RETURNING relationship_id`,
-      [survivorId, absorbedMemberships.map((m) => m.relationship_id)]
+      [survivorId, absorbedMemberships.map((m) => m.relationship_id), currentLabel()]
     );
     const replacedWrittenForm = input.writtenFormFrom === "absorbed";
     if (replacedWrittenForm) {
@@ -922,8 +932,8 @@ export async function mergeArguments(input: {
       [absorbedId, survivorId, `Merged into argument ${survivorId}: ${reasoning}`]
     );
     const [event] = await tx.query<{ id: string }>(
-      `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
-       VALUES ('merge_arguments', $1, $2::jsonb, 'curator') RETURNING id`,
+      `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by, sensitivity_label)
+       VALUES ('merge_arguments', $1, $2::jsonb, 'curator', $3) RETURNING id`,
       [
         reasoning,
         JSON.stringify({
@@ -940,6 +950,7 @@ export async function mergeArguments(input: {
             ? { at: new Date(absorbed.retired_at).toISOString(), reason: absorbed.retired_reason }
             : null,
         }),
+        currentLabel(),
       ]
     );
     return {
@@ -1005,9 +1016,9 @@ export async function splitArgument(input: {
     const moves: Array<{ part_id: string; relationship_ids: string[]; instance_ids: string[] }> = [];
     for (const part of input.parts) {
       const [row] = await tx.query<{ id: string }>(
-        `INSERT INTO arguments (claim_id, stance, name, content, created_by)
-         VALUES ($1, $2, $3, $4, 'curator') RETURNING id`,
-        [original.claim_id, original.stance, part.name.trim(), part.writtenForm.trim()]
+        `INSERT INTO arguments (claim_id, stance, name, content, created_by, sensitivity_label)
+         VALUES ($1, $2, $3, $4, 'curator', $5) RETURNING id`,
+        [original.claim_id, original.stance, part.name.trim(), part.writtenForm.trim(), currentLabel()]
       );
       const partId = row!.id;
       partIds.push(partId);
@@ -1032,8 +1043,8 @@ export async function splitArgument(input: {
       [original.id]
     );
     const [event] = await tx.query<{ id: string }>(
-      `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by)
-       VALUES ('split_argument', $1, $2::jsonb, 'curator') RETURNING id`,
+      `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by, sensitivity_label)
+       VALUES ('split_argument', $1, $2::jsonb, 'curator', $3) RETURNING id`,
       [
         input.reasoning,
         JSON.stringify({
@@ -1042,6 +1053,7 @@ export async function splitArgument(input: {
           moves,
           retired_evaluation_ids: retiredEvaluations.map((r) => r.id),
         }),
+        currentLabel(),
       ]
     );
     return { eventId: event?.id, claimId: original.claim_id, partIds };
@@ -1368,8 +1380,9 @@ export async function reassignInstance(input: {
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO claim_instances
            (claim_id, source_id, verbatim_text, context, summary_context, stance, stated_estimate,
-            answer_claim_id, speaker, publication, source_date, link, segment_id, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, 'curator')
+            answer_claim_id, speaker, publication, source_date, link, segment_id, created_by,
+            sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, 'curator', $14)
          RETURNING id`,
         [
           input.toClaimId,
@@ -1385,6 +1398,9 @@ export async function reassignInstance(input: {
           before.source_date,
           before.link,
           before.segment_id,
+          // The copy is a new row and is this run's, like every row a run
+          // writes. It does not take the label of the instance it copies.
+          currentLabel(),
         ]
       );
       instanceId = row!.id;
@@ -1751,10 +1767,10 @@ export async function reverseReconciliation(
         // Edges deleted since the merge are gone; only the ones that remain
         // are grouped again.
         await rawQuery(
-          `INSERT INTO argument_subclaims (argument_id, relationship_id)
-           SELECT $1, cr.id FROM claim_relationships cr WHERE cr.id = ANY($2::uuid[])
+          `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
+           SELECT $1, cr.id, $3 FROM claim_relationships cr WHERE cr.id = ANY($2::uuid[])
            ON CONFLICT DO NOTHING`,
-          [absorbedId, absorbedEdges]
+          [absorbedId, absorbedEdges, currentLabel()]
         );
       }
       const prior = p.replaced_written_form as { content: string; description: string | null } | null;

@@ -164,15 +164,19 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Fourteen of these are stamped by the code that writes them: the
-    // judgments, sources and runs (this file), and the rows that stand for
+    // Fifty-one of these are stamped by the code that writes them: the
+    // judgments, sources and runs (this file); the rows that stand for
     // work waiting to be done, which hand their label to the run that
-    // takes it up (label-carried.test.ts). The other eighty-one got the
-    // column in the label_columns migration and hold its default until the
-    // code that stamps them lands (label-columns.test.ts, which also lists
-    // the tables that carry no label, each with its reason). One more,
-    // claim_state_changes, came with its own column and is stamped by
-    // claim-lifecycle-service.ts.
+    // takes it up (label-carried.test.ts); the graph's own content, from
+    // nodes and edges to formal statements (label-graph.test.ts); and what
+    // is read from a source or written about one, from instances and
+    // segments to examinations (label-sources.test.ts). The other
+    // forty-four, what a run writes about itself and the rows work is
+    // asked for and governed with, got the column in the label_columns
+    // migration and hold its default until the code that stamps them lands
+    // (label-columns.test.ts, which also lists the tables that carry no
+    // label, each with its reason). One more, claim_state_changes,
+    // came with its own column and is stamped by claim-lifecycle-service.ts.
     expect(rows).toEqual(
       [
         "action_allocations", "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",

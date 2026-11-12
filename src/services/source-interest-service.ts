@@ -22,7 +22,7 @@
  * structured refusal (§20).
  */
 import { rawQuery } from "../db/client.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 
 export class SourceInterestError extends Error {
   constructor(message: string) {
@@ -113,10 +113,10 @@ export async function recordSourceInterest(input: RecordSourceInterestInput): Pr
     [sourceId, claimId]
   );
   const [row] = await rawQuery<{ id: string; created_at: Date }>(
-    `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, created_at`,
-    [sourceId, claimId, party, stake, input.recordedBy, getUsageContext().runId ?? null]
+    [sourceId, claimId, party, stake, input.recordedBy, getUsageContext().runId ?? null, currentLabel()]
   );
   return {
     id: row!.id,

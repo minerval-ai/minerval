@@ -27,6 +27,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { ensureCurateAction } from "./action-service.js";
+import { runAtLabel } from "../llm/usage-context.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
 // Who asked. Every source but the scan is an agent's or a person's
@@ -362,9 +363,9 @@ export async function scanReconcileCandidates(policy: {
 }): Promise<number> {
   const cap = Math.floor(policy.reconcile_candidates_max_per_sweep);
   if (cap <= 0) return 0;
-  const pairs = await rawQuery<{ anchor: string; other: string; similarity: number }>(
-    `SELECT c.id AS anchor, n.id AS other, n.similarity
-       FROM (SELECT id, embedding FROM claims
+  const pairs = await rawQuery<{ anchor: string; anchor_label: string; other: string; similarity: number }>(
+    `SELECT c.id AS anchor, c.sensitivity_label AS anchor_label, n.id AS other, n.similarity
+       FROM (SELECT id, embedding, sensitivity_label FROM claims
               WHERE state = 'active' AND embedding IS NOT NULL
                 AND created_at > now() - make_interval(days => $3)
               ORDER BY created_at DESC
@@ -399,19 +400,26 @@ export async function scanReconcileCandidates(policy: {
     const key = [p.anchor, p.other].sort().join(":");
     if (seen.has(key)) continue;
     seen.add(key);
-    const r = await requestCuration({
-      anchorClaimId: p.anchor,
-      otherClaimId: p.other,
-      source: "reconcile_candidate",
-      defect: "duplicate",
-      signal: Number(p.similarity),
-      concern:
-        `The reconcile-candidate scan found this claim and claim ${p.other} ` +
-        `unusually alike (embedding similarity ${Number(p.similarity).toFixed(3)}) ` +
-        `with no edge or link between them. They may be duplicates, ` +
-        `counterparts, or simply neighbours; decide which, and do nothing ` +
-        `if they are distinct.`,
-    });
+    // The scan starts from the anchor claim, outside any run, so the
+    // Curator's row is opened at the anchor's label (runAtClaimLabel in
+    // label-service.ts). The pair itself is found with no regard to labels:
+    // the neighbor may carry another one, and holding the scan to pairs a
+    // single run may read is the enforcement work's, not this floor's.
+    const r = await runAtLabel(p.anchor_label, `claim ${p.anchor}`, () =>
+      requestCuration({
+        anchorClaimId: p.anchor,
+        otherClaimId: p.other,
+        source: "reconcile_candidate",
+        defect: "duplicate",
+        signal: Number(p.similarity),
+        concern:
+          `The reconcile-candidate scan found this claim and claim ${p.other} ` +
+          `unusually alike (embedding similarity ${Number(p.similarity).toFixed(3)}) ` +
+          `with no edge or link between them. They may be duplicates, ` +
+          `counterparts, or simply neighbours; decide which, and do nothing ` +
+          `if they are distinct.`,
+      })
+    );
     if (r.ok && !r.repeat) raised++;
   }
   return raised;
