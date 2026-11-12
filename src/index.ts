@@ -15,6 +15,8 @@ import { startMonitorScheduler } from "./workers/monitor-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
+import { startUsageReports } from "./workers/usage-reports.js";
+import { usageReporting } from "./services/usage-report-service.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
 import { startLookoutTriggers } from "./workers/lookout-triggers.js";
@@ -197,6 +199,13 @@ async function main() {
   // High-water-marked in platform_flags, so every task may run it.
   pollers.push(startLookoutTriggers({ logger }));
   pollers.push(startCorrespondentTriggers({ logger }));
+
+  // The usage report (docs/usage-report.md): a members-only deployment on
+  // the metered price reports the owls its runs spent each closed UTC day,
+  // one total. Not started on the public graph, which reports to no one,
+  // or on the flat price. Preparing takes a database lock and a report is
+  // recorded once, so every task may run it.
+  if (usageReporting(config)) pollers.push(startUsageReports({ logger }));
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands

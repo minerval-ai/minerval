@@ -7,7 +7,8 @@
  *   GET    /permissions: what each permission covers.
  *   GET    /permissions/mine: what the signed-in account holds.
  *   GET    /permissions/log: every grant, removal and
- *     administrative change, newest first. Any member may read it.
+ *     administrative change, newest first, owls created and standing
+ *     mandates set up included (routes/owls.ts). Any member may read it.
  *   GET    /permissions/grants: who holds what now.
  *   POST   /permissions/grants: grant one permission.
  *   DELETE /permissions/grants/:grant_id: remove a grant (the row stays).
@@ -132,7 +133,7 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["permissions"],
       summary:
-        "The log of who was granted what, who removed it, and every change to labels, parties and whose material a source is, newest first",
+        "The log of who was granted what, who removed it, every change to labels, parties and whose material a source is, and every creation of owls or of a standing mandate, newest first",
       description:
         "Any member may read it. People appear by display name. The name of a label you are " +
         "not cleared to read, or of a party that is neither the organization itself nor one " +

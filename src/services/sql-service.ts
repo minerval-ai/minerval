@@ -34,6 +34,7 @@
 import pg from "pg";
 import { loadConfig } from "../config.js";
 import { databaseSsl, rawQuery } from "../db/client.js";
+import { ASK_AN_ADMINISTRATOR_FOR_OWLS, owlsCreatedHere } from "./owl.js";
 
 /** The views callers and agents may read (migration 0093). */
 export const SQL_VIEWS = [
@@ -425,7 +426,10 @@ export async function runCallerQuery(input: {
         "ALLOWANCE",
         `Today's free query time (${allowance} seconds) is used. Further queries cost ` +
           `${config.sqlOwlsPerSecond} owls per second of database time, and your balance is ` +
-          `${input.balanceOwls ?? 0} owls. Buy owls, or wait until midnight UTC.`
+          `${input.balanceOwls ?? 0} owls. ` +
+          (owlsCreatedHere(config)
+            ? `${ASK_AN_ADMINISTRATOR_FOR_OWLS} Or wait until midnight UTC.`
+            : `Buy owls, or wait until midnight UTC.`)
       );
     }
   }

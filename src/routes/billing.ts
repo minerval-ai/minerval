@@ -20,6 +20,11 @@
  *
  * Invoices/receipts stay on Stripe-hosted surfaces (Checkout emails a receipt
  * when configured) — deliberately no invoice code here.
+ *
+ * A deployment that creates its own owls (OWLS=created; routes/owls.ts)
+ * sells none: the packs, the checkout and the webhook are not mounted
+ * there, so neither they nor the tools generated from them exist. The
+ * ledger is an account's own history and stays.
  */
 import type { FastifyInstance } from "fastify";
 import type Stripe from "stripe";
@@ -33,7 +38,7 @@ import {
   recordOwlEntry,
   OWL_REASONS,
 } from "../services/owl-ledger-service.js";
-import { getOwlPack, owlPacks, owlsToMicroUsd } from "../services/owl.js";
+import { getOwlPack, owlPacks, owlsCreatedHere, owlsToMicroUsd } from "../services/owl.js";
 import { getContributorById } from "../services/contributor-service.js";
 
 /** Credit a paid Checkout Session to its buyer's ledger. Idempotent. */
@@ -76,8 +81,13 @@ async function creditCheckoutSession(
 }
 
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
+  // The routes that sell owls are mounted only where owls are sold. They
+  // keep their places in the file, so the public graph registers its
+  // routes in the order it always has.
+  const sold = !owlsCreatedHere();
+
   // GET /billing/packs — what owls cost here. Public.
-  app.get("/packs", {
+  if (sold) app.get("/packs", {
     schema: {
       tags: ["billing"],
       summary: "List purchasable owl packs (with bulk discounts)",
@@ -97,7 +107,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /billing/checkout — returns the Stripe-hosted payment page URL.
-  app.post("/checkout", {
+  if (sold) app.post("/checkout", {
     schema: {
       tags: ["billing"],
       summary: "Start a Stripe Checkout session for an owl pack",
@@ -189,7 +199,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /billing/webhook — in its own scope so the raw-body content-type
   // parser (required for signature verification) applies to nothing else.
-  await app.register(async (scope) => {
+  if (sold) await app.register(async (scope) => {
     scope.addContentTypeParser(
       "application/json",
       { parseAs: "buffer" },

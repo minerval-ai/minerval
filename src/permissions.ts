@@ -113,7 +113,9 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "administer the deployment",
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
-      "and say whose material a source is.",
+      "and say whose material a source is. Set up the deployment's General and Governance " +
+      "mandates, and create owls where the deployment creates its own. Read the usage reports " +
+      "the deployment makes to the public graph, and send them.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",

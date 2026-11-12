@@ -8,6 +8,7 @@
 import { anthropicAdapter } from "./anthropic.js";
 import { openaiAdapter } from "./openai.js";
 import { openrouterAdapter } from "./openrouter.js";
+import { assertModelPriced } from "../pricing.js";
 import { providerForModel } from "./routing.js";
 import type { ProviderAdapter, ProviderName } from "./types.js";
 
@@ -17,9 +18,16 @@ const ADAPTERS: Record<ProviderName, ProviderAdapter> = {
   openrouter: openrouterAdapter,
 };
 
-/** The adapter serving `modelId`. Throws if the id matches no known shape. */
+/**
+ * The adapter serving `modelId`. Throws if the id matches no known shape,
+ * or, in a deployment that creates its own owls, if the model has no price
+ * there (pricing.ts, assertModelPriced): every call takes its adapter from
+ * here, so an unpriced model is refused before anything is sent.
+ */
 export function getAdapter(modelId: string): ProviderAdapter {
-  return ADAPTERS[providerForModel(modelId)];
+  const adapter = ADAPTERS[providerForModel(modelId)];
+  assertModelPriced(modelId);
+  return adapter;
 }
 
 export { anthropicAdapter, openaiAdapter, openrouterAdapter };

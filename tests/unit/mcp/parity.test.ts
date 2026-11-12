@@ -6,12 +6,14 @@
  * ROUTE_TOOLS in src/mcp/route-tools.ts, or, if MCP genuinely should not
  * have it, to MCP_EXCLUDED_ROUTES with the reason.
  *
- * The app is built three times: with every feature on, which is what the
+ * The app is built four times: with every feature on, which is what the
  * tables decide for the public graph; with every feature off
  * (src/features.ts), to check that a feature's routes and tools go together
- * and nothing else goes with them; and members-only (src/permissions.ts),
- * which mounts the routes for permissions, parties and labels that the
- * public graph does not have.
+ * and nothing else goes with them; members-only (src/permissions.ts),
+ * which mounts the routes for permissions, parties, labels, the standing
+ * mandates and the outgoing usage reports that the public graph does not
+ * have; and members-only creating its own owls (OWLS=created), which
+ * mounts the routes for created owls and none that sell them.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -52,8 +54,14 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
-const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(key.slice(key.indexOf(" ") + 1));
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
+/** Mounted only by a members-only deployment that creates its own owls. */
+const CREATED_OWLS_ROUTE = /^\/owls\/created$/;
+/** Not mounted where owls are created: the routes that sell them. */
+const SELLS_OWLS_ROUTE = /^\/billing\/(packs|checkout|webhook)$/;
+const urlOf = (key: string) => key.slice(key.indexOf(" ") + 1);
+const createdOwlsRoute = (key: string) => CREATED_OWLS_ROUTE.test(urlOf(key));
+const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(urlOf(key)) || createdOwlsRoute(key);
 const openRouteTools = () =>
   Object.entries(ROUTE_TOOLS)
     .filter(([key]) => !membersOnlyRoute(key))
@@ -467,6 +475,8 @@ describe("in a members-only deployment", () => {
     const own = membersKeys.filter(membersOnlyRoute);
     expect(own.length).toBeGreaterThan(10);
     expect(membersKeys.filter((key) => !membersOnlyRoute(key)).sort()).toEqual([...keys].sort());
+    // Creating owls is a second setting: without it the routes are absent.
+    expect(membersKeys.filter(createdOwlsRoute)).toEqual([]);
   });
 
   it("decides each of its own routes once, and the tables name no other", () => {
@@ -479,13 +489,16 @@ describe("in a members-only deployment", () => {
       ...Object.keys(ROUTE_TOOLS),
       ...Object.keys(NATIVE_TOOL_ROUTES),
       ...Object.keys(MCP_EXCLUDED_ROUTES),
-    ].filter(membersOnlyRoute);
+    ].filter((key) => membersOnlyRoute(key) && !createdOwlsRoute(key));
     expect(named.sort()).toEqual([...own].sort());
   });
 
   it("offers a caller who holds every permission every tool", () => {
     const tools = toolsOf(["direct", "fund", "administer"]);
-    for (const tool of Object.values(ROUTE_TOOLS)) expect(tools, tool.name).toContain(tool.name);
+    for (const [key, tool] of Object.entries(ROUTE_TOOLS)) {
+      if (createdOwlsRoute(key)) expect(tools, tool.name).not.toContain(tool.name);
+      else expect(tools, tool.name).toContain(tool.name);
+    }
     expect(new Set(tools).size).toBe(tools.length);
   });
 
@@ -509,5 +522,85 @@ describe("in a members-only deployment", () => {
     const funder = toolsOf(["fund"]);
     for (const name of needing("fund")) expect(funder, name).toContain(name);
     for (const name of needing("direct")) expect(funder, name).not.toContain(name);
+  });
+});
+
+/**
+ * A members-only deployment that creates its own owls (OWLS=created,
+ * src/services/owl.ts). It mounts the routes for created owls, and none of
+ * the routes that sell owls, so the tools go the same way.
+ */
+describe("in a deployment that creates its own owls", () => {
+  let createdApp: FastifyInstance;
+  let createdKeys: string[];
+  let tools: string[];
+  let saved: Record<string, string | undefined>;
+
+  beforeAll(async () => {
+    saved = { READS: process.env.READS, OWLS: process.env.OWLS, API_KEYS: process.env.API_KEYS };
+    process.env.READS = "members";
+    process.env.OWLS = "created";
+    process.env.API_KEYS = "parity-created-key";
+    vi.resetModules();
+    const { buildApp } = await import("../../../src/server/app.js");
+    const mcp = await import("../../../src/mcp/server.js");
+    createdApp = await buildApp();
+    await createdApp.ready();
+    createdKeys = createdApp.routeCatalog.map((r) => routeKey(r.method, r.url));
+    tools = Object.keys(
+      (
+        mcp.buildMcpServer({
+          auth: {
+            method: "api_key" as const,
+            userId: "u",
+            apiKeyId: "k",
+            contributorExternalId: "x:u",
+            isService: false,
+            isSession: false,
+            standing: {
+              member: true,
+              grants: [{ permission: "administer" as const, label: null, partyId: null, group: null }],
+              clearance: ["public"],
+              rawSourceLabels: ["public"],
+              groups: [],
+            },
+          },
+          requestId: "r",
+          app: createdApp,
+        }) as unknown as { _registeredTools: Record<string, unknown> }
+      )._registeredTools
+    );
+  });
+
+  afterAll(async () => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await createdApp?.close();
+  });
+
+  it("mounts the routes for created owls, each decided in the tables", () => {
+    const own = createdKeys.filter(createdOwlsRoute).sort();
+    expect(own).toEqual(["GET /owls/created", "POST /owls/created"]);
+    expect("GET /owls/created" in ROUTE_TOOLS).toBe(true);
+    expect("POST /owls/created" in MCP_EXCLUDED_ROUTES).toBe(true);
+    const named = [...Object.keys(ROUTE_TOOLS), ...Object.keys(MCP_EXCLUDED_ROUTES)].filter(createdOwlsRoute);
+    expect(named.sort()).toEqual(own);
+  });
+
+  it("mounts no route that sells owls, and every other route the public graph has", () => {
+    expect(createdKeys.filter((key) => SELLS_OWLS_ROUTE.test(urlOf(key)))).toEqual([]);
+    expect(createdKeys.filter((key) => !membersOnlyRoute(key)).sort()).toEqual(
+      keys.filter((key) => !SELLS_OWLS_ROUTE.test(urlOf(key))).sort()
+    );
+    // An account's own owl history is not a sale and stays.
+    expect(createdKeys).toContain("GET /billing/ledger");
+  });
+
+  it("offers the tool that reads created owls and not the one that lists packs", () => {
+    expect(tools).toContain("get_created_owls");
+    expect(tools).toContain("get_owl_ledger");
+    expect(tools).not.toContain("list_owl_packs");
   });
 });

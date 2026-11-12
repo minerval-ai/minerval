@@ -444,6 +444,9 @@ describe("what a permission guards", () => {
       "POST /labels": ["administer"],
       "POST /labels/:label/reads": ["administer"],
       "DELETE /labels/:label/reads/:reads": ["administer"],
+      "POST /standing-mandates/:name": ["administer"],
+      "GET /usage-reports/outgoing": ["administer"],
+      "POST /usage-reports/outgoing/send": ["administer"],
     });
   });
 

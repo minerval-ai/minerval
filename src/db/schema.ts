@@ -274,7 +274,8 @@ export const accountGroups = pgTable(
 //
 // `action` is a name the code gives the act ('label_defined',
 // 'label_read_added', 'label_read_removed', 'party_added',
-// 'source_party_set'). It is not held to a list here, so that a later kind
+// 'source_party_set', 'owls_created', 'standing_mandate_created'). It is
+// not held to a list here, so that a later kind
 // of administrative act is a new name and not a migration. actor_id is the
 // administrator who did it; null only for a change no person made.
 // ---------------------------------------------------------------------------
@@ -2326,7 +2327,8 @@ export const owlLedger = pgTable(
     // llm_usage.cost_micro_usd so cost/price arithmetic never converts units.
     amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
     // purchase | signup_grant | monthly_grant | contribution_award | charge |
-    // refund | escrow_hold | escrow_refund | admin_adjust
+    // refund | escrow_hold | escrow_refund | admin_adjust | owl_created
+    // (OWL_REASONS in src/services/owl-ledger-service.ts has them all)
     reason: text("reason").notNull().default("purchase"),
     // For charges/refunds: the priced operation (claim_proposal,
     // source_ingest, extension_analysis, …) — see src/services/owl.ts.
@@ -2347,6 +2349,103 @@ export const owlLedger = pgTable(
   (table) => [
     index("idx_owl_ledger_user_time").on(table.userId, table.createdAt),
     index("idx_owl_ledger_contribution").on(table.contributionId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// usage_reports: what this deployment reports of its own owl spend
+//
+// A members-only deployment on the metered price reports, for each closed
+// UTC day, the owls its runs spent: one total and nothing else
+// (docs/usage-report.md; src/services/usage-report-service.ts). A row is
+// one report. `body` is the report exactly as it is sent, character for
+// character, written when the report is prepared and never changed, so an
+// administrator can read before sending what will leave, and afterwards
+// what left. It is text and not jsonb for that reason: jsonb would reorder
+// it.
+//
+// A period's report is not rewritten. If a later count of the same day
+// differs, the correction is a new row with the next `revision`, and both
+// are sent. `deployment_id` is minted with the first report and repeated on
+// every one, so that two deployments reporting under one account are told
+// apart.
+//
+// The sending columns are the only ones that change: when the public graph
+// acknowledged the report (`sent_at`, `sent_via` 'online', `receipt`), or
+// when it was written to a file to be handed over (`sent_via` 'file',
+// `receipt` holding the file's name), and the last failed attempt. Empty
+// on the public graph, which reports to no one.
+// ---------------------------------------------------------------------------
+export const usageReports = pgTable(
+  "usage_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deploymentId: uuid("deployment_id").notNull(),
+    // The UTC day the report is of.
+    period: date("period").notNull(),
+    // 0 for the day's first report; each correction takes the next number.
+    revision: integer("revision").notNull().default(0),
+    body: text("body").notNull(),
+    // sha256 of `body`, hex.
+    bodyHash: text("body_hash").notNull(),
+    // The total the body states, in millionths of an owl, kept beside it so
+    // that a recount can be compared without parsing the body.
+    spentMicroOwls: bigint("spent_micro_owls", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    // 'online' | 'file'; null until sent.
+    sentVia: text("sent_via"),
+    receipt: jsonb("receipt"),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+  },
+  (table) => [
+    uniqueIndex("uq_usage_reports_period_revision").on(table.period, table.revision),
+    index("idx_usage_reports_unsent").on(table.period).where(sql`${table.sentAt} IS NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// usage_reports_received: what other deployments reported to this one
+//
+// The receiving side of the same report (POST /usage-reports): a private
+// deployment sends its report to the public graph under the organization's
+// account, and it is recorded here against that account, as it was sent.
+// Nothing reads these rows to bill yet. One row per account, deployment,
+// period and revision: the same report sent again is recognized by its
+// hash and changes nothing, and a different report for a period already
+// reported is refused unless it is the next revision. Empty on a
+// deployment nobody reports to.
+// ---------------------------------------------------------------------------
+export const usageReportsReceived = pgTable(
+  "usage_reports_received",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    deploymentId: uuid("deployment_id").notNull(),
+    period: date("period").notNull(),
+    revision: integer("revision").notNull().default(0),
+    // The report as received, in canonical form (keys sorted, no spaces),
+    // which is the form a deployment sends it in.
+    body: text("body").notNull(),
+    bodyHash: text("body_hash").notNull(),
+    // The total the body states, in millionths of an owl.
+    spentMicroOwls: bigint("spent_micro_owls", { mode: "number" }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_usage_reports_received").on(
+      table.accountId,
+      table.deploymentId,
+      table.period,
+      table.revision
+    ),
   ]
 );
 

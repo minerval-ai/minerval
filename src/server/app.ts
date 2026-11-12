@@ -54,6 +54,9 @@ import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
+import { createdOwlRoutes, standingMandateRoutes } from "../routes/owls.js";
+import { usageReportReceivingRoutes, usageReportSendingRoutes } from "../routes/usage-reports.js";
+import { owlsCreatedHere } from "../services/owl.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -150,7 +153,19 @@ export async function buildApp() {
   // these routes, so it has none of their tools either.
   if (membersOnly(config)) {
     await app.register(permissionRoutes);
+    // The deployment's own standing mandates, set up by an administrator
+    // in place of the seed script (routes/owls.ts), and what it reports of
+    // its own owl spend (routes/usage-reports.ts).
+    await app.register(standingMandateRoutes);
+    await app.register(usageReportSendingRoutes);
+    // Creating owls exists only where the deployment creates its own
+    // (OWLS=created, which needs READS=members).
+    if (owlsCreatedHere(config)) await app.register(createdOwlRoutes);
   }
+  // Where a private deployment's usage report is received. On every
+  // deployment, and of use on the public graph, which private deployments
+  // report to.
+  await app.register(usageReportReceivingRoutes);
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool
   // either: the tools are built from the catalog of mounted routes.

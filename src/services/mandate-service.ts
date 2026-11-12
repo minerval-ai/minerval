@@ -16,6 +16,7 @@
 import { correspondentPublic, listCorrespondents, type CorrespondentPublic } from "./correspondent-service.js";
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
+import { membersOnly } from "../permissions.js";
 import {
   contributeToBudgetJob,
   getJobContributions,
@@ -91,7 +92,10 @@ function actionMix(plan: GrantRow["plan"]): Record<string, number> {
 }
 
 /**
- * How a mandate's funder is shown. The platform is Minerval. A funder who
+ * How a mandate's funder is shown. The platform is Minerval, except in a
+ * members-only deployment, where the standing mandates are the
+ * organization's own and are shown under the name its own account carries
+ * (owl-creation-service.ts, deploymentOwnAccountId). A funder who
  * chose not to be named is "an anonymous funder", or "a reader" for a
  * decomposition (one reader buying depth on one claim); their stake, if
  * they declared one, is shown either way. A mandate funded before funders
@@ -106,7 +110,9 @@ export function funderDisclosure(row: {
   const declared = m?.funder_named !== undefined;
   const named = row.is_platform || !declared || m!.funder_named === true;
   const shown_as = row.is_platform
-    ? "Minerval"
+    ? membersOnly()
+      ? row.manager_name
+      : "Minerval"
     : named
       ? row.manager_name
       : m?.origin === "deep_decomposition"

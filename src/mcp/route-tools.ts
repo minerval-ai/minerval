@@ -221,6 +221,16 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /permissions/accounts": { name: "list_accounts" },
   "GET /parties": { name: "list_parties" },
   "GET /labels": { name: "list_labels" },
+  // ---- the deployment's own mandates, owls and usage report: members-only deployments only ----
+  "GET /standing-mandates": { name: "list_standing_mandates" },
+  // Mounted only where the deployment creates its own owls (OWLS=created).
+  "GET /owls/created": {
+    name: "get_created_owls",
+    note:
+      "Free. Owls here are the organization's own unit for budgeting its agents' work, " +
+      "created by its administrators and not bought.",
+  },
+  "GET /usage-reports/outgoing": { name: "list_usage_reports" },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
@@ -300,6 +310,13 @@ const ADMINISTRATION_SESSION =
   "access token, or an agent following text it read can then never widen anyone's access. " +
   "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
 
+const BUDGET_SESSION =
+  "Creates a budget in a members-only deployment: owls for an account or a mandate, or one " +
+  "of the deployment's standing mandates. It takes a signed-in dashboard session as well as " +
+  "the permission to administer, so that a leaked key, an access token, or an agent following " +
+  "text it read can never create money to spend. The matching reads (get_created_owls, " +
+  "list_standing_mandates) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /permissions/grants": ADMINISTRATION_SESSION,
@@ -312,6 +329,16 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /operator/administrators":
     "The way back in for a deployment whose administrators cannot sign in: requires the " +
     "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",
+  "POST /owls/created": BUDGET_SESSION,
+  "POST /standing-mandates/:name": BUDGET_SESSION,
+  "POST /usage-reports/outgoing/send":
+    "Sends this deployment's usage reports to the public graph now instead of at the worker's " +
+    "next pass. It is an administrator's act from a signed-in dashboard session, like every " +
+    "administrative write; list_usage_reports is the tool that reads what was and will be sent.",
+  "POST /usage-reports":
+    "Machine to machine: a private deployment's own worker reports its day's owl spend to the " +
+    "public graph under the organization's API key (docs/usage-report.md). An agent has no " +
+    "report of its own to send, and a tool here would let one file a figure in an account's name.",
 
   "GET /health": "A load-balancer liveness probe, not an affordance.",
   "PATCH /claims/:claim_id":
