@@ -566,8 +566,22 @@ describe("a standing showing of a node with what sits under it", () => {
         await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1 AND sensitivity_label = $2`, [id.root, C]);
         await rawQuery(`INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label) VALUES ($1, 'supported', 0.7, $2, $2, true, $3)`, [id.root, words, C]);
       });
+    // A pass on the node is still running when its assessment appears: the page is not recorded from a half-finished pass.
+    await system(() => rawQuery(`UPDATE claims SET steward_state = 'running' WHERE id = $1`, [id.root]));
     await version("First reading of the line speed.");
+    expect(await followShowings()).toBe(0);
+    expect(((await atA(() => shownShowing(id.standing!)))!.nodes as any[])[0].state).toBe("not_yet_assessed");
+    await expect(askShowing({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! })).rejects.toThrow(
+      `A pass on this node at "${C}" is running now, and a page shown once is the page as it stands when it is asked for. Ask again when the pass has finished, so that the page is the finished one.`
+    );
+    // The pass adds an argument after its assessment and ends; the page recorded then has it.
+    await system(async () => {
+      await rawQuery(`INSERT INTO arguments (claim_id, stance, name, content, created_by, sensitivity_label) VALUES ($1, 'for', 'Written last', 'Added after the assessment, in the same pass.', 'steward', $2)`, [id.root, C]);
+      await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [id.root]);
+    });
     expect(await followShowings()).toBe(1);
+    const [recorded] = await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.node_id = $1 AND p.kind = 'argument'`, [id.root]));
+    expect(recorded!.n).toBe(1);
     record = (await atA(() => shownShowing(id.standing!)))!;
     const firstPage = (record.nodes as any[])[0].versions[0].page_id;
     expect((record.nodes as any[])[0].state).toBe("held");

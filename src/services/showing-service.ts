@@ -223,6 +223,13 @@ export async function askShowing(input: {
       `SELECT id FROM ${spec.table}_versions WHERE claim_id = $1 AND sensitivity_label = $2`,
       [node.id, pageLabel]
     );
+    if (input.form === "once" && version && (await passRunning(node, pageLabel))) {
+      throw new ShowingError(
+        "PASS_RUNNING",
+        `A pass on this node at "${pageLabel}" is running now, and a page shown once is the page as it stands when it is asked for. ` +
+          `Ask again when the pass has finished, so that the page is the finished one.`
+      );
+    }
     if (input.form === "once" && !version) {
       throw new ShowingError(
         "NOTHING_TO_SHOW",
@@ -395,6 +402,11 @@ async function followShowing(showingId: string, opts: { first?: boolean } = {}):
       [node.id, showing.page_label]
     );
     if (!version) continue;
+    // A page is recorded from a finished version. While a pass on the node
+    // at the page's label is running, the Steward may have written its
+    // assessment and still be writing the arguments and readings that go
+    // with it, so the page waits for the next look after the pass has ended.
+    if (await passRunning(node, showing.page_label)) continue;
     const [has] = await rawQuery(
       `SELECT 1 FROM showing_pages WHERE showing_id = $1 AND node_id = $2 AND judgment_id = $3`,
       [showing.id, node.id, version.id]
@@ -404,6 +416,21 @@ async function followShowing(showingId: string, opts: { first?: boolean } = {}):
     opened++;
   }
   return opened;
+}
+
+/**
+ * Whether a Steward's pass on the node at `label` is running now. Work at
+ * the node's own label keeps its state on the node, and work at another
+ * label in that label's slot (services/steward-lease.ts).
+ */
+async function passRunning(node: NodeRow, label: string): Promise<boolean> {
+  const [row] = await rawQuery<{ running: boolean }>(
+    node.label === label
+      ? `SELECT steward_state = 'running' AS running FROM claims WHERE id = $1`
+      : `SELECT steward_state = 'running' AS running FROM steward_slots WHERE claim_id = $1 AND sensitivity_label = $2`,
+    node.label === label ? [node.id] : [node.id, label]
+  );
+  return row?.running === true;
 }
 
 /**

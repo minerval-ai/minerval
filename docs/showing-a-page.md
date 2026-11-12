@@ -154,6 +154,11 @@ that values it, or a person with the permission to fund
 one for each new version. A version replaced before its redaction ran is
 not redacted, and stays in the showing's history as that.
 
+A page is recorded from a finished version. While a Steward's pass on the
+node at the page's label is running, a standing showing does not record the
+page, and takes it in at the next look after the pass has ended; a page
+asked to be shown once is refused until then, with that reason.
+
 The Redactor (`src/llm/prompts/redactor.ts`) works at the page's label. Its
 tools:
 
