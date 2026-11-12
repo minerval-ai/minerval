@@ -19,7 +19,7 @@ import {
   primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -818,13 +818,15 @@ export const assessments = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    // One current verdict per claim, whatever its label. It becomes one per
-    // claim and label only when the reads can choose a judgment by the
-    // reader's clearance: until then two current rows for one claim is a
-    // state no read can handle. The same holds for the current-row indexes
-    // on argument_evaluations, quantity_estimates and question_assessments.
+    // One current verdict per claim and label: a node may carry a version
+    // at each label, written by work at that label and replaced only by it
+    // (src/labels.ts, "A judgment at each label"). Which of them a reader
+    // goes by is the *_in_force views' to say, at the end of this file. The
+    // same holds for the current-row indexes on argument_evaluations,
+    // quantity_estimates and question_assessments. On the public graph,
+    // whose only label is `public`, it is one per claim as it always was.
     uniqueIndex("idx_assessments_current")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(sql`${table.isCurrent} = true`),
     // The change stream reads assessments in the order they were written
     // (services/graph-change-service.ts, #562 / #563).
@@ -1086,7 +1088,7 @@ export const argumentEvaluations = pgTable(
   (table) => [
     index("idx_argument_evaluations_argument").on(table.argumentId),
     uniqueIndex("idx_argument_evaluations_current")
-      .on(table.argumentId)
+      .on(table.argumentId, table.sensitivityLabel)
       .where(sql`${table.isCurrent} = true`),
   ]
 );
@@ -2559,10 +2561,12 @@ export const assessmentOrders = pgTable(
       .where(sql`status = 'pending'`),
     index("idx_orders_user_time").on(table.userId, table.createdAt),
     index("idx_orders_claim").on(table.claimId),
-    // One OPEN order per user per claim, enforced: two racing clicks (or a
-    // network retry) must join one order, not charge twice.
+    // One OPEN order per user per claim and label, enforced: two racing
+    // clicks (or a network retry) must join one order, not charge twice. An
+    // order is for a pass at its label (src/labels.ts), so one person may
+    // have one open at each label they may start work at.
     uniqueIndex("uq_orders_open_per_claim")
-      .on(table.userId, table.claimId)
+      .on(table.userId, table.claimId, table.sensitivityLabel)
       .where(sql`status IN ('pending', 'running')`),
   ]
 );
@@ -5652,7 +5656,7 @@ export const quantityEstimates = pgTable(
   },
   (table) => [
     uniqueIndex("idx_quantity_estimates_current")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(sql`${table.isCurrent} = true`),
     index("idx_quantity_estimates_claim").on(table.claimId),
   ]
@@ -5764,7 +5768,7 @@ export const questionAssessments = pgTable(
   },
   (table) => [
     uniqueIndex("idx_question_assessments_current")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(sql`${table.isCurrent} = true`),
     index("idx_question_assessments_claim").on(table.claimId),
     check(
@@ -6237,13 +6241,20 @@ export const agentSessions = pgTable(
 //   - 'source': a source attached to this node by a live instance, with the
 //     source's content hash when it had one.
 //
+//   - 'beside': another label's version of this same node that was current
+//     when this one was written, at a label this one's label reads, with
+//     that label (input_label). A node may carry a version at each label
+//     (src/labels.ts), and each is made beside the ones its label reads. An
+//     argument's evaluation records the same, and nothing else.
+//
 // Staleness then follows from versions instead of from someone remembering
 // to say so: a judgment is out of date when a premise has been judged again,
 // when a premise or a source has been added or removed, or when one of its
-// sources has had a correction or a retraction since
+// sources has had a correction or a retraction since, and it was made
+// against an earlier version when one it was made beside has been replaced
 // (services/judgment-inputs-service.ts).
 //
-// judgment_id points at one of three tables by judgment_kind, so it carries
+// judgment_id points at one of four tables by judgment_kind, so it carries
 // no foreign key; the rows are written in the same statement sequence as the
 // judgment and never updated. A judgment whose inputs_recorded is false has
 // no rows here because none were recorded, not because it rests on nothing.
@@ -6260,6 +6271,10 @@ export const judgmentInputs = pgTable(
     nodeId: uuid("node_id"),
     relationType: text("relation_type"),
     inputJudgmentId: uuid("input_judgment_id"),
+    // 'beside': the label of the version in input_judgment_id. It is not
+    // this row's own label (sensitivity_label below), which is the label of
+    // the version that records it.
+    inputLabel: text("input_label").references(() => labels.name),
     // 'source': the source, and its content hash then when it had one.
     sourceId: uuid("source_id"),
     contentHash: text("content_hash"),
@@ -6274,37 +6289,113 @@ export const judgmentInputs = pgTable(
     index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
     check(
       "ck_judgment_inputs_judgment_kind",
-      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment')`
+      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation')`
     ),
-    check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source')`),
+    check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source', 'beside')`),
     check(
       "ck_judgment_inputs_shape",
       sql`(${table.inputKind} = 'premise' AND ${table.nodeId} IS NOT NULL AND ${table.relationType} IS NOT NULL AND ${table.sourceId} IS NULL)
-        OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)`
+        OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)
+        OR (${table.inputKind} = 'beside' AND ${table.inputJudgmentId} IS NOT NULL AND ${table.inputLabel} IS NOT NULL AND ${table.nodeId} IS NULL AND ${table.sourceId} IS NULL)`
     ),
+    // The upkeep that finds versions made beside one that has since been
+    // replaced reads these rows by the version they name.
+    index("idx_judgment_inputs_beside")
+      .on(table.inputJudgmentId)
+      .where(sql`${table.inputKind} = 'beside'`),
   ]
 );
 
 // ---------------------------------------------------------------------------
-// The judgment in force (#566)
+// steward_slots: the Steward's pending slot for work on a node at a label
+// other than the node's own (src/labels.ts, "A judgment at each label")
 //
-// A node's judgment in force is the one a reader or an agent should go by:
-// today, the current row of the table its kind keeps (a proposition's verdict
-// in `assessments`, a quantity's estimate in `quantity_estimates`, a
-// question's standing in `question_assessments`), and the current evaluation
-// of an argument in `argument_evaluations`. Every read of "the current
-// judgment" goes through one of these four views, so that what "in force"
-// means is defined once, here, and can change here: when judgments come to
-// be versioned by label, the view will return the highest version its reader
-// is cleared for, and no query that reads it will need to change.
+// A node's own row is its queue for work at its own label
+// (claims.steward_state and the columns beside it). Work at another label
+// that reads the node, such as an internal assessment of a public claim,
+// keeps its slot here, one row per node and label, with the same columns
+// and the same lifecycle (services/steward-lease.ts says which of the two a
+// piece of work uses). So a pass at one label neither waits on nor shows
+// itself to a pass at another, and no run writes its bookkeeping into a row
+// at a label that is not its own. A row is made the first time work at its
+// label is asked for on the node, as 'done' (nothing waiting), and the
+// statement that asks then moves it.
 //
-// Read the view to learn what a node's judgment is. Read the table for
+// The public graph has one label, every piece of work is at its node's own,
+// and the table stays empty there.
+// ---------------------------------------------------------------------------
+export const stewardSlots = pgTable(
+  "steward_slots",
+  {
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    stewardState: text("steward_state").notNull().default("done"),
+    stewardTrigger: text("steward_trigger"),
+    stewardError: text("steward_error"),
+    stewardErrorReason: text("steward_error_reason"),
+    stewardedAt: timestamp("stewarded_at", { withTimezone: true }),
+    stewardRequeued: boolean("steward_requeued").notNull().default(false),
+    stewardAttempts: integer("steward_attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // The label of the work the slot is for, stamped from the run or the
+    // request that first asked for it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.claimId, table.sensitivityLabel] }),
+    index("idx_steward_slots_pending")
+      .on(table.sensitivityLabel, table.updatedAt)
+      .where(sql`steward_state = 'pending'`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// The judgment in force (#566), and a version at each label
+//
+// A node may carry one current judgment at each label: the current row, for
+// that label, of the table its kind keeps (a proposition's verdict in
+// `assessments`, a quantity's estimate in `quantity_estimates`, a question's
+// standing in `question_assessments`), and the current evaluation of an
+// argument in `argument_evaluations`. Each is a version, written by work at
+// its label and replaced only by it.
+//
+// Which versions are in force depends on who is reading. Among the current
+// versions a connection's clearance reads, a version is in force unless
+// another of them was made at a label that reads its label: that other one
+// was made with sight of everything this one saw, and more. A reader who
+// holds two labels that do not read each other, each with a version, has
+// both in force. Nothing is merged. That rule is written once, in the
+// database (minerval_version_standing, in the migration that brought it),
+// and everything here reads through it:
+//
+//   - `<table>_in_force` is the version a reader goes by, one row for each
+//     node at most: the version in force, and where several are in force
+//     the one made most recently. Every read of "the current judgment" that
+//     wants one row for a node goes through one of these four views.
+//   - `<table>_versions` is every current version the reader may read, each
+//     with its label and whether it is in force for this reader. A read that
+//     shows a node's versions side by side, or that wants the version at
+//     one label (a run's own), reads these.
+//
+// On the public graph there is one label and one version, and both
+// functions the views call are the constant true, which the planner folds
+// away: each view is planned as the plain "where is_current" it was. The
+// step that turns enforcement on (minerval_enforcement_sync) points the two
+// functions at the rule when a second label is defined.
+//
+// Read a view to learn what a node's judgment is. Read the table for
 // history (every row, current or not) and for the write seam that supersedes
 // a current row; nothing writes through a view. A file that mentions
 // is_current has to say why (tests/unit/db/judgment-in-force.test.ts).
 //
 // drizzle-kit writes the views into migrations with their columns spelled
-// out, so adding a column to one of the tables regenerates its view: run
+// out, so adding a column to one of the tables regenerates its views: run
 // `npm run db:generate` as for any schema change.
 // ---------------------------------------------------------------------------
 // Each reads its table with its caller's rights (security_invoker): a view
@@ -6313,18 +6404,102 @@ export const judgmentInputs = pgTable(
 // said here so that a regenerated view is created with it.
 const callersRights = { securityInvoker: true };
 
+/** The version a one-row read takes, as a condition on a judgment table's row. */
+const goneBy = (judgments: string, node: AnyPgColumn, label: AnyPgColumn): SQL =>
+  sql`minerval_version_gone_by(${sql.raw(`'${judgments}'`)}, ${node}, ${label})`;
+/** Whether a current version is in force for the connection reading it. */
+const inForce = (judgments: string, node: AnyPgColumn, label: AnyPgColumn): SQL<boolean> =>
+  sql<boolean>`minerval_version_in_force(${sql.raw(`'${judgments}'`)}, ${node}, ${label})`;
+
 export const assessmentsInForce = pgView("assessments_in_force").with(callersRights).as((qb) =>
-  qb.select().from(assessments).where(eq(assessments.isCurrent, true))
+  qb
+    .select()
+    .from(assessments)
+    .where(and(eq(assessments.isCurrent, true), goneBy("assessments", assessments.claimId, assessments.sensitivityLabel)))
 );
 
 export const argumentEvaluationsInForce = pgView("argument_evaluations_in_force").with(callersRights).as((qb) =>
-  qb.select().from(argumentEvaluations).where(eq(argumentEvaluations.isCurrent, true))
+  qb
+    .select()
+    .from(argumentEvaluations)
+    .where(
+      and(
+        eq(argumentEvaluations.isCurrent, true),
+        goneBy("argument_evaluations", argumentEvaluations.argumentId, argumentEvaluations.sensitivityLabel)
+      )
+    )
 );
 
 export const quantityEstimatesInForce = pgView("quantity_estimates_in_force").with(callersRights).as((qb) =>
-  qb.select().from(quantityEstimates).where(eq(quantityEstimates.isCurrent, true))
+  qb
+    .select()
+    .from(quantityEstimates)
+    .where(
+      and(
+        eq(quantityEstimates.isCurrent, true),
+        goneBy("quantity_estimates", quantityEstimates.claimId, quantityEstimates.sensitivityLabel)
+      )
+    )
 );
 
 export const questionAssessmentsInForce = pgView("question_assessments_in_force").with(callersRights).as((qb) =>
-  qb.select().from(questionAssessments).where(eq(questionAssessments.isCurrent, true))
+  qb
+    .select()
+    .from(questionAssessments)
+    .where(
+      and(
+        eq(questionAssessments.isCurrent, true),
+        goneBy("question_assessments", questionAssessments.claimId, questionAssessments.sensitivityLabel)
+      )
+    )
+);
+
+export const assessmentVersions = pgView("assessments_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(assessments),
+      inForce: inForce("assessments", assessments.claimId, assessments.sensitivityLabel).as("in_force"),
+    })
+    .from(assessments)
+    .where(eq(assessments.isCurrent, true))
+);
+
+export const argumentEvaluationVersions = pgView("argument_evaluations_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(argumentEvaluations),
+      inForce: inForce(
+        "argument_evaluations",
+        argumentEvaluations.argumentId,
+        argumentEvaluations.sensitivityLabel
+      ).as("in_force"),
+    })
+    .from(argumentEvaluations)
+    .where(eq(argumentEvaluations.isCurrent, true))
+);
+
+export const quantityEstimateVersions = pgView("quantity_estimates_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(quantityEstimates),
+      inForce: inForce("quantity_estimates", quantityEstimates.claimId, quantityEstimates.sensitivityLabel).as(
+        "in_force"
+      ),
+    })
+    .from(quantityEstimates)
+    .where(eq(quantityEstimates.isCurrent, true))
+);
+
+export const questionAssessmentVersions = pgView("question_assessments_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(questionAssessments),
+      inForce: inForce(
+        "question_assessments",
+        questionAssessments.claimId,
+        questionAssessments.sensitivityLabel
+      ).as("in_force"),
+    })
+    .from(questionAssessments)
+    .where(eq(questionAssessments.isCurrent, true))
 );

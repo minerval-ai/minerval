@@ -555,8 +555,12 @@ export async function changeNodeKind(input: {
   const retire = async (table: string): Promise<string[]> =>
     (
       await rawQuery<{ id: string }>(
-        `UPDATE ${table} SET is_current = false WHERE claim_id = $1 AND is_current = true RETURNING id`,
-        [claimId]
+        // This label's version only: a version is retired by work at its
+        // own label, and another label's on this node stays as it is until
+        // that label's own pass, which the change opens (version-upkeep.ts).
+        `UPDATE ${table} SET is_current = false
+          WHERE claim_id = $1 AND is_current = true AND sensitivity_label = $2 RETURNING id`,
+        [claimId, currentLabel()]
       )
     ).map((r) => r.id);
   const retired = {
@@ -1039,8 +1043,8 @@ export async function splitArgument(input: {
     }
     const retiredEvaluations = await tx.query<{ id: string }>(
       `UPDATE argument_evaluations SET is_current = false
-        WHERE argument_id = $1 AND is_current = true RETURNING id`,
-      [original.id]
+        WHERE argument_id = $1 AND is_current = true AND sensitivity_label = $2 RETURNING id`,
+      [original.id, currentLabel()]
     );
     const [event] = await tx.query<{ id: string }>(
       `INSERT INTO reconciliation_events (operation, reasoning, payload, created_by, sensitivity_label)
@@ -1596,10 +1600,16 @@ export async function reverseReconciliation(
       const retired = (p.retired as Record<string, string[]>) ?? {};
       // The new kind's records are retired; the old kind's come back.
       for (const table of ["assessments", "quantity_estimates", "question_assessments"]) {
-        await rawQuery(`UPDATE ${table} SET is_current = false WHERE claim_id = $1 AND is_current = true`, [claimId]);
+        await rawQuery(
+          `UPDATE ${table} SET is_current = false WHERE claim_id = $1 AND is_current = true AND sensitivity_label = $2`,
+          [claimId, currentLabel()]
+        );
         const ids = retired[table] ?? [];
         if (ids.length) {
-          await rawQuery(`UPDATE ${table} SET is_current = true WHERE id = ANY($1::uuid[])`, [ids]);
+          await rawQuery(
+            `UPDATE ${table} SET is_current = true WHERE id = ANY($1::uuid[]) AND sensitivity_label = $2`,
+            [ids, currentLabel()]
+          );
         }
       }
       await restoreStances((p.remapped_stances as StanceRef[]) ?? []);
@@ -1798,9 +1808,10 @@ export async function reverseReconciliation(
       if (retiredEvaluations.length) {
         await rawQuery(
           `UPDATE argument_evaluations SET is_current = true
-            WHERE id = ANY($1::uuid[])
-              AND NOT EXISTS (SELECT 1 FROM argument_evaluations WHERE argument_id = $2 AND is_current = true)`,
-          [retiredEvaluations, originalId]
+            WHERE id = ANY($1::uuid[]) AND sensitivity_label = $3
+              AND NOT EXISTS (SELECT 1 FROM argument_evaluations
+                               WHERE argument_id = $2 AND is_current = true AND sensitivity_label = $3)`,
+          [retiredEvaluations, originalId, currentLabel()]
         );
       }
       break;

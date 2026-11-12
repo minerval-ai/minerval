@@ -21,6 +21,7 @@ import {
   type QuestionStanding,
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
+import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
 
@@ -188,15 +189,22 @@ export async function recordQuestionAssessment(input: {
   if (!["answered", "leaning"].includes(input.standing) && favored.length > 0) {
     throw new KindError(`A question that is ${input.standing} favors no answer`);
   }
+  // On a question that carries another label, this label's assessment rests
+  // on material at this label or is not stored (judgment-version-service.ts).
+  const noMaterial = await versionWithoutMaterial(input.claimId);
+  if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An assessment"));
   return withTransaction(async (tx) => {
     await requireQuestion(tx, input.claimId);
     const answers = await answerIds(tx, input.claimId);
     for (const id of favored) {
       if (!answers.has(id)) throw new KindError(`Node ${id} is not an answer to ${input.claimId}`);
     }
+    // This label's current assessment is retired, and no other label's
+    // (db/schema.ts, "a version at each label").
     await tx.query(
-      `UPDATE question_assessments SET is_current = false WHERE claim_id = $1 AND is_current = true`,
-      [input.claimId]
+      `UPDATE question_assessments SET is_current = false
+        WHERE claim_id = $1 AND is_current = true AND sensitivity_label = $2`,
+      [input.claimId, currentLabel()]
     );
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO question_assessments
@@ -225,6 +233,7 @@ export async function recordQuestionAssessment(input: {
     );
     // What the assessment was made against, in the same transaction (#566).
     await recordJudgmentInputs(tx.query, "question_assessment", row!.id, input.claimId);
+    await recordMadeBeside(tx.query, "question_assessments", "question_assessment", row!.id, input.claimId);
     return { id: row!.id };
   });
 }

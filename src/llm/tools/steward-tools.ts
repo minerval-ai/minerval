@@ -7,9 +7,14 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import { recordJudgmentInputs } from "../../services/judgment-inputs-service.js";
+import {
+  recordMadeBeside,
+  versionWithoutMaterial,
+  versionWithoutMaterialMessage,
+} from "../../services/judgment-version-service.js";
 import {
   claims,
   assessments,
@@ -1461,13 +1466,33 @@ export async function executeStewardTool(
         const kindRefusal = await wrongKindForAssessment(claimId);
         if (kindRefusal) return kindRefusal;
 
+        // A node may carry a version at each label, and this run writes its
+        // own label's. On a node that carries another label, that version
+        // rests on material at this run's label or is not stored
+        // (judgment-version-service.ts). Asked before anything is written,
+        // so a refusal leaves this label's current version standing.
+        const noMaterial = await versionWithoutMaterial(claimId);
+        if (noMaterial) {
+          return JSON.stringify({
+            success: false,
+            message: versionWithoutMaterialMessage(noMaterial, "An assessment"),
+          });
+        }
+
         const db = getDb();
 
-        // Mark previous assessment as non-current
+        // Retire this label's current version, and no other label's: each
+        // stays in force for the readers and runs that go by it.
         await db
           .update(assessments)
           .set({ isCurrent: false })
-          .where(eq(assessments.claimId, claimId));
+          .where(
+            and(
+              eq(assessments.claimId, claimId),
+              eq(assessments.isCurrent, true),
+              eq(assessments.sensitivityLabel, currentLabel())
+            )
+          );
 
         // Insert new assessment
         const [written] = await db.insert(assessments).values({
@@ -1509,6 +1534,7 @@ export async function executeStewardTool(
         if (written?.id) {
           try {
             await recordJudgmentInputs(rawQuery, "assessment", written.id, claimId);
+            await recordMadeBeside(rawQuery, "assessments", "assessment", written.id, claimId);
           } catch (err) {
             console.error(
               "[steward] failed to record what an assessment was made against:",
@@ -2445,6 +2471,22 @@ export async function executeStewardTool(
               "reference the load-bearing subclaim(s) inline as " +
               "[[claim:<uuid>]], as in the written form.",
           });
+        }
+
+        // An evaluation is a version too: on an argument that carries
+        // another label it is stored only where material at this run's
+        // label bears on the argument's claim (judgment-version-service.ts).
+        if (argument.sensitivityLabel !== currentLabel()) {
+          const noMaterial = await versionWithoutMaterial(argument.claimId);
+          if (noMaterial) {
+            return JSON.stringify({
+              success: false,
+              message: versionWithoutMaterialMessage(
+                { label: noMaterial.label, nodeLabel: argument.sensitivityLabel },
+                "An argument's evaluation"
+              ),
+            });
+          }
         }
 
         // Provenance: stamp the claim assessment this evaluation was derived

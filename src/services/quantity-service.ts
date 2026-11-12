@@ -22,6 +22,7 @@ import {
   type ValueShown,
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
+import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
 /** Set a quantity's definition, making a fresh claim a quantity if it is not one yet. */
@@ -74,13 +75,20 @@ export async function recordEstimate(input: {
 }): Promise<{ id: string }> {
   const estimate = quantityEstimateSchema.parse(input.estimate);
   if (!input.work.trim()) throw new KindError("An estimate records its work");
+  // On a quantity that carries another label, this label's estimate rests
+  // on material at this label or is not stored (judgment-version-service.ts).
+  const noMaterial = await versionWithoutMaterial(input.claimId);
+  if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An estimate"));
   return withTransaction(async (tx) => {
     await requireKind(tx, input.claimId, "quantity");
     const [def] = await tx.query(`SELECT 1 FROM quantity_definitions WHERE claim_id = $1`, [input.claimId]);
     if (!def) throw new KindError(`Quantity ${input.claimId} has no definition yet; define it first`);
+    // This label's current estimate is retired, and no other label's
+    // (db/schema.ts, "a version at each label").
     await tx.query(
-      `UPDATE quantity_estimates SET is_current = false WHERE claim_id = $1 AND is_current = true`,
-      [input.claimId]
+      `UPDATE quantity_estimates SET is_current = false
+        WHERE claim_id = $1 AND is_current = true AND sensitivity_label = $2`,
+      [input.claimId, currentLabel()]
     );
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO quantity_estimates
@@ -104,6 +112,7 @@ export async function recordEstimate(input: {
     );
     // What the estimate was made against, in the same transaction (#566).
     await recordJudgmentInputs(tx.query, "quantity_estimate", row!.id, input.claimId);
+    await recordMadeBeside(tx.query, "quantity_estimates", "quantity_estimate", row!.id, input.claimId);
     return { id: row!.id };
   });
 }

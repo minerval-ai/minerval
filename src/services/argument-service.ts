@@ -2,6 +2,7 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations, argumentEvaluationsInForce } from "../db/schema.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { recordMadeBeside } from "./judgment-version-service.js";
 
 /**
  * Inline claim reference inside an argument's written form:
@@ -186,10 +187,18 @@ export async function setArgumentEvaluation(input: {
   createdBy?: string;
 }) {
   const db = getDb();
+  // This label's current evaluation is retired, and no other label's: an
+  // argument may carry one at each label (db/schema.ts).
   await db
     .update(argumentEvaluations)
     .set({ isCurrent: false })
-    .where(eq(argumentEvaluations.argumentId, input.argumentId));
+    .where(
+      and(
+        eq(argumentEvaluations.argumentId, input.argumentId),
+        eq(argumentEvaluations.isCurrent, true),
+        eq(argumentEvaluations.sensitivityLabel, currentLabel())
+      )
+    );
   const [evaluation] = await db
     .insert(argumentEvaluations)
     .values({
@@ -205,6 +214,8 @@ export async function setArgumentEvaluation(input: {
       sensitivityLabel: currentLabel(),
     })
     .returning();
+  // The evaluations at the labels this one's label reads, as they stood.
+  await recordMadeBeside(rawQuery, "argument_evaluations", "argument_evaluation", evaluation!.id, input.argumentId);
   return evaluation!;
 }
 
@@ -280,8 +291,8 @@ export async function reviseArgument(input: {
     await tx.query(`UPDATE arguments SET stance = $2 WHERE id = $1`, [input.argumentId, input.stance]);
     const retired = await tx.query<{ id: string }>(
       `UPDATE argument_evaluations SET is_current = false
-        WHERE argument_id = $1 AND is_current = true RETURNING id`,
-      [input.argumentId]
+        WHERE argument_id = $1 AND is_current = true AND sensitivity_label = $2 RETURNING id`,
+      [input.argumentId, currentLabel()]
     );
     return { evaluationRetired: retired.length > 0 };
   });
