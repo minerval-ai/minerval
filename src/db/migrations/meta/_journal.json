@@ -897,6 +897,13 @@
       "when": 1794494323629,
       "tag": "0127_mirror",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1794495765868,
+      "tag": "0128_permissions",
+      "breakpoints": true
     }
   ]
 }
