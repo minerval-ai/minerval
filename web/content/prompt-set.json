@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "41673f36273fcfa0a10ef6a29d55fac6518a42c0f090ff6033c9739819706c34",
+  "hash": "a3e773f9827a8ee222702e5eb1a0c71332d93dbb4891b8d60253c2565571a8f1",
   "constitution": {
     "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
@@ -149,8 +149,8 @@
     },
     {
       "name": "sql",
-      "version": 6,
-      "hash": "bf6a3b33f1771c21ce81baae32989777d29b59f46e4c9565c09d2a1dd70a3c86"
+      "version": 7,
+      "hash": "5d2fd4bc77eb05a3b9b7cfbaf17886be26a733d77247e6cc333c45186f5b0856"
     }
   ]
 }
