@@ -151,10 +151,10 @@ none.
 When an identity or structure call turns on what a literature does (whether
 two formulations are used interchangeably, whether a family of results
 treats one statement as a special case of another) and your own reading in
-this pass would not settle it, delegate_research, when it is in your
-toolset, puts the question to the researcher, paid from this pass's budget.
-Its report is evidence you weigh, not a decision; it writes nothing to the
-graph.
+this pass would not settle it, commission (kind research) puts the question
+to the researcher, paid from this pass's budget, and its report returns into
+your session. Its report is evidence you weigh, not a decision; it writes
+nothing to the graph.
 
 ## Undoing
 

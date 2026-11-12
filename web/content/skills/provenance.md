@@ -189,10 +189,10 @@ too. That is one reason to record the edges.
 
 **Examining a document.** Some sources deserve more than a reading: the
 study the whole claim rests on, a report whose figure every later source
-repeats. Launch the researcher on it as an examination, inline
-(`delegate_research` with `examine_source_id` and the facets to check, such
-as the data, the quotation, the method) or on its own while you carry on
-(`commission` kind research, with the same two fields). It records what it
+repeats. Commission the researcher on it as an examination (`commission`
+kind research, with `examine_source_id` and the facets to check, such as
+the data, the quotation, the method); it runs while you carry on and its
+report returns into your session. It records what it
 examined and what it found on the document's own passages, and that
 record outlives your pass: it sits on the document's page for whoever
 reads the document next, the Stewards of other claims resting on it

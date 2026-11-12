@@ -51,8 +51,7 @@ export function getSpendToolDefinitions(): Tool[] {
         "report goes to this node's inbox for a later pass. The resumption is paid from what this " +
         "run has left, by whoever paid for this run. Without wait, the report goes to this node's " +
         "inbox for its next pass. follow_up_of continues an earlier research run from where it " +
-        "stopped, with its notebook. For a quick check you need inside this turn, delegate_research " +
-        "runs the Researcher inline instead.",
+        "stopped, with its notebook.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -92,8 +91,8 @@ export function getSpendToolDefinitions(): Tool[] {
             description:
               "For research from a Steward: run it as an examination of one document in your node's map, by " +
               "its source id. The Researcher records what it examined and what it found on the document's own " +
-              "passages, a record that sits on the document's page for whoever reads it next, as with " +
-              "delegate_research. A review of a document for its own sake, beyond what your node needs, is " +
+              "passages, a record that sits on the document's page for whoever reads it next. A review of a " +
+              "document for its own sake, beyond what your node needs, is " +
               "asked for as a request bearing on it (file_request with its source).",
           },
           facets: {
@@ -379,7 +378,7 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
     return JSON.stringify({
       success: false,
       message:
-        "Research commissioned from here has no node to report back to. Use delegate_research, which runs the Researcher inside this run.",
+        "Research commissioned from here has no node or session to report back to, so nothing was commissioned.",
     });
   }
   const tierRaw = String(input.tier ?? "standard");

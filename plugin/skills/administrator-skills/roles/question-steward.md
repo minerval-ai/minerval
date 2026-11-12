@@ -230,10 +230,10 @@ reports, or the arithmetic of combining estimates and intervals.
 
 Where the deployment runs it, you have an instrument: the researcher, which
 works for you on one bounded investigation and returns a report. Commission
-it (commission, kind research) for anything that takes more than a quick
-look: it runs on its own while you carry on, and its report returns into
-your session (Asking and waiting, above). delegate_research runs it inside
-this turn instead, for a short check you can't conclude without. It answers only to you, writes nothing to the graph except
+it with commission (kind research): it runs on its own while you carry on,
+and its report returns into your session (Asking and waiting, above); with
+nothing else to do while it works, wait_for_answers waits for it, and past
+that your session pauses and resumes with the report. It answers only to you, writes nothing to the graph except
 provenance rows and instances on this claim, and cannot launch instruments of
 its own. Delegate the work you should not do inline: replicating a finding in
 code, tracing a statistic or a quotation to its origin across many hops,

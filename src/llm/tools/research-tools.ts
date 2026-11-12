@@ -519,13 +519,19 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
         "what the pass has left when you launch it. " +
         unfundedCap
       : undefined;
+  // The agents that run in sessions (a Steward, the Curator, the Audit
+  // Agent) commission research with `commission` (kind research), whose
+  // report returns into their session, so they keep only the reading of
+  // runs here. The Grantmaker's passes have no session yet, so it still
+  // launches the researcher inline.
+  const launchesInline = !paysFromPass;
   const definitions = config.researcherEnabled
-    ? [
-        ...getResearchToolDefinitions({ claimScoped, graphWrites, launcher, funding: stewardFunding }).filter(
-          (t) => t.name !== DELEGATE_RESEARCH_TOOL_NAME || !paysFromPass || passLeft !== null
-        ),
-        ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
-      ]
+    ? launchesInline
+      ? [
+          ...getResearchToolDefinitions({ claimScoped, graphWrites, launcher, funding: stewardFunding }),
+          ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
+        ]
+      : [getResearchRunReadToolDefinition()]
     : [];
 
   /**
@@ -877,7 +883,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     });
 
   const execute = async (name: string, input: Record<string, unknown>): Promise<string | null> => {
-    if (name === DELEGATE_RESEARCH_TOOL_NAME) return delegate(input);
+    if (name === DELEGATE_RESEARCH_TOOL_NAME) return launchesInline ? delegate(input) : null;
     if (name === GET_RESEARCH_RUN_TOOL_NAME) return get(input);
     if (name === FUND_REQUEST_TOOL_NAME) return fund(input);
     return null;

@@ -146,8 +146,9 @@ describe("the Steward's sandbox by provider", () => {
 
   it("tells the Steward which research tiers can run code", async () => {
     const opts = await run("claim", "claude-sonnet-5-5");
-    const delegate = opts.tools.find((t) => t.name === "delegate_research") as { description?: string } | undefined;
-    expect(delegate?.description).toContain(
+    // Research is commissioned (kind research); its description names the tiers.
+    const commission = opts.tools.find((t) => t.name === "commission") as { description?: string } | undefined;
+    expect(commission?.description).toContain(
       "'strong' and 'standard' have a code-execution sandbox (Python, no network); 'cheap' has none and cannot run code."
     );
   });

@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "4aa616c4880f2e82269a87bb547a9c5551050eacffb5a0345fa6bdc11c5a3870",
+  "hash": "c628aa245352c1b945c8040d94edc87ad0caebda52dd6a0f5966987cf1738dc5",
   "constitution": {
     "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
@@ -17,14 +17,14 @@
       "name": "audit-agent",
       "source_path": "src/llm/prompts/audit-agent.ts",
       "blocks": [
-        "a5c95d4271722f9cc5080c5d99a2e1ddc74c68329989b50bd47d778b7c0daba4"
+        "af9d1f1646aa19b49d30042683b356e6fac8de5c92f292722e690bcf66214684"
       ]
     },
     {
       "name": "claim-steward",
       "source_path": "src/llm/prompts/claim-steward.ts",
       "blocks": [
-        "5b03f8634d39fc052993429246b6715b030af9ba45b72ccad511fc49dbb24ff7"
+        "67aab7ceb7f8f0e2f7da8956286d0acbb5add82cf34dad62b997fcca2457f238"
       ]
     },
     {
@@ -52,7 +52,7 @@
       "name": "curator",
       "source_path": "src/llm/prompts/curator.ts",
       "blocks": [
-        "3c2dc3456465ac7dc2c39c708f801cebbc66c7e318a7b61711d02ba5c7f3e796"
+        "d93b17f5209218c594ce3648d36ce2bfb3c6c07cc3cbcbfe46394059cf0b27aa"
       ]
     },
     {
@@ -101,7 +101,7 @@
       "name": "question-steward",
       "source_path": "src/llm/prompts/question-steward.ts",
       "blocks": [
-        "890280359d7f78a99b3500c41eb1b2ae5d63a3c40fc56feedecd76710891a9e0"
+        "65237277eb038c5a9afa41d00d77a4bd9cdf932fe71b5b0604bbda7e0e0d2c3c"
       ]
     },
     {
@@ -139,8 +139,8 @@
     },
     {
       "name": "provenance",
-      "version": 9,
-      "hash": "6dcf8325b85b4d9cf054a937644b015cd650d4cd59eaf78a58d647ced967901d"
+      "version": 10,
+      "hash": "2d547966ea19bb59978e4b03db09ba59ef922c39f0dfe1dc925d566ea9f7d7f4"
     },
     {
       "name": "search",

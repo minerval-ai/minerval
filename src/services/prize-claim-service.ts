@@ -834,12 +834,16 @@ export async function fundPrizeReviewAction(
      RETURNING id`,
     [`prize_review:${claim.id}`, claim.claim_id, claim.id, `Review prize claim ${claim.id.slice(0, 8)}`, Math.max(1, Math.round(estimateMicroUsd)), currentLabel()]
   );
+  // A commission from the reserve, at what the reserve holds up to the
+  // estimate: the review's whole budget, from one payer, which the run is
+  // told. A reserve already spent places nothing.
   const { job, room } = await reserveRoomMicroUsd(claim.bounty_id, r);
   const allocated = Math.min(room, Math.max(0, Math.round(estimateMicroUsd)));
   if (job && allocated > 0) {
     await r.query(
-      `INSERT INTO action_allocations (exclusion_group, action_id, claim_id, user_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO action_allocations
+         (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason)
+       VALUES ($1, $2, $3, $4, $5, 'prize_reserve', 'The prize''s review reserve pays for its reviews.')`,
       [`prize_review:${claim.id}`, action!.id, claim.claim_id, job.user_id, allocated]
     );
   }

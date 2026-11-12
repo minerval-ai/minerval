@@ -52,20 +52,14 @@ const curate = () =>
   runCurator({ trigger: "merge_candidate", claimId: "aaaaaaaa-0000-4000-8000-000000000001", context: "two formulations" });
 
 describe("Curator research", () => {
-  it("offers delegate_research only with a pass budget to pay from, and it writes nothing to the graph", async () => {
-    await curate();
-    let opts = mocks.loopOptions.at(-1) as unknown as Opts;
-    expect(opts.tools.map((t) => t.name)).not.toContain("delegate_research");
-
+  it("commissions research (kind research) and reads earlier runs; it launches nothing inline", async () => {
     await withPassBudget({ microUsd: 2_000_000, source: "the allocations funding this curation" }, curate);
-    opts = mocks.loopOptions.at(-1) as unknown as Opts;
+    const opts = mocks.loopOptions.at(-1) as unknown as Opts;
     const names = opts.tools.map((t) => t.name);
-    expect(names).toContain("delegate_research");
+    expect(names).not.toContain("delegate_research");
     expect(names).toContain("get_research_run");
+    expect(names).toContain("commission");
     expect(names).not.toContain("fund_request");
-    const delegate = opts.tools.find((t) => t.name === "delegate_research")!;
-    expect(delegate.description).toContain("nothing to the graph (it reads and reports");
-    expect(delegate.description).toContain("the allocations funding this curation");
-    expect(opts.system.join("\n")).toContain("## Delegating research");
+    expect(opts.system.join("\n")).toContain("commission (kind research) puts the question");
   });
 });

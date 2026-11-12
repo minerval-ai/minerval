@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 29979,
-    "fullChars": 128303,
+    "roleChars": 29972,
+    "fullChars": 128296,
     "skills": [
       {
         "name": "costing",
@@ -151,8 +151,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19455,
-    "fullChars": 117779,
+    "roleChars": 19448,
+    "fullChars": 117772,
     "skills": []
   },
   {
@@ -164,8 +164,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 12122,
-    "fullChars": 110446,
+    "roleChars": 12144,
+    "fullChars": 110468,
     "skills": [
       {
         "name": "costing",
@@ -257,8 +257,8 @@
     "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 10340,
-    "fullChars": 108664,
+    "roleChars": 10358,
+    "fullChars": 108682,
     "skills": [
       {
         "name": "costing",

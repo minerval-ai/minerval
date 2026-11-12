@@ -160,8 +160,7 @@ describe("Steward toolset without a domain tag", () => {
       ...PROVENANCE_TOOLS,
     ];
     expect(names.slice(first + 1, first + 1 + skillTools.length)).toEqual(skillTools);
-    expect(names.slice(-10)).toEqual([
-      "delegate_research",
+    expect(names.slice(-9)).toEqual([
       "get_research_run",
       "raise_issue",
       "update_issue",

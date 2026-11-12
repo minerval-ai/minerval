@@ -149,20 +149,16 @@ describe("Audit toolset with the mathematics domain", () => {
 });
 
 describe("Audit research (Part VIII, Instruments)", () => {
-  it("offers delegate_research, paid from the run's own budget, only with the researcher on and a budget to pay from", async () => {
+  it("commissions research (kind research) and reads earlier runs; it launches nothing inline", async () => {
     mocks.researcherEnabled = true;
     try {
-      let names = (await run([])).tools.map((t) => t.name);
-      expect(names).not.toContain("delegate_research");
       await withPassBudget({ microUsd: 3_000_000, source: "the allocations funding this audit" }, () => run([]));
       const opts = mocks.loopOptions.at(-1) as unknown as LoopOptions & { tools: Array<{ name: string; description?: string }> };
-      names = opts.tools.map((t) => t.name);
-      expect(names).toContain("delegate_research");
+      const names = opts.tools.map((t) => t.name);
+      expect(names).not.toContain("delegate_research");
       expect(names).toContain("get_research_run");
-      const delegate = opts.tools.find((t) => t.name === "delegate_research")!;
-      expect(delegate.description).toContain("nothing to the graph (it reads and reports");
-      expect(delegate.description).toContain("the allocations funding this audit");
-      expect(opts.system[0]).toContain("delegate_research, when it is in your toolset, has the\nresearcher check whether the cited source says what the agent claimed");
+      expect(names).toContain("commission");
+      expect(opts.system[0]).toContain("commission (kind research) has the researcher check\nwhether the cited source says what the agent claimed");
     } finally {
       mocks.researcherEnabled = false;
     }
