@@ -30,6 +30,7 @@ import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import { claimAction, completeAction, releaseAction } from "../../services/action-service.js";
 import { commissionAction, commissionNodePass, grantDayUseMicroUsd, placeCommission } from "../../services/commission-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
+import { refreshCurationInboxItems } from "../../services/maintenance-funding.js";
 import {
   decidePetition,
   inboxWaiting,
@@ -561,6 +562,11 @@ export async function workMandateInbox(grantId: string): Promise<void> {
   if (config.officerBatchMs > 0) await new Promise((r) => setTimeout(r, config.officerBatchMs));
   const grant = await loadGrant(grantId);
   if (!grant) return;
+  // Curation items are snapshots; the sitting reads them as the ledger has
+  // them now, with what opened each row, and none whose row has closed (#955).
+  await refreshCurationInboxItems(grantId).catch((err) =>
+    console.warn(`[officer] refreshing curation items for ${grantId} failed:`, err instanceof Error ? err.message : err)
+  );
   const waiting = await inboxWaiting(grantId);
   if (waiting.officer > 0) await runRole(grant, "officer");
   const after = await inboxWaiting(grantId);

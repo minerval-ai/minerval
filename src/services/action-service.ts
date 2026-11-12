@@ -708,6 +708,11 @@ export async function reconcileActions(): Promise<{
         AND al.released_at IS NULL AND al.grant_id IS NOT NULL
         AND al.spent_micro_usd = 0`
   );
+  // The officers' waiting curation items follow their rows (#955): retired
+  // with the reason when the row closed, rewritten from its live requests.
+  await import("./maintenance-funding.js")
+    .then((m) => m.refreshCurationInboxItems())
+    .catch((err) => console.warn("[reconcile] refreshing curation items failed:", err instanceof Error ? err.message : err));
 
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
