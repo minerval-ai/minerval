@@ -119,12 +119,28 @@ export function isUnseenCollision(err: unknown): boolean {
 const WALL_REFUSALS = new Set(["MVL02", "MVL03", "MVL04", "MVL06", "MVL07"]);
 
 export function refusalForCaller(err: unknown): string | null {
-  const e = err as { code?: string; message?: string; hint?: string } | null;
-  if (!e || typeof e.message !== "string") return null;
-  if (err instanceof ClearanceError) return e.message;
-  if (!WALL_REFUSALS.has(e.code ?? "")) return null;
+  // A statement made with the query builder is refused inside an error of
+  // the builder's own ("Failed query: ..."), which carries the statement
+  // and its parameters and has the database's error as its cause. The
+  // refusal is the cause: the caller is told that, in the same words as
+  // for a plain statement, and never the wrapper's text.
+  const e = refusalIn(err);
+  if (!e) return null;
+  if (e instanceof ClearanceError) return e.message;
   const sentence = `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}.`;
   return e.hint ? `${sentence} ${e.hint}` : sentence;
+}
+
+/** The wall's refusal in an error or in what caused it, a few causes deep; null where there is none. */
+function refusalIn(err: unknown): { code?: string; message: string; hint?: string } | null {
+  let e = err as { code?: string; message?: unknown; hint?: string; cause?: unknown } | null;
+  for (let depth = 0; e && depth < 4; depth++) {
+    if (typeof e.message === "string" && (e instanceof ClearanceError || WALL_REFUSALS.has(e.code ?? ""))) {
+      return e as { code?: string; message: string; hint?: string };
+    }
+    e = (e.cause ?? null) as typeof e;
+  }
+  return null;
 }
 
 /**
