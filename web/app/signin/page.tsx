@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import {
-  auth,
-  signIn,
-  githubEnabled,
-  googleEnabled,
-  devLoginEnabled,
-} from "../../auth";
+import { auth } from "../../auth";
+import { signInOptions } from "../../components/sign-in-options";
 import { isSafeRelativePath } from "../../lib/safe-redirect";
 import { PageHead } from "../../components/PageHead";
 import { loadFeatures } from "../../lib/data";
@@ -28,8 +23,6 @@ export default async function SignInPage({
   const session = await auth();
   if (session?.externalId) redirect(redirectTo);
 
-  const anyOauth = githubEnabled() || googleEnabled();
-  const devLogin = devLoginEnabled();
   // The extension is named among what an account is for only where this
   // deployment has it.
   const extensionOn = featureOn(await loadFeatures(), "extension");
@@ -47,71 +40,7 @@ export default async function SignInPage({
         }
       />
 
-      <div className="signin-options">
-        {githubEnabled() && (
-          <form
-            action={async () => {
-              "use server";
-              await signIn("github", { redirectTo });
-            }}
-          >
-            <button className="signin-button" type="submit">
-              Continue with GitHub
-            </button>
-          </form>
-        )}
-        {googleEnabled() && (
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo });
-            }}
-          >
-            <button className="signin-button" type="submit">
-              Continue with Google
-            </button>
-          </form>
-        )}
-        {devLogin && (
-          <form
-            className="signin-dev"
-            action={async (formData: FormData) => {
-              "use server";
-              await signIn("dev", {
-                username: formData.get("username"),
-                redirectTo,
-              });
-            }}
-          >
-            <label className="sc" htmlFor="dev-username">
-              development login
-            </label>
-            <div className="signin-dev-row">
-              <input
-                id="dev-username"
-                name="username"
-                placeholder="username"
-                autoComplete="off"
-                required
-                pattern="[A-Za-z0-9_\-]{1,40}"
-              />
-              <button className="signin-button" type="submit">
-                Sign in
-              </button>
-            </div>
-            <p className="signin-note">
-              Local development only; never available in production.
-            </p>
-          </form>
-        )}
-        {!anyOauth && !devLogin && (
-          <p className="signin-note">
-            No sign-in providers are configured. Set{" "}
-            <code>AUTH_GITHUB_ID</code>/<code>AUTH_GITHUB_SECRET</code> (or the
-            Google equivalents) in the frontend environment.
-          </p>
-        )}
-      </div>
+      {signInOptions({ redirectTo })}
     </div>
   );
 }

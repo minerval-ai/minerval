@@ -28,6 +28,7 @@ import { mandatePrizesBlock } from "../services/bounty-service.js";
 import { getLookout, listLookoutFlags, lookoutPrecision } from "../services/lookout-service.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
 import { optionalAuthHook } from "../server/optional-auth.js";
+import { requirePermission } from "../server/require-permission.js";
 
 export async function mandateRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
@@ -181,7 +182,7 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       },
-      preHandler: [app.authenticate, app.requireUser],
+      preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
         const result = await contributeToMandate({
           grantId: request.params.id,

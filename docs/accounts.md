@@ -111,6 +111,195 @@ workflow calls with the operator key (held in GitHub secrets) once a
 merged pull request pins the Grantmaker's draft (#529). The service key
 alone moves no money.
 
+## Members-only deployments
+
+Everything above describes a deployment anyone may read, which is the public
+graph and the starting point of every deployment. One setting changes that:
+`READS`. At `open`, its starting value, nothing in this section applies and
+no code in it runs. At `members` the deployment is private:
+
+- **Nothing is served to anyone who is not signed in.** One hook
+  (`src/server/plugins/members-only.ts`) authenticates every request before
+  its route runs, so a route added later is closed without anyone
+  remembering to close it. The dev bypass does not exist here, whatever the
+  environment.
+- **What a signed-in person may do follows from their permissions**, which
+  the deployment's own administrators grant (`src/permissions.ts`).
+- **A member is an account with at least one live grant.** An account that
+  has signed in and holds none is served only who it is (`GET /users/me`)
+  and what it holds (`GET /permissions/mine`), which is how the web app
+  tells the person they have no access yet and shows the identity an
+  administrator will know them by.
+
+What stays reachable without being a signed-in member is written out in
+that file and nowhere else:
+
+| who | routes | why |
+|---|---|---|
+| anyone | `GET /health` | the load balancer's liveness probe |
+| anyone | `GET /.well-known/oauth-authorization-server[/mcp]`, `GET /.well-known/oauth-protected-resource[/mcp]`, `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token` | how an MCP client signs in: these have to be reachable before there is a credential. None reads the graph; approving a client still takes a signed-in member on the consent page |
+| a credential of the route's own | every route that takes the operator key; `POST /billing/webhook` (Stripe's signature) | each checks its own credential, as before |
+| the web tier's service key, nobody named | `POST /users/provision` | creates or refreshes the account when a person signs in |
+| any signed-in account | `GET /users/me`, `GET /permissions/mine` | so a person with no grant can be told so |
+
+A CORS preflight is answered, with headers and no content. Everything else,
+a request for an address that does not exist included, answers `401
+SIGN_IN_REQUIRED` to a request with no credential or with a key that acts
+for no person, and `403 NOT_A_MEMBER` to an account that holds no grant.
+
+### Permissions
+
+Six permissions, each granted on its own, to an account or to a group the
+identity provider names. One person may hold several, and nothing in the
+code decides who should hold which.
+
+| permission | held | lets its holder | never lets anyone |
+|---|---|---|---|
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources | edit an assessment or a run's log |
+| `release` | for one party | release or hold what would leave the deployment of that party's material (publishing outward is not built; the grant records who holds the gate) | edit what the agents wrote, or release another party's material |
+| `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
+| `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
+| `read_sources` | at one label | open the sources themselves at that label | change a source |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is | act under a permission they have not also been granted, or change who may do what without a log entry |
+
+A request's **standing** is resolved once, when it arrives: the live grants
+that reach its account (its own, and those made to a group its latest
+sign-in carried), and its **clearance**, the labels it may read: `public`,
+each label a `read` grant names, and every label those read, following
+`label_reads` to the end. The clearance is on the request's async context
+(`currentClearance()` in `src/llm/usage-context.ts`). Nothing holds a read
+to it yet: that is the database's work and comes separately. Until it does,
+`read` and `read_sources` grants are recorded and resolved and change
+nothing a member is served.
+
+The routes a permission guards, in each mode (`requirePermission` in
+`src/server/require-permission.ts`; the list is asserted in
+`tests/db/members-only.test.ts`):
+
+| route | open (the public graph) | members-only adds |
+|---|---|---|
+| `POST /grant-conversations`, `POST /grant-conversations/:id/messages`, `POST /grants/:id/approve`, `POST /correspondents/:id/poke` | an account | `direct` |
+| `POST /sources` | any valid key, and the owl charge | `direct` |
+| `POST /grant-conversations/:id/fund`, `POST /grants/:id/topup`, `POST /mandates/:id/contribute`, `POST /claims/:claim_id/order`, `POST /claims/:claim_id/contribute`, `POST /claims/:claim_id/decompose`, `POST /requests/:request_id/contribute`, `POST /budget-jobs/:id/topup` | an account, and the owls | `fund` |
+| `POST /grants` | a direct service caller | `direct` and `fund` |
+| the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
+
+Taking money back asks for no permission in either mode: withdrawing from a
+mandate, cancelling a grant, a job or an order. A funder may take back
+their share at any time (constitution §19), and a permission removed later
+must not stand between a person and their own owls. Proposing, contributing
+and appealing ask for none either: any member may.
+
+An MCP caller is not offered a tool whose route needs a permission its
+account lacks, and is told which and why: the Assistant in its brief
+(`src/llm/permissions-note.ts`), an outside client in the server's
+instructions.
+
+### Granting, and the log
+
+Mounted only where `READS=members`:
+
+| route | who | |
+|---|---|---|
+| `GET /permissions` | a member | what each permission covers |
+| `GET /permissions/mine` | any signed-in account | what the account holds, its clearance and groups |
+| `GET /permissions/log` | a member | every grant, removal and administrative change, newest first |
+| `GET /permissions/grants`, `GET /permissions/accounts`, `GET /parties`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the parties; the labels |
+| `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |
+| `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
+| `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
+| `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
+
+Every write takes a signed-in session, as minting an API key does, so a
+leaked key, an access token, or an agent following text it read can never
+widen what anyone may read or release. For the same reason the writes are
+not MCP tools; the reads are.
+
+`permission_grants` is state and log in one. A row is a grant; removing it
+marks the same row with who removed it and when; no row is deleted. The
+other administrative acts (a label defined, a pair of labels added or
+removed, a party added, a source's party set) each write a row to
+`administrative_events` in the same transaction as the change. The last
+live grant of `administer` cannot be removed.
+
+The log is open to every member, because who holds power over a graph is
+part of what its readers weigh. People appear by display name. The name of
+a label the reader is not cleared for, or of a party that is neither the
+organization itself nor one the reader holds `release` for, is replaced by
+`{"withheld": true}`: a deployment may hold material from parties who are
+not to learn of each other. That an act happened, who did it, to whom and
+when is always shown.
+
+### The first administrator
+
+Set `FIRST_ADMINISTRATOR` to the sign-in identity of the person setting the
+deployment up (`<provider>:<subject>`, for instance `oidc:00u1abcd`). The
+first time that person signs in, while the deployment has never had an
+administrator, they are granted every permission: `direct`, `fund` and
+`administer`, `read` and `read_sources` at each label that exists besides
+`public`, and `release` for each party that exists. The grants are rows
+like any other, marked as made by the setting. From then on they hand
+permissions out, to themselves included when they define a new label.
+
+The setting works once. Once any administrator has existed, removed ones
+included, it does nothing whatever it says, so a person the administrators
+later removed cannot return by signing in, and a stale setting grants no
+one anything. A person does not need to know their identity in advance:
+anyone who signs in and holds nothing is shown their own.
+
+If a deployment loses its administrators (the only one can no longer sign
+in, or the only grant went to a group nobody is in), the way back is the
+operator key: `POST /operator/administrators`. It grants `administer` and
+nothing else, and the grant is marked as made with the operator key.
+
+### Single sign-on and groups
+
+The web app signs people in through the organization's own identity
+provider, any that speaks OpenID Connect: `AUTH_OIDC_ISSUER`,
+`AUTH_OIDC_ID` and `AUTH_OIDC_SECRET` in the web app's environment
+(`web/.env.example`), with `<site>/api/auth/callback/oidc` registered at
+the provider. The API never talks to the provider. An account's identity
+is `oidc:<subject>`, and it is created the first time the person signs in,
+holding nothing.
+
+The provider's groups reach the API with the sign-in: the web app reads
+them from the ID token (the `groups` claim, or the one
+`AUTH_OIDC_GROUPS_CLAIM` names) and passes them when it provisions the
+account, where they replace the account's rows in `account_groups`. A grant
+made to a group reaches every account whose latest sign-in carried it.
+
+The API learns that a person has left a group only from their next sign-in,
+so a sign-in vouches for its groups for a limited time:
+`SIGN_IN_VALID_HOURS`, 12 by default. After that the groups count for
+nothing until the person signs in again, and the web app ends a session at
+the same age, so someone at work is sent back through the provider before
+their groups lapse. Grants made to an account directly do not lapse; an
+administrator removes them.
+
+### The web app
+
+The web app reads the same setting (`READS=members`, set where it runs and
+when it is built). It then asks every visitor to sign in, sends who is
+reading on every read (`x-acting-user`), keeps no copy of a read to share
+between readers, and never falls back to the design fixtures: a read that
+is refused or fails shows nothing. Started as members-only on a build made
+without the setting, it serves nothing and its log says why, because pages
+prepared at build time would otherwise be served without a sign-in
+(`web/instrumentation.ts`). Whatever the web app believes, a read the API
+refuses as members-only is never answered from a fixture.
+
+The gate stands in for every page until the visitor is a signed-in member,
+and each page is still rendered behind it: what a visitor who is not signed
+in receives carries the page's empty frame, with no read behind it
+answered. Stopping the render itself needs the web app's pages to sit under
+a layout that can turn a visitor away, which comes with the private web
+shell.
+
+To run one locally: set `READS=members` and an `API_KEYS` entry on the API
+(there is no dev bypass), the same key and `READS=members` on the web app,
+and sign in with the development login, whose identities read
+`dev:<username>`.
+
 ## The per-token meter
 
 Every Anthropic call flows through `src/llm/client.ts`, which writes one

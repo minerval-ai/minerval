@@ -88,7 +88,8 @@ import {
   REPORT_BODY_MAX_CHARS,
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
-import { registerRouteTools } from "./route-tools.js";
+import { registerRouteTools, withheldRouteTools } from "./route-tools.js";
+import { permissionsNote } from "../llm/permissions-note.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
 import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
@@ -375,6 +376,11 @@ async function matchAssertion(
 
 // ---- server -----------------------------------------------------------------
 
+function withPermissions(instructions: string, ctx: McpRequestContext): string {
+  const note = ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "";
+  return note ? `${instructions}\n\n${note}` : instructions;
+}
+
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
   const server = new McpServer(
     {
@@ -382,7 +388,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       version: "0.1.0",
     },
     // The principles for callers, for clients that load no skills (#620).
-    { instructions: MCP_INSTRUCTIONS }
+    // In a members-only deployment a caller whose user lacks a permission
+    // is not offered the tools that need it (route-tools.ts), and is told
+    // so here, with the reason, as the Assistant is in its own brief
+    // (llm/permissions-note.ts). Everywhere else the note is empty.
+    { instructions: withPermissions(MCP_INSTRUCTIONS, ctx) }
   );
 
   // ---- free read tools ----

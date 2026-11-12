@@ -114,6 +114,38 @@ const configSchema = z.object({
     })
     .prefault(""),
 
+  // Who this deployment serves (src/permissions.ts; docs/accounts.md,
+  // "Members-only deployments"). "open", the starting value, is the public
+  // graph: a read needs no account and the rules for every act are the ones
+  // each route already carries. "members" serves nothing to anyone who is
+  // not signed in, and what a signed-in person may do follows from the
+  // permissions the deployment's administrators have granted them.
+  reads: z.enum(["open", "members"]).default("open"),
+  // The sign-in identity ("<provider>:<subject>", as an account's
+  // external_id reads) of the person setting a members-only deployment up.
+  // It is used once: the first time that person signs in while the
+  // deployment has never had an administrator, they are granted every
+  // permission, and the grants are logged as made by this setting. After
+  // that it does nothing, whatever it says. Empty by default.
+  firstAdministrator: z
+    .string()
+    .trim()
+    .refine((id) => id === "" || /^[a-z0-9_-]+:.+$/i.test(id), {
+      message:
+        'FIRST_ADMINISTRATOR must be a sign-in identity of the form "<provider>:<subject>", ' +
+        'for example "oidc:00u1abcd". A person who has signed in and holds no permission is ' +
+        "shown their own.",
+    })
+    .default(""),
+  // How long a sign-in vouches for the groups it carried, in hours, in a
+  // members-only deployment. The API never asks the identity provider
+  // anything, so a person removed from a group there is known here only by
+  // their next sign-in: a group's grants reach an account while its latest
+  // sign-in is younger than this. The web app ends a session at the same
+  // age (web/auth.ts reads the same variable), so a person at work signs in
+  // again before their groups lapse.
+  signInValidHours: z.coerce.number().positive().default(12),
+
   // CORS
   corsOrigins: z.string().default(""),
 
@@ -1334,6 +1366,9 @@ export function loadConfig(): Config {
     dbPassword: process.env.DB_PASSWORD,
     apiKeys: process.env.API_KEYS,
     apiKeyContributors: process.env.API_KEYS,
+    reads: process.env.READS || undefined,
+    firstAdministrator: process.env.FIRST_ADMINISTRATOR,
+    signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
     corsOrigins: process.env.CORS_ORIGINS,
     publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
     publicReadStaleWhileRevalidateSeconds:

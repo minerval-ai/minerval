@@ -57,6 +57,7 @@ import { claimTypeEnum, uuidSchema } from "../schemas/common.js";
 import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../services/tag-service.js";
 import { CLAIM_CARDS_MAX_IDS, getClaimCard, getClaimCards } from "../services/claim-card-service.js";
 import { RESOLVED_FROM_SCHEMA } from "../services/claim-alias-service.js";
+import { requirePermission } from "../server/require-permission.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -1688,6 +1689,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     preHandler: [
       app.authenticate,
       app.requireUser,
+      requirePermission("fund"),
       app.requireAgenticQuota("assessment"),
     ],
     handler: async (request, reply) => {
@@ -1737,7 +1739,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       },
-      preHandler: [app.authenticate, app.requireUser],
+      preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
         const result = await allocateToClaimAssessment({
           userId: request.auth!.userId!,
@@ -1793,7 +1795,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       },
-      preHandler: [app.authenticate, app.requireUser],
+      preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
         const result = await createClaimMandate({
           userId: request.auth!.userId!,

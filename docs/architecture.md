@@ -2425,6 +2425,23 @@ site that has it.
 
 ---
 
+## Who a deployment serves
+
+One setting, `READS`, says who a deployment serves. At `open`, its starting
+value, a read needs no account and every act is guarded by the rules its
+route carries: this document describes that deployment. At `members` the
+deployment is private. One hook authenticates every request, nothing is
+served to anyone who is not signed in, and what a signed-in person may do
+follows from permissions the deployment's own administrators grant: to
+direct the graph, to release one party's material, to fund, to read at a
+label, to open raw sources at a label, and to administer. The setting, the
+permissions, how the first administrator is established, and sign-in
+through an organization's identity provider are in
+[accounts.md](accounts.md), "Members-only deployments". With the setting at
+its starting value none of that code runs.
+
+---
+
 ## Deployment
 
 The API runs as a container on ECS Fargate behind an application load balancer
