@@ -167,10 +167,11 @@ that reach its account (its own, and those made to a group its latest
 sign-in carried), and its **clearance**, the labels it may read: `public`,
 each label a `read` grant names, and every label those read, following
 `label_reads` to the end. The clearance is on the request's async context
-(`currentClearance()` in `src/llm/usage-context.ts`). Nothing holds a read
-to it yet: that is the database's work and comes separately. Until it does,
-`read` and `read_sources` grants are recorded and resolved and change
-nothing a member is served.
+(`currentClearance()` in `src/llm/usage-context.ts`), and where the
+deployment holds material at more than one label the database holds every
+read of the request to it ([architecture.md](architecture.md), "Labels and
+clearance"). A `read_sources` grant opens the sources themselves at its
+label ("Opening raw sources", below).
 
 The routes a permission guards, in each mode (`requirePermission` in
 `src/server/require-permission.ts`; the list is asserted in
@@ -195,6 +196,112 @@ account lacks, and is told which and why: the Assistant in its brief
 (`src/llm/permissions-note.ts`), an outside client in the server's
 instructions.
 
+### The label a request works at
+
+Reading is held to a clearance, a set of labels. Writing needs one label:
+the database lets a request add a row only at the label it works at. Where
+a deployment has one label, `public`, nothing below is asked and nothing
+changes. Where it has more, every request that writes is given its label
+in one of two ways (`src/server/request-labels.ts` has the rule for each
+route, with the reason, and a test fails for a writing route that has
+none). No agent chooses a label, and a label that is missing is never read
+as `public`.
+
+- **From what the request is about.** A contribution, an appeal, an order,
+  funding, a message in a conversation that already exists: each is about a
+  row that already carries a label, and everything the request writes,
+  however far down, carries that label. A person who may not read the row
+  is told it does not exist.
+- **From the person, when they start something new.** A source, a proposed
+  node, a granting conversation, a conversation with the Assistant, a page,
+  an API key: the request names the label in a `label` field, among the
+  labels the person may read. There is no default and nothing is
+  preselected. A request that names none answers `400 LABEL_REQUIRED` with
+  the labels it may name; one that names a label the person may not read
+  answers `403 LABEL_NOT_READABLE`, in the same words whether or not a
+  label of that name exists.
+
+`GET /labels/mine` returns what a page needs to offer the choice: the
+labels the person may read, each with its description, what else its
+readers read, and who reads it (`who_reads`, in words). A label that reads
+one of theirs and that they may not read is counted and not named.
+
+The mandate drafted in a granting conversation takes the conversation's
+label, and its Grantmaker runs there. A conversation with the Assistant
+runs every turn at its label. Each says which label it is in what the API
+returns for it (`label`), and a held action's card says which label it will
+write at (`writes_at`). A conversation or a mandate at a label its owner
+may no longer read is not served to them.
+
+What a request writes at a label it then reads at that label: while it
+runs, it reads what its label and the person's clearance both read. A
+request about a `public` node does not read the person's private labels
+while it writes the public rows.
+
+**API keys and access tokens** work the other way round, because an agent
+holds them. A key works at one label, named by the person when they mint it
+(`POST /api-keys` takes `label`, required where there is more than one),
+and never changed. An access token works at the label the person named when
+they approved the client on the consent page
+(`POST /oauth/requests/:request_id/approve` takes `label`), through every
+refresh. Every request made with one:
+
+- reads what that label reads, within what the person may read, and not
+  the rest of the person's clearance;
+- files what it starts new at that label, with no parameter. The MCP tools
+  have no `label` input, and a REST request that names another label is
+  refused (`400 LABEL_FIXED`);
+- acts on an existing row only where the row carries that same label. A
+  row it can read at another label is refused with `409 LABEL_MISMATCH`
+  and the reason.
+
+So an agent holding a key cannot choose where something is filed, and
+cannot read at one label and write beside a row at another, whatever text
+it has read. The Assistant in one conversation is held the same way, to the
+conversation's label. A key minted before the deployment had a second label
+works at `public`: it reads and writes public material only, and its holder
+mints a new key to work at another label (`GET /api-keys` shows each key's
+label and says this). A key or a token whose label the person may no longer
+read is refused (`403 CREDENTIAL_LABEL_NOT_READABLE`). The MCP endpoint
+itself takes a key or a token: a signed-in session has no label of its own
+and is refused there.
+
+The operator key names no person and carries no clearance. The routes it
+guards read and write `public` alone.
+
+### Opening raw sources
+
+`read` at a label covers what the agents wrote there: a node, its
+assessment, each instance with the passage it quotes, a reading, an
+examination's findings. `read_sources` at a label opens the sources
+themselves, and is granted separately, label by label: a grant at one
+label does not open the sources of a label it reads. `public` sources are
+open to every member.
+
+The database cannot hold the two apart, since a source's stored text is a
+column of the source's own row. The permission is held at each place the
+text is returned to a person (`src/raw-sources.ts`):
+
+| where | without the permission |
+|---|---|
+| `GET /sources/:source_id/document` (MCP: `get_source_document`, and the Assistant's tool) | every segment comes without its text and its heading, and `text_withheld` says so and names the permission and the label. The structure, the length, and every instance the agents recorded from the document are served |
+| `GET /runs/:run_id/steps`, `GET /runs/:run_id/steps/:seq` | the parts of a step that hold a source's text are replaced by the same kind of notice: the opening message of an agent that is handed a document (the Extractor), and the output of a tool that returns one (`provenance_read_source`, `examination_outline`, `get_contribution_details`). The rest of the step and its hash are served |
+
+A run's log says what its run could have opened, not which source each
+step read. So a reader of a run at a label needs `read_sources` at that
+label and at each label it reads; a run at `public` read only public
+sources.
+
+Read-only SQL returns no source text: no view selects it, and a test fails
+if one comes to.
+
+What this does not protect. A passage an agent quoted from a source is text
+from the source, and reading at the label shows it. A person without
+`read_sources` cannot open a document; they can read every passage the
+agents chose to record from it, and what the agents said about it. An
+agent's own run is not held to the permission: it reads what its label
+reads, sources included.
+
 ### Granting, and the log
 
 Mounted only where `READS=members`:
@@ -203,6 +310,7 @@ Mounted only where `READS=members`:
 |---|---|---|
 | `GET /permissions` | a member | what each permission covers |
 | `GET /permissions/mine` | any signed-in account | what the account holds, its clearance and groups |
+| `GET /labels/mine` | a member | the labels the caller may file new material at, and who reads each; for a key or a token, the one label it works at |
 | `GET /permissions/log` | a member | every grant, removal and administrative change, newest first |
 | `GET /permissions/grants`, `GET /permissions/accounts`, `GET /parties`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the parties; the labels |
 | `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |

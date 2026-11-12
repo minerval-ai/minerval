@@ -22,7 +22,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestAuth } from "../../server/plugins/auth.js";
 import { buildMcpServer } from "../../mcp/server.js";
-import { withheldRouteTools } from "../../mcp/route-tools.js";
+import { NATIVE_TOOL_ROUTES, ROUTE_TOOLS, withheldRouteTools } from "../../mcp/route-tools.js";
+import { REQUEST_LABELS } from "../../server/request-labels.js";
+import { decideRequestLabel } from "../../server/plugins/request-label.js";
 import { membersOnly, type PermissionName } from "../../permissions.js";
 import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
@@ -197,6 +199,14 @@ export interface AccountTools {
    * (llm/permissions-note.ts). Absent or empty when nothing is withheld.
    */
   withheld?: Array<{ tool: string; permission: PermissionName }>;
+  /**
+   * Whether a call would be refused for its label (server/request-labels.ts)
+   * before anything else about it is looked at: the tool's own refusal, as
+   * the Assistant would be given it, or null. Asked before a call is held,
+   * so a person is never shown a card that could not run. Absent or null
+   * everywhere a deployment has one label.
+   */
+  labelRefusal?(name: string, input: Record<string, unknown>): Promise<string | null>;
   call(name: string, input: Record<string, unknown>): Promise<AccountToolResult>;
   close(): Promise<void>;
 }
@@ -256,10 +266,29 @@ export async function openAccountTools(
     input_schema: t.inputSchema as Tool["input_schema"],
   }));
 
+  // The route each tool that writes stands for, to ask that route's rule
+  // for the label a call would work at.
+  const writingRoute = new Map<string, string>();
+  for (const [key, tool] of Object.entries(ROUTE_TOOLS)) if (!key.startsWith("GET ")) writingRoute.set(tool.name, key);
+  for (const [key, names] of Object.entries(NATIVE_TOOL_ROUTES)) {
+    if (!key.startsWith("GET ")) for (const name of names) writingRoute.set(name, key);
+  }
+
   return {
     definitions,
     readOnly,
     withheld,
+    async labelRefusal(name, input) {
+      if (!membersOnly()) return null;
+      const key = writingRoute.get(name);
+      const rule = key ? REQUEST_LABELS[key] : undefined;
+      if (!rule) return null;
+      // A tool's input is its route's params and body in one object, and
+      // the two never share a name (mcp/route-tools.ts).
+      const decided = await decideRequestLabel(rule, { auth, params: input, body: input });
+      if (!("refusal" in decided)) return null;
+      return JSON.stringify({ error: { code: decided.refusal.code, message: decided.refusal.error } });
+    },
     async call(name, input) {
       const result = await runAsAssistant(() => client.callTool({ name, arguments: input }));
       const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
@@ -342,6 +371,13 @@ export function createAssistantTools(account: AccountTools, hooks: AssistantTool
     }
     const kind = HELD_TOOLS[name];
     if (kind) {
+      // A call that its label would refuse is refused now, with the reason,
+      // and not held: the card would show an action that cannot run.
+      const refused = await account.labelRefusal?.(name, input);
+      if (refused) {
+        hooks.used(name, { text: refused, isError: true }, input);
+        return refused;
+      }
       const ran = await hooks.hold(name, kind, input);
       if (!ran) return heldResult(name, kind);
       hooks.used(name, ran, input);

@@ -42,8 +42,12 @@
  *     end, with `public` always included), writing at that label.
  *  4. A request with a clearance (server/plugins/members-only.ts): cleared,
  *     reading that clearance.
- *  5. Both, which is a run at a label acting for a person: cleared, reading
- *     only what the label and the person's clearance both read.
+ *  5. Both: cleared, reading only what the label and the person's
+ *     clearance both read, writing at the label. That is a request that
+ *     writes, once its route has given it a label
+ *     (server/plugins/request-label.ts), a request made with a key or a
+ *     token, which has one label throughout, and a run at a label acting
+ *     for a person.
  *  6. Nothing in context: cleared, reading `public` alone.
  *
  * What this does not protect against. The clearance is a setting, and the
@@ -487,10 +491,10 @@ export async function currentSession(ownerQuery: OwnerQuery): Promise<Session> {
   }
   const ofLabel = await clearanceOfLabel(context.label, ownerQuery);
   if (context.clearance === undefined) return { role: "cleared", clearance: ofLabel, label: context.label };
-  // Both: a run at a label acting for a person (the Assistant's tools run
-  // as its user, inside its turn). It reads what both may read, so nothing
-  // comes back into the run that its label does not read, and nothing that
-  // the person may not.
+  // Both: a person's request that has been given its label, or a run at a
+  // label acting for a person (the Assistant's tools run as its user,
+  // inside its turn). It reads what both may read, so nothing is read that
+  // the label does not read, and nothing that the person may not.
   const held = new Set(normalizeClearance(context.clearance));
   return { role: "cleared", clearance: ofLabel.filter((l) => held.has(l)), label: context.label };
 }

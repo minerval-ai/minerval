@@ -185,7 +185,7 @@ export interface ChoosableLabel {
   description: string;
   /** The other labels whose material a reader of this one also reads. */
   reads: string[];
-  /** Everyone signed in to the deployment reads it. True of `public` alone. */
+  /** Every member of the deployment reads it. True of `public` alone. */
   read_by_everyone: boolean;
   /**
    * The other labels whose readers also read this one, as far as the asker
@@ -207,7 +207,7 @@ const quotedList = (labels: readonly string[]): string => {
 /** Who reads material filed at a label, in words (the `who_reads` of a ChoosableLabel). */
 export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" | "also_read_from_others">): string {
   if (label.name === PUBLIC_LABEL) {
-    return "Everyone who is signed in to this deployment can read it, and anyone may open its sources.";
+    return "Every member of this deployment can read it and can open its sources.";
   }
   const also: string[] = [];
   if (label.also_read_from.length > 0) also.push(`at ${quotedList(label.also_read_from)}`);

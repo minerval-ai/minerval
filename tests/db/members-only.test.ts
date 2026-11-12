@@ -663,7 +663,7 @@ describe("an MCP caller and the Assistant", () => {
     const mine = app.routeCatalog
       .map((r) => routeKey(r.method, r.url))
       .filter((key) => /^\S+ \/(permissions|parties|labels)(\/|$)|\/party$|^POST \/operator\/administrators$/.test(key));
-    expect(mine.length).toBe(15);
+    expect(mine.length).toBe(16);
     for (const key of mine) {
       const isRead = key.startsWith("GET ");
       expect(key in ROUTE_TOOLS, key).toBe(isRead);

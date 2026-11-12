@@ -673,7 +673,25 @@ describe("the Assistant", () => {
         contribution_type: "challenge",
         content: "Text read at rl-a.",
       });
-      await input.hold("order_assessment", "assess", { claim_id: claimAt[A] });
+      // Through the Assistant's own executor, as the model's calls go: a
+      // held tool aimed at a node at another label is refused there and
+      // then, and no card is made for it. One at its own label is held.
+      const { createAssistantTools } = await import("../../src/llm/tools/assistant-tools.js");
+      const tools = createAssistantTools(input.account as never, {
+        hold: input.hold as never,
+        note: () => undefined,
+        used: () => undefined,
+      });
+      results.push({
+        tool: "order_assessment elsewhere",
+        text: await tools.execute("order_assessment", { claim_id: claimAt.public }),
+        isError: true,
+      });
+      results.push({
+        tool: "order_assessment",
+        text: await tools.execute("order_assessment", { claim_id: claimAt[A] }),
+        isError: false,
+      });
     }) as never;
 
     const unnamed = await as(both, { method: "POST", url: "/assistant/conversations", payload: { message: "Hello." } });
@@ -709,7 +727,13 @@ describe("the Assistant", () => {
       message: LABEL_MESSAGES.mismatch({ label: A, of: "Assistant conversation" }, "node", "public"),
     });
 
-    // The card says where it will write, and pressing it writes there.
+    expect(JSON.parse(by("order_assessment elsewhere").text).error).toEqual({
+      code: "LABEL_MISMATCH",
+      message: LABEL_MESSAGES.mismatch({ label: A, of: "Assistant conversation" }, "node", "public"),
+    });
+    expect(JSON.parse(by("order_assessment").text)).toMatchObject({ held: true });
+
+    // One card, for the call that can run. It says where it will write, and pressing it writes there.
     const read = (await as(both, { url: `/assistant/conversations/${id}` })).json().conversation;
     expect(read.label).toBe(A);
     expect(read.held_actions).toHaveLength(1);

@@ -83,6 +83,19 @@ opt-in doc-checking hook — the repo doubles as its marketplace:
 
 See [plugin/README.md](../plugin/README.md) for auth and usage.
 
+### The label a connection works at
+
+In a members-only deployment that holds material at more than one label
+([accounts.md](accounts.md), "The label a request works at"), a key or a
+token works at one label, which the person chose when they minted the key
+or approved the client. The server's instructions say which, and
+`get_my_labels` says who reads it. Every call reads what that label reads
+and files what it adds there. No tool takes a label: a tool that starts
+something new files it at the connection's label, and a tool that acts on
+an existing thing is refused, with the reason, when that thing carries
+another label. The endpoint is not for a signed-in session, which has no
+label of its own.
+
 ## Metering
 
 Tool calls follow the same free-vs-metered split as the REST API (#70):

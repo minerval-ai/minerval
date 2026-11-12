@@ -100,8 +100,12 @@ export interface UsageContext {
    * run row, its prompt step's setup, every judgment and source it writes,
    * and every piece of work it enqueues (currentLabel below), never chosen
    * by the agent. Set by whatever picks work up, from the row the work
-   * waited in (runAtLabel below). Absent means public: a request outside
-   * any run, which is all the public graph has.
+   * waited in (runAtLabel below), and for a person's request that writes,
+   * by the rule of its route (server/plugins/request-label.ts): the label
+   * of the row it is about, the label the person named, or the one label
+   * of the key or token it came with. Absent means public: a request
+   * outside any run on the public graph, and elsewhere a request that adds
+   * no row that carries a label.
    */
   label?: string;
   /**

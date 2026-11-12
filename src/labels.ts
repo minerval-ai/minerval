@@ -172,13 +172,26 @@
  * the table, so the worker checks that the label it carries is defined and
  * refuses the message if it is not (UndefinedLabelError).
  *
+ * A person's request is the other thing that writes. It has a clearance,
+ * the labels its account was granted to read, and no label until it is
+ * given one, and it is given one by rule, never by default
+ * (server/request-labels.ts): the label of the row it is about (a
+ * contribution's node, a message's conversation, the mandate money is put
+ * behind), or the label the person names when they start something new. A
+ * request made with an API key or an access token, and each call the
+ * Assistant makes for its user, works at the one label that credential was
+ * made for, and acts only on rows that carry it. No agent chooses a label
+ * here either, and a request that should have a label and has none is
+ * refused.
+ *
  * The public graph has one label, the one named here, and no pairs, and
  * there nothing is held: every query runs as it always did. Where a
  * deployment defines a second label, the database holds every read and
  * write to a clearance, the set of labels a run or a reader may read
  * (db/clearance.ts): a run reads its own label and the labels it reads, a
- * request reads what its account was granted, and work with nothing in
- * context reads `public` alone. An insert that names no label is given
+ * request reads what its account was granted (and, once it has a label,
+ * only what that label reads as well), and work with nothing in context
+ * reads `public` alone. An insert that names no label is given
  * the label of the connection it arrives on, so a forgotten stamp inside
  * a run lands at the run's label. Each label keeping its own judgment of
  * a node, and its own copy of a source, is later work; until then a

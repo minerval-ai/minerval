@@ -2264,6 +2264,24 @@ refused. The one exception is the ledger's own rule, which the database
 checks: a finished ledger row that is opened again takes the label of the
 work that reopens it.
 
+**A request's label.** A person's request has a clearance and, until it is
+given one, no label to write at. Each request that writes is given one
+(`src/server/request-labels.ts`, one rule for every route that is not a
+read, checked against the route catalog by
+`tests/unit/server/request-labels.test.ts`): the label of the row it is
+about, or the label the person names when they start something new, with
+no default. It is entered on the request's context beside the clearance
+(`src/server/plugins/request-label.ts`), so everything the request writes,
+in whichever service, is stamped with it, and the request reads what the
+label and the clearance both read. An API key, an access token and the
+Assistant in one conversation work at one label fixed when they were made:
+the whole request is held to it, reads included, and it acts only on rows
+that carry it. [accounts.md](accounts.md), "The label a request works at",
+has the rules as a caller meets them. A request the table gives no label
+(a read, or a route that adds no labelled row) still stamps `public` on a
+labelled row if it writes one: the usage row of an embedding call made for
+a search is the case that exists.
+
 **How a connection gets its clearance.** Connections held to a clearance log
 in as the role `minerval_cleared`, which owns no table and so is bound by the
 policies. Its clearance and its label are settings fixed when the connection
@@ -2365,7 +2383,10 @@ where reads are held.
 - Row-level security binds rows, not columns. A source's stored text is a
   column of the source's own row, so the database cannot hold "may read what
   was written from a source, but not open the source" apart from reading
-  the row.
+  the row. The permission to open raw sources is held in the application,
+  at each place the text is returned to a person (`src/raw-sources.ts`;
+  [accounts.md](accounts.md), "Opening raw sources"). A passage an agent
+  quoted from a source is shown to everyone who reads at the label.
 - A run may change or delete a row at any label it reads. An internal run
   that rewords a public node has written into a public row.
 - A table holds one row for each identity whatever the labels. An insert
