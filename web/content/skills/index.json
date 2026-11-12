@@ -64,7 +64,7 @@
       "name": "costing",
       "displayName": "Costing",
       "description": "How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.",
-      "version": 7,
+      "version": 8,
       "sinceEpoch": "2026-09-domain-skills",
       "kind": "method",
       "domains": [],
@@ -162,7 +162,7 @@
           }
         }
       ],
-      "bodyChars": 11158
+      "bodyChars": 11654
     },
     {
       "name": "mathematics",

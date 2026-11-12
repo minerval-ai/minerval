@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "hash": "3e8be00ca367d6eb81a06708451eb8bffb490282663c7250fea4eb6aa9800d2e",
+  "hash": "8ddb5940b03ba49d5df908ea41947dc67f849f92444c41334c37e601e67b418a",
   "constitution": {
-    "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
+    "hash": "a0cf454801c3f25609767ac4da5ef5ab998cd200ae3c59d5f8d2d9469f0fe81f",
     "source_path": "admin_constitution.md"
   },
   "roles": [
@@ -129,8 +129,8 @@
   "skills": [
     {
       "name": "costing",
-      "version": 7,
-      "hash": "0ca8baac750108a5e92bc61d85fea0e5c694c90752967d973b90249f3399d20c"
+      "version": 8,
+      "hash": "ff4adf62d5cf3e8c27f09c752e4dfda6843df0dc9d0f6d843e4abd707d0595a0"
     },
     {
       "name": "mathematics",
