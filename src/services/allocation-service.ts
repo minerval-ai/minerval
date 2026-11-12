@@ -16,6 +16,8 @@
  * policy (program-officer.ts). Money never touches claims.importance or any
  * judgment of a claim; it buys attention, never conclusions.
  */
+import { currentLabel } from "../llm/usage-context.js";
+import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { rawQuery } from "../db/client.js";
 import { windowRoomSql } from "./pace-service.js";
 import { loadConfig } from "../config.js";
@@ -596,14 +598,19 @@ export async function fundGrantSelfActions(): Promise<number> {
     if (amount === null) continue;
     // A commission like any other: whole, from one payer, with the reason
     // on the mandate's record. The mandate's own upkeep is commissioned by
-    // the mandate itself, at the row's estimate.
-    const inserted = await rawQuery<{ id: string }>(
-      `INSERT INTO action_allocations
-         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by, reason)
-       VALUES ($1, $2, $3, $4, $5, 'mandate', $6)
-       ON CONFLICT DO NOTHING
-       RETURNING id`,
-      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, SELF_REASON[row.kind] ?? "The mandate's own upkeep."]
+    // the mandate itself, at the row's estimate. Placing a mandate's money
+    // on its own row is the mandate's work, so where a sweep does it the
+    // placement is at the mandate's label (src/labels.ts); inside a run it
+    // keeps the run's.
+    const inserted = await runAtMandateLabelOutsideAnyRun(row.grant_id, () =>
+      rawQuery<{ id: string }>(
+        `INSERT INTO action_allocations
+           (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, 'mandate', $6, $7)
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, SELF_REASON[row.kind] ?? "The mandate's own upkeep.", currentLabel()]
+      )
     );
     if (inserted.length === 0) continue;
     if (amount < needed) {

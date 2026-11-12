@@ -112,7 +112,7 @@ import {
   type PreLabelClaimPipelineMessage,
 } from "../../src/services/queue-service.js";
 import { commissionResearch } from "../../src/services/research-commission-service.js";
-import { suspendSession, takeReadySession } from "../../src/services/session-service.js";
+import { deliverReply, suspendSession, takeReadySession } from "../../src/services/session-service.js";
 import { submitSource } from "../../src/services/source-service.js";
 import { startTextAnalysis, settleTextAnalyses } from "../../src/services/text-analysis-service.js";
 import { handleArbitrationMessage } from "../../src/workers/arbitration-pipeline.js";
@@ -188,6 +188,10 @@ async function runFundedPass(claimId: string) {
 /** Run only the open rows in this group, as the engine executor would pick them. */
 async function runOnly(group: string) {
   await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE status = 'open' AND exclusion_group <> $1`, [group]);
+  // An escalation another test left with no Grantmaker session live would
+  // have the executor's tick reopen that mandate's review ahead of this row.
+  await rawQuery(`UPDATE mandate_inbox SET handled_at = now() WHERE escalated_at IS NOT NULL AND handled_at IS NULL`);
+  await rawQuery(`UPDATE petitions SET status = 'refused' WHERE status = 'escalated'`);
   return processNextEngineAction();
 }
 
@@ -785,7 +789,12 @@ describe("a research commission and a paused session", () => {
     expect(new Set(await assessLabels(neighbor))).toEqual(new Set([INTERNAL]));
   });
 
-  it("resume at the session's label when the answer is delivered by work at another", async () => {
+  // An answer is written by whoever delivers it, at their label, and a
+  // session shows what it holds to a run at the session's own. So a session
+  // takes only an answer of its own label (deliverReply). This test used to
+  // show the session resuming, at its own label, on an answer from work at
+  // another: the answer no longer goes in.
+  it("are not answered by work at another label: the answer goes to the node's inbox at its own label, and the session waits", async () => {
     const grantId = await mandate();
     const anchor = await seedClaim("carried cross-label anchor");
     const { sessionId, researchGroup, actionId } = await pauseOnResearch(INTERNAL, grantId, anchor);
@@ -795,6 +804,26 @@ describe("a research commission and a paused session", () => {
     expect(await runOnly(researchGroup)).toMatchObject({ status: "processed", kind: "research" });
     expect(stage.seen[0]!.label).toBe(PUBLIC_LABEL);
 
+    // The session holds no answer and no pass is commissioned to resume it.
+    const [session] = await rawQuery<{ status: string; replies: unknown[]; sensitivity_label: string }>(
+      `SELECT status, replies, sensitivity_label FROM agent_sessions WHERE id = $1`,
+      [sessionId]
+    );
+    expect(session).toEqual({ status: "waiting", replies: [], sensitivity_label: INTERNAL });
+    expect(await rawQuery(`SELECT 1 FROM actions WHERE kind = 'resume' AND target_ref = $1`, [sessionId])).toEqual([]);
+    // The report went where an answer goes when its session cannot take it,
+    // as a message at the label of the run that wrote it.
+    const messages = await rawQuery<{ trigger: string; sender_kind: string; sensitivity_label: string }>(
+      `SELECT trigger, sender_kind, sensitivity_label FROM node_messages WHERE node_id = $1`,
+      [anchor]
+    );
+    expect(messages).toEqual([{ trigger: "research_report", sender_kind: "researcher", sensitivity_label: PUBLIC_LABEL }]);
+
+    // An answer at the session's own label is taken, and resumes it there.
+    const routed = await runWithUsageContext({ label: INTERNAL }, () =>
+      deliverReply({ sessionId, kind: "research", ref: researchGroup.slice("research:".length), text: "The 2019 edition.", fallback: null })
+    );
+    expect(routed).toBe("session");
     const row = await resumeRow(sessionId);
     expect(row.sensitivity_label).toBe(INTERNAL);
     stage.seen = [];

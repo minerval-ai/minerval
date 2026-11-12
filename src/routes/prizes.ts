@@ -71,6 +71,7 @@ import {
 import { retryCheckError } from "../workers/prize-check-pipeline.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
 import { optionalAuthHook } from "../server/optional-auth.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -99,8 +100,8 @@ function operatorActor(request: FastifyRequest): string {
 async function logMoneyRoute(claimId: string | null, action: string, reasoning: string, actor: string): Promise<void> {
   if (!claimId) return;
   await rawQuery(
-    `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
-    [claimId, action, reasoning, actor]
+    `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, $5)`,
+    [claimId, action, reasoning, actor, currentLabel()]
   ).catch(() => undefined);
 }
 

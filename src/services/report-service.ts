@@ -40,6 +40,7 @@
 import { createHash } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   reportKindEnum,
   reportOriginEnum,
@@ -785,8 +786,8 @@ async function recordSighting(
   if (!row) return null;
   await rawQuery(
     `INSERT INTO agent_report_sightings
-       (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id)
-     VALUES ($1, 'sighting', $2, $3, $4, $5, $6, $7, $8)`,
+       (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id, sensitivity_label)
+     VALUES ($1, 'sighting', $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       row.id,
       input.body,
@@ -796,6 +797,8 @@ async function recordSighting(
       uuidOrNull(input.runId),
       uuidOrNull(input.jobId),
       uuidOrNull(input.claimId),
+      // This sighting is the run's that saw it; the report keeps its own label.
+      currentLabel(),
     ]
   );
   const reopened = row.previous_status === "actioned";
@@ -921,9 +924,9 @@ export async function raiseIssue(
       `INSERT INTO agent_reports
          (kind, severity, title, body, surface, origin, agent, model,
           reporter_contributor_id, context_refs, run_id, job_id, claim_id,
-          dedupe_key, embedding)
+          dedupe_key, embedding, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               $15::vector)
+               $15::vector, $16)
        ON CONFLICT (dedupe_key) DO UPDATE SET
          occurrence_count = agent_reports.occurrence_count + 1,
          last_seen_at = now(),
@@ -951,6 +954,9 @@ export async function raiseIssue(
         uuidOrNull(input.claimId),
         dedupeKey,
         embedding ? toVectorLiteral(embedding) : null,
+        // The label of the run or request that files it (src/labels.ts). A
+        // repeat that lands on the row already there leaves its label alone.
+        currentLabel(),
       ]
     );
     const row = rows[0];
@@ -1073,8 +1079,8 @@ export async function updateReport(
     if (note) {
       await rawQuery(
         `INSERT INTO agent_report_sightings
-           (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id)
-         VALUES ($1, 'note', $2, $3, $4, $5, $6, $7, $8)`,
+           (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id, sensitivity_label)
+         VALUES ($1, 'note', $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           row.id,
           note,
@@ -1084,6 +1090,7 @@ export async function updateReport(
           uuidOrNull(input.runId),
           uuidOrNull(input.jobId),
           uuidOrNull(input.claimId),
+          currentLabel(),
         ]
       );
     }

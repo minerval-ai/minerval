@@ -39,6 +39,7 @@ import {
   PETITION_COLUMNS,
   type PetitionRow,
 } from "../../services/petition-service.js";
+import { runAtMandateLabel } from "../../services/label-service.js";
 import {
   getOperatingPolicy,
   officerLimit,
@@ -330,12 +331,18 @@ async function loadGrant(grantId: string): Promise<GrantRow | null> {
   return g ?? null;
 }
 
+/**
+ * What a sitting works: the petitions and inbox items of the label it runs
+ * at, which is its mandate's (workMandateInbox). One raised at another label
+ * is left where it is: read here, it would be decided, and answered, by a
+ * run at this label.
+ */
 async function petitionsFor(grantId: string, role: Role): Promise<PetitionRow[]> {
   return rawQuery<PetitionRow>(
     `SELECT ${PETITION_COLUMNS} FROM petitions
-      WHERE grant_id = $1 AND status = $2
+      WHERE grant_id = $1 AND status = $2 AND sensitivity_label = $3
       ORDER BY waiting DESC, created_at`,
-    [grantId, role === "officer" ? "pending" : "escalated"]
+    [grantId, role === "officer" ? "pending" : "escalated", currentLabel()]
   );
 }
 
@@ -346,9 +353,10 @@ async function itemsFor(grantId: string, role: Role): Promise<InboxItem[]> {
        FROM mandate_inbox i LEFT JOIN claims c ON c.id = i.target_node_id
       WHERE i.grant_id = $1 AND i.handled_at IS NULL AND i.held_until IS NULL
         AND (i.escalated_at IS ${role === "officer" ? "NULL" : "NOT NULL"})
+        AND i.sensitivity_label = $2
       ORDER BY i.created_at
       LIMIT ${ITEMS_PER_SITTING}`,
-    [grantId]
+    [grantId, currentLabel()]
   );
 }
 
@@ -614,10 +622,10 @@ async function buildBrief(
 /**
  * Open (or reopen) a sitting's ledger row and commission it from the mandate.
  *
- * The sitting runs here, in the caller's context, as soon as the row is
- * claimed: no executor picks this row up later. So the row records the label
- * the sitting runs at (src/labels.ts), the caller's, and a row left open by
- * a sitting that could not be funded takes this one's.
+ * The sitting runs here, as soon as the row is claimed: no executor picks
+ * this row up later. So the row records the label the sitting runs at
+ * (src/labels.ts), which is the mandate's (workMandateInbox), and a row left
+ * open by a sitting that could not be funded takes this one's.
  */
 async function commissionSitting(grant: GrantRow, role: Role): Promise<string | null> {
   const config = loadConfig();
@@ -701,9 +709,9 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
     const left = await rawQuery<{ id: string; kind: string; requester_node_id: string | null }>(
       `UPDATE petitions SET status = 'escalated',
               reason = COALESCE(reason, 'The officer did not decide it; a run is waiting.')
-        WHERE grant_id = $1 AND status = 'pending' AND waiting
+        WHERE grant_id = $1 AND status = 'pending' AND waiting AND sensitivity_label = $2
         RETURNING id, kind, requester_node_id`,
-      [grant.id]
+      [grant.id, currentLabel()]
     );
     const { recordEvent } = await import("../../services/event-service.js");
     for (const p of left) {
@@ -724,14 +732,23 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
  * One sitting on a mandate's inbox, by its program officer. What the officer
  * escalates reaches the Grantmaker in its own session, as an event it is
  * subscribed to (mandate-review.ts), not in a sitting of its own.
+ *
+ * A sitting is the mandate's work and runs at the mandate's label
+ * (src/labels.ts), whoever holds it: the scheduler's sweep, a note raised to
+ * the mandate, or a petitioner's own run waiting for its answer. It works
+ * the petitions and items of that label and no others: the count below is
+ * of everything waiting, and a role that finds nothing of its own label to
+ * read opens no run (runRole).
  */
 export async function workMandateInbox(grantId: string): Promise<void> {
   const config = loadConfig();
   if (config.officerBatchMs > 0) await new Promise((r) => setTimeout(r, config.officerBatchMs));
   const grant = await loadGrant(grantId);
   if (!grant) return;
-  const waiting = await inboxWaiting(grantId);
-  if (waiting.officer > 0) await runRole(grant, "officer");
+  await runAtMandateLabel(grant.id, async () => {
+    const waiting = await inboxWaiting(grantId);
+    if (waiting.officer > 0) await runRole(grant, "officer");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -748,9 +765,9 @@ interface ToolCtx {
 
 async function logDecision(ctx: ToolCtx, input: { itemKind: string; decision: string; target?: string | null; owls?: number | null; reason?: string | null; actionId?: string | null }) {
   await rawQuery(
-    `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [ctx.grant.id, ctx.decidedBy, input.itemKind, input.decision, input.target ?? null, input.owls ?? null, input.reason ?? null, input.actionId ?? null]
+    `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [ctx.grant.id, ctx.decidedBy, input.itemKind, input.decision, input.target ?? null, input.owls ?? null, input.reason ?? null, input.actionId ?? null, currentLabel()]
   );
 }
 
@@ -1055,8 +1072,10 @@ export async function workWaitingInboxes(limit = 20): Promise<number> {
     `SELECT DISTINCT g.id FROM grants g
       WHERE g.status = 'active'
         AND (g.officer_lease_until IS NULL OR g.officer_lease_until < now())
-        AND (EXISTS (SELECT 1 FROM mandate_inbox i WHERE i.grant_id = g.id AND i.handled_at IS NULL)
-             OR EXISTS (SELECT 1 FROM petitions p WHERE p.grant_id = g.id AND p.status IN ('pending', 'escalated')))
+        AND (EXISTS (SELECT 1 FROM mandate_inbox i WHERE i.grant_id = g.id AND i.handled_at IS NULL
+                                                     AND i.sensitivity_label = g.sensitivity_label)
+             OR EXISTS (SELECT 1 FROM petitions p WHERE p.grant_id = g.id AND p.status IN ('pending', 'escalated')
+                                                    AND p.sensitivity_label = g.sensitivity_label))
       LIMIT $1`,
     [limit]
   );
@@ -1238,9 +1257,9 @@ export async function executeMandateOperationsTool(
       [grantId, micro, micro > 0 ? reason : null]
     );
     await rawQuery(
-      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, owls_micro_usd, reason)
-       VALUES ($1, 'grantmaker', 'reserve', $2, $3, $4)`,
-      [grantId, micro > 0 ? "held in reserve" : "released the reserve", micro, reason]
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, owls_micro_usd, reason, sensitivity_label)
+       VALUES ($1, 'grantmaker', 'reserve', $2, $3, $4, $5)`,
+      [grantId, micro > 0 ? "held in reserve" : "released the reserve", micro, reason, currentLabel()]
     );
     const after = await paceRoom(grantId, "delegated");
     const { recordEvent } = await import("../../services/event-service.js");
@@ -1265,9 +1284,9 @@ export async function executeMandateOperationsTool(
     if (!v.ok) return JSON.stringify({ success: false, message: v.problem });
     await rawQuery(`UPDATE grants SET pace = $2::jsonb, updated_at = now() WHERE id = $1`, [grantId, JSON.stringify(v.pace)]);
     await rawQuery(
-      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, reason)
-       VALUES ($1, 'grantmaker', 'pace', $2, $3)`,
-      [grantId, describePace(v.pace), note]
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, reason, sensitivity_label)
+       VALUES ($1, 'grantmaker', 'pace', $2, $3, $4)`,
+      [grantId, describePace(v.pace), note, currentLabel()]
     );
     const after = await paceRoom(grantId, "grantmaker");
     const { recordEvent } = await import("../../services/event-service.js");
@@ -1308,9 +1327,9 @@ export async function executeMandateOperationsTool(
     });
     if (!r.ok) return JSON.stringify({ success: false, message: r.message });
     await rawQuery(
-      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason)
-       VALUES ($1, 'grantmaker', 'withdrawal', 'withdrew a regrant', $2, $3, $4)`,
-      [grantId, target, owlsToMicroUsd(r.withdrawnOwls), String(input.reason ?? "")]
+      `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, sensitivity_label)
+       VALUES ($1, 'grantmaker', 'withdrawal', 'withdrew a regrant', $2, $3, $4, $5)`,
+      [grantId, target, owlsToMicroUsd(r.withdrawnOwls), String(input.reason ?? ""), currentLabel()]
     );
     return JSON.stringify({ success: true, message: `Withdrew ${r.withdrawnOwls} owls into your escrow.` });
   }

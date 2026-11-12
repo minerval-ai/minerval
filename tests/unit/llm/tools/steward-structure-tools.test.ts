@@ -28,6 +28,7 @@ vi.mock("../../../../src/db/client.js", () => ({
 
 vi.mock("../../../../src/llm/usage-context.js", () => ({
   getUsageContext: () => usage,
+  currentLabel: () => "public",
 }));
 
 vi.mock("../../../../src/services/argument-service.js", async (importOriginal) => ({

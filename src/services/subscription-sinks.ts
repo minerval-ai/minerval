@@ -27,8 +27,8 @@ export async function deliverToAgentSink(s: SubscriptionRow, e: EventRow | null,
   }
   if (s.subscriber_kind === "lookout") {
     const rows = await rawQuery(
-      `INSERT INTO lookout_events (lookout_id, kind, payload)
-       SELECT l.id, 'subscription', $2::jsonb FROM lookouts l WHERE l.id::text = $1 AND l.status = 'active'
+      `INSERT INTO lookout_events (lookout_id, kind, payload, sensitivity_label)
+       SELECT l.id, 'subscription', $2::jsonb, l.sensitivity_label FROM lookouts l WHERE l.id::text = $1 AND l.status = 'active'
        RETURNING id`,
       [s.subscriber_ref, JSON.stringify({ subscription_id: s.id, event_seq: e?.seq ?? null, event_kind: e?.kind ?? null, node_id: e?.node_id ?? null, text })]
     );

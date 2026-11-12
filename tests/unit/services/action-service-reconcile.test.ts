@@ -27,7 +27,7 @@ const { state, queries } = vi.hoisted(() => ({
     attemptGroups: { groups: 0, live: 0 },
     publishedFor: new Set<string>(),
     lastAttemptFinishedAt: null as Date | null,
-    dueLookouts: [] as Array<{ id: string; title: string }>,
+    dueLookouts: [] as Array<{ id: string; title: string; sensitivity_label: string }>,
     // The Steward standing of the claims a test names (#834): its queue
     // state and, when it parked, the failure recorded against it.
     stewardState: "done" as string,
@@ -41,6 +41,10 @@ const { state, queries } = vi.hoisted(() => ({
     // claim with no entry reads as no row).
     pending: [] as Array<{ id: string; sensitivity_label: string | null }>,
     claimLabels: {} as Record<string, string>,
+    // The mandate's own label, and the labels of the unread messages
+    // waiting on a claim (a claim with no entry has none waiting).
+    grantLabel: "public" as string,
+    unread: {} as Record<string, string[]>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -49,6 +53,12 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     queries.push({ q, params });
     if (q.includes("FROM claims c") && q.includes("steward_state = 'pending'")) return state.pending;
+    // runAtMandateLabel's read of the mandate's label, and pendingPassLabel's
+    // read of the labels waiting on a claim (label-service.ts).
+    if (q.includes("SELECT sensitivity_label FROM grants WHERE id = $1")) return [{ sensitivity_label: state.grantLabel }];
+    if (q.includes("FROM node_messages") && q.includes("read_at IS NULL")) {
+      return (state.unread[params[0] as string] ?? []).map((sensitivity_label) => ({ sensitivity_label }));
+    }
     // runAtClaimLabel's read of the claim's label (label-service.ts).
     if (q.includes("SELECT sensitivity_label FROM claims WHERE id = $1")) {
       const label = state.claimLabels[params[0] as string];
@@ -167,12 +177,15 @@ beforeEach(() => {
   state.rowById = null;
   state.pending = [];
   state.claimLabels = {};
+  state.grantLabel = "public";
+  state.unread = {};
 });
 
 // The sweep starts from a claim, not from a piece of work, so the rows it
-// opens about one claim take that claim's label (src/labels.ts). A row that
-// is not about one claim (a lookout's, above) stays at the sweep's own.
-describe("rows about one claim, opened by the sweep", () => {
+// opens for a pending claim take the label of the messages waiting on it,
+// or the claim's own (src/labels.ts). A row that is a mandate's work, or a
+// lookout's, takes the mandate's or the lookout's.
+describe("rows opened by the sweep", () => {
   const assessRows = () =>
     queries.filter((x) => x.q.includes("INSERT INTO actions") && ["assess", "reassess"].includes(x.params[0] as string));
 
@@ -189,6 +202,22 @@ describe("rows about one claim, opened by the sweep", () => {
       [ASSESS_GROUP(CLAIM_A), "strong", "internal"],
       [ASSESS_GROUP(CLAIM_B), "standard", "public"],
       [ASSESS_GROUP(CLAIM_B), "strong", "public"],
+    ]);
+  });
+
+  it("opens a pending claim's rows at the label of its unread messages when they agree on one", async () => {
+    state.pending = [
+      { id: CLAIM_A, sensitivity_label: "public" },
+      { id: CLAIM_B, sensitivity_label: "public" },
+    ];
+    // One label waiting on A; two on B, which cannot say which the pass is for.
+    state.unread = { [CLAIM_A]: ["internal"], [CLAIM_B]: ["internal", "embargoed"] };
+    await reconcileActions();
+    expect(assessRows().map((r) => [r.params[1], r.params[6]])).toEqual([
+      [ASSESS_GROUP(CLAIM_A), "internal"],
+      [ASSESS_GROUP(CLAIM_A), "internal"],
+      [ASSESS_GROUP(CLAIM_B), "public"],
+      [ASSESS_GROUP(CLAIM_B), "public"],
     ]);
   });
 
@@ -210,8 +239,10 @@ describe("rows about one claim, opened by the sweep", () => {
     }
   });
 
-  it("opens a plan's formalize and attempt rows at the claim's label", async () => {
-    state.claimLabels = { [CLAIM_A]: "internal", [CLAIM_B]: "internal" };
+  it("opens a plan's formalize and attempt rows at the mandate's label, whatever the claims' are", async () => {
+    // A mandate decides for its work. The claims' own labels are not read.
+    state.grantLabel = "internal";
+    state.claimLabels = { [CLAIM_A]: "embargoed", [CLAIM_B]: "public" };
     state.publishedFor.add(CLAIM_B);
     state.grant.plan.items = [
       { action: "formalize", claim_id: CLAIM_A, rationale: "a statement" },
@@ -222,11 +253,23 @@ describe("rows about one claim, opened by the sweep", () => {
     const attempts = inserts("attempt_proof");
     expect(attempts).toHaveLength(2);
     expect(attempts.map((r) => r.params[6])).toEqual(["internal", "internal"]);
+    expect(queries.some((x) => x.q.includes("SELECT sensitivity_label FROM claims"))).toBe(false);
+  });
+
+  it("opens a mandate's review row, and its planning row, at the mandate's label", async () => {
+    state.grantLabel = "internal";
+    await reconcileActions();
+    expect(inserts("mandate_review").map((r) => [r.params[1], r.params[4]])).toEqual([["g-1", "internal"]]);
+    queries.length = 0;
+    state.grant.status = "planning";
+    await reconcileActions();
+    expect(inserts("grant_planning").map((r) => [r.params[1], r.params[4]])).toEqual([["g-1", "internal"]]);
   });
 
   it("leaves them at the run's label when a run, not the sweep, materializes the plan", async () => {
     // A Grantmaker's run that writes a plan materializes it there and then:
     // the rows are that run's work, as everything a run opens is.
+    state.grantLabel = "internal";
     state.claimLabels = { [CLAIM_A]: "internal" };
     state.grant.plan.items = [{ action: "formalize", claim_id: CLAIM_A, rationale: "a statement" }];
     await runWithUsageContext({ label: "public" }, () => reconcileActions());
@@ -236,7 +279,7 @@ describe("rows about one claim, opened by the sweep", () => {
 
 describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
   it("opens one standard row per due lookout in group lookout:<id>, reopening a closed row only when the lookout is due again", async () => {
-    state.dueLookouts = [{ id: "l-1", title: "Retraction watch" }];
+    state.dueLookouts = [{ id: "l-1", title: "Retraction watch", sensitivity_label: "internal" }];
     await reconcileActions();
     const due = queries.find((x) => x.q.includes("FROM lookouts l"))!;
     // Due = heartbeat passed, or an unconsumed event waits; active on both sides.
@@ -245,8 +288,9 @@ describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
     expect(due.q).toContain("g.status = 'active'");
     const rows = inserts("lookout_run");
     expect(rows).toHaveLength(1);
-    // The last parameter is the row's label: the sweep runs outside any run, so public.
-    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "public"]);
+    // The last parameter is the row's label: the lookout's own, read with the row.
+    expect(due.q).toContain("l.sensitivity_label");
+    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "internal"]);
     expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
     // A closed row opened again takes the label of the work that reopens it.
     expect(rows[0]!.q).toContain("sensitivity_label = EXCLUDED.sensitivity_label");

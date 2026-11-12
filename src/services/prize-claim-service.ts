@@ -597,8 +597,8 @@ export async function transitionPrizeClaim(
   if (!row) return null;
   const updated = normalizeRow(row);
   await r.query(
-    `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
-    [updated.claim_id, `prize_claim:${to}`, `prize claim ${updated.id}: ${opts.reason}`, opts.actor]
+    `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, $5)`,
+    [updated.claim_id, `prize_claim:${to}`, `prize claim ${updated.id}: ${opts.reason}`, opts.actor, currentLabel()]
   );
   await emitPrizeClaimEvent(updated, "claim_decided", opts.actor);
   return updated;
@@ -621,8 +621,8 @@ export async function updatePrizeClaimFields(
   const updated = normalizeRow(row);
   if (note) {
     await r.query(
-      `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
-      [updated.claim_id, `prize_claim:${note.action}`, `prize claim ${updated.id}: ${note.reason}`, note.actor]
+      `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, $5)`,
+      [updated.claim_id, `prize_claim:${note.action}`, `prize claim ${updated.id}: ${note.reason}`, note.actor, currentLabel()]
     );
   }
   return updated;
@@ -842,9 +842,9 @@ export async function fundPrizeReviewAction(
   if (job && allocated > 0) {
     await r.query(
       `INSERT INTO action_allocations
-         (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason)
-       VALUES ($1, $2, $3, $4, $5, 'prize_reserve', 'The prize''s review reserve pays for its reviews.')`,
-      [`prize_review:${claim.id}`, action!.id, claim.claim_id, job.user_id, allocated]
+         (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, 'prize_reserve', 'The prize''s review reserve pays for its reviews.', $6)`,
+      [`prize_review:${claim.id}`, action!.id, claim.claim_id, job.user_id, allocated, currentLabel()]
     );
   }
   return { actionId: action!.id, allocated };
@@ -985,8 +985,8 @@ export async function filePrizeClaim(input: FilePrizeClaimInput): Promise<FiledP
     const [pc] = await tx.query<{ id: string }>(
       `INSERT INTO prize_claims
          (contribution_id, bounty_id, claim_id, formalization_id, claimant_id, direction, status,
-          credit_name, tools_disclosure, declarations, rules_version, submitted_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7, $8, $9::jsonb, $10, $11)
+          credit_name, tools_disclosure, declarations, rules_version, submitted_at, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7, $8, $9::jsonb, $10, $11, $12)
        RETURNING id`,
       [
         contribution!.id,
@@ -1000,6 +1000,7 @@ export async function filePrizeClaim(input: FilePrizeClaimInput): Promise<FiledP
         JSON.stringify(declarations),
         input.rulesVersion,
         contribution!.submitted_at,
+        currentLabel(),
       ]
     );
     // Tie groups: equal submitted_at to the microsecond on the same version.
@@ -1019,8 +1020,8 @@ export async function filePrizeClaim(input: FilePrizeClaimInput): Promise<FiledP
     );
     await fundPrizeReviewAction(tx, { id: pc!.id, claim_id: input.claimId, bounty_id: bounty.id }, estimate);
     await tx.query(
-      `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'prize_claim:queued', $2, $3)`,
-      [input.claimId, `prize claim ${pc!.id} filed (${input.direction}) by ${input.creditName.trim().slice(0, 120)}`, `contributor:${c.id}`]
+      `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, 'prize_claim:queued', $2, $3, $4)`,
+      [input.claimId, `prize claim ${pc!.id} filed (${input.direction}) by ${input.creditName.trim().slice(0, 120)}`, `contributor:${c.id}`, currentLabel()]
     );
     return {
       prizeClaimId: pc!.id,
@@ -1095,9 +1096,9 @@ export async function admitPrizeClaim(input: {
     if (input.review) {
       const [review] = await tx.query<{ id: string }>(
         `INSERT INTO contribution_reviews
-           (contribution_id, decision, reasoning, confidence, policy_citations, reviewed_by)
-         VALUES ($1, 'accept', $2, $3, $4, 'contribution_reviewer') RETURNING id`,
-        [input.contributionId, input.review.reasoning, input.review.confidence, input.review.policyCitations]
+           (contribution_id, decision, reasoning, confidence, policy_citations, reviewed_by, sensitivity_label)
+         VALUES ($1, 'accept', $2, $3, $4, 'contribution_reviewer', $5) RETURNING id`,
+        [input.contributionId, input.review.reasoning, input.review.confidence, input.review.policyCitations, currentLabel()]
       );
       reviewId = review!.id;
     }
@@ -1678,8 +1679,8 @@ export async function challengePrizeClaim(input: {
     [pc.claim_id, input.contributorId, `[ground: ${input.ground}] ${input.content.trim()}`, input.evidenceUrls ?? [], pc.id, currentLabel()]
   );
   await rawQuery(
-    `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'prize_claim:challenged', $2, $3)`,
-    [pc.claim_id, `prize claim ${pc.id}: challenge ${row!.id} filed on the ground ${input.ground}`, `contributor:${input.contributorId}`]
+    `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, 'prize_claim:challenged', $2, $3, $4)`,
+    [pc.claim_id, `prize claim ${pc.id}: challenge ${row!.id} filed on the ground ${input.ground}`, `contributor:${input.contributorId}`, currentLabel()]
   );
   return { ok: true, contribution_id: row!.id };
 }

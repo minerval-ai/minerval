@@ -42,6 +42,7 @@ import {
   type PrizeClaimRow,
 } from "./prize-claim-service.js";
 import { insertAttachment, validateTaxForm, type IncomingFile } from "./attachment-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 // ---------------------------------------------------------------------------
 // Pure rules
@@ -497,8 +498,8 @@ export async function clawbackPrizeOwls(input: {
     if (inserted.length === 0) return { reversed_micro_usd: 0 };
     await tx.query(`UPDATE contributors SET owls_prized_micro_usd = owls_prized_micro_usd - $1 WHERE id = $2`, [total, pc.claimant_id]);
     await tx.query(
-      `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'prize_claim:clawback', $2, $3)`,
-      [pc.claim_id, `prize claim ${pc.id}: ${formatOwls(total)} of prize owls reversed: ${input.reason}`, input.actor]
+      `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, 'prize_claim:clawback', $2, $3, $4)`,
+      [pc.claim_id, `prize claim ${pc.id}: ${formatOwls(total)} of prize owls reversed: ${input.reason}`, input.actor, currentLabel()]
     );
     return { reversed_micro_usd: total };
   });

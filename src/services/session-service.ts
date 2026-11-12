@@ -146,6 +146,17 @@ export function currentSessionId(): string | null {
  * it in the run's next tool result; a paused one is resumed. Returns
  * 'session' when the session took it, 'inbox' when it went to the node's
  * inbox instead (the session expired, closed, or never existed).
+ *
+ * A session takes only an answer of its own label (src/labels.ts). The
+ * answer is written by whoever delivers it, at their label, and a session
+ * shows what it holds to a run at the session's label, so an answer from
+ * work at another label is not put into it: it goes where an answer goes
+ * when the session cannot take it (the node's inbox, as a message at the
+ * answer's own label, or nowhere when the caller names no fallback), and
+ * the session waits on, to its deadline. The same reason a Steward's pass
+ * resumes only a session of its own label (takeReadySession below).
+ * Whether one label may read another is a clearance, which nothing checks
+ * yet; until something does, only the same label is taken.
  */
 export async function deliverReply(input: {
   sessionId: string | null;
@@ -175,8 +186,8 @@ export async function deliverReply(input: {
   const took = input.sessionId
     ? await withTransaction(async (tx) => {
         const [s] = await tx.query<SessionRow>(
-          `SELECT ${COLUMNS} FROM agent_sessions WHERE id = $1 FOR UPDATE`,
-          [input.sessionId]
+          `SELECT ${COLUMNS} FROM agent_sessions WHERE id = $1 AND sensitivity_label = $2 FOR UPDATE`,
+          [input.sessionId, currentLabel()]
         );
         if (!s || s.status === "expired" || s.status === "closed") return false;
         const next = s.status === "waiting" && wake ? "ready" : s.status;
@@ -530,23 +541,30 @@ export async function takeSessionForResume(sessionId: string): Promise<{ session
   });
   if (!taken) return null;
   if (taken.tooLong) {
-    await sendRepliesToInbox(taken.session.node_id, taken.replies);
+    await sendRepliesToInbox(taken.session, taken.replies);
     return null;
   }
   return { session: taken.session, replies: taken.replies };
 }
 
-/** Answers that could not reach their session, to its node's inbox when it has one. */
-async function sendRepliesToInbox(nodeId: string | null, replies: SessionReply[]): Promise<void> {
+/**
+ * Answers that could not reach their session's run, to its node's inbox when
+ * it has one. The messages carry the session's label, which is the label of
+ * every answer it took (deliverReply), whatever sweep or pass sends them on.
+ */
+async function sendRepliesToInbox(s: Pick<SessionRow, "id" | "node_id" | "sensitivity_label">, replies: SessionReply[]): Promise<void> {
+  const nodeId = s.node_id;
   if (!nodeId) return;
-  for (const r of replies) {
-    await postMessage({
-      nodeId,
-      trigger: r.kind === "research" ? "research_report" : "message_reply",
-      body: r.text,
-      sender: r.kind === "research" ? { kind: "researcher", ref: r.ref } : { kind: "system" },
-    }).catch(() => null);
-  }
+  await runAtLabel(s.sensitivity_label, `paused session ${s.id}`, async () => {
+    for (const r of replies) {
+      await postMessage({
+        nodeId,
+        trigger: r.kind === "research" ? "research_report" : "message_reply",
+        body: r.text,
+        sender: r.kind === "research" ? { kind: "researcher", ref: r.ref } : { kind: "system" },
+      }).catch(() => null);
+    }
+  });
 }
 
 /**
@@ -585,7 +603,7 @@ export async function takeReadySession(nodeId: string, role: string): Promise<{ 
   });
   if (!taken) return null;
   if (taken.tooLong) {
-    await sendRepliesToInbox(nodeId, taken.replies);
+    await sendRepliesToInbox(taken.session, taken.replies);
     return null;
   }
   return { session: taken.session, replies: taken.replies };
@@ -686,7 +704,7 @@ export async function sweepSessions(): Promise<number> {
       RETURNING ${COLUMNS}`
   );
   for (const s of rows) {
-    await sendRepliesToInbox(s.node_id, s.replies.filter((x) => !x.delivered));
+    await sendRepliesToInbox(s, s.replies.filter((x) => !x.delivered));
     // A session that has ended holds no interest in anything.
     await rawQuery(
       `UPDATE subscriptions SET active = false, ended_at = now()

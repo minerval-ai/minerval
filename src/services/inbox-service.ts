@@ -17,6 +17,7 @@
  * no work of its own: it is read on whatever pass the sender's node next gets.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export type MessageSenderKind =
   | "steward"
@@ -86,8 +87,8 @@ export async function postMessage(input: {
   if (body === "") return null;
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO node_messages
-       (node_id, trigger, sender_kind, sender_node_id, sender_ref, body, paid, reply_to)
-     SELECT $1, $2, $3, $4, $5, $6, $7, $8
+       (node_id, trigger, sender_kind, sender_node_id, sender_ref, body, paid, reply_to, sensitivity_label)
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9::text
       WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1)
      RETURNING id`,
     [
@@ -99,6 +100,7 @@ export async function postMessage(input: {
       body,
       input.paid ?? false,
       input.replyTo ?? null,
+      currentLabel(),
     ]
   );
   return rows[0]?.id ?? null;

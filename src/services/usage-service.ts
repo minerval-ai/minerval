@@ -11,7 +11,7 @@ import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { apiKeys, llmUsage } from "../db/schema.js";
 import { costMicroUsd } from "../llm/pricing.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 
 export interface LlmCallUsage {
@@ -78,6 +78,8 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
       claimId: ctx.claimId ?? null,
       runId: ctx.runId ?? null,
       requestId: ctx.requestId ?? null,
+      // The label of the run or request the spend was for (src/labels.ts).
+      sensitivityLabel: currentLabel(),
       agent: ctx.agent ?? "unknown",
       model: call.model,
       provider: call.provider ?? "anthropic",
@@ -137,6 +139,8 @@ export async function meterExternalUsage(usage: ExternalUsage): Promise<void> {
       claimId: ctx.claimId ?? null,
       runId: ctx.runId ?? null,
       requestId: ctx.requestId ?? null,
+      // The label of the run or request the spend was for (src/labels.ts).
+      sensitivityLabel: currentLabel(),
       agent: ctx.agent ?? "unknown",
       model: usage.model,
       provider: usage.provider,

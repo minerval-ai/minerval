@@ -17,6 +17,7 @@
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export const POLICY_SECTIONS = ["current", "mission", "priorities", "budgets", "petitions", "delegation"] as const;
 export type PolicySection = (typeof POLICY_SECTIONS)[number];
@@ -165,9 +166,9 @@ export async function writeOperatingPolicy(input: {
     [input.grantId, JSON.stringify(next)]
   );
   await rawQuery(
-    `INSERT INTO mandate_policy_versions (grant_id, part, section, content, note, author)
-     VALUES ($1, 'policy', $2, $3::jsonb, $4, $5)`,
-    [input.grantId, input.section ?? null, JSON.stringify(next), note, input.author]
+    `INSERT INTO mandate_policy_versions (grant_id, part, section, content, note, author, sensitivity_label)
+     VALUES ($1, 'policy', $2, $3::jsonb, $4, $5, $6)`,
+    [input.grantId, input.section ?? null, JSON.stringify(next), note, input.author, currentLabel()]
   );
   const { recordEvent } = await import("./event-service.js");
   await recordEvent({
