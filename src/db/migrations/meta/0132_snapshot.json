@@ -1,6 +1,6 @@
 {
-  "id": "9a2875ff-cbaa-4e63-a287-98948fd69bb9",
-  "prevId": "1ab28ad9-b8fa-49b7-a06c-331e2f6ba902",
+  "id": "1ab28ad9-b8fa-49b7-a06c-331e2f6ba902",
+  "prevId": "850c6ba7-9c75-4170-a93c-c2c277699793",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -164,6 +164,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -336,6 +343,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "action_allocations_sensitivity_label_labels_name_fk": {
+          "name": "action_allocations_sensitivity_label_labels_name_fk",
+          "tableFrom": "action_allocations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -435,7 +455,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "created_at": {
           "name": "created_at",
@@ -450,31 +470,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "fault_reason": {
-          "name": "fault_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fault_since": {
-          "name": "fault_since",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fault_attempts": {
-          "name": "fault_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "retry_after": {
-          "name": "retry_after",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -733,7 +728,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -910,7 +905,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -1101,7 +1096,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -1340,7 +1335,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -1600,7 +1595,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -1811,7 +1806,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "created_at": {
           "name": "created_at",
@@ -1949,7 +1944,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -2090,7 +2085,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -2377,7 +2372,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -2564,7 +2559,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {},
@@ -2689,7 +2684,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -2838,7 +2833,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -3023,7 +3018,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -3190,7 +3185,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -3366,7 +3361,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -3517,7 +3512,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "created_at": {
           "name": "created_at",
@@ -3816,7 +3811,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -4084,7 +4079,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -4210,7 +4205,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "created_at": {
           "name": "created_at",
@@ -4358,7 +4353,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -4523,7 +4518,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -4722,7 +4717,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -4913,7 +4908,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -5015,7 +5010,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -5149,7 +5144,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -5396,7 +5391,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -5587,7 +5582,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "created_at": {
           "name": "created_at",
@@ -5902,7 +5897,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -6055,7 +6050,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -6204,7 +6199,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -6416,7 +6411,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -6622,7 +6617,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -6830,7 +6825,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -6986,7 +6981,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -7154,7 +7149,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -7300,7 +7295,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -7505,7 +7500,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -7785,7 +7780,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -8054,7 +8049,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -8262,7 +8257,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -8427,7 +8422,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {},
@@ -8617,7 +8612,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -9044,7 +9039,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -9160,7 +9155,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -9304,7 +9299,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -9530,7 +9525,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -9654,12 +9649,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "defect": {
-          "name": "defect",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "signal": {
           "name": "signal",
           "type": "real",
@@ -9702,7 +9691,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
+        },
+        "defect": {
+          "name": "defect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -9926,7 +9921,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -10124,7 +10119,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -10263,7 +10258,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -10407,7 +10402,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -10612,7 +10607,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -10732,7 +10727,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -10948,7 +10943,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -11083,7 +11078,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {},
@@ -11167,7 +11162,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "created_at": {
           "name": "created_at",
@@ -11318,7 +11313,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -11446,7 +11441,12 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_label_reads_public_reads_nothing": {
+          "name": "ck_label_reads_public_reads_nothing",
+          "value": "\"label_reads\".\"label\" <> 'public'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.labels": {
@@ -11478,7 +11478,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "labels_name_plain": {
+          "name": "labels_name_plain",
+          "value": "\"labels\".\"name\" ~ '^[a-z][a-z0-9_-]{0,62}$' AND \"labels\".\"name\" <> 'null'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.lean_checks": {
@@ -11626,7 +11631,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -11832,7 +11837,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -12034,7 +12039,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -12215,7 +12220,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -12483,7 +12488,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -12671,7 +12676,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -12924,7 +12929,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13086,7 +13091,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13232,7 +13237,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13410,7 +13415,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13550,7 +13555,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13644,6 +13649,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -13688,6 +13700,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mandate_valuations_sensitivity_label_labels_name_fk": {
+          "name": "mandate_valuations_sensitivity_label_labels_name_fk",
+          "tableFrom": "mandate_valuations",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -14195,7 +14220,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -15323,7 +15348,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -15635,7 +15660,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -16189,7 +16214,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -16354,7 +16379,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -16500,7 +16525,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -16641,7 +16666,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -16788,7 +16813,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -16996,7 +17021,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -17194,7 +17219,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -17339,7 +17364,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {},
@@ -17412,6 +17437,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -17471,6 +17503,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "regrants_sensitivity_label_labels_name_fk": {
+          "name": "regrants_sensitivity_label_labels_name_fk",
+          "tableFrom": "regrants",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -17548,7 +17593,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -17683,7 +17728,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -17881,7 +17926,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -18115,7 +18160,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -18438,7 +18483,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -18669,7 +18714,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -18782,7 +18827,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {},
@@ -18867,7 +18912,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -19031,7 +19076,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -19163,7 +19208,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -19331,7 +19376,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -19516,7 +19561,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -19720,7 +19765,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -19905,7 +19950,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -20057,7 +20102,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -20245,7 +20290,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -20391,7 +20436,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -20458,115 +20503,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.deployment_faults": {
-      "name": "deployment_faults",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "first_seen_at": {
-          "name": "first_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "occurrences": {
-          "name": "occurrences",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reported_at": {
-          "name": "reported_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cleared_at": {
-          "name": "cleared_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "uq_deployment_faults_open": {
-          "name": "uq_deployment_faults_open",
-          "columns": [
-            {
-              "expression": "reason",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"deployment_faults\".\"cleared_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_deployment_faults_first_seen": {
-          "name": "idx_deployment_faults_first_seen",
-          "columns": [
-            {
-              "expression": "first_seen_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -20652,7 +20588,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -20666,6 +20602,9 @@
       "name": "argument_evaluations_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     },
     "public.assessments_in_force": {
@@ -20794,7 +20733,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -20808,6 +20747,9 @@
       "name": "assessments_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     },
     "public.quantity_estimates_in_force": {
@@ -20899,7 +20841,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -20913,6 +20855,9 @@
       "name": "quantity_estimates_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     },
     "public.question_assessments_in_force": {
@@ -21029,7 +20974,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         },
         "origin": {
           "name": "origin",
@@ -21043,6 +20988,9 @@
       "name": "question_assessments_in_force",
       "schema": "public",
       "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
       "materialized": false
     }
   },

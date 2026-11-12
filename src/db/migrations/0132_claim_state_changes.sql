@@ -9,7 +9,7 @@ CREATE TABLE "claim_state_changes" (
 	"cohort" text,
 	"reconciliation_event_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"sensitivity_label" text DEFAULT 'public' NOT NULL
+	"sensitivity_label" text DEFAULT minerval_default_label() NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "claim_state_changes" ADD CONSTRAINT "claim_state_changes_claim_id_claims_id_fk" FOREIGN KEY ("claim_id") REFERENCES "public"."claims"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -54,3 +54,8 @@ SELECT 'state_changed', s.claim_id, s.created_at,
                    CASE WHEN cardinality(s.successor_ids) > 0
                         THEN concat(' (successors: ', array_to_string(s.successor_ids, ', '), ')') ELSE '' END), 500)
   FROM claim_state_changes s;
+--> statement-breakpoint
+-- A new labelled table: where a deployment holds reads to a clearance
+-- (0130), bring this table under the same policies now. A no-op where
+-- 'public' is the only label.
+SELECT minerval_enforcement_sync();

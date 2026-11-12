@@ -79,7 +79,9 @@ import {
   contributionTypeEnum,
   reportKindEnum,
   reportSeverityEnum,
+  STATED_VIEW_CONTRIBUTION_TYPE,
 } from "../schemas/common.js";
+import { statedViewForContribution } from "../services/stated-view-service.js";
 import {
   checkReportRateLimit,
   raiseIssue,
@@ -1127,7 +1129,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Check the outcome of a submitted contribution: pending until " +
         "reviewed, then the decision (accept, reject, or escalate) with the " +
         "reviewer's reasoning and policy citations. An accepted proposal " +
-        "carries became_claim_id and page_url, the node it became. Lost the " +
+        "carries became_claim_id and page_url, the node it became. A " +
+        "state_view carries stated_view: the view as stated, the instance it " +
+        "became once admitted, and what the node's Steward answered to its " +
+        "reasons. Lost the " +
         "id? list_contributions with mine: true lists yours. Free.",
       inputSchema: { contribution_id: z.guid() },
       annotations: { readOnlyHint: true },
@@ -1138,9 +1143,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         return errorResult("NOT_FOUND", "Contribution not found");
       }
       const review = await getReviewForContribution(contribution_id);
+      const statedView =
+        contribution.contributionType === STATED_VIEW_CONTRIBUTION_TYPE
+          ? await statedViewForContribution(contribution_id)
+          : null;
       return jsonResult({
         // The same shape GET /contributions/:id serves (#723).
         contribution: formatContribution(contribution),
+        ...(statedView ? { stated_view: statedView } : {}),
         review: review
           ? {
               decision: review.decision,
