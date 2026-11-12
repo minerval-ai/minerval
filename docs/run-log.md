@@ -103,7 +103,8 @@ By default the log is best-effort: a step that cannot be written is logged
 to the console and the run carries on, closing unsealed. `RUN_LOG_MODE=record`
 turns the dependence round:
 
-- every traceable run is traced, whatever `TRACE_LEVEL` says;
+- every run is traced, whatever `TRACE_LEVEL` says;
+- no model is called outside a run (below);
 - nothing in a step is cut to a size cap;
 - the run does not return until its log is sealed, and a run whose log
   could not be written whole fails with `RunLogError`;
@@ -113,11 +114,82 @@ What a run wrote to the graph before its log failed stays written; a reader
 tells it by the run being unsealed. Making readers treat a judgment whose
 run is unsealed as unfinished is later work.
 
-Two things record mode does not change yet: the paths that are untraced on
-purpose because they handle a reader's own page or conversation (the
-browser extension, the MCP's on-demand analysis, #356), and work that
-returns without a promise, which has nothing to hold its result behind. A
-private graph switches the first off instead of exempting it.
+One thing record mode does not change yet: work that returns without a
+promise, which has nothing to hold its result behind. Every agent's entry
+point is async, so today this is no agent's work.
 
 The public graph runs best-effort until record mode has run somewhere in
 earnest.
+
+## Work the best-effort log leaves out, and record mode does not
+
+While the log is best-effort, four kinds of model work are kept off it on
+purpose (#356). Each handles a reader's own content, which the public
+service's terms say is never stored:
+
+- the MCP tools `match_claim`, `extract_claims` and `assess_text`, which
+  analyze a passage the caller hands over;
+- the browser extension's page analysis, which reads whatever page the
+  reader has open;
+- the extension's page chat;
+- the naming of an Assistant conversation from its first message. The
+  message itself is kept, in the conversation and in the log of the
+  Assistant's reply; what keeps the naming off the log is that deleting a
+  conversation deletes the runs its messages name, and no message names
+  this one.
+
+The code marks each with `untraced()` (`src/llm/usage-context.ts`), and
+the extension's own agent is never traced whoever calls it. Metering is
+unaffected: the calls are counted and charged like any others.
+
+That is an exemption of the best-effort log, and record mode has none. A
+deployment that keeps its log as a record holds material whose handling
+has to be on that log, and a member's passage or page there is such
+material. So in record mode each of these is a logged run like any other:
+the run row, the prompt step with its `setup`, a step for each turn, and
+the seal the run waits on. If a log cannot be written whole, the tool or
+the analysis fails with `RunLogError`, and the cap charged for an MCP tool
+call is refunded, as it is for any failure. One call makes one run for
+each agent it invokes: `match_claim` makes two (the domain prior, which
+runs as the `extractor` agent, and the Matcher), `extract_claims` one
+Extractor run, and `assess_text` one Extractor run and a Matcher run for
+each claim it judges. The runs of one MCP call share its `request_id`.
+Naming a conversation is one run of the `assistant` agent, whose role part
+is the prompt set's `assistant-title`; if its log cannot be written the
+name is dropped and the conversation keeps its opening words as its title.
+
+These runs start private, so their transcripts are served only with the
+service key, like any private run's: the naming run because every run of
+the `assistant` agent is private, the others with the reason
+`input:readers-own-content` in `private_reasons`. A report an agent raises
+from such work still leaves its body out, in either mode: a report travels
+further than the log does.
+
+What a caller gets back and what they are charged are the same in both
+modes. The charge is the metered cost of the model calls, which logging
+does not change. What record mode adds is the log's own writes: for each
+run one `agent_runs` row, one `agent_steps` row for the prompt and one for
+each model turn and each batch of tool results, and one update when the
+run closes. The prompt step holds the whole system prompt and the tool
+descriptors, uncut.
+
+## No model call outside a run
+
+A run is logged because `withAgent` opened it. Code that reached a model
+without passing through `withAgent` would leave no run, no steps and no
+seal, in any mode. Two things keep that from happening.
+
+In record mode the door to a provider refuses: `getAdapter`
+(`src/llm/providers/index.ts`), which every function of the LLM client
+goes through, and the web search that is a completion of its own, throw
+`UnloggedModelCallError` when no run is open (`src/llm/logged-run.ts`). The
+call is not made. While the log is best-effort nothing is refused.
+
+`tests/unit/llm/logged-runs.test.ts` is the static half. It fails when a
+file calls the LLM client without opening a run in the same file, imports
+a provider adapter around the client, constructs a provider's SDK client,
+or calls `untraced()`, unless the file is on the test's list for that with
+its reason.
+
+Embedding calls are not agent work and are outside both: text goes in and
+a vector comes back, with no prompt, reasoning or output to log.

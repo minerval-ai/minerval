@@ -33,7 +33,10 @@
  * page analysis and chat, the MCP's on-demand analysis — nothing derived
  * from the reader's content may be persisted, so a report or a note keeps
  * its kind, severity, title, surface, and id refs but the free-text body is
- * withheld. The title is the report there; the prompts say so.
+ * withheld. The title is the report there; the prompts say so. In record
+ * mode that work is logged (usage-context.ts, untraced) and the body is
+ * still withheld: a report travels further than the log does, to whoever
+ * triages reports and, where a repository is configured, into an issue.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;

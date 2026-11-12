@@ -32,6 +32,7 @@ import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
+import { requireLoggedRun } from "../logged-run.js";
 import { OPENROUTER_MODELS } from "../models.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
 import {
@@ -235,11 +236,16 @@ const WEB_SEARCH_EXCERPT_CHARS = 1500;
  * whichever model fills the tier (a model with a native engine would run
  * that instead, and its annotations arrive on its own terms). Metered like
  * any other call: OpenRouter's reported cost covers the search fee.
+ *
+ * It is a completion that does not go through getAdapter, so it makes the
+ * same check itself: in record mode it runs only inside a logged run, whose
+ * tool step records the query and the hits (../logged-run.ts).
  */
 export async function openrouterWebSearch(
   query: string,
   maxResults: number
 ): Promise<WebSearchHit[]> {
+  requireLoggedRun("A web search");
   const model = OPENROUTER_MODELS.flash;
   const completion = await getClient().chat.completions.create({
     ...baseParams({ model, maxTokens: 1 }),

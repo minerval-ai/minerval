@@ -15,6 +15,8 @@
  * Being the one path, it is also where every call with a system prompt is
  * told today's date (run-date.ts, #771), and where an agent run in a
  * deployment with features switched off is told which (withRunBrief below).
+ * And every call here reaches its provider through getAdapter, which in
+ * record mode refuses a call that no agent run would log (logged-run.ts).
  *
  * This file does dispatch and provider-independent control flow only. The
  * request-building, wire format, and response parsing for each backend live in

@@ -1116,7 +1116,8 @@ backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick) embeds
 such reports afterwards.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
-rule holds for this channel too. External agents on the MCP surface get
+rule holds for this channel too, including where the work itself is logged
+because the run log is kept as a record. External agents on the MCP surface get
 `raise_issue` only, attributed and rate-limited, matched against
 external-origin reports only, and their reports triage as testimony rather
 than findings.
@@ -2042,7 +2043,13 @@ instances, and keeps its result only in an in-memory cache. Chat is the
 exception since it became the Assistant: a conversation is kept in the
 user's account, with the page's address, title and marked passages (never
 its text), and its runs are logged privately like any Assistant run. The MCP's
-on-demand analysis tools follow the same rule. Only source submission, where
+on-demand analysis tools follow the same rule. That rule belongs to the
+best-effort run log, which is how the public graph runs. A deployment that
+keeps its log as a record (`RUN_LOG_MODE=record`) logs the analysis
+pipeline's runs and the on-demand tools' like any others, private to the
+reader (docs/run-log.md, "Work the best-effort log leaves out, and record
+mode does not"); it still writes no sources and no instances from them.
+Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)
 holds that a claim is about the world, not a private person, and the
