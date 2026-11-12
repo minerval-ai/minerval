@@ -2320,7 +2320,10 @@ where reads are held.
   grants, the labels themselves) are not held.
 
 **Running one.** The role in `DATABASE_URL` must own the tables and be able
-to create roles, as the migrations already require. A backup taken with
+to create roles, as the migrations already require. The role
+`minerval_cleared` belongs to the whole database server and its password is
+derived from the owner's credentials, so two deployments with different
+owners cannot share one Postgres server. A backup taken with
 `pg_dump` as that role reads everything. The client holds at most twenty
 connections across the cleared pools besides the owner pool's twenty, and
 closes one that has been idle for ten seconds. A script that writes
