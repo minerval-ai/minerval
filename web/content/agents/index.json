@@ -254,11 +254,11 @@
     "stage": 7,
     "group": "governance",
     "tagline": "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
-    "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the Governance mandate funds.",
+    "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, the prize decisions (a large bounty, an accepted prize claim, a checker failure), and, in a deployment that holds material at more than one label, the check of each redaction before a page is shown to readers who do not read its label. Each is a ledger action the Governance mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 10340,
-    "fullChars": 108664,
+    "roleChars": 12924,
+    "fullChars": 111248,
     "skills": [
       {
         "name": "costing",
@@ -530,6 +530,19 @@
         ]
       }
     ]
+  },
+  {
+    "key": "redactor",
+    "name": "Redactor",
+    "stage": 10,
+    "group": "governance",
+    "tagline": "Prepares a page written at one label to be shown to readers who may not read that label, under the policy for that boundary. It removes the passages a category of the policy covers and marks each removal in place. Its tools change no word of the page, and it does not decide what is then released.",
+    "invokedWhen": "In a deployment that holds material at more than one label: a person who directs the graph asks for a node's page to be shown to readers who do not read its label, and again for each later version while a standing showing stands. Each run is a ledger action that runs when it is paid for. The public graph has one label and no Redactor runs there.",
+    "model": "Claude Sonnet 5.5",
+    "hasConstitution": true,
+    "roleChars": 5835,
+    "fullChars": 104159,
+    "skills": []
   },
   {
     "key": "math-solver",

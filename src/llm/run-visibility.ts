@@ -52,6 +52,7 @@ export const AGENTS_GIVEN_SOURCE_TEXT: Readonly<Record<string, string>> = {
 };
 
 export const TOOLS_RETURNING_SOURCE_TEXT: Readonly<Record<string, string>> = {
+  get_page_to_redact: "with source_id, a window of the stored text of a source the page drew on",
   provenance_read_source: "a window of the source's stored text",
   examination_outline: "the opening words of each segment of the examined document",
   get_contribution_details: "an excerpt of the stored text of a source proposed for intake",
@@ -74,6 +75,7 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced" },
   math_solver: { reads: "private", why: "an attempt and earlier attempts, unpublished until the platform publishes them" },
   program_officer: { reads: "private", why: "petitions and inbox items with fields the public views leave out" },
+  redactor: { reads: "private", why: "a page written at a label only some readers may read, before anything is removed from it" },
   researcher: { reads: "public", why: "a research task; runs a Grantmaker launched from a funder's brief are marked private" },
   steward: { reads: "public", why: "a claim's id and context; the graph it reads is public" },
   tagger: { reads: "public", why: "public claims" },
@@ -81,6 +83,15 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
 
 /** Every tool an agent can call, by what its output can carry. */
 export const TOOL_READS: Readonly<Record<string, Classification>> = {
+  cannot_cross: { reads: "private", why: "confirms a finding about a page held at a label only some readers read" },
+  finish_redaction: { reads: "private", why: "the fingerprint and removal counts of a page not yet released" },
+  get_page_to_redact: { reads: "private", why: "a page as written at a label only some readers read, and its sources' text" },
+  get_redaction_policies: { reads: "private", why: "boundaries' policies, read by the two sides of each boundary and not by everyone" },
+  get_redaction_policy: { reads: "private", why: "a boundary's policy, read by the two sides of that boundary and not by everyone" },
+  get_redaction_to_check: { reads: "private", why: "a page as written and as redacted, with the Redactor's notes" },
+  record_fidelity_outcome: { reads: "private", why: "confirms an outcome on a page held at a label only some readers read" },
+  redact: { reads: "private", why: "a part of a page as it reads after a removal, before release" },
+  restore: { reads: "private", why: "a part of a page as it reads after a removal is taken back, before release" },
   add_answer: { reads: "public", why: "confirms the run's own write to public graph records" },
   add_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
   add_decomposition_edge: { reads: "public", why: "confirms the run's own write to public graph records" },

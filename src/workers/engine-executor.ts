@@ -68,6 +68,7 @@ import { partitionFromRef } from "../services/consistency-service.js";
 import { runConsistencySweep } from "./consistency-sweep.js";
 import { runCurator } from "../llm/agents/curator.js";
 import { runAudit } from "../llm/agents/audit-agent.js";
+import { runRedactor } from "../llm/agents/redactor.js";
 import {
   consumeCurationRequests,
   describeCurationRequests,
@@ -186,6 +187,7 @@ export async function processNextEngineAction(
       "consistency_sweep",
       "curate",
       "audit",
+      "redact",
       "ingest",
       "formalize",
       ...(researcherOn ? (["request", "research"] as const) : []),
@@ -207,6 +209,7 @@ export async function processNextEngineAction(
     if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
     if (action.kind === "curate") return runCurateAction(action);
     if (action.kind === "audit") return runAuditAction(action);
+    if (action.kind === "redact") return runRedactAction(action);
     if (action.kind === "request") return runRequestAction(action);
     if (action.kind === "research") return runResearchAction(action);
     if (action.kind === "resume") return runResumeAction(action);
@@ -980,6 +983,62 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     ok: !failure && !!report,
     ...(failure ? { error: failure instanceof Error ? failure.message : String(failure) } : {}),
   };
+}
+
+/**
+ * redact: one Redactor run on the page in target_ref (showing-service.ts),
+ * at the page's label, under its largest funder and to the budget its
+ * allocations give it. The run finishes the redaction itself, by a tool
+ * call that fingerprints the page and asks for Audit's check, or says the
+ * page cannot be shown. A run that ends having done neither leaves the page
+ * waiting, and the row is opened again so that it can be paid for again:
+ * nothing is shown from a redaction nobody finished.
+ */
+async function runRedactAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const pageId = action.target_ref ?? "";
+  const [page] = pageId
+    ? await rawQuery<{ id: string; stage: string; node_id: string }>(
+        `SELECT id, stage, node_id FROM showing_pages WHERE id = $1`,
+        [pageId]
+      )
+    : [];
+  if (!page || page.stage !== "to_redact") {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const context = await funderContext(action);
+  const close = (billedMicroUsd: number) =>
+    completeAction(action.id, billedMicroUsd, { meteredJobId: context.jobId }).catch((err) =>
+      console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
+    );
+  try {
+    const { billedMicroUsd } = await runWithUsageContext(
+      { userId: context.userId, jobId: context.jobId },
+      () =>
+        withPassBudget(actionBudget(action, "the allocations funding this redaction"), () =>
+          runRedactor({ pageId: page.id })
+        )
+    );
+    await close(billedMicroUsd);
+    const [after] = await rawQuery<{ stage: string }>(`SELECT stage FROM showing_pages WHERE id = $1`, [page.id]);
+    if (after?.stage === "to_redact") {
+      const { ensureRedactAction } = await import("../services/showing-service.js");
+      await ensureRedactAction(page.id, page.node_id);
+    }
+    return { status: "processed", actionId: action.id, kind: "redact", grantId: context.grantId, ok: after?.stage !== "to_redact" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "transient", actionId: action.id, kind: "redact", grantId: context.grantId, error: msg };
+    }
+    await close(0);
+    return { status: "processed", actionId: action.id, kind: "redact", grantId: context.grantId, ok: false, error: msg };
+  }
 }
 
 /**

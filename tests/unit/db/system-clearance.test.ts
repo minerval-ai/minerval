@@ -176,6 +176,22 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing while it sees every label: when a merge is undone it reads the ids and labels of the records of what the merge carried to other labels. Each is then undone inside runAtLabel at its label, from that label's own record, and the restored node's Steward at that label is told in fixed words that name the other node.",
     ],
   ],
+  "src/services/redaction-policy.ts": [
+    [
+      "A boundary's policy is kept as one row on each side of the boundary, and the two sides may share no label.",
+      "One version of a boundary's policy, as two rows with the same text: one at the label pages are written at and one at the label they are shown to. The text is categories an administrator saved, or the starting text in the repository, and the destination's row names no label of origin.",
+    ],
+    [
+      "A boundary's policy is kept as one row on each side of the boundary, and the two sides may share no label.",
+      "Nothing: it reads whether the boundary has a policy yet. The starting text is then saved by the call above.",
+    ],
+  ],
+  "src/services/showing-service.ts": [
+    [
+      "Showing a page below its label keeps rows on both sides of a boundary, the page's label and the destination's, and the two may share no label.",
+      "This is the one path by which text reaches a label that does not read the label it was written at, so it is the exception to the rule above and is held to its own: on the destination side it writes fixed words, ids, dates, hashes, counts and party names, and the text of a part only once every party the part rests on has released it, with the Redactor's removals already made (settle in release-gate-service.ts, which is the only statement that writes text there). The page is read inside runAtLabel at the page's label, and the reassessment that follows an arrival is opened inside runAtLabel at the destination's.",
+    ],
+  ],
   "src/services/version-upkeep.ts": [
     [
       "The upkeep of versions finds, at every label, the versions made beside one that has since been replaced; each node's reassessment is then opened at its own version's label.",

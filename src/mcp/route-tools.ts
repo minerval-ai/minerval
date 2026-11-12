@@ -241,6 +241,22 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "carries it.",
   },
 
+  // ---- showing a page below its label: members-only deployments only ----
+  // The reads, and paying for the work. The acts are excluded below.
+  "GET /showings": { name: "list_showings" },
+  "GET /showings/:showing_id": {
+    name: "get_showing",
+    note:
+      "Free. Report a node's state as given: a page that is held, or released in part, is a fact about the " +
+      "showing and says nothing about what the held text contains.",
+  },
+  "GET /showings/:showing_id/pages/:page_id": { name: "get_shown_page" },
+  "GET /redaction-policies": { name: "list_redaction_policies" },
+  "GET /redaction-policies/:policy_id": { name: "get_redaction_policy" },
+  "GET /release/queue": { name: "get_release_queue" },
+  "GET /release/rules": { name: "list_release_rules" },
+  "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_showing_work", note: ESCROWS_OWLS },
+
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
   "GET /findings": { name: "list_findings" },
@@ -319,8 +335,23 @@ const ADMINISTRATION_SESSION =
   "access token, or an agent following text it read can then never widen anyone's access. " +
   "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
 
+const SHOWING_SESSION =
+  "Decides what leaves a label: asking for a page to be shown, ending a showing, holding, releasing, setting a " +
+  "standing rule, or saving a boundary's policy. Each is recorded with the person who did it and the permissions " +
+  "they held, so it takes a signed-in dashboard session as well as the permission: a leaked key, an access token, " +
+  "or an agent following text it read can then never ask for a page to be shown or open the gate. The matching " +
+  "reads (list_showings, get_showing, get_shown_page, get_release_queue, list_release_rules, " +
+  "list_redaction_policies) are tools, and so is paying for the work (fund_showing_work).";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /showings": SHOWING_SESSION,
+  "POST /showings/:showing_id/end": SHOWING_SESSION,
+  "POST /showings/:showing_id/pages/:page_id/hold": SHOWING_SESSION,
+  "POST /release/decisions": SHOWING_SESSION,
+  "POST /release/rules": SHOWING_SESSION,
+  "DELETE /release/rules/:rule_id": SHOWING_SESSION,
+  "PUT /redaction-policies": SHOWING_SESSION,
   "POST /permissions/grants": ADMINISTRATION_SESSION,
   "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
   "POST /parties": ADMINISTRATION_SESSION,

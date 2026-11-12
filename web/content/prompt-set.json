@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "4aa616c4880f2e82269a87bb547a9c5551050eacffb5a0345fa6bdc11c5a3870",
+  "hash": "0c08402e9a1a72086d732cbecabfde8aa6b2b8e31efb2aa72f83dbe6c1d9d8bd",
   "constitution": {
     "hash": "e679f4e03005ea59c770d88d07ebb02772a41c96faff81e38ebd63f7af06a4c8",
     "source_path": "admin_constitution.md"
@@ -17,7 +17,7 @@
       "name": "audit-agent",
       "source_path": "src/llm/prompts/audit-agent.ts",
       "blocks": [
-        "a5c95d4271722f9cc5080c5d99a2e1ddc74c68329989b50bd47d778b7c0daba4"
+        "a115cb0bd975490d7b1eda922d4e52627b7525e0f93ecf97e4c92d94fffca708"
       ]
     },
     {
@@ -102,6 +102,13 @@
       "source_path": "src/llm/prompts/question-steward.ts",
       "blocks": [
         "890280359d7f78a99b3500c41eb1b2ae5d63a3c40fc56feedecd76710891a9e0"
+      ]
+    },
+    {
+      "name": "redactor",
+      "source_path": "src/llm/prompts/redactor.ts",
+      "blocks": [
+        "45a1c3bf44690c527fdc07e17962c6b8acb1dd33bba8b202e2c4a8af9f6418ad"
       ]
     },
     {

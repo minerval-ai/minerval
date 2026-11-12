@@ -88,7 +88,15 @@ export async function openReassessmentsForVersionsMadeBesideEarlier(
              JOIN judgment_inputs i
                ON i.judgment_kind = $1 AND i.judgment_id = v.id AND i.input_kind = 'beside'
              JOIN claims c ON c.id = v.claim_id AND c.state = 'active'
-            WHERE NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)${only}
+            WHERE NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)
+              -- A version replaced only because its Steward took in a page this
+              -- version's label had shown it gives this version nothing new to
+              -- weigh (minerval_only_shown_pages_between; showing-service.ts).
+              AND NOT minerval_only_shown_pages_between(
+                    $1, i.input_judgment_id,
+                    (SELECT o.id FROM ${table}_versions o
+                      WHERE o.claim_id = v.claim_id AND o.sensitivity_label = i.input_label),
+                    v.sensitivity_label)${only}
            UNION ALL
            -- ...or a label it reads has a version now and had none then.
            SELECT v.id, v.claim_id, v.sensitivity_label, o.sensitivity_label, NULL, o.id

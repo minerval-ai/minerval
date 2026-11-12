@@ -149,8 +149,32 @@ export function labelNote(
     `label's work. What ${tick(label)} has to say about such a thing is recorded as something new, at ` +
     `${tick(label)}.${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}\n\n` +
     `${opts.writesJudgments ? versionsForAWriter(label, others, mirror) : versionsForAReader(mirror)}\n\n` +
+    `${opts.writesJudgments ? `${shownBelowNote(label)}\n\n` : ""}` +
     `If the work cannot be done well on what this label can read, say so in what you record, so that ` +
     `whoever reads it or pays for the next pass knows what it rests on.`
+  );
+}
+
+/**
+ * What a run that records judgments is told about its page being shown to
+ * readers who do not read its label (services/showing-service.ts). One
+ * passage, separate from the rest of the note: what the machinery does,
+ * why, that the run writes what it concludes either way, and the one thing
+ * it may do about it.
+ */
+export function shownBelowNote(label: string): string {
+  const own = tick(label);
+  return (
+    `## Showing a page to readers who do not read its label\n\n` +
+    `A person who directs this graph may ask for a node's page at ${own} to be shown to readers who do ` +
+    `not read ${own}, at another label here or outside this deployment, so that what was concluded can ` +
+    `be read where the evidence for it cannot. What is shown is the page as you wrote it, less the ` +
+    `passages a Redactor removes under that boundary's policy and marks in place, and less the parts ` +
+    `that the people who hold the permission to release decide to hold. Nobody rewords it. ` +
+    `get_redaction_policies returns the policies for pages written at ${own}. Write what you conclude, ` +
+    `whether or not the page is shown. You may arrange the reasoning so that a reader can follow it ` +
+    `after removals, for example by saying what a sensitive figure shows in a sentence apart from the ` +
+    `figure.`
   );
 }
 

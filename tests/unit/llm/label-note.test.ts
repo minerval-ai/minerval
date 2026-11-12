@@ -85,6 +85,16 @@ const INTERNAL_STEWARD =
   "for this run: a version is in force unless another one you can read was made at a label that reads " +
   "its label. Where a read gives a single judgment for a node, it is the one in force, and the most " +
   "recent of them if two labels that do not read each other each have one.\n\n" +
+  "## Showing a page to readers who do not read its label\n\n" +
+  "A person who directs this graph may ask for a node's page at `internal` to be shown to readers who do " +
+  "not read `internal`, at another label here or outside this deployment, so that what was concluded can " +
+  "be read where the evidence for it cannot. What is shown is the page as you wrote it, less the " +
+  "passages a Redactor removes under that boundary's policy and marks in place, and less the parts " +
+  "that the people who hold the permission to release decide to hold. Nobody rewords it. " +
+  "get_redaction_policies returns the policies for pages written at `internal`. Write what you conclude, " +
+  "whether or not the page is shown. You may arrange the reasoning so that a reader can follow it " +
+  "after removals, for example by saying what a sensitive figure shows in a sentence apart from the " +
+  "figure.\n\n" +
   "If the work cannot be done well on what this label can read, say so in what you record, so that " +
   "whoever reads it or pays for the next pass knows what it rests on.";
 

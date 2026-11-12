@@ -61,6 +61,8 @@ import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
+import { executePolicyReadTool, getPolicyReadToolDefinition } from "../tools/policy-read-tool.js";
+import { oneLabelOnly } from "../../services/judgment-version-service.js";
 import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -693,6 +695,9 @@ async function runClaimStewardImpl(input: {
     ...getSpendToolDefinitions(),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
+    // Where a page may be shown below its label, the policy it would be
+    // shown under (label-note.ts). Not on the public graph.
+    ...(oneLabelOnly() ? [] : [getPolicyReadToolDefinition()]),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
@@ -896,6 +901,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (spendOutput !== null) return spendOutput;
     const sqlOutput = await executeSqlTool(name, toolInput);
     if (sqlOutput !== null) return sqlOutput;
+    const policyOutput = await executePolicyReadTool(name, toolInput);
+    if (policyOutput !== null) return policyOutput;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".

@@ -55,6 +55,7 @@ import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
+import { showingRoutes } from "../routes/showings.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
 
@@ -165,6 +166,9 @@ export async function buildApp() {
   // these routes, so it has none of their tools either.
   if (membersOnly(config)) {
     await app.register(permissionRoutes);
+    // Showing a page below its label needs a second label and the
+    // permissions that say who may ask and who may release.
+    await app.register(showingRoutes);
   }
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool

@@ -1241,7 +1241,7 @@ export const sources = pgTable("sources", {
   // two together).
   check(
     "ck_sources_source_type",
-    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')`
+    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'shown_page', 'unknown')`
   ),
 ]);
 
@@ -6891,4 +6891,405 @@ export const questionAssessmentVersions = pgView("question_assessments_versions"
     })
     .from(questionAssessments)
     .where(eq(questionAssessments.isCurrent, true))
+);
+
+// ---------------------------------------------------------------------------
+// Showing a node's page below its label (services/showing-service.ts,
+// docs/showing-a-page.md)
+//
+// A page written at one label can be shown to readers who may not read that
+// label: at another label inside the deployment, or outside it. It is one
+// act at every boundary. What is shown is the ordinary page, read from the
+// rows the Steward's ordinary work wrote, less what a Redactor removed under
+// the boundary's policy and less the parts the holders of `release` hold.
+//
+// Two sets of readers need rows about one showing, and they may share no
+// label: the people and runs at the page's label, who see the page whole,
+// and the readers on the destination side, who see what was released. So the
+// tables come in two families, and a row's sensitivity_label says which side
+// it is for.
+//
+//   At the page's label:        showings, showing_pages, showing_parts,
+//                               showing_removals
+//   At the destination's label: shown_showings, shown_nodes, shown_pages,
+//                               shown_parts, showing_acts, release_rules
+//   One row on each side:       redaction_policies
+//
+// A showing outside the deployment keeps its destination-side rows at
+// `public`: what is released to anyone may be read by every member.
+//
+// The rows on the destination side are written by the showing service as
+// the tables' owner, once the route has checked the permission of the
+// person acting, or by the step that follows an agent's run. They are the
+// one way text reaches a label that does not read the label it was written
+// at, and they hold only what was released, with fixed words for the rest.
+// A destination-side row does not name the page's label: a label's name is
+// not shown to people who may not read it.
+//
+// The public graph has one label, nothing can be shown below it, and every
+// table here stays empty there.
+// ---------------------------------------------------------------------------
+
+// A request to show a node's page, as the page's side holds it.
+export const showings = pgTable(
+  "showings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // The destination: a label, or outside the deployment (to_label null).
+    toLabel: text("to_label").references(() => labels.name),
+    toOutside: boolean("to_outside").notNull().default(false),
+    // The boundary is the pair (the page's label, the destination). Its id
+    // is what the destination side knows it by (redaction_policies).
+    boundaryId: uuid("boundary_id").notNull(),
+    // 'once': the page as it stood when asked. 'standing': each later
+    // version follows.
+    form: text("form").notNull(),
+    // 'node': this node alone. 'under': with what sits under it.
+    scope: text("scope").notNull(),
+    askedBy: uuid("asked_by").references((): AnyPgColumn => contributors.id),
+    // The permissions the person held when they asked, as the record shows
+    // them ("direct", "release for <party>", ...).
+    askedHolding: text("asked_holding").array().notNull().default([]),
+    askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    endedHolding: text("ended_holding").array(),
+    // One of END_REASONS in services/showing-service.ts.
+    endReason: text("end_reason"),
+    // The page's label.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    check("ck_showings_destination", sql`(${table.toLabel} IS NULL) = ${table.toOutside}`),
+    check("ck_showings_form", sql`${table.form} IN ('once', 'standing')`),
+    check("ck_showings_scope", sql`${table.scope} IN ('node', 'under')`),
+    check("ck_showings_not_own_label", sql`${table.toLabel} IS NULL OR ${table.toLabel} <> ${table.sensitivityLabel}`),
+    index("idx_showings_node").on(table.nodeId),
+    // One live showing of a node across a boundary in each form and scope:
+    // asking again for what already stands is refused, not stacked.
+    uniqueIndex("uq_showings_live")
+      .on(table.nodeId, table.boundaryId, table.form, table.scope)
+      .where(sql`ended_at IS NULL AND form = 'standing'`),
+  ]
+);
+
+// One version of one node's page under a showing: the page as recorded when
+// the version was found, and where its redaction, check and gate stand.
+export const showingPages = pgTable(
+  "showing_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id")
+      .notNull()
+      .references(() => showings.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // The version of the node's judgment at the page's label this page
+    // carries: one of the three judgment tables by kind, so no foreign key.
+    judgmentKind: text("judgment_kind").notNull(),
+    judgmentId: uuid("judgment_id").notNull(),
+    judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    // to_redact | to_check | at_gate | cannot_cross | overtaken
+    stage: text("stage").notNull().default("to_redact"),
+    // How many times the redaction has been done: 1, and one more each time
+    // the check returned it.
+    round: integer("round").notNull().default(1),
+    redactActionId: uuid("redact_action_id"),
+    auditRunId: uuid("audit_run_id"),
+    policyId: uuid("policy_id"),
+    // What is always shown when the page is shown: the verdict with its
+    // confidence and any credence or estimate, coverage, the sources that
+    // exist, the gaps recorded, how the page was made, the removals counted
+    // by category. Canonical JSON, hashed as the tree's first leaf.
+    header: text("header"),
+    headerSalt: text("header_salt"),
+    root: text("root"),
+    // The parties whose release the verdict takes: every party whose
+    // material the version read. Empty means the organization's own.
+    restsOn: uuid("rests_on").array().notNull().default([]),
+    // The Redactor's own words, which stay at the page's label.
+    leastSure: jsonb("least_sure"),
+    cannotCrossCategory: text("cannot_cross_category"),
+    cannotCrossNote: text("cannot_cross_note"),
+    // Audit's answers. `audit_answer` is one of the three fixed answers
+    // (FIDELITY_ANSWERS); its reasons stay at the page's label.
+    auditAnswer: text("audit_answer"),
+    auditReasons: text("audit_reasons"),
+    redactorModel: text("redactor_model"),
+    redactorRunId: uuid("redactor_run_id"),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_showing_pages_version").on(table.showingId, table.nodeId, table.judgmentId),
+    index("idx_showing_pages_stage").on(table.stage),
+    check(
+      "ck_showing_pages_stage",
+      sql`${table.stage} IN ('to_redact', 'to_check', 'at_gate', 'cannot_cross', 'overtaken')`
+    ),
+    check(
+      "ck_showing_pages_kind",
+      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment')`
+    ),
+  ]
+);
+
+// One part of a page: a paragraph, an argument, a source's reading, a
+// subclaim with its bearing. The page is divided mechanically from its
+// structure when it is recorded (services/page-parts.ts).
+export const showingParts = pgTable(
+  "showing_parts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => showingPages.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    // One of PART_KINDS in services/page-parts.ts.
+    kind: text("kind").notNull(),
+    // The kind as a held part is named: "argument:against", "reasoning".
+    descriptor: text("descriptor").notNull(),
+    // The row the part was read from (an argument, an instance, an edge, a
+    // request), where it has one.
+    refId: uuid("ref_id"),
+    // The part as written. Never changed.
+    original: text("original").notNull(),
+    salt: text("salt").notNull(),
+    // The parties whose release the part takes. Empty means the
+    // organization's own.
+    restsOn: uuid("rests_on").array().notNull().default([]),
+    // Set when the Redactor finishes: the part as it left it, and its hash.
+    redacted: text("redacted"),
+    marks: jsonb("marks"),
+    commitment: text("commitment"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_showing_parts_position").on(table.pageId, table.position)]
+);
+
+// One removal the Redactor made inside a part, by its place in the part as
+// written. The note is the Redactor's and stays at the page's label.
+export const showingRemovals = pgTable(
+  "showing_removals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    partId: uuid("part_id")
+      .notNull()
+      .references(() => showingParts.id, { onDelete: "cascade" }),
+    startOffset: integer("start_offset").notNull(),
+    endOffset: integer("end_offset").notNull(),
+    category: text("category").notNull(),
+    note: text("note").notNull(),
+    policyId: uuid("policy_id").notNull(),
+    madeInRound: integer("made_in_round").notNull().default(1),
+    // A removal the Redactor took back, after the check returned the work.
+    takenBackAt: timestamp("taken_back_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_showing_removals_part").on(table.partId),
+    check("ck_showing_removals_span", sql`${table.startOffset} >= 0 AND ${table.endOffset} > ${table.startOffset}`),
+  ]
+);
+
+// The same showing as its destination side reads it. Same id as `showings`.
+export const shownShowings = pgTable(
+  "shown_showings",
+  {
+    id: uuid("id").primaryKey(),
+    nodeId: uuid("node_id").notNull(),
+    toOutside: boolean("to_outside").notNull().default(false),
+    boundaryId: uuid("boundary_id").notNull(),
+    form: text("form").notNull(),
+    scope: text("scope").notNull(),
+    askedBy: uuid("asked_by").references((): AnyPgColumn => contributors.id),
+    askedHolding: text("asked_holding").array().notNull().default([]),
+    askedAt: timestamp("asked_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    endedHolding: text("ended_holding").array(),
+    endReason: text("end_reason"),
+    // The destination's label; `public` for a showing outside.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_shown_showings_node").on(table.nodeId)]
+);
+
+// Each node a showing covers, from when it came under it until it left.
+// A node with no page yet is "not yet assessed".
+export const shownNodes = pgTable(
+  "shown_nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    // The node it sits under in this showing; null for the node asked for.
+    placeParentId: uuid("place_parent_id"),
+    enteredAt: timestamp("entered_at", { withTimezone: true }).notNull().defaultNow(),
+    leftAt: timestamp("left_at", { withTimezone: true }),
+    // One of LEFT_REASONS in services/showing-service.ts.
+    leftReason: text("left_reason"),
+    // When the node was first assessed at the page's label, so a reader can
+    // see whether the showing began before or after.
+    firstAssessedAt: timestamp("first_assessed_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_shown_nodes_showing").on(table.showingId),
+    index("idx_shown_nodes_node").on(table.nodeId),
+  ]
+);
+
+// One version of a node's page as the destination side reads it. Same id as
+// `showing_pages`. The header and its salt are null until the page is shown.
+export const shownPages = pgTable(
+  "shown_pages",
+  {
+    id: uuid("id").primaryKey(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    // Where the page stands, in the fixed words of PAGE_STAGES.
+    stage: text("stage").notNull().default("to_redact"),
+    round: integer("round").notNull().default(1),
+    // The tree's root, recorded when the Redactor finished and before
+    // anyone decided anything. An earlier round's root stays in `roots`.
+    root: text("root"),
+    roots: jsonb("roots").notNull().default([]),
+    headerCommitment: text("header_commitment"),
+    header: text("header"),
+    headerSalt: text("header_salt"),
+    // The parties whose release the verdict takes, by id.
+    needs: uuid("needs").array().notNull().default([]),
+    auditAnswer: text("audit_answer"),
+    shownAt: timestamp("shown_at", { withTimezone: true }),
+    // The source this page arrived as at the destination label, once shown.
+    sourceId: uuid("source_id"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_shown_pages_showing").on(table.showingId, table.nodeId)]
+);
+
+// One part of a shown page as the destination side reads it. Same id as
+// `showing_parts`. The text, its marks and its salt are null while held.
+export const shownParts = pgTable(
+  "shown_parts",
+  {
+    id: uuid("id").primaryKey(),
+    pageId: uuid("page_id").notNull(),
+    position: integer("position").notNull(),
+    kind: text("kind").notNull(),
+    descriptor: text("descriptor").notNull(),
+    commitment: text("commitment").notNull(),
+    needs: uuid("needs").array().notNull().default([]),
+    text: text("text"),
+    marks: jsonb("marks"),
+    salt: text("salt"),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_shown_parts_position").on(table.pageId, table.position)]
+);
+
+// Everything a person, a rule or the process did on a showing, in order.
+// Rows are added and never changed or removed: a hold stays on the record
+// after it is lifted, and a release is not taken back.
+export const showingActs = pgTable(
+  "showing_acts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    // The page the act is on, and the part; a page with no part is the act
+    // on the page itself (its verdict).
+    pageId: uuid("page_id"),
+    partId: uuid("part_id"),
+    // One of ACTS in services/showing-service.ts.
+    act: text("act").notNull(),
+    // The party the act was made for, where it was made under `release`.
+    partyId: uuid("party_id").references(() => parties.id),
+    // Who acted; null for an act of the process or of a standing rule.
+    actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
+    // The permissions the actor held when they acted.
+    holding: text("holding").array().notNull().default([]),
+    ruleId: uuid("rule_id"),
+    // A category from a fixed list, never free text.
+    reason: text("reason"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_showing_acts_showing").on(table.showingId, table.at),
+    index("idx_showing_acts_item").on(table.pageId, table.partId),
+  ]
+);
+
+// A standing rule a party's holders of `release` set, in words the system
+// can apply without judgment (RULE_CONDITIONS in services/showing-service.ts).
+export const releaseRules = pgTable(
+  "release_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    partyId: uuid("party_id")
+      .notNull()
+      .references(() => parties.id),
+    boundaryId: uuid("boundary_id").notNull(),
+    condition: text("condition").notNull(),
+    // Whether the rule also releases the page itself, with its verdict.
+    coversVerdict: boolean("covers_verdict").notNull().default(false),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setHolding: text("set_holding").array().notNull().default([]),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_release_rules_boundary").on(table.boundaryId),
+    check("ck_release_rules_condition", sql`${table.condition} IN ('nothing_removed_and_only_ours', 'only_ours')`),
+  ]
+);
+
+// The policy for one boundary, versioned. Each version is two rows with the
+// same text: one at the page's label, which the Redactor, Audit and the
+// assessing Steward read, and one on the destination side, which names no
+// label the destination does not read.
+export const redactionPolicies = pgTable(
+  "redaction_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    boundaryId: uuid("boundary_id").notNull(),
+    // 'page' or 'destination'.
+    side: text("side").notNull(),
+    version: integer("version").notNull(),
+    // The categories as saved: [{ name, covers, examples }].
+    categories: jsonb("categories").notNull(),
+    // The whole policy as a reader is given it.
+    body: text("body").notNull(),
+    // sha256 of `body`.
+    hash: text("hash").notNull(),
+    // The pair, on the page's side only.
+    fromLabel: text("from_label").references(() => labels.name),
+    toLabel: text("to_label").references(() => labels.name),
+    toOutside: boolean("to_outside").notNull().default(false),
+    // Null for the version every boundary starts from.
+    savedBy: uuid("saved_by").references((): AnyPgColumn => contributors.id),
+    savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_redaction_policies_version").on(table.boundaryId, table.side, table.version),
+    check("ck_redaction_policies_side", sql`${table.side} IN ('page', 'destination')`),
+    check(
+      "ck_redaction_policies_pair",
+      sql`(${table.side} = 'page') = (${table.fromLabel} IS NOT NULL)`
+    ),
+  ]
 );

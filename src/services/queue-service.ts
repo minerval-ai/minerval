@@ -107,6 +107,10 @@ export interface StewardMessage {
     // on material at this label, and that material has since been detached
     // or removed (version-upkeep.ts). The context says so in fixed words.
     | "version_material_gone"
+    // A page of this node written at a label this one does not read has
+    // been shown at this label and is now among the node's sources
+    // (release-gate-service.ts). The context is counts and fixed words.
+    | "page_shown"
     // The public graph merged or withdrew a node that work at this label
     // rests on, and the batch of the mirror that says so is in
     // (mirror-upkeep.ts). The context says what happened and what of this
@@ -204,7 +208,10 @@ export interface AuditMessage {
     | "contributor_review"
     | "anomaly_investigation"
     // Triage of the agents' own reports (#366): cluster, rank, set status.
-    | "report_triage";
+    | "report_triage"
+    // The check of a Redactor's work on a page that is to be shown below its
+    // label (showing-service.ts): once for each round of redaction.
+    | "redaction_fidelity";
   context: string;
   // The audit_runs row this message executes (#180): findings attach to it,
   // and completion is recorded on it. Absent only for hand-crafted messages.
@@ -493,7 +500,10 @@ export async function requestAudit(input: {
     | "prize_check_error"
     // The Extractor reported text addressed to the agents rather than to a
     // source's readers (#740): deduped per source.
-    | "injected_source";
+    | "injected_source"
+    // A Redactor finished a page that is to be shown below its label
+    // (showing-service.ts): deduped per page and round.
+    | "redaction_finished";
   dedupeKey?: string;
   /** The mandate the audit examines, if any: it may not fund its own audit. */
   subjectGrantId?: string | null;

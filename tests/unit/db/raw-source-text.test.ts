@@ -59,9 +59,15 @@ describe("a source's stored text", () => {
     // Each of these was read for what it does with the text. Returned to a
     // person: source-segment-service (the document view, which withholds).
     // Used and not returned: the rest (facts parsed from the page, a quote
-    // checked against it, its length, whether there is any).
+    // checked against it, its length, whether there is any). Two belong to
+    // the showing of a page: release-gate-service writes the page as shown
+    // into a new source's text and returns none, and showing-service hands a
+    // Redactor a window of a source its page drew on, through a tool named
+    // below.
     expect(mentioning("services", /raw_content|rawContent\b/)).toEqual([
       "services/examination-service.ts",
+      "services/release-gate-service.ts",
+      "services/showing-service.ts",
       "services/source-content.ts",
       "services/source-context-service.ts",
       "services/source-facts-service.ts",
@@ -85,6 +91,7 @@ describe("a source's stored text", () => {
     expect(Object.keys(TOOLS_RETURNING_SOURCE_TEXT).sort()).toEqual([
       "examination_outline",
       "get_contribution_details",
+      "get_page_to_redact",
       "provenance_read_source",
     ]);
   });

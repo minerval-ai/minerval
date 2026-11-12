@@ -72,6 +72,7 @@ export const CARRIERS = {
   finding: { table: "agent_findings", noun: "finding" },
   request: { table: "requests", noun: "request" },
   prize_claim: { table: "prize_claims", noun: "prize claim" },
+  showing_page: { table: "showing_pages", noun: "page under a showing" },
   proof_attempt: { table: "proof_attempts", noun: "proof attempt" },
 } as const;
 
@@ -115,6 +116,9 @@ const from = (
   why: string,
   where: "params" | "body" = "params"
 ): Extract<RequestLabelRule, { rule: "from" }> => ({ rule: "from", carrier, in: where, field, why });
+
+const SHOWING =
+  "Writes on both sides of a boundary, the label a page was written at and the label it is shown to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the showing service writes each row on the database owner's connection, naming its label (services/showing-service.ts).";
 
 const OPERATOR =
   "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
@@ -283,6 +287,20 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /labels": { rule: "none", why: ADMINISTRATION },
   "POST /labels/:label/reads": { rule: "none", why: ADMINISTRATION },
   "DELETE /labels/:label/reads/:reads": { rule: "none", why: ADMINISTRATION },
+
+  // ---- showing a page below its label: members-only deployments only ----
+  "POST /showings": { rule: "none", why: SHOWING },
+  "POST /showings/:showing_id/end": { rule: "none", why: SHOWING },
+  "POST /showings/:showing_id/pages/:page_id/hold": { rule: "none", why: SHOWING },
+  "POST /showings/:showing_id/pages/:page_id/commission": from(
+    "showing_page",
+    "page_id",
+    "The money is for the redaction of this page or the check of it, which run at the page's label."
+  ),
+  "POST /release/decisions": { rule: "none", why: SHOWING },
+  "POST /release/rules": { rule: "none", why: SHOWING },
+  "DELETE /release/rules/:rule_id": { rule: "none", why: SHOWING },
+  "PUT /redaction-policies": { rule: "none", why: SHOWING },
 
   // ---- the operator key ----
   "POST /operator/administrators": { rule: "none", why: OPERATOR },

@@ -308,6 +308,8 @@ export const SOURCE_KIND_DESCRIPTIONS = {
   reference_work: "an encyclopedia entry, textbook, handbook or fact sheet",
   broadcast: "a podcast, programme or video that is not a verbatim record of one remark or event",
   webpage: "a web page of none of the kinds above: an organization's page, documentation, a product page",
+  shown_page:
+    "a page of this graph, written at a label this one does not read and shown here with what was removed or held marked in its place",
   unknown: "not yet identified",
 } as const;
 
@@ -324,8 +326,12 @@ export const sourceKindEnum = z.enum(SOURCE_KINDS);
  */
 export const GENERIC_SOURCE_KINDS: ReadonlySet<string> = new Set<SourceKind>(["unknown", "webpage"]);
 
-/** The kinds an agent may state for a source it read: every kind but "unknown", which is the absence of one. */
-export const STATABLE_SOURCE_KINDS = SOURCE_KINDS.filter((k) => k !== "unknown");
+/**
+ * The kinds an agent may state for a source it read: every kind but
+ * "unknown", which is the absence of one, and "shown_page", which only the
+ * showing of a page records (services/showing-service.ts).
+ */
+export const STATABLE_SOURCE_KINDS = SOURCE_KINDS.filter((k) => k !== "unknown" && k !== "shown_page");
 
 /** `value` as a kind an agent may state, or null when it is not one. */
 export function statedSourceKind(value: unknown): SourceKind | null {

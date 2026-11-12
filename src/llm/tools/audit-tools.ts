@@ -559,6 +559,47 @@ export function getAuditToolDefinitions(): Tool[] {
         required: ["claim_id", "finding_id", "reason"],
       },
     },
+    {
+      name: "get_redaction_to_check",
+      description:
+        "For a redaction_fidelity audit: the page as its author recorded it and as the Redactor left it, part by " +
+        "part, each removal with its category and the Redactor's note, what the Redactor was least sure of, what is " +
+        "always shown with the page, and the policy for the boundary in full.",
+      input_schema: {
+        type: "object" as const,
+        properties: { page_id: { type: "string", description: "The page's id, from the audit's context" } },
+        required: ["page_id"],
+      },
+    },
+    {
+      name: "record_fidelity_outcome",
+      description:
+        "Record the outcome of a redaction_fidelity audit. 'pass' sends the page on to the people who decide what " +
+        "is released, with your answer to whether what remains still supports the verdict, which is shown with the " +
+        "page in fixed words. 'return' sends the work back to the Redactor with your reasons, and its redaction is " +
+        "opened again. Your reasons stay at the label the page was written at.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          page_id: { type: "string", description: "The page's id" },
+          outcome: { type: "string", enum: ["pass", "return"] },
+          answer: {
+            type: "string",
+            enum: ["supports", "supports_in_part", "does_not_show_why"],
+            description:
+              "With 'pass': supports (the reasoning shown supports the verdict), supports_in_part, or " +
+              "does_not_show_why (the reasoning shown does not show why the verdict was reached).",
+          },
+          reasons: {
+            type: "string",
+            description:
+              "With 'return': what passed that the policy protects, or what was removed that it does not name, " +
+              "part by part, so the Redactor can act on it. With 'pass': why the work holds up and why you chose the answer.",
+          },
+        },
+        required: ["page_id", "outcome", "reasons"],
+      },
+    },
   ];
 }
 
@@ -1304,6 +1345,42 @@ export async function executeAuditTool(
           ...(resolved.length > 0 ? { resolved_finding_ids: resolved } : {}),
           ...(recordedFindingId ? { recorded_finding_id: recordedFindingId } : {}),
         });
+      }
+
+      case "get_redaction_to_check": {
+        const { redactionToCheck, ShowingError } = await import("../../services/showing-service.js");
+        try {
+          return JSON.stringify({ success: true, ...(await redactionToCheck(String(input.page_id ?? "").trim())) });
+        } catch (err) {
+          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          throw err;
+        }
+      }
+
+      case "record_fidelity_outcome": {
+        const { recordFidelityOutcome, ShowingError } = await import("../../services/showing-service.js");
+        const outcome = String(input.outcome ?? "");
+        if (outcome !== "pass" && outcome !== "return") {
+          return JSON.stringify({ success: false, message: "outcome is 'pass' or 'return'." });
+        }
+        try {
+          const result = await recordFidelityOutcome({
+            pageId: String(input.page_id ?? "").trim(),
+            outcome,
+            answer: typeof input.answer === "string" ? input.answer : undefined,
+            reasons: String(input.reasons ?? ""),
+          });
+          return JSON.stringify({
+            success: true,
+            message:
+              result.stage === "at_gate"
+                ? "Recorded. The page has gone on to the people who decide what is released, with your answer."
+                : "Recorded. The work is back with the Redactor with your reasons, and its redaction is open again.",
+          });
+        } catch (err) {
+          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          throw err;
+        }
       }
 
       default:

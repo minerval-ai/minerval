@@ -134,7 +134,13 @@ export type ActionKind =
   // a time: `scope` (a cheap pass that returns a quote) while the request
   // has no budget, then `full`, costed at the request's budget. Valued by
   // mandates like any action, and fundable by anyone.
-  | "request";
+  | "request"
+  // One Redactor run on a page that is to be shown below its label
+  // (showing-service.ts): group `redact:<showing_pages.id>`, target_ref the
+  // page, at the page's label. Opened when a showing takes in a version and
+  // again each time Audit returns the work; it runs when a mandate that
+  // values it or the person who asked pays for it.
+  | "redact";
 
 /**
  * A node's assess group, at a label: the label of the work in progress

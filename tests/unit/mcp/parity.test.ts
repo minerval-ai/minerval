@@ -63,7 +63,7 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|release|redaction-policies)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
 const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(key.slice(key.indexOf(" ") + 1));
 const openRouteTools = () =>
   Object.entries(ROUTE_TOOLS)
@@ -495,13 +495,13 @@ describe("in a members-only deployment", () => {
   });
 
   it("offers a caller who holds every permission every tool", () => {
-    const tools = toolsOf(["direct", "fund", "administer"]);
+    const tools = toolsOf(["direct", "fund", "administer", "release"]);
     for (const tool of Object.values(ROUTE_TOOLS)) expect(tools, tool.name).toContain(tool.name);
     expect(new Set(tools).size).toBe(tools.length);
   });
 
   it("leaves out the tools of a permission the caller lacks, and nothing else", () => {
-    const all = toolsOf(["direct", "fund", "administer"]);
+    const all = toolsOf(["direct", "fund", "administer", "release"]);
     const needing = (permission: string) =>
       membersApp.routeCatalog
         .filter((r) => r.permissions.includes(permission as "direct"))
@@ -514,7 +514,8 @@ describe("in a members-only deployment", () => {
     expect(needing("administer").length).toBeGreaterThan(3);
 
     const reader = toolsOf([]);
-    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer")]);
+    expect(needing("release").sort()).toEqual(["get_release_queue", "list_release_rules"]);
+    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release")]);
     expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());
 
     const funder = toolsOf(["fund"]);

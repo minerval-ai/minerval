@@ -402,7 +402,7 @@ describe("what an outside MCP caller is told", () => {
     expect(limited.instructions).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(limited.instructions).not.toMatch(/Without the permission to fund work/);
 
-    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }]);
+    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }, { permission: "release" }]);
     expect(all.instructions).toBe(all.base);
   });
 });

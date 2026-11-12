@@ -171,8 +171,17 @@ export async function madeBesideOf(
   if (judgmentIds.length === 0 || oneLabelOnly()) return out;
   const nodeColumn = table === "argument_evaluations" ? "argument_id" : "claim_id";
   const rows = await rawQuery<{ judgment_id: string; label: string; beside_id: string | null; replaced: boolean }>(
+    // A version replaced only because its Steward took in a page this
+    // version's label had shown it is not read as a replacement: the page
+    // was in front of this version when it was made (showing-service.ts).
     `SELECT i.judgment_id, i.input_label AS label, i.input_judgment_id AS beside_id,
-            NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id) AS replaced
+            NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)
+              AND NOT minerval_only_shown_pages_between(
+                    $1, i.input_judgment_id,
+                    (SELECT o.id FROM ${table}_versions o
+                       JOIN ${table}_versions mine ON mine.id = i.judgment_id
+                      WHERE o.${nodeColumn} = mine.${nodeColumn} AND o.sensitivity_label = i.input_label),
+                    i.sensitivity_label) AS replaced
        FROM judgment_inputs i
       WHERE i.judgment_kind = $1 AND i.judgment_id = ANY($2::uuid[]) AND i.input_kind = 'beside'
      UNION ALL

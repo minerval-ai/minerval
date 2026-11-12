@@ -48,6 +48,7 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
+import { followShowings } from "../services/showing-service.js";
 import {
   openReassessmentsForVersionsMadeBesideEarlier,
   openReassessmentsForVersionsWithoutMaterial,
@@ -162,6 +163,14 @@ export async function allocationSchedulerTick(
     console.error(
       `[allocation-scheduler] version upkeep (material) failed: ${err instanceof Error ? err.message : String(err)}`
     )
+  );
+
+  // 1d. Standing showings of a page below its label (showing-service.ts):
+  // a page is opened for each new version, with its redaction on the ledger,
+  // and nodes that came under a shown node or left it are recorded. Opening
+  // a redaction runs nothing; it runs when it is paid for.
+  await followShowings().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 
   // 2. The pending list's order, for display and the fallback lane. It
