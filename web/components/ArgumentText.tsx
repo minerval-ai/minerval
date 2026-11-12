@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { parseProse } from "@/lib/claim-links";
+import { parseProse, recordHref } from "@/lib/claim-links";
 
 /**
  * The graph's inline prose conventions, rendered: [[claim:<id>]] references
@@ -28,6 +28,14 @@ export function ArgumentText({
             <a key={i} href={seg.href} className="prose-url" rel="nofollow noopener">
               {seg.href.replace(/^https?:\/\//, "")}
             </a>
+          );
+        }
+        if (seg.kind === "record") {
+          // An argument or a source named in prose: a plain link to its page.
+          return (
+            <Link key={i} href={recordHref(seg.record, seg.id)} className="argform-link">
+              {seg.display || (seg.record === "argument" ? "linked argument" : "linked source")}
+            </Link>
           );
         }
         const canonical = texts?.get(seg.claimId);

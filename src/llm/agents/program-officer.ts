@@ -34,6 +34,7 @@ import {
   decidePetition,
   inboxWaiting,
   type DecisionKind,
+  PETITION_COLUMNS,
   type PetitionRow,
 } from "../../services/petition-service.js";
 import {
@@ -285,7 +286,9 @@ async function loadGrant(grantId: string): Promise<GrantRow | null> {
 
 async function petitionsFor(grantId: string, role: Role): Promise<PetitionRow[]> {
   return rawQuery<PetitionRow>(
-    `SELECT * FROM petitions WHERE grant_id = $1 AND status = $2 ORDER BY waiting DESC, created_at`,
+    `SELECT ${PETITION_COLUMNS} FROM petitions
+      WHERE grant_id = $1 AND status = $2
+      ORDER BY waiting DESC, created_at`,
     [grantId, role === "officer" ? "pending" : "escalated"]
   );
 }

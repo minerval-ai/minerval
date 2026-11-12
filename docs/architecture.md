@@ -1169,7 +1169,17 @@ counted and kept in its own words, rather than a new finding. Findings live in
 `agent_findings` with the same no-FK attribution snapshot as reports, so a
 note outlives the trace it came from; the read side computes a `stale`
 flag when a cited assessment, standing or estimate is no longer the node's
-current one. The
+current one. An account links what it names inline, as assessment prose
+does: a node as `[[claim:<uuid>|phrase]]`, and an argument or a source the
+same way (`[[argument:…]]`, `[[source:…]]`); the tool's description says so
+in a sentence and asks for no more linking than a reader would follow. The
+finding's page sets each linked record beside the paragraph that links it,
+as a margin card with the record's wording and where it stands now; the
+index (`/findings`) lists findings a few lines each, with a search by words
+and by meaning and filters on topic, the claim's status, importance, the
+role that noted it and how recently (`GET /findings`: `q`, `tag`,
+`claim_status`, `min_importance`, `agent`, `since`, with `total` and, on
+`facets=true`, the count each choice would leave). The
 extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
 and the solver do not carry the tool: an outside agent's discovery is a
 contribution, and a Lookout's is a flag for a Steward to judge.

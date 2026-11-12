@@ -71,10 +71,32 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // created the table), and no pairs. The rows that carry a label hold it in
 // sensitivity_label, stamped from the run or request that writes them
 // (currentLabel in llm/usage-context.ts). Two kinds of row carry one:
-// what a run writes (judgments, sources, the run itself), and work waiting
-// to be done or resumed (a job, a ledger action, an order, a paused
-// session), which hands its label to the run that later takes it up
-// (runAtLabel). No reader is held to a label yet.
+// what a run writes (the graph's content: nodes, edges, arguments, tags,
+// definitions and formal statements; judgments and what each rested on;
+// sources and what is read from them: instances, readings, provenance,
+// examinations; the run itself and what it writes about itself: its
+// steps, its usage rows, the parts of its setup, the investigations,
+// reports, findings and audits it opens; and the rows work is asked for
+// and governed with: requests, messages, petitions, mandates and their
+// decisions, lookouts, correspondents, reviews, rulings, the audit trail),
+// and work waiting to be done or resumed (a job, a ledger action, an
+// order, a paused session), which hands its label to the run that later
+// takes it up (runAtLabel). A claim and a source are both: work that
+// starts from the claim or the source itself, with no row of its own to
+// wait in, runs at that row's label. So are a mandate, a lookout, a
+// correspondent and a request: the work that is theirs is opened at their
+// label, whichever sweep starts it. The tables with no label are the
+// accounts and keys, the owl ledger and payouts, the platform's own
+// switches and counters, and the two tables here. One kind of row takes
+// its label from neither a run nor a request: what is derived mechanically
+// from a document (its segments, the notices against it) carries the
+// document's label. No reader is held to a clearance yet.
+//
+// The tables that got the column in the label_columns migration are not
+// stamped yet. The writes that stamp them, and the runs opened at a row's
+// label, come in the changes after it; until then each of those columns
+// holds its default, 'public', on every row, and the comment on each says
+// what label the row will carry.
 // ---------------------------------------------------------------------------
 export const labels = pgTable("labels", {
   name: text("name").primaryKey(),
@@ -106,6 +128,32 @@ const sensitivityLabelColumn = () =>
     .notNull()
     .default(PUBLIC_LABEL)
     .references(() => labels.name);
+
+// ---------------------------------------------------------------------------
+// origin: which graph a row belongs to
+//
+// A private deployment holds a mirror of the public graph in the same tables
+// as its own rows, because edges and judgments reference claims.id. A row
+// that the mirror's applier wrote from the public graph's signed feed is
+// 'mirror'; every other row is 'local', which is every row on the public
+// graph. The tables that carry the column are the replicated ones
+// (services/mirror-manifest.ts).
+//
+// A mirrored row is the public graph's, so nothing local may change what was
+// replicated: the mirror_row_guard triggers (the migration that added the
+// column) refuse an insert, update or delete of a 'mirror' row from any
+// session but the applier's, apart from the columns that are this
+// deployment's own working state on a claim (its queue state and the like).
+// The triggers fire only for rows whose origin is 'mirror', so they do
+// nothing where there are none.
+// ---------------------------------------------------------------------------
+export const ROW_ORIGINS = ["local", "mirror"] as const;
+export type RowOrigin = (typeof ROW_ORIGINS)[number];
+
+const originColumn = () => text("origin").notNull().default("local");
+
+const originCheck = (name: string, column: AnyPgColumn) =>
+  check(name, sql`${column} IN ('local', 'mirror')`);
 
 // ---------------------------------------------------------------------------
 // parties: whose material a source is (src/permissions.ts)
@@ -449,8 +497,15 @@ export const claims = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this node (src/labels.ts), stamped from the usage context
+    // when it is minted. Work that starts from the claim itself, outside any
+    // run, runs at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claims_origin", table.origin),
     index("idx_claims_state").on(table.state),
     check("ck_claims_kind", sql`${table.kind} IN ('claim', 'quantity', 'question')`),
     index("idx_claims_updated").on(table.updatedAt),
@@ -514,6 +569,9 @@ export const tags = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_tags_slug").on(table.slug),
@@ -556,6 +614,9 @@ export const taggings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_taggings_tag_subject").on(
@@ -600,8 +661,14 @@ export const claimRelationships = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claim_relationships_origin", table.origin),
     uniqueIndex("idx_cr_unique").on(
       table.parentClaimId,
       table.childClaimId,
@@ -646,8 +713,14 @@ export const claimLinks = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claim_links_origin", table.origin),
     uniqueIndex("idx_claim_links_unique").on(
       table.claimAId,
       table.claimBId,
@@ -745,8 +818,11 @@ export const assessments = pgTable(
     // Who may read this verdict (src/labels.ts), stamped from the usage
     // context by update_claim_assessment, never by the agent.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_assessments_origin", table.origin),
     // One current verdict per claim, whatever its label. It becomes one per
     // claim and label only when the reads can choose a judgment by the
     // reader's clearance: until then two current rows for one claim is a
@@ -807,8 +883,14 @@ export const arguments_ = pgTable(
     mergedInto: uuid("merged_into").references((): AnyPgColumn => arguments_.id, {
       onDelete: "set null",
     }),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
-  (table) => [index("idx_arguments_claim").on(table.claimId)]
+  (table) => [
+    originCheck("ck_arguments_origin", table.origin),index("idx_arguments_claim").on(table.claimId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -833,6 +915,9 @@ export const argumentEvidenceBacklog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [uniqueIndex("idx_argument_evidence_backlog_url").on(table.argumentId, table.url)]
 );
@@ -903,8 +988,14 @@ export const argumentInstances = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_argument_instances_origin", table.origin),
     index("idx_argument_instances_argument").on(table.argumentId),
     index("idx_argument_instances_claim").on(table.claimId),
     index("idx_argument_instances_source").on(table.sourceId),
@@ -939,8 +1030,14 @@ export const argumentSubclaims = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_argument_subclaims_origin", table.origin),
     primaryKey({ columns: [table.argumentId, table.relationshipId] }),
     index("idx_argument_subclaims_relationship").on(table.relationshipId),
   ]
@@ -999,8 +1096,11 @@ export const argumentEvaluations = pgTable(
     // Who may read this evaluation (src/labels.ts), stamped from the usage
     // context when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_argument_evaluations_origin", table.origin),
     index("idx_argument_evaluations_argument").on(table.argumentId),
     uniqueIndex("idx_argument_evaluations_current")
       .on(table.argumentId)
@@ -1052,12 +1152,15 @@ export const sources = pgTable("sources", {
   // Who may read this document (src/labels.ts): the label of the run or
   // request that first recorded it.
   sensitivityLabel: sensitivityLabelColumn(),
+  // Which graph the row belongs to (the origin column, above).
+  origin: originColumn(),
   // Whose material this is (parties above): the organization itself or an
   // outside party that supplied it. Null on the public graph, where no
   // source belongs to a party, and until an administrator says. Each change
   // is logged in administrative_events.
   partyId: uuid("party_id").references(() => parties.id),
 }, (table) => [
+  originCheck("ck_sources_origin", table.origin),
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
@@ -1100,6 +1203,10 @@ export const sourceEvents = pgTable(
     note: text("note"),
     // Which watcher recorded it ("crossref_poll", "facts_fetch").
     detectedBy: text("detected_by").notNull(),
+    // Who may read this row (src/labels.ts): the label of the source the
+    // notice is against, whoever recorded it. A notice is looked up about
+    // the document and holds no judgment of the run that asked.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_source_events_unique").on(table.sourceId, table.kind, table.noticeUrl),
@@ -1148,8 +1255,15 @@ export const sourceSegments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts): the source's label, whoever
+    // segmented it, because the segments are computed from the document's
+    // text. Not `label` above, which is the heading a reader sees.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_source_segments_origin", table.origin),
     uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal),
     index("idx_source_segments_parent").on(table.parentId),
     check(
@@ -1206,6 +1320,9 @@ export const examinations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_examinations_source").on(table.sourceId),
@@ -1231,6 +1348,9 @@ export const examinationCoverage = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_examination_coverage_unique").on(table.examinationId, table.segmentId, table.facet),
@@ -1256,6 +1376,9 @@ export const examinationFindings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_examination_findings_examination").on(table.examinationId)]
 );
@@ -1275,6 +1398,9 @@ export const readingCitations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId),
@@ -1295,6 +1421,9 @@ export const auditNotes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_audit_notes_finding").on(table.findingId)]
 );
@@ -1398,8 +1527,14 @@ export const claimInstances = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_claim_instances_origin", table.origin),
     check(
       "ck_instances_stated_probability",
       sql`${table.statedProbability} IS NULL OR (${table.statedProbability} >= 0 AND ${table.statedProbability} <= 1)`
@@ -1483,6 +1618,9 @@ export const claimProvenanceEdges = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_cpe_unique").on(
@@ -1523,6 +1661,9 @@ export const sourceRelationships = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_sr_unique").on(
@@ -1590,6 +1731,10 @@ export const claimInstanceReadings = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this reading (src/labels.ts): the label of the run that
+    // first recorded it. A re-read replaces the reading in place and leaves
+    // this as it was; the log row each re-read appends carries its own.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     // One current reading per instance; a re-map overwrites in place. The
@@ -1621,6 +1766,9 @@ export const claimInstanceReadingLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_cirl_instance").on(table.instanceId)]
 );
@@ -1659,6 +1807,9 @@ export const claimSourceMaps = pgTable(
     mappedAt: timestamp("mapped_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [uniqueIndex("idx_csm_claim").on(table.claimId)]
 );
@@ -1707,6 +1858,9 @@ export const claimProvenanceRoots = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId),
@@ -1752,8 +1906,14 @@ export const sourceInterests = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_source_interests_origin", table.origin),
     index("idx_source_interests_source").on(table.sourceId, table.claimId, table.createdAt),
     index("idx_source_interests_claim")
       .on(table.claimId)
@@ -1965,6 +2125,10 @@ export const llmUsage = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request the call was made for (src/labels.ts).
+    // A usage row holds counts and cost, never content, but it says that a
+    // run happened, on which claim and for whom.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_llm_usage_user_time").on(table.userId, table.createdAt),
@@ -2088,6 +2252,12 @@ export const agentSteps = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run the step belongs to (src/labels.ts), taken from
+    // the run when it opened and not from whatever is in the air when the
+    // queued write lands (services/trace-service.ts). The hash chain covers
+    // prev_hash, seq, kind and content, not this column: the label a run
+    // worked at is under the chain in its prompt step's setup.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_steps_run").on(table.runId, table.seq),
@@ -2122,6 +2292,10 @@ export const setupParts = pgTable(
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that first stored this text (src/labels.ts). A
+    // part is stored once and shared by every run that used the same text,
+    // so this is the label of the first sighting and stays that way.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     primaryKey({ columns: [table.kind, table.name, table.hash] }),
@@ -2175,6 +2349,8 @@ export const enqueueEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that enqueued (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_enqueue_events_queue_time").on(table.queue, table.createdAt),
@@ -2287,6 +2463,8 @@ export const claimPredictions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of whatever seeded the prediction (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("idx_claim_predictions_fixture").on(table.fixtureId),
@@ -2771,6 +2949,10 @@ export const grants = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request or run that created the mandate
+    // (src/labels.ts). A mandate decides for its work: its plan, its review
+    // and planning rows, its sittings and its events are opened at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_grants_funder").on(table.funderUserId, table.createdAt),
@@ -2850,6 +3032,9 @@ export const grantSources = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_grant_sources_grant").on(table.grantId, table.createdAt),
@@ -2900,6 +3085,9 @@ export const sourceExtractions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_source_extractions_source").on(table.sourceId, table.createdAt)]
 );
@@ -2920,6 +3108,8 @@ export const ingestFocuses = pgTable("ingest_focuses", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // The label of the work that first opened the scoped ingest (src/labels.ts).
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -2997,6 +3187,10 @@ export const lookouts = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that set the lookout up (src/labels.ts). A
+    // lookout decides for its work: its runs, its feed polls and the events
+    // a timer queues for it are at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_lookouts_grant").on(table.grantId, table.createdAt),
@@ -3034,6 +3228,9 @@ export const lookoutEvents = pgTable(
       .notNull()
       .defaultNow(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The label of whoever queued it; for an event a timer queues (a
+    // retraction, a feed wake), the lookout's (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_lookout_events_pending")
@@ -3069,6 +3266,9 @@ export const mandateEvents = pgTable(
       .notNull()
       .defaultNow(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The mandate's label (src/labels.ts): events are collected for a
+    // mandate, by a timer that works at the mandate's label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_mandate_events_pending")
@@ -3128,6 +3328,8 @@ export const lookoutFlags = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the lookout's run that raised it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_lookout_flags_lookout").on(table.lookoutId, table.createdAt),
@@ -3199,6 +3401,8 @@ export const lookoutFeeds = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that added the feed (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_lookout_feeds_url").on(table.lookoutId, table.url),
@@ -3263,6 +3467,10 @@ export const lookoutFeedItems = pgTable(
       .notNull()
       .defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when the poll records the item. The page a lookout later fetches into
+    // `body` lands on the row and leaves this as it was.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey),
@@ -3349,6 +3557,9 @@ export const correspondents = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that set the correspondent up (src/labels.ts). Its
+    // runs and the wakes a timer queues for it are at this label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondents_grant").on(table.grantId, table.createdAt),
@@ -3383,6 +3594,9 @@ export const correspondentEvents = pgTable(
       .notNull()
       .defaultNow(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The label of whoever queued it; for a wake the change scan queues, the
+    // correspondent's (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondent_events_pending")
@@ -3412,6 +3626,8 @@ export const correspondentPlanItems = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the correspondent's run that added it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondent_plan_items").on(table.correspondentId, table.status, table.createdAt),
@@ -3453,6 +3669,8 @@ export const correspondentUpdates = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the correspondent's run that published it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_correspondent_updates_feed").on(table.correspondentId, table.createdAt),
@@ -3499,6 +3717,8 @@ export const consistencySweeps = pgTable(
       .notNull()
       .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // The label of the run that swept (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_consistency_sweeps_tag").on(table.tagId, table.startedAt),
@@ -3563,6 +3783,8 @@ export const consistencyFlags = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the sweep that raised it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_consistency_flags_primary").on(table.primaryClaimId, table.createdAt),
@@ -3622,6 +3844,9 @@ export const grantConversations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request that opened the conversation (src/labels.ts).
+    // Its turns are in `messages`, on this row.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_grant_convos_user").on(table.userId, table.createdAt),
@@ -3680,6 +3905,9 @@ export const assistantConversations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request that opened the conversation (src/labels.ts).
+    // Its turns are in `messages`, on this row.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_assistant_convos_user").on(table.userId, table.updatedAt),
@@ -3756,6 +3984,8 @@ export const assistantPages = pgTable(
     versions: jsonb("versions").notNull().default([]),
     savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run or request that made the page (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_assistant_pages_user").on(table.userId, table.savedAt)]
 );
@@ -3999,6 +4229,8 @@ export const contributionReviews = pgTable("contribution_reviews", {
   // as history, but exactly one non-superseded review is live per contribution
   // and get_recent_decisions shows only live ones.
   superseded: boolean("superseded").notNull().default(false),
+  // The label of the run that reviewed (src/labels.ts).
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -4064,6 +4296,8 @@ export const arbitrationResults = pgTable("arbitration_results", {
     .notNull()
     .defaultNow(),
   arbitratedBy: text("arbitrated_by").notNull().default("dispute_arbitrator"),
+  // The label of the run that ruled (src/labels.ts).
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -4097,6 +4331,8 @@ export const reputationEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request behind the change (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_reputation_events_contributor_time").on(
@@ -4151,6 +4387,8 @@ export const curationRequests = pgTable(
       { onDelete: "set null" }
     ),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The label of the run or request that asked (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_curation_requests_live")
@@ -4197,6 +4435,9 @@ export const reconciliationEvents = pgTable("reconciliation_events", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // Who may read this row (src/labels.ts), stamped from the usage context
+  // when it is written.
+  sensitivityLabel: sensitivityLabelColumn(),
 });
 
 // ---------------------------------------------------------------------------
@@ -4226,6 +4467,8 @@ export const auditLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that made the entry (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_audit_log_claim_time").on(table.claimId, table.createdAt)]
 );
@@ -4279,6 +4522,9 @@ export const auditRuns = pgTable(
     bountyId: uuid("bounty_id").references(() => bounties.id, {
       onDelete: "set null",
     }),
+    // The label the audit was asked for at (src/labels.ts): the run or
+    // request that asked, or, for one a timer opens, the thing audited.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_audit_runs_action").on(table.actionId),
@@ -4337,6 +4583,8 @@ export const auditFindings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the audit run that recorded it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_audit_findings_status").on(table.status, table.createdAt),
@@ -4424,6 +4672,9 @@ export const claimFormalizations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     unique("uq_claim_formalizations_claim_version").on(
@@ -4486,6 +4737,9 @@ export const leanChecks = pgTable(
       .notNull()
       .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     unique("uq_lean_checks_submission").on(
@@ -4552,6 +4806,9 @@ export const proofAttempts = pgTable(
     heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_proof_attempts_claim").on(table.claimId),
@@ -4657,6 +4914,10 @@ export const researchRuns = pgTable(
     examinationId: uuid("examination_id").references((): AnyPgColumn => examinations.id, {
       onDelete: "set null",
     }),
+    // The label of the run that launched the investigation (src/labels.ts).
+    // The report and the notebook are the researcher's, whose run works at
+    // the same label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_research_runs_claim").on(table.claimId),
@@ -4733,6 +4994,8 @@ export const bounties = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that posted it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_bounties_claim").on(table.claimId),
@@ -4823,6 +5086,8 @@ export const prizeClaims = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request that submitted it (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_prize_claims_bounty_status").on(table.bountyId, table.status),
@@ -4933,6 +5198,9 @@ export const attachments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the request or run that stored it (src/labels.ts). Who
+    // may fetch the bytes is `visibility`, which this does not replace.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_attachments_contribution").on(table.contributionId),
@@ -5041,6 +5309,9 @@ export const agentReports = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that first filed the report
+    // (src/labels.ts). A repeat lands on this row and leaves it alone.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_agent_reports_dedupe_key").on(table.dedupeKey),
@@ -5089,6 +5360,8 @@ export const agentReportSightings = pgTable(
     seenAt: timestamp("seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run or request that saw it again (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_report_sightings_report").on(table.reportId, table.seenAt),
@@ -5159,6 +5432,8 @@ export const agentFindings = pgTable(
     lastNotedAt: timestamp("last_noted_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that noted the finding (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_findings_claim").on(table.claimId, table.lastNotedAt),
@@ -5194,6 +5469,8 @@ export const agentFindingSightings = pgTable(
     notedAt: timestamp("noted_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The label of the run that met the finding again (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_agent_finding_sightings_finding").on(table.findingId, table.notedAt),
@@ -5226,6 +5503,10 @@ export const sharedPageAnalyses = pgTable(
     verifiedAt: timestamp("verified_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this entry (src/labels.ts): the label of the request whose
+    // analysis first entered the page. A later analysis replaces the entry
+    // in place and leaves this as it was.
+    sensitivityLabel: sensitivityLabelColumn(),
   }
   // Lookups ask for every hash sharing a short prefix: a range scan on the
   // primary key (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.
@@ -5337,7 +5618,14 @@ export const quantityDefinitions = pgTable("quantity_definitions", {
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+  // Who may read this row (src/labels.ts), stamped from the usage context
+  // when it is written.
+  sensitivityLabel: sensitivityLabelColumn(),
+  // Which graph the row belongs to (the origin column, above).
+  origin: originColumn(),
+}, (table) => [
+  originCheck("ck_quantity_definitions_origin", table.origin),
+]);
 
 export const quantityEstimates = pgTable(
   "quantity_estimates",
@@ -5369,8 +5657,11 @@ export const quantityEstimates = pgTable(
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
     // Who may read this estimate (src/labels.ts), as on assessments.sensitivity_label.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_quantity_estimates_origin", table.origin),
     uniqueIndex("idx_quantity_estimates_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -5401,8 +5692,14 @@ export const quantityReadings = pgTable(
     }),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
-  (table) => [index("idx_quantity_readings_claim").on(table.claimId)]
+  (table) => [
+    originCheck("ck_quantity_readings_origin", table.origin),index("idx_quantity_readings_claim").on(table.claimId)]
 );
 
 // A claim about which side of a figure a quantity lies, where one has a node
@@ -5422,8 +5719,14 @@ export const quantityCuts = pgTable(
     value: real("value").notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_quantity_cuts_origin", table.origin),
     index("idx_quantity_cuts_quantity").on(table.quantityId),
     check("ck_quantity_cuts_direction", sql`${table.direction} IN ('above', 'below')`),
     check("ck_quantity_cuts_self", sql`${table.claimId} != ${table.quantityId}`),
@@ -5475,8 +5778,11 @@ export const questionAssessments = pgTable(
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
     // Who may read this assessment (src/labels.ts), as on assessments.sensitivity_label.
     sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_question_assessments_origin", table.origin),
     uniqueIndex("idx_question_assessments_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -5508,8 +5814,14 @@ export const answerRelations = pgTable(
     reasoning: text("reasoning"),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_answer_relations_origin", table.origin),
     uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId),
     check("ck_answer_relations_ordered", sql`${table.claimAId} < ${table.claimBId}`),
     check("ck_answer_relations_relation", sql`${table.relation} IN ('excludes', 'compatible')`),
@@ -5581,6 +5893,9 @@ export const requests = pgTable(
         || setweight(to_tsvector('english', ${requests.satisfiedBy}), 'C')
         || setweight(to_tsvector('english', coalesce(${requests.bearsOnText}, '')), 'C')`
     ),
+    // The label of the run or request that filed it (src/labels.ts). The
+    // ledger rows for its work are opened at it.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_requests_state").on(table.state, table.createdAt),
@@ -5611,6 +5926,8 @@ export const requestTargets = pgTable(
       .references(() => requests.id, { onDelete: "cascade" }),
     claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
     sourceId: uuid("source_id").references(() => sources.id, { onDelete: "cascade" }),
+    // The label of the run or request that named the target (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_request_targets_request").on(table.requestId),
@@ -5654,6 +5971,8 @@ export const requestWork = pgTable(
     budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" }),
     quoteMicroUsd: bigint("quote_micro_usd", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run that recorded the work (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_request_work_request").on(table.requestId),
@@ -5708,6 +6027,9 @@ export const nodeMessages = pgTable(
     // answer: the answer returns into that session instead of the sender
     // node's inbox.
     replyToSession: uuid("reply_to_session"),
+    // The label of whoever sent it (src/labels.ts). A claim left pending by
+    // unread messages of one label is taken up at that label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_node_messages_unread")
@@ -5756,6 +6078,9 @@ export const petitions = pgTable(
     replyToSession: uuid("reply_to_session"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    // The label of the run that asked (src/labels.ts). A sitting works the
+    // petitions of its mandate's label, and a follow-up runs at this one.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_petitions_open").on(table.grantId, table.createdAt).where(sql`status IN ('pending', 'escalated')`),
@@ -5792,6 +6117,9 @@ export const mandateInbox = pgTable(
     handledBy: text("handled_by"),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),
     escalationNote: text("escalation_note"),
+    // The label of the run that raised it (src/labels.ts). A sitting works
+    // the items of its mandate's label.
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_mandate_inbox_open").on(table.grantId, table.createdAt).where(sql`handled_at IS NULL`),
@@ -5819,6 +6147,8 @@ export const mandateDecisions = pgTable(
     petitionId: uuid("petition_id").references(() => petitions.id, { onDelete: "set null" }),
     actionId: uuid("action_id").references(() => actions.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run or request that decided (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_mandate_decisions_grant").on(table.grantId, table.createdAt)]
 );
@@ -5843,6 +6173,8 @@ export const mandatePolicyVersions = pgTable(
     // applied | awaiting_approval (a platform mandate's amended terms)
     status: text("status").notNull().default("applied"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // The label of the run or request that wrote the version (src/labels.ts).
+    sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_mandate_policy_versions_grant").on(table.grantId, table.createdAt)]
 );
@@ -5957,8 +6289,14 @@ export const judgmentInputs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Who may read this row (src/labels.ts), stamped from the usage context
+    // when it is written.
+    sensitivityLabel: sensitivityLabelColumn(),
+    // Which graph the row belongs to (the origin column, above).
+    origin: originColumn(),
   },
   (table) => [
+    originCheck("ck_judgment_inputs_origin", table.origin),
     index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
     check(
       "ck_judgment_inputs_judgment_kind",
@@ -5971,6 +6309,135 @@ export const judgmentInputs = pgTable(
         OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)`
     ),
   ]
+);
+
+// ---------------------------------------------------------------------------
+// The mirror feed (services/mirror-feed-service.ts, docs/mirror.md)
+//
+// A deployment that publishes keeps the batches it has cut and, for every
+// row it has published, the hash of the replicated columns as last
+// published. The next cut compares the tables with those hashes: a row whose
+// hash is new or different is sent again whole, and a row that is gone or no
+// longer public is sent as a deletion or a retraction. Both tables are empty
+// on a deployment that does not publish.
+// ---------------------------------------------------------------------------
+export const mirrorFeedBatches = pgTable(
+  "mirror_feed_batches",
+  {
+    // Starts at 1 and never repeats or skips: the primary key refuses a
+    // repeat, and a batch is written only by a cut that holds the feed's lock
+    // and numbers it one past the last.
+    sequence: bigint("sequence", { mode: "number" }).primaryKey(),
+    // The feed this deployment publishes, minted with its first batch.
+    feedId: uuid("feed_id").notNull(),
+    // 'snapshot' (every published row) or 'changes'.
+    kind: text("kind").notNull(),
+    // A cut too large for one batch is split; these name the first batch of
+    // the cut and say whether this is its last.
+    partFirst: bigint("part_first", { mode: "number" }).notNull(),
+    partLast: boolean("part_last").notNull(),
+    // The schema the batch was cut from: the number and tag of the newest
+    // migration the publisher's code carried.
+    migrationNumber: integer("migration_number").notNull(),
+    migrationTag: text("migration_tag").notNull(),
+    // The hash of the mirrored tables' shape the rows were cut in
+    // (replicatedShape in services/mirror-manifest.ts). When it differs from
+    // the last batch's, the next cut is a snapshot.
+    shape: text("shape").notNull(),
+    cutAt: timestamp("cut_at", { withTimezone: true }).notNull(),
+    previousHash: text("previous_hash").notNull(),
+    batchHash: text("batch_hash").notNull(),
+    keyId: text("key_id").notNull(),
+    rowCount: integer("row_count").notNull(),
+    removalCount: integer("removal_count").notNull(),
+    // The batch as signed and served, byte for byte.
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_mirror_feed_batches_hash").on(table.batchHash),
+    check("ck_mirror_feed_batches_kind", sql`${table.kind} IN ('snapshot', 'changes')`),
+  ]
+);
+
+export const mirrorFeedRows = pgTable(
+  "mirror_feed_rows",
+  {
+    tableName: text("table_name").notNull(),
+    // The row's key as text; a composite key is joined with '/'.
+    rowKey: text("row_key").notNull(),
+    // sha256 of the replicated columns as last published.
+    rowHash: text("row_hash").notNull(),
+    // The batch that last carried the row.
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tableName, table.rowKey] })]
+);
+
+// ---------------------------------------------------------------------------
+// The mirror, applied (services/mirror-apply-service.ts)
+//
+// A deployment that mirrors keeps one row per batch it has applied: the
+// newest is where its mirror stands ("the public graph as of ..."), and the
+// chain of hashes is what the next batch must follow. A batch it refused is
+// recorded with the reason, and nothing of a refused batch is applied.
+// ---------------------------------------------------------------------------
+export const mirrorAppliedBatches = pgTable("mirror_applied_batches", {
+  sequence: bigint("sequence", { mode: "number" }).primaryKey(),
+  feedId: uuid("feed_id").notNull(),
+  kind: text("kind").notNull(),
+  partFirst: bigint("part_first", { mode: "number" }).notNull(),
+  partLast: boolean("part_last").notNull(),
+  migrationNumber: integer("migration_number").notNull(),
+  // When the publisher cut the batch: the mirror shows the public graph as
+  // of the newest of these.
+  cutAt: timestamp("cut_at", { withTimezone: true }).notNull(),
+  previousHash: text("previous_hash").notNull(),
+  batchHash: text("batch_hash").notNull(),
+  keyId: text("key_id").notNull(),
+  // Where the public graph's pages are, as the batch stated it, so that a
+  // mirrored judgment's run can be linked to where its transcript is.
+  publisherWebBaseUrl: text("publisher_web_base_url"),
+  // Rows written and removed, by table.
+  counts: jsonb("counts").notNull().default({}),
+  // What the batch left for someone to look at: local rows that hang off a
+  // claim the public graph merged away, mirrored claims kept as deprecated
+  // because local rows reference them, local rows a deletion took with it.
+  notes: jsonb("notes").notNull().default({}),
+  // Where the batch came from: the feed's address or a file's name.
+  receivedFrom: text("received_from"),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// The rows a snapshot has written so far, kept only while the snapshot is
+// being applied. A snapshot holds every public row, so when its last batch
+// is in, a mirrored row that is not listed here is one the public graph no
+// longer has, and it is removed; then the table is emptied. This is what
+// lets a mirror start again from a later snapshot when it cannot apply the
+// batches in between.
+export const mirrorSnapshotRows = pgTable(
+  "mirror_snapshot_rows",
+  {
+    tableName: text("table_name").notNull(),
+    rowKey: text("row_key").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tableName, table.rowKey] })]
+);
+
+export const mirrorRefusals = pgTable(
+  "mirror_refusals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // What the batch said of itself; null where it could not be read.
+    sequence: bigint("sequence", { mode: "number" }),
+    batchHash: text("batch_hash"),
+    // One of MIRROR_REFUSAL_CODES (services/mirror-batch.ts).
+    code: text("code").notNull(),
+    message: text("message").notNull(),
+    receivedFrom: text("received_from"),
+    refusedAt: timestamp("refused_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_mirror_refusals_at").on(table.refusedAt)]
 );
 
 // ---------------------------------------------------------------------------

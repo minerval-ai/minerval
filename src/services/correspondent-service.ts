@@ -98,11 +98,20 @@ export interface CorrespondentRow {
   updated_at: Date;
 }
 
+/**
+ * The columns a correspondent is read with, named, so that a column the
+ * table gains (its label, src/labels.ts) does not ride along into a run's
+ * brief or a route's reply. Every read of a whole correspondent uses these.
+ */
+export const CORRESPONDENT_COLUMNS = [
+  "id", "grant_id", "title", "brief", "audience", "scope_claim_ids", "scope_tag_ids",
+  "status", "heartbeat_hours", "triggers", "min_wake_hours", "model", "changes_cursor",
+  "workspace", "last_note", "last_run_at", "next_due_at", "runs", "updates",
+  "created_by", "created_at", "updated_at",
+] as const;
+
 const SELECT = `
-  SELECT id, grant_id, title, brief, audience, scope_claim_ids, scope_tag_ids,
-         status, heartbeat_hours, triggers, min_wake_hours, model, changes_cursor,
-         workspace, last_note, last_run_at, next_due_at, runs, updates,
-         created_by, created_at, updated_at
+  SELECT ${CORRESPONDENT_COLUMNS.join(", ")}
     FROM correspondents`;
 
 export type CorrespondentWriteResult =
