@@ -584,7 +584,7 @@ export async function publicAccount(): Promise<Record<string, unknown>> {
         "Public owls are the organization's balance on the public graph, bought there. They pay for public work only, and owls created in this deployment never convert to them.",
       public_mandates: list.map((g) => ({
         id: g.id,
-        title: g.title ?? g.mandate?.title ?? null,
+        title: g.name ?? g.title ?? g.mandate?.title ?? null,
         status: g.status ?? null,
         budget_owls: g.budget_owls ?? g.budget?.owls ?? null,
         spent_owls: g.spent_owls ?? g.spend?.owls ?? null,

@@ -58,6 +58,7 @@ export default async function OutsidePage() {
           {(account.public_mandates ?? []).length === 0 ? (
             <p className="account-empty">The organisation funds no mandate on the public graph.</p>
           ) : (
+            <div style={{ overflowX: "auto" }}>
             <table className="account-table acct-table">
               <thead>
                 <tr>
@@ -91,6 +92,7 @@ export default async function OutsidePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
 
           {mayAct && (
@@ -125,37 +127,30 @@ export default async function OutsidePage() {
         {log.length === 0 ? (
           <p className="account-empty">Nothing has been done on the public graph from this deployment.</p>
         ) : (
-          <table className="account-table acct-table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Who</th>
-                <th>What</th>
-                <th>What was sent</th>
-                <th>What the public graph answered</th>
-              </tr>
-            </thead>
-            <tbody>
-              {log.map((a) => (
-                <tr key={a.id}>
-                  <td>{when(a.at)}</td>
-                  <td>
-                    {a.by ?? "nobody"}
-                    {a.holding.length > 0 && <span className="acct-detail">holding {a.holding.join(", ")}</span>}
-                  </td>
-                  <td>
-                    {a.what.charAt(0).toUpperCase() + a.what.slice(1)}
-                    {a.result !== "done" && <span className="acct-detail">{a.result === "refused" ? "not taken" : "not sent"}</span>}
-                  </td>
-                  <td>
-                    <code>{a.on_the_public_graph ?? ""}</code>
-                    {Object.keys(a.sent).length > 0 && <pre className="admin-pre">{JSON.stringify(a.sent, null, 1)}</pre>}
-                  </td>
-                  <td>{a.the_public_graph_said ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          log.map((a) => (
+            <div key={a.id} className="admin-report">
+              <div className="acct-sub">
+                <h3>
+                  {a.what.charAt(0).toUpperCase() + a.what.slice(1)}
+                  {a.result !== "done" && <span className="acct-detail">{a.result === "refused" ? "not taken" : "not sent"}</span>}
+                </h3>
+                <span className="acct-note">
+                  {when(a.at)} · {a.by ?? "nobody"}
+                  {a.holding.length > 0 ? `, holding ${a.holding.join(", ")}` : ""}
+                </span>
+              </div>
+              <p className="acct-note">
+                {a.on_the_public_graph && (
+                  <>
+                    On the public graph: <code>{a.on_the_public_graph}</code>.{" "}
+                  </>
+                )}
+                {Object.keys(a.sent).length === 0 ? "Nothing was sent with it." : "Exactly what was sent:"}
+              </p>
+              {Object.keys(a.sent).length > 0 && <pre className="admin-pre">{JSON.stringify(a.sent, null, 1)}</pre>}
+              {a.the_public_graph_said && <p className="acct-note">The public graph answered: {a.the_public_graph_said}</p>}
+            </div>
+          ))
         )}
       </section>
     </div>

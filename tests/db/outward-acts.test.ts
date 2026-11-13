@@ -75,7 +75,9 @@ const actor: Record<string, GateActor> = {};
 const feedKey = generateKeyPairSync("ed25519");
 const publishKey = generateSigningKey();
 const key = () => `epk_${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`;
-const orgKey = key();
+// OUTWARD_ORG_KEY and OUTWARD_KEEP_STATE are for looking at the pages afterwards: the run then leaves both
+// databases as the tests left them, with the organization's key on the public graph a known one.
+const orgKey = process.env.OUTWARD_ORG_KEY || key();
 const readerKey = key();
 const orgAccount = `test-org:${tag}`;
 
@@ -344,6 +346,10 @@ beforeAll(async () => {
 afterAll(async () => {
   server?.kill("SIGTERM");
   await app?.close();
+  if (process.env.OUTWARD_KEEP_STATE) {
+    await pubPool?.end();
+    return;
+  }
   Object.assign(loadConfig(), { publishSigningKey: "", deploymentHosting: "", publicGraphApiUrl: "", publicGraphApiKey: "" });
   await system(async () => {
     for (const table of ["report_sendings", "keep_current_queue", "keep_current_exceptions", "adopted_requests", "inbound_contributions", "outward_acts", "outward_settings"]) {
